@@ -5,7 +5,7 @@
 | 域名 | 内容 | 部署 |
 |---|---|---|
 | `pinomad.si`（`www` 跳到根域名） | 落地页、文档和博客，`apps/site` 的静态构建，中英两份（英文在根路径，中文在 `/zh/`） | Cloudflare Pages，接 GitHub，合进 `main` 自动发布 |
-| `app.pinomad.si` | 托管的服务端：账号 API、中继、它自带的 Web 客户端 | Zeabur，`deploy/server/Dockerfile`，见[远程访问](https://pinomad.si/zh/docs/remote-access/)的"容器平台" |
+| `app.pinomad.si` | 托管的服务端：账号 API、中继、它自带的 Web 客户端 | 洛杉矶一台 VPS，npm 全局包 + systemd + Caddy，见下面的"app.pinomad.si"和[远程访问](https://pinomad.si/zh/docs/remote-access/)的"经自部署中继访问" |
 
 官网只是静态文件，不跟服务端共享代码和部署，也不跟 npm 版本走；服务端照旧托管和它同版本的 Web 客户端（ADR-0015 §4）。
 
@@ -48,6 +48,13 @@ cd apps/site && bun run build && bun run preview
 
 ## app.pinomad.si
 
-`app` 子域名的 DNS 记录在同一个 Cloudflare 区域里：A 记录指向 Zeabur 服务器 IP，**灰云**（和[远程访问](https://pinomad.si/zh/docs/remote-access/)里说的一样，证书由 Zeabur 签，橙云会让国内访问多绕一圈）。从旧域名迁过来的步骤见[远程访问](https://pinomad.si/zh/docs/remote-access/)的"更换服务端域名"。
+跑在 VMISS 洛杉矶 CN2 GIA 的一台 VPS 上（Debian 13，2 核 4GB，`38.47.117.251`），国内外用户共用：到美东约 70ms、欧洲约 140ms、东亚约 100–150ms，国内走 CN2 GIA 回国线路。服务端只能单实例（中继的转接状态在内存里，数据目录有锁）。
+
+- `app` 子域名的 DNS 记录在同一个 Cloudflare 区域里：A 记录指向这台 VPS，**灰云**（橙云会让国内访问多绕一圈，Caddy 的证书验证也会被挡在 Cloudflare 那边）。
+- 服务端是全局装的 npm 包（版本和宿主一起升，见[远程访问](https://pinomad.si/zh/docs/remote-access/)的"升级"），系统级单元 `pinomad-server.service`，以 `pinomad` 用户运行，数据目录 `/var/lib/pinomad/server`。APNs 变量在 `/etc/pinomad-server.env`（root、600）。
+- Caddy 用官方 apt 源，`/etc/caddy/Caddyfile` 反代到 `127.0.0.1:7430`，自动签证书。防火墙是 nftables，只开 22、80、443（含 UDP 443）；SSH 只认密钥。
+- 看日志：`journalctl -u pinomad-server`、`journalctl -u caddy`。
+
+从别的机器搬过来的步骤见[远程访问](https://pinomad.si/zh/docs/remote-access/)的"搬到另一台机器"，换域名见"更换服务端域名"。
 
 托管实例现在不开放注册（ADR-0022），落地页上的 "Open the web app" 对访客来说只能看到登录页；开放注册前它主要给作者自己和已配对的设备用。

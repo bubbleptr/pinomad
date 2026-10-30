@@ -87,44 +87,34 @@ relay.example.com {
 }
 ```
 
-systemd 单元示例（VPS 上的系统级单元；node 和包路径都用绝对路径，`command -v node` 和 `npm root -g` 查）。首次启动的两个账号变量放进 `/etc/pinomad-server.env`（`chmod 600`），用户建好后这个文件可以删掉。数据目录的锁是旁边的 `<目录>.lock`，所以数据目录放在 `StateDirectory` 下面一层：
+systemd 单元示例（VPS 上的系统级单元；node 和包路径都用绝对路径，`command -v node` 和 `npm root -g` 查）。首次启动的两个账号变量和推送用的 APNs 变量都放进 `/etc/pinomad-server.env`（`chmod 600`），用户建好后账号变量可以删掉。数据目录的锁是旁边的 `<目录>.lock`，所以数据目录放在 `StateDirectory` 下面一层：
 
 ```ini
 [Unit]
-Description=PiNomad relay
+Description=PiNomad server
 After=network-online.target
 
 [Service]
 User=pinomad
 StateDirectory=pinomad
 EnvironmentFile=-/etc/pinomad-server.env
-ExecStart=/usr/bin/node /usr/lib/node_modules/pinomad/dist/pinomad.js relay --public-origin https://relay.example.com --data-dir /var/lib/pinomad/server --trust-proxy
+ExecStart=/usr/bin/node /usr/lib/node_modules/pinomad/dist/pinomad.js server --public-origin https://relay.example.com --data-dir /var/lib/pinomad/server --trust-proxy
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-### 容器平台（Zeabur 等）
+### 容器平台
 
-镜像在 `deploy/server/Dockerfile`，装的是锁版本的 npm 发布包（`ARG PINOMAD_VERSION`）。平台终结 TLS 并转发到 `$PORT`（默认 8080），不需要 Caddy；镜像固定带 `--trust-proxy`。中继把转接状态放在内存里、数据目录也有锁，**只能跑一个实例**，不要开扩容。账号数据在 `/data/server`（锁文件是旁边的 `/data/server.lock`，所以数据目录不能直接是卷的根），**要在服务上挂一个持久卷到 `/data`**（Zeabur 在服务的 Volumes 里加，命令行不支持），否则每次重新部署都会丢掉用户、登录和宿主绑定。
+镜像在 `deploy/server/Dockerfile`，装的是锁版本的 npm 发布包（`ARG PINOMAD_VERSION`）。平台终结 TLS 并转发到 `$PORT`（默认 8080），不需要 Caddy；镜像固定带 `--trust-proxy`。中继把转接状态放在内存里、数据目录也有锁，**只能跑一个实例**，不要开扩容。账号数据在 `/data/server`（锁文件是旁边的 `/data/server.lock`，所以数据目录不能直接是卷的根），**要在服务上挂一个持久卷到 `/data`**，否则每次重新部署都会丢掉用户、登录和宿主绑定。
 
 | 环境变量 | 含义 |
 |---|---|
 | `PINOMAD_PUBLIC_ORIGIN` | 客户端打开的 https origin，比如 `https://nomad.example.com` |
 | `PINOMAD_SERVER_USER` / `PINOMAD_SERVER_PASSWORD` | 第一次启动时建出唯一的用户（密码至少 12 位）；之后留着也没关系，用户已存在时不再读 |
-| `ZBPACK_DOCKERFILE_PATH=Dockerfile` | **Zeabur 必加**：目录里只有一个 Dockerfile 时，Zeabur 会把它识别成静态站点、用 Caddy 托管文件，中继根本没启动；这个变量强制按 Dockerfile 构建（部署日志里应是 `PLANTYPE=docker`） |
 
-Zeabur 上的步骤（在 Dedicated Server 上部署，用 CLI 上传目录，不接 GitHub）：
-
-```sh
-cd deploy/server
-zeabur deploy --project-id <项目 id> --create --name pinomad-relay   # 首次：在项目里建出服务
-# 之后重新部署同一个服务：
-zeabur deploy --service-id <服务 id>
-```
-
-然后在服务上配好上面的环境变量（`PORT` 由平台注入，不用自己设），在 Domains 里绑定自定义域名，到 DNS 加一条记录：Dedicated Server 用 **A 记录指向服务器 IP**；Cloudflare 上建议**关掉代理（灰云）**，橙云会让国内访问多绕一圈，证书也由 Zeabur 自己签。域名状态变成 `PROVISIONED` 后，验证：
+配好变量和持久卷，绑定自定义域名，DNS 指向平台给的地址；用 Cloudflare 时建议**关掉代理（灰云）**，橙云会让国内访问多绕一圈，证书由平台自己签。域名生效后验证：
 
 ```sh
 curl -sI https://nomad.example.com/          # 200，中继托管的 Web 客户端
@@ -146,7 +136,7 @@ pinomad server --public-origin https://relay.example.com --data-dir /var/lib/pin
 ```
 
 - 两个变量缺一个、或密码不到 12 位，启动直接报错；users 表已有用户后启动不再需要它们。数据目录和宿主一样一个目录只允许一个进程，容器平台部署要挂持久卷。
-- 账号 API 和控制连接只走 HTTPS/WSS，明文只留给 localhost 开发。前面有反向代理（Caddy、Zeabur）时必须加 `--trust-proxy`：服务端据此信任 `X-Forwarded-Proto` 判定请求是否来自 https，并取 `X-Forwarded-For` 做按 IP 限速；不加的话，经过代理进来的请求会被当成不可信的明文连接拒绝（`/api/*` 回 403，`/host` 升级回 403），限速也只看到代理的地址。
+- 账号 API 和控制连接只走 HTTPS/WSS，明文只留给 localhost 开发。前面有反向代理（Caddy、容器平台）时必须加 `--trust-proxy`：服务端据此信任 `X-Forwarded-Proto` 判定请求是否来自 https，并取 `X-Forwarded-For` 做按 IP 限速；不加的话，经过代理进来的请求会被当成不可信的明文连接拒绝（`/api/*` 回 403，`/host` 升级回 403），限速也只看到代理的地址。
 - 改密码用 `pinomad server passwd`（要求服务端已停，它和数据目录锁互斥），新密码从 stdin 读：
 
   ```sh
@@ -213,14 +203,25 @@ HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（
 | `PINOMAD_SERVER_APNS_DEVELOPMENT_KEY_ID` / `PINOMAD_SERVER_APNS_DEVELOPMENT_KEY` | development（sandbox）环境，同上。建 key 时选 "Sandbox & Production" 就只用一把，两组变量填同样的 Key ID 和 `.p8` |
 
 - 每个环境要 `*_KEY_ID` 和 `*_KEY` 都配上才会向宿主声明；只配一半会在日志里写一条 `apns:` 警告并跳过这个环境。启动日志的 `{"event":"ready",…,"push":["production",…]}` 是实际生效的环境。
-- `_KEY` 是 PEM 文本本身，不是文件路径。服务端认真实换行，也认字面的 `\n`。Zeabur 的变量只存单行，直接粘多行内容（包括 Edit Raw Content）会丢掉换行，启动日志报 `apns: the … key is not a valid EC private key`；先把 `.p8` 转成用字面 `\n` 连接的一行再粘：`awk 'NR>1{printf "\\n"} {printf "%s", $0}' AuthKey_XXXXXXXXXX.p8 | pbcopy`（Linux 换成 `wl-copy`），不加引号。
+- `_KEY` 是 PEM 文本本身，不是文件路径。服务端认真实换行，也认字面的 `\n`。有的容器平台的变量只存单行，直接粘多行内容会丢掉换行，启动日志报 `apns: the … key is not a valid EC private key`；先把 `.p8` 转成用字面 `\n` 连接的一行再粘：`awk 'NR>1{printf "\\n"} {printf "%s", $0}' AuthKey_XXXXXXXXXX.p8 | pbcopy`（Linux 换成 `wl-copy`），不加引号。
 - 服务端按环境各持一条到 APNs 的 HTTP/2 长连接（production 打 `api.push.apple.com`，development 打 `api.sandbox.push.apple.com`），断了自己重建；provider token 用 `node:crypto` 签 ES256，缓存在进程里。
 - 推送负载只带标题和事件类型（"Waiting for your answer" / "Finished" / "Failed"），不带对话内容。
-- Zeabur 上把变量加进服务的 Variables 即可。**注意**：`zeabur` CLI 的 `variable set` 会把该服务全部变量连值打印到 stdout——密钥会落进终端历史和 CI 日志，跑这条命令时把输出丢掉（`zeabur variable set KEY=VALUE >/dev/null`），别贴给任何人或工具。
 
 ### 升级
 
-中继托管的 Web 客户端和宿主版本不一致时，客户端会显示需要更新；两边一起升级——宿主 `pinomad upgrade`，VPS 上 `npm i -g pinomad@latest` 后重启中继；容器部署则是改 Dockerfile 里的 `PINOMAD_VERSION`，再在 `deploy/server` 下重新 `zeabur deploy --service-id <服务 id>`（从 GitHub 部署的话合进 main 即触发）。宿主没加入服务端账号时，宿主日志和 Web 警告会提示先 `pinomad join`。从只用 `--allow-host` 白名单的老版本升级时，这个参数已经去掉（带着它启动会报未知参数）：按「服务端账号」配好数据目录和首个用户，在每台宿主上 `pinomad join`，再去掉 `--allow-host` 启动新版本。服务端命令现在叫 `pinomad server`，旧名 `pinomad relay` 仍然可用。
+中继托管的 Web 客户端和宿主版本不一致时，客户端会显示需要更新；两边一起升级——宿主 `pinomad upgrade`，VPS 上 `npm i -g pinomad@<版本>` 后 `systemctl restart pinomad-server`；容器部署则是改 Dockerfile 里的 `PINOMAD_VERSION` 再重新构建部署。宿主没加入服务端账号时，宿主日志和 Web 警告会提示先 `pinomad join`。从只用 `--allow-host` 白名单的老版本升级时，这个参数已经去掉（带着它启动会报未知参数）：按「服务端账号」配好数据目录和首个用户，在每台宿主上 `pinomad join`，再去掉 `--allow-host` 启动新版本。服务端命令现在叫 `pinomad server`，旧名 `pinomad relay` 仍然可用。
+
+### 搬到另一台机器（域名不变）
+
+`--public-origin` 不变时，宿主的 `server.json` 签名、客户端记下的 `wss://<域名>/c/<hostId>` 和浏览器 cookie 都继续有效，宿主不用重新 join。整个服务端状态就是数据目录里的 `server.sqlite`：
+
+1. 新机器按上面装好包、Caddy 和 systemd 单元，APNs 变量也配上，但先不启动服务端。
+2. 停掉旧服务端，再拷数据目录（SQLite 不要在运行中拷；正常退出后 WAL 已合回主文件，目录里可能只剩 `server.sqlite`）。锁文件 `<目录>.lock` 不用拷。
+3. 新机器上把数据目录交给服务端的用户（`chown -R pinomad:pinomad /var/lib/pinomad/server`），启动，确认启动日志 `{"event":"ready",…,"push":[…]}` 里的推送环境齐全。
+4. DNS 改指新机器。等权威解析和公共解析都换过来再让 Caddy 签证书，免得验证请求打到旧机器、白白用掉 Let's Encrypt 的失败配额。
+5. 宿主会自己重连，日志出现 `"status":"registered"` 即可。宿主或客户端走本地代理（fake-ip）时，代理自己的 DNS 缓存过期前仍会连旧地址。
+
+停服到 DNS 生效这段时间宿主连不上中继，外网设备会断线；P2P 和 tailnet 直连不受影响。
 
 ### 更换服务端域名
 
@@ -230,12 +231,12 @@ HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（
 - 客户端配对时记下的是 `wss://<旧域名>/c/<hostId>`，之后不会自动刷新；账号列表里这台宿主仍显示已配对，不会提示重新配对。
 - 浏览器 cookie 绑在旧域名上，Web 要在新地址重新登录；桌面端要用新地址重新登录。
 
-所以**旧域名不要直接下线，也不要 301 跳转**（WebSocket 不跟随重定向）：让它和新域名一起指向同一个服务。设备入口 `/c/<hostId>` 只看路径，不看 Host，旧链接经旧域名照样接通，加密是端到端的，域名不影响安全性。步骤（以 Zeabur 为例）：
+所以**旧域名不要直接下线，也不要 301 跳转**（WebSocket 不跟随重定向）：让它和新域名一起指向同一个服务。设备入口 `/c/<hostId>` 只看路径，不看 Host，旧链接经旧域名照样接通，加密是端到端的，域名不影响安全性。步骤（以 VPS + Caddy 为例）：
 
-1. 在服务的 Domains 里加上新域名（旧的留着），DNS 加记录（Dedicated Server 用 A 记录指向服务器 IP，Cloudflare 灰云），等到 `PROVISIONED`。
-2. 把 `PINOMAD_PUBLIC_ORIGIN` 改成新 origin 并重新部署（数据卷不动）。从这时起宿主掉线，直到下一步做完。
+1. 新域名的 DNS 也指向这台服务器（Cloudflare 灰云），在 Caddyfile 的站点地址里把新旧域名写在一起（`old.example.com, new.example.com {`），`systemctl reload caddy` 后等新域名的证书签好。
+2. 把 `--public-origin` 改成新 origin 并重启服务端（数据目录不动；容器部署是改 `PINOMAD_PUBLIC_ORIGIN` 重新部署）。从这时起宿主掉线，直到下一步做完。
 3. 在新地址登录 Web，"Add a host" 拿一次性命令，在每台宿主上跑 `pinomad join https://<新域名> <token>`。重新 join 会覆盖 `server.json` 并等空闲重启，**不要先 `leave`**——它会用旧 origin 签名，被新服务端拒绝。
 4. 确认宿主在线：`curl -sI https://<新域名>/` 回 200，宿主日志有 `"status":"registered"`，`wss://<新域名>/c/<hostId>` 连上后保持打开。
-5. Web、桌面端在新地址重新登录。Web 的配对存在浏览器 localStorage 里、按域名隔离，新地址的页面一开始没有宿主，登录后在账号列表里点 Pair 即可；桌面端和 iOS 的已有配对先继续经旧域名工作；想彻底换掉旧域名时，在各个客户端里删掉这台宿主重新配对（账号里点 Pair，iOS 扫码），全部换完再从服务上解绑旧域名。
+5. Web、桌面端在新地址重新登录。Web 的配对存在浏览器 localStorage 里、按域名隔离，新地址的页面一开始没有宿主，登录后在账号列表里点 Pair 即可；桌面端和 iOS 的已有配对先继续经旧域名工作；想彻底换掉旧域名时，在各个客户端里删掉这台宿主重新配对（账号里点 Pair，iOS 扫码），全部换完再从 Caddyfile 里去掉旧域名。
 
 npm 装的实例和本机任何开发检出互不相干（各自的数据目录、进程、包路径都独立），所以在同一台机器上开发 PiNomad 不会碰到正在跑的服务。
