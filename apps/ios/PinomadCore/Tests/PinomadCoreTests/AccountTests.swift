@@ -88,6 +88,39 @@ struct AccountTests {
         #expect(!again.changed)
     }
 
+    /// Automatic registration follows the shared eligibility rule: an
+    /// unpaired host qualifies only when it is not declined and the local
+    /// list was actually read (ADR-0035 §5).
+    @Test func autoRegistrationEligibilityCarriesTheRealInputs() {
+        let host = accountHost("host1", key: "key1", pairing: .available)
+        let eligible = AccountHosts.reconcile(
+            serverOrigin: "https://relay.example.com",
+            hosts: [host],
+            stored: StoredHosts(),
+            rejectedHostKeys: [],
+            declined: [],
+            storedRead: true)
+        #expect(eligible.autoRegisterHostIds == ["host1"])
+
+        let declined = AccountHosts.reconcile(
+            serverOrigin: "https://relay.example.com/",
+            hosts: [host],
+            stored: StoredHosts(),
+            rejectedHostKeys: [],
+            declined: [AccountHostRef(serverOrigin: "https://relay.example.com", hostId: "host1")],
+            storedRead: true)
+        #expect(declined.autoRegisterHostIds.isEmpty)
+
+        let unread = AccountHosts.reconcile(
+            serverOrigin: "https://relay.example.com",
+            hosts: [host],
+            stored: StoredHosts(),
+            rejectedHostKeys: [],
+            declined: [],
+            storedRead: false)
+        #expect(unread.autoRegisterHostIds.isEmpty)
+    }
+
     /// The server's pairing verdict decides whether the Pair button works,
     /// and each non-available verdict carries a reason.
     @Test func unpairedHostUsesTheServerVerdict() {

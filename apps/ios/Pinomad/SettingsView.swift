@@ -31,7 +31,9 @@ struct SettingsView: View {
 
             // Only the connected host's page opens; the others need a
             // connection to read anything from.
-            if let live = machines.first(where: isLive) {
+            if let live = machines.first(where: {
+                $0.hostKey == model.currentHostKey && model.connected
+            }) {
                 Section {
                     NavigationLink(value: Route.machine(live.hostKey)) {
                         LabeledContent {
@@ -100,7 +102,15 @@ struct SettingsView: View {
     }
 
     private func isLive(_ host: HostRecord) -> Bool {
-        host.hostKey == model.currentHostKey && model.connected
+        model.isConnected(host.hostKey)
+    }
+
+    private func status(_ host: HostRecord) -> String {
+        if host.hostKey == model.currentHostKey, model.connected,
+           let summary = model.connectedSummary {
+            return summary
+        }
+        return model.connectionLabel(for: host.hostKey)
     }
 
     /// Tap to switch; the trailing ⓘ has its own hit area and opens the
@@ -118,7 +128,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(label(host))
                             .foregroundStyle(.primary)
-                        Text(isLive(host) ? model.connectedSummary ?? host.url : host.url)
+                        Text(status(host))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -157,8 +167,8 @@ struct SettingsView: View {
         .tint(.primary)
     }
 
-    /// The app-level switch. Only the connected host can register or clear
-    /// now; the others catch up on their next connection.
+    /// The app-level switch. Every connected host registers or clears; a host
+    /// that is still connecting catches up when it becomes ready.
     @ViewBuilder
     private var pushSection: some View {
         Section {

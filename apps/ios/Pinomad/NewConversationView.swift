@@ -383,7 +383,9 @@ struct NewConversationView: View {
             }
             if model.hostSupports("listFolders") {
                 Button("Add Project…", image: .folderPlus) {
-                    model.navPath.append(.addProject)
+                    if let hostKey = model.currentHostKey {
+                        model.navPath.append(.addProject(hostKey: hostKey))
+                    }
                 }
             }
         } label: {

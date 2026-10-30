@@ -14,31 +14,32 @@ extension AppModel {
     /// clears at once; a refused send is a local row with its own Retry
     /// (ADR-0034 §5), not a second copy in the composer.
     func send(conversation id: UInt64, mode: SubmitMode) {
-        let text = drafts[id] ?? ""
-        let tray = trays[id] ?? AttachmentTray()
-        var files = fileTrays[id] ?? FileAttachmentTray()
+        guard let runtime = focusedRuntime, let session = runtime.session else { return }
+        let text = runtime.drafts[id] ?? ""
+        let tray = runtime.trays[id] ?? AttachmentTray()
+        var files = runtime.fileTrays[id] ?? FileAttachmentTray()
         guard !text.allSatisfy(\.isWhitespace) || !tray.images.isEmpty || !files.isEmpty,
-              tray.preparing == 0, files.canSend, !filePreparing(id), let session else { return }
+              tray.preparing == 0, files.canSend, !filePreparing(id, in: runtime) else { return }
         // Past the host's 24 h TTL the id may already be gone; drop it and
         // keep the source so Retry re-uploads instead of losing the draft.
         if files.expire() {
-            fileTrays[id] = files
-            lastError = "Attachment expired; attach it again"
+            runtime.fileTrays[id] = files
+            runtime.lastError = "Attachment expired; attach it again"
             return
         }
         let images = tray.images
         let requestId = UUID().uuidString
         let sentFiles = files.attachments
         let attachments = sentFiles.map(\.id)
-        let chips = chips(for: id)
-        let payload = chips.payload(hostMinor: hostMinor)
-        if !sentFiles.isEmpty { sentFileDetails[requestId] = sentFiles }
-        drafts[id] = ""
-        skillChips[id] = nil
-        trays[id] = nil
-        fileTrays[id] = nil
-        transcriptPin += 1
-        Task { [weak self] in
+        let chips = chips(for: id, in: runtime)
+        let payload = chips.payload(hostMinor: runtime.hostMinor)
+        if !sentFiles.isEmpty { runtime.sentFileDetails[requestId] = sentFiles }
+        runtime.drafts[id] = ""
+        runtime.skillChips[id] = nil
+        runtime.trays[id] = nil
+        runtime.fileTrays[id] = nil
+        runtime.transcriptPin += 1
+        Task {
             do {
                 _ = try await session.invoke(
                     .submit(text: payload.text, whenBusy: mode, target: id, requestId: requestId,
@@ -48,8 +49,7 @@ extension AppModel {
                 // putting the draft back would leave two resendable copies.
                 // Only a session that ended before admitting the call has no
                 // row, and there is no composer left to restore into then.
-                guard let self else { return }
-                self.showToast("Couldn't send: \(self.describe(error))", level: "error")
+                runtime.showToast("Couldn't send: \(self.describe(error))", level: "error")
             }
         }
     }
@@ -58,28 +58,29 @@ extension AppModel {
     /// are read and re-encoded off the main actor, and the batch lands (or
     /// fails as a whole) when every image is ready.
     func attach(conversation id: UInt64, accepts: Bool, sources: [@Sendable () async throws -> Data]) {
-        var tray = trays[id] ?? AttachmentTray()
+        guard let runtime = focusedRuntime else { return }
+        var tray = runtime.trays[id] ?? AttachmentTray()
         let claim = tray.reserve(sources.count, accepts: accepts)
-        trays[id] = tray
+        runtime.trays[id] = tray
         guard let claim else { return }
         let kept = Array(sources.prefix(claim.count))
-        transcriptPin += 1
-        Task { [weak self] in
+        runtime.transcriptPin += 1
+        Task {
             do {
                 var prepared: [MessageImage] = []
                 for load in kept {
                     let data = try await load()
                     prepared.append(try await Task.detached { try ImagePrep.prepare(data) }.value)
                 }
-                guard let self else { return }
                 // The first snapshot naming these bytes should hit the local
                 // cache, not download the attachment back from the host.
                 for image in prepared {
                     await self.images.prefill(CachedImage(data: image.data, mimeType: image.mimeType))
                 }
-                self.trays[id]?.fulfil(claim, with: prepared)
+                runtime.trays[id]?.fulfil(claim, with: prepared)
             } catch {
-                self?.trays[id]?.fail(claim, message: (error as? ImagePrep.Failure)?.description ?? "Couldn't read the image")
+                runtime.trays[id]?.fail(
+                    claim, message: (error as? ImagePrep.Failure)?.description ?? "Couldn't read the image")
             }
         }
     }
@@ -102,25 +103,32 @@ extension AppModel {
     /// since they were stored (typing, a menu insertion, a clear) shifts
     /// or unbinds them.
     func chips(for id: UInt64) -> SkillChips {
-        (skillChips[id] ?? SkillChips()).following(drafts[id] ?? "")
+        guard let runtime = focusedRuntime else { return SkillChips() }
+        return chips(for: id, in: runtime)
+    }
+
+    func chips(for id: UInt64, in runtime: HostRuntime) -> SkillChips {
+        (runtime.skillChips[id] ?? SkillChips()).following(runtime.drafts[id] ?? "")
     }
 
     /// Store the chips against the current text — called on every draft
     /// change, so each step is one edit to follow.
     func syncChips(_ id: UInt64) {
-        let chips = chips(for: id)
-        if skillChips[id] != chips { skillChips[id] = chips }
+        guard let runtime = focusedRuntime else { return }
+        let chips = chips(for: id, in: runtime)
+        if runtime.skillChips[id] != chips { runtime.skillChips[id] = chips }
     }
 
     /// A `$` menu pick: bind the `$name` now in the draft at `location`.
     func bindSkillChip(_ name: String, at location: Int, in id: UInt64) {
-        var chips = chips(for: id)
+        guard let runtime = focusedRuntime else { return }
+        var chips = chips(for: id, in: runtime)
         chips.bind(name, at: location)
-        skillChips[id] = chips
+        runtime.skillChips[id] = chips
     }
 
     func removeImage(conversation id: UInt64, at index: Int) {
-        trays[id]?.remove(at: index)
+        focusedRuntime?.trays[id]?.remove(at: index)
     }
 
     func reportAttachProblem(conversation id: UInt64, _ message: String) {
@@ -134,9 +142,9 @@ extension AppModel {
     /// until then so a refused answer (toasted) can be resent. Returns once
     /// the host took or refused it, so the card can hold Submit meanwhile.
     func answer(_ question: PendingQuestion, conversation id: UInt64) async {
-        let draft = questionDrafts[question.request.id]
+        guard let runtime = focusedRuntime, let session = runtime.session else { return }
+        let draft = runtime.questionDrafts[question.request.id]
             ?? QuestionDraft(questionCount: question.request.questions.count)
-        guard let session else { return }
         _ = try? await session.invoke(.answer(kind: question.kind, requestId: question.request.id,
                                               answers: draft.answers(), target: id))
     }
@@ -179,27 +187,6 @@ extension AppModel {
         run(.setThinkingLevel(level: level))
     }
 
-    func dismissToast(_ id: UInt64) {
-        toasts.removeAll { $0.id == id }
-    }
-
-    /// Queue a notice as a toast that clears itself; at most three stay up.
-    func show(_ notice: Notice) {
-        toasts.append(notice)
-        if toasts.count > 3 { toasts.removeFirst(toasts.count - 3) }
-        Task { [weak self] in
-            try? await Task.sleep(for: .seconds(4))
-            self?.dismissToast(notice.id)
-        }
-    }
-
-    /// A notice the app produced itself (the queued actions' outcomes and
-    /// refusals). The descending id keeps it out of the core notice feed.
-    func showToast(_ message: String, level: String = "info") {
-        localToastID &-= 1
-        show(Notice(id: localToastID, level: level, message: message))
-    }
-
     // ── Queued inputs (#144) ────────────────────────────────────────────
     // Withdraw and steer are request-class: their outcome and any host
     // refusal come back here, not as a notice. One request per row at a
@@ -238,20 +225,21 @@ extension AppModel {
     /// Resend a failed or unconfirmed local send with its original key; the
     /// core queries before resending when the outcome is unknown.
     func retrySubmission(conversation id: UInt64, requestId: String) {
-        guard connected, let session, submissionPending.insert(requestId).inserted else { return }
-        let generation = sessionGeneration
-        Task { [weak self] in
-            guard let self else { return }
+        guard let runtime = focusedRuntime, runtime.isConnectedNow, let session = runtime.session,
+              runtime.submissionPending.insert(requestId).inserted
+        else { return }
+        let generation = runtime.generation
+        Task {
             defer {
-                if self.sessionGeneration == generation {
-                    self.submissionPending.remove(requestId)
+                if runtime.generation == generation {
+                    runtime.submissionPending.remove(requestId)
                 }
             }
             do {
                 _ = try await session.invoke(.retrySubmission(requestId: requestId))
             } catch {
-                guard self.sessionGeneration == generation else { return }
-                self.showToast(self.describe(error), level: "error")
+                guard runtime.generation == generation else { return }
+                runtime.showToast(self.describe(error), level: "error")
             }
         }
     }
@@ -261,92 +249,99 @@ extension AppModel {
     /// switched away; its ref images are read while the source entries are
     /// still subscribed.
     func editSubmission(conversation id: UInt64, requestId: String) {
-        guard connected, let session, takingBack == nil,
+        guard let runtime = focusedRuntime, runtime.isConnectedNow, let session = runtime.session,
+              runtime.takingBack == nil,
               !editAvailability(conversation: id).isDisabled,
-              submissionPending.insert(requestId).inserted
+              runtime.submissionPending.insert(requestId).inserted
         else { return }
-        takingBack = id
-        let generation = sessionGeneration
-        Task { [weak self] in
-            guard let self else { return }
+        runtime.takingBack = id
+        let generation = runtime.generation
+        Task {
             defer {
-                if self.sessionGeneration == generation {
-                    if self.takingBack == id { self.takingBack = nil }
-                    self.submissionPending.remove(requestId)
+                if runtime.generation == generation {
+                    if runtime.takingBack == id { runtime.takingBack = nil }
+                    runtime.submissionPending.remove(requestId)
                 }
             }
             do {
                 let result = try await session.invoke(
                     .takeBackSubmission(requestId: requestId))
-                guard self.session === session, self.sessionGeneration == generation,
+                guard runtime.generation == generation,
                       case let .takeBackSubmission(draft) = result, let draft
                 else { return }
                 var images: [MessageImage] = []
                 do {
                     images = try await draft.images.resolving { ref, variant in
-                        try await self.cachedImage(ref: ref, variant: variant, session: session)
+                        try await self.cachedImage(
+                            ref: ref, variant: variant, session: session, source: runtime.hostKey)
                     }
                 } catch {
                     // The text and file chips are still worth restoring; the
                     // source image ref left the live view. A replaced host is
                     // not this task's to fill.
-                    guard self.session === session, self.sessionGeneration == generation
-                    else { return }
-                    self.showToast(
+                    guard runtime.generation == generation else { return }
+                    runtime.showToast(
                         "Couldn't load the original images; the message text is back.",
                         level: "error")
                 }
-                guard self.session === session, self.sessionGeneration == generation else { return }
-                self.putBack(PendingTakeBack(conversationId: id, draft: draft),
-                             requestId: requestId, images: images)
+                guard runtime.generation == generation else { return }
+                self.putBack(
+                    PendingTakeBack(conversationId: id, draft: draft),
+                    requestId: requestId, images: images, runtime: runtime)
             } catch is CancellationError {
                 // The session is closing; nothing to restore into.
             } catch {
-                guard self.session === session, self.sessionGeneration == generation else { return }
-                self.showToast("Couldn't take the message back: \(self.describe(error))",
-                               level: "error")
+                guard runtime.generation == generation else { return }
+                runtime.showToast(
+                    "Couldn't take the message back: \(self.describe(error))", level: "error")
             }
         }
     }
 
     /// Refill the origin conversation's composer with a taken-back send.
-    private func putBack(_ pending: PendingTakeBack, requestId: String, images: [MessageImage]) {
+    private func putBack(
+        _ pending: PendingTakeBack, requestId: String, images: [MessageImage],
+        runtime: HostRuntime
+    ) {
         let id = pending.conversationId
         guard let draft = pending.draft(for: id) else { return }
-        drafts[id] = draft.text
-        skillChips[id] = .restored(text: draft.text, skills: draft.skills)
-        var tray = trays[id] ?? AttachmentTray()
+        runtime.drafts[id] = draft.text
+        runtime.skillChips[id] = .restored(text: draft.text, skills: draft.skills)
+        var tray = runtime.trays[id] ?? AttachmentTray()
         tray.restore(images)
-        trays[id] = tray
-        let known = sentFileDetails[requestId] ?? []
+        runtime.trays[id] = tray
+        let known = runtime.sentFileDetails[requestId] ?? []
         restoreFiles(
             conversation: id,
             attachments: draft.attachments.compactMap { attachmentId in
                 known.first { $0.id == attachmentId }
-            }
+            },
+            in: runtime
         )
-        sentFileDetails.removeValue(forKey: requestId)
-        if case .conversation(id)? = navPath.last {
-            queuedEditFocus[id, default: 0] += 1
+        runtime.sentFileDetails.removeValue(forKey: requestId)
+        if case .conversation(let ref)? = navPath.last,
+           ref.hostKey == runtime.hostKey {
+            runtime.queuedEditFocus[id, default: 0] += 1
         }
     }
 
     /// Withdraw a queued row without editing it. `sent` means it reached the
     /// transcript before the call landed; every other success is silent.
     func withdrawQueued(conversation id: UInt64, item: QueueItem) {
-        guard connected, hostSupports("withdrawQueued"), let session,
-              queuedEdit.copy?.id != item.id,
-              queuePending.insert(item.id).inserted
+        guard let runtime = focusedRuntime, runtime.isConnectedNow,
+              hostSupportsCall(hostMinor: runtime.hostMinor, method: "withdrawQueued"),
+              let session = runtime.session,
+              runtime.queuedEdit.copy?.id != item.id,
+              runtime.queuePending.insert(item.id).inserted
         else { return }
-        Task { [weak self] in
-            defer { self?.queuePending.remove(item.id) }
+        Task {
+            defer { runtime.queuePending.remove(item.id) }
             do {
                 if try await session.withdrawQueued(submissionId: item.id, target: id) == .sent {
-                    self?.showToast("Already sent, can't withdraw")
+                    runtime.showToast("Already sent, can't withdraw")
                 }
             } catch {
-                guard let self else { return }
-                self.showToast(self.describe(error), level: "error")
+                runtime.showToast(self.describe(error), level: "error")
             }
         }
     }
@@ -355,17 +350,18 @@ extension AppModel {
     /// the next available boundary will treat it as steer — it is not an
     /// "inserted now" notice; `sent` and `unavailable` are equally silent.
     func steerQueued(conversation id: UInt64, item: QueueItem) {
-        guard connected, hostSupports("steerQueued"), let session,
-              queuedEdit.copy?.id != item.id,
-              queuePending.insert(item.id).inserted
+        guard let runtime = focusedRuntime, runtime.isConnectedNow,
+              hostSupportsCall(hostMinor: runtime.hostMinor, method: "steerQueued"),
+              let session = runtime.session,
+              runtime.queuedEdit.copy?.id != item.id,
+              runtime.queuePending.insert(item.id).inserted
         else { return }
-        Task { [weak self] in
-            defer { self?.queuePending.remove(item.id) }
+        Task {
+            defer { runtime.queuePending.remove(item.id) }
             do {
                 _ = try await session.steerQueued(submissionId: item.id, target: id)
             } catch {
-                guard let self else { return }
-                self.showToast(self.describe(error), level: "error")
+                runtime.showToast(self.describe(error), level: "error")
             }
         }
     }
@@ -374,10 +370,12 @@ extension AppModel {
     /// images back. The content is read before the call because a successful
     /// withdrawal removes the row from the next snapshot.
     func editQueued(conversation id: UInt64, item: QueueItem) {
-        guard connected, hostSupports("withdrawQueued"), let session,
+        guard let runtime = focusedRuntime, runtime.isConnectedNow,
+              hostSupportsCall(hostMinor: runtime.hostMinor, method: "withdrawQueued"),
+              let session = runtime.session,
               !queuedEditDisabled(conversation: id),
-              queuedEdit.copy?.id != item.id,
-              queuedEditPreparing.isEmpty,
+              runtime.queuedEdit.copy?.id != item.id,
+              runtime.queuedEditPreparing.isEmpty,
               let input = session.queuedInput(submissionId: item.id)
         else { return }
         let copy = QueuedEdit.Copy(
@@ -386,88 +384,97 @@ extension AppModel {
         // Refs are valid only while the row is still in the subscribed view;
         // resolve every image before withdrawing, or the copy could not be
         // resent after the row leaves the inbox (ADR-0027 §5).
-        queuedEditPreparing.insert(id)
-        queuePending.insert(item.id)
+        runtime.queuedEditPreparing.insert(id)
+        runtime.queuePending.insert(item.id)
+        let generation = runtime.generation
         Task { [weak self] in
             guard let self else { return }
             do {
                 let resolved = try await copy.resolvingImages { ref, variant in
-                    try await self.cachedImage(ref: ref, variant: variant)
+                    try await self.cachedImage(
+                        ref: ref, variant: variant, session: session, source: runtime.hostKey)
                 }
-                // A host switch drops the prepared copy; never begin a
-                // withdraw on the replaced session after the fetch lands.
-                guard self.session === session, self.queuedEditPreparing.contains(id) else {
-                    self.queuedEditPreparing.remove(id)
-                    self.queuePending.remove(item.id)
+                // A replaced session drops the prepared copy; never begin a
+                // withdraw on it after the fetch lands.
+                guard runtime.generation == generation,
+                      runtime.queuedEditPreparing.contains(id)
+                else {
+                    runtime.queuedEditPreparing.remove(id)
+                    runtime.queuePending.remove(item.id)
                     return
                 }
-                guard self.queuedEdit.begin(resolved) else {
-                    self.queuedEditPreparing.remove(id)
-                    self.queuePending.remove(item.id)
+                guard runtime.queuedEdit.begin(resolved) else {
+                    runtime.queuedEditPreparing.remove(id)
+                    runtime.queuePending.remove(item.id)
                     return
                 }
-                self.queuedEditPreparing.remove(id)
-                await self.resolveQueuedEdit(resolved, session: session)
+                runtime.queuedEditPreparing.remove(id)
+                await self.resolveQueuedEdit(resolved, session: session, runtime: runtime)
             } catch {
-                self.queuedEditPreparing.remove(id)
-                self.queuePending.remove(item.id)
-                self.showToast("Couldn't load an image for editing. Try again.", level: "error")
+                runtime.queuedEditPreparing.remove(id)
+                runtime.queuePending.remove(item.id)
+                runtime.showToast(
+                    "Couldn't load an image for editing. Try again.", level: "error")
             }
         }
     }
 
     /// The reconnect retry trigger: only a copy whose withdraw reply was
     /// lost is pending, and the host's withdraw is idempotent.
-    func retryQueuedEditIfNeeded() {
-        guard let session, let copy = queuedEdit.retryOnReconnect(connected: connected) else { return }
-        queuePending.insert(copy.id)
+    func retryQueuedEditIfNeeded(for runtime: HostRuntime) {
+        guard let session = runtime.session,
+              let copy = runtime.queuedEdit.retryOnReconnect(connected: runtime.isConnectedNow)
+        else { return }
+        runtime.queuePending.insert(copy.id)
         Task { [weak self] in
-            await self?.resolveQueuedEdit(copy, session: session)
+            await self?.resolveQueuedEdit(copy, session: session, runtime: runtime)
         }
     }
 
-    private func resolveQueuedEdit(_ copy: QueuedEdit.Copy, session: PinomadSession) async {
+    private func resolveQueuedEdit(
+        _ copy: QueuedEdit.Copy, session: PinomadSession, runtime: HostRuntime
+    ) async {
         do {
             let outcome = try await session.withdrawQueued(
                 submissionId: copy.id, target: copy.conversationId)
-            guard queuedEdit.copy == copy else { return }
+            guard runtime.queuedEdit.copy == copy else { return }
             switch outcome {
             case .withdrawn:
-                guard let restored = queuedEdit.withdrawn() else { return }
-                queuePending.remove(copy.id)
-                putBack(restored)
+                guard let restored = runtime.queuedEdit.withdrawn() else { return }
+                runtime.queuePending.remove(copy.id)
+                putBack(restored, runtime: runtime)
             case .sent:
-                queuedEdit.alreadySent()
-                queuePending.remove(copy.id)
-                showToast("Already sent, can't withdraw")
+                runtime.queuedEdit.alreadySent()
+                runtime.queuePending.remove(copy.id)
+                runtime.showToast("Already sent, can't withdraw")
             }
         } catch let error as SessionError {
-            guard queuedEdit.copy == copy else { return }
+            guard runtime.queuedEdit.copy == copy else { return }
             switch error {
             case .connectionLost:
                 // The request's connection epoch ended: the host may have
                 // withdrawn it, so keep the copy and re-confirm by id.
-                await awaitReconnectOrRetry(copy)
+                await awaitReconnectOrRetry(copy, runtime: runtime)
             case .operationFailed:
                 // A refusal from a replaced session does not describe this
                 // input; ask the live one again when it is reachable.
-                guard self.session === session else {
-                    await awaitReconnectOrRetry(copy)
+                guard runtime.session === session else {
+                    await awaitReconnectOrRetry(copy, runtime: runtime)
                     return
                 }
                 // The epoch did not move, so the host refused while the
                 // connection stayed up: nothing was withdrawn.
-                queuedEdit.failed(connected: true)
-                queuePending.remove(copy.id)
-                showToast(describe(error), level: "error")
+                runtime.queuedEdit.failed(connected: true)
+                runtime.queuePending.remove(copy.id)
+                runtime.showToast(describe(error), level: "error")
             case .sessionClosed:
-                await awaitReconnectOrRetry(copy)
+                await awaitReconnectOrRetry(copy, runtime: runtime)
             }
         } catch {
             // Not a session refusal: keep the copy for the reconnect retry
             // rather than guessing that the input was not withdrawn.
-            guard queuedEdit.copy == copy else { return }
-            await awaitReconnectOrRetry(copy)
+            guard runtime.queuedEdit.copy == copy else { return }
+            await awaitReconnectOrRetry(copy, runtime: runtime)
         }
     }
 
@@ -476,24 +483,25 @@ extension AppModel {
     /// retry — the snapshot can be stale in either direction. When it is not
     /// live, the copy waits for a connected view; every such view checks for
     /// a pending retry, so a coalesced disconnect edge cannot strand it.
-    private func awaitReconnectOrRetry(_ copy: QueuedEdit.Copy) async {
-        guard queuedEdit.copy == copy else { return }
-        if let live = self.session, live.isConnectedNow {
-            await resolveQueuedEdit(copy, session: live)
+    private func awaitReconnectOrRetry(_ copy: QueuedEdit.Copy, runtime: HostRuntime) async {
+        guard runtime.queuedEdit.copy == copy else { return }
+        if let live = runtime.session, live.isConnectedNow {
+            await resolveQueuedEdit(copy, session: live, runtime: runtime)
         } else {
-            queuedEdit.failed(connected: false)
+            runtime.queuedEdit.failed(connected: false)
         }
     }
 
-    private func putBack(_ copy: QueuedEdit.Copy) {
-        drafts[copy.conversationId] = copy.text
-        skillChips[copy.conversationId] = .restored(text: copy.text, skills: copy.skills)
-        var tray = trays[copy.conversationId] ?? AttachmentTray()
+    private func putBack(_ copy: QueuedEdit.Copy, runtime: HostRuntime) {
+        runtime.drafts[copy.conversationId] = copy.text
+        runtime.skillChips[copy.conversationId] = .restored(text: copy.text, skills: copy.skills)
+        var tray = runtime.trays[copy.conversationId] ?? AttachmentTray()
         tray.restore(copy.images)
-        trays[copy.conversationId] = tray
-        restoreFiles(conversation: copy.conversationId, attachments: copy.attachments)
-        transcriptPin += 1
-        queuedEditFocus[copy.conversationId, default: 0] += 1
+        runtime.trays[copy.conversationId] = tray
+        restoreFiles(
+            conversation: copy.conversationId, attachments: copy.attachments, in: runtime)
+        runtime.transcriptPin += 1
+        runtime.queuedEditFocus[copy.conversationId, default: 0] += 1
     }
 
     /// One ref and variant's bytes, from disk/memory or the host. The cache
@@ -501,15 +509,18 @@ extension AppModel {
     /// ordered loop only carries the read-only `image` call.
     func cachedImage(ref: String, variant: ImageVariant = .original) async throws -> CachedImage {
         guard let session else { throw SessionError.sessionClosed }
-        return try await cachedImage(ref: ref, variant: variant, session: session)
+        return try await cachedImage(
+            ref: ref, variant: variant, session: session, source: currentHostKey)
     }
 
-    /// The same read pinned to a captured session: a host switch must not
-    /// load the old conversation's ref through the new host.
+    /// The same read pinned to a captured session and source host: a host
+    /// switch must not load the old conversation's ref through the new host,
+    /// and one host's pending request must not hold another's.
     func cachedImage(
-        ref: String, variant: ImageVariant = .original, session: PinomadSession
+        ref: String, variant: ImageVariant = .original, session: PinomadSession,
+        source: String?
     ) async throws -> CachedImage {
-        try await images.load(ref: ref, variant: variant) { ref, variant in
+        try await images.load(ref: ref, variant: variant, source: source) { ref, variant in
             let result = try await session.invoke(.image(ref: ref, variant: variant))
             guard case .image(let image) = result else {
                 throw SessionError.operationFailed("The host's reply wasn't an image.")

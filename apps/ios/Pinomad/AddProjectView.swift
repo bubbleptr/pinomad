@@ -135,7 +135,7 @@ struct AddProjectView: View {
             do {
                 try await model.addProject(path)
                 // Back to the draft, now set to this project.
-                if model.navPath.last == .addProject { model.navPath.removeLast() }
+                if case .addProject = model.navPath.last { model.navPath.removeLast() }
             } catch {
                 addError = model.describe(error)
             }

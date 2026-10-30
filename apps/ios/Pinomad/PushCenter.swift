@@ -23,9 +23,10 @@ final class PushCenter: NSObject, @MainActor UNUserNotificationCenterDelegate {
     private(set) var isEnabled: Bool
     /// Why APNs registration failed, if it did.
     private(set) var registrationError: String?
-    /// The connected host whose banner is suppressed. `nil` while the app
-    /// is not connected, so every push shows.
-    var currentConnectedHostKey: String?
+    /// The conversation actually on screen. Only its own push is suppressed;
+    /// another conversation on the same host, or any other host's push,
+    /// still shows a banner (ADR-0035 §9).
+    var visibleConversation: ConversationRef?
 
     /// A tap that arrived before `AppModel` started.
     private var pendingTarget: PushTarget?
@@ -166,9 +167,14 @@ final class PushCenter: NSObject, @MainActor UNUserNotificationCenterDelegate {
         willPresent notification: UNNotification,
         withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
     ) {
-        let hostKey = notification.request.content.userInfo["hostKey"] as? String
+        let info = notification.request.content.userInfo
+        let hostKey = info["hostKey"] as? String
+        let conversationId = (info["conversationId"] as? NSNumber)?.uint64Value
+            ?? (info["conversationId"] as? String).flatMap(UInt64.init)
         let show = shouldPresentPushBanner(
-            pushHostKey: hostKey, currentHostKey: currentConnectedHostKey)
+            pushHostKey: hostKey,
+            pushConversationId: conversationId,
+            visible: visibleConversation)
         completionHandler(show ? [.banner, .sound] : [])
     }
 

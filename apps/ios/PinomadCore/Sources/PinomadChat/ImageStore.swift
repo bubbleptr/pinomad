@@ -86,7 +86,14 @@ public actor ImageStore {
     private var diskBytes = 0
     private var indexed = false
     private var tick: UInt64 = 0
-    private var inFlight: [Key: Task<CachedImage, Error>] = [:]
+    /// In-flight requests are kept per source host: the bytes are shared once
+    /// fetched, but one host's stuck request must not hold another host's
+    /// copy of the same ref (ADR-0035 §3).
+    private struct FlightKey: Hashable {
+        let source: String?
+        let key: Key
+    }
+    private var inFlight: [FlightKey: Task<CachedImage, Error>] = [:]
     /// Every call to `load`, including cache hits and merged requests.
     private(set) var debugLoadAttempts = 0
 
@@ -101,36 +108,41 @@ public actor ImageStore {
     public func load(
         ref: String,
         variant: ImageVariant = .original,
+        source: String? = nil,
         using loader: @escaping @Sendable (String, ImageVariant) async throws -> CachedImage
     ) async throws -> CachedImage {
         debugLoadAttempts += 1
         let key = Key(ref: ref, variant: variant)
         if let hit = cached(key: key) { return hit }
         if variant != .original, let original = cached(ref: ref) { return original }
-        if let pending = inFlight[key] {
+        let flight = FlightKey(source: source, key: key)
+        if let pending = inFlight[flight] {
             do {
                 return try await pending.value
             } catch {
                 if variant != .original {
-                    return try await load(ref: ref, variant: .original, using: loader)
+                    return try await load(
+                        ref: ref, variant: .original, source: source, using: loader)
                 }
                 throw error
             }
         }
-        if variant != .original, let pending = inFlight[Key(ref: ref, variant: .original)] {
+        if variant != .original, let pending = inFlight[
+            FlightKey(source: source, key: Key(ref: ref, variant: .original))] {
             return try await pending.value
         }
 
         let task = Task { try await self.fetch(ref: ref, variant: variant, using: loader) }
-        inFlight[key] = task
+        inFlight[flight] = task
         do {
             let image = try await task.value
-            inFlight[key] = nil
+            inFlight[flight] = nil
             return image
         } catch {
-            inFlight[key] = nil
+            inFlight[flight] = nil
             if variant != .original {
-                return try await load(ref: ref, variant: .original, using: loader)
+                return try await load(
+                    ref: ref, variant: .original, source: source, using: loader)
             }
             throw error
         }

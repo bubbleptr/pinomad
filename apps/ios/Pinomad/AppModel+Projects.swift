@@ -3,7 +3,9 @@ import PinomadChat
 import PinomadCore
 
 /// The new-conversation draft, projects, and per-conversation management
-/// (rename, archive).
+/// (rename, archive). The draft lives on the focused host's runtime, so a
+/// focus change shows that host's own draft instead of migrating anything
+/// (ADR-0035 §3).
 extension AppModel {
     /// Drafts and trays key the new-conversation draft here — no real
     /// conversation id reaches it.
@@ -14,14 +16,13 @@ extension AppModel {
         return snapshot.connection == .connected && !snapshot.unauthorized
     }
 
-    /// Whether the host knows `method` — older hosts reject calls added
+    /// Whether the focused host knows `method` — older hosts reject calls added
     /// after them, so their entry points are hidden.
     func hostSupports(_ method: String) -> Bool {
         hostSupportsCall(hostMinor: snapshot?.host?.protocol.minor ?? 0, method: method)
     }
 
-    /// Whether the host honors a call-arg feature — older hosts silently
-    /// ignore the arg, so the picker stays hidden.
+    /// Whether the focused host honors a call-arg feature.
     func hostSupports(_ feature: HostFeature) -> Bool {
         hostSupportsFeature(hostMinor: snapshot?.host?.protocol.minor ?? 0, feature: feature)
     }
@@ -33,8 +34,8 @@ extension AppModel {
                         defaults: snapshot?.defaults)
     }
 
-    /// The named-agent derivation (display values, sources, problem) while
-    /// one is picked; nil for an unassigned draft.
+    /// The named-agent derivation while one is picked; nil for an unassigned
+    /// draft.
     var draftResolution: AgentDraft? {
         draftAgent.resolution(agents: snapshot?.agents, models: snapshot?.models ?? [],
                               defaults: snapshot?.defaults)
@@ -52,38 +53,40 @@ extension AppModel {
         draftAgent.setLevel(level, models: snapshot?.models ?? [], defaults: snapshot?.defaults)
     }
 
-    /// Create a conversation from the draft and show it in place of the
-    /// draft page. The call is command-class: it "succeeds" either way, so
-    /// success means a snapshot showing a conversation the host hadn't
-    /// listed before (an earlier queued switch may publish in the meantime
-    /// — that one is known); a new notice (the host's refusal) or a
-    /// timeout means it failed, and the draft stays for another try.
+    /// Create a conversation from the focused host's draft and show it in
+    /// place of the draft page. The call is command-class: success means a
+    /// snapshot showing a conversation the host hadn't listed before; a new
+    /// notice (the host's refusal) or a timeout means it failed, and the draft
+    /// stays for another try.
     func createConversation() async {
         let key = Self.draftKey
-        let text = drafts[key] ?? ""
-        let tray = trays[key] ?? AttachmentTray()
-        var files = fileTrays[key] ?? FileAttachmentTray()
-        guard !creating, let session,
-              !text.allSatisfy(\.isWhitespace) || !tray.images.isEmpty || !files.isEmpty,
-              tray.preparing == 0, files.canSend, !filePreparing(key)
+        guard let runtime = focusedRuntime, let session = runtime.session, !runtime.creating else { return }
+        let text = runtime.drafts[key] ?? ""
+        let tray = runtime.trays[key] ?? AttachmentTray()
+        var files = runtime.fileTrays[key] ?? FileAttachmentTray()
+        guard !text.allSatisfy(\.isWhitespace) || !tray.images.isEmpty || !files.isEmpty,
+              tray.preparing == 0, files.canSend, !filePreparing(key, in: runtime)
         else { return }
         if files.expire() {
-            fileTrays[key] = files
-            lastError = "Attachment expired; attach it again"
+            runtime.fileTrays[key] = files
+            runtime.lastError = "Attachment expired; attach it again"
             return
         }
-        guard let organized = snapshot?.organized else { return }
-        let known = KnownConversations(organized)
-        let noticesBefore = snapshot?.notices.map(\.id).max() ?? 0
-        let models = snapshot?.models ?? []
-        let defaults = snapshot?.defaults
+        guard let snapshot = runtime.snapshot else { return }
+        let known = KnownConversations(snapshot.organized)
+        let noticesBefore = snapshot.notices.map(\.id).max() ?? 0
+        let models = snapshot.models
+        let defaults = snapshot.defaults
         // An unresolved or unavailable named agent blocks the create rather
         // than silently falling back (ADR-0023).
-        if draftAgent.resolution(agents: snapshot?.agents, models: models, defaults: defaults)?.problem != nil {
+        if runtime.draftAgent.resolution(
+            agents: snapshot.agents, models: models, defaults: defaults)?.problem != nil {
             return
         }
-        let pick = effectiveDraftPick
-        let send = draftAgent.send(agents: snapshot?.agents, models: models, defaults: defaults)
+        let pick = runtime.draftAgent.pick(
+            agents: snapshot.agents, models: models, defaults: defaults)
+        let send = runtime.draftAgent.send(
+            agents: snapshot.agents, models: models, defaults: defaults)
         let modelArg: ModelRef?
         let levelArg: ThinkingLevel?
         if let send {
@@ -96,36 +99,39 @@ extension AppModel {
             levelArg = pick.level
         }
         let checkout: ConversationCheckout? = {
-            if case .project = draftHome, draftCheckout == .project { return .project }
+            if case .project = runtime.draftHome, runtime.draftCheckout == .project { return .project }
             return nil
         }()
         // The `$` picks bind on the host only from 5.16 (ADR-0028).
-        let payload = chips(for: key).payload(hostMinor: hostMinor)
-        creating = true
-        defer { creating = false }
+        let payload = chips(for: key, in: runtime).payload(hostMinor: runtime.hostMinor)
+        runtime.creating = true
+        defer { runtime.creating = false }
         do {
             _ = try await session.invoke(.createConversation(
-                home: draftHome, text: payload.text, checkout: checkout,
+                home: runtime.draftHome, text: payload.text, checkout: checkout,
                 model: modelArg, thinkingLevel: levelArg, agent: send?.agent, images: tray.images,
                 skills: payload.skills, attachments: files.ids))
         } catch {
-            lastError = "Couldn't create conversation: \(describe(error))"
+            runtime.lastError = "Couldn't create conversation: \(describe(error))"
             return
         }
         // The op resolves before its snapshot is published — wait for it.
         for _ in 0..<120 {
-            if let shown = known.created(shown: snapshot?.conversation?.id) {
-                drafts[key] = nil
-                skillChips[key] = nil
-                trays[key] = nil
-                fileTrays[key] = nil
+            if let shown = known.created(shown: runtime.snapshot?.conversation?.id) {
+                runtime.drafts[key] = nil
+                runtime.skillChips[key] = nil
+                runtime.trays[key] = nil
+                runtime.fileTrays[key] = nil
                 // The next draft starts from "no agent", as on the web; the
                 // remembered model/level stays.
-                draftAgent.clearAgent()
-                navPath = [.conversation(shown)]
+                runtime.draftAgent.clearAgent()
+                if runtime === focusedRuntime, let hostKey = runtime.hostKey {
+                    navPath = [.conversation(
+                        ConversationRef(hostKey: hostKey, conversationId: shown))]
+                }
                 return
             }
-            if (snapshot?.notices.map(\.id).max() ?? 0) > noticesBefore { return }
+            if (runtime.snapshot?.notices.map(\.id).max() ?? 0) > noticesBefore { return }
             try? await Task.sleep(for: .milliseconds(50))
         }
     }
@@ -152,13 +158,16 @@ extension AppModel {
         return (files, truncated)
     }
 
-    /// Register a folder as a project and make it the draft's home.
+    /// Register a folder as a project and make it the focused host's draft
+    /// home.
     func addProject(_ path: String) async throws {
-        guard let session else { throw SessionError.sessionClosed }
+        guard let runtime = focusedRuntime, let session = runtime.session else {
+            throw SessionError.sessionClosed
+        }
         guard case .project(let project) = try await session.invoke(.addProject(path: path)) else {
             throw SessionError.operationFailed("The host's reply wasn't a project")
         }
-        draftHome = .project(path: project.path ?? path)
+        runtime.draftHome = .project(path: project.path ?? path)
     }
 
     func rename(conversation id: UInt64, to title: String) async throws {

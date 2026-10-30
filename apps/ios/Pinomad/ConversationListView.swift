@@ -27,7 +27,8 @@ struct ConversationListView: View {
             } else {
                 if let organized = model.snapshot?.organized {
                     StatusTiles(roots: allRoots(organized).map(\.node)) { filter in
-                        model.navPath.append(.conversations(filter))
+                        guard let hostKey = model.currentHostKey else { return }
+                        model.navPath.append(.conversations(hostKey: hostKey, filter: filter))
                     }
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
@@ -41,7 +42,10 @@ struct ConversationListView: View {
                             Button {
                                 model.switchHost(host.hostKey)
                             } label: {
-                                Label("Not connected. Tap to connect", image: .cloudOff)
+                                Label(
+                                    model.isConnected(host.hostKey)
+                                        ? "Connected. Tap to switch" : "Not connected. Tap to switch",
+                                    image: model.isConnected(host.hostKey) ? .circleCheck : .cloudOff)
                                     .foregroundStyle(.secondary)
                             }
                             .listRowBackground(Color.clear)
@@ -50,8 +54,7 @@ struct ConversationListView: View {
                     } header: {
                         MachineHeader(
                             label: label(host),
-                            online: host.hostKey == model.currentHostKey
-                                && model.snapshot?.connection == .connected
+                            online: model.isConnected(host.hostKey)
                         )
                     }
                 }
@@ -89,7 +92,8 @@ struct ConversationListView: View {
             ToolbarSpacer(.flexible, placement: .bottomBar)
             ToolbarItem(placement: .bottomBar) {
                 Button("New", image: .squarePen) {
-                    model.navPath.append(.newConversation)
+                    guard let hostKey = model.currentHostKey else { return }
+                    model.navPath.append(.newConversation(hostKey: hostKey))
                 }
                 .disabled(!model.connected)
             }
@@ -133,7 +137,8 @@ struct ConversationListView: View {
             }
             if canAdd {
                 Button {
-                    model.navPath.append(.addProject)
+                    guard let hostKey = model.currentHostKey else { return }
+                    model.navPath.append(.addProject(hostKey: hostKey))
                 } label: {
                     Label("Add project", image: .plus)
                         .foregroundStyle(.secondary)
@@ -157,7 +162,8 @@ struct ConversationListView: View {
         let results = allRoots(organized).filter { matches($0.node) }
         ForEach(results, id: \.node.summary.id) { entry in
             if let id = entry.node.summary.id {
-                NavigationLink(value: Route.conversation(id)) {
+                NavigationLink(value: Route.conversation(
+                    ConversationRef(hostKey: model.currentHostKey ?? "", conversationId: id))) {
                     ConversationRowLabel(node: entry.node, project: entry.project)
                 }
                 .quietSeparator()
@@ -176,7 +182,8 @@ struct ConversationListView: View {
     private func groupRow(
         _ filter: ConversationFilter, title: String, image: ImageResource, count: Int, endsGroup: Bool
     ) -> some View {
-        NavigationLink(value: Route.conversations(filter)) {
+        NavigationLink(value: Route.conversations(
+            hostKey: model.currentHostKey ?? "", filter: filter)) {
             HStack(spacing: 12) {
                 Image(image)
                     .font(.body)

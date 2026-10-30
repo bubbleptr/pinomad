@@ -91,6 +91,37 @@ private actor DerivedFallbackLoader {
 }
 
 @Suite struct ImageStoreTests {
+    /// The bytes are shared once fetched, but a request from one host must
+    /// not merge with another host's request for the same ref: one stuck
+    /// source would otherwise hold the other's image (ADR-0035 §3).
+    @Test func inFlightRequestsAreSeparatePerSourceHost() async throws {
+        let directory = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = ImageStore(directory: directory, limits: .init(memoryBytes: 0, diskBytes: 1_000_000, maxInFlight: 4))
+        let gate = LoadGate()
+        let home = image(bytes: 24, seed: 1)
+        let office = image(bytes: 24, seed: 2)
+
+        let first = Task {
+            try await store.load(ref: "same-ref", source: "home") { _, _ in
+                await gate.begin()
+                return home
+            }
+        }
+        let second = Task {
+            try await store.load(ref: "same-ref", source: "office") { _, _ in
+                await gate.begin()
+                return office
+            }
+        }
+        await gate.waitForStarted(2)
+        await gate.openGate()
+
+        #expect(try await first.value == home)
+        #expect(try await second.value == office)
+        #expect(await gate.started == 2)
+    }
+
     @Test func concurrentLoadsForTheSameRefShareOneRequest() async throws {
         let directory = temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

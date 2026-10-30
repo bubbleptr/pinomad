@@ -17,7 +17,7 @@ struct HostDetailView: View {
 
     private var host: HostRecord? { model.hostRecord(for: hostKey) }
     private var isCurrent: Bool { hostKey == model.currentHostKey }
-    private var isLive: Bool { isCurrent && model.phase == .connected && model.connected }
+    private var isLive: Bool { model.isConnected(hostKey) }
 
     var body: some View {
         List {
@@ -70,7 +70,7 @@ struct HostDetailView: View {
         .task(id: isLive) {
             guard isLive else { return }
             while !Task.isCancelled {
-                model.refreshLiveRtcStatus()
+                model.refreshLiveRtcStatus(for: hostKey)
                 try? await Task.sleep(for: .seconds(1))
             }
         }
@@ -97,14 +97,14 @@ struct HostDetailView: View {
     }
 
     private var status: RtcDiagnostics? {
-        isCurrent ? model.rtcStatus : nil
+        model.rtcStatus(for: hostKey)
     }
 
     /// The core's `agoMs` is frozen until a Clock event, so the failure row
     /// adds the local time since the status read — the same baseline the
     /// cooldown uses.
     private var statusElapsedMs: UInt64 {
-        let elapsed = Date().timeIntervalSince(model.rtcStatusAt)
+        let elapsed = Date().timeIntervalSince(model.rtcStatusAt(for: hostKey))
         guard elapsed > 0 else { return 0 }
         return UInt64(elapsed * 1000)
     }
@@ -146,7 +146,7 @@ struct HostDetailView: View {
 
     private var remainingCooldown: UInt64 {
         guard let status else { return 0 }
-        let elapsed = Date().timeIntervalSince(model.rtcStatusAt)
+        let elapsed = Date().timeIntervalSince(model.rtcStatusAt(for: hostKey))
         let remaining = Double(status.cooldownRemainingMs) - max(0, elapsed) * 1000
         return remaining > 0 ? UInt64(remaining) : 0
     }

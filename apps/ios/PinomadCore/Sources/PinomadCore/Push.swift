@@ -34,11 +34,16 @@ public func pushRegistrationAction(
     return mayHaveRegistration ? .unregister : .none
 }
 
-/// A foreground banner is suppressed only for the host on screen right now;
-/// pushes from the reader's other hosts still show (ADR-0025 §9).
-public func shouldPresentPushBanner(pushHostKey: String?, currentHostKey: String?) -> Bool {
-    guard let pushHostKey else { return true }
-    return pushHostKey != currentHostKey
+/// A foreground banner is suppressed only for the conversation visible on
+/// screen right now; another conversation on the same host, or any push from
+/// another host, still shows (ADR-0035 §9).
+public func shouldPresentPushBanner(
+    pushHostKey: String?,
+    pushConversationId: UInt64?,
+    visible: ConversationRef?
+) -> Bool {
+    guard let pushHostKey, let visible else { return true }
+    return !(pushHostKey == visible.hostKey && pushConversationId == visible.conversationId)
 }
 
 /// The custom payload a tap carries — the host that sent it and the
@@ -83,17 +88,20 @@ public enum PushTargetAction: Equatable, Sendable {
     /// loading its conversations.
     case wait
     case switchHost(String)
-    case open(UInt64)
+    case open(ConversationRef)
 }
 
+/// Decide a tap against the live focus. Moving to another host only changes
+/// focus; its connection is already running. The pending tap stays queued
+/// until that host is ready, so a slow connect does not drop it.
 public func pushTargetAction(
     _ target: PushTarget,
     storedHostKeys: Set<String>,
-    currentHostKey: String?,
+    focus: HostFocus?,
     hostReady: Bool
 ) -> PushTargetAction {
     guard storedHostKeys.contains(target.hostKey) else { return .drop }
-    guard target.hostKey == currentHostKey else { return .switchHost(target.hostKey) }
+    guard focus?.hostKey == target.hostKey else { return .switchHost(target.hostKey) }
     guard hostReady else { return .wait }
-    return .open(target.conversationId)
+    return .open(ConversationRef(hostKey: target.hostKey, conversationId: target.conversationId))
 }

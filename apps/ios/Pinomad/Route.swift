@@ -1,15 +1,18 @@
 import PinomadCore
 import SwiftUI
 
-/// Where the navigation stack can go.
+/// Where the navigation stack can go. Host-related destinations carry their
+/// hostKey so #429 can list every machine without changing the route shape
+/// (ADR-0035 §1).
 enum Route: Hashable {
-    case conversation(UInt64)
-    /// One list of the machine's roots: a status tile's, Chats, or a project.
-    case conversations(ConversationFilter)
+    case conversation(ConversationRef)
+    /// One list of the focused machine's roots: a status tile's, Chats, or a
+    /// project.
+    case conversations(hostKey: String, filter: ConversationFilter)
     /// The draft page that creates a conversation on send.
-    case newConversation
+    case newConversation(hostKey: String)
     /// The host folder picker, pushed from the draft page.
-    case addProject
+    case addProject(hostKey: String)
     /// This device's settings and the paired machines.
     case settings
     /// Scan or paste a pairing link, pushed from Settings.
@@ -40,8 +43,9 @@ struct RouteDestination: View {
 
     var body: some View {
         switch route {
-        case .conversation(let id): ConversationView(model: model, conversationId: id)
-        case .conversations(let filter): ConversationsPage(model: model, filter: filter)
+        case .conversation(let ref): ConversationView(model: model, ref: ref)
+        case .conversations(let hostKey, let filter):
+            ConversationsPage(model: model, hostKey: hostKey, filter: filter)
         case .newConversation: NewConversationView(model: model)
         case .addProject: AddProjectView(model: model)
         case .settings: SettingsView(model: model)
