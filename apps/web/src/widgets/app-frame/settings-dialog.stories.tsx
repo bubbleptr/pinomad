@@ -56,6 +56,9 @@ export const Updates: Story = {
 /** Disconnected, the host group has nothing live, so the dialog lands on this device's hosts. */
 export const Disconnected: Story = { args: { view: fakeView({ connection: "reconnecting" }) } };
 
+/** The focused host is still connecting: only "This device" exists, so it opens there. */
+export const HostNotReady: Story = { args: { view: undefined, remote: undefined } };
+
 /** A pre-5.1 host has no settings, auth or providers streams. */
 export const OlderHost: Story = {
   args: {

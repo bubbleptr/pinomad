@@ -13,7 +13,6 @@ import {
   type CSSProperties,
   type ReactNode,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -22,7 +21,8 @@ import {
 import type { CallMethods } from "@pinomad/protocol/frames.ts";
 
 import { outgoingImage, type ImageVariant } from "@pinomad/protocol/images.ts";
-import { findConversation, type Home } from "@pinomad/protocol/organization.ts";
+import { findConversation, type ConversationNode, type Home } from "@pinomad/protocol/organization.ts";
+import { currentAgentOf } from "./entities/conversation/current-agent.ts";
 import { displayName, forksAt, rootOf } from "@pinomad/client/family.ts";
 import { mergeStoredHost, updateStoredHostConnection, updateStoredHostEndpoints } from "@pinomad/client/stored-host.ts";
 import { candidatePlan, preferredLegacyUrl } from "@pinomad/protocol/remote-candidates.ts";
@@ -30,13 +30,15 @@ import { requestNotificationPermission } from "./entities/conversation/notificat
 import { ImageSourceProvider, useImageRetryKey } from "./entities/image/image-source.tsx";
 import { useRunNotifications } from "./entities/conversation/use-run-notifications.ts";
 import { useConversationOpening, type Opening } from "./entities/conversation/use-conversation-opening.ts";
-import { AppFrame } from "./widgets/app-frame/app-frame.tsx";
+import { AppFrame, FrameHeader, NoticeToasts } from "./widgets/app-frame/app-frame.tsx";
+import { HostFrame } from "./widgets/app-frame/host-frame.tsx";
 import { DraftHome } from "./widgets/draft-home/draft-home.tsx";
 import { ConversationComposer } from "./widgets/composer/conversation-composer.tsx";
 import { takeBackForConversation, type PendingTakeBack } from "./widgets/composer/take-back.ts";
 import { ConversationTranscript } from "./widgets/chat/conversation-transcript.tsx";
 import { ComposerSkeleton, ConversationSkeleton, ConversationUnavailable } from "./widgets/chat/conversation-skeleton.tsx";
-import type { PanelTab } from "./widgets/side-panel/side-panel.tsx";
+import { SidePanel, type PanelTab } from "./widgets/side-panel/side-panel.tsx";
+import { OverviewCard } from "./widgets/overview/overview-card.tsx";
 import { DiffView } from "./presentation/diff.tsx";
 import { PendingQuestions } from "./presentation/question.tsx";
 import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
@@ -56,6 +58,7 @@ import {
   type HostFocus,
 } from "./entities/host/focus.ts";
 import { browserDeclined, cancelAccountRegistration } from "./entities/account/declined.ts";
+import { writeLastNewHost } from "./entities/host/last-new-host.ts";
 import {
   createHostRuntimeRegistry,
   HostRuntimesContext,
@@ -74,6 +77,14 @@ import { Centered } from "./shared/ui/centered.tsx";
 import { reloadedKey, VersionMismatch } from "./widgets/app-frame/version-mismatch.tsx";
 
 const chatColumn: CSSProperties = { flex: 1, minHeight: 0 };
+
+const anyAtWork = (nodes: readonly ConversationNode[]): boolean =>
+  nodes.some(
+    (node) =>
+      node.summary.status === "running"
+      || node.summary.status === "needs-answer"
+      || anyAtWork(node.children),
+  );
 
 const OVERVIEW_OPEN_KEY = "pinomad.overview.open";
 const readOverviewOpen = (): boolean =>
@@ -385,33 +396,36 @@ export function App() {
               <NoHostLink />
             </Centered>
           ) : (
-            <HostRuntimes
-              hosts={hosts}
-              focus={focus}
-              renderWorkbench={({
-                host,
-                remote,
-                device,
-                rejected,
-                retry,
-                opening,
-                cancelOpening,
-                openConversation,
-              }) => (
-                <Workbench
-                  remote={remote}
-                  wsUrl={host.url}
-                  rejected={rejected}
-                  device={device}
-                  hostKey={host.hostKey}
-                  onReconnect={retry}
-                  notify={false}
-                  hostOpening={opening}
-                  hostOpen={openConversation}
-                  hostCancelOpening={cancelOpening}
-                />
-              )}
-            />
+            <HostFrame>
+              <HostRuntimes
+                hosts={hosts}
+                focus={focus}
+                renderWorkbench={({
+                  host,
+                  remote,
+                  device,
+                  rejected,
+                  retry,
+                  opening,
+                  cancelOpening,
+                  openConversation,
+                }) => (
+                  <Workbench
+                    remote={remote}
+                    wsUrl={host.url}
+                    rejected={rejected}
+                    device={device}
+                    hostKey={host.hostKey}
+                    onReconnect={retry}
+                    notify={false}
+                    framed={false}
+                    hostOpening={opening}
+                    hostOpen={openConversation}
+                    hostCancelOpening={cancelOpening}
+                  />
+                )}
+              />
+            </HostFrame>
           )}
         </AccountProvider>
       </HostRuntimesContext.Provider>
@@ -753,7 +767,7 @@ export function RemoteWorkbench({
   );
 }
 
-function Workbench({
+export function Workbench({
   remote,
   wsUrl,
   rejected,
@@ -762,6 +776,7 @@ function Workbench({
   hostKey,
   onReconnect,
   notify = true,
+  framed = true,
   hostOpening,
   hostOpen,
   hostCancelOpening,
@@ -775,6 +790,8 @@ function Workbench({
   onReconnect?: () => void;
   /** False when the host runtime owns the notification baseline (multi-host). */
   notify?: boolean;
+  /** False when HostFrame already renders the shell for this workbench. */
+  framed?: boolean;
   /** The ready host's opening tracker; absent for token clients. */
   hostOpening?: Opening;
   hostOpen?: (id: ConversationId) => void;
@@ -800,16 +817,23 @@ function Workbench({
   // The 5.12 name the connected host announced rides back into the stored
   // entry — bound to this connection's hostKey, not whichever host is focused.
   useHostNameSync(hostKey, view.settings);
-  // `drafting` starts true: after connect nothing is shown, and the composer
-  // creates a conversation at the draft's home instead of prompting it.
-  const [drafting, setDrafting] = useState(true);
+  // In the stored-host root, focus owns whether this workbench is a draft: a
+  // sidebar click can start one without rendering through this component.
+  // A one-shot token or device-link client has no focus entry and keeps the
+  // local state.
+  const [localDrafting, setLocalDrafting] = useState(true);
+  const drafting = framed
+    ? localDrafting
+    : focus !== null && focus.hostKey === hostKey && focus.conversationId === undefined;
   // The draft home lives on the host's new-draft slot: it survives this
   // workbench being unmounted by a focus switch.
   const newDraftSlot = useComposerSlot();
   const draft = useComposerSlotState(newDraftSlot).home;
-  // The shown conversation's identity decides drafting; creating or selecting one
-  // leaves it, archiving the shown one or "New chat" enters it.
-  useEffect(() => setDrafting(view.conversation === undefined), [view.conversation?.conversation.id]);
+  // Token clients learn drafting from the snapshot; the stored-host root reads
+  // it from focus instead.
+  useEffect(() => {
+    if (framed) setLocalDrafting(view.conversation === undefined);
+  }, [framed, view.conversation?.conversation.id]);
   // Opening a conversation moves the main column to it at once; the remote
   // only shows it once its snapshot lands, so until then the column holds a
   // skeleton (or, if the switch failed, says so) instead of the old one.
@@ -820,13 +844,13 @@ function Workbench({
   const cancelOpening = hostCancelOpening ?? localOpening.cancel;
   const openConversation = useCallback(
     (id: ConversationId): void => {
-      setDrafting(false);
+      if (framed) setLocalDrafting(false);
       // For a stored host the focus effect performs the one switch; a token
       // client has no focus entry and opens directly.
       if (hostKey !== undefined) focusConversation({ hostKey, conversationId: id });
       else openTarget(id);
     },
-    [focusConversation, hostKey, openTarget],
+    [focusConversation, framed, hostKey, openTarget],
   );
   useRunNotifications(
     view,
@@ -834,7 +858,7 @@ function Workbench({
     drafting ? undefined : view.conversation?.conversation.id,
     (ref) => {
       if (hostKey === undefined) {
-        setDrafting(false);
+        setLocalDrafting(false);
         openTarget(ref.conversationId);
       } else {
         focusConversation(ref);
@@ -850,7 +874,13 @@ function Workbench({
   useEffect(() => {
     if (failed && view.connection === "connected") openTarget(opening.id);
   }, [failed, openTarget, opening?.id, view.connection]);
-  const shownId = drafting ? undefined : loading ? opening.id : view.conversation?.conversation.id;
+  const shownId = drafting
+    ? undefined
+    : loading
+      ? opening.id
+      : !framed && hostKey !== undefined
+        ? focus?.conversationId
+        : view.conversation?.conversation.id;
   const busy = conversation !== undefined && isBusy(conversation);
   // Below this the chat column would be squeezed; the panel opens as a dialog.
   const narrow = useMediaQuery("(max-width: 1023px)");
@@ -889,6 +919,12 @@ function Workbench({
     },
     [remote],
   );
+  const openTasks = (id?: ConversationId): void => {
+    if (id !== undefined) return openInPanel(id, "tasks");
+    void remote.controller.showSide(undefined);
+    setPanelTab("tasks");
+    setPanelOpen(true);
+  };
   // "Open in main" promotes a thread to the main column and closes the side —
   // the family root stays the same, so the close rule below must not fire for it.
   const openInMain = useCallback(
@@ -913,6 +949,18 @@ function Workbench({
   // Any conversation with a parent — fork or subagent — offers a breadcrumb
   // back to the conversation it belongs to.
   const shownSummary = shownId === undefined ? undefined : findConversation(view.organized, shownId)?.summary;
+  // A subagent's role comes from the delegating call; a top-level conversation
+  // or fork shows the agent it currently runs as.
+  const headerAgent =
+    shownSummary === undefined
+      ? undefined
+      : shownSummary.kind === "subagent"
+        ? shownSummary.role
+        : currentAgentOf(shownSummary);
+  // A fork or subagent of the shown family still at work: the closed panel's
+  // button carries a dot so the activity is not out of sight entirely.
+  const liveRoot = shownId === undefined ? undefined : rootOf(view.organized, shownId);
+  const liveActivity = liveRoot !== undefined && anyAtWork(liveRoot.children);
   const parentId = shownSummary?.parent;
   const parentSummary =
     parentId === undefined ? undefined : findConversation(view.organized, parentId)?.summary;
@@ -942,7 +990,7 @@ function Workbench({
     cancelOpening();
     if (hostKey !== undefined) focusDraft(hostKey);
     newDraftSlot.setHome(home);
-    setDrafting(true);
+    if (framed) setLocalDrafting(true);
   };
   const [forkTarget, setForkTarget] = useState<string>();
   const [changesOpen, setChangesOpen] = useState(false);
@@ -961,44 +1009,25 @@ function Workbench({
       </Centered>
     );
   }
-  return (
-    <ImageSourceProvider
-      load={imageLoad}
-      retryKey={imageRetryKey}
-      {...(hostKey === undefined ? {} : { source: hostKey })}
-    >
-      <AppFrame
-        view={view}
-        remote={remote}
-        device={device}
-        hostKey={hostKey}
-        onReconnect={onReconnect}
+  const body = (
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
+      <FrameHeader
         narrow={narrow}
-        drafting={drafting}
-        draftingChat={drafting && draft.kind === "chat"}
-        draftLabel={draftLabel}
-        conversation={conversation}
-        shownId={shownId}
-        summary={shownSummary}
+        title={drafting ? draftLabel : displayName(shownSummary)}
+        {...(headerAgent === undefined ? {} : { agent: headerAgent })}
         parentSummary={parentSummary}
-        banner={
-          <>
-            {notice}
-            <ConnectionBanner view={view} wsUrl={wsUrl} hostKey={hostKey} />
-          </>
-        }
-        onDraft={startDraft}
-        onOpenChanges={() => setChangesOpen(true)}
+        onBackToParent={openConversation}
+        showOverview={shownId !== undefined}
         overviewOpen={overviewOpen}
         onOverviewChange={changeOverview}
         panelOpen={panelOpen}
-        panelTab={panelTab}
-        onPanelOpen={setPanelOpen}
-        onPanelTab={setPanelTab}
-        openInPanel={openInPanel}
-        openInMain={openInMain}
-        onOpen={openConversation}
-      >
+        onPanelChange={setPanelOpen}
+        liveActivity={liveActivity}
+      />
+      {notice}
+      <ConnectionBanner view={view} wsUrl={wsUrl} hostKey={hostKey} />
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <div className="@container relative flex min-h-0 min-w-0 flex-1 flex-col">
         {shownId === undefined ? (
           <DraftHome
             view={view}
@@ -1009,6 +1038,9 @@ function Workbench({
             onCreated={() => {
               const id = remote.view.current().conversation?.conversation.id;
               if (id === undefined) return;
+              // The global New chat remembers where a draft actually became a
+              // conversation, even if the reader moved on before it landed.
+              if (hostKey !== undefined) writeLastNewHost(window.localStorage, hostKey);
               const stillDrafting =
                 hostKey === undefined
                 || (focusRef.current?.hostKey === hostKey && focusRef.current.conversationId === undefined);
@@ -1139,7 +1171,53 @@ function Workbench({
             )}
           </ChatLayout>
         )}
-      </AppFrame>
+          {overviewOpen && conversation !== undefined ? (
+            <OverviewCard
+              view={view}
+              remote={remote}
+              conversation={conversation}
+              narrow={narrow}
+              busy={isBusy(conversation)}
+              onOpenChanges={() => setChangesOpen(true)}
+              onOpenTasks={openTasks}
+              onClose={() => changeOverview(false)}
+            />
+          ) : null}
+        </div>
+        {!narrow ? (
+          <SidePanel
+            view={view}
+            remote={remote}
+            shownId={shownId}
+            narrow={false}
+            open={panelOpen}
+            onOpenChange={setPanelOpen}
+            tab={panelTab}
+            onTabChange={setPanelTab}
+            openInPanel={openInPanel}
+            onOpenInMain={openInMain}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+  const extras = (
+    <>
+      {narrow ? (
+        <SidePanel
+          view={view}
+          remote={remote}
+          shownId={shownId}
+          narrow
+          open={panelOpen}
+          onOpenChange={setPanelOpen}
+          tab={panelTab}
+          onTabChange={setPanelTab}
+          openInPanel={openInPanel}
+          onOpenInMain={openInMain}
+        />
+      ) : null}
+      <NoticeToasts notices={view.notices} />
       {forkTarget === undefined ? null : (
         <ForkDialog
           entryId={forkTarget}
@@ -1154,6 +1232,37 @@ function Workbench({
       )}
       {changesOpen && conversation !== undefined && (
         <ChangesDialog view={view} remote={remote} busy={busy} onClose={() => setChangesOpen(false)} />
+      )}
+    </>
+  );
+  return (
+    <ImageSourceProvider
+      load={imageLoad}
+      retryKey={imageRetryKey}
+      {...(hostKey === undefined ? {} : { source: hostKey })}
+    >
+      {framed ? (
+        <AppFrame
+          view={view}
+          remote={remote}
+          device={device}
+          hostKey={hostKey}
+          onReconnect={onReconnect}
+          draftingChat={drafting && draft.kind === "chat"}
+          shownId={shownId}
+          onDraft={startDraft}
+          onOpen={openConversation}
+          onNewChat={() => startDraft({ kind: "chat" })}
+          narrow={narrow}
+        >
+          {body}
+          {extras}
+        </AppFrame>
+      ) : (
+        <>
+          {body}
+          {extras}
+        </>
       )}
     </ImageSourceProvider>
   );

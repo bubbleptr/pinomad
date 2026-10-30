@@ -7,6 +7,7 @@ import { userEvent, within } from "storybook/test";
 import type { RtcDiagnostics } from "@pinomad/protocol/remote-durable.ts";
 import type { RtcSelectedPair } from "@pinomad/protocol/rtc.ts";
 import { DEVBOX_HOST, fakeHosts, fakeRemote, fakeView, HOME_HOST, signedIn, withAccount, withHosts } from "../../test/story-fixtures.tsx";
+import { HostComposerStore } from "../../entities/composer/composer-store.ts";
 import {
   createHostRuntimeRegistry,
   HostRuntimesContext,
@@ -34,10 +35,15 @@ const ready = (next: RtcDiagnostics, connection: "connected" | "reconnecting" = 
     },
     view: current,
     retry: () => {},
+    composer: new HostComposerStore(),
   };
 };
 
-const connecting: HostRuntimeInfo = { phase: "connecting", retry: () => {} };
+const connecting: HostRuntimeInfo = {
+  phase: "connecting",
+  retry: () => {},
+  composer: new HostComposerStore(),
+};
 
 const withRuntime = (info?: HostRuntimeInfo): Decorator => (Story) => {
   const registry = createHostRuntimeRegistry();

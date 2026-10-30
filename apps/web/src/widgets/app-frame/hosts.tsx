@@ -440,9 +440,10 @@ export function HostsSection({
 }
 
 /**
- * Connection-failure screens have no sidebar; they still owe the user a way
- * off a dead host — the Hosts section inline, plus Account where this client
- * can reach one (ADR-0022).
+ * The connection-failure screens repeat the device's hosts inline. The frame's
+ * sidebar now stays up too, but a dead focused host still needs its own way
+ * off — the Hosts section plus Account where this client can reach one
+ * (ADR-0022). PR-B decides whether this inline copy stays.
  */
 export function HostsFallback() {
   const account = useAccountModel();

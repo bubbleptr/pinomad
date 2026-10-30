@@ -73,8 +73,9 @@ export function SettingsDialog({
   onReconnect,
   onClose,
 }: {
-  view: DurableView;
-  remote: RemoteDurable;
+  /** The focused host's snapshot; absent while it is connecting or failed. */
+  view?: DurableView;
+  remote?: RemoteDurable;
   /** This client's device key, for marking "This device" under Devices. */
   device?: KeyPair;
   /** The stored host this connection is to — absent for token clients. */
@@ -85,20 +86,21 @@ export function SettingsDialog({
 }) {
   const compact = useMediaQuery("(max-width: 640px)");
   const [section, setSection] = useState<SectionId | undefined>(undefined);
-  const connected = view.connection === "connected";
+  const hostAvailable = view !== undefined && remote !== undefined;
+  const connected = view?.connection === "connected";
   const { hosts } = useHosts();
   const hasUpdater = window.pinomadDesktop?.updates !== undefined;
-  // Disconnected, the host group has nothing live to show; land on the
-  // device's own hosts instead.
-  const active = section ?? (connected ? "providers" : "hosts");
+  // A host that is not ready has no settings streams to show; land on the
+  // device's own hosts instead of asking for a view that does not exist.
+  const active = !hostAvailable ? "hosts" : section ?? (connected ? "providers" : "hosts");
   // The cached name of the host this connection reaches — a token client
   // reaches none of the stored ones, whichever pairing is selected.
   const stored = hosts.find((host) => host.hostKey === hostKey);
   const hostName =
-    view.settings?.hostName ?? (stored === undefined ? undefined : hostLabels(hosts).get(stored.hostKey)) ?? "This host";
+    view?.settings?.hostName ?? (stored === undefined ? undefined : hostLabels(hosts).get(stored.hostKey)) ?? "This host";
   const groups = [
     { title: "This device", sections: SECTIONS.filter((entry) => entry.group === "device" && (entry.id !== "updates" || hasUpdater)) },
-    { title: hostName, sections: SECTIONS.filter((entry) => entry.group === "host") },
+    ...(hostAvailable ? [{ title: hostName, sections: SECTIONS.filter((entry) => entry.group === "host") }] : []),
   ];
 
   const sectionNav = (
@@ -189,12 +191,12 @@ export function SettingsDialog({
               sectionList
             ) : (
               <SectionPage
-                view={view}
-                remote={remote}
-                device={device}
-                hostKey={hostKey}
+                {...(view === undefined ? {} : { view })}
+                {...(remote === undefined ? {} : { remote })}
+                {...(device === undefined ? {} : { device })}
+                {...(hostKey === undefined ? {} : { hostKey })}
                 connected={connected}
-                onReconnect={onReconnect}
+                {...(onReconnect === undefined ? {} : { onReconnect })}
                 section={active}
                 showTitle={!compact}
               />
@@ -216,8 +218,8 @@ function SectionPage({
   section,
   showTitle,
 }: {
-  view: DurableView;
-  remote: RemoteDurable;
+  view?: DurableView;
+  remote?: RemoteDurable;
   device?: KeyPair;
   hostKey?: string;
   connected: boolean;
@@ -243,23 +245,33 @@ function SectionPage({
 }
 
 function sectionBody(
-  view: DurableView,
-  remote: RemoteDurable,
+  view: DurableView | undefined,
+  remote: RemoteDurable | undefined,
   device: KeyPair | undefined,
   hostKey: string | undefined,
   connected: boolean,
   onReconnect: (() => void) | undefined,
   section: SectionId,
 ): { title: string; supporting?: ReactNode; body: ReactNode } {
+  if (section === "hosts") {
+    return {
+      title: "Hosts",
+      supporting: <Text as="p" type="supporting">The hosts this device has paired with. It stays connected to all of them.</Text>,
+      body: <HostsSection />,
+    };
+  }
+  if (section === "updates") {
+    return { title: "Updates", body: <UpdatesSection /> };
+  }
+  if (view === undefined || remote === undefined) {
+    // The host group is hidden while the focused host is not ready; this
+    // covers a runtime disappearing while the dialog is already open.
+    return {
+      title: sectionTitle(section),
+      body: <Text as="p" type="supporting">Connect to a host to see its settings.</Text>,
+    };
+  }
   switch (section) {
-    case "hosts":
-      return {
-        title: "Hosts",
-        supporting: <Text as="p" type="supporting">The hosts this device has paired with. It stays connected to all of them.</Text>,
-        body: <HostsSection />,
-      };
-    case "updates":
-      return { title: "Updates", body: <UpdatesSection /> };
     case "devices":
       return {
         title: "Devices",

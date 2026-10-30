@@ -365,6 +365,23 @@ function ConversationRow({
 }
 
 /**
+ * What the sidebar can render before the focused host has a view. The global
+ * New chat still works — it selects a connected host by itself.
+ */
+export function SidebarUnavailable({ onNewChat }: { onNewChat?: () => void }) {
+  return (
+    <SideNavSection isHeaderHidden title="New chat">
+      <SideNavItem
+        icon={<AnimatedNewChat className="size-4" />}
+        label="New chat"
+        isDisabled={onNewChat === undefined}
+        onClick={onNewChat}
+      />
+    </SideNavSection>
+  );
+}
+
+/**
  * The sidebar's shared content — the "New chat" entry plus the Chats and
  * Projects sections — rendered inside the desktop SideNav and inside MobileNav
  * on narrow screens.
@@ -376,6 +393,7 @@ export function SidebarContent({
   draftingChat,
   shownId,
   onDraft,
+  onNewChat,
   onOpen,
   onSelect,
 }: {
@@ -386,6 +404,8 @@ export function SidebarContent({
   draftingChat: boolean;
   shownId: ConversationId | undefined;
   onDraft: (home: Home) => void;
+  /** The global New chat entry chooses its host; the section actions stay on this one. */
+  onNewChat?: () => void;
   onOpen: (id: ConversationId) => void;
   onSelect?: () => void;
 }) {
@@ -432,8 +452,12 @@ export function SidebarContent({
           icon={<AnimatedNewChat className="size-4" />}
           label="New chat"
           isSelected={draftingChat}
-          isDisabled={disabled}
-          onClick={() => start({ kind: "chat" })}
+          // Global: it may pick another connected host even when this one is offline.
+          isDisabled={onNewChat === undefined}
+          onClick={() => {
+            onNewChat?.();
+            onSelect?.();
+          }}
         />
       </SideNavSection>
       <SideNavSection isHeaderHidden title="Chats">
