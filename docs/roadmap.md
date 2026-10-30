@@ -6,6 +6,8 @@
 
 [M8 多宿主](https://github.com/bubbleptr/pinomad/milestone/6)：一个客户端同时连着所有宿主，按「机器 → 项目 → 对话」浏览，不再靠切换。先定多连接的客户端模型（ADR-0035），再做 Web/桌面，然后是 iOS。跨宿主的 agent 协作排在它后面。
 
+[M9 公开发布](https://github.com/bubbleptr/pinomad/milestone/7)：官方服务端接纳作者以外的用户，不自己部署服务端也能用全部功能。先过 ADR-0025 的开放注册门槛（服务端核对推送 token 归属），再做注册、账号生命周期、多租户安全项和隐私条款，iOS 公开渠道排在账号之后。和 M8 并行，M8 不是它的门槛。
+
 ## 以后
 
 - [Backlog](https://github.com/bubbleptr/pinomad/issues?q=is%3Aopen+is%3Aissue+no%3Amilestone+-label%3Alater+-label%3Atech-debt)：没排进阶段的具体小项
