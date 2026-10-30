@@ -67,30 +67,11 @@ import Testing
     @Test func tappedNotificationWaitsForItsHostThenOpensOnce() throws {
         let target = try #require(PushTarget(hostKey: "office", conversationId: 42))
         let ref = ConversationRef(hostKey: "office", conversationId: 42)
-        #expect(pushTargetAction(
-            target, storedHostKeys: ["home"], focus: HostFocus(hostKey: "home"), hostReady: true
-        ) == .drop)
-        #expect(pushTargetAction(
-            target, storedHostKeys: ["home", "office"],
-            focus: HostFocus(hostKey: "home"), hostReady: true
-        ) == .switchHost("office"))
-        #expect(pushTargetAction(
-            target, storedHostKeys: ["home", "office"], focus: nil, hostReady: false
-        ) == .switchHost("office"))
-        // The host is focused but still connecting or syncing its list.
-        #expect(pushTargetAction(
-            target, storedHostKeys: ["home", "office"],
-            focus: HostFocus(hostKey: "office"), hostReady: false
-        ) == .wait)
-        #expect(pushTargetAction(
-            target, storedHostKeys: ["home", "office"],
-            focus: HostFocus(hostKey: "office"), hostReady: true
-        ) == .open(ref))
-        // A tap for another conversation on the focused host opens it too.
-        #expect(pushTargetAction(
-            target, storedHostKeys: ["home", "office"],
-            focus: HostFocus(hostKey: "office", conversationId: 9), hostReady: true
-        ) == .open(ref))
+        #expect(pushTargetAction(target, storedHostKeys: ["home"], hostReady: true) == .drop)
+        // Every host is connected at once (#429): a tap waits for its own
+        // host without moving the screen, however the focus stands.
+        #expect(pushTargetAction(target, storedHostKeys: ["home", "office"], hostReady: false) == .wait)
+        #expect(pushTargetAction(target, storedHostKeys: ["home", "office"], hostReady: true) == .open(ref))
     }
 
     @Test func forgettingClearsExactlyWhenThisDeviceMayStillBeRegistered() {
