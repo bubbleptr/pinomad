@@ -117,8 +117,12 @@ final class AppModel {
         guard let hostKey, let runtime = runtimes[hostKey] else { return false }
         return runtime.phase == .connected && runtime.showsReconnecting
     }
-    /// NavigationStack path.
-    var navPath: [Route] = []
+    /// NavigationStack path. The focus moves with it synchronously, so a
+    /// page pushed for another machine never renders, or runs its onAppear,
+    /// against the previous machine's state.
+    var navPath: [Route] = [] {
+        didSet { navigationChanged() }
+    }
     /// Live answer streams, one set per host. Reading through the focused
     /// runtime means a non-focused host's snapshot can never feed them.
     var replyStreams: ReplyStreams { focusedRuntime?.replyStreams ?? emptyReplyStreams }
@@ -452,7 +456,7 @@ final class AppModel {
     /// and a page of no host keeps the host but releases its conversation.
     /// Never touches the stack — this is what replaces an explicit switch,
     /// and what makes the push banner rule depend on the visible conversation.
-    func navigationChanged() {
+    private func navigationChanged() {
         guard !pairingOwnsFocus else { return }
         let previousHost = runtimeTable.focus?.hostKey
         let released = runtimeTable.followPage(navPath.last?.page)

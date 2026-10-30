@@ -52,8 +52,6 @@ struct RootView: View {
         .sensoryFeedback(.success, trigger: model.pairings)
         // `pinomad://pair#…` — the confirm page decides what to do with it.
         .onOpenURL { url in model.offerPairing(url.absoluteString) }
-        // Focus follows the visible page, not just the selected host.
-        .onChange(of: model.navPath) { _, _ in model.navigationChanged() }
         // Forgetting could not clear the host-side registration; the only
         // remaining path is revoking this device from the host.
         .alert("Push registration not cleared", isPresented: Binding(
