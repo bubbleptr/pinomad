@@ -1,6 +1,6 @@
-// The stored-host composition root's frame: it reads the focused host's
-// runtime from the registry, so the sidebar survives every connection phase and
-// focus change, while the main column stays inside HostRuntimes.
+// The stored-host composition root's frame: it reads every host's runtime from
+// the registry, so the sidebar lists all machines through every connection
+// phase and focus change, while the main column stays inside HostRuntimes.
 import { useMediaQuery } from "@astryxdesign/core/hooks";
 import { useMemo, type ReactNode } from "react";
 import type { Home } from "@pinomad/protocol/organization.ts";
@@ -11,27 +11,39 @@ import { newDraftKey } from "../../entities/composer/composer-store.ts";
 import { connectionStatus, useHostRuntimeInfos } from "../../entities/host/host-runtimes.ts";
 import { readLastNewHost, selectNewChatHost } from "../../entities/host/last-new-host.ts";
 import { useHosts } from "../../entities/host/host-store.ts";
-import { AppFrame } from "./app-frame.tsx";
+import { hostLabels } from "@pinomad/client/stored-host.ts";
+import { AppFrame, type FrameMachine } from "./app-frame.tsx";
 
 /**
- * The frame for stored pairings. The focused host supplies its view and remote
- * only once ready; the sidebar still paints during connecting and failure.
+ * The frame for stored pairings: one sidebar group per paired machine, each
+ * fed by its own runtime, so every machine stays browsable while any one of
+ * them is connecting, failed, or out of focus (ADR-0035 §1).
  */
 export function HostFrame({ children }: { children: ReactNode }) {
-  const { hosts, focus, focusConversation, focusDraft } = useHosts();
+  const { hosts, focus, focusConversation, focusDraft, focusHost } = useHosts();
   const infos = useHostRuntimeInfos();
   const narrow = useMediaQuery("(max-width: 1023px)");
-  const host = focus === null ? undefined : hosts.find((entry) => entry.hostKey === focus.hostKey);
-  const info = focus === null ? undefined : infos.get(focus.hostKey);
-  const ready = info?.phase === "ready" ? info : undefined;
-  const slot = info?.composer.slot(newDraftKey);
-  const home = useOptionalComposerSlotState(slot)?.home;
-  // The focused host's device key marks "This device" in Settings → Devices;
-  // it belongs to the client, so the frame derives it once per stored entry.
-  const device = useMemo(
-    () => (host === undefined ? undefined : keyPairFromPrivate(fromBase64Url(host.privateKey))),
-    [host],
+  const focusedInfo = focus === null ? undefined : infos.get(focus.hostKey);
+  const home = useOptionalComposerSlotState(focusedInfo?.composer.slot(newDraftKey))?.home;
+  // Each pairing's device key marks "This device" in that host's Devices list.
+  const devices = useMemo(
+    () => new Map(hosts.map((host) => [host.hostKey, keyPairFromPrivate(fromBase64Url(host.privateKey))])),
+    [hosts],
   );
+  const labels = hostLabels(hosts);
+  const machines: FrameMachine[] = hosts.map((host) => {
+    const info = infos.get(host.hostKey);
+    const ready = info?.phase === "ready" ? info : undefined;
+    const device = devices.get(host.hostKey);
+    return {
+      key: host.hostKey,
+      hostKey: host.hostKey,
+      label: labels.get(host.hostKey) ?? host.url,
+      ...(ready === undefined ? {} : { view: ready.view, remote: ready.remote }),
+      ...(device === undefined ? {} : { device }),
+      ...(info === undefined ? {} : { retry: info.retry }),
+    };
+  });
 
   const startDraft = (hostKey: string, next: Home): void => {
     // Put the home on that host's own new-draft slot first: focusing the
@@ -51,19 +63,14 @@ export function HostFrame({ children }: { children: ReactNode }) {
 
   return (
     <AppFrame
-      {...(focus === null ? {} : { hostKey: focus.hostKey })}
-      {...(ready === undefined ? {} : { view: ready.view, remote: ready.remote })}
-      {...(device === undefined ? {} : { device })}
-      {...(info === undefined ? {} : { onReconnect: info.retry })}
+      machines={machines}
+      focusKey={focus?.hostKey}
       draftingChat={(focus === null || focus.conversationId === undefined) && home?.kind === "chat"}
       shownId={focus?.conversationId}
-      onDraft={(next) => {
-        if (focus !== null) startDraft(focus.hostKey, next);
-      }}
-      onOpen={(id) => {
-        if (focus !== null) focusConversation({ hostKey: focus.hostKey, conversationId: id });
-      }}
+      onDraft={startDraft}
+      onOpen={(hostKey, conversationId) => focusConversation({ hostKey, conversationId })}
       onNewChat={newChat}
+      onShowMachine={focusHost}
       narrow={narrow}
     >
       {children}

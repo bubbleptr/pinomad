@@ -1,6 +1,7 @@
 // The draft screen's send path (issue #321): a file still uploading blocks
 // both Enter and the button, and the eventual create carries its id.
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { fakeRemote, fakeView } from "../../test/story-fixtures.tsx";
 import { HostComposerContext } from "../../entities/composer/composer-context.tsx";
@@ -145,5 +146,39 @@ describe("DraftHome attachment uploads", () => {
     expect(second.container.querySelector<HTMLElement>('[aria-multiline="true"]')!.textContent).toBe(
       "half-written prompt",
     );
+  });
+});
+
+describe("DraftHome machine picker", () => {
+  const options = [
+    { value: "home", label: "kieran-mbp" },
+    { value: "devbox", label: "omarchy" },
+  ];
+  const renderWith = (machine?: Parameters<typeof DraftHome>[0]["machine"]) => {
+    const view = fakeView();
+    return render(
+      <DraftHome
+        view={view}
+        remote={fakeRemote(view)}
+        draft={{ kind: "chat" }}
+        onDraft={() => {}}
+        onCreated={() => {}}
+        connected
+        {...(machine === undefined ? {} : { machine })}
+      />,
+    );
+  };
+
+  it("stays hidden with a single paired machine", () => {
+    renderWith({ value: "home", options: options.slice(0, 1), onChange: () => {} });
+    expect(screen.queryByRole("combobox", { name: "Machine" })).toBeNull();
+  });
+
+  it("hands another machine's key to the caller instead of editing this draft", async () => {
+    const onChange = vi.fn();
+    renderWith({ value: "home", options, onChange });
+    await userEvent.click(screen.getByRole("combobox", { name: "Machine" }));
+    await userEvent.click(await screen.findByRole("option", { name: "omarchy" }));
+    expect(onChange).toHaveBeenCalledWith("devbox");
   });
 });

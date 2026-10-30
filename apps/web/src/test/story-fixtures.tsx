@@ -527,6 +527,39 @@ export function fakeRemote(view: DurableView = fakeView(), overrides: Partial<Du
 export const HOME_HOST: StoredHost = { url: "wss://kieran-mbp.tailf76614.ts.net:8787", hostKey: key("H"), privateKey: key("p"), name: "kieran-mbp" };
 export const DEVBOX_HOST: StoredHost = { url: "wss://omarchy.tailf76614.ts.net:8787", hostKey: key("D"), privateKey: key("q"), name: "omarchy" };
 
+export const NAS_HOST: StoredHost = { url: "wss://nas.tailf76614.ts.net:8787", hostKey: key("N"), privateKey: key("r"), name: "nas" };
+
+/** A second machine's smaller tree: one project, no plain chats. */
+export function devboxView(overrides: Partial<DurableView> = {}): DurableView {
+  const base = fakeView();
+  const [first] = base.organized.projects;
+  return fakeView({
+    conversation: undefined,
+    organized: {
+      ...base.organized,
+      chats: [],
+      projects: first === undefined ? [] : [{ ...first, project: { ...first.project, path: "/home/kieran/code/harness", name: "harness" } }],
+    },
+    ...overrides,
+  });
+}
+
+/**
+ * Three paired machines as the frame sees them: the focused Mac with the full
+ * tree, a connected Linux box, and a NAS that has not connected yet.
+ */
+export function fakeMachines(
+  overrides: { home?: DurableView; devbox?: DurableView } = {},
+): { key: string; hostKey: string; label: string; view?: DurableView; remote?: RemoteDurable; device?: KeyPair }[] {
+  const home = overrides.home ?? fakeView();
+  const devbox = overrides.devbox ?? devboxView();
+  return [
+    { key: HOME_HOST.hostKey, hostKey: HOME_HOST.hostKey, label: "kieran-mbp", view: home, remote: fakeRemote(home), device: SELF },
+    { key: DEVBOX_HOST.hostKey, hostKey: DEVBOX_HOST.hostKey, label: "omarchy", view: devbox, remote: fakeRemote(devbox), device: SELF },
+    { key: NAS_HOST.hostKey, hostKey: NAS_HOST.hostKey, label: "nas" },
+  ];
+}
+
 export function fakeHosts(hosts: readonly StoredHost[] = [HOME_HOST, DEVBOX_HOST], focusedHostKey: string | null = HOME_HOST.hostKey): HostsState {
   return {
     store: {

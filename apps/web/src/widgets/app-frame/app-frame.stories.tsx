@@ -7,10 +7,10 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import {
   fakeRemote,
   fakeView,
+  fakeMachines,
   HOME_HOST,
   PARSER_ID,
   PINOMAD,
-  SELF,
   signedIn,
   summaryOf,
   withAccount,
@@ -135,21 +135,20 @@ const meta = {
   ],
   parameters: { canvasWidth: "full" },
   args: {
-    view,
-    remote: fakeRemote(view),
-    device: SELF,
-    hostKey: HOME_HOST.hostKey,
+    machines: fakeMachines(),
+    focusKey: HOME_HOST.hostKey,
     draftingChat: false,
     shownId: PARSER_ID,
     onDraft: fn(),
     onOpen: fn(),
     onNewChat: fn(),
+    onShowMachine: fn(),
     narrow: false,
     children: null,
   },
   render: (args) => {
-    const storyView = args.view ?? view;
-    const storyRemote = args.remote ?? fakeRemote(storyView);
+    const storyView = args.machines.find((machine) => machine.key === args.focusKey)?.view ?? view;
+    const storyRemote = fakeRemote(storyView);
     return (
       <AppFrame {...args}>
         <Body
@@ -172,8 +171,7 @@ export const Conversation: Story = {};
 const drafting = fakeView({ conversation: undefined, home: undefined, checkout: undefined, docs: [] });
 export const Drafting: Story = {
   args: {
-    view: drafting,
-    remote: fakeRemote(drafting),
+    machines: fakeMachines({ home: drafting }),
     draftingChat: true,
     shownId: undefined,
   },
@@ -182,12 +180,12 @@ export const Drafting: Story = {
 /** A conversation opened from the sidebar, before its view lands: title and selection move at once. */
 const opening = fakeView({ conversation: undefined });
 export const Opening: Story = {
-  args: { view: opening, remote: fakeRemote(opening), shownId: PARSER_ID },
+  args: { machines: fakeMachines({ home: opening }), shownId: PARSER_ID },
 };
 
 /** Every notice also lands as a toast. */
 const noticed = fakeView({ notices: [{ id: 1, level: "error", message: "Model anthropic/claude-opus-5-5 is overloaded; retrying in 8s" }] });
-export const WithNotice: Story = { args: { view: noticed, remote: fakeRemote(noticed) } };
+export const WithNotice: Story = { args: { machines: fakeMachines({ home: noticed }) } };
 
 /** On a phone the sidebar becomes a drawer behind the header's menu button. */
 export const Narrow: Story = {

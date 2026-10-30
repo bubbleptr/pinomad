@@ -14,8 +14,7 @@ import {
   type ReactNode,
 } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
-import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
-import type { ConversationSummary, DurableView, Notice } from "@pinomad/protocol/view.ts";
+import type { ConversationSummary, Notice } from "@pinomad/protocol/view.ts";
 import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import type { Home } from "@pinomad/protocol/organization.ts";
 import { displayName } from "@pinomad/client/family.ts";
@@ -26,7 +25,8 @@ import {
   SidebarContent,
   SidebarFooter,
   SidebarHeaderBand,
-  SidebarUnavailable,
+  type SidebarLocate,
+  type SidebarMachine,
 } from "./sidebar.tsx";
 import { SettingsDialog } from "./settings-dialog.tsx";
 import { AccountDialog } from "../account/account-dialog.tsx";
@@ -53,40 +53,45 @@ const FrameChromeContext = createContext<FrameChrome>(defaultFrameChrome);
 
 export const useFrameChrome = (): FrameChrome => useContext(FrameChromeContext);
 
+/** A sidebar machine plus what Settings needs to manage it. */
+export interface FrameMachine extends SidebarMachine {
+  /** The stored pairing; absent for a token client. */
+  readonly hostKey?: string;
+  /** This client's device key on that host, for marking "This device". */
+  readonly device?: KeyPair;
+  /** Remount the connection after a terminal close (for example Direct only). */
+  readonly retry?: () => void;
+}
+
 /**
  * The app frame: Astryx AppShell, sidebar, mobile drawer, and the dialogs that
  * belong to this client rather than one host. It outlives every host runtime,
  * so a host connecting, failing or losing focus cannot remove the sidebar.
  */
 export function AppFrame({
-  view,
-  remote,
-  device,
-  hostKey,
-  onReconnect,
+  machines,
+  focusKey,
   draftingChat,
   shownId,
   onDraft,
   onOpen,
   onNewChat,
+  onShowMachine,
   narrow,
   children,
 }: {
-  /** The focused host's snapshot; absent while it is connecting or failed. */
-  view?: DurableView;
-  remote?: RemoteDurable;
-  device?: KeyPair;
-  /** The stored pairing this focus belongs to — absent for token clients. */
-  hostKey?: string;
-  /** Remount the connection after a terminal close (for example Direct only). */
-  onReconnect?: () => void;
-  /** The focused host is showing its plain-chat draft. */
+  /** Every paired machine in stored order (ADR-0035 §1). */
+  machines: readonly FrameMachine[];
+  /** The machine the main column shows. */
+  focusKey: string | undefined;
+  /** The focused machine is showing its plain-chat draft. */
   draftingChat: boolean;
   shownId: ConversationId | undefined;
-  onDraft: (home: Home) => void;
-  onOpen: (id: ConversationId) => void;
-  /** The global New chat picks a host by itself instead of following focus. */
+  onDraft: (key: string, home: Home) => void;
+  onOpen: (key: string, id: ConversationId) => void;
+  /** The global New chat picks a machine by itself instead of following focus. */
   onNewChat?: () => void;
+  onShowMachine?: (key: string) => void;
   narrow: boolean;
   children: ReactNode;
 }) {
@@ -94,6 +99,8 @@ export function AppFrame({
   const [navOpen, setNavOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [locate, setLocate] = useState<SidebarLocate>();
+  const focused = machines.find((machine) => machine.key === focusKey);
   // Under the desktop shell on macOS, the traffic lights own the top-left
   // corner: whichever band sits there reserves the inset and drags the window.
   const chrome = hostWindowChrome();
@@ -105,31 +112,24 @@ export function AppFrame({
     });
   }, []);
   const openNav = useCallback((): void => setNavOpen(true), []);
-  // Project folds, rename and remove-project dialogs belong to one host. The
-  // SideNav shell stays mounted; this content subtree is replaced on focus so
-  // A's pending action can never be confirmed against B's remote.
-  const sidebarKey = `host:${hostKey ?? "local"}`;
-  const sidebar =
-    view !== undefined && remote !== undefined ? (
-      <SidebarContent
-        key={sidebarKey}
-        view={view}
-        remote={remote}
-        {...(hostKey === undefined ? {} : { hostKey })}
-        draftingChat={draftingChat}
-        shownId={shownId}
-        onDraft={onDraft}
-        {...(onNewChat === undefined ? {} : { onNewChat })}
-        onOpen={onOpen}
-        onSelect={() => setNavOpen(false)}
-      />
-    ) : (
-      <SidebarUnavailable
-        key={sidebarKey}
-        {...(onNewChat === undefined ? {} : { onNewChat })}
-        onSelect={() => setNavOpen(false)}
-      />
-    );
+  const locateHost = (hostKey: string): void => {
+    const machine = machines.find((entry) => entry.hostKey === hostKey);
+    if (machine !== undefined) setLocate((prev) => ({ key: machine.key, seq: (prev?.seq ?? 0) + 1 }));
+  };
+  const sidebar = (
+    <SidebarContent
+      machines={machines}
+      focusKey={focusKey}
+      draftingChat={draftingChat}
+      shownId={shownId}
+      {...(locate === undefined ? {} : { locate })}
+      onDraft={onDraft}
+      {...(onNewChat === undefined ? {} : { onNewChat })}
+      onOpen={onOpen}
+      {...(onShowMachine === undefined ? {} : { onShowMachine })}
+      onSelect={() => setNavOpen(false)}
+    />
+  );
 
   return (
     // The viewport wraps the workbench so every descendant's useToast reaches
@@ -156,6 +156,7 @@ export function AppFrame({
                   <SidebarFooter
                     onOpenSettings={() => setSettingsOpen(true)}
                     onOpenAccount={() => setAccountOpen(true)}
+                    onLocateHost={locateHost}
                   />
                 }
               >
@@ -166,7 +167,7 @@ export function AppFrame({
         >
           {children}
         </AppShell>
-        {narrow && (view === undefined || view.unauthorized === true) ? (
+        {narrow && (focused?.view === undefined || focused.view.unauthorized === true) ? (
           // The workbench header (and its navigation button) exists only when
           // it paints the column. A phone still needs a way into the drawer
           // while the focused host is connecting, failed, or revoked.
@@ -197,17 +198,15 @@ export function AppFrame({
             <SidebarFooter
               onOpenSettings={() => setSettingsOpen(true)}
               onOpenAccount={() => setAccountOpen(true)}
+              onLocateHost={locateHost}
               onSelect={() => setNavOpen(false)}
             />
           </MobileNav>
         ) : null}
         {settingsOpen ? (
           <SettingsDialog
-            {...(view === undefined ? {} : { view })}
-            {...(remote === undefined ? {} : { remote })}
-            {...(device === undefined ? {} : { device })}
-            {...(hostKey === undefined ? {} : { hostKey })}
-            {...(onReconnect === undefined ? {} : { onReconnect })}
+            machines={machines}
+            {...(focusKey === undefined ? {} : { initialKey: focusKey })}
             onClose={() => setSettingsOpen(false)}
           />
         ) : null}

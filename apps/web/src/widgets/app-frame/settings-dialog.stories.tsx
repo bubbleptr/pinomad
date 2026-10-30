@@ -1,16 +1,14 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn, userEvent, within } from "storybook/test";
-import { fakeRemote, fakeView, HOME_HOST, SELF, withDesktopUpdates, withHosts } from "../../test/story-fixtures.tsx";
+import { fakeMachines, fakeView, HOME_HOST, NAS_HOST, withDesktopUpdates, withHosts } from "../../test/story-fixtures.tsx";
 import { SettingsDialog } from "./settings-dialog.tsx";
-
-const view = fakeView();
 
 const meta = {
   title: "Widgets/AppFrame/SettingsDialog",
   component: SettingsDialog,
   decorators: [withHosts()],
   parameters: { canvasWidth: "full" },
-  args: { view, remote: fakeRemote(view), device: SELF, hostKey: HOME_HOST.hostKey, onClose: fn() },
+  args: { machines: fakeMachines(), initialKey: HOME_HOST.hostKey, onClose: fn() },
 } satisfies Meta<typeof SettingsDialog>;
 
 export default meta;
@@ -54,14 +52,21 @@ export const Updates: Story = {
 };
 
 /** Disconnected, the host group has nothing live, so the dialog lands on this device's hosts. */
-export const Disconnected: Story = { args: { view: fakeView({ connection: "reconnecting" }) } };
+export const Disconnected: Story = {
+  args: { machines: fakeMachines({ home: fakeView({ connection: "reconnecting" }) }).slice(0, 1) },
+};
 
-/** The focused host is still connecting: only "This device" exists, so it opens there. */
-export const HostNotReady: Story = { args: { view: undefined, remote: undefined } };
+/** The only host is still connecting: only "This device" exists, so it opens there. */
+export const HostNotReady: Story = { args: { machines: fakeMachines().slice(2), initialKey: NAS_HOST.hostKey } };
+
+/** With several machines the host group picks one; one that isn't connected explains itself. */
+export const PickedMachineNotReady: Story = { ...open("Models"), args: { initialKey: NAS_HOST.hostKey } };
 
 /** A pre-5.1 host has no settings, auth or providers streams. */
 export const OlderHost: Story = {
   args: {
-    view: fakeView({ settings: null, auth: null, providers: null, agents: null, mcp: null, host: { protocol: { major: 5, minor: 0 } } }),
+    machines: fakeMachines({
+      home: fakeView({ settings: null, auth: null, providers: null, agents: null, mcp: null, host: { protocol: { major: 5, minor: 0 } } }),
+    }),
   },
 };
