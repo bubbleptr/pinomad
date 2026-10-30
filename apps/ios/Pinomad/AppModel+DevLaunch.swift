@@ -11,6 +11,18 @@ import UIKit
 /// screen awake, or toggle the perf instrumentation. Debug behavior is the
 /// scripted flow the device and perf runs rely on.
 extension AppModel {
+    /// The host a demo route belongs to; demos without a host use a stable
+    /// placeholder so routes still carry a ref.
+    private var demoHostKey: String { currentHostKey ?? "demo" }
+
+    private func demoConversationRoute(_ id: UInt64) -> Route {
+        .conversation(ConversationRef(hostKey: demoHostKey, conversationId: id))
+    }
+
+    private func demoNewConversationRoute() -> Route {
+        .newConversation(hostKey: demoHostKey)
+    }
+
     /// Apply the launch-time dev channels. Returns true when one took over
     /// startup, so `start()` skips the stored-host path.
     func applyDevLaunch() -> Bool {
@@ -206,7 +218,7 @@ extension AppModel {
             }
             self.drafts[Self.draftKey] = text
             self.draftHome = .chat
-            self.navPath = [.newConversation]
+            self.navPath = [demoNewConversationRoute()]
             await self.createConversation()
         }
     }
@@ -226,7 +238,7 @@ extension AppModel {
             showToast("Dev attach file is unreadable", level: "error")
             return
         }
-        navPath = [.newConversation]
+        navPath = [demoNewConversationRoute()]
         let key = Self.draftKey
         let name = url.lastPathComponent
         Task { [weak self] in
@@ -297,7 +309,7 @@ extension AppModel {
                 questions: [], todo: nil, home: nil, checkout: nil, busy: mode == "queue",
                 contextUsage: nil, fresh: true, freshEpoch: 1
             )
-            navPath = [.conversation(1)]
+            navPath = [demoConversationRoute(1)]
             publishDevSnapshot(ClientSnapshot(
                 version: 1, connection: .connected, unauthorized: false,
                 protocolMismatch: nil, host: host, hostName: nil, settings: nil, devices: [],
@@ -312,7 +324,7 @@ extension AppModel {
             return
         }
 
-        navPath = [.newConversation]
+        navPath = [demoNewConversationRoute()]
         drafts[Self.draftKey] = "Check these files before I send them."
         var tray = FileAttachmentTray()
         func source(_ name: String, _ size: Int) -> FileAttachmentSource {
@@ -355,7 +367,7 @@ extension AppModel {
     func consumeDevOpenRequest() {
         guard let id = pendingOpen else { return }
         pendingOpen = nil
-        navPath = [.conversation(id)]
+        navPath = [demoConversationRoute(id)]
     }
 
     /// Retries the injected pairing link while the phase is a failure —
@@ -379,7 +391,7 @@ extension AppModel {
     /// the session uses, so a blank screen reproduces exactly what the
     /// host-driven view would show.
     private func startDemo() {
-        navPath = [.conversation(1)]
+        navPath = [demoConversationRoute(1)]
         let body = """
         This is a streaming output demo. **Markdown** appears word by word, and you should see it fade in.
 
@@ -412,7 +424,7 @@ extension AppModel {
     /// A settled run with two delegated tasks — one named agent, one
     /// ordinary subagent — for the card layout (role line present/absent).
     private func startSubagentDemo() {
-        navPath = [.conversation(1)]
+        navPath = [demoConversationRoute(1)]
         let now = Date.now.timeIntervalSince1970 * 1000
         let parent = ConversationSummary(
             id: 1, kind: .conversation, parent: nil, forkedAt: nil,
@@ -488,7 +500,7 @@ extension AppModel {
     /// subagents — four still running, one waiting for an answer — with a
     /// canned `changes()` answer behind the overview's stat and file list.
     private func startOverviewDemo(truncated: Bool) {
-        navPath = [.conversation(1)]
+        navPath = [demoConversationRoute(1)]
         let now = Date.now.timeIntervalSince1970 * 1000
         let projectPath = "/Users/void/code/pinomad"
         let worktree = "/Users/void/.pinomad/worktrees/pinomad/overview-sheet"
@@ -598,7 +610,7 @@ extension AppModel {
     /// A settled run that ends in a pending question request. With no host
     /// behind it, Submit only shows its sending state.
     private func startQuestionDemo(_ mode: String) {
-        navPath = [.conversation(1)]
+        navPath = [demoConversationRoute(1)]
         let now = Date.now.timeIntervalSince1970 * 1000
         let summary = ConversationSummary(
             id: 1, kind: .conversation, parent: nil, forkedAt: nil,
@@ -678,7 +690,7 @@ extension AppModel {
     /// settles one conversation so the overview's context row can be
     /// photographed without a host.
     private func startContextDemo(_ spec: String) {
-        navPath = [.conversation(1)]
+        navPath = [demoConversationRoute(1)]
         let parts = spec.split(separator: "/")
         let usage: ContextUsage?
         if parts.count == 2, let used = Double(parts[0]), let window = Double(parts[1]) {
@@ -736,7 +748,7 @@ extension AppModel {
     /// without a live host. `missing` selects a role the host no longer
     /// offers; `none` has no current agent.
     private func startAgentDemo(_ mode: String) {
-        navPath = [.conversation(1)]
+        navPath = [demoConversationRoute(1)]
         let now = Date.now.timeIntervalSince1970 * 1000
         let gpt = ModelRef(provider: "openai", modelId: "gpt-5")
         let models = [
@@ -793,7 +805,7 @@ extension AppModel {
     /// that takes the text's color; the sheet opens on Claude. The settled
     /// run was Claude's, so its trace keeps Claude's logo.
     private func startModelsDemo(sheet: Bool) {
-        navPath = [.conversation(1)]
+        navPath = [demoConversationRoute(1)]
         let now = Date.now.timeIntervalSince1970 * 1000
         let levels: [ThinkingLevel] = [.off, .low, .medium, .high]
         let entries: [(provider: String, modelId: String, name: String, reasons: Bool)] = [
@@ -860,7 +872,7 @@ extension AppModel {
     /// step streaming in, and with `interims` a line to the user now and
     /// then) under a todo list half done, last written by the run before.
     private func startTraceDemo(interims: Bool) {
-        navPath = [.conversation(1)]
+        navPath = [demoConversationRoute(1)]
         let start = Date.now.timeIntervalSince1970 * 1000
         let commands = ["bun run typecheck", "rg -n uploadQueue src", "bun test upload", "bun run lint"]
         let lines = [
@@ -1056,7 +1068,7 @@ extension AppModel {
             questions: [], todo: nil, home: nil, checkout: nil, busy: mode == "queue",
             contextUsage: nil, fresh: true, freshEpoch: 1,
             localSubmissions: local, localQueueItems: localQueue)
-        navPath = [.conversation(1)]
+        navPath = [demoConversationRoute(1)]
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: .connected, unauthorized: false,
             protocolMismatch: nil, host: host, hostName: nil, settings: nil, devices: [],

@@ -432,6 +432,10 @@ public struct AccountReconciliation: Equatable, Sendable {
     public let rows: [AccountHostRow]
     public let stored: StoredHosts
     public let changed: Bool
+    /// Account hosts the shared eligibility rule allows this device to
+    /// register without asking (ADR-0035 §5). The app still checks the
+    /// server's pairing verdict before starting a handshake.
+    public let autoRegisterHostIds: [String]
 }
 
 public enum AccountHosts {
@@ -442,17 +446,17 @@ public enum AccountHosts {
         serverOrigin: String,
         hosts: [AccountHost],
         stored: StoredHosts,
-        rejectedHostKeys: Set<String>
+        rejectedHostKeys: Set<String>,
+        declined: [AccountHostRef] = [],
+        storedRead: Bool = true
     ) -> AccountReconciliation {
         let origin = normalizeServerOrigin(origin: serverOrigin)
-        // Declined identities and a failed stored-list read arrive with the
-        // automatic-registration work; reconciliation itself stays unchanged.
         let matches = matchAccountHosts(
             serverOrigin: origin,
             hosts: hosts,
             stored: stored.hosts.map { $0.ffi },
-            declined: [],
-            storedRead: true)
+            declined: declined,
+            storedRead: storedRead)
 
         var next = stored
         var changed = false
@@ -498,7 +502,11 @@ public enum AccountHosts {
                 storedHostKey: storedKey)
         }
 
-        return AccountReconciliation(rows: rows, stored: next, changed: changed)
+        return AccountReconciliation(
+            rows: rows,
+            stored: next,
+            changed: changed,
+            autoRegisterHostIds: matches.filter(\.autoRegister).map(\.host.hostId))
     }
 
 }

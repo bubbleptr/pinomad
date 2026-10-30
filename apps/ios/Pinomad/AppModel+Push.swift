@@ -2,7 +2,7 @@ import Foundation
 import PinomadCore
 
 /// The push switch and tapped notifications. The decisions themselves live
-/// in `PinomadCore.Push`; this is the thin session/UI assembly.
+/// in `PinomadCore.Push`; this is the thin per-host assembly.
 extension AppModel {
     /// The app-level switch; every connected host follows it.
     var pushEnabled: Bool {
@@ -10,8 +10,8 @@ extension AppModel {
     }
 
     /// The reader flipped the switch: ask for permission the first time it is
-    /// turned on, then register or clear the connected host. Other hosts
-    /// catch up on their next connection.
+    /// turned on, then register or clear every connected host. Hosts that are
+    /// still connecting catch up when they become ready.
     func setPushEnabled(_ enabled: Bool) {
         push.setEnabled(enabled)
         pushError = nil
@@ -37,49 +37,72 @@ extension AppModel {
         advancePushTarget()
     }
 
-    /// Route the pending tap: drop it when the host is no longer stored,
-    /// switch to another stored host, wait for the selected host's first
-    /// view, then open its conversation exactly once.
+    /// Route the pending tap: drop it when the host is no longer paired,
+    /// focus another stored host (never reconnecting it), wait for that
+    /// host's first view, then open its conversation exactly once.
     func advancePushTarget() {
         guard hostsLoaded, let target = pendingPush else { return }
+        var storedHostKeys = Set(hosts.hosts.map(\.hostKey))
+        storedHostKeys.formUnion(unsavedHostKeys)
+        let runtime = runtimes[target.hostKey] ?? (pairingRuntime?.hostKey == target.hostKey
+            ? pairingRuntime : nil)
         let action = pushTargetAction(
             target,
-            storedHostKeys: Set(hosts.hosts.map(\.hostKey)),
-            currentHostKey: currentHostKey,
-            hostReady: connected && snapshot != nil)
+            storedHostKeys: storedHostKeys,
+            focus: runtimeTable.focus,
+            hostReady: runtime?.isConnectedNow == true && runtime?.snapshot != nil)
         switch action {
         case .drop:
             pendingPush = nil
         case .wait:
             break
         case .switchHost(let hostKey):
-            switchHost(hostKey)
-        case .open(let conversationId):
+            // Keep the target pending: the ready callback asks again.
+            focus(on: hostKey)
+            if runtimeTable.focus?.hostKey != hostKey { pendingPush = nil }
+            else { advancePushTarget() }
+        case .open(let ref):
             pendingPush = nil
-            navPath = [.conversation(conversationId)]
-            openConversation(conversationId)
+            navPath = [.conversation(ref)]
+            openConversation(ref)
         }
     }
 
-    /// Register or clear this device for the current host at one of the
-    /// occasions ADR-0025 §9 lists. The switch is app-wide, so the same
-    /// value applies to every host; only the connected one can act on it now.
-    /// A failed request leaves its reason by the switch and is tried again
-    /// at the next occasion.
-    func syncPushToken() {
-        if pushSyncInFlight {
-            pushSyncPending = true
+    /// The banner baseline is the conversation actually visible, not just
+    /// the app being in the foreground (ADR-0035 §9).
+    func updatePushVisibility() {
+        guard let runtime = focusedRuntime, runtime.isConnectedNow else {
+            push.visibleConversation = nil
             return
         }
-        guard phase == .connected, let host = sessionHost, let session,
-              let snapshot, snapshot.connection == .connected, !snapshot.unauthorized,
+        push.visibleConversation = runtimeTable.focus?.conversation
+    }
+
+    /// Register or clear this device on every connected host at one of the
+    /// occasions ADR-0025 §9 lists. Each host has its own in-flight slot, so
+    /// a slow or failing host never stalls another.
+    func syncPushToken() {
+        for runtime in runtimes.values { syncPushToken(for: runtime) }
+    }
+
+    func syncPushToken(for runtime: HostRuntime) {
+        guard let hostKey = runtime.hostKey,
+              runtime.phase == .connected,
+              runtime.isConnectedNow,
+              let snapshot = runtime.snapshot,
+              !snapshot.unauthorized,
               let hostMinor = snapshot.host?.protocol.minor,
-              !forgettingHosts.contains(host.hostKey)
+              !forgettingHosts.contains(hostKey)
         else { return }
+
+        if pushSyncInFlight.contains(hostKey) {
+            pushSyncPending.insert(hostKey)
+            return
+        }
 
         let action = pushRegistrationAction(
             enabled: push.isEnabled,
-            mayHaveRegistration: push.mayHaveRegistration(for: host.hostKey),
+            mayHaveRegistration: push.mayHaveRegistration(for: hostKey),
             hostMinor: hostMinor,
             deviceToken: push.deviceToken,
             environment: push.environment)
@@ -97,32 +120,33 @@ extension AppModel {
         }
 
         // Remember the attempt before it goes out: a host may accept a
-        // register whose reply (or this process) never comes back. Only a
-        // successful clear is proof that nothing is registered.
-        if registering, !forgettingHosts.contains(host.hostKey) {
-            push.setMayHaveRegistration(true, for: host.hostKey)
+        // register whose reply (or this process) never comes back.
+        if registering, !forgettingHosts.contains(hostKey) {
+            push.setMayHaveRegistration(true, for: hostKey)
         }
-        pushSyncInFlight = true
-        Task { [weak self] in
+        pushSyncInFlight.insert(hostKey)
+        guard let session = runtime.session else {
+            pushSyncInFlight.remove(hostKey)
+            return
+        }
+        Task { [weak self, weak runtime] in
             guard let self else { return }
             do {
                 _ = try await session.invoke(.setPushToken(token: token))
-                // A host being forgotten owns the clearing request; a
-                // late clear must not resurrect or drop its flag.
-                if !registering, !self.forgettingHosts.contains(host.hostKey),
-                   self.hosts.hosts.contains(where: { $0.hostKey == host.hostKey }) {
-                    self.push.setMayHaveRegistration(false, for: host.hostKey)
+                if !registering, !self.forgettingHosts.contains(hostKey),
+                   self.hosts.hosts.contains(where: { $0.hostKey == hostKey })
+                    || self.unsavedHostKeys.contains(hostKey) {
+                    self.push.setMayHaveRegistration(false, for: hostKey)
                 }
-                if self.currentHostKey == host.hostKey { self.pushError = nil }
+                if self.currentHostKey == hostKey { self.pushError = nil }
             } catch {
-                if self.currentHostKey == host.hostKey {
+                if self.currentHostKey == hostKey {
                     self.pushError = self.describe(error)
                 }
             }
-            self.pushSyncInFlight = false
-            if self.pushSyncPending {
-                self.pushSyncPending = false
-                self.syncPushToken()
+            self.pushSyncInFlight.remove(hostKey)
+            if self.pushSyncPending.remove(hostKey) != nil, let runtime {
+                self.syncPushToken(for: runtime)
             }
         }
     }

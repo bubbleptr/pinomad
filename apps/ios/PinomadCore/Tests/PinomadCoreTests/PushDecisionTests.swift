@@ -48,32 +48,49 @@ import Testing
         ) == .register(ApnsPushToken(apns: token, environment: .production)))
     }
 
-    @Test func foregroundBannerIsOnlySuppressedForTheConnectedHost() {
-        #expect(!shouldPresentPushBanner(pushHostKey: "home", currentHostKey: "home"))
-        #expect(shouldPresentPushBanner(pushHostKey: "office", currentHostKey: "home"))
-        #expect(shouldPresentPushBanner(pushHostKey: "office", currentHostKey: nil))
+    @Test func foregroundBannerIsSuppressedOnlyForTheVisibleConversation() {
+        let visible = ConversationRef(hostKey: "home", conversationId: 7)
+        #expect(!shouldPresentPushBanner(
+            pushHostKey: "home", pushConversationId: 7, visible: visible))
+        // Another conversation on the same host is not on screen — show it.
+        #expect(shouldPresentPushBanner(
+            pushHostKey: "home", pushConversationId: 8, visible: visible))
+        #expect(shouldPresentPushBanner(
+            pushHostKey: "office", pushConversationId: 7, visible: visible))
+        #expect(shouldPresentPushBanner(
+            pushHostKey: "office", pushConversationId: 7, visible: nil))
         // No host in the payload is not this host — show it.
-        #expect(shouldPresentPushBanner(pushHostKey: nil, currentHostKey: "home"))
+        #expect(shouldPresentPushBanner(
+            pushHostKey: nil, pushConversationId: 7, visible: visible))
     }
 
     @Test func tappedNotificationWaitsForItsHostThenOpensOnce() throws {
         let target = try #require(PushTarget(hostKey: "office", conversationId: 42))
+        let ref = ConversationRef(hostKey: "office", conversationId: 42)
         #expect(pushTargetAction(
-            target, storedHostKeys: ["home"], currentHostKey: "home", hostReady: true
+            target, storedHostKeys: ["home"], focus: HostFocus(hostKey: "home"), hostReady: true
         ) == .drop)
         #expect(pushTargetAction(
-            target, storedHostKeys: ["home", "office"], currentHostKey: "home", hostReady: true
+            target, storedHostKeys: ["home", "office"],
+            focus: HostFocus(hostKey: "home"), hostReady: true
         ) == .switchHost("office"))
         #expect(pushTargetAction(
-            target, storedHostKeys: ["home", "office"], currentHostKey: nil, hostReady: false
+            target, storedHostKeys: ["home", "office"], focus: nil, hostReady: false
         ) == .switchHost("office"))
-        // The host is selected but still connecting or syncing its list.
+        // The host is focused but still connecting or syncing its list.
         #expect(pushTargetAction(
-            target, storedHostKeys: ["home", "office"], currentHostKey: "office", hostReady: false
+            target, storedHostKeys: ["home", "office"],
+            focus: HostFocus(hostKey: "office"), hostReady: false
         ) == .wait)
         #expect(pushTargetAction(
-            target, storedHostKeys: ["home", "office"], currentHostKey: "office", hostReady: true
-        ) == .open(42))
+            target, storedHostKeys: ["home", "office"],
+            focus: HostFocus(hostKey: "office"), hostReady: true
+        ) == .open(ref))
+        // A tap for another conversation on the focused host opens it too.
+        #expect(pushTargetAction(
+            target, storedHostKeys: ["home", "office"],
+            focus: HostFocus(hostKey: "office", conversationId: 9), hostReady: true
+        ) == .open(ref))
     }
 
     @Test func forgettingClearsExactlyWhenThisDeviceMayStillBeRegistered() {

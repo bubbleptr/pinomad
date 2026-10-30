@@ -15,6 +15,8 @@ public final class PerfLog: @unchecked Sendable {
     public struct Event: Sendable {
         let t: Double // epoch ms
         let name: String
+        /// Already reduced to the hostKey suffix; nil for app-wide events.
+        let host: String?
         let version: UInt64?
         let ms: Double? // interval measurements (snapshot compute time, hitch gap)
         let span: Double? // expected frame interval for hitch events
@@ -35,18 +37,59 @@ public final class PerfLog: @unchecked Sendable {
         #endif
     }
 
-    public func mark(_ name: String, version: UInt64? = nil) {
-        record(name, version: version, ms: nil, span: nil)
+    public func mark(_ name: String, version: UInt64? = nil, host: String? = nil) {
+        record(name, host: host, version: version, ms: nil, span: nil)
     }
 
-    public func measure(_ name: String, ms: Double, version: UInt64? = nil) {
-        record(name, version: version, ms: ms, span: nil)
+    public func measure(_ name: String, ms: Double, version: UInt64? = nil, host: String? = nil) {
+        record(name, host: host, version: version, ms: ms, span: nil)
     }
 
-    private func record(_ name: String, version: UInt64?, ms: Double?, span: Double? = nil) {
+    /// The last eight characters are enough to tell two paired hosts apart
+    /// without carrying key material into a diagnostics file.
+    static func hostSuffix(_ hostKey: String) -> String {
+        String(hostKey.suffix(8))
+    }
+
+    /// One NDJSON line. The host field is always present so a merged run
+    /// cannot silently lose attribution; app-wide events use "-".
+    static func line(
+        name: String, hostKey: String?, version: UInt64?, ms: Double?
+    ) -> String {
+        line(
+            name: name, host: hostKey.map(hostSuffix), version: version, ms: ms,
+            span: nil, mem: nil, t: Date().timeIntervalSince1970 * 1000)
+    }
+
+    private static func line(
+        name: String, host: String?, version: UInt64?, ms: Double?,
+        span: Double?, mem: Double?, t: Double
+    ) -> String {
+        var parts = [
+            "\"t\":\(t)",
+            "\"n\":\"\(name)\"",
+            "\"host\":\"\(host ?? "-")\"",
+        ]
+        if let version { parts.append("\"v\":\(version)") }
+        if let ms { parts.append("\"ms\":\(ms)") }
+        if let span { parts.append("\"span\":\(span)") }
+        if let mem { parts.append("\"mem\":\(mem)") }
+        return "{\(parts.joined(separator: ","))}"
+    }
+
+    private func record(
+        _ name: String, host: String?, version: UInt64?, ms: Double?, span: Double? = nil
+    ) {
         guard enabled else { return }
         lock.lock()
-        events.append(Event(t: Date().timeIntervalSince1970 * 1000, name: name, version: version, ms: ms, span: span, mem: Self.footprint()))
+        events.append(Event(
+            t: Date().timeIntervalSince1970 * 1000,
+            name: name,
+            host: host.map(Self.hostSuffix),
+            version: version,
+            ms: ms,
+            span: span,
+            mem: Self.footprint()))
         lock.unlock()
     }
 
@@ -56,13 +99,10 @@ public final class PerfLog: @unchecked Sendable {
         guard enabled else { return }
         lock.lock(); let copy = events; lock.unlock()
         guard let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
-        let lines = copy.map { e -> String in
-            var parts = ["\"t\":\(e.t)", "\"n\":\"\(e.name)\""]
-            if let v = e.version { parts.append("\"v\":\(v)") }
-            if let m = e.ms { parts.append("\"ms\":\(m)") }
-            if let s = e.span { parts.append("\"span\":\(s)") }
-            if let m = e.mem { parts.append("\"mem\":\(m)") }
-            return "{\(parts.joined(separator: ","))}"
+        let lines = copy.map {
+            Self.line(
+                name: $0.name, host: $0.host, version: $0.version, ms: $0.ms,
+                span: $0.span, mem: $0.mem, t: $0.t)
         }
         try? lines.joined(separator: "\n").write(to: dir.appendingPathComponent(Self.fileName), atomically: true, encoding: .utf8)
     }
@@ -74,7 +114,7 @@ public final class PerfLog: @unchecked Sendable {
     public func startFrameMonitor() {
         guard enabled, Thread.isMainThread, monitor == nil else { return }
         monitor = FrameMonitor { [weak self] gapMs, frameMs in
-            self?.record("hitch", version: nil, ms: gapMs, span: frameMs)
+            self?.record("hitch", host: nil, version: nil, ms: gapMs, span: frameMs)
         }
         // A screen with no snapshots arriving (an idle conversation) never
         // reaches the publish flush; write every 5 s too, off the main

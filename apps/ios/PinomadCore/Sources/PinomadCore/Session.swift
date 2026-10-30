@@ -156,6 +156,9 @@ public final class PinomadSession: @unchecked Sendable {
     /// stored host — nil for a QR/pasted pairing (which keeps any link the
     /// same host already had).
     private let pairingAccount: AccountLink?
+    /// The host every PerfLog line from this session is attributed to. A
+    /// pairing learns it when the handshake completes.
+    private var logHost: String?
     /// The in-memory identity this session is connected as. It survives a
     /// failed keychain write and is the source of truth for Retry's routing.
     private var currentHost: HostRecord?
@@ -169,13 +172,15 @@ public final class PinomadSession: @unchecked Sendable {
         dependencies: SessionDependencies,
         pairingAccount: AccountLink? = nil,
         host: HostRecord? = nil,
-        hostIsStored: Bool = false
+        hostIsStored: Bool = false,
+        logHost: String? = nil
     ) {
         self.client = client
         self.dependencies = dependencies
         self.pairingAccount = pairingAccount
         self.currentHost = host
         self.currentHostInStore = hostIsStored
+        self.logHost = logHost
         var sink: AsyncStream<SessionEvent>.Continuation!
         self.events = AsyncStream { sink = $0 }
         self.sink = sink
@@ -209,7 +214,8 @@ public final class PinomadSession: @unchecked Sendable {
             client: client,
             dependencies: dependencies,
             host: host,
-            hostIsStored: true)
+            hostIsStored: true,
+            logHost: host.hostKey)
     }
 
     // ── public inputs: all just yields into the one queue ──
@@ -358,8 +364,9 @@ public final class PinomadSession: @unchecked Sendable {
         case .socketOpened(let conn):
             feed(.socketOpened(conn: conn))
         case .socketData(let conn, let bytes):
-            signposter.emitEvent("bytes")
-            PerfLog.shared.mark("bytes")
+            signposter.emitEvent(
+                "bytes", "\(self.logHost.map(PerfLog.hostSuffix) ?? "-", privacy: .public)")
+            PerfLog.shared.mark("bytes", host: logHost)
             feed(.socketData(conn: conn, bytes: bytes))
         case .socketClosed(let conn, let code, let reason):
             feed(.socketClosed(conn: conn, code: code, reason: reason))
@@ -440,8 +447,9 @@ public final class PinomadSession: @unchecked Sendable {
             snapshotInFlight = false
             if let snapshot, snapshot.version > publishedVersion {
                 publishedVersion = snapshot.version
-                signposter.emitEvent("publish")
-                PerfLog.shared.mark("publish", version: snapshot.version)
+                signposter.emitEvent(
+                    "publish", "\(self.logHost.map(PerfLog.hostSuffix) ?? "-", privacy: .public)")
+                PerfLog.shared.mark("publish", version: snapshot.version, host: logHost)
                 updateSink.yield(.snapshot(snapshot))
             }
             if viewDirty { startSnapshot() }
@@ -569,14 +577,16 @@ public final class PinomadSession: @unchecked Sendable {
         snapshotInFlight = true
         let snapshotter = dependencies.snapshotter ?? { [client] in client.snapshot() }
         let signposter = self.signposter
+        let host = logHost.map(PerfLog.hostSuffix) ?? "-"
         Task { [sink] in
-            let interval = signposter.beginInterval("snapshot")
+            let interval = signposter.beginInterval(
+                "snapshot", id: .exclusive, "\(host, privacy: .public)")
             let t0 = ContinuousClock.now
             let snapshot = snapshotter()
             let elapsed = t0.duration(to: .now)
             let ms = Double(elapsed.components.seconds) * 1000 + Double(elapsed.components.attoseconds) / 1e15
-            signposter.endInterval("snapshot", interval)
-            PerfLog.shared.measure("snapshot", ms: ms, version: snapshot?.version)
+            signposter.endInterval("snapshot", interval, "\(host, privacy: .public)")
+            PerfLog.shared.measure("snapshot", ms: ms, version: snapshot?.version, host: logHost)
             sink.yield(.snapshotReady(snapshot))
         }
     }
@@ -614,6 +624,7 @@ public final class PinomadSession: @unchecked Sendable {
         // The host accepted this device even if the keychain did not. Keep
         // that identity as the session's routing source for learned endpoints.
         currentHost = record
+        logHost = record.hostKey
         currentHostInStore = saveError == nil
         updateSink.yield(.paired(record, saveError: saveError))
     }

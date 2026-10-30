@@ -7,6 +7,7 @@ import SwiftUI
 /// rule, via the core's family derivations).
 struct ConversationsPage: View {
     let model: AppModel
+    let hostKey: String
     let filter: ConversationFilter
 
     /// The row being renamed, and the title being typed.
@@ -59,7 +60,7 @@ struct ConversationsPage: View {
                     // A project's page starts the draft in it; Chats as a Chat.
                     if case .project(let path) = filter { model.draftHome = .project(path: path) }
                     if filter == .chats { model.draftHome = .chat }
-                    model.navPath.append(.newConversation)
+                    model.navPath.append(.newConversation(hostKey: hostKey))
                 }
                 .disabled(!model.connected)
             }
@@ -123,7 +124,8 @@ struct ConversationsPage: View {
     private func row(_ node: ConversationNode, project: String?) -> some View {
         let summary = node.summary
         if let id = summary.id {
-            NavigationLink(value: Route.conversation(id)) {
+            NavigationLink(value: Route.conversation(
+                ConversationRef(hostKey: hostKey, conversationId: id))) {
                 ConversationRowLabel(node: node, project: project)
             }
             .quietSeparator()

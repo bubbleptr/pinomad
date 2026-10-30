@@ -7,7 +7,7 @@ private let hostNameLogger = Logger(subsystem: "build.kieran.pinomad", category:
 
 /// The token clear did not come back in time — the host may have kept the
 /// registration, so forgetting proceeds with the revocation warning.
-private struct PushUnregisterTimeout: Error {}
+struct PushUnregisterTimeout: Error {}
 
 /// A pairing link waiting for the reader's go-ahead. `url` is where it
 /// would connect, or nil when the link isn't a usable pairing link.
@@ -16,10 +16,8 @@ struct PendingPairing: Equatable {
     let target: PairingTarget?
 }
 
-/// Pairing entry points and the host list: every link — pasted, scanned,
-/// opened as `pinomad://pair#…` — goes through the same confirm page, and
-/// switching or forgetting a host goes through the keychain record first,
-/// so the launch host is always the one on screen.
+/// Pairing entry points, labels and the explicit host switch. Connection
+/// and forget lifecycles live on AppModel now that every host has a runtime.
 extension AppModel {
     /// Label per stored host — its address, told apart by key when two
     /// hosts share one (e.g. behind the same relay).
@@ -29,7 +27,17 @@ extension AppModel {
             uniquingKeysWith: { first, _ in first })
     }
 
-    /// What the screens call the host the session is for.
+    /// One host's connection state for the per-host rows (issue #428 §8).
+    func connectionLabel(for hostKey: String) -> String {
+        guard let runtime = runtimes[hostKey] else { return "Not connected" }
+        switch runtime.phase {
+        case .connecting: return "Connecting"
+        case .connected: return runtime.isConnectedNow ? "Connected" : "Reconnecting"
+        case .failed: return "Offline"
+        }
+    }
+
+    /// What the screens call the focused host.
     var currentHostLabel: String? {
         if let host = sessionHost { return hostLabels[host.hostKey] ?? hostOf(host.url) }
         return pairingTarget.map { hostOf($0.url) }
@@ -74,142 +82,18 @@ extension AppModel {
         PinomadCore.pairingTarget(link: text.trimmingCharacters(in: .whitespacesAndNewlines)) != nil
     }
 
-    /// Back out of a pairing whose handshake never completed — the
-    /// keychain is unchanged, so its launch host is the one from before.
-    func cancelPairing() {
-        connectActive()
-    }
-
-    /// The host to offer going back to from a failure page: the one the
-    /// device was on before a pairing whose handshake went through (making
-    /// the new host the launch one) but whose session then failed.
-    var previousHostKey: String? {
-        guard let key = hostBeforePairing, key != currentHostKey,
-              hosts.hosts.contains(where: { $0.hostKey == key })
-        else { return nil }
-        return key
-    }
-
-    /// Try the same thing again — the link for a pairing, else the host.
-    /// Also the manual reconnect for a closed session, which never
-    /// retries on its own.
-    func retryConnection() {
-        switch pairing.retry {
-        case .link(let link, let account):
-            pair(link: link, account: account)
-        case .host(let host):
-            // After a pairing's handshake this is the identity it stored —
-            // the link's code is spent, so pairing again would be refused.
-            connect(host)
-        case .active:
-            connectActive()
-        }
-    }
-
-    /// Make `hostKey` the launch host and connect to it.
+    /// Move the screen to another paired host without reconnecting it. The
+    /// connection stays up and its session object is never rebuilt
+    /// (issue #428 §8).
     func switchHost(_ hostKey: String) {
-        guard hostKey != currentHostKey || phase != .connected else { return }
         #if DEBUG
         if devHostsInjected {
             showToast("Demo data: hosts don't switch.")
             return
         }
         #endif
-        var saveError: String?
-        do {
-            try store.update { $0 = $0.activating(hostKey) }
-        } catch {
-            saveError = describe(error)
-        }
-        reloadHosts()
-        guard let host = hosts.hosts.first(where: { $0.hostKey == hostKey }) else { return }
-        connect(host)
-        // After `connect`: starting a session clears the last one's error.
-        // Connecting anyway is right — only the next launch would open the
-        // old host — but the reader should know.
-        if let saveError {
-            lastError = "Couldn't save the selected host (\(saveError)). The previous host opens after the app restarts."
-        }
-    }
-
-    /// Drop `hostKey`'s pairing, clearing this device's push registration
-    /// first when it can (ADR-0025 §9). A host that can't be reached — or
-    /// refuses the clear — is still forgotten; the reader is sent to the
-    /// host's Devices page instead.
-    func forget(_ hostKey: String) {
-        #if DEBUG
-        if devHostsInjected {
-            showToast("Demo data: hosts aren't forgotten.")
-            return
-        }
-        #endif
-        // The switch is not proof either way: it may have been turned off
-        // while offline after a successful registration. The flag is set
-        // before a register and cleared only by a successful clear, so it
-        // is the one judgement here.
-        let plan = pushForgetPlan(
-            mayHaveRegistration: push.mayHaveRegistration(for: hostKey),
-            canClear: hostKey == currentHostKey && phase == .connected && connected
-                && hostSupports("setPushToken"))
-        // Stop token callbacks from queuing a fresh register behind the
-        // clearing request while this host is being removed.
-        forgettingHosts.insert(hostKey)
-        Task { [weak self] in
-            guard let self else { return }
-            var warning: String?
-            switch plan {
-            case .forget:
-                break
-            case .forgetWithWarning:
-                warning = "Forgot this host. It may still have this device registered for notifications; revoke this device on the host's Devices page to stop them."
-            case .clearThenForget:
-                do {
-                    guard let session = self.session else { throw SessionError.sessionClosed }
-                    try await self.clearPushRegistration(on: session)
-                    self.push.setMayHaveRegistration(false, for: hostKey)
-                } catch is PushUnregisterTimeout {
-                    warning = "Forgot this host, but the host timed out clearing notifications. Revoke this device on the host's Devices page to stop them."
-                } catch {
-                    warning = "Forgot this host, but couldn't clear notifications (\(self.describe(error))). Revoke this device on the host's Devices page to stop them."
-                }
-            }
-            self.forgetNow(hostKey, warning: warning)
-        }
-    }
-
-    /// The clear is bounded: a black-holed connection must not keep the
-    /// pairing on the device forever.
-    private func clearPushRegistration(on session: PinomadSession) async throws {
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            group.addTask {
-                _ = try await session.invoke(.setPushToken(token: nil))
-            }
-            group.addTask {
-                try await Task.sleep(for: .seconds(5))
-                throw PushUnregisterTimeout()
-            }
-            defer { group.cancelAll() }
-            _ = try await group.next()
-        }
-    }
-
-    private func forgetNow(_ hostKey: String, warning: String?) {
-        forgettingHosts.remove(hostKey)
-        do {
-            try store.update { $0 = $0.forgetting(hostKey) }
-        } catch {
-            lastError = "Couldn't forget this host: \(describe(error))"
-            return
-        }
-        push.forget(hostKey)
-        accountHostForgotten(hostKey)
-        if hostKey == currentHostKey {
-            connectActive()
-        } else {
-            reloadHosts()
-        }
-        if let warning { pushForgetWarning = warning }
-        advancePushTarget()
+        guard runtimeTable.contains(hostKey) else { return }
+        focus(on: hostKey)
     }
 
     /// The host's one-time pairing offer for another device. Request-class:

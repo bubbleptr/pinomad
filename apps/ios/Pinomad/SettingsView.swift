@@ -31,7 +31,9 @@ struct SettingsView: View {
 
             // Only the connected host's page opens; the others need a
             // connection to read anything from.
-            if let live = machines.first(where: isLive) {
+            if let live = machines.first(where: {
+                $0.hostKey == model.currentHostKey && model.connected
+            }) {
                 Section {
                     NavigationLink(value: Route.machine(live.hostKey)) {
                         LabeledContent {
@@ -100,38 +102,44 @@ struct SettingsView: View {
     }
 
     private func isLive(_ host: HostRecord) -> Bool {
-        host.hostKey == model.currentHostKey && model.connected
+        model.isConnected(host.hostKey)
+    }
+
+    private func status(_ host: HostRecord) -> String {
+        if host.hostKey == model.currentHostKey, model.connected,
+           let summary = model.connectedSummary {
+            return summary
+        }
+        return model.connectionLabel(for: host.hostKey)
     }
 
     /// Tap to switch; the trailing ⓘ has its own hit area and opens the
     /// connection page without changing hosts.
     private func pairedRow(_ host: HostRecord) -> some View {
         HStack(spacing: 4) {
-            Button {
-                guard host.hostKey != model.currentHostKey || model.phase != .connected else { return }
-                model.switchHost(host.hostKey)
-                // Switching resets the stack already; in the sheet this closes it.
-                dismiss()
-            } label: {
-                HStack(spacing: 10) {
-                    MachineDot(live: isLive(host))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(label(host))
-                            .foregroundStyle(.primary)
-                        Text(isLive(host) ? model.connectedSummary ?? host.url : host.url)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                    if host.hostKey == model.currentHostKey {
-                        Image(.check)
-                            .foregroundStyle(.blue)
-                    }
+            // A plain tap gesture, not a Button: iOS 27 List rows swallow
+            // normal taps on Buttons (only a press-and-slide activates them),
+            // so host switching must not rely on one.
+            HStack(spacing: 10) {
+                MachineDot(live: isLive(host))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(label(host))
+                        .foregroundStyle(.primary)
+                    Text(status(host))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-                .contentShape(Rectangle())
+                Spacer(minLength: 0)
+                if host.hostKey == model.currentHostKey {
+                    Image(.check)
+                        .foregroundStyle(.blue)
+                }
             }
-            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+            .onTapGesture { choose(host) }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { choose(host) }
 
             Button {
                 detailHostKey = host.hostKey
@@ -157,8 +165,15 @@ struct SettingsView: View {
         .tint(.primary)
     }
 
-    /// The app-level switch. Only the connected host can register or clear
-    /// now; the others catch up on their next connection.
+    private func choose(_ host: HostRecord) {
+        guard host.hostKey != model.currentHostKey || model.phase != .connected else { return }
+        model.switchHost(host.hostKey)
+        // Switching resets the stack already; in the sheet this closes it.
+        dismiss()
+    }
+
+    /// The app-level switch. Every connected host registers or clears; a host
+    /// that is still connecting catches up when it becomes ready.
     @ViewBuilder
     private var pushSection: some View {
         Section {

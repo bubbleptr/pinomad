@@ -11,7 +11,9 @@ import SwiftUI
 /// what actually changed.
 struct ConversationView: View {
     let model: AppModel
-    let conversationId: UInt64
+    let ref: ConversationRef
+
+    private var conversationId: UInt64 { ref.conversationId }
 
     /// The shared calendar day for every message time. A local midnight timer
     /// and returning to the foreground both re-read it (the Web's useToday).
@@ -119,7 +121,7 @@ struct ConversationView: View {
                 }
             } else if failed {
                 ConversationUnavailable(missing: node == nil, connected: connected) {
-                    model.openConversation(conversationId)
+                    model.openConversation(ref)
                 }
                 .transition(.opacity)
             } else {
@@ -215,12 +217,12 @@ struct ConversationView: View {
             }
         }
         .task {
-            model.openConversation(conversationId)
+            model.openConversation(ref)
         }
         // A failed open seen offline (the session was gone when it began)
         // retries once connected; one the host refused waits for Retry.
         .onChange(of: connected) { _, connected in
-            if connected, failed { model.openConversation(conversationId) }
+            if connected, failed { model.openConversation(ref) }
         }
         .task(id: scenePhase) {
             // A suspended app's timer does not run; the active pass is what
@@ -283,7 +285,9 @@ struct ConversationView: View {
     private func openSubagent(_ child: UInt64, from run: String?) {
         subagentReturnItem = run
         subagentReturnAtBottom = transcriptAtBottom
-        model.navPath.append(.conversation(child))
+        guard let hostKey = model.currentHostKey else { return }
+        model.navPath.append(.conversation(
+            ConversationRef(hostKey: hostKey, conversationId: child)))
     }
 
     /// The newest run: the todo line ends it and no other. Not simply the

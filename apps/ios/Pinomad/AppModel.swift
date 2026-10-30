@@ -5,9 +5,10 @@ import PinomadChat
 import PinomadCore
 import UIKit
 
-/// The app's one session and its UI-facing state: which host it talks to
-/// (or which pairing link it is trying), how that ended, and everything the
-/// screens read off the newest snapshot.
+/// The app's composition root: every paired host's runtime, the one focused
+/// host/conversation, pairing and account flow, and the state the screens
+/// read through the focused runtime (ADR-0035). Connection state itself lives
+/// in `HostRuntime`, one per host.
 @MainActor @Observable
 final class AppModel {
     enum Phase: Equatable {
@@ -43,169 +44,208 @@ final class AppModel {
     }
 
     var phase: Phase = .loading
-    var lastError = ""
-    /// A paired handshake whose keychain write failed. Kept separately from
-    /// `lastError` so the failure page can show it beside the connection
-    /// failure instead of losing it with the list page.
-    private var pairingWarning = PairingWarningState()
-    var pairingSaveWarning: String? { pairingWarning.message }
+    private var globalFailure: ConnectFailure?
     /// Every paired host and which one opens on launch, as last read from
     /// the keychain.
     private(set) var hosts = StoredHosts()
-    /// The RTC coordinator's status for the live session, refreshed with
-    /// every snapshot. The detail page counts the cooldown down locally;
-    /// path/phase changes arrive with the next snapshot.
-    private(set) var rtcStatus: RtcDiagnostics?
+    /// The stored order plus the one focus. Kept beside the runtime objects
+    /// so the ordering and release rules are testable without a session.
+    private(set) var runtimeTable = HostRuntimeTable(hostKeys: [])
+    /// One runtime per paired host, keyed by hostKey.
+    private(set) var runtimes: [String: HostRuntime] = [:]
+    /// The user-started pairing handshake, if any. It is the only pairing
+    /// runtime that may own the screen; account registrations live in
+    /// `automaticPairingRuntimes` and never displace it.
+    var pairingRuntime: HostRuntime?
+    var pairingRegistry = PairingRuntimeRegistry()
+    /// Whether a manual pairing is what the screen shows.
+    private var pairingOwnsFocus: Bool { pairingRegistry.isManualActive }
+    /// Hosts whose pairing is live but whose keychain save failed. They stay
+    /// in the table until the next successful save or a forget.
+    var unsavedHostKeys: Set<String> = []
+    /// Account registrations that registered on the host but failed to save
+    /// locally, by hostId. The next refresh retries only the save (ADR-0035 §5).
+    var unsavedAccountHosts: [String: HostRecord] = [:]
+
+    /// A paired handshake whose keychain write failed. Kept separately from
+    /// `lastError` so the failure page can show it beside the connection
+    /// failure instead of losing it with the list page.
+    var pairingSaveWarning: String? { focusedRuntime?.pairingWarning.message }
+    /// The RTC coordinator's status for the focused session.
+    var rtcStatus: RtcDiagnostics? { focusedRuntime?.rtcStatus }
     /// When `rtcStatus` was read, so the page can count a cooldown down
     /// without asking the core on every tick.
-    private(set) var rtcStatusAt = Date()
+    var rtcStatusAt: Date { focusedRuntime?.rtcStatusAt ?? .distantPast }
     /// The host or pairing identity the connection is for. One value so a
     /// completed handshake consumes the one-time link before Retry reads it.
     private(set) var pairing = PairingAttempt()
-    /// The host the session is this device on — a stored host, or the one
-    /// a pairing just made (even if the keychain failed to keep it); nil
-    /// until a pairing's handshake completes.
-    var sessionHost: HostRecord? { pairing.host }
-    var currentHostKey: String? { sessionHost?.hostKey }
+    /// The host the focused session is this device on — a stored host, or the
+    /// one a pairing just made (even if the keychain failed to keep it).
+    var sessionHost: HostRecord? {
+        if pairingOwnsFocus { return pairing.host }
+        return focusedRuntime?.host
+    }
+    var currentHostKey: String? {
+        #if DEBUG
+        if devHostsInjected { return developmentRuntime?.hostKey ?? runtimeTable.focus?.hostKey }
+        #endif
+        if pairingOwnsFocus, pairing.host == nil { return nil }
+        return runtimeTable.focus?.hostKey ?? sessionHost?.hostKey
+    }
     /// The link the session is pairing with, until its handshake spends the
     /// one-time code (then retrying must reconnect, not pair again).
-    var pairingLink: String? { pairing.link }
+    var pairingLink: String? { pairingOwnsFocus ? pairing.link : nil }
     /// The account link a server-vouched pairing must carry into the saved
     /// host — kept beside the link so Retry doesn't lose it.
-    var pairingAccount: AccountLink? { pairing.account }
+    var pairingAccount: AccountLink? { pairingOwnsFocus ? pairing.account : nil }
     /// Where that link goes — names the host while pairing.
-    var pairingTarget: PairingTarget? { pairing.target }
+    var pairingTarget: PairingTarget? { pairingOwnsFocus ? pairing.target : nil }
     /// The host the device was on before the latest pairing, so a pairing
-    /// that fails after its handshake (which already made the new host the
-    /// launch one) still offers the way back. Cleared once a session is up.
+    /// that fails after its handshake still offers the way back.
     private(set) var hostBeforePairing: String?
     /// Bumped by each completed pairing handshake — the success haptic's
     /// trigger, which an ordinary reconnect never fires.
     private(set) var pairings = 0
-    /// The conversation on screen when the same host's session was rebuilt
-    /// — the new session has to be told to show it again once up.
-    private var reopenAfterReady: UInt64?
     var modal: Modal?
     private var nextModal: Modal?
-    /// The newest published view — the list and the open conversation
-    /// both read straight off it; nothing here re-derives its contents.
-    private(set) var snapshot: ClientSnapshot? {
-        didSet {
-            reconnectNotice.observe(reconnecting: snapshot?.connection == .reconnecting, at: .now)
-            refreshReconnectNotice()
-        }
-    }
-    /// "Connecting…" in the bar: on once a reconnect outlasts its grace
-    /// window, so the quick redial after a trip to the background shows nothing.
-    private(set) var showsReconnecting = false
-    private var reconnectNotice = ReconnectNotice()
-    private var reconnectNoticeDeadline: ContinuousClock.Instant?
-    private var reconnectNoticeTimer: Task<Void, Never>?
+    /// The newest published view for the focused host — the list and the
+    /// open conversation both read straight off it.
+    var snapshot: ClientSnapshot? { focusedRuntime?.snapshot }
+    /// "Connecting…" in the bar for the focused host.
+    var showsReconnecting: Bool { focusedRuntime?.showsReconnecting ?? false }
     /// NavigationStack path.
     var navPath: [Route] = []
-    /// Live answer streams, keyed by run entry id — the model side feeds
-    /// them per snapshot so view rows stay side-effect free (lazy rows
-    /// mutating their own @State kept iOS 27's layout unsettled; the
-    /// transcript rendered blank).
-    let replyStreams = ReplyStreams()
-    /// Unsent composer text per conversation — kept across navigation,
-    /// dropped with the session (a new host has other conversations).
-    var drafts: [UInt64: String] = [:]
-    /// The `$` menu picks bound in each draft (ADR-0028), read through
-    /// `chips(for:)`, which follows them onto the draft's current text.
-    var skillChips: [UInt64: SkillChips] = [:]
-    /// The new-conversation draft's home, checkout and model pick. Its text
-    /// and images live in `drafts` / `trays` under `draftKey`.
-    var draftHome: NewConversationHome = .chat
-    var draftCheckout: ConversationCheckout = .worktree
-    /// The draft's remembered pick, chosen agent and per-side overrides
-    /// (ADR-0023). Kept across navigation, reset when the host changes.
-    var draftAgent = AgentDraftPick()
-    /// A create is in flight — the draft page holds its send.
-    var creating = false
+    /// Live answer streams, one set per host. Reading through the focused
+    /// runtime means a non-focused host's snapshot can never feed them.
+    var replyStreams: ReplyStreams { focusedRuntime?.replyStreams ?? emptyReplyStreams }
+    private let emptyReplyStreams = ReplyStreams()
+    /// Unsent composer text per conversation on the focused host.
+    var drafts: [UInt64: String] {
+        get { focusedRuntime?.drafts ?? [:] }
+        set { focusedRuntime?.drafts = newValue }
+    }
+    var skillChips: [UInt64: SkillChips] {
+        get { focusedRuntime?.skillChips ?? [:] }
+        set { focusedRuntime?.skillChips = newValue }
+    }
+    /// The new-conversation draft's host-local state.
+    var draftHome: NewConversationHome {
+        get { focusedRuntime?.draftHome ?? .chat }
+        set { focusedRuntime?.draftHome = newValue }
+    }
+    var draftCheckout: ConversationCheckout {
+        get { focusedRuntime?.draftCheckout ?? .worktree }
+        set { focusedRuntime?.draftCheckout = newValue }
+    }
+    var draftAgent: AgentDraftPick {
+        get { focusedRuntime?.draftAgent ?? AgentDraftPick() }
+        set { focusedRuntime?.draftAgent = newValue }
+    }
+    var creating: Bool {
+        get { focusedRuntime?.creating ?? false }
+        set { focusedRuntime?.creating = newValue }
+    }
     /// Staged images per conversation, beside its draft text.
-    var trays: [UInt64: AttachmentTray] = [:]
-    /// Host-stored file uploads per conversation (issue #321). Kept beside
-    /// the images so a switch mid-upload neither loses nor redirects one.
-    var fileTrays: [UInt64: FileAttachmentTray] = [:]
-    /// Picks still being read off the main actor. A send waits for these,
-    /// exactly like an upload in progress. Tokens keep an old read from
-    /// clearing a newer one after a host switch.
-    var fileReads: [UInt64: Set<UUID>] = [:]
-    /// The queued-input Edit flow: the copy read before withdrawing, its
-    /// request phase, and the composer lock. Memory only; a host switch
-    /// drops it (an unresolved copy is retried after a same-host reconnect).
-    var queuedEdit = QueuedEdit()
-    /// Conversations whose queued copy is resolving ref images before any
-    /// withdraw starts. The composer stays locked meanwhile so a ref copy
-    /// cannot land over new typing.
-    var queuedEditPreparing: Set<UInt64> = []
-    /// Queued rows whose withdraw/steer request is in flight. An Edit's row
-    /// stays here until its outcome is known.
-    var queuePending: Set<UInt64> = []
-    /// Bumped per conversation when an Edit hands content back, so the open
-    /// composer can focus after the refill.
-    var queuedEditFocus: [UInt64: UInt64] = [:]
-    /// The conversation whose local send is being taken back right now.
-    var takingBack: UInt64?
-    /// Local sends with a retry or take-back request in flight; their row's
-    /// buttons stay disabled until it settles.
-    var submissionPending: Set<String> = []
-    /// The file chips each local send was made with, by request id. The host
-    /// only keeps ids, so this is what a local bubble and its take-back show.
-    var sentFileDetails: [String: [UserAttachment]] = [:]
-    /// Local toast ids descend from the top so they never collide with the
-    /// core's increasing notice ids.
-    var localToastID: UInt64 = .max
+    var trays: [UInt64: AttachmentTray] {
+        get { focusedRuntime?.trays ?? [:] }
+        set { focusedRuntime?.trays = newValue }
+    }
+    /// Host-stored file uploads per conversation (issue #321).
+    var fileTrays: [UInt64: FileAttachmentTray] {
+        get { focusedRuntime?.fileTrays ?? [:] }
+        set { focusedRuntime?.fileTrays = newValue }
+    }
+    var fileReads: [UInt64: Set<UUID>] {
+        get { focusedRuntime?.fileReads ?? [:] }
+        set { focusedRuntime?.fileReads = newValue }
+    }
+    var queuedEdit: QueuedEdit {
+        get { focusedRuntime?.queuedEdit ?? QueuedEdit() }
+        set { focusedRuntime?.queuedEdit = newValue }
+    }
+    var queuedEditPreparing: Set<UInt64> {
+        get { focusedRuntime?.queuedEditPreparing ?? [] }
+        set { focusedRuntime?.queuedEditPreparing = newValue }
+    }
+    var queuePending: Set<UInt64> {
+        get { focusedRuntime?.queuePending ?? [] }
+        set { focusedRuntime?.queuePending = newValue }
+    }
+    var queuedEditFocus: [UInt64: UInt64] {
+        get { focusedRuntime?.queuedEditFocus ?? [:] }
+        set { focusedRuntime?.queuedEditFocus = newValue }
+    }
+    var takingBack: UInt64? {
+        get { focusedRuntime?.takingBack }
+        set { focusedRuntime?.takingBack = newValue }
+    }
+    var submissionPending: Set<String> {
+        get { focusedRuntime?.submissionPending ?? [] }
+        set { focusedRuntime?.submissionPending = newValue }
+    }
+    var sentFileDetails: [String: [UserAttachment]] {
+        get { focusedRuntime?.sentFileDetails ?? [:] }
+        set { focusedRuntime?.sentFileDetails = newValue }
+    }
     /// The message image shown full screen, if any.
-    var viewing: MessageImage?
-    /// In-progress answers per pending question request id.
-    var questionDrafts: [String: QuestionDraft] = [:]
-    /// Bumped when the reader acts at the transcript's end (sends, starts
-    /// typing) — the transcript jumps back to its end on each change.
-    var transcriptPin = 0
+    var viewing: MessageImage? {
+        get { focusedRuntime?.viewing }
+        set { focusedRuntime?.viewing = newValue }
+    }
+    var questionDrafts: [String: QuestionDraft] {
+        get { focusedRuntime?.questionDrafts ?? [:] }
+        set { focusedRuntime?.questionDrafts = newValue }
+    }
+    /// Bumped when the reader acts at the transcript's end.
+    var transcriptPin: Int {
+        get { focusedRuntime?.transcriptPin ?? 0 }
+        set { focusedRuntime?.transcriptPin = newValue }
+    }
     /// Which conversation page's open settled without showing it.
-    var opening = ConversationOpening()
-    /// A sheet is up and shows the toasts itself — the root stack steps
-    /// aside so a notice isn't drawn twice.
+    var opening: ConversationOpening {
+        get { focusedRuntime?.opening ?? ConversationOpening() }
+        set { focusedRuntime?.opening = newValue }
+    }
+    /// A sheet is up and shows the toasts itself.
     var sheetShowsToasts = false
-    /// Notices currently shown as toasts, newest last.
+    /// Notices currently shown as toasts, newest last. They are collected
+    /// from every host, so a failure on a background host is still visible;
+    /// with more than one host paired the message names its source.
     var toasts: [Notice] = []
-    /// Which notices already toasted — one per session (ids restart).
-    private var noticeFeed = NoticeFeed()
+    private var nextToastID: UInt64 = .max
+    var lastError: String {
+        get { focusedRuntime?.lastError ?? globalError }
+        set {
+            if let runtime = focusedRuntime { runtime.lastError = newValue }
+            else { globalError = newValue }
+        }
+    }
+    private var globalError = ""
 
-    private(set) var session: PinomadSession?
-    /// The consumer of the current session's update stream. It keeps
-    /// draining after a timeout closes the session, so a just-queued
-    /// paired update lands before the failure page.
-    private var connectAttempt: ConnectAttempt?
-    /// Bumped when the session is replaced or stopped — a late update from
-    /// the old session must not land on the new one.
-    var sessionGeneration: UInt64 = 0
-    /// The `$` skill listings for this host session, one entry per scope
-    /// (issue #143). Reset when the host changes.
-    var skillCache = SkillListCache()
-    /// The `/` command listings for this host session, one entry per
-    /// conversation (issue #254). Reset when the host changes.
-    var commandCache = CommandListCache()
-    /// Scene state for a session that starts while the app is backgrounded
-    /// (an account pairing response can land then). The core owns the
-    /// candidate deadlines, so foregrounding only restarts a backoff.
+    /// The consumer of the focused session's update stream. Kept for the dev
+    /// seams and for the account/queue code that only needs the focused host.
+    var session: PinomadSession? { focusedRuntime?.session }
+    /// The `$` skill listings for the focused host.
+    var skillCache: SkillListCache {
+        get { focusedRuntime?.skillCache ?? SkillListCache() }
+        set { focusedRuntime?.skillCache = newValue }
+    }
+    /// The `/` command listings for the focused host.
+    var commandCache: CommandListCache {
+        get { focusedRuntime?.commandCache ?? CommandListCache() }
+        set { focusedRuntime?.commandCache = newValue }
+    }
+    /// Scene state for a session that starts while the app is backgrounded.
     private var isInBackground = UIApplication.shared.applicationState == .background
     let store = KeychainHostStore()
     /// Content-addressed image bytes for ref-mode conversations (ADR-0027).
-    /// UI-owned: fetches never enter the session's ordered state.
     let images = ImageStore()
-    /// Bumped when the shown conversation's ref subscription becomes fresh,
-    /// so a failed ref fetch retries on reconnect (AgentChatKit's inline
-    /// image epoch). A connected hello alone is not enough: the host may not
-    /// have rebuilt the conversation subscription yet.
-    var imageEpoch: UInt64 = 0
-    private var lastConversationFreshEpoch: UInt64 = 0
-    // Account state (ADR-0022). The token lives in the keychain and the
-    // in-memory record only; everything else here is view state.
+    /// Bumped when the focused conversation's ref subscription becomes fresh.
+    var imageEpoch: UInt64 { focusedRuntime?.imageEpoch ?? 0 }
+    // Account state (ADR-0022).
     let accountStore = KeychainAccountStore()
     let accountTransport: any AccountTransport = URLSessionAccountTransport()
+    let declinedAccountHosts = DeclinedAccountHosts()
     var accountRecord: AccountRecord?
     var accountRows: [AccountHostRow] = []
     var accountHostsError: String?
@@ -217,68 +257,110 @@ final class AppModel {
     var accountRefreshPending = false
     var accountPairingHostId: String?
     var accountPairingGeneration: UInt64 = 0
+    /// In-flight automatic registrations, by hostId, so a refresh re-entry
+    /// cannot start a second handshake for the same account host.
+    var accountRegistrationInFlight: Set<String> = []
+    /// Auto-registration runtimes by hostId, so sign-out or a forget can
+    /// really abandon a handshake that already started.
+    var automaticPairingRuntimes: [String: HostRuntime] = [:]
     var accountRejectedHostKeys: Set<String> = []
     /// Push switches, permission, APNs token, and the system callbacks.
     let push = PushCenter.shared
-    /// The host's reason the last token change failed, shown by the switch.
     var pushError: String?
-    /// A forgotten host whose push registration could not be cleared.
     var pushForgetWarning: String?
     var pendingPush: PushTarget?
     /// Set once the keychain answered — a cold-start tap must not be
     /// dropped as "unknown host" before the stored hosts are read.
     var hostsLoaded = false
-    var pushSyncInFlight = false
-    var pushSyncPending = false
-    /// Hosts whose pairing is being removed; no new token change may be
-    /// queued for them while the clearing request is in flight.
+    /// Push registration is serialized per host: one request in flight and at
+    /// most one queued behind it.
+    var pushSyncInFlight: Set<String> = []
+    var pushSyncPending: Set<String> = []
     var forgettingHosts: Set<String> = []
-    var lastSnapshotConnected = false
-    private let monitor = NetworkMonitor()
-    /// Marks each snapshot landing on the main actor — paired with the
-    /// session's `bytes`/`publish` events for the byte-to-UI latency.
+    let monitor = NetworkMonitor()
+    /// Marks each focused snapshot landing on the main actor.
     private let signposter = OSSignposter(subsystem: "build.kieran.pinomad", category: "delivery")
 
-    /// Dev-only launch channels, compiled out of Release. The logic lives in
-    /// `AppModel+DevLaunch.swift`; the few members here are internal because a
-    /// Swift extension in another file cannot reach `private` state.
+    /// Dev-only launch channels, compiled out of Release.
     #if DEBUG
-    /// Set by `-openConversation` / `PINOMAD_OPEN` — pushed once connected.
     var pendingOpen: UInt64?
-    /// Retries an injected pairing link while the phase is a failure.
     var pairRetryTask: Task<Void, Never>?
-    /// A demo's answer to `changes()` — a demo has no session to ask.
     var devChanges: ConversationChanges?
-    /// A file to attach after pairing, and whether to create the draft once
-    /// it finishes uploading — the simulator end-to-end seam.
     var pendingAttachFile: String?
     var pendingAttachSend = false
-    /// A text file submitted once the carrier is P2P — the device
-    /// end-to-end seam for a multi-record business frame.
     var pendingPromptFile: String?
-    /// Opens the current host's connection detail after the first view, so
-    /// a device run can screenshot the P2P status without a tap.
     var openHostDetailAfterReady = false
-    /// The agent demo opens the conversation's model sheet once the
-    /// composer is on screen, so a screenshot can show it without a host.
     var devShowsModelSheet = false
+    var devHostsInjected = false
+    private var developmentRuntime: HostRuntime?
 
-    /// Publish a demo snapshot through the slot the session normally fills;
-    /// the setter itself stays file-private.
-    func publishDevSnapshot(_ snapshot: ClientSnapshot) { self.snapshot = snapshot }
+    /// Publish a demo snapshot through the slot the focused runtime fills.
+    func publishDevSnapshot(_ snapshot: ClientSnapshot) {
+        if developmentRuntime == nil {
+            let host = sessionHost
+            let runtime = HostRuntime(
+                hostKey: host?.hostKey ?? "demo", host: host, isPairing: false)
+            developmentRuntime = runtime
+            runtime.onToast = { [weak self] runtime, notice in
+                self?.presentToast(runtime, notice: notice)
+            }
+            if runtimeTable.hostKeys.isEmpty, let key = runtime.hostKey {
+                runtimeTable = HostRuntimeTable(hostKeys: [key], rememberedHostKey: key)
+            }
+        }
+        developmentRuntime?.publishDevelopmentSnapshot(snapshot)
+        phase = .connected
+    }
 
     /// A demo host list stands in for the keychain's; switching and
     /// forgetting must then neither write the keychain nor dial anything.
-    var devHostsInjected = false
-
-    /// Stand a demo host list in for the keychain's, with `stored.active` as
-    /// the session's host. Nothing is written to the keychain.
     func useDevHosts(_ stored: StoredHosts) {
         devHostsInjected = true
         hosts = stored
-        if let active = stored.active { pairing.connect(active) }
+        runtimeTable = HostRuntimeTable(
+            hostKeys: stored.hosts.map(\.hostKey), rememberedHostKey: stored.activeHostKey)
+        if let active = stored.active {
+            pairing.connect(active)
+            let runtime = HostRuntime(hostKey: active.hostKey, host: active, isPairing: false)
+            runtime.onToast = { [weak self] runtime, notice in
+                self?.presentToast(runtime, notice: notice)
+            }
+            developmentRuntime = runtime
+        }
     }
     #endif
+
+    /// Every live runtime exactly once: the table, background account
+    /// registrations, and a manual pairing that has not joined the table yet.
+    /// A paired runtime is already in the table and must not get the event
+    /// twice.
+    private var runtimesForFanout: [HostRuntime] {
+        var all = Array(runtimes.values)
+        for runtime in automaticPairingRuntimes.values
+        where !all.contains(where: { $0 === runtime }) {
+            all.append(runtime)
+        }
+        if let pairingRuntime, !all.contains(where: { $0 === pairingRuntime }) {
+            all.append(pairingRuntime)
+        }
+        return all
+    }
+
+    /// The runtime the screen reads, or a pairing handshake that owns it.
+    var focusedRuntime: HostRuntime? {
+        if pairingOwnsFocus, let pairingRuntime { return pairingRuntime }
+        #if DEBUG
+        if devHostsInjected { return developmentRuntime }
+        #endif
+        if let key = runtimeTable.focus?.hostKey, let runtime = runtimes[key] {
+            return runtime
+        }
+        #if DEBUG
+        return developmentRuntime
+        #else
+        return nil
+        #endif
+    }
 
     func start() {
         push.onTarget = { [weak self] target in self?.receivePushTarget(target) }
@@ -288,85 +370,129 @@ final class AppModel {
             await self?.push.bootstrap()
             self?.syncPushToken()
         }
-        // The monitor runs for the app's lifetime; it only yields into
-        // whatever session exists at the moment.
+        // The monitor runs for the app's lifetime; every host's session gets
+        // each real path change.
         monitor.start { [weak self] in
-            Task { @MainActor in self?.session?.notifyNetworkChanged() }
+            Task { @MainActor in
+                guard let self else { return }
+                for runtime in self.runtimesForFanout {
+                    runtime.networkChanged()
+                }
+            }
         }
-        // Scripted launch channels exist only in Debug builds (see
-        // `AppModel+DevLaunch.swift`). One that takes over startup returns
-        // here; Release skips straight to the normal stored-host path.
         #if DEBUG
         if applyDevLaunch() { return }
         #endif
         loadAccount()
+        if accountSession != nil {
+            Task { [weak self] in await self?.accountRefreshHosts() }
+        }
         connectActive()
     }
 
     func didEnterForeground() {
         // Only a real return: Control Center or a banner goes through
         // .inactive and back without suspending anything.
-        if isInBackground {
-            reconnectNotice.restart(at: .now)
-            refreshReconnectNotice()
-        }
         isInBackground = false
-        session?.notifyForeground()
+        for runtime in runtimesForFanout { runtime.foregrounded() }
         Task { [weak self] in
             await self?.push.refreshAuthorization()
             self?.syncPushToken()
         }
+        if accountSession != nil {
+            Task { [weak self] in await self?.accountRefreshHosts() }
+        }
     }
+
     func didEnterBackground() {
         isInBackground = true
-        session?.notifyBackground()
+        for runtime in runtimesForFanout { runtime.backgrounded() }
     }
 
-    /// Show "Connecting…" if the grace window is over, else wake at its end.
-    /// Snapshots stream in while connected, so the timer is only replaced
-    /// when the deadline itself moves.
-    private func refreshReconnectNotice() {
-        let visible = reconnectNotice.isVisible(at: .now)
-        if showsReconnecting != visible { showsReconnecting = visible }
-        let deadline = visible ? nil : reconnectNotice.deadline
-        guard deadline != reconnectNoticeDeadline else { return }
-        reconnectNoticeDeadline = deadline
-        reconnectNoticeTimer?.cancel()
-        reconnectNoticeTimer = deadline.map { deadline in
-            Task { [weak self] in
-                guard (try? await Task.sleep(until: deadline, clock: .continuous)) != nil else { return }
-                self?.refreshReconnectNotice()
-            }
-        }
-    }
+    // MARK: - Focus and navigation
 
-    /// Show and talk to a conversation — command-class, so a refused
-    /// switch surfaces as a snapshot notice, not a thrown error. Its page
-    /// loads meanwhile; whether the switch landed is read once it settles,
-    /// so a refused one stops loading (`opening.failed`). A disconnect
-    /// doesn't settle it: the core keeps waiting for the snapshot across the
-    /// reconnect, so the page stays on its skeleton (the bar says
-    /// "Connecting…" after its grace period) and loads once the host is back.
+    /// Show and talk to a conversation on the focused host.
     func openConversation(_ id: UInt64) {
-        let attempt = opening.begin(id)
-        Task { [weak self] in
-            guard let session = self?.session else {
-                self?.opening.settle(id, attempt: attempt, shown: nil)
-                return
+        guard let hostKey = runtimeTable.focus?.hostKey else { return }
+        openConversation(ConversationRef(hostKey: hostKey, conversationId: id))
+    }
+
+    /// Show a conversation, moving the one focus. The previous host releases
+    /// its conversation subscription but keeps its connection (ADR-0035 §2).
+    func openConversation(_ ref: ConversationRef) {
+        guard let runtime = runtime(for: ref.hostKey) else { return }
+        if runtimeTable.focus != HostFocus(hostKey: ref.hostKey, conversationId: ref.conversationId) {
+            let released = runtimeTable.focusConversation(ref)
+            if let released { runtimes[released.hostKey]?.clearConversation() }
+            persistFocus(ref.hostKey)
+            syncPhase()
+        }
+        runtime.openConversation(ref.conversationId)
+        updatePushVisibility()
+    }
+
+    /// Keep focus on what the stack actually shows: a conversation page owns
+    /// the ref, every other page shows the host's draft and releases the
+    /// conversation subscription. This is what makes the push banner rule
+    /// depend on the visible conversation, not on the app being foregrounded.
+    func navigationChanged() {
+        guard !pairingOwnsFocus, let hostKey = runtimeTable.focus?.hostKey else { return }
+        if case .conversation(let ref)? = navPath.last {
+            if ref.hostKey == hostKey, runtimeTable.focus != HostFocus(
+                hostKey: ref.hostKey, conversationId: ref.conversationId) {
+                let released = runtimeTable.focusConversation(ref)
+                if let released { runtimes[released.hostKey]?.clearConversation() }
+                persistFocus(ref.hostKey)
+                syncPhase()
             }
-            _ = try? await session.invoke(.switchConversation(id: id))
-            let shown = await Task.detached { session.shownConversationNow }.value
-            self?.opening.settle(id, attempt: attempt, shown: shown)
+            updatePushVisibility()
+            return
+        }
+        let released = runtimeTable.focusDraft(on: hostKey)
+        if let released { runtimes[released.hostKey]?.clearConversation() }
+        updatePushVisibility()
+    }
+
+    /// Move focus to a host's draft. It never reconnects another host and
+    /// never rebuilds a session (issue #428 §8).
+    func focus(on hostKey: String) {
+        guard runtimeTable.contains(hostKey) else { return }
+        if runtimeTable.focus?.hostKey != hostKey {
+            let released = runtimeTable.focusDraft(on: hostKey)
+            if let released { runtimes[released.hostKey]?.clearConversation() }
+            navPath = []
+            persistFocus(hostKey)
+            syncPhase()
+        }
+        if runtimes[hostKey] == nil, let host = hosts.hosts.first(where: { $0.hostKey == hostKey }) {
+            ensureRuntime(host)
+        }
+        updatePushVisibility()
+    }
+
+    private func persistFocus(_ hostKey: String) {
+        do {
+            try store.update { stored in
+                stored = stored.activating(hostKey)
+            }
+            hosts = hosts.activating(hostKey)
+        } catch {
+            lastError = "Couldn't save the selected host (\(describe(error))). The previous host opens after the app restarts."
         }
     }
 
-    /// Start a session pairing with `link` — replaces whatever session ran.
-    /// `account` is set only for a server-vouched pairing; it rides into the
-    /// saved host record.
+    // MARK: - Pairing and connection
+
+    /// Start a session pairing with `link`. `focus` is false for an
+    /// account-vouched automatic registration, which must not move the screen.
     @discardableResult
-    func pair(link: String, account: AccountLink? = nil) -> Bool {
-        // A QR/pasted pairing starts a new target; an in-flight account ask
-        // for another host must not land after it.
+    func pair(link: String, account: AccountLink? = nil, focus: Bool = true) -> Bool {
+        beginPairing(link: link, account: account, focus: focus, autoRegisterHostId: nil) != nil
+    }
+
+    func beginPairing(
+        link: String, account: AccountLink?, focus: Bool, autoRegisterHostId: String?
+    ) -> HostRuntime? {
         if account == nil { invalidateAccountPairing() }
         do {
             let previous = currentHostKey ?? hosts.active?.hostKey
@@ -374,108 +500,582 @@ final class AppModel {
                 link: link,
                 deviceName: DeviceModelName.currentDisplayName(fallback: UIDevice.current.model),
                 account: account)
-            adopt(session, sameHost: false)
-            hostBeforePairing = hostBeforePairing ?? previous
-            pairing.pair(
-                link: link, account: account,
-                target: PinomadCore.pairingTarget(link: link))
-            return true
+            let runtime = HostRuntime(hostKey: nil, host: nil, isPairing: true)
+            runtime.autoRegisterHostId = autoRegisterHostId
+            configure(runtime)
+            runtime.attach(session, sameHost: false)
+            if focus {
+                closePairingRuntime()
+                pairingRuntime = runtime
+                pairingRegistry.start(.manual)
+                pairing.pair(
+                    link: link, account: account,
+                    target: PinomadCore.pairingTarget(link: link))
+                hostBeforePairing = hostBeforePairing ?? previous
+                syncPhase()
+            } else if let autoRegisterHostId {
+                // Background registrations are tracked apart from the manual
+                // pairing slot so they can never take or replace the screen.
+                pairingRegistry.start(.automatic(hostId: autoRegisterHostId))
+                automaticPairingRuntimes[autoRegisterHostId] = runtime
+            } else {
+                runtime.close()
+                return nil
+            }
+            return runtime
         } catch {
-            // Links reach here through `offerPairing`, which already parsed
-            // them — this is the core refusing to build the session.
-            fail(.unreachable(describe(error)))
-            return false
+            // A background registration must not replace the screen with a
+            // failure page; the next account refresh can try again.
+            if autoRegisterHostId == nil {
+                fail(.unreachable(describe(error)))
+            }
+            return nil
         }
     }
 
-    /// Start a session for a stored host.
+    /// Start a session for a stored host and show it.
     func connect(_ host: HostRecord) {
         invalidateAccountPairing()
-        do {
-            let session = try PinomadSession.connect(host: host)
-            adopt(session, sameHost: host.hostKey == currentHostKey)
-            pairing.connect(host)
-        } catch {
-            fail(.unreachable(describe(error)))
-        }
+        ensureRuntime(host)
+        focus(on: host.hostKey)
     }
 
-    /// Re-read the keychain and connect to the launch host, or wait for a
-    /// link when there is none.
+    /// Re-read the keychain and connect every stored host, restoring the
+    /// remembered focus. Existing runtimes are kept (cancel pairing, returning
+    /// from a forgotten host), only missing ones are built.
     func connectActive() {
         invalidateAccountPairing()
         do {
             hosts = try store.load()
             hostsLoaded = true
+            globalFailure = nil
         } catch {
-            closeSession()
+            closeAllRuntimes()
             fail(.unreachable("Couldn't read the saved pairings: \(describe(error))"))
             return
         }
-        if let host = hosts.active {
-            connect(host)
-        } else {
-            closeSession()
+        if hosts.hosts.isEmpty && unsavedHostKeys.isEmpty {
+            closeAllRuntimes()
             phase = .pairing
-            // As in `fail`: the pairing page replaces the list, and pages
-            // pushed over it (Settings, after forgetting the last host)
-            // would lose their destination.
             navPath = []
+            advancePushTarget()
+            return
         }
+        synchronizeRuntimes(rememberedHostKey: hosts.activeHostKey)
+        syncPhase()
         advancePushTarget()
     }
 
-    /// Refresh `hosts` from the keychain; a failed read keeps the last
-    /// good list (connecting reports it, see `connectActive`).
+    /// Refresh `hosts` from the keychain; a failed read keeps the last good
+    /// list (connecting reports it, see `connectActive`).
     func reloadHosts() {
-        if let stored = try? store.load() {
-            hosts = stored
-            hostsLoaded = true
+        guard let stored = try? store.load() else { return }
+        hosts = stored
+        hostsLoaded = true
+        synchronizeRuntimes(rememberedHostKey: stored.activeHostKey)
+        syncPhase()
+        advancePushTarget()
+    }
+
+    /// Bring the runtime table in line with the keychain: update records,
+    /// build/connect missing hosts, close forgotten ones, and keep the focus
+    /// on a host that still exists.
+    private func synchronizeRuntimes(rememberedHostKey: String?) {
+        var keys = hosts.hosts.map(\.hostKey)
+        keys.append(contentsOf: unsavedHostKeys.filter { !keys.contains($0) })
+        for key in runtimes.keys.filter({ !keys.contains($0) }) {
+            runtimes.removeValue(forKey: key)?.close()
+        }
+        for host in hosts.hosts {
+            if let runtime = runtimes[host.hostKey] {
+                runtime.updateHost(host)
+                if runtime.session == nil { startSession(runtime, host: host) }
+            } else {
+                ensureRuntime(host)
+            }
+        }
+        for key in unsavedHostKeys {
+            if let runtime = runtimes[key] {
+                if runtime.session == nil, let host = runtime.host {
+                    startSession(runtime, host: host)
+                }
+            } else if let host = hosts.hosts.first(where: { $0.hostKey == key }) {
+                ensureRuntime(host)
+            }
+        }
+        if runtimeTable.hostKeys.isEmpty {
+            runtimeTable = HostRuntimeTable(
+                hostKeys: keys, rememberedHostKey: rememberedHostKey)
+        } else {
+            let released = runtimeTable.synchronize(keys)
+            if let released { runtimes[released.hostKey]?.clearConversation() }
         }
     }
 
-    /// The RTC status is only meaningful for the host this session is for;
-    /// a stale value from the previous host would label its rows wrongly.
-    private func refreshRtcStatus() {
-        guard let session, let key = sessionHost?.hostKey,
-              hosts.hosts.contains(where: { $0.hostKey == key }) || currentHostKey == key
-        else {
-            rtcStatus = nil
+    @discardableResult
+    private func ensureRuntime(_ host: HostRecord) -> HostRuntime {
+        if let runtime = runtimes[host.hostKey] {
+            runtime.updateHost(host)
+            if runtime.session == nil { startSession(runtime, host: host) }
+            return runtime
+        }
+        let runtime = HostRuntime(hostKey: host.hostKey, host: host, isPairing: false)
+        configure(runtime)
+        runtimes[host.hostKey] = runtime
+        startSession(runtime, host: host)
+        return runtime
+    }
+
+    private func startSession(_ runtime: HostRuntime, host: HostRecord) {
+        do {
+            let session = try PinomadSession.connect(host: host)
+            // A rebuilt session for the same identity keeps the reader's
+            // drafts and page; a fresh runtime starts clean.
+            runtime.attach(session, sameHost: runtime.generation > 0)
+        } catch {
+            runtime.fail(.unreachable(describe(error)))
+        }
+    }
+
+    /// Retry this identity: stop its session and build a fresh one. Only the
+    /// focused runtime is rebuilt.
+    private func restart(_ runtime: HostRuntime) {
+        guard let host = runtime.host else { return }
+        if case .conversation(let ref) = navPath.last, ref.hostKey == host.hostKey {
+            runtime.reopenAfterReady = ref.conversationId
+        }
+        runtime.close()
+        startSession(runtime, host: host)
+        syncPhase()
+    }
+
+    /// The host to offer going back to from a failure page.
+    var previousHostKey: String? {
+        guard let key = hostBeforePairing, key != currentHostKey,
+              hosts.hosts.contains(where: { $0.hostKey == key })
+        else { return nil }
+        return key
+    }
+
+    /// Try again on the focused host — a pairing link, else a fresh session.
+    func retryConnection() {
+        switch pairing.retry {
+        case .link(let link, let account):
+            pair(link: link, account: account)
+        case .host(let host):
+            if let runtime = runtimes[host.hostKey] {
+                restart(runtime)
+            } else {
+                ensureRuntime(host)
+            }
+        case .active:
+            if let runtime = focusedRuntime, !runtime.isPairing, runtime.host != nil {
+                restart(runtime)
+            } else {
+                connectActive()
+            }
+        }
+    }
+
+    /// Cancel a pairing whose handshake has not completed; a completed one
+    /// keeps the stored host and only loses the pair page.
+    func cancelPairing() {
+        if let runtime = pairingRuntime {
+            if let key = runtime.hostKey, !hosts.hosts.contains(where: { $0.hostKey == key }) {
+                runtime.close()
+                runtimes.removeValue(forKey: key)
+                unsavedHostKeys.remove(key)
+            } else if runtime.session == nil {
+                runtime.close()
+            }
+        }
+        pairingRuntime = nil
+        pairingRegistry.finish(.manual)
+        pairing.clear()
+        hostBeforePairing = nil
+        connectActive()
+    }
+
+    /// Stop tracking the old pairing session without touching a host that
+    /// already joined the table: starting a new pairing must not close any
+    /// established host's connection (ADR-0035 §2).
+    private func closePairingRuntime() {
+        if let runtime = pairingRuntime {
+            let stored = runtime.hostKey.map { key in
+                hosts.hosts.contains(where: { $0.hostKey == key })
+            } ?? false
+            if !stored {
+                runtime.close()
+                if let key = runtime.hostKey {
+                    runtimes.removeValue(forKey: key)
+                    unsavedHostKeys.remove(key)
+                }
+            }
+        }
+        pairingRuntime = nil
+        pairingRegistry.finish(.manual)
+    }
+
+    private func closeAllRuntimes() {
+        for runtime in runtimes.values { runtime.close() }
+        runtimes.removeAll()
+        for runtime in automaticPairingRuntimes.values { runtime.close() }
+        automaticPairingRuntimes.removeAll()
+        accountRegistrationInFlight.removeAll()
+        pairingRuntime?.close()
+        pairingRuntime = nil
+        pairingRegistry = PairingRuntimeRegistry()
+        runtimeTable = HostRuntimeTable(hostKeys: [])
+        unsavedHostKeys.removeAll()
+    }
+
+    /// Forget one host: close only its runtime, clear its push registration,
+    /// and remember the decline if it was an account host (ADR-0035 §5).
+    func forget(_ hostKey: String) {
+        #if DEBUG
+        if devHostsInjected {
+            showToast("Demo data: hosts aren't forgotten.")
             return
         }
-        setRtcStatus(session.rtcDiagnostics())
-    }
-
-    /// Re-read the RTC status while its detail page is visible. The core
-    /// publishes snapshots for view changes; RTC phases move on timers and
-    /// datagrams that need not change the view, so the page polls this
-    /// cheap lock read once a second.
-    func refreshLiveRtcStatus() {
-        guard phase == .connected, let session, let key = sessionHost?.hostKey,
-              key == currentHostKey
-        else { return }
-        setRtcStatus(session.rtcDiagnostics())
-    }
-
-    /// The poll re-reads the same core value until the next core clock tick.
-    /// A changed value starts a new local baseline for the cooldown and the
-    /// failure age; resetting every second would double-count elapsed time
-    /// once the core clock advances.
-    private func setRtcStatus(_ next: RtcDiagnostics) {
-        let previous = rtcStatus
-        rtcStatus = next
-        if previous == nil
-            || previous?.phase != next.phase
-            || previous?.path != next.path
-            || previous?.cooldownRemainingMs != next.cooldownRemainingMs
-            || previous?.lastFailure != next.lastFailure
-        {
-            rtcStatusAt = Date()
+        #endif
+        let record = hostRecord(for: hostKey)
+        let plan = pushForgetPlan(
+            mayHaveRegistration: push.mayHaveRegistration(for: hostKey),
+            canClear: canClearPushRegistration(for: hostKey))
+        forgettingHosts.insert(hostKey)
+        Task { [weak self] in
+            guard let self else { return }
+            var warning: String?
+            switch plan {
+            case .forget:
+                break
+            case .forgetWithWarning:
+                warning = "Forgot this host. It may still have this device registered for notifications; revoke this device on the host's Devices page to stop them."
+            case .clearThenForget:
+                do {
+                    guard let session = self.runtimes[hostKey]?.session else {
+                        throw SessionError.sessionClosed
+                    }
+                    try await self.clearPushRegistration(on: session)
+                    self.push.setMayHaveRegistration(false, for: hostKey)
+                } catch is PushUnregisterTimeout {
+                    warning = "Forgot this host, but the host timed out clearing notifications. Revoke this device on the host's Devices page to stop them."
+                } catch {
+                    warning = "Forgot this host, but couldn't clear notifications (\(self.describe(error))). Revoke this device on the host's Devices page to stop them."
+                }
+            }
+            self.forgetNow(hostKey, record: record, warning: warning)
         }
     }
 
-    /// "Connected · P2P" / "Relay" / "Direct" / "Local" for the live host's
-    /// row; nil when nothing is connected.
+    private func canClearPushRegistration(for hostKey: String) -> Bool {
+        guard let runtime = runtimes[hostKey] else { return false }
+        return runtime.isConnectedNow && hostSupportsCall(
+            hostMinor: runtime.hostMinor, method: "setPushToken")
+    }
+
+    /// The clear is bounded: a black-holed connection must not keep the
+    /// pairing on the device forever.
+    private func clearPushRegistration(on session: PinomadSession) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                _ = try await session.invoke(.setPushToken(token: nil))
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(5))
+                throw PushUnregisterTimeout()
+            }
+            defer { group.cancelAll() }
+            _ = try await group.next()
+        }
+    }
+
+    private func forgetNow(_ hostKey: String, record: HostRecord?, warning: String?) {
+        forgettingHosts.remove(hostKey)
+        // Cancelling in-flight registrations for this identity is part of
+        // forgetting it; a late handshake must not resurrect it.
+        accountPairingGeneration &+= 1
+        if let account = record?.account {
+            accountRegistrationInFlight.remove(account.hostId)
+            unsavedAccountHosts.removeValue(forKey: account.hostId)
+            pairingRegistry.finish(.automatic(hostId: account.hostId))
+            if let runtime = automaticPairingRuntimes.removeValue(forKey: account.hostId) {
+                runtime.close()
+            }
+        }
+        do {
+            try store.update { $0 = $0.forgetting(hostKey) }
+        } catch {
+            lastError = "Couldn't forget this host: \(describe(error))"
+            return
+        }
+        if let account = record?.account {
+            declinedAccountHosts.add(serverOrigin: account.serverOrigin, hostId: account.hostId)
+        }
+        push.forget(hostKey)
+        accountHostForgotten(hostKey)
+        runtimes.removeValue(forKey: hostKey)?.close()
+        unsavedHostKeys.remove(hostKey)
+        let wasFocused = runtimeTable.focus?.hostKey == hostKey
+        let released = runtimeTable.forget(hostKey)
+        if let released { runtimes[released.hostKey]?.clearConversation() }
+        if wasFocused { navPath = [] }
+        reloadHosts()
+        if runtimeTable.hostKeys.isEmpty && !pairingOwnsFocus {
+            phase = .pairing
+        }
+        if let warning { pushForgetWarning = warning }
+        updatePushVisibility()
+        advancePushTarget()
+    }
+
+    func setConnectionMode(_ mode: HostConnectionMode, for hostKey: String) {
+        do {
+            try store.update { stored in
+                if let next = stored.settingConnectionMode(mode, for: hostKey) {
+                    stored = next
+                }
+            }
+        } catch {
+            lastError = "Couldn't save this host's connection mode (\(describe(error)))."
+            return
+        }
+        reloadHosts()
+        guard let runtime = runtimes[hostKey], let host = hostRecord(for: hostKey) else { return }
+        runtime.updateHost(host)
+        restart(runtime)
+    }
+
+    func connectionMode(for hostKey: String) -> HostConnectionMode {
+        hostRecord(for: hostKey)?.connectionMode ?? .auto
+    }
+
+    func hostRecord(for hostKey: String) -> HostRecord? {
+        hosts.hosts.first { $0.hostKey == hostKey }
+            ?? runtimes[hostKey]?.host
+            ?? (sessionHost?.hostKey == hostKey ? sessionHost : nil)
+    }
+
+    func fail(_ failure: ConnectFailure) {
+        globalFailure = failure
+        phase = .failed(failure)
+        navPath = []
+        push.visibleConversation = nil
+    }
+
+    // MARK: - Snapshot and lifecycle wiring
+
+    private func configure(_ runtime: HostRuntime) {
+        runtime.onReady = { [weak self] runtime in
+            guard let self else { return }
+            if runtime === self.focusedRuntime { self.syncPhase() }
+            self.syncPushToken(for: runtime)
+            self.advancePushTarget()
+        }
+        runtime.onSnapshot = { [weak self] runtime, snapshot in
+            guard let self else { return }
+            self.receivedSnapshot(runtime, snapshot: snapshot)
+        }
+        runtime.onPaired = { [weak self] runtime, host, saveError in
+            guard let self else { return }
+            self.paired(runtime, host: host, saveError: saveError)
+        }
+        runtime.onEndpoints = { [weak self] runtime, host, _ in
+            guard let self else { return }
+            self.applyEndpointPatch(host, from: runtime)
+        }
+        runtime.onFailure = { [weak self] runtime, failure in
+            guard let self else { return }
+            if runtime === self.focusedRuntime { self.syncPhase() }
+            self.handleRegistrationFailure(runtime, failure: failure)
+        }
+        runtime.onUnauthorized = { [weak self] runtime, host in
+            guard let self else { return }
+            self.markAccountRejected(host)
+        }
+        runtime.onHostName = { [weak self] hostKey, name in
+            self?.cacheHostName(name, for: hostKey)
+        }
+        runtime.onConnectedEdge = { [weak self] runtime in
+            self?.syncPushToken(for: runtime)
+        }
+        runtime.onConnectedView = { [weak self] runtime in
+            self?.retryQueuedEditIfNeeded(for: runtime)
+        }
+        runtime.onToast = { [weak self] runtime, notice in
+            self?.presentToast(runtime, notice: notice)
+        }
+    }
+
+    private func receivedSnapshot(_ runtime: HostRuntime, snapshot: ClientSnapshot) {
+        let isFocused = runtime === focusedRuntime
+        // Release is driven by the runtime's own snapshot, not only by the
+        // navigation edge: a conversation created after focus moved away, or
+        // one restored by a reconnect, would otherwise keep a subscription
+        // nobody shows. A focused host that is still opening its target is
+        // left alone (its snapshot may legitimately show the old one).
+        if shouldReleaseConversation(
+            isFocused: isFocused,
+            focusedConversationId: isFocused ? runtimeTable.focus?.conversationId : nil,
+            shownConversationId: snapshot.conversation?.id,
+            sideConversationId: nil,
+            isConnected: runtime.isConnectedNow,
+            isCreatingConversation: isFocused && runtime.creating) {
+            runtime.clearConversation()
+        }
+        guard isFocused else { return }
+        syncPhase()
+        updatePushVisibility()
+        signposter.emitEvent(
+            "ui-publish",
+            "\(runtime.hostKey.map { String($0.suffix(8)) } ?? "-", privacy: .public)")
+        PerfLog.shared.mark("ui-publish", version: snapshot.version, host: runtime.hostKey)
+        if let conversation = snapshot.conversation {
+            PerfLog.shared.mark(
+                "conv-\(conversation.id)-\(conversation.chat.count)", host: runtime.hostKey)
+        }
+        PerfLog.shared.flush()
+        advancePushTarget()
+    }
+
+    private func syncPhase() {
+        if let globalFailure {
+            phase = .failed(globalFailure)
+            return
+        }
+        if pairingOwnsFocus, let pairingRuntime {
+            phase = appPhase(pairingRuntime.phase)
+            return
+        }
+        guard let runtime = focusedRuntime else {
+            phase = hostsLoaded && hosts.hosts.isEmpty ? .pairing : .loading
+            return
+        }
+        phase = appPhase(runtime.phase)
+    }
+
+    private func appPhase(_ phase: HostRuntime.Phase) -> Phase {
+        switch phase {
+        case .connecting: .connecting
+        case .connected: .connected
+        case .failed(let failure): .failed(failure)
+        }
+    }
+
+    private func paired(_ runtime: HostRuntime, host: HostRecord, saveError: String?) {
+        runtime.identify(host)
+        runtimes[host.hostKey] = runtime
+        accountRejectedHostKeys.remove(host.hostKey)
+        if let autoHostId = runtime.autoRegisterHostId {
+            runtime.autoRegisterHostId = nil
+            pairingRegistry.finish(.automatic(hostId: autoHostId))
+            automaticPairingRuntimes.removeValue(forKey: autoHostId)
+            accountRegistrationInFlight.remove(autoHostId)
+            // A forget or explicit decline during the handshake wins over the
+            // late registration (ADR-0035 §5).
+            if let account = host.account,
+               declinedAccountHosts.contains(
+                serverOrigin: account.serverOrigin, hostId: account.hostId) {
+                accountRegistrationInFlight.remove(autoHostId)
+                runtime.close()
+                runtimes.removeValue(forKey: host.hostKey)
+                return
+            }
+            if saveError != nil {
+                // The host registered this device; only the local write
+                // failed. Keep the identity for a save-only retry and close
+                // the live connection so it is not an invisible extra host.
+                unsavedAccountHosts[autoHostId] = host
+                runtime.close()
+                runtimes.removeValue(forKey: host.hostKey)
+            } else {
+                runtimeTable.addPairedHost(host.hostKey, focus: false)
+                // The core marks every newly saved pairing as the launch
+                // host; an automatic one must not steal the remembered focus.
+                if let focusKey = runtimeTable.focus?.hostKey {
+                    try? store.update { $0 = $0.activating(focusKey) }
+                }
+                reloadHosts()
+            }
+            accountRefreshAfterPairing()
+            return
+        }
+
+        pairing.paired(host)
+        pairingRegistry.finish(.manual)
+        if saveError != nil { unsavedHostKeys.insert(host.hostKey) }
+        let released = runtimeTable.addPairedHost(host.hostKey, focus: true)
+        if let released { runtimes[released.hostKey]?.clearConversation() }
+        navPath = []
+        pairings += 1
+        reloadHosts()
+        syncPhase()
+        accountRefreshAfterPairing()
+        advancePushTarget()
+    }
+
+    /// An account registration that never named its host has no table entry;
+    /// drop it and let the next refresh decide again.
+    private func handleRegistrationFailure(_ runtime: HostRuntime, failure: ConnectFailure) {
+        guard let hostId = runtime.autoRegisterHostId else { return }
+        accountRegistrationInFlight.remove(hostId)
+        pairingRegistry.finish(.automatic(hostId: hostId))
+        automaticPairingRuntimes.removeValue(forKey: hostId)
+        runtime.close()
+    }
+
+    private func applyEndpointPatch(_ patch: HostRecord, from runtime: HostRuntime) {
+        if pairingOwnsFocus, pairing.host?.hostKey == patch.hostKey {
+            pairing.endpoints(patch)
+        }
+        guard let set = patch.endpointSet,
+              let next = hosts.settingEndpoints(set, url: patch.url, for: patch.hostKey)
+        else { return }
+        hosts = next
+        runtime.updateHost(patch)
+    }
+
+    func streamFor(_ entryId: String) -> StreamingMarkdown? {
+        focusedRuntime?.replyStreams.stream(for: entryId)
+    }
+
+    func dismissToast(_ id: UInt64) {
+        toasts.removeAll { $0.id == id }
+    }
+
+    func showToast(_ message: String, level: String = "info") {
+        guard let runtime = focusedRuntime else { return }
+        presentToast(runtime, notice: Notice(id: 0, level: level, message: message))
+    }
+
+    /// One toast stack for all hosts. Ids are renumbered here: core notice
+    /// ids restart per session and would collide across hosts. The source
+    /// machine is named only when there is more than one to tell apart.
+    private func presentToast(_ runtime: HostRuntime, notice: Notice) {
+        nextToastID &-= 1
+        var message = notice.message
+        if hosts.hosts.count > 1, let hostKey = runtime.hostKey, let label = hostLabels[hostKey] {
+            message = "\(label): \(message)"
+        }
+        let toast = Notice(id: nextToastID, level: notice.level, message: message)
+        toasts.append(toast)
+        if toasts.count > 3 { toasts.removeFirst(toasts.count - 3) }
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            self?.dismissToast(toast.id)
+        }
+    }
+
+    func refreshRtcStatus() {
+        focusedRuntime?.refreshRtcStatus()
+    }
+
+    func refreshLiveRtcStatus() {
+        focusedRuntime?.refreshLiveRtcStatus()
+    }
+
+    /// "Connected · P2P" / "Relay" / "Direct" / "Local" for the focused
+    /// host; nil when nothing is connected.
     var connectedSummary: String? {
         guard phase == .connected, let snapshot, snapshot.connection == .connected,
               !snapshot.unauthorized
@@ -490,48 +1090,22 @@ final class AppModel {
         return "Connected · \(path)"
     }
 
-    /// One paired host by key, including the unsaved pairing target.
-    func hostRecord(for hostKey: String) -> HostRecord? {
-        hosts.hosts.first { $0.hostKey == hostKey }
-            ?? sessionHost.flatMap { $0.hostKey == hostKey ? $0 : nil }
+    /// Whether one host's runtime is connected, for per-host status rows.
+    func isConnected(_ hostKey: String) -> Bool {
+        runtimes[hostKey]?.isConnectedNow ?? false
     }
 
-    func connectionMode(for hostKey: String) -> HostConnectionMode {
-        hostRecord(for: hostKey)?.connectionMode ?? .auto
+    /// One host's live RTC status, for its own connection page.
+    func rtcStatus(for hostKey: String) -> RtcDiagnostics? {
+        runtimes[hostKey]?.rtcStatus
     }
 
-    /// Persist the mode choice first, then rebuild the session when this is
-    /// the host on screen — the coordinator's mode is fixed at construction,
-    /// so an in-place switch would keep the old candidates.
-    func setConnectionMode(_ mode: HostConnectionMode, for hostKey: String) {
-        do {
-            try store.update { stored in
-                if let next = stored.settingConnectionMode(mode, for: hostKey) {
-                    stored = next
-                }
-            }
-        } catch {
-            lastError = "Couldn't save this host's connection mode (\(describe(error)))."
-            return
-        }
-        reloadHosts()
-        guard hostKey == currentHostKey else { return }
-        // A pairing whose keychain save failed is live but absent from the
-        // store; the choice still has to apply to this session, not be
-        // silently ignored.
-        pairing.connectionMode(mode, for: hostKey)
-        guard let host = hostRecord(for: hostKey) else { return }
-        connect(host)
+    func rtcStatusAt(for hostKey: String) -> Date {
+        runtimes[hostKey]?.rtcStatusAt ?? .distantPast
     }
 
-    func fail(_ failure: ConnectFailure) {
-        phase = .failed(failure)
-        rtcStatus = nil
-        push.currentConnectedHostKey = nil
-        lastSnapshotConnected = false
-        // The failure screen replaces the list; pages pushed over it
-        // would keep showing a session that is gone.
-        navPath = []
+    func refreshLiveRtcStatus(for hostKey: String) {
+        runtimes[hostKey]?.refreshLiveRtcStatus()
     }
 
     /// Present `next`, after the current sheet (if any) has gone.
@@ -544,219 +1118,15 @@ final class AppModel {
         }
     }
 
-    /// The root sheet's onDismiss — shows whatever was waiting for it.
     func modalDismissed() {
         guard let next = nextModal else { return }
         nextModal = nil
         modal = next
     }
 
-    private func closeSession() {
-        stopSession()
-        pairing.clear()
+    private func runtime(for hostKey: String) -> HostRuntime? {
+        if let runtime = runtimes[hostKey] { return runtime }
+        guard let host = hosts.hosts.first(where: { $0.hostKey == hostKey }) else { return nil }
+        return ensureRuntime(host)
     }
-
-    /// Drop the live session but leave the host/pairing identity in place —
-    /// the timeout failure page still needs the target for Retry, Cancel
-    /// and "back to the previous host".
-    private func stopSession() {
-        sessionGeneration &+= 1
-        connectAttempt?.stop()
-        connectAttempt = nil
-        session?.close()
-        session = nil
-        snapshot = nil
-        push.currentConnectedHostKey = nil
-        lastSnapshotConnected = false
-        lastConversationFreshEpoch = 0
-    }
-
-    /// Take over `session`. `sameHost` is a rebuilt session for the host
-    /// already on screen (Retry, Reconnect): the reader's unsent work and
-    /// place stay. Anything else is another host, whose conversations
-    /// those drafts and pages don't belong to.
-    private func adopt(_ session: PinomadSession, sameHost: Bool) {
-        sessionGeneration &+= 1
-        let generation = sessionGeneration
-        connectAttempt?.stop()
-        connectAttempt = nil
-        self.session?.close()
-        self.session = session
-        snapshot = nil
-        pairingWarning.clear()
-        lastError = ""
-        pushError = nil
-        push.currentConnectedHostKey = nil
-        lastSnapshotConnected = false
-        lastConversationFreshEpoch = 0
-        // Actions owned by the replaced session can no longer touch this
-        // one; a late release must not unlock a new session's row either.
-        submissionPending.removeAll()
-        takingBack = nil
-        fileReads = [:]
-        replyStreams.sync(chat: nil)
-        toasts = []
-        noticeFeed = NoticeFeed()
-        if sameHost {
-            if case .conversation(let id) = navPath.last { reopenAfterReady = id }
-        } else {
-            navPath = []
-            reopenAfterReady = nil
-            skillCache.reset()
-            commandCache.reset()
-            drafts = [:]
-            skillChips = [:]
-            questionDrafts = [:]
-            trays = [:]
-            fileTrays = [:]
-            queuedEdit.reset()
-            queuedEditPreparing.removeAll()
-            queuePending.removeAll()
-            queuedEditFocus = [:]
-            sentFileDetails = [:]
-            viewing = nil
-            draftHome = .chat
-            draftCheckout = .worktree
-            draftAgent.reset()
-        }
-        phase = .connecting
-        let attempt = ConnectAttempt(
-            updates: session.updates,
-            close: { session.close() },
-            apply: { [weak self] update in
-                guard let self, self.sessionGeneration == generation else { return }
-                self.apply(update)
-            })
-        connectAttempt = attempt
-        attempt.start()
-    }
-
-    /// Route a learned endpoint set into the live host identity and the
-    /// in-memory list without replacing either record's key material.
-    private func applyEndpointPatch(_ patch: HostRecord) {
-        pairing.endpoints(patch)
-        guard let set = patch.endpointSet,
-              let next = hosts.settingEndpoints(set, url: patch.url, for: patch.hostKey)
-        else { return }
-        hosts = next
-    }
-
-    private func apply(_ update: SessionUpdate) {
-        pairingWarning.apply(update)
-        switch update {
-        case .ready(let outcome):
-            // A revoked device can be refused before the first snapshot; the
-            // account list still needs the marker.
-            if outcome == .unauthorized, let host = revokedHost {
-                markAccountRejected(host)
-            }
-            if let failure = ConnectFailure(outcome: outcome, pairing: pairingLink != nil) {
-                fail(failure)
-                return
-            }
-            phase = .connected
-            hostBeforePairing = nil
-            refreshRtcStatus()
-            push.currentConnectedHostKey = sessionHost?.hostKey
-            #if DEBUG
-            consumeDevOpenRequest()
-            consumeDevAttachRequest()
-            consumeDevPromptRequest()
-            if openHostDetailAfterReady {
-                openHostDetailAfterReady = false
-                Task { @MainActor [weak self] in
-                    // Ready can precede the pairing host record; wait for
-                    // the identity before pushing.
-                    for _ in 0..<50 {
-                        guard let self else { return }
-                        if let key = self.currentHostKey {
-                            self.navPath = [.settings, .host(key)]
-                            return
-                        }
-                        try? await Task.sleep(for: .milliseconds(100))
-                    }
-                }
-            }
-            #endif
-            if let id = reopenAfterReady {
-                reopenAfterReady = nil
-                openConversation(id)
-            }
-            advancePushTarget()
-        case .candidateFailed:
-            // Per-path evidence is in the ready error's aggregate message;
-            // the structured update stays available to other clients.
-            break
-        case .endpoints(let host, let saveError):
-            // Address learning is independent of readiness: a failed write
-            // leaves the live session alone and is retried by the next hello.
-            if let saveError {
-                lastError = "Couldn't save this host's updated addresses (\(saveError)). The connection is still live."
-            } else {
-                reloadHosts()
-            }
-            applyEndpointPatch(host)
-        case .paired(let host, let saveError):
-            // The handshake spent the link's code and (normally) made this
-            // the launch host — the session is this host's device now,
-            // whatever the first view turns out to say.
-            pairing.paired(host)
-            pairings += 1
-            accountRejectedHostKeys.remove(host.hostKey)
-            reloadHosts()
-            accountRefreshAfterPairing()
-            advancePushTarget()
-            if let warning = pairingWarning.message {
-                lastError = warning
-            }
-        case .snapshot(let snapshot):
-            // Terminal after the first view: revoked (4401) or a hello
-            // with another protocol major.
-            if let failure = ConnectFailure(snapshot: snapshot) {
-                fail(failure)
-            }
-            if snapshot.unauthorized, let host = revokedHost {
-                markAccountRejected(host)
-            }
-            self.snapshot = snapshot
-            refreshRtcStatus()
-            let freshEpoch = snapshot.conversation?.freshEpoch ?? 0
-            if freshEpoch > lastConversationFreshEpoch { imageEpoch &+= 1 }
-            lastConversationFreshEpoch = freshEpoch
-            if let hostKey = sessionHost?.hostKey {
-                cacheHostName(snapshot.hostName, for: hostKey)
-            }
-            // A failure page explains itself; the core's notice for the
-            // same thing (e.g. the 4401) would only repeat it in English.
-            for notice in noticeFeed.fresh(snapshot.notices) where phase == .connected { show(notice) }
-            let connectedNow = snapshot.connection == .connected && !snapshot.unauthorized
-            push.currentConnectedHostKey = connectedNow ? sessionHost?.hostKey : nil
-            if connectedNow && !lastSnapshotConnected { syncPushToken() }
-            if connectedNow {
-                // Retry on every connected view, not just the disconnect
-                // edge: ViewChanged coalescing can hide the offline snapshot.
-                // The state machine refuses a duplicate while one is in
-                // flight, so this is cheap and idempotent.
-                retryQueuedEditIfNeeded()
-            }
-            lastSnapshotConnected = connectedNow
-            advancePushTarget()
-            signposter.emitEvent("ui-publish")
-            replyStreams.sync(chat: snapshot.conversation?.chat)
-            PerfLog.shared.mark("ui-publish", version: snapshot.version)
-            // Perf runs double as field diagnostics: which conversation is
-            // shown and how many chat rows it carries.
-            if let c = snapshot.conversation {
-                PerfLog.shared.mark("conv-\(c.id)-\(c.chat.count)")
-            }
-            PerfLog.shared.flush()
-        case .platformError(let message):
-            lastError = message
-        }
-    }
-
-    /// The stream a run's answer is being revealed through, or nil while
-    /// no answer has arrived.
-    func streamFor(_ entryId: String) -> StreamingMarkdown? { replyStreams.stream(for: entryId) }
-
 }

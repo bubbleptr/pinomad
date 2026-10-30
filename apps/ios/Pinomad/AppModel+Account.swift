@@ -3,19 +3,17 @@ import PinomadCore
 
 /// Account actions (ADR-0022): one server at a time, a bearer token in the
 /// keychain, and the host list matched against this device's pairings. The
-/// decisions live in PinomadCore's account layer; this extension is the thin
-/// app wiring around them.
+/// decisions live in PinomadCore's account layer; this extension is the app
+/// wiring around them, including the per-account-host automatic registration
+/// from ADR-0035 §5.
 extension AppModel {
     var accountSession: AccountSession? { accountRecord?.session }
 
     /// The stored host whose snapshot said 4401 — only a stored host can
     /// carry an account link to repair.
     var revokedHost: HostRecord? {
-        // sessionHost holds the record from connect time; adoption may have
-        // added the account link to the keychain copy since. Prefer the
-        // latest stored record so a 4401 can still be reported.
-        guard let key = sessionHost?.hostKey ?? currentHostKey else { return nil }
-        return hosts.hosts.first { $0.hostKey == key } ?? sessionHost
+        guard let key = currentHostKey else { return nil }
+        return hostRecord(for: key) ?? sessionHost
     }
 
     func loadAccount() {
@@ -94,6 +92,9 @@ extension AppModel {
                 token: token,
                 expiresAt: value.expiresAt)
             let record = AccountRecord(session: session)
+            // A new account starts a new registration epoch; work started
+            // for the previous session must not land on this one.
+            invalidateAccountPairing()
             accountRecord = record
             accountNotice = nil
             accountSignOutWarning = nil
@@ -112,7 +113,9 @@ extension AppModel {
     }
 
     /// Load the account's hosts and reconcile them with the stored pairings.
-    /// A stale answer (logout or another login meanwhile) is dropped.
+    /// A stale answer (logout or another login meanwhile) is dropped. A failed
+    /// keychain read is reported and makes every host ineligible for automatic
+    /// registration — it is not an empty list (ADR-0035 §5).
     func accountRefreshHosts() async {
         guard let session = accountSession, let api = accountAPI() else {
             accountRows = []
@@ -141,21 +144,31 @@ extension AppModel {
             }
         case .success(let hosts):
             guard accountSession == session else { return }
-            let stored: StoredHosts
+            var stored: StoredHosts
+            let storedRead: Bool
             do {
                 stored = try store.load()
+                storedRead = true
             } catch {
-                // A keychain read failure is not "no pairings": keep the last
-                // good account rows and say what happened instead of inviting
-                // a re-pair over a live device key.
+                // Keep the last good list for display, but never auto-register
+                // over a failed read.
+                stored = hostsRecordFallback()
+                storedRead = false
                 accountHostsError = "Couldn't read the saved pairings: \(describe(error))"
-                return
+            }
+            if storedRead {
+                retryUnsavedAccountHosts()
+                // A recovered save changes the matches; use the fresh list so
+                // the same host is not registered a second time this round.
+                stored = (try? store.load()) ?? stored
             }
             let result = AccountHosts.reconcile(
                 serverOrigin: session.serverOrigin,
                 hosts: hosts,
                 stored: stored,
-                rejectedHostKeys: accountRejectedHostKeys)
+                rejectedHostKeys: accountRejectedHostKeys,
+                declined: declinedHostRefs(),
+                storedRead: storedRead)
             if result.changed {
                 // Adopting a pre-account pairing is bookkeeping, not a
                 // pairing: a failed write just leaves it to the next refresh.
@@ -167,7 +180,9 @@ extension AppModel {
                             serverOrigin: session.serverOrigin,
                             hosts: hosts,
                             stored: current,
-                            rejectedHostKeys: accountRejectedHostKeys).stored
+                            rejectedHostKeys: accountRejectedHostKeys,
+                            declined: declinedHostRefs(),
+                            storedRead: true).stored
                     }
                     reloadHosts()
                 } catch {
@@ -175,8 +190,129 @@ extension AppModel {
                 }
             }
             accountRows = result.rows
-            accountHostsError = nil
+            if storedRead { accountHostsError = nil }
+            if storedRead {
+                startAutomaticRegistrations(result, session: session)
+            }
         }
+    }
+
+    /// The last good in-memory list, for display while the keychain read is
+    /// failing. `storedRead: false` still bars automatic registration.
+    private func hostsRecordFallback() -> StoredHosts {
+        hosts
+    }
+
+    private func declinedHostRefs() -> [AccountHostRef] {
+        declinedAccountHosts.list().map {
+            AccountHostRef(serverOrigin: $0.serverOrigin, hostId: $0.hostId)
+        }
+    }
+
+    /// Try to persist account-registered identities whose handshake succeeded
+    /// but whose keychain write failed. This only retries the save — never a
+    /// new key or a second host registration (ADR-0035 §5).
+    private func retryUnsavedAccountHosts() {
+        for hostId in Array(unsavedAccountHosts.keys) {
+            guard let host = unsavedAccountHosts[hostId] else { continue }
+            do {
+                try store.update { stored in
+                    guard !stored.hosts.contains(where: { $0.hostKey == host.hostKey }) else { return }
+                    stored.hosts.append(host)
+                }
+                unsavedAccountHosts.removeValue(forKey: hostId)
+            } catch {
+                // Keep the slot for the next refresh.
+            }
+        }
+        reloadHosts()
+    }
+
+    /// One automatic registration per hostId. A host the server says is
+    /// offline or too old is skipped until a later refresh.
+    private func startAutomaticRegistrations(
+        _ reconciliation: AccountReconciliation, session: AccountSession
+    ) {
+        guard accountPairingHostId == nil else { return }
+        for hostId in reconciliation.autoRegisterHostIds {
+            guard !declinedAccountHosts.contains(
+                serverOrigin: session.serverOrigin, hostId: hostId)
+            else { continue }
+            guard let row = reconciliation.rows.first(where: { $0.hostId == hostId }),
+                  row.pairable
+            else { continue }
+            guard accountRegistrationInFlight.insert(hostId).inserted else { continue }
+            Task { [weak self] in
+                await self?.automaticRegister(hostId, session: session)
+            }
+        }
+    }
+
+    private func automaticRegister(_ hostId: String, session: AccountSession) async {
+        guard accountSession == session, let api = accountAPI() else {
+            accountRegistrationInFlight.remove(hostId)
+            return
+        }
+        if let pending = unsavedAccountHosts[hostId] {
+            do {
+                try store.update { stored in
+                    guard !stored.hosts.contains(where: { $0.hostKey == pending.hostKey }) else { return }
+                    stored.hosts.append(pending)
+                }
+                unsavedAccountHosts.removeValue(forKey: hostId)
+                reloadHosts()
+                await accountRefreshHosts()
+            } catch {
+                // Save-only retry failed; keep the slot and try next refresh.
+            }
+            accountRegistrationInFlight.remove(hostId)
+            return
+        }
+
+        let generation = accountPairingGeneration
+        switch await api.requestPairing(hostId: hostId) {
+        case .failure(let failure):
+            guard accountSession == session, generation == accountPairingGeneration else {
+                accountRegistrationInFlight.remove(hostId)
+                return
+            }
+            if failure.clearsSession {
+                accountRegistrationInFlight.remove(hostId)
+                accountSignOutWarning = endAccountSession(notice: "You were signed out. Sign in again.")
+                return
+            }
+            if isDeclinedAccountFailure(failure) {
+                declinedAccountHosts.add(
+                    serverOrigin: session.serverOrigin, hostId: hostId)
+            }
+        case .success(let offer):
+            guard accountSession == session, generation == accountPairingGeneration,
+                  !declinedAccountHosts.contains(
+                    serverOrigin: session.serverOrigin, hostId: hostId)
+            else {
+                accountRegistrationInFlight.remove(hostId)
+                return
+            }
+            guard let link = accountPairingLink(offer: offer) else {
+                accountRegistrationInFlight.remove(hostId)
+                return
+            }
+            let account = AccountLink(serverOrigin: session.serverOrigin, hostId: hostId)
+            guard beginPairing(
+                link: link, account: account, focus: false,
+                autoRegisterHostId: hostId) != nil
+            else {
+                accountRegistrationInFlight.remove(hostId)
+                return
+            }
+            // The handshake's .paired/.failure removes the in-flight slot.
+            return
+        }
+        accountRegistrationInFlight.remove(hostId)
+    }
+
+    private func isDeclinedAccountFailure(_ failure: AccountFailure) -> Bool {
+        failure.code == "pair_rejected" || failure.code == "disabled"
     }
 
     /// Signing out keeps the paired hosts; only the server's guarantee goes
@@ -211,7 +347,8 @@ extension AppModel {
     }
 
     /// Pair one account host through a server-vouched offer, then the same
-    /// IK handshake a QR link drives. Never retried implicitly.
+    /// IK handshake a QR link drives. The reader's explicit join removes a
+    /// decline and wins over an automatic round already in flight.
     @discardableResult
     func pairViaAccount(hostId: String) async -> Bool {
         guard let session = accountSession, let api = accountAPI() else {
@@ -219,10 +356,19 @@ extension AppModel {
             return false
         }
         guard !accountBusy else { return false }
+        // An explicit join wins over an automatic round already in flight for
+        // the same account host.
+        pairingRegistry.finish(.automatic(hostId: hostId))
+        if let runtime = automaticPairingRuntimes.removeValue(forKey: hostId) {
+            runtime.close()
+        }
+        accountRegistrationInFlight.remove(hostId)
+        accountPairingGeneration &+= 1
         let generation = accountPairingGeneration
         accountBusy = true
         accountPairingHostId = hostId
         accountError = nil
+        declinedAccountHosts.remove(serverOrigin: session.serverOrigin, hostId: hostId)
         defer {
             // A connection or another pairing invalidated this ask while it
             // was waiting; that path already cleared the indicators.
@@ -232,12 +378,33 @@ extension AppModel {
             }
         }
 
+        if let pending = unsavedAccountHosts[hostId] {
+            do {
+                try store.update { stored in
+                    guard !stored.hosts.contains(where: { $0.hostKey == pending.hostKey }) else { return }
+                    stored.hosts.append(pending)
+                }
+                unsavedAccountHosts.removeValue(forKey: hostId)
+                reloadHosts()
+                focus(on: pending.hostKey)
+                await accountRefreshHosts()
+                return true
+            } catch {
+                accountError = AccountCopy.message(AccountFailure(code: "pairing_not_saved"))
+                return false
+            }
+        }
+
         switch await api.requestPairing(hostId: hostId) {
         case .failure(let failure):
             guard accountSession == session, generation == accountPairingGeneration else { return false }
             if failure.clearsSession {
                 accountSignOutWarning = endAccountSession(notice: "You were signed out. Sign in again.")
             } else {
+                if isDeclinedAccountFailure(failure) {
+                    declinedAccountHosts.add(
+                        serverOrigin: session.serverOrigin, hostId: hostId)
+                }
                 accountError = AccountCopy.message(failure)
             }
             return false
@@ -247,9 +414,11 @@ extension AppModel {
                 accountError = AccountCopy.message(AccountFailure(code: "invalid_offer"))
                 return false
             }
-            return pair(
+            return beginPairing(
                 link: link,
-                account: AccountLink(serverOrigin: session.serverOrigin, hostId: hostId))
+                account: AccountLink(serverOrigin: session.serverOrigin, hostId: hostId),
+                focus: true,
+                autoRegisterHostId: nil) != nil
         }
     }
 
@@ -257,6 +426,12 @@ extension AppModel {
     /// chose while it waited wins; the late offer must not steal it.
     func invalidateAccountPairing() {
         accountPairingGeneration &+= 1
+        for (hostId, runtime) in automaticPairingRuntimes {
+            pairingRegistry.finish(.automatic(hostId: hostId))
+            runtime.close()
+        }
+        automaticPairingRuntimes.removeAll()
+        accountRegistrationInFlight.removeAll()
         if accountPairingHostId != nil {
             accountPairingHostId = nil
             accountBusy = false
@@ -286,8 +461,6 @@ extension AppModel {
     /// A 4401 only marks the stored pairing. Asking for an invite is the
     /// reader's explicit action, never something this hook does.
     func markAccountRejected(_ host: HostRecord) {
-        // The 4401 is about this stored pairing, not about being signed in:
-        // record it now so a later login/adoption still labels the row.
         accountRejectedHostKeys.insert(host.hostKey)
         guard let link = host.account,
               let session = accountSession,
@@ -309,7 +482,13 @@ extension AppModel {
 
     /// Forgetting a stored host leaves the account row for the same host
     /// unpaired, so the list doesn't offer to connect to a key that is gone.
+    /// The declined set is written by the forget path before this runs.
     func accountHostForgotten(_ hostKey: String) {
+        if let link = hostRecord(for: hostKey)?.account {
+            declinedAccountHosts.add(serverOrigin: link.serverOrigin, hostId: link.hostId)
+            unsavedAccountHosts.removeValue(forKey: link.hostId)
+            accountRegistrationInFlight.remove(link.hostId)
+        }
         accountRejectedHostKeys.remove(hostKey)
         accountRows = accountRows.map { row in
             guard row.storedHostKey == hostKey else { return row }
@@ -362,6 +541,14 @@ extension AppModel {
         accountError = nil
         accountSignOutWarning = nil
         accountNotice = notice
+        // In-flight registrations belong to the session that just ended.
+        accountPairingGeneration &+= 1
+        accountRegistrationInFlight.removeAll()
+        for (hostId, runtime) in automaticPairingRuntimes {
+            pairingRegistry.finish(.automatic(hostId: hostId))
+            runtime.close()
+        }
+        automaticPairingRuntimes.removeAll()
         do {
             try accountStore.save(cleared)
             return nil
