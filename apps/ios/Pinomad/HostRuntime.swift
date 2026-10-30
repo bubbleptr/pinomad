@@ -34,6 +34,9 @@ final class HostRuntime {
     /// asynchronous continuation checks it before touching this host's state.
     private(set) var generation: UInt64 = 0
     private var connectAttempt: ConnectAttempt?
+    /// One release request at a time; repeated snapshots showing the same
+    /// stale conversation must not queue a clear each time.
+    private var clearInFlight = false
 
     var lastError = ""
     var pairingWarning = PairingWarningState()
@@ -130,6 +133,7 @@ final class HostRuntime {
         lastError = ""
         lastSnapshotConnected = false
         lastConversationFreshEpoch = 0
+        clearInFlight = false
         submissionPending.removeAll()
         takingBack = nil
         fileReads = [:]
@@ -353,8 +357,14 @@ final class HostRuntime {
     /// Release this host's conversation subscription while its connection,
     /// uploads and unsettled submissions keep running (ADR-0035 §2).
     func clearConversation() {
-        guard let session else { return }
-        Task { _ = try? await session.invoke(.clearConversation) }
+        guard !clearInFlight, let session else { return }
+        clearInFlight = true
+        let generation = generation
+        Task { [weak self] in
+            _ = try? await session.invoke(.clearConversation)
+            guard let self, self.generation == generation else { return }
+            self.clearInFlight = false
+        }
     }
 
     /// Debug demos publish synthetic views through the same runtime slot the

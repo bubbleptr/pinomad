@@ -53,12 +53,13 @@ final class AppModel {
     private(set) var runtimeTable = HostRuntimeTable(hostKeys: [])
     /// One runtime per paired host, keyed by hostKey.
     private(set) var runtimes: [String: HostRuntime] = [:]
-    /// A pairing handshake that has not named its host yet. Once it does, the
-    /// same runtime joins `runtimes`.
+    /// The user-started pairing handshake, if any. It is the only pairing
+    /// runtime that may own the screen; account registrations live in
+    /// `automaticPairingRuntimes` and never displace it.
     var pairingRuntime: HostRuntime?
-    /// Whether the pairing runtime is what the screen shows. An account
-    /// registration pairs in the background and never steals focus.
-    private var pairingOwnsFocus = false
+    var pairingRegistry = PairingRuntimeRegistry()
+    /// Whether a manual pairing is what the screen shows.
+    private var pairingOwnsFocus: Bool { pairingRegistry.isManualActive }
     /// Hosts whose pairing is live but whose keychain save failed. They stay
     /// in the table until the next successful save or a forget.
     var unsavedHostKeys: Set<String> = []
@@ -329,12 +330,20 @@ final class AppModel {
     }
     #endif
 
-    /// A pairing runtime that has not joined the table yet — a paired one is
-    /// already in `runtimes` and must not receive the same event twice.
-    private var pairingRuntimeOutsideTable: HostRuntime? {
-        guard let pairingRuntime else { return nil }
-        guard let hostKey = pairingRuntime.hostKey else { return pairingRuntime }
-        return runtimes[hostKey] === pairingRuntime ? nil : pairingRuntime
+    /// Every live runtime exactly once: the table, background account
+    /// registrations, and a manual pairing that has not joined the table yet.
+    /// A paired runtime is already in the table and must not get the event
+    /// twice.
+    private var runtimesForFanout: [HostRuntime] {
+        var all = Array(runtimes.values)
+        for runtime in automaticPairingRuntimes.values
+        where !all.contains(where: { $0 === runtime }) {
+            all.append(runtime)
+        }
+        if let pairingRuntime, !all.contains(where: { $0 === pairingRuntime }) {
+            all.append(pairingRuntime)
+        }
+        return all
     }
 
     /// The runtime the screen reads, or a pairing handshake that owns it.
@@ -366,12 +375,9 @@ final class AppModel {
         monitor.start { [weak self] in
             Task { @MainActor in
                 guard let self else { return }
-                for runtime in self.runtimes.values { runtime.networkChanged() }
-                for runtime in self.automaticPairingRuntimes.values
-                where runtime !== self.pairingRuntime {
+                for runtime in self.runtimesForFanout {
                     runtime.networkChanged()
                 }
-                self.pairingRuntimeOutsideTable?.networkChanged()
             }
         }
         #if DEBUG
@@ -388,11 +394,7 @@ final class AppModel {
         // Only a real return: Control Center or a banner goes through
         // .inactive and back without suspending anything.
         isInBackground = false
-        for runtime in runtimes.values { runtime.foregrounded() }
-        for runtime in automaticPairingRuntimes.values where runtime !== pairingRuntime {
-            runtime.foregrounded()
-        }
-        pairingRuntimeOutsideTable?.foregrounded()
+        for runtime in runtimesForFanout { runtime.foregrounded() }
         Task { [weak self] in
             await self?.push.refreshAuthorization()
             self?.syncPushToken()
@@ -404,11 +406,7 @@ final class AppModel {
 
     func didEnterBackground() {
         isInBackground = true
-        for runtime in runtimes.values { runtime.backgrounded() }
-        for runtime in automaticPairingRuntimes.values where runtime !== pairingRuntime {
-            runtime.backgrounded()
-        }
-        pairingRuntimeOutsideTable?.backgrounded()
+        for runtime in runtimesForFanout { runtime.backgrounded() }
     }
 
     // MARK: - Focus and navigation
@@ -509,17 +507,20 @@ final class AppModel {
             if focus {
                 closePairingRuntime()
                 pairingRuntime = runtime
-                pairingOwnsFocus = true
+                pairingRegistry.start(.manual)
                 pairing.pair(
                     link: link, account: account,
                     target: PinomadCore.pairingTarget(link: link))
                 hostBeforePairing = hostBeforePairing ?? previous
                 syncPhase()
+            } else if let autoRegisterHostId {
+                // Background registrations are tracked apart from the manual
+                // pairing slot so they can never take or replace the screen.
+                pairingRegistry.start(.automatic(hostId: autoRegisterHostId))
+                automaticPairingRuntimes[autoRegisterHostId] = runtime
             } else {
-                pairingRuntime = runtime
-                if let autoRegisterHostId {
-                    automaticPairingRuntimes[autoRegisterHostId] = runtime
-                }
+                runtime.close()
+                return nil
             }
             return runtime
         } catch {
@@ -689,7 +690,7 @@ final class AppModel {
             }
         }
         pairingRuntime = nil
-        pairingOwnsFocus = false
+        pairingRegistry.finish(.manual)
         pairing.clear()
         hostBeforePairing = nil
         connectActive()
@@ -712,7 +713,7 @@ final class AppModel {
             }
         }
         pairingRuntime = nil
-        pairingOwnsFocus = false
+        pairingRegistry.finish(.manual)
     }
 
     private func closeAllRuntimes() {
@@ -723,7 +724,7 @@ final class AppModel {
         accountRegistrationInFlight.removeAll()
         pairingRuntime?.close()
         pairingRuntime = nil
-        pairingOwnsFocus = false
+        pairingRegistry = PairingRuntimeRegistry()
         runtimeTable = HostRuntimeTable(hostKeys: [])
         unsavedHostKeys.removeAll()
     }
@@ -797,9 +798,9 @@ final class AppModel {
         if let account = record?.account {
             accountRegistrationInFlight.remove(account.hostId)
             unsavedAccountHosts.removeValue(forKey: account.hostId)
+            pairingRegistry.finish(.automatic(hostId: account.hostId))
             if let runtime = automaticPairingRuntimes.removeValue(forKey: account.hostId) {
                 runtime.close()
-                if pairingRuntime === runtime { pairingRuntime = nil }
             }
         }
         do {
@@ -907,7 +908,22 @@ final class AppModel {
     }
 
     private func receivedSnapshot(_ runtime: HostRuntime, snapshot: ClientSnapshot) {
-        guard runtime === focusedRuntime else { return }
+        let isFocused = runtime === focusedRuntime
+        // Release is driven by the runtime's own snapshot, not only by the
+        // navigation edge: a conversation created after focus moved away, or
+        // one restored by a reconnect, would otherwise keep a subscription
+        // nobody shows. A focused host that is still opening its target is
+        // left alone (its snapshot may legitimately show the old one).
+        if shouldReleaseConversation(
+            isFocused: isFocused,
+            focusedConversationId: isFocused ? runtimeTable.focus?.conversationId : nil,
+            shownConversationId: snapshot.conversation?.id,
+            sideConversationId: nil,
+            isConnected: runtime.isConnectedNow,
+            isCreatingConversation: isFocused && runtime.creating) {
+            runtime.clearConversation()
+        }
+        guard isFocused else { return }
         syncPhase()
         updatePushVisibility()
         signposter.emitEvent(
@@ -952,6 +968,7 @@ final class AppModel {
         accountRejectedHostKeys.remove(host.hostKey)
         if let autoHostId = runtime.autoRegisterHostId {
             runtime.autoRegisterHostId = nil
+            pairingRegistry.finish(.automatic(hostId: autoHostId))
             automaticPairingRuntimes.removeValue(forKey: autoHostId)
             accountRegistrationInFlight.remove(autoHostId)
             // A forget or explicit decline during the handshake wins over the
@@ -985,7 +1002,7 @@ final class AppModel {
         }
 
         pairing.paired(host)
-        pairingOwnsFocus = false
+        pairingRegistry.finish(.manual)
         if saveError != nil { unsavedHostKeys.insert(host.hostKey) }
         let released = runtimeTable.addPairedHost(host.hostKey, focus: true)
         if let released { runtimes[released.hostKey]?.clearConversation() }
@@ -1002,9 +1019,9 @@ final class AppModel {
     private func handleRegistrationFailure(_ runtime: HostRuntime, failure: ConnectFailure) {
         guard let hostId = runtime.autoRegisterHostId else { return }
         accountRegistrationInFlight.remove(hostId)
+        pairingRegistry.finish(.automatic(hostId: hostId))
         automaticPairingRuntimes.removeValue(forKey: hostId)
         runtime.close()
-        if pairingRuntime === runtime { pairingRuntime = nil }
     }
 
     private func applyEndpointPatch(_ patch: HostRecord, from runtime: HostRuntime) {

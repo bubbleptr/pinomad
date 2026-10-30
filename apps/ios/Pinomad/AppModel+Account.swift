@@ -358,9 +358,9 @@ extension AppModel {
         guard !accountBusy else { return false }
         // An explicit join wins over an automatic round already in flight for
         // the same account host.
+        pairingRegistry.finish(.automatic(hostId: hostId))
         if let runtime = automaticPairingRuntimes.removeValue(forKey: hostId) {
             runtime.close()
-            if pairingRuntime === runtime { pairingRuntime = nil }
         }
         accountRegistrationInFlight.remove(hostId)
         accountPairingGeneration &+= 1
@@ -426,7 +426,10 @@ extension AppModel {
     /// chose while it waited wins; the late offer must not steal it.
     func invalidateAccountPairing() {
         accountPairingGeneration &+= 1
-        for runtime in automaticPairingRuntimes.values { runtime.close() }
+        for (hostId, runtime) in automaticPairingRuntimes {
+            pairingRegistry.finish(.automatic(hostId: hostId))
+            runtime.close()
+        }
         automaticPairingRuntimes.removeAll()
         accountRegistrationInFlight.removeAll()
         if accountPairingHostId != nil {
@@ -541,12 +544,11 @@ extension AppModel {
         // In-flight registrations belong to the session that just ended.
         accountPairingGeneration &+= 1
         accountRegistrationInFlight.removeAll()
-        for runtime in automaticPairingRuntimes.values { runtime.close() }
-        automaticPairingRuntimes.removeAll()
-        if let runtime = pairingRuntime, runtime.autoRegisterHostId != nil {
+        for (hostId, runtime) in automaticPairingRuntimes {
+            pairingRegistry.finish(.automatic(hostId: hostId))
             runtime.close()
-            pairingRuntime = nil
         }
+        automaticPairingRuntimes.removeAll()
         do {
             try accountStore.save(cleared)
             return nil
