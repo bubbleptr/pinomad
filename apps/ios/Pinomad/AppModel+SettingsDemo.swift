@@ -5,7 +5,7 @@ import PinomadCore
 /// `PINOMAD_DEMO_SETTINGS`: the settings pages without a host — two paired
 /// machines (the first connected, renamed, with three devices, this one
 /// among them), a chat, and one archived root. `failed`
-/// shows the first machine's failure page instead; `pairing` the first-run
+/// fails the first machine and opens its failure page; `pairing` the first-run
 /// page with nothing paired; `account` adds a signed-in account (its calls
 /// never leave the app). The addresses are
 /// `.invalid` and the injected hosts block switching and forgetting, so
@@ -32,7 +32,9 @@ extension AppModel {
                 token: "demo", expiresAt: Date.now.addingTimeInterval(86_400).timeIntervalSince1970 * 1000)
         }
         if mode == "failed" {
-            phase = .failed(.unreachable("Couldn't reach mbp.invalid:7777."))
+            failDevHost("demo-mbp", .unreachable("Couldn't reach mbp.invalid:7777."))
+            phase = .home
+            navPath = [.machineUnavailable("demo-mbp")]
             return
         }
         let now = Date.now.timeIntervalSince1970 * 1000
@@ -51,7 +53,7 @@ extension AppModel {
                     project: Project(path: "/Users/void/code/opensource/pinomad", name: "pinomad", addedAt: now)),
             ]
         )
-        phase = .connected
+        phase = .home
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: .connected, unauthorized: false,
             protocolMismatch: nil, host: HostInfo(version: "0.9.0", protocol: ProtocolVersion(major: 5, minor: 14)),

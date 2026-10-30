@@ -1,17 +1,18 @@
 import PinomadCore
 import SwiftUI
 
-/// The home page: the family statuses as four tiles, then every paired
-/// machine with its Chats and projects — each a page of its own, so the
-/// page stays short however many conversations there are. One connection
-/// at a time (#148): another machine's groups are unknown until it is the
-/// one connected, so it shows as a row that connects it.
+/// The home page: the family statuses of every machine as four tiles, then
+/// every paired machine with its Chats and projects — each a page of its
+/// own, so the page stays short however many conversations there are. All
+/// machines are live at once (#429): each group reads its own host's view
+/// and shows its own state; nothing here moves the focus.
 struct ConversationListView: View {
     let model: AppModel
 
     @State private var query = ""
 
     var body: some View {
+        let roots = model.machineRoots
         List {
             if !model.lastError.isEmpty {
                 // Platform failures (e.g. the keychain rejecting a pairing
@@ -22,50 +23,26 @@ struct ConversationListView: View {
                     .foregroundStyle(.orange)
                     .listRowBackground(Color.clear)
             }
-            if !query.isEmpty, let organized = model.snapshot?.organized {
-                searchResults(organized)
+            if !query.isEmpty {
+                searchResults(roots)
             } else {
-                if let organized = model.snapshot?.organized {
-                    StatusTiles(roots: allRoots(organized).map(\.node)) { filter in
-                        guard let hostKey = model.currentHostKey else { return }
-                        model.navPath.append(.conversations(hostKey: hostKey, filter: filter))
+                if model.machines.contains(where: { model.runtimes[$0.hostKey]?.snapshot != nil }) {
+                    StatusTiles(roots: roots.map(\.node)) { filter in
+                        model.navPath.append(.conversations(hostKey: nil, filter: filter))
                     }
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                 }
-                ForEach(machines, id: \.hostKey) { host in
+                ForEach(model.machines, id: \.hostKey) { host in
                     Section {
-                        if host.hostKey == model.currentHostKey {
-                            currentMachine
-                        } else {
-                            // A plain tap gesture, not a Button: on iOS 27 a
-                            // Button inside a List row does not receive a
-                            // normal tap (only a press-and-slide), so the
-                            // switch silently never ran (issue #428 review).
-                            Label(
-                                model.isConnected(host.hostKey)
-                                    ? "Connected. Tap to switch" : "Not connected. Tap to switch",
-                                image: model.isConnected(host.hostKey) ? .circleCheck : .cloudOff)
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
-                                .onTapGesture { model.switchHost(host.hostKey) }
-                                .accessibilityAddTraits(.isButton)
-                                .accessibilityAction { model.switchHost(host.hostKey) }
-                                .listRowBackground(Color.clear)
-                                .listRowSeparator(.hidden, edges: .bottom)
-                        }
+                        MachineGroup(model: model, hostKey: host.hostKey)
                     } header: {
                         MachineHeader(
-                            label: label(host),
+                            label: model.machineLabel(host.hostKey),
                             online: model.isConnected(host.hostKey)
                         )
                     }
-                    // Rebuild the section when focus moves between hosts:
-                    // its two branches have different structure, and the old
-                    // row's action must not survive the swap.
-                    .id("\(host.hostKey):\(host.hostKey == model.currentHostKey ? "focused" : "other")")
                 }
             }
         }
@@ -73,8 +50,7 @@ struct ConversationListView: View {
         .scrollContentBackground(.hidden)
         .background(Color(.systemGroupedBackground))
         .overlay {
-            if !query.isEmpty, let organized = model.snapshot?.organized,
-               !allRoots(organized).contains(where: { matches($0.node) }) {
+            if !query.isEmpty, !roots.contains(where: { matches($0.node) }) {
                 ContentUnavailableView.search(text: query)
             }
         }
@@ -100,6 +76,8 @@ struct ConversationListView: View {
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
             ToolbarSpacer(.flexible, placement: .bottomBar)
             ToolbarItem(placement: .bottomBar) {
+                // The draft of the machine last shown; its page offers the
+                // others.
                 Button("New", image: .squarePen) {
                     guard let hostKey = model.currentHostKey else { return }
                     model.navPath.append(.newConversation(hostKey: hostKey))
@@ -107,78 +85,22 @@ struct ConversationListView: View {
                 .disabled(!model.connected)
             }
         }
-        .safeAreaInset(edge: .top) { ConnectionBanner(model: model) }
-        .reconnectingTitle(model)
     }
 
-    /// Every paired machine in stored order — positions do not jump when
-    /// the connection moves — plus a host a pairing just made that the
-    /// keychain failed to keep.
-    private var machines: [HostRecord] {
-        var hosts = model.hosts.hosts
-        if let session = model.sessionHost, !hosts.contains(where: { $0.hostKey == session.hostKey }) {
-            hosts.insert(session, at: 0)
-        }
-        return hosts
-    }
-
-    private func label(_ host: HostRecord) -> String {
-        model.hostLabels[host.hostKey] ?? host.name ?? hostOf(host.url)
-    }
-
+    /// While searching, the matching roots of every machine replace the
+    /// groups.
     @ViewBuilder
-    private var currentMachine: some View {
-        if let organized = model.snapshot?.organized {
-            // The folder picker needs listFolders (protocol 5.3); an older
-            // host gets no add row, and its last project ends the group.
-            let canAdd = model.hostSupports("listFolders")
-            let projects = organized.projects.compactMap { group in
-                group.project.path.map { (path: $0, group: group) }
-            }
-            if !organized.chats.isEmpty {
-                groupRow(.chats, title: "Chats", image: .messageCircle,
-                         count: organized.chats.count, endsGroup: !canAdd && projects.isEmpty)
-            }
-            ForEach(Array(projects.enumerated()), id: \.offset) { index, entry in
-                groupRow(.project(entry.path), title: entry.group.project.name ?? entry.path,
-                         image: .folder, count: entry.group.conversations.count,
-                         endsGroup: !canAdd && index == projects.count - 1)
-            }
-            if canAdd {
-                Button {
-                    guard let hostKey = model.currentHostKey else { return }
-                    model.navPath.append(.addProject(hostKey: hostKey))
-                } label: {
-                    Label("Add project", image: .plus)
-                        .foregroundStyle(.secondary)
-                }
-                .disabled(!model.connected)
-                .listRowBackground(Color.clear)
-                // Ends the machine's group; the next header separates it.
-                .listRowSeparator(.hidden, edges: .bottom)
-            }
-        } else {
-            GroupRowsSkeleton()
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-        }
-    }
-
-    /// While searching, the matching roots of the connected machine replace
-    /// the groups.
-    @ViewBuilder
-    private func searchResults(_ organized: Organized) -> some View {
-        let results = allRoots(organized).filter { matches($0.node) }
-        ForEach(results, id: \.node.summary.id) { entry in
-            if let id = entry.node.summary.id {
-                NavigationLink(value: Route.conversation(
-                    ConversationRef(hostKey: model.currentHostKey ?? "", conversationId: id))) {
-                    ConversationRowLabel(node: entry.node, project: entry.project)
+    private func searchResults(_ roots: [MachineRoot]) -> some View {
+        let results = roots.filter { matches($0.node) }
+        ForEach(results) { entry in
+            if let ref = entry.ref {
+                NavigationLink(value: Route.conversation(ref)) {
+                    ConversationRowLabel(node: entry.node, project: model.rowSubtitle(entry))
                 }
                 .quietSeparator()
                 // Rules only between results, as on the conversations pages.
                 .listRowSeparator(.hidden, edges: .top)
-                .listRowSeparator(id == results.last?.node.summary.id ? .hidden : .automatic, edges: .bottom)
+                .listRowSeparator(entry.id == results.last?.id ? .hidden : .automatic, edges: .bottom)
                 .listRowBackground(Color.clear)
             }
         }
@@ -187,12 +109,74 @@ struct ConversationListView: View {
     private func matches(_ node: ConversationNode) -> Bool {
         displayName(summary: node.summary).localizedCaseInsensitiveContains(query)
     }
+}
+
+/// One machine's rows under its header: its groups once it has a view, a
+/// skeleton while it connects, or why it can't be used.
+private struct MachineGroup: View {
+    let model: AppModel
+    let hostKey: String
+
+    var body: some View {
+        let runtime = model.runtimes[hostKey]
+        if case .failed(let failure)? = runtime?.phase {
+            NavigationLink(value: Route.machineUnavailable(hostKey)) {
+                HStack(spacing: 12) {
+                    Image(.cloudOff)
+                        .font(.body)
+                        .frame(width: 28)
+                    Text(failure.title)
+                        .lineLimit(1)
+                }
+                .foregroundStyle(.secondary)
+                .padding(.vertical, 6)
+            }
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden, edges: .bottom)
+        } else if let organized = runtime?.snapshot?.organized {
+            groups(organized, connected: runtime?.isConnectedNow ?? false)
+        } else {
+            GroupRowsSkeleton()
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+        }
+    }
+
+    @ViewBuilder
+    private func groups(_ organized: Organized, connected: Bool) -> some View {
+        // The folder picker needs listFolders (protocol 5.3); an older
+        // host gets no add row, and its last project ends the group.
+        let canAdd = model.hostSupports("listFolders", on: hostKey)
+        let projects = organized.projects.compactMap { group in
+            group.project.path.map { (path: $0, group: group) }
+        }
+        if !organized.chats.isEmpty {
+            groupRow(.chats, title: "Chats", image: .messageCircle,
+                     count: organized.chats.count, endsGroup: !canAdd && projects.isEmpty)
+        }
+        ForEach(Array(projects.enumerated()), id: \.offset) { index, entry in
+            groupRow(.project(entry.path), title: entry.group.project.name ?? entry.path,
+                     image: .folder, count: entry.group.conversations.count,
+                     endsGroup: !canAdd && index == projects.count - 1)
+        }
+        if canAdd {
+            Button {
+                model.navPath.append(.addProject(hostKey: hostKey))
+            } label: {
+                Label("Add project", image: .plus)
+                    .foregroundStyle(.secondary)
+            }
+            .disabled(!connected)
+            .listRowBackground(Color.clear)
+            // Ends the machine's group; the next header separates it.
+            .listRowSeparator(.hidden, edges: .bottom)
+        }
+    }
 
     private func groupRow(
         _ filter: ConversationFilter, title: String, image: ImageResource, count: Int, endsGroup: Bool
     ) -> some View {
-        NavigationLink(value: Route.conversations(
-            hostKey: model.currentHostKey ?? "", filter: filter)) {
+        NavigationLink(value: Route.conversations(hostKey: hostKey, filter: filter)) {
             HStack(spacing: 12) {
                 Image(image)
                     .font(.body)
@@ -212,6 +196,30 @@ struct ConversationListView: View {
         .quietSeparator()
         .listRowSeparator(endsGroup ? .hidden : .automatic, edges: .bottom)
         .listRowBackground(Color.clear)
+    }
+}
+
+/// A root with the machine it lives on, for lists that mix machines.
+struct MachineRoot: Identifiable {
+    let hostKey: String
+    let node: ConversationNode
+    /// The project's name; nil for a Chat.
+    let project: String?
+
+    var ref: ConversationRef? {
+        node.summary.id.map { ConversationRef(hostKey: hostKey, conversationId: $0) }
+    }
+
+    var id: String { "\(hostKey):\(node.summary.id.map(String.init) ?? "-")" }
+}
+
+extension AppModel {
+    /// The line under a root's title in a list that mixes groups: its
+    /// project, led by its machine once there is more than one to tell
+    /// apart.
+    func rowSubtitle(_ entry: MachineRoot) -> String? {
+        guard machines.count > 1 else { return entry.project }
+        return [machineLabel(entry.hostKey), entry.project].compactMap { $0 }.joined(separator: " · ")
     }
 }
 

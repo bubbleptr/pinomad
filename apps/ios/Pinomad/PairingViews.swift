@@ -122,11 +122,6 @@ struct PairConfirmView: View {
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(.fill.tertiary, in: .rect(cornerRadius: 10))
-                if model.phase == .connected, let current = model.currentHostLabel {
-                    Text("This disconnects \(current).")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
                 HStack(spacing: 12) {
                     Button { dismiss() } label: {
                         Text("Cancel").frame(maxWidth: .infinity)

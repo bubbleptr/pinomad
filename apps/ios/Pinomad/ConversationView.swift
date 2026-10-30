@@ -147,8 +147,8 @@ struct ConversationView: View {
             guard let old, let new else { return false }
             return new > old
         }
-        .safeAreaInset(edge: .top) { ConnectionBanner(model: model) }
-        .reconnectingTitle(model)
+        .safeAreaInset(edge: .top) { ConnectionBanner(model: model, hostKey: ref.hostKey) }
+        .reconnectingTitle(model, hostKey: ref.hostKey)
         // A bar, not a plain inset: the transcript scrolling under it gets
         // the system's soft edge instead of a hard cut at the card.
         .safeAreaBar(edge: .bottom) {

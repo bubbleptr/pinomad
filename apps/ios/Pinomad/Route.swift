@@ -6,9 +6,11 @@ import SwiftUI
 /// (ADR-0035 §1).
 enum Route: Hashable {
     case conversation(ConversationRef)
-    /// One list of the focused machine's roots: a status tile's, Chats, or a
-    /// project.
-    case conversations(hostKey: String, filter: ConversationFilter)
+    /// One list of roots: a machine's Chats or project, or a status tile's
+    /// across every machine (nil host).
+    case conversations(hostKey: String?, filter: ConversationFilter)
+    /// Why a machine can't be used, and the ways out.
+    case machineUnavailable(String)
     /// The draft page that creates a conversation on send.
     case newConversation(hostKey: String)
     /// The host folder picker, pushed from the draft page.
@@ -46,6 +48,7 @@ struct RouteDestination: View {
         case .conversation(let ref): ConversationView(model: model, ref: ref)
         case .conversations(let hostKey, let filter):
             ConversationsPage(model: model, hostKey: hostKey, filter: filter)
+        case .machineUnavailable(let hostKey): MachineUnavailableView(model: model, hostKey: hostKey)
         case .newConversation: NewConversationView(model: model)
         case .addProject: AddProjectView(model: model)
         case .settings: SettingsView(model: model)
@@ -69,6 +72,23 @@ struct RouteDestination: View {
             ProvidersGate(model: model, hostKey: hostKey) { _ in
                 CustomEndpointView(model: model, hostKey: hostKey, providerId: id)
             }
+        }
+    }
+}
+
+extension Route {
+    /// The host whose page this is, which the focus follows (#429); nil
+    /// for pages of no host or of every host.
+    var page: HostFocus? {
+        switch self {
+        case .conversation(let ref): HostFocus(hostKey: ref.hostKey, conversationId: ref.conversationId)
+        case .conversations(let hostKey, _): hostKey.map { HostFocus(hostKey: $0) }
+        case .newConversation(let hostKey), .addProject(let hostKey), .machineUnavailable(let hostKey),
+             .machine(let hostKey), .host(let hostKey), .providers(let hostKey),
+             .providerSubscriptions(let hostKey), .providerKeys(let hostKey),
+             .provider(let hostKey, _, _), .customEndpoint(let hostKey, _):
+            HostFocus(hostKey: hostKey)
+        case .settings, .addHost: nil
         }
     }
 }

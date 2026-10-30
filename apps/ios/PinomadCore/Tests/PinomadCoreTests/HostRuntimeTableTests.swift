@@ -81,4 +81,29 @@ struct HostRuntimeTableTests {
         #expect(table.synchronize([]) == nil)
         #expect(table.focus == nil)
     }
+
+    /// Focus follows the visible page (#429): there is no explicit switch.
+    @Test func anotherHostsPageMovesFocusAndReleasesTheShownConversation() {
+        var table = HostRuntimeTable(hostKeys: ["home", "office"], rememberedHostKey: "home")
+        table.focusConversation(ConversationRef(hostKey: "home", conversationId: 5))
+        #expect(table.followPage(HostFocus(hostKey: "office")) == ConversationRef(hostKey: "home", conversationId: 5))
+        #expect(table.focus == HostFocus(hostKey: "office"))
+    }
+
+    /// The home page and the cross-machine lists belong to no host: the
+    /// focused host stays (it is where New starts), its conversation goes.
+    @Test func aPageOfNoHostKeepsTheHostButDropsTheConversation() {
+        var table = HostRuntimeTable(hostKeys: ["home", "office"], rememberedHostKey: "office")
+        table.focusConversation(ConversationRef(hostKey: "office", conversationId: 2))
+        #expect(table.followPage(nil) == ConversationRef(hostKey: "office", conversationId: 2))
+        #expect(table.focus == HostFocus(hostKey: "office"))
+        #expect(table.followPage(nil) == nil)
+    }
+
+    @Test func aPageOfAnUnknownHostLeavesFocusAlone() {
+        var table = HostRuntimeTable(hostKeys: ["home"])
+        table.focusConversation(ConversationRef(hostKey: "home", conversationId: 1))
+        #expect(table.followPage(HostFocus(hostKey: "gone")) == nil)
+        #expect(table.focus == HostFocus(hostKey: "home", conversationId: 1))
+    }
 }

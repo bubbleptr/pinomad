@@ -3,16 +3,15 @@ import PinomadCore
 import SwiftUI
 import UIKit
 
-/// This device's settings: its paired hosts (and a way to add one), the
-/// connected host's own settings, the account, push and about. Pushed from
-/// the list; needs no connection.
+/// This device's settings: its paired hosts — each opening its own
+/// settings — and a way to add one, the account, push and about. Pushed
+/// from the list; needs no connection.
 struct SettingsView: View {
     let model: AppModel
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @State private var forgetting: HostRecord?
-    @State private var detailHostKey: String?
 
     var body: some View {
         List {
@@ -26,24 +25,6 @@ struct SettingsView: View {
                 }
                 NavigationLink(value: Route.addHost) {
                     Label("Add Host", image: .plus)
-                }
-            }
-
-            // Only the connected host's page opens; the others need a
-            // connection to read anything from.
-            if let live = machines.first(where: {
-                $0.hostKey == model.currentHostKey && model.connected
-            }) {
-                Section {
-                    NavigationLink(value: Route.machine(live.hostKey)) {
-                        LabeledContent {
-                            Text(label(live))
-                        } label: {
-                            Label("Host Settings", image: .settings)
-                        }
-                    }
-                } footer: {
-                    Text("Providers, paired devices and archived conversations on the connected host.")
                 }
             }
 
@@ -71,9 +52,6 @@ struct SettingsView: View {
             aboutSection
         }
         .navigationTitle("Settings")
-        .navigationDestination(item: $detailHostKey) { hostKey in
-            HostDetailView(model: model, hostKey: hostKey)
-        }
         .alert(
             "Forget \(forgetting.map(label) ?? "this host")?",
             isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
@@ -93,65 +71,27 @@ struct SettingsView: View {
         }
     }
 
-    private var machines: [HostRecord] {
-        pairedMachines(stored: model.hosts, session: model.sessionHost)
-    }
+    private var machines: [HostRecord] { model.machines }
 
     private func label(_ host: HostRecord) -> String {
-        model.hostLabels[host.hostKey] ?? host.name ?? hostOf(host.url)
+        model.machineLabel(host.hostKey)
     }
 
-    private func isLive(_ host: HostRecord) -> Bool {
-        model.isConnected(host.hostKey)
-    }
-
-    private func status(_ host: HostRecord) -> String {
-        if host.hostKey == model.currentHostKey, model.connected,
-           let summary = model.connectedSummary {
-            return summary
-        }
-        return model.connectionLabel(for: host.hostKey)
-    }
-
-    /// Tap to switch; the trailing ⓘ has its own hit area and opens the
-    /// connection page without changing hosts.
+    /// Opens the machine's own settings; every machine is live, so there is
+    /// nothing to switch (#429).
     private func pairedRow(_ host: HostRecord) -> some View {
-        HStack(spacing: 4) {
-            // A plain tap gesture, not a Button: iOS 27 List rows swallow
-            // normal taps on Buttons (only a press-and-slide activates them),
-            // so host switching must not rely on one.
+        NavigationLink(value: Route.machine(host.hostKey)) {
             HStack(spacing: 10) {
-                MachineDot(live: isLive(host))
+                MachineDot(live: model.isConnected(host.hostKey))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label(host))
                         .foregroundStyle(.primary)
-                    Text(status(host))
+                    Text(model.connectionLabel(for: host.hostKey))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
-                Spacer(minLength: 0)
-                if host.hostKey == model.currentHostKey {
-                    Image(.check)
-                        .foregroundStyle(.blue)
-                }
             }
-            .contentShape(Rectangle())
-            .onTapGesture { choose(host) }
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction { choose(host) }
-
-            Button {
-                detailHostKey = host.hostKey
-            } label: {
-                Image(.info)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Connection details for \(label(host))")
         }
         .swipeActions {
             Button("Forget", role: .destructive) { forgetting = host }
@@ -161,15 +101,6 @@ struct SettingsView: View {
         .contextMenu {
             Button("Forget", image: .trash2, role: .destructive) { forgetting = host }
         }
-        // Rows are choices, not links — plain text, not tinted.
-        .tint(.primary)
-    }
-
-    private func choose(_ host: HostRecord) {
-        guard host.hostKey != model.currentHostKey || model.phase != .connected else { return }
-        model.switchHost(host.hostKey)
-        // Switching resets the stack already; in the sheet this closes it.
-        dismiss()
     }
 
     /// The app-level switch. Every connected host registers or clears; a host
@@ -192,8 +123,11 @@ struct SettingsView: View {
             set: { model.setPushEnabled($0) }
         ))
 
-        if model.connected && !model.hostSupports(.apnsPush) {
-            Text("Update the host to 5.9 or later to get notifications.")
+        let outdated = machines.filter {
+            model.isConnected($0.hostKey) && !model.hostSupports(.apnsPush, on: $0.hostKey)
+        }
+        if !outdated.isEmpty {
+            Text("Update \(ListFormatter.localizedString(byJoining: outdated.map(label))) to 5.9 or later to get notifications.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -223,14 +157,16 @@ struct SettingsView: View {
         }
     }
 
-    /// The app's version, and the connected host's — the app's own
-    /// protocol version is not exposed by the core.
+    /// The app's version, and each machine's that has answered — the app's
+    /// own protocol version is not exposed by the core.
     private var aboutSection: some View {
         Section("About") {
             LabeledContent("App version", value: appVersion)
-            if let info = model.snapshot?.host, let name = model.currentHostLabel {
-                LabeledContent(name) {
-                    Text("\(info.version ?? "source build") · protocol \(info.protocol.major).\(info.protocol.minor)")
+            ForEach(machines, id: \.hostKey) { host in
+                if let info = model.runtimes[host.hostKey]?.snapshot?.host {
+                    LabeledContent(label(host)) {
+                        Text("\(info.version ?? "source build") · protocol \(info.protocol.major).\(info.protocol.minor)")
+                    }
                 }
             }
         }
@@ -266,6 +202,9 @@ struct SettingsSheet: View {
                 }
         }
         .environment(\.popToProviders, PopToProvidersAction(stack: "settings") { path.popToProviders() })
+        // This stack isn't navPath; the focus must follow it all the same.
+        .onChange(of: path) { _, path in model.followVisiblePage(path.last) }
+        .onDisappear { model.followVisiblePage(model.navPath.last) }
     }
 }
 
@@ -281,6 +220,15 @@ struct MachineSettingsView: View {
 
     var body: some View {
         List {
+            Section {
+                NavigationLink(value: Route.host(hostKey)) {
+                    LabeledContent {
+                        Text(model.connectionLabel(for: hostKey))
+                    } label: {
+                        Label("Connection", image: .info)
+                    }
+                }
+            }
             if hostKey == model.currentHostKey, let snapshot = model.snapshot {
                 if snapshot.settings != nil && model.hostSupports(.hostName) {
                     hostNameSection(snapshot)
@@ -295,7 +243,7 @@ struct MachineSettingsView: View {
                 ContentUnavailableView {
                     Label("Not connected to this host", image: .cloudOff)
                 } description: {
-                    Text("Connect to it to see its settings.")
+                    Text("Its settings show once it connects.")
                 }
             }
         }
@@ -357,7 +305,7 @@ struct MachineSettingsView: View {
             }
             Spacer()
             if let id = entry.node.summary.id {
-                Button("Restore") { model.archive(conversation: id, false) }
+                Button("Restore") { model.archive(ConversationRef(hostKey: hostKey, conversationId: id), false) }
                     .buttonStyle(.tactile(.glass))
                     .controlSize(.small)
                     .disabled(!model.connected)
@@ -503,7 +451,7 @@ private struct DeviceRow: View {
     }
 }
 
-/// Green while the session is connected to this machine, grey otherwise.
+/// Green while this machine is connected, grey otherwise.
 private struct MachineDot: View {
     let live: Bool
 
