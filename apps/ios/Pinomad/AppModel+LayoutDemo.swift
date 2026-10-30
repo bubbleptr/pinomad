@@ -3,15 +3,18 @@ import Foundation
 import PinomadCore
 
 /// `PINOMAD_DEMO_LAYOUT`: the conversation list grouped by machine, without
-/// a host — two paired machines (the first connected), chats, two projects,
-/// a family whose subagents roll up into its row, and one archived root.
-/// `old` connects a 5.2 host, which has no folder picker.
+/// a host — three paired machines: the first with chats, two projects, a
+/// family whose subagents roll up into its row and one archived root; the
+/// second with a chat and a project; the third still connecting. `old`
+/// connects the first as a 5.2 host, which has no folder picker; `offline`
+/// fails the third instead.
 extension AppModel {
     func startLayoutDemo(_ mode: String) {
         useDevHosts(StoredHosts(
             hosts: [
                 HostRecord(url: "ws://mbp:7777", hostKey: "demo-mbp", privateKey: "", name: "mbp"),
                 HostRecord(url: "ws://omarchy:7777", hostKey: "demo-omarchy", privateKey: "", name: "omarchy"),
+                HostRecord(url: "ws://studio:7777", hostKey: "demo-studio", privateKey: "", name: "studio"),
             ],
             activeHostKey: "demo-mbp"
         ))
@@ -72,7 +75,31 @@ extension AppModel {
             organized: organized,
             notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
             agents: nil, conversation: nil
-        ))
+        ), on: "demo-mbp")
+        publishDevSnapshot(ClientSnapshot(
+            version: 1, connection: .connected, unauthorized: false,
+            protocolMismatch: nil,
+            host: HostInfo(version: nil, protocol: ProtocolVersion(major: 5, minor: 14)),
+            hostName: "omarchy", settings: nil, devices: [],
+            organized: Organized(
+                chats: [node(summary(50, "Hyprland window rules", status: .running, ago: 3))],
+                projects: [
+                    ProjectConversations(
+                        project: Project(path: "/home/kieran/Projects/dotfiles", name: "dotfiles", addedAt: now),
+                        conversations: [
+                            node(summary(60, "Waybar battery module", status: .needsAnswer, ago: 8)),
+                            node(summary(61, "Migrate to foot terminal", ago: 2_000)),
+                        ]
+                    ),
+                ],
+                archived: []
+            ),
+            notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
+            agents: nil, conversation: nil
+        ), on: "demo-omarchy")
+        if mode == "offline" {
+            failDevHost("demo-studio", .unreachable("Couldn't reach studio:7777."))
+        }
     }
 }
 #endif

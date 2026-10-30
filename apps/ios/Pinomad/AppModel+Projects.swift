@@ -170,14 +170,22 @@ extension AppModel {
         runtime.draftHome = .project(path: project.path ?? path)
     }
 
-    func rename(conversation id: UInt64, to title: String) async throws {
-        guard let session else { throw SessionError.sessionClosed }
-        _ = try await session.invoke(.renameConversation(id: id, title: title))
+    /// Rename on the conversation's own host — a cross-machine list holds
+    /// rows of hosts that aren't focused.
+    func rename(_ ref: ConversationRef, to title: String) async throws {
+        guard let session = runtimes[ref.hostKey]?.session else { throw SessionError.sessionClosed }
+        _ = try await session.invoke(.renameConversation(id: ref.conversationId, title: title))
     }
 
-    func archive(conversation id: UInt64, _ archived: Bool) {
-        guard let session else { return }
-        Task { _ = try? await session.invoke(.archive(id: id, archived: archived)) }
+    func archive(_ ref: ConversationRef, _ archived: Bool) {
+        guard let session = runtimes[ref.hostKey]?.session else { return }
+        Task { _ = try? await session.invoke(.archive(id: ref.conversationId, archived: archived)) }
+    }
+
+    /// Whether one host knows `method`, for rows and groups of hosts that
+    /// aren't focused.
+    func hostSupports(_ method: String, on hostKey: String) -> Bool {
+        hostSupportsCall(hostMinor: runtimes[hostKey]?.hostMinor ?? 0, method: method)
     }
 
     /// The host's own words for a request-class rejection.

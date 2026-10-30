@@ -69,14 +69,14 @@ extension AppModel {
             // No host needed: synthesize a streaming conversation so the
             // reply path (StreamingMarkdown + its fade) can be exercised
             // on a device that cannot reach one.
-            phase = .connected
+            phase = .home
             startDemo()
             return true
         }
         if env["PINOMAD_DEMO_SUBAGENTS"] != nil {
             // The subagent cards' states: one named agent and one ordinary
             // call, so their layouts can be compared without a host.
-            phase = .connected
+            phase = .home
             startSubagentDemo()
             return true
         }
@@ -84,7 +84,7 @@ extension AppModel {
             // The overview sheet: a worktree conversation in a project, a
             // change stat (`truncated` marks it approximate), and running
             // plus settled subagents.
-            phase = .connected
+            phase = .home
             startOverviewDemo(truncated: mode == "truncated")
             return true
         }
@@ -92,7 +92,7 @@ extension AppModel {
             // A run that keeps working: the capsule's live label, the todo
             // line and the trace sheet following new steps. `quiet` never
             // says anything mid-run, so the label is the current action.
-            phase = .connected
+            phase = .home
             startTraceDemo(interims: mode != "quiet")
             return true
         }
@@ -100,28 +100,29 @@ extension AppModel {
             // The agent's question card without a host: four questions, or
             // `single` for a one-question request; `offline` shows the four
             // with the connection down (Submit disabled).
-            phase = .connected
+            phase = .home
             startQuestionDemo(mode)
             return true
         }
         if let mode = env["PINOMAD_DEMO_SETTINGS"] {
             // The settings pages over two demo machines; `failed` opens on
-            // the failure page instead of the list.
+            // the first machine's failure page.
             startSettingsDemo(mode)
             return true
         }
         if let mode = env["PINOMAD_DEMO_LAYOUT"] {
-            // The conversation list grouped by machine: two paired hosts
-            // (one connected), chats, two projects, a family with subagents;
-            // `old` connects a host too old to add projects.
-            phase = .connected
+            // The conversation list grouped by machine: three paired hosts
+            // (two with views, one connecting), chats, projects, a family
+            // with subagents; `old` connects a host too old to add projects,
+            // `offline` fails the third.
+            phase = .home
             startLayoutDemo(mode)
             return true
         }
         if let context = env["PINOMAD_DEMO_CONTEXT"] {
             // The overview's context row at a scripted usage, for
             // screenshots on a simulator that cannot reach a host.
-            phase = .connected
+            phase = .home
             startContextDemo(context)
             return true
         }
@@ -134,7 +135,7 @@ extension AppModel {
         if let mode = env["PINOMAD_DEMO_MESSAGE_META"] {
             // Message times and delivery states without a host, for the
             // light/dark screenshots: transcript | queue.
-            phase = .connected
+            phase = .home
             startMessageMetaDemo(mode)
             return true
         }
@@ -142,14 +143,14 @@ extension AppModel {
             // The conversation model sheet's pickable Agent section on a
             // 5.18 host: `missing` keeps a since-removed agent selected,
             // `none` starts without one.
-            phase = .connected
+            phase = .home
             startAgentDemo(mode)
             return true
         }
         if let mode = env["PINOMAD_DEMO_MODELS"] {
             // The model capsule and sheet with makers' logos; `sheet` opens
             // the sheet over the conversation.
-            phase = .connected
+            phase = .home
             startModelsDemo(sheet: mode == "sheet")
             return true
         }
@@ -275,7 +276,7 @@ extension AppModel {
     /// `PINOMAD_DEMO_FILES=uploading|done|failed|all|bubble`: a draft with
     /// staged file chips, or a sent message with attachment chips.
     private func startFilesDemo(_ mode: String) {
-        phase = .connected
+        phase = .home
         let host = HostInfo(version: "5.19.0", protocol: ProtocolVersion(major: 5, minor: 19))
         let ref = ModelRef(provider: "faux", modelId: "faux-1")
         let model = ModelSummary(
@@ -1002,7 +1003,7 @@ extension AppModel {
     /// bubble and a timed answer; queue mode shows the inbox check and the
     /// same local phases above the composer.
     private func startMessageMetaDemo(_ mode: String) {
-        phase = .connected
+        phase = .home
         let now = Date.now.timeIntervalSince1970 * 1000
         let earlier = now - 2 * 86_400_000
         let host = HostInfo(version: "5.25.0", protocol: ProtocolVersion(major: 5, minor: 25))

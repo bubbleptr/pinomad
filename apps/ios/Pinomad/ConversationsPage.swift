@@ -1,17 +1,18 @@
 import PinomadCore
 import SwiftUI
 
-/// One list of the machine's roots — a status tile's, Chats, or a project —
-/// one row per family: forks and subagents roll up into their root's status
-/// and recency rather than getting rows of their own (the web sidebar's
-/// rule, via the core's family derivations).
+/// One list of roots — a machine's Chats or project, or a status tile's
+/// across every machine (nil host) — one row per family: forks and
+/// subagents roll up into their root's status and recency rather than
+/// getting rows of their own (the web sidebar's rule, via the core's family
+/// derivations).
 struct ConversationsPage: View {
     let model: AppModel
-    let hostKey: String
+    let hostKey: String?
     let filter: ConversationFilter
 
     /// The row being renamed, and the title being typed.
-    @State private var renaming: ConversationSummary?
+    @State private var renaming: ConversationRef?
     @State private var newTitle = ""
     @State private var renameError: String?
     @State private var query = ""
@@ -27,18 +28,15 @@ struct ConversationsPage: View {
                 .listRowSeparator(.hidden)
                 .listRowInsets(EdgeInsets(top: 4, leading: 20, bottom: 8, trailing: 20))
                 .accessibilityAddTraits(.isHeader)
-            ForEach(rows, id: \.node.summary.id) { entry in
-                row(entry.node, project: showsProject ? entry.project : nil)
+            ForEach(rows) { entry in
+                row(entry)
                     // The list ends without a rule under its last row.
-                    .listRowSeparator(
-                        entry.node.summary.id == rows.last?.node.summary.id ? .hidden : .automatic,
-                        edges: .bottom
-                    )
+                    .listRowSeparator(entry.id == rows.last?.id ? .hidden : .automatic, edges: .bottom)
             }
         }
         .listStyle(.plain)
         .overlay {
-            if rows.isEmpty, model.snapshot?.organized != nil {
+            if rows.isEmpty, loaded {
                 if query.isEmpty {
                     ContentUnavailableView { Label(emptyTitle, image: filter.image) }
                 } else {
@@ -50,19 +48,20 @@ struct ConversationsPage: View {
         // except as the slot "Connecting…" takes over.
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(removing: model.showsReconnecting ? nil : .title)
+        .toolbar(removing: model.showsReconnecting(hostKey) ? nil : .title)
         .searchable(text: $query, prompt: "Search conversations")
         .toolbar {
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
             ToolbarSpacer(.flexible, placement: .bottomBar)
             ToolbarItem(placement: .bottomBar) {
                 Button("New", image: .squarePen) {
+                    guard let draftHost else { return }
                     // A project's page starts the draft in it; Chats as a Chat.
-                    if case .project(let path) = filter { model.draftHome = .project(path: path) }
-                    if filter == .chats { model.draftHome = .chat }
-                    model.navPath.append(.newConversation(hostKey: hostKey))
+                    if case .project(let path) = filter { model.runtimes[draftHost]?.draftHome = .project(path: path) }
+                    if filter == .chats { model.runtimes[draftHost]?.draftHome = .chat }
+                    model.navPath.append(.newConversation(hostKey: draftHost))
                 }
-                .disabled(!model.connected)
+                .disabled(!model.isConnected(draftHost ?? ""))
             }
         }
         .alert("Rename Conversation", isPresented: Binding(
@@ -75,27 +74,49 @@ struct ConversationsPage: View {
         } message: {
             if let renameError { Text(renameError) }
         }
-        .safeAreaInset(edge: .top) { ConnectionBanner(model: model) }
-        .reconnectingTitle(model)
-    }
-
-    private var rows: [(node: ConversationNode, project: String?)] {
-        guard let organized = model.snapshot?.organized else { return [] }
-        let roots: [(node: ConversationNode, project: String?)]
-        switch filter {
-        case .all: roots = allRoots(organized)
-        case .needsAnswer, .running, .failed:
-            roots = allRoots(organized).filter { familyStatus(node: $0.node) == filter.status }
-        case .chats: roots = organized.chats.map { ($0, nil) }
-        case .project(let path):
-            roots = organized.projects.first { $0.project.path == path }?
-                .conversations.map { ($0, nil) } ?? []
+        .safeAreaInset(edge: .top) {
+            if let hostKey { ConnectionBanner(model: model, hostKey: hostKey) }
         }
-        guard !query.isEmpty else { return roots }
-        return roots.filter { displayName(summary: $0.node.summary).localizedCaseInsensitiveContains(query) }
+        .reconnectingTitle(model, hostKey: hostKey)
     }
 
-    /// A page mixing groups names each row's project.
+    /// This machine's draft; a cross-machine list starts on the machine
+    /// last shown, as the home page does.
+    private var draftHost: String? { hostKey ?? model.currentHostKey }
+
+    private var loaded: Bool {
+        if let hostKey { return model.runtimes[hostKey]?.snapshot != nil }
+        return model.machines.contains { model.runtimes[$0.hostKey]?.snapshot != nil }
+    }
+
+    private var organized: Organized? {
+        hostKey.flatMap { model.runtimes[$0]?.snapshot?.organized }
+    }
+
+    private var rows: [MachineRoot] {
+        let roots: [MachineRoot]
+        if let hostKey {
+            guard let organized else { return [] }
+            switch filter {
+            case .chats:
+                roots = organized.chats.map { MachineRoot(hostKey: hostKey, node: $0, project: nil) }
+            case .project(let path):
+                roots = (organized.projects.first { $0.project.path == path }?.conversations ?? [])
+                    .map { MachineRoot(hostKey: hostKey, node: $0, project: nil) }
+            default:
+                roots = allRoots(organized).map { MachineRoot(hostKey: hostKey, node: $0.node, project: $0.project) }
+            }
+        } else {
+            roots = model.machineRoots
+        }
+        let filtered = filter.status.map { status in
+            roots.filter { familyStatus(node: $0.node) == status }
+        } ?? roots
+        guard !query.isEmpty else { return filtered }
+        return filtered.filter { displayName(summary: $0.node.summary).localizedCaseInsensitiveContains(query) }
+    }
+
+    /// A page mixing groups names each row's project (and machine).
     private var showsProject: Bool {
         switch filter {
         case .chats, .project: false
@@ -106,7 +127,7 @@ struct ConversationsPage: View {
     private var title: String {
         switch filter {
         case .project(let path):
-            model.snapshot?.organized.projects.first { $0.project.path == path }?.project.name ?? path
+            organized?.projects.first { $0.project.path == path }?.project.name ?? path
         default: filter.title
         }
     }
@@ -121,37 +142,39 @@ struct ConversationsPage: View {
     }
 
     @ViewBuilder
-    private func row(_ node: ConversationNode, project: String?) -> some View {
-        let summary = node.summary
-        if let id = summary.id {
-            NavigationLink(value: Route.conversation(
-                ConversationRef(hostKey: hostKey, conversationId: id))) {
-                ConversationRowLabel(node: node, project: project)
-            }
-            .quietSeparator()
-            .contextMenu {
-                if model.hostSupports("renameConversation") {
-                    Button("Rename", image: .pencil) {
-                        newTitle = displayName(summary: summary)
-                        renameError = nil
-                        renaming = summary
+    private func row(_ entry: MachineRoot) -> some View {
+        let label = ConversationRowLabel(node: entry.node, project: showsProject ? model.rowSubtitle(entry) : nil)
+        if let ref = entry.ref {
+            NavigationLink(value: Route.conversation(ref)) { label }
+                .quietSeparator()
+                .contextMenu {
+                    if model.hostSupports("renameConversation", on: ref.hostKey) {
+                        Button("Rename", image: .pencil) {
+                            newTitle = displayName(summary: entry.node.summary)
+                            renameError = nil
+                            renaming = ref
+                        }
                     }
+                    Button("Archive", image: .archive) { model.archive(ref, true) }
                 }
-                Button("Archive", image: .archive) { model.archive(conversation: id, true) }
-            }
-            .swipeActions(edge: .trailing) {
-                Button("Archive", image: .archive) { model.archive(conversation: id, true) }
-                    .tint(.indigo)
-            }
+                .swipeActions(edge: .trailing) {
+                    Button("Archive", image: .archive) { model.archive(ref, true) }
+                        .tint(.indigo)
+                }
         } else {
-            ConversationRowLabel(node: node, project: project)
+            label
         }
     }
 
     /// Rename is request-class: a refusal comes back as the host's reason,
     /// shown in the alert, which stays up for another try.
     private func saveRename() {
-        guard let summary = renaming, let id = summary.id else { return }
+        guard let ref = renaming,
+              let summary = rows.first(where: { $0.ref == ref })?.node.summary
+        else {
+            renaming = nil
+            return
+        }
         let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty, title != displayName(summary: summary) else {
             renaming = nil
@@ -159,11 +182,11 @@ struct ConversationsPage: View {
         }
         Task {
             do {
-                try await model.rename(conversation: id, to: title)
+                try await model.rename(ref, to: title)
                 renaming = nil
             } catch {
                 renameError = model.describe(error)
-                renaming = summary
+                renaming = ref
             }
         }
     }

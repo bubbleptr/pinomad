@@ -87,6 +87,16 @@ public struct HostRuntimeTable: Equatable, Sendable {
         focus(HostFocus(hostKey: hostKey))
     }
 
+    /// Focus what the visible page shows (#429): its host's conversation or
+    /// draft. A page of no host — the home page, a cross-machine list —
+    /// keeps the focused host, which is where New starts, but not its
+    /// conversation.
+    @discardableResult
+    public mutating func followPage(_ page: HostFocus?) -> ConversationRef? {
+        guard let target = page ?? focus.map({ HostFocus(hostKey: $0.hostKey) }) else { return nil }
+        return focus(target)
+    }
+
     /// A new pairing lands at the end of the stored order; a manual pairing
     /// also focuses it.
     @discardableResult

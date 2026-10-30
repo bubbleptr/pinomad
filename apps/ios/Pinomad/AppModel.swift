@@ -15,8 +15,12 @@ final class AppModel {
         case loading
         /// No stored host — waiting for a link (pasted, scanned or opened).
         case pairing
+        /// A manual pairing's handshake, which owns the screen until done.
         case connecting
-        case connected
+        /// The home page: every paired machine, each showing its own state
+        /// (#429). One host failing never replaces it.
+        case home
+        /// A manual pairing failed, or the stored pairings couldn't be read.
         case failed(ConnectFailure)
     }
 
@@ -86,9 +90,6 @@ final class AppModel {
         return focusedRuntime?.host
     }
     var currentHostKey: String? {
-        #if DEBUG
-        if devHostsInjected { return developmentRuntime?.hostKey ?? runtimeTable.focus?.hostKey }
-        #endif
         if pairingOwnsFocus, pairing.host == nil { return nil }
         return runtimeTable.focus?.hostKey ?? sessionHost?.hostKey
     }
@@ -111,8 +112,11 @@ final class AppModel {
     /// The newest published view for the focused host — the list and the
     /// open conversation both read straight off it.
     var snapshot: ClientSnapshot? { focusedRuntime?.snapshot }
-    /// "Connecting…" in the bar for the focused host.
-    var showsReconnecting: Bool { focusedRuntime?.showsReconnecting ?? false }
+    /// "Connecting…" in the bar of one machine's pages.
+    func showsReconnecting(_ hostKey: String?) -> Bool {
+        guard let hostKey, let runtime = runtimes[hostKey] else { return false }
+        return runtime.phase == .connected && runtime.showsReconnecting
+    }
     /// NavigationStack path.
     var navPath: [Route] = []
     /// Live answer streams, one set per host. Reading through the focused
@@ -306,27 +310,42 @@ final class AppModel {
             }
             if runtimeTable.hostKeys.isEmpty, let key = runtime.hostKey {
                 runtimeTable = HostRuntimeTable(hostKeys: [key], rememberedHostKey: key)
+                runtimes[key] = runtime
             }
         }
         developmentRuntime?.publishDevelopmentSnapshot(snapshot)
-        phase = .connected
+        phase = .home
     }
 
-    /// A demo host list stands in for the keychain's; switching and
-    /// forgetting must then neither write the keychain nor dial anything.
+    /// A demo host list stands in for the keychain's, one sessionless
+    /// runtime per host; focusing and forgetting must then neither write the
+    /// keychain nor dial anything.
     func useDevHosts(_ stored: StoredHosts) {
         devHostsInjected = true
         hosts = stored
         runtimeTable = HostRuntimeTable(
             hostKeys: stored.hosts.map(\.hostKey), rememberedHostKey: stored.activeHostKey)
-        if let active = stored.active {
-            pairing.connect(active)
-            let runtime = HostRuntime(hostKey: active.hostKey, host: active, isPairing: false)
+        for host in stored.hosts {
+            let runtime = HostRuntime(hostKey: host.hostKey, host: host, isPairing: false)
             runtime.onToast = { [weak self] runtime, notice in
                 self?.presentToast(runtime, notice: notice)
             }
-            developmentRuntime = runtime
+            runtimes[host.hostKey] = runtime
         }
+        if let active = stored.active {
+            pairing.connect(active)
+            developmentRuntime = runtimes[active.hostKey]
+        }
+    }
+
+    /// Publish a demo snapshot on one injected host, focused or not.
+    func publishDevSnapshot(_ snapshot: ClientSnapshot, on hostKey: String) {
+        runtimes[hostKey]?.publishDevelopmentSnapshot(snapshot)
+    }
+
+    /// Fail one injected host, as its first connect would.
+    func failDevHost(_ hostKey: String, _ failure: ConnectFailure) {
+        runtimes[hostKey]?.fail(failure)
     }
     #endif
 
@@ -349,9 +368,6 @@ final class AppModel {
     /// The runtime the screen reads, or a pairing handshake that owns it.
     var focusedRuntime: HostRuntime? {
         if pairingOwnsFocus, let pairingRuntime { return pairingRuntime }
-        #if DEBUG
-        if devHostsInjected { return developmentRuntime }
-        #endif
         if let key = runtimeTable.focus?.hostKey, let runtime = runtimes[key] {
             return runtime
         }
@@ -431,25 +447,22 @@ final class AppModel {
         updatePushVisibility()
     }
 
-    /// Keep focus on what the stack actually shows: a conversation page owns
-    /// the ref, every other page shows the host's draft and releases the
-    /// conversation subscription. This is what makes the push banner rule
-    /// depend on the visible conversation, not on the app being foregrounded.
+    /// Keep focus on what the stack actually shows (#429): a conversation
+    /// page owns its ref, another host-scoped page focuses that host's draft,
+    /// and a page of no host keeps the host but releases its conversation.
+    /// Never touches the stack — this is what replaces an explicit switch,
+    /// and what makes the push banner rule depend on the visible conversation.
     func navigationChanged() {
-        guard !pairingOwnsFocus, let hostKey = runtimeTable.focus?.hostKey else { return }
-        if case .conversation(let ref)? = navPath.last {
-            if ref.hostKey == hostKey, runtimeTable.focus != HostFocus(
-                hostKey: ref.hostKey, conversationId: ref.conversationId) {
-                let released = runtimeTable.focusConversation(ref)
-                if let released { runtimes[released.hostKey]?.clearConversation() }
-                persistFocus(ref.hostKey)
-                syncPhase()
-            }
-            updatePushVisibility()
-            return
-        }
-        let released = runtimeTable.focusDraft(on: hostKey)
+        guard !pairingOwnsFocus else { return }
+        let previousHost = runtimeTable.focus?.hostKey
+        let released = runtimeTable.followPage(navPath.last?.page)
         if let released { runtimes[released.hostKey]?.clearConversation() }
+        if let hostKey = runtimeTable.focus?.hostKey, hostKey != previousHost {
+            if runtimes[hostKey] == nil, let host = hosts.hosts.first(where: { $0.hostKey == hostKey }) {
+                ensureRuntime(host)
+            }
+            persistFocus(hostKey)
+        }
         updatePushVisibility()
     }
 
@@ -471,6 +484,12 @@ final class AppModel {
     }
 
     private func persistFocus(_ hostKey: String) {
+        #if DEBUG
+        if devHostsInjected {
+            hosts = hosts.activating(hostKey)
+            return
+        }
+        #endif
         do {
             try store.update { stored in
                 stored = stored.activating(hostKey)
@@ -674,6 +693,16 @@ final class AppModel {
             } else {
                 connectActive()
             }
+        }
+    }
+
+    /// Try one stored host again with a fresh session, from its own failure
+    /// page or banner.
+    func retryConnection(hostKey: String) {
+        if let runtime = runtimes[hostKey] {
+            restart(runtime)
+        } else if let host = hosts.hosts.first(where: { $0.hostKey == hostKey }) {
+            ensureRuntime(host)
         }
     }
 
@@ -944,22 +973,18 @@ final class AppModel {
             return
         }
         if pairingOwnsFocus, let pairingRuntime {
-            phase = appPhase(pairingRuntime.phase)
+            switch pairingRuntime.phase {
+            case .connecting: phase = .connecting
+            case .connected: phase = .home
+            case .failed(let failure): phase = .failed(failure)
+            }
             return
         }
-        guard let runtime = focusedRuntime else {
-            phase = hostsLoaded && hosts.hosts.isEmpty ? .pairing : .loading
+        if !runtimeTable.hostKeys.isEmpty {
+            phase = .home
             return
         }
-        phase = appPhase(runtime.phase)
-    }
-
-    private func appPhase(_ phase: HostRuntime.Phase) -> Phase {
-        switch phase {
-        case .connecting: .connecting
-        case .connected: .connected
-        case .failed(let failure): .failed(failure)
-        }
+        phase = hostsLoaded && hosts.hosts.isEmpty ? .pairing : .loading
     }
 
     private func paired(_ runtime: HostRuntime, host: HostRecord, saveError: String?) {
@@ -1077,7 +1102,7 @@ final class AppModel {
     /// "Connected · P2P" / "Relay" / "Direct" / "Local" for the focused
     /// host; nil when nothing is connected.
     var connectedSummary: String? {
-        guard phase == .connected, let snapshot, snapshot.connection == .connected,
+        guard focusedRuntime?.phase == .connected, let snapshot, snapshot.connection == .connected,
               !snapshot.unauthorized
         else { return nil }
         let path: String

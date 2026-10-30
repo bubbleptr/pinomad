@@ -27,6 +27,31 @@ extension AppModel {
             uniquingKeysWith: { first, _ in first })
     }
 
+    /// Every paired machine in stored order — positions never jump when the
+    /// focus moves — plus a host a pairing just made that the keychain
+    /// failed to keep.
+    var machines: [HostRecord] {
+        pairedMachines(stored: hosts, session: sessionHost)
+    }
+
+    /// What every screen calls one machine.
+    func machineLabel(_ hostKey: String) -> String {
+        if let label = hostLabels[hostKey] { return label }
+        guard let host = hostRecord(for: hostKey) else { return "Host" }
+        return host.name ?? hostOf(host.url)
+    }
+
+    /// Every machine's roots in stored order, for the status tiles, search
+    /// and the cross-machine lists (#429).
+    var machineRoots: [MachineRoot] {
+        machines.flatMap { host -> [MachineRoot] in
+            guard let organized = runtimes[host.hostKey]?.snapshot?.organized else { return [] }
+            return allRoots(organized).map {
+                MachineRoot(hostKey: host.hostKey, node: $0.node, project: $0.project)
+            }
+        }
+    }
+
     /// One host's connection state for the per-host rows (issue #428 §8).
     func connectionLabel(for hostKey: String) -> String {
         guard let runtime = runtimes[hostKey] else { return "Not connected" }

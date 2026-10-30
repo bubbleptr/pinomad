@@ -166,7 +166,7 @@ struct SettingsView: View {
     }
 
     private func choose(_ host: HostRecord) {
-        guard host.hostKey != model.currentHostKey || model.phase != .connected else { return }
+        guard host.hostKey != model.currentHostKey || model.phase != .home else { return }
         model.switchHost(host.hostKey)
         // Switching resets the stack already; in the sheet this closes it.
         dismiss()
@@ -357,7 +357,7 @@ struct MachineSettingsView: View {
             }
             Spacer()
             if let id = entry.node.summary.id {
-                Button("Restore") { model.archive(conversation: id, false) }
+                Button("Restore") { model.archive(ConversationRef(hostKey: hostKey, conversationId: id), false) }
                     .buttonStyle(.tactile(.glass))
                     .controlSize(.small)
                     .disabled(!model.connected)
