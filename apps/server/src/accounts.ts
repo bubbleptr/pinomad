@@ -1,5 +1,6 @@
 // Server accounts (ADR-0022 §2): the server persists users, sessions, join
-// tokens, and host bindings in <dataDir>/server.sqlite, guarded by the same
+// tokens, host bindings, and the APNs tokens each account's devices registered
+// (ADR-0036) in <dataDir>/server.sqlite, guarded by the same
 // one-process-per-directory lock the host uses. Secrets never reach the DB in
 // the clear — passwords are scrypt hashes, session and join tokens are SHA-256.
 //
@@ -10,11 +11,12 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
+import type { ApnsEnvironment } from "@pinomad/protocol/relay.ts";
 import { normalizeHostName } from "@pinomad/protocol/settings.ts";
 import { lockDataDir } from "./lock.ts";
 
 const DB_FILE = "server.sqlite";
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 // Sessions die 30 days after issue and are never renewed — a stolen token has a
 // hard ceiling, and re-logging-in is the only way forward.
@@ -23,6 +25,23 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 // Join tokens are short-lived and single-use (ADR-0022 §3): a leaked one is
 // only useful for minutes and only once.
 const JOIN_TOKEN_TTL_MS = 10 * 60 * 1000;
+
+// Push registrations (ADR-0036 §2, §5): the app refreshes its token on every
+// connect and foreground, so one untouched for 90 days belongs to a device
+// that is gone; an account keeps its 32 most recently refreshed.
+const PUSH_TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+const MAX_PUSH_TOKENS_PER_USER = 32;
+
+// Same bounds the host applies to `setPushToken` (apps/host/src/push.ts):
+// Apple does not fix the length, so hex up to 256 characters.
+const APNS_TOKEN_PATTERN = /^(?:[0-9a-f]{2})+$/;
+const APNS_TOKEN_MAX_CHARS = 256;
+
+/** The lowercase token when `raw` is a plausible APNs device token, else undefined. */
+export function normalizeApnsToken(raw: string): string | undefined {
+  const token = raw.toLowerCase();
+  return token.length <= APNS_TOKEN_MAX_CHARS && APNS_TOKEN_PATTERN.test(token) ? token : undefined;
+}
 
 // scrypt parameters are embedded in the stored string, so they can be raised
 // later without a flag day for existing hashes.
@@ -113,6 +132,22 @@ export interface Accounts {
     readonly noisePublicKey: string;
     readonly name?: string;
   }): JoinHostResult;
+  /** The account a host is bound to, or undefined for an unbound hostId. */
+  hostOwner(hostId: string): number | undefined;
+  /**
+   * Registers or refreshes a device's APNs token under `userId` (ADR-0036 §1-2).
+   * A token belongs to one account at a time: registering it moves it here.
+   */
+  registerPushToken(userId: number, token: string, environment: ApnsEnvironment): void;
+  /** Drops the registration only when `userId` owns it. */
+  removePushToken(userId: number, token: string, environment: ApnsEnvironment): void;
+  /** The account a live (refreshed within 90 days) registration belongs to. */
+  pushTokenOwner(token: string, environment: ApnsEnvironment): number | undefined;
+  /**
+   * APNs reported the token invalid at `unregisteredAt`: drop the registration
+   * only when it is older, so a late 410 never removes a fresh one (ADR-0025 §5).
+   */
+  forgetPushToken(token: string, environment: ApnsEnvironment, unregisteredAt: number): void;
   /** Drops a host's account binding; false when the hostId was never bound. */
   leaveHost(hostId: string): boolean;
   /** Every host bound to a user — GET /api/hosts. */
@@ -186,9 +221,28 @@ function migrate(db: DatabaseSync): void {
     throw new Error(`server database schema ${version} is newer than this build (${SCHEMA_VERSION})`);
   }
   if (version === SCHEMA_VERSION) return;
-  // Schema is defined once up front — join_tokens and hosts exist from day one
-  // even though their writers arrive in later steps (roadmap M3). The whole
-  // migration is one transaction so a crash can't leave a half-made schema.
+  // Each step is one transaction so a crash can't leave a half-made schema.
+  // Schema 1 defined join_tokens and hosts up front even though their writers
+  // arrived in later steps (roadmap M3).
+  if (version < 1) migrateTo1(db);
+  if (version < 2) {
+    db.exec(`
+      BEGIN;
+      CREATE TABLE push_tokens (
+        token TEXT NOT NULL,
+        environment TEXT NOT NULL,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (token, environment)
+      );
+      CREATE INDEX push_tokens_user ON push_tokens (user_id, updated_at);
+      PRAGMA user_version = 2;
+      COMMIT;
+    `);
+  }
+}
+
+function migrateTo1(db: DatabaseSync): void {
   db.exec(`
     BEGIN;
     CREATE TABLE users (
@@ -218,7 +272,7 @@ function migrate(db: DatabaseSync): void {
       joined_at INTEGER NOT NULL,
       last_seen_at INTEGER NOT NULL
     );
-    PRAGMA user_version = ${SCHEMA_VERSION};
+    PRAGMA user_version = 1;
     COMMIT;
   `);
 }
@@ -399,11 +453,72 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
     },
 
     revokeAllSessions(userId) {
-      db.prepare("DELETE FROM sessions WHERE user_id = ?").run(userId);
+      // Signing out everywhere also stops every device of the account from
+      // receiving pushes until it logs in and registers again (ADR-0036 §5).
+      db.exec("BEGIN");
+      try {
+        db.prepare("DELETE FROM sessions WHERE user_id = ?").run(userId);
+        db.prepare("DELETE FROM push_tokens WHERE user_id = ?").run(userId);
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
     },
 
     hasHost(hostId) {
       return db.prepare("SELECT 1 AS x FROM hosts WHERE host_id = ?").get(hostId) !== undefined;
+    },
+
+    hostOwner(hostId) {
+      const row = db.prepare("SELECT user_id AS userId FROM hosts WHERE host_id = ?").get(hostId) as
+        | { userId: number }
+        | undefined;
+      return row?.userId;
+    },
+
+    registerPushToken(userId, token, environment) {
+      const at = now();
+      db.exec("BEGIN");
+      try {
+        db.prepare("DELETE FROM push_tokens WHERE updated_at < ?").run(at - PUSH_TOKEN_TTL_MS);
+        db.prepare(
+          `INSERT INTO push_tokens (token, environment, user_id, updated_at) VALUES (?, ?, ?, ?)
+           ON CONFLICT (token, environment) DO UPDATE SET user_id = excluded.user_id, updated_at = excluded.updated_at`,
+        ).run(token.toLowerCase(), environment, userId, at);
+        db.prepare(
+          `DELETE FROM push_tokens WHERE user_id = ? AND rowid NOT IN (
+             SELECT rowid FROM push_tokens WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?
+           )`,
+        ).run(userId, userId, MAX_PUSH_TOKENS_PER_USER);
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+
+    removePushToken(userId, token, environment) {
+      db.prepare("DELETE FROM push_tokens WHERE token = ? AND environment = ? AND user_id = ?").run(
+        token.toLowerCase(),
+        environment,
+        userId,
+      );
+    },
+
+    pushTokenOwner(token, environment) {
+      const row = db
+        .prepare("SELECT user_id AS userId FROM push_tokens WHERE token = ? AND environment = ? AND updated_at >= ?")
+        .get(token.toLowerCase(), environment, now() - PUSH_TOKEN_TTL_MS) as { userId: number } | undefined;
+      return row?.userId;
+    },
+
+    forgetPushToken(token, environment, unregisteredAt) {
+      db.prepare("DELETE FROM push_tokens WHERE token = ? AND environment = ? AND updated_at < ?").run(
+        token.toLowerCase(),
+        environment,
+        unregisteredAt,
+      );
     },
 
     createJoinToken(userId) {
@@ -543,6 +658,7 @@ export async function changePassword(options: {
       db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hash, userId);
       db.prepare("DELETE FROM sessions WHERE user_id = ?").run(userId);
       db.prepare("DELETE FROM join_tokens WHERE user_id = ? AND used_at IS NULL").run(userId);
+      db.prepare("DELETE FROM push_tokens WHERE user_id = ?").run(userId);
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");

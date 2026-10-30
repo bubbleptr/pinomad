@@ -79,6 +79,11 @@ async function startServer(
   const dataDir = await tempDir();
   defer(dataDir.remove);
   const accounts = await openAccounts({ dataDir: dataDir.path, bootstrapUser: "admin", bootstrapPassword: GOOD_PASSWORD });
+  // The devices are logged into the host's account and registered their
+  // tokens with the server, which only pushes to those (ADR-0036).
+  for (const token of [TOKEN_OK, TOKEN_GONE, TOKEN_BAD, TOKEN_BUSY, TOKEN_ERR, TOKEN_JWT]) {
+    for (const env of envs) accounts.registerPushToken(1, token, env);
+  }
   const apns = await fakeApns(responder);
   defer(apns.close);
   const environments: Record<string, { keyId: string; keyPem: string; authority: string }> = {};
