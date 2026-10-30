@@ -39,17 +39,22 @@ struct ConversationListView: View {
                         if host.hostKey == model.currentHostKey {
                             currentMachine
                         } else {
-                            Button {
-                                model.switchHost(host.hostKey)
-                            } label: {
-                                Label(
-                                    model.isConnected(host.hostKey)
-                                        ? "Connected. Tap to switch" : "Not connected. Tap to switch",
-                                    image: model.isConnected(host.hostKey) ? .circleCheck : .cloudOff)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .listRowBackground(Color.clear)
-                            .listRowSeparator(.hidden, edges: .bottom)
+                            // A plain tap gesture, not a Button: on iOS 27 a
+                            // Button inside a List row does not receive a
+                            // normal tap (only a press-and-slide), so the
+                            // switch silently never ran (issue #428 review).
+                            Label(
+                                model.isConnected(host.hostKey)
+                                    ? "Connected. Tap to switch" : "Not connected. Tap to switch",
+                                image: model.isConnected(host.hostKey) ? .circleCheck : .cloudOff)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                                .onTapGesture { model.switchHost(host.hostKey) }
+                                .accessibilityAddTraits(.isButton)
+                                .accessibilityAction { model.switchHost(host.hostKey) }
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden, edges: .bottom)
                         }
                     } header: {
                         MachineHeader(
@@ -57,6 +62,10 @@ struct ConversationListView: View {
                             online: model.isConnected(host.hostKey)
                         )
                     }
+                    // Rebuild the section when focus moves between hosts:
+                    // its two branches have different structure, and the old
+                    // row's action must not survive the swap.
+                    .id("\(host.hostKey):\(host.hostKey == model.currentHostKey ? "focused" : "other")")
                 }
             }
         }

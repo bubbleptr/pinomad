@@ -39,6 +39,15 @@ struct HostRuntimeTableTests {
         #expect(table.focus == HostFocus(hostKey: "home"))
     }
 
+    @Test func switchingToAnotherHostsDraftMovesFocusBothWays() {
+        var table = HostRuntimeTable(hostKeys: ["home", "office"], rememberedHostKey: "office")
+        #expect(table.focus == HostFocus(hostKey: "office"))
+        #expect(table.focusDraft(on: "home") == nil)
+        #expect(table.focus == HostFocus(hostKey: "home"))
+        #expect(table.focusDraft(on: "office") == nil)
+        #expect(table.focus == HostFocus(hostKey: "office"))
+    }
+
     @Test func forgettingTheFocusedHostFallsBackWithoutItsConversation() {
         var table = HostRuntimeTable(hostKeys: ["home", "office"], rememberedHostKey: "home")
         table.focusConversation(ConversationRef(hostKey: "home", conversationId: 4))

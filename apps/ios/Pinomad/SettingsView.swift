@@ -117,31 +117,29 @@ struct SettingsView: View {
     /// connection page without changing hosts.
     private func pairedRow(_ host: HostRecord) -> some View {
         HStack(spacing: 4) {
-            Button {
-                guard host.hostKey != model.currentHostKey || model.phase != .connected else { return }
-                model.switchHost(host.hostKey)
-                // Switching resets the stack already; in the sheet this closes it.
-                dismiss()
-            } label: {
-                HStack(spacing: 10) {
-                    MachineDot(live: isLive(host))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(label(host))
-                            .foregroundStyle(.primary)
-                        Text(status(host))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                    if host.hostKey == model.currentHostKey {
-                        Image(.check)
-                            .foregroundStyle(.blue)
-                    }
+            // A plain tap gesture, not a Button: iOS 27 List rows swallow
+            // normal taps on Buttons (only a press-and-slide activates them),
+            // so host switching must not rely on one.
+            HStack(spacing: 10) {
+                MachineDot(live: isLive(host))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(label(host))
+                        .foregroundStyle(.primary)
+                    Text(status(host))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
-                .contentShape(Rectangle())
+                Spacer(minLength: 0)
+                if host.hostKey == model.currentHostKey {
+                    Image(.check)
+                        .foregroundStyle(.blue)
+                }
             }
-            .buttonStyle(.plain)
+            .contentShape(Rectangle())
+            .onTapGesture { choose(host) }
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { choose(host) }
 
             Button {
                 detailHostKey = host.hostKey
@@ -165,6 +163,13 @@ struct SettingsView: View {
         }
         // Rows are choices, not links — plain text, not tinted.
         .tint(.primary)
+    }
+
+    private func choose(_ host: HostRecord) {
+        guard host.hostKey != model.currentHostKey || model.phase != .connected else { return }
+        model.switchHost(host.hostKey)
+        // Switching resets the stack already; in the sheet this closes it.
+        dismiss()
     }
 
     /// The app-level switch. Every connected host registers or clears; a host
