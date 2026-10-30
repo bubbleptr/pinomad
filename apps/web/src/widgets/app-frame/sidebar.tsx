@@ -2,18 +2,19 @@ import { Avatar } from "@astryxdesign/core/Avatar";
 import { Button } from "@astryxdesign/core/Button";
 import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
+import { Icon } from "@astryxdesign/core/Icon";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
-import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { ConversationNode, Home, Project } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { familyStatus, taskGroupsOf, type FamilyStatus } from "@pinomad/client/family.ts";
 import { useAppUpdate } from "../../entities/app-update/use-app-update.ts";
-import { ArchiveArrowDown, Bot, ChevronRight, FolderAdd, FolderClosed, FolderOpenState, MoreHorizontal, Pencil, Plus, Settings, Trash2, UserCircle } from "../../shared/ui/icons.tsx";
+import { ArchiveArrowDown, Bot, ChatBubble, FolderAdd, FolderClosed, FolderOpenState, MoreHorizontal, Pencil, Plus, Settings, Trash2, UserCircle } from "../../shared/ui/icons.tsx";
 import { AnimatedNewChat, AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
 import { AddProjectDialog, RemoveProjectDialog } from "./project-dialogs.tsx";
 import { RenameConversationDialog } from "./rename-dialog.tsx";
@@ -24,11 +25,10 @@ import { clientDeviceName } from "../../address.ts";
 const PROJECT_EXPANDED_KEY = "pinomad.projectSidebar.expanded";
 
 /** Project folds belong to one host: the same path may exist on both. */
-const projectExpandedKey = (hostKey: string | undefined): string =>
-  hostKey === undefined ? PROJECT_EXPANDED_KEY : `${PROJECT_EXPANDED_KEY}.${hostKey}`;
+const projectExpandedKey = (machineKey: string): string => `${PROJECT_EXPANDED_KEY}.${machineKey}`;
 
-const readExpandedProjects = (hostKey: string | undefined): Record<string, boolean> => {
-  const raw = window.localStorage.getItem(projectExpandedKey(hostKey));
+const readExpandedProjects = (machineKey: string): Record<string, boolean> => {
+  const raw = window.localStorage.getItem(projectExpandedKey(machineKey));
   if (raw === null) return {};
   try {
     const parsed = JSON.parse(raw) as Record<string, boolean>;
@@ -42,26 +42,12 @@ const readExpandedProjects = (hostKey: string | undefined): Record<string, boole
   }
 };
 
-const writeExpandedProjects = (hostKey: string | undefined, expanded: Record<string, boolean>): void => {
-  window.localStorage.setItem(projectExpandedKey(hostKey), JSON.stringify(expanded));
+const writeExpandedProjects = (machineKey: string, expanded: Record<string, boolean>): void => {
+  window.localStorage.setItem(projectExpandedKey(machineKey), JSON.stringify(expanded));
 };
 
 const flattenNodes = (nodes: readonly ConversationNode[]): ConversationNode[] =>
   nodes.flatMap((node) => [node, ...flattenNodes(node.children)]);
-
-function useSidebarSectionExpansion(section: "chats" | "projects") {
-  const storageKey = `pinomad.sidebarSection.${section}.expanded`;
-  const [expanded, setExpanded] = useState(() =>
-    typeof window === "undefined" || window.localStorage.getItem(storageKey) !== "false",
-  );
-  const contentId = useId();
-  const toggle = () => {
-    const next = !expanded;
-    window.localStorage.setItem(storageKey, String(next));
-    setExpanded(next);
-  };
-  return { expanded, contentId, toggle };
-}
 
 /** The SideNav header band: the collapse toggle. The slot adds 8px block
     padding each side, so 24px of band lands the toggle on the same 40px
@@ -99,10 +85,13 @@ export function SidebarHeaderBand({
 export function SidebarFooter({
   onOpenSettings,
   onOpenAccount,
+  onLocateHost,
   onSelect,
 }: {
   onOpenSettings: () => void;
   onOpenAccount: () => void;
+  /** Bring a machine's sidebar group into view; absent where there is no group to show. */
+  onLocateHost?: (hostKey: string) => void;
   onSelect?: () => void;
 }) {
   const update = useAppUpdate();
@@ -116,7 +105,7 @@ export function SidebarFooter({
           }}
         />
       </div>
-      <HostsMenu />
+      <HostsMenu {...(onLocateHost === undefined ? {} : { onLocate: onLocateHost })} />
       <span className="relative inline-flex">
         <IconButton
           icon={<Settings aria-hidden="true" />}
@@ -209,11 +198,14 @@ function SidebarSectionHeader({
         onClick={onToggle}
       >
         <span className="pigui-sidenav-section-toggle__title">{title}</span>
-        <ChevronRight
+        {/* The same chevron glyph the selectors use, so every disclosure reads alike. */}
+        <span
           aria-hidden="true"
           className="pigui-sidenav-section-toggle__chevron"
           data-expanded={expanded ? "true" : "false"}
-        />
+        >
+          <Icon icon="chevronRight" size="sm" color="inherit" />
+        </span>
       </button>
       <HStack className={pinnedActions ? undefined : "pigui-sidenav-hover-actions"} gap={0.5} vAlign="center">
         {actions}
@@ -246,8 +238,17 @@ function FamilyStatusGlyph({ status }: { status: FamilyStatus }) {
 
 
 
-function ProjectExpansionIndicator({ expanded }: { expanded: boolean }) {
-  const StateIcon = expanded ? FolderOpenState : FolderClosed;
+/** A folder row's glyph: its own icon at rest, a turning chevron on hover. */
+function FoldIndicator({
+  expanded,
+  closed: Closed,
+  open: Open,
+}: {
+  expanded: boolean;
+  closed: typeof FolderClosed;
+  open: typeof FolderClosed;
+}) {
+  const StateIcon = expanded ? Open : Closed;
   return (
     <span
       aria-hidden="true"
@@ -255,7 +256,9 @@ function ProjectExpansionIndicator({ expanded }: { expanded: boolean }) {
       data-expanded={expanded ? "true" : "false"}
     >
       <StateIcon className="pigui-project-expansion-indicator__state" />
-      <ChevronRight className="pigui-project-expansion-indicator__chevron" />
+      <span className="pigui-project-expansion-indicator__chevron">
+        <Icon icon="chevronRight" size="sm" color="inherit" />
+      </span>
     </span>
   );
 }
@@ -364,96 +367,58 @@ function ConversationRow({
   );
 }
 
-/**
- * What the sidebar can render before the focused host has a view. The global
- * New chat still works — it selects a connected host by itself.
- */
-export function SidebarUnavailable({
-  onNewChat,
-  onSelect,
-}: {
-  onNewChat?: () => void;
-  onSelect?: () => void;
-}) {
-  return (
-    <SideNavSection isHeaderHidden title="New chat">
-      <SideNavItem
-        icon={<AnimatedNewChat className="size-4" />}
-        label="New chat"
-        isDisabled={onNewChat === undefined}
-        onClick={() => {
-          onNewChat?.();
-          onSelect?.();
-        }}
-      />
-    </SideNavSection>
-  );
+/** One paired machine as the sidebar sees it (ADR-0035 §1). */
+export interface SidebarMachine {
+  /** The stored hostKey, or a fixed key for a token client. */
+  readonly key: string;
+  readonly label: string;
+  /** The host's latest snapshot; absent until its first connection is ready. */
+  readonly view?: DurableView;
+  readonly remote?: RemoteDurable;
 }
 
+/** A request to bring one machine's group into view; `seq` repeats a locate. */
+export interface SidebarLocate {
+  readonly key: string;
+  readonly seq: number;
+}
+
+const machineExpandedKey = (key: string): string => `pinomad.sidebarMachine.${key}.expanded`;
+
+/** Not a filesystem path, so it can share the project fold map. */
+const CHATS_FOLD = ":chats";
+
 /**
- * The sidebar's shared content — the "New chat" entry plus the Chats and
- * Projects sections — rendered inside the desktop SideNav and inside MobileNav
- * on narrow screens.
+ * The sidebar's shared content — the global "New chat" entry plus one group per
+ * paired machine (machine → project → conversation, ADR-0035 §1) — rendered
+ * inside the desktop SideNav and inside MobileNav on narrow screens.
  */
 export function SidebarContent({
-  view,
-  remote,
-  hostKey,
+  machines,
+  focusKey,
   draftingChat,
   shownId,
-  onDraft,
+  locate,
   onNewChat,
+  onDraft,
   onOpen,
+  onShowMachine,
   onSelect,
 }: {
-  view: DurableView;
-  remote: RemoteDurable;
-  /** The stored host this tree belongs to; absent for token clients. */
-  hostKey?: string;
+  machines: readonly SidebarMachine[];
+  /** The machine the main column shows; only its rows can be selected. */
+  focusKey: string | undefined;
   draftingChat: boolean;
   shownId: ConversationId | undefined;
-  onDraft: (home: Home) => void;
-  /** The global New chat entry chooses its host; the section actions stay on this one. */
+  locate?: SidebarLocate;
+  /** The global New chat chooses its own machine (ADR-0035 §7). */
   onNewChat?: () => void;
-  onOpen: (id: ConversationId) => void;
+  onDraft: (key: string, home: Home) => void;
+  onOpen: (key: string, id: ConversationId) => void;
+  /** Focus a machine that has nothing to list, so the main column explains why. */
+  onShowMachine?: (key: string) => void;
   onSelect?: () => void;
 }) {
-  const disabled = view.connection !== "connected";
-  const [addOpen, setAddOpen] = useState(false);
-  const [removing, setRemoving] = useState<Project>();
-  const [expandedProjects, setExpandedProjects] = useState(() => readExpandedProjects(hostKey));
-  const chats = useSidebarSectionExpansion("chats");
-  const projects = useSidebarSectionExpansion("projects");
-  const start = (home: Home): void => {
-    onDraft(home);
-    onSelect?.();
-  };
-  const shownProjectPath = useMemo(
-    () =>
-      shownId === undefined
-        ? undefined
-        : view.organized.projects.find(({ conversations }) =>
-            flattenNodes(conversations).some((node) => node.summary.id === shownId),
-          )?.project.path,
-    [shownId, view.organized.projects],
-  );
-  // Keep the shown conversation's project open even if the user folded it.
-  useEffect(() => {
-    if (shownProjectPath === undefined) return;
-    setExpandedProjects((prev) => {
-      if (prev[shownProjectPath] !== false) return prev;
-      const next = { ...prev, [shownProjectPath]: true };
-      writeExpandedProjects(hostKey, next);
-      return next;
-    });
-  }, [hostKey, shownProjectPath]);
-  const toggleProject = (path: string): void =>
-    setExpandedProjects((prev) => {
-      const next = { ...prev, [path]: !(prev[path] ?? true) };
-      writeExpandedProjects(hostKey, next);
-      return next;
-    });
-
   return (
     <>
       <SideNavSection isHeaderHidden title="New chat">
@@ -461,7 +426,6 @@ export function SidebarContent({
           icon={<AnimatedNewChat className="size-4" />}
           label="New chat"
           isSelected={draftingChat}
-          // Global: it may pick another connected host even when this one is offline.
           isDisabled={onNewChat === undefined}
           onClick={() => {
             onNewChat?.();
@@ -469,141 +433,225 @@ export function SidebarContent({
           }}
         />
       </SideNavSection>
-      <SideNavSection isHeaderHidden title="Chats">
-        <SidebarSectionHeader
-          title="Chats"
-          expanded={chats.expanded}
-          contentId={chats.contentId}
-          onToggle={chats.toggle}
-          actions={
-            <IconButton
-              icon={<Plus aria-hidden="true" />}
-              label="New chat without a project"
-              tooltip="New chat"
-              size="sm"
-              variant="ghost"
-              isDisabled={disabled}
-              onClick={() => start({ kind: "chat" })}
-            />
-          }
+      {machines.map((machine) => (
+        <MachineSection
+          key={machine.key}
+          machine={machine}
+          shownId={machine.key === focusKey ? shownId : undefined}
+          locateSeq={locate?.key === machine.key ? locate.seq : undefined}
+          onDraft={(home) => onDraft(machine.key, home)}
+          onOpen={(id) => onOpen(machine.key, id)}
+          {...(onShowMachine === undefined ? {} : { onShow: () => onShowMachine(machine.key) })}
+          onSelect={onSelect}
         />
-        <VStack id={chats.contentId} gap={0.5}>
-          {chats.expanded ? (
-            view.organized.chats.length === 0 ? (
-              <SideNavItem icon={<SessionGlyphSlot />} isDisabled label="No chats" />
-            ) : (
-              view.organized.chats.map((node) => (
-                <ConversationRow
-                  key={node.summary.id}
-                  node={node}
-                  shown={shownId}
-                  disabled={disabled}
-                  remote={remote}
-                  onOpen={onOpen}
-                  onSelect={onSelect}
-                />
-              ))
-            )
-          ) : null}
-        </VStack>
-      </SideNavSection>
-      <SideNavSection isHeaderHidden title="Projects">
+      ))}
+    </>
+  );
+}
+
+/**
+ * One machine's group. Its header carries no connection status (#213): that
+ * lives in the footer's hosts list. Dialogs and folds here belong to this
+ * machine's remote alone, whichever machine is focused.
+ */
+function MachineSection({
+  machine,
+  shownId,
+  locateSeq,
+  onDraft,
+  onOpen,
+  onShow,
+  onSelect,
+}: {
+  machine: SidebarMachine;
+  shownId: ConversationId | undefined;
+  locateSeq: number | undefined;
+  onDraft: (home: Home) => void;
+  onOpen: (id: ConversationId) => void;
+  onShow?: () => void;
+  onSelect?: (() => void) | undefined;
+}) {
+  const { key, label, view, remote } = machine;
+  const disabled = view?.connection !== "connected";
+  const contentId = useId();
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(() => window.localStorage.getItem(machineExpandedKey(key)) !== "false");
+  const setMachineExpanded = (next: boolean): void => {
+    window.localStorage.setItem(machineExpandedKey(key), String(next));
+    setExpanded(next);
+  };
+  const [addOpen, setAddOpen] = useState(false);
+  const [removing, setRemoving] = useState<Project>();
+  const [folds, setFolds] = useState(() => readExpandedProjects(key));
+  const organized = view?.organized;
+  const start = (home: Home): void => {
+    onDraft(home);
+    onSelect?.();
+  };
+  const shownFold = useMemo(() => {
+    if (shownId === undefined || organized === undefined) return undefined;
+    if (flattenNodes(organized.chats).some((node) => node.summary.id === shownId)) return CHATS_FOLD;
+    return organized.projects.find(({ conversations }) =>
+      flattenNodes(conversations).some((node) => node.summary.id === shownId),
+    )?.project.path;
+  }, [organized, shownId]);
+  // Keep the shown conversation visible even if the user folded its machine or folder.
+  useEffect(() => {
+    if (shownFold === undefined) return;
+    if (!expanded) setMachineExpanded(true);
+    setFolds((prev) => {
+      if (prev[shownFold] !== false) return prev;
+      const next = { ...prev, [shownFold]: true };
+      writeExpandedProjects(key, next);
+      return next;
+    });
+    // Only a move of the shown conversation reopens; a fold made afterwards stays.
+  }, [key, shownFold]);
+  // A locate from the hosts list opens the group and scrolls it into view
+  // without moving focus (#427).
+  useEffect(() => {
+    if (locateSeq === undefined) return;
+    setMachineExpanded(true);
+    headerRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [locateSeq]);
+  const toggleFold = (path: string): void =>
+    setFolds((prev) => {
+      const next = { ...prev, [path]: !(prev[path] ?? true) };
+      writeExpandedProjects(key, next);
+      return next;
+    });
+  const row = (node: ConversationNode) =>
+    remote === undefined ? null : (
+      <ConversationRow
+        key={node.summary.id}
+        node={node}
+        shown={shownId}
+        disabled={disabled}
+        remote={remote}
+        onOpen={onOpen}
+        onSelect={onSelect}
+      />
+    );
+  const chatsOpen = folds[CHATS_FOLD] ?? true;
+
+  return (
+    <SideNavSection isHeaderHidden title={label}>
+      <div ref={headerRef}>
         <SidebarSectionHeader
-          title="Projects"
-          expanded={projects.expanded}
-          contentId={projects.contentId}
-          onToggle={projects.toggle}
-          pinnedActions
+          title={label}
+          expanded={expanded}
+          contentId={contentId}
+          onToggle={() => setMachineExpanded(!expanded)}
           actions={
-            <IconButton
-              icon={<FolderAdd aria-hidden="true" />}
-              label="Add project"
-              tooltip="Add project"
-              size="sm"
-              variant="ghost"
-              isDisabled={disabled}
-              onClick={() => setAddOpen(true)}
-            />
-          }
-        />
-        <VStack id={projects.contentId} gap={0.5}>
-          {projects.expanded ? (
-            view.organized.projects.length === 0 ? (
-              <SideNavItem
+            <>
+              <IconButton
+                icon={<Plus aria-hidden="true" />}
+                label={`New chat on ${label}`}
+                tooltip="New chat"
+                size="sm"
+                variant="ghost"
+                isDisabled={disabled}
+                onClick={() => start({ kind: "chat" })}
+              />
+              <IconButton
                 icon={<FolderAdd aria-hidden="true" />}
-                label="Add project"
+                label={`Add project on ${label}`}
+                tooltip="Add project"
+                size="sm"
+                variant="ghost"
                 isDisabled={disabled}
                 onClick={() => setAddOpen(true)}
               />
-            ) : (
-              view.organized.projects.map(({ project, conversations }) => {
-                const expanded = expandedProjects[project.path] ?? true;
-                return (
-                  <div key={project.path} className="pigui-sidenav-row-with-actions">
-                    <SideNavItem
-                      collapsible={{ isCollapsed: !expanded, onCollapsedChange: () => toggleProject(project.path) }}
-                      icon={<ProjectExpansionIndicator expanded={expanded} />}
-                      label={project.name}
-                      isDisabled={disabled}
-                      // A <button> row cannot contain the interactive actions;
-                      // this only reserves their width so the label truncates
-                      // before the overlay.
-                      endContent={<span aria-hidden="true" className="pigui-sidenav-actions-spacer" />}
-                    >
-                      {conversations.length === 0 ? (
-                        <SideNavItem icon={<SessionGlyphSlot />} isDisabled label="No conversations" />
-                      ) : (
-                        conversations.map((node) => (
-                          <ConversationRow
-                            key={node.summary.id}
-                            node={node}
-                            shown={shownId}
-                            disabled={disabled}
-                            remote={remote}
-                            onOpen={onOpen}
-                            onSelect={onSelect}
-                          />
-                        ))
-                      )}
-                    </SideNavItem>
-                    <HStack className="pigui-sidenav-row-actions" gap={0.5} vAlign="center">
-                      <HStack className="pigui-sidenav-hover-actions" gap={0.5} vAlign="center">
-                        <IconButton
-                          icon={<Plus aria-hidden="true" />}
-                          label={`New conversation in ${project.name}`}
-                          size="sm"
-                          variant="ghost"
-                          isDisabled={disabled}
-                          onClick={() => start({ kind: "project", path: project.path })}
-                        />
-                        <DropdownMenu
-                          hasChevron={false}
-                          button={{
-                            icon: <MoreHorizontal aria-hidden="true" />,
-                            isIconOnly: true,
-                            label: `Project actions for ${project.name}`,
-                            size: "sm",
-                            variant: "ghost",
-                            isDisabled: disabled,
-                          }}
-                          items={[
-                            {
-                              label: "Remove project",
-                              icon: <Trash2 aria-hidden="true" size={16} />,
-                              onClick: () => setRemoving(project),
-                            },
-                          ]}
-                        />
-                      </HStack>
+            </>
+          }
+        />
+      </div>
+      <VStack id={contentId} gap={0.5}>
+        {!expanded ? null : organized === undefined ? (
+          <SideNavItem
+            icon={<SessionGlyphSlot />}
+            label="No conversations available"
+            isDisabled={onShow === undefined}
+            onClick={() => {
+              onShow?.();
+              onSelect?.();
+            }}
+          />
+        ) : organized.chats.length === 0 && organized.projects.length === 0 ? (
+          <SideNavItem icon={<SessionGlyphSlot />} isDisabled label="No conversations" />
+        ) : (
+          <>
+            {organized.chats.length === 0 ? null : (
+              // Same wrapper as a project row, so its conversations share the
+              // project rows' indent (see .pigui-sidenav-row-with-actions).
+              <div className="pigui-sidenav-row-with-actions">
+                <SideNavItem
+                  collapsible={{ isCollapsed: !chatsOpen, onCollapsedChange: () => toggleFold(CHATS_FOLD) }}
+                  icon={<FoldIndicator expanded={chatsOpen} closed={ChatBubble} open={ChatBubble} />}
+                  label="Chats"
+                  isDisabled={disabled}
+                >
+                  {organized.chats.map(row)}
+                </SideNavItem>
+              </div>
+            )}
+            {organized.projects.map(({ project, conversations }) => {
+              const open = folds[project.path] ?? true;
+              return (
+                <div key={project.path} className="pigui-sidenav-row-with-actions">
+                  <SideNavItem
+                    collapsible={{ isCollapsed: !open, onCollapsedChange: () => toggleFold(project.path) }}
+                    icon={<FoldIndicator expanded={open} closed={FolderClosed} open={FolderOpenState} />}
+                    label={project.name}
+                    isDisabled={disabled}
+                    // A <button> row cannot contain the interactive actions;
+                    // this only reserves their width so the label truncates
+                    // before the overlay.
+                    endContent={<span aria-hidden="true" className="pigui-sidenav-actions-spacer" />}
+                  >
+                    {conversations.length === 0 ? (
+                      <SideNavItem icon={<SessionGlyphSlot />} isDisabled label="No conversations" />
+                    ) : (
+                      conversations.map(row)
+                    )}
+                  </SideNavItem>
+                  <HStack className="pigui-sidenav-row-actions" gap={0.5} vAlign="center">
+                    <HStack className="pigui-sidenav-hover-actions" gap={0.5} vAlign="center">
+                      <IconButton
+                        icon={<Plus aria-hidden="true" />}
+                        label={`New conversation in ${project.name}`}
+                        size="sm"
+                        variant="ghost"
+                        isDisabled={disabled}
+                        onClick={() => start({ kind: "project", path: project.path })}
+                      />
+                      <DropdownMenu
+                        hasChevron={false}
+                        button={{
+                          icon: <MoreHorizontal aria-hidden="true" />,
+                          isIconOnly: true,
+                          label: `Project actions for ${project.name}`,
+                          size: "sm",
+                          variant: "ghost",
+                          isDisabled: disabled,
+                        }}
+                        items={[
+                          {
+                            label: "Remove project",
+                            icon: <Trash2 aria-hidden="true" size={16} />,
+                            onClick: () => setRemoving(project),
+                          },
+                        ]}
+                      />
                     </HStack>
-                  </div>
-                );
-              })
-            )
-          ) : null}
-        </VStack>
-      </SideNavSection>
-      {addOpen ? (
+                  </HStack>
+                </div>
+              );
+            })}
+          </>
+        )}
+      </VStack>
+      {addOpen && remote !== undefined ? (
         <AddProjectDialog
           remote={remote}
           connected={!disabled}
@@ -614,9 +662,9 @@ export function SidebarContent({
           onClose={() => setAddOpen(false)}
         />
       ) : null}
-      {removing === undefined ? null : (
+      {removing === undefined || remote === undefined ? null : (
         <RemoveProjectDialog project={removing} remote={remote} connected={!disabled} onClose={() => setRemoving(undefined)} />
       )}
-    </>
+    </SideNavSection>
   );
 }

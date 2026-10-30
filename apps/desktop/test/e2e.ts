@@ -165,8 +165,9 @@ try {
       })
       .then(() => undefined);
 
-  // Both hosts run concurrently; selecting A only moves focus. The marker
-  // survives only if the renderer was not reloaded.
+  // Both hosts run concurrently, each with its own sidebar group; opening A's
+  // conversation only moves focus. The marker survives only if the renderer
+  // was not reloaded.
   await page.evaluate(() => {
     (window as unknown as { __pinomadE2ENoReload?: string }).__pinomadE2ENoReload = "kept";
   });
@@ -175,7 +176,10 @@ try {
   await page.getByRole("menuitem", { name: `${labelB} (connected)`, exact: true }).waitFor();
   await settleMenu();
   await page.screenshot({ path: "/tmp/pinomad-desktop-host-switcher.png" });
-  await page.getByRole("menuitem", { name: `${labelA} (connected)`, exact: true }).click();
+  await page.keyboard.press("Escape");
+  const groupA = page.getByRole("group", { name: labelA, exact: true });
+  const groupB = page.getByRole("group", { name: labelB, exact: true });
+  await groupA.getByRole("button", { name: "hello from electron", exact: true }).click();
   await prompt.waitFor({ timeout: 30_000 });
   await page.getByText("hello from the desktop", { exact: true }).waitFor({ timeout: 30_000 });
   const marker = await page.evaluate(
@@ -183,10 +187,8 @@ try {
   );
   if (marker !== "kept") throw new Error("switching hosts reloaded the window");
 
-  // Switching back to B finds its conversation intact.
-  await page.getByRole("button", { name: "Hosts", exact: true }).click();
-  await page.getByRole("menuitem", { name: `${labelB} (connected)`, exact: true }).waitFor();
-  await page.getByRole("menuitem", { name: `${labelB} (connected)`, exact: true }).click();
+  // Going back to B finds its conversation intact.
+  await groupB.getByRole("button", { name: "hello from electron on B", exact: true }).click();
   await prompt.waitFor({ timeout: 30_000 });
   await page.getByText("hello from host B", { exact: true }).waitFor({ timeout: 30_000 });
 
@@ -201,7 +203,8 @@ try {
     .waitFor({ timeout: 30_000 });
   await settleMenu();
   await page.screenshot({ path: "/tmp/pinomad-desktop-host-switcher-offline.png" });
-  await page.getByRole("menuitem", { name: `${labelA} (connected)`, exact: true }).click();
+  await page.keyboard.press("Escape");
+  await groupA.getByRole("button", { name: "hello from electron", exact: true }).click();
   await prompt.waitFor({ timeout: 30_000 });
   await page.getByText("hello from the desktop", { exact: true }).waitFor({ timeout: 30_000 });
 

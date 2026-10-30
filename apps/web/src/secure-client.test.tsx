@@ -164,7 +164,7 @@ describe("SecureClient retry identity and candidates", () => {
       "wss://b-direct.example/secure",
     ]);
     // The second attempt actually becomes ready, not just "options changed".
-    await waitFor(() => expect(screen.queryByText("Connecting")).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Connecting" })).toBeNull());
     expect(screen.queryByText("Could not connect to the host")).toBeNull();
   });
 
@@ -186,13 +186,13 @@ describe("SecureClient retry identity and candidates", () => {
 
     render(<Harness address={address} connect={connect} observed={observed} initialHosts={initialHosts} />);
     await waitFor(() => expect(calls).toHaveLength(1));
-    await waitFor(() => expect(screen.queryByText("Connecting")).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Connecting" })).toBeNull());
     const first = calls[0]!;
     if ("onEndpointSet" in first) first.onEndpointSet?.(B);
     await waitFor(() => expect(observed.hosts[0]?.endpointSet).toEqual(B));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(calls).toHaveLength(1);
-    expect(screen.queryByText("Connecting")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Connecting" })).toBeNull();
   });
 
   it("stops replaying the secret and keeps the same device after paired", async () => {

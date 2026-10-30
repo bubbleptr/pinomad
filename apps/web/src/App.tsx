@@ -24,13 +24,13 @@ import { outgoingImage, type ImageVariant } from "@pinomad/protocol/images.ts";
 import { findConversation, type ConversationNode, type Home } from "@pinomad/protocol/organization.ts";
 import { currentAgentOf } from "./entities/conversation/current-agent.ts";
 import { displayName, forksAt, rootOf } from "@pinomad/client/family.ts";
-import { mergeStoredHost, updateStoredHostConnection, updateStoredHostEndpoints } from "@pinomad/client/stored-host.ts";
+import { hostLabels, mergeStoredHost, updateStoredHostConnection, updateStoredHostEndpoints } from "@pinomad/client/stored-host.ts";
 import { candidatePlan, preferredLegacyUrl } from "@pinomad/protocol/remote-candidates.ts";
 import { requestNotificationPermission } from "./entities/conversation/notification-permission.ts";
 import { ImageSourceProvider, useImageRetryKey } from "./entities/image/image-source.tsx";
 import { useRunNotifications } from "./entities/conversation/use-run-notifications.ts";
 import { useConversationOpening, type Opening } from "./entities/conversation/use-conversation-opening.ts";
-import { AppFrame, FrameHeader, NoticeToasts } from "./widgets/app-frame/app-frame.tsx";
+import { AppFrame, FrameHeader } from "./widgets/app-frame/app-frame.tsx";
 import { HostFrame } from "./widgets/app-frame/host-frame.tsx";
 import { DraftHome } from "./widgets/draft-home/draft-home.tsx";
 import { ConversationComposer } from "./widgets/composer/conversation-composer.tsx";
@@ -798,7 +798,7 @@ export function Workbench({
   hostCancelOpening?: () => void;
 }) {
   const view = useDurableView(remote);
-  const { focus, focusConversation, focusDraft, rememberConversation } = useHosts();
+  const { hosts, focus, focusConversation, focusDraft, rememberConversation } = useHosts();
   // A draft create resolves after an arbitrary delay. Record the latest focus
   // so a same-host selection made while it was in flight wins.
   const focusRef = useRef(focus);
@@ -945,6 +945,17 @@ export function Workbench({
   useEffect(() => {
     void remote.controller.showSide(undefined);
   }, [familyRootId]);
+  const labels = hostLabels(hosts);
+  // A stored host's draft can move to another paired machine — to that
+  // machine's own draft, untouched by what was typed here (ADR-0035 §7).
+  const draftMachine =
+    hostKey === undefined || framed
+      ? undefined
+      : {
+          value: hostKey,
+          options: hosts.map((host) => ({ value: host.hostKey, label: labels.get(host.hostKey) ?? host.url })),
+          onChange: focusDraft,
+        };
   const draftLabel = draft.kind === "chat" ? "New chat" : `New conversation in ${projectName(view.organized, draft.path)}`;
   // Any conversation with a parent — fork or subagent — offers a breadcrumb
   // back to the conversation it belongs to.
@@ -1035,6 +1046,7 @@ export function Workbench({
             hostKey={hostKey}
             draft={draft}
             onDraft={startDraft}
+            {...(draftMachine === undefined ? {} : { machine: draftMachine })}
             onCreated={() => {
               const id = remote.view.current().conversation?.conversation.id;
               if (id === undefined) return;
@@ -1217,7 +1229,6 @@ export function Workbench({
           onOpenInMain={openInMain}
         />
       ) : null}
-      <NoticeToasts notices={view.notices} />
       {forkTarget === undefined ? null : (
         <ForkDialog
           entryId={forkTarget}
@@ -1243,15 +1254,23 @@ export function Workbench({
     >
       {framed ? (
         <AppFrame
-          view={view}
-          remote={remote}
-          device={device}
-          hostKey={hostKey}
-          onReconnect={onReconnect}
+          // A one-shot client reaches a single machine.
+          machines={[
+            {
+              key: hostKey ?? "local",
+              label: view.settings?.hostName ?? wsUrl,
+              view,
+              remote,
+              ...(hostKey === undefined ? {} : { hostKey }),
+              ...(device === undefined ? {} : { device }),
+              ...(onReconnect === undefined ? {} : { retry: onReconnect }),
+            },
+          ]}
+          focusKey={hostKey ?? "local"}
           draftingChat={drafting && draft.kind === "chat"}
           shownId={shownId}
-          onDraft={startDraft}
-          onOpen={openConversation}
+          onDraft={(_key, home) => startDraft(home)}
+          onOpen={(_key, id) => openConversation(id)}
           onNewChat={() => startDraft({ kind: "chat" })}
           narrow={narrow}
         >

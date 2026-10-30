@@ -9,6 +9,7 @@ import { HStack, Layout, LayoutContent, LayoutPanel, VStack } from "@astryxdesig
 import { List, ListItem } from "@astryxdesign/core/List";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
+import { Selector } from "@astryxdesign/core/Selector";
 import { SideNav, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
@@ -22,13 +23,12 @@ import { cleanHostName, type HostSettings, type QueueMode } from "@pinomad/proto
 import type { ModelRef } from "@earendil-works/pi-durable";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { familyUpdatedAt, relativeTime } from "@pinomad/client/family.ts";
-import { hostLabels } from "@pinomad/client/stored-host.ts";
 import { summaryOf, thinkingLevelLabels } from "@pinomad/client/model.ts";
-import { useHosts } from "../../entities/host/host-store.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { Archive, ArchiveRestore, ArrowLeft, Bot, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, MoreHorizontal, Puzzle, RefreshCw, Sparkles } from "../../shared/ui/icons.tsx";
 import { AgentEditorDialog } from "./agent-editor-dialog.tsx";
+import type { FrameMachine } from "./app-frame.tsx";
 import { DevicesSection } from "./devices-section.tsx";
 import { HostsSection } from "./hosts.tsx";
 import { ProvidersSection } from "./providers-section.tsx";
@@ -69,44 +69,53 @@ const sectionIcon = (Icon: Section["icon"]): ReactNode => (
  * drill-in under 640px; the open section is the only local state.
  */
 export function SettingsDialog({
-  view,
-  remote,
-  device,
-  hostKey,
-  onReconnect,
+  machines,
+  initialKey,
   onClose,
 }: {
-  /** The focused host's snapshot; absent while it is connecting or failed. */
-  view?: DurableView;
-  remote?: RemoteDurable;
-  /** This client's device key, for marking "This device" under Devices. */
-  device?: KeyPair;
-  /** The stored host this connection is to — absent for token clients. */
-  hostKey?: string;
-  /** Remount the connection after a terminal close (for example Direct only). */
-  onReconnect?: () => void;
+  /** Every paired machine; the host group manages one of them at a time. */
+  machines: readonly FrameMachine[];
+  /** The machine to open on — the focused one. */
+  initialKey?: string;
   onClose: () => void;
 }) {
   const compact = useMediaQuery("(max-width: 640px)");
   const [section, setSection] = useState<SectionId | undefined>(undefined);
+  // Picked here, not followed from focus: a form half-filled for one machine
+  // must never be saved to another because focus moved underneath it.
+  const [pickedKey, setPickedKey] = useState(initialKey);
+  const machine = machines.find((entry) => entry.key === pickedKey) ?? machines[0];
+  const view = machine?.view;
+  const remote = machine?.remote;
   const hostAvailable = view !== undefined && remote !== undefined;
   const connected = view?.connection === "connected";
-  const { hosts } = useHosts();
   const hasUpdater = window.pinomadDesktop?.updates !== undefined;
-  // A host that is not ready has no settings streams to show; fall back only
-  // when the selected section is host-scoped. "This device" sections (Hosts,
-  // Updates) stay reachable while the focused host is connecting or failed.
-  const selected = section ?? (connected ? "providers" : "hosts");
-  const active = !hostAvailable && isHostSection(selected) ? "hosts" : selected;
-  // The cached name of the host this connection reaches — a token client
-  // reaches none of the stored ones, whichever pairing is selected.
-  const stored = hosts.find((host) => host.hostKey === hostKey);
-  const hostName =
-    view?.settings?.hostName ?? (stored === undefined ? undefined : hostLabels(hosts).get(stored.hostKey)) ?? "This host";
+  const choosable = machines.length > 1;
+  // A host that is not ready has no settings streams to show; open on the
+  // device's own sections then. An explicit pick stays put and explains itself.
+  const active = section ?? (connected ? "providers" : "hosts");
+  const hostName = view?.settings?.hostName ?? machine?.label ?? "This host";
   const groups = [
     { title: "This device", sections: SECTIONS.filter((entry) => entry.group === "device" && (entry.id !== "updates" || hasUpdater)) },
-    ...(hostAvailable ? [{ title: hostName, sections: SECTIONS.filter((entry) => entry.group === "host") }] : []),
+    // With a picker the machine's name is on the picker; the title just names the group.
+    ...(hostAvailable || choosable
+      ? [{ title: choosable ? "Host" : hostName, sections: SECTIONS.filter((entry) => entry.group === "host") }]
+      : []),
   ];
+  const picker =
+    !choosable || machine === undefined ? null : (
+      <Selector
+        label="Host"
+        isLabelHidden
+        size="sm"
+        variant="ghost"
+        placement="below"
+        startIcon={<Computer aria-hidden="true" className="size-4 shrink-0 text-muted" />}
+        value={machine.key}
+        options={machines.map((entry) => ({ value: entry.key, label: entry.label }))}
+        onChange={setPickedKey}
+      />
+    );
 
   const sectionNav = (
     <LayoutPanel padding={2} width="calc(var(--spacing-10) * 7)" hasDivider>
@@ -114,6 +123,7 @@ export function SettingsDialog({
         <VStack gap={3}>
           {groups.map((group) => (
             <SideNavSection key={group.title} title={group.title}>
+              {group.sections[0]?.group === "host" ? picker : null}
               {group.sections.map((entry) => (
                 <SideNavItem
                   key={entry.id}
@@ -137,6 +147,7 @@ export function SettingsDialog({
           <Text type="supporting" weight="semibold">
             {group.title}
           </Text>
+          {group.sections[0]?.group === "host" ? picker : null}
           <List density="compact" aria-label={group.title}>
             {group.sections.map((entry) => (
               <ListItem
@@ -199,13 +210,13 @@ export function SettingsDialog({
                 // Host-scoped pages carry form and navigation state, so a
                 // focus switch must remount them instead of handing A's
                 // half-filled form to B's remote. Device sections stay put.
-                key={isHostSection(active) ? `host:${hostKey ?? "local"}` : undefined}
+                key={isHostSection(active) ? `host:${machine?.key ?? "none"}` : undefined}
                 {...(view === undefined ? {} : { view })}
                 {...(remote === undefined ? {} : { remote })}
-                {...(device === undefined ? {} : { device })}
-                {...(hostKey === undefined ? {} : { hostKey })}
+                {...(machine?.device === undefined ? {} : { device: machine.device })}
+                {...(machine?.hostKey === undefined ? {} : { hostKey: machine.hostKey })}
                 connected={connected}
-                {...(onReconnect === undefined ? {} : { onReconnect })}
+                {...(machine?.retry === undefined ? {} : { onReconnect: machine.retry })}
                 section={active}
                 showTitle={!compact}
               />
@@ -273,11 +284,10 @@ function sectionBody(
     return { title: "Updates", body: <UpdatesSection /> };
   }
   if (view === undefined || remote === undefined) {
-    // The host group is hidden while the focused host is not ready; this
-    // covers a runtime disappearing while the dialog is already open.
+    // The picked machine has no settings streams until it connects.
     return {
       title: sectionTitle(section),
-      body: <Text as="p" type="supporting">Connect to a host to see its settings.</Text>,
+      body: <Text as="p" type="supporting">This host isn't connected. Its settings appear once it is.</Text>,
     };
   }
   switch (section) {

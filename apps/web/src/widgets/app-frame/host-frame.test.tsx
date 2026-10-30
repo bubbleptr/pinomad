@@ -1,6 +1,6 @@
 // The frame lives above one host's runtime: focus and connection churn move
 // the main column, not the sidebar, and the global New chat picks a machine.
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useMemo, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -23,7 +23,7 @@ import {
 } from "../../entities/host/host-runtimes.ts";
 import { HostsContext, type HostsState } from "../../entities/host/host-store.ts";
 import type { HostFocus } from "../../entities/host/focus.ts";
-import { DEVBOX_HOST, fakeHosts, fakeRemote, fakeView, HOME_HOST } from "../../test/story-fixtures.tsx";
+import { DEVBOX_HOST, fakeHosts, fakeRemote, fakeView, HOME_HOST, PARSER_ID } from "../../test/story-fixtures.tsx";
 import { HostFrame } from "./host-frame.tsx";
 
 const id = (value: number): ConversationId => value as ConversationId;
@@ -125,7 +125,26 @@ describe("the app frame across hosts", () => {
     expect(screen.getByRole("navigation")).toBe(sidebar);
   });
 
-  it("drops host-private sidebar state when focus moves", async () => {
+  it("lists every paired machine and opens a conversation on the machine clicked", async () => {
+    const registry = createHostRuntimeRegistry();
+    render(
+      <Harness
+        hosts={[HOME_HOST, DEVBOX_HOST]}
+        initialFocus={{ hostKey: HOME_HOST.hostKey, conversationId: id(2) }}
+        connect={connected}
+        registry={registry}
+      />,
+    );
+    await waitFor(() => expect(registry.get(DEVBOX_HOST.hostKey)?.phase).toBe("ready"));
+    const devbox = await screen.findByRole("group", { name: "omarchy" });
+    expect(screen.getByRole("group", { name: "kieran-mbp" })).toBeInTheDocument();
+
+    await userEvent.click(within(devbox).getByRole("button", { name: "Fix the parser's trailing-comma bug" }));
+
+    await waitFor(() => expect(screen.getByTestId("focus").textContent).toBe(`${DEVBOX_HOST.hostKey}:${PARSER_ID}`));
+  });
+
+  it("archives through the remote of the machine the row belongs to", async () => {
     const registry = createHostRuntimeRegistry();
     const { connect, remotes } = connectedHosts();
     render(
@@ -136,21 +155,104 @@ describe("the app frame across hosts", () => {
         registry={registry}
       />,
     );
-    await waitFor(() => expect(screen.getByTestId("workbench").dataset.host).toBe(HOME_HOST.hostKey));
     await waitFor(() => expect(registry.get(DEVBOX_HOST.hostKey)?.phase).toBe("ready"));
+    const devbox = await screen.findByRole("group", { name: "omarchy" });
 
-    await userEvent.click(screen.getByRole("button", { name: "Project actions for pinomad" }));
+    await userEvent.click(within(devbox).getAllByRole("button", { name: "Conversation actions" })[0]!);
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Archive" }));
+
+    expect(remotes.get(DEVBOX_HOST.hostKey)!.controller.archive).toHaveBeenCalled();
+    expect(remotes.get(HOME_HOST.hostKey)!.controller.archive).not.toHaveBeenCalled();
+  });
+
+  it("starts a chat draft on the machine whose header was used", async () => {
+    const registry = createHostRuntimeRegistry();
+    render(
+      <Harness
+        hosts={[HOME_HOST, DEVBOX_HOST]}
+        initialFocus={{ hostKey: HOME_HOST.hostKey, conversationId: id(2) }}
+        connect={connected}
+        registry={registry}
+      />,
+    );
+    await waitFor(() => expect(registry.get(DEVBOX_HOST.hostKey)?.phase).toBe("ready"));
+    registry.get(DEVBOX_HOST.hostKey)!.composer.slot(newDraftKey).setHome({ kind: "project", path: "/elsewhere" });
+
+    await userEvent.click(await screen.findByRole("button", { name: "New chat on omarchy" }));
+
+    await waitFor(() => expect(screen.getByTestId("focus").textContent).toBe(`${DEVBOX_HOST.hostKey}:draft`));
+    await waitFor(() => expect(screen.getByTestId("workbench").dataset.home).toBe("chat"));
+  });
+
+  it("lets a machine that never connected be focused from its group", async () => {
+    const registry = createHostRuntimeRegistry();
+    const connect = (options: RemoteDurableOptions): Promise<RemoteDurable> => {
+      const url = "candidates" in options ? options.candidates[0]?.url ?? "" : "";
+      return url.includes("omarchy") ? new Promise<RemoteDurable>(() => {}) : connected(options);
+    };
+    render(
+      <Harness
+        hosts={[HOME_HOST, DEVBOX_HOST]}
+        initialFocus={{ hostKey: HOME_HOST.hostKey, conversationId: id(2) }}
+        connect={connect}
+        registry={registry}
+      />,
+    );
+    const devbox = await screen.findByRole("group", { name: "omarchy" });
+
+    await userEvent.click(within(devbox).getByRole("button", { name: "No conversations available" }));
+
+    await waitFor(() => expect(screen.getByTestId("focus").textContent).toBe(`${DEVBOX_HOST.hostKey}:draft`));
+  });
+
+  it("locates a machine from the hosts list without moving focus", async () => {
+    const registry = createHostRuntimeRegistry();
+    render(
+      <Harness
+        hosts={[HOME_HOST, DEVBOX_HOST]}
+        initialFocus={{ hostKey: HOME_HOST.hostKey, conversationId: id(2) }}
+        connect={connected}
+        registry={registry}
+      />,
+    );
+    await waitFor(() => expect(registry.get(DEVBOX_HOST.hostKey)?.phase).toBe("ready"));
+    const devbox = await screen.findByRole("group", { name: "omarchy" });
+    await userEvent.click(within(devbox).getByRole("button", { name: "Collapse omarchy" }));
+    expect(within(devbox).queryByRole("button", { name: "Fix the parser's trailing-comma bug" })).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Hosts" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: /omarchy/ }));
+
+    expect(await within(devbox).findByRole("button", { name: "Fix the parser's trailing-comma bug" })).toBeInTheDocument();
+    expect(screen.getByTestId("focus").textContent).toBe(`${HOME_HOST.hostKey}:2`);
+  });
+
+  it("keeps a pending sidebar action bound to its own machine when focus moves", async () => {
+    const registry = createHostRuntimeRegistry();
+    const { connect, remotes } = connectedHosts();
+    render(
+      <Harness
+        hosts={[HOME_HOST, DEVBOX_HOST]}
+        initialFocus={{ hostKey: HOME_HOST.hostKey, conversationId: id(2) }}
+        connect={connect}
+        registry={registry}
+      />,
+    );
+    await waitFor(() => expect(registry.get(DEVBOX_HOST.hostKey)?.phase).toBe("ready"));
+    const home = await screen.findByRole("group", { name: "kieran-mbp" });
+
+    await userEvent.click(within(home).getByRole("button", { name: "Project actions for pinomad" }));
     await userEvent.click(await screen.findByRole("menuitem", { name: "Remove project" }));
     expect(await screen.findByText("Remove project pinomad?")).toBeInTheDocument();
-
     await userEvent.click(screen.getByRole("button", { name: "focus-devbox" }));
     await waitFor(() => expect(screen.getByTestId("workbench").dataset.host).toBe(DEVBOX_HOST.hostKey));
+    await userEvent.click(screen.getByRole("button", { name: "Remove project" }));
 
-    expect(screen.queryByText("Remove project pinomad?")).toBeNull();
+    await waitFor(() => expect(remotes.get(HOME_HOST.hostKey)!.controller.removeProject).toHaveBeenCalled());
     expect(remotes.get(DEVBOX_HOST.hostKey)!.controller.removeProject).not.toHaveBeenCalled();
   });
 
-  it("resets a host settings form when focus moves", async () => {
+  it("keeps Settings on the machine it was managing when focus moves, and switches only by its picker", async () => {
     const registry = createHostRuntimeRegistry();
     const { connect, remotes } = connectedHosts();
     render(
@@ -168,17 +270,42 @@ describe("the app frame across hosts", () => {
     const dialog = await screen.findByRole("dialog", { name: "Settings" });
     await userEvent.click(within(dialog).getByRole("button", { name: /Custom endpoint/ }));
     const name = within(dialog).getByLabelText("Name");
-    const baseUrl = within(dialog).getByLabelText("Base URL");
     await userEvent.type(name, "Host A endpoint");
-    await userEvent.type(baseUrl, "http://a.example/v1");
-    expect(name).toHaveValue("Host A endpoint");
 
     await userEvent.click(screen.getByRole("button", { name: "focus-devbox" }));
     await waitFor(() => expect(screen.getByTestId("workbench").dataset.host).toBe(DEVBOX_HOST.hostKey));
+    expect(within(dialog).getByLabelText("Name")).toHaveValue("Host A endpoint");
 
-    expect(within(dialog).queryByLabelText("Base URL")).toBeNull();
+    await userEvent.click(within(dialog).getByRole("combobox", { name: "Host" }));
+    await userEvent.click(await screen.findByRole("option", { name: "omarchy" }));
+
     expect(within(dialog).queryByLabelText("Name")).toBeNull();
     expect(remotes.get(DEVBOX_HOST.hostKey)!.controller.saveCustomProvider).not.toHaveBeenCalled();
+  });
+
+  it("toasts a notice from a machine that is not focused, named by its machine", async () => {
+    const registry = createHostRuntimeRegistry();
+    render(
+      <Harness
+        hosts={[HOME_HOST, DEVBOX_HOST]}
+        initialFocus={{ hostKey: HOME_HOST.hostKey, conversationId: id(2) }}
+        connect={connected}
+        registry={registry}
+      />,
+    );
+    await waitFor(() => expect(registry.get(DEVBOX_HOST.hostKey)?.phase).toBe("ready"));
+    await screen.findByRole("group", { name: "omarchy" });
+    const devbox = registry.get(DEVBOX_HOST.hostKey)!;
+    if (devbox.phase !== "ready") throw new Error("devbox not ready");
+
+    act(() =>
+      registry.publish(DEVBOX_HOST.hostKey, {
+        ...devbox,
+        view: { ...devbox.view, notices: [{ id: 41, level: "info", message: "Kept worktree pinomad/9-dirty" }] },
+      }),
+    );
+
+    expect(await screen.findByText("omarchy: Kept worktree pinomad/9-dirty")).toBeInTheDocument();
   });
 
   it("keeps navigation reachable on a phone while the focused host is connecting", async () => {
@@ -213,7 +340,7 @@ describe("the app frame across hosts", () => {
     render(
       <Harness hosts={[HOME_HOST]} initialFocus={{ hostKey: HOME_HOST.hostKey }} connect={connect} registry={registry} />,
     );
-    expect(await screen.findByText("Connecting")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Connecting" })).toBeInTheDocument();
     expect(screen.getByRole("navigation")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Hosts" })).toBeInTheDocument();

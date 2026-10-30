@@ -37,7 +37,7 @@ bun run pair         # 打印配对二维码（一次性，5 分钟过期）
 bun run host -- --remote-port 7422 --public-url https://pinomad.example.com
 ```
 
-远程端口不接受 token：只有完成配对、公钥已登记在设备表里的客户端能连。不开 `--remote-port` / `--relay` 时 `pair` 打印的是回环链接（回环端口 `/secure` 路径上的安全通道），只能给本机上的客户端用，比如桌面端 App。桌面端 App 可以配对多台宿主（Settings → Hosts），在侧栏底部的电脑图标里切换（一次只连一台）。App 会自动检查更新（GitHub Release 上的 `latest-mac.yml`，自动下载、不自动安装），下载完成后侧栏底部的 Settings 图标上出现一个圆点，到 Settings → Updates 点 "Restart to update"；也可以在菜单里手动 Check for Updates…。
+远程端口不接受 token：只有完成配对、公钥已登记在设备表里的客户端能连。不开 `--remote-port` / `--relay` 时 `pair` 打印的是回环链接（回环端口 `/secure` 路径上的安全通道），只能给本机上的客户端用，比如桌面端 App。桌面端 App 可以配对多台宿主（Settings → Hosts），同时连着所有宿主，侧栏按机器分组；侧栏底部的电脑图标列出各宿主的连接状态，点一台会滚到它的分组。App 会自动检查更新（GitHub Release 上的 `latest-mac.yml`，自动下载、不自动安装），下载完成后侧栏底部的 Settings 图标上出现一个圆点，到 Settings → Updates 点 "Restart to update"；也可以在菜单里手动 Check for Updates…。
 
 </details>
 

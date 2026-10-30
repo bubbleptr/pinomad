@@ -22,7 +22,7 @@ import { summaryOf, type AgentDraftProblem } from "@pinomad/client/model.ts";
 import { ChatAddMenu, ChatAddMenuItem } from "@/shared/ui/chat/chat-add-menu";
 import { ChatPromptInput, type ChatPromptInputHandle } from "@/shared/ui/chat/chat-prompt-input";
 import { composerPlaceholder } from "@/shared/ui/chat/chat-placeholder";
-import { Bot, ChatAdd, FileIcon, FolderClosed, ImageIcon, Sparkles } from "@/shared/ui/icons";
+import { Bot, ChatAdd, Computer, FileIcon, FolderClosed, ImageIcon, Sparkles } from "@/shared/ui/icons";
 import { PinomadMark } from "@/shared/ui/pinomad-mark";
 
 /** The capsule's red line + tooltip for a draft problem the host would refuse. */
@@ -60,6 +60,7 @@ export function DraftHome({
   onDraft,
   onCreated,
   connected,
+  machine,
 }: {
   view: DurableView;
   remote: RemoteDurable;
@@ -67,6 +68,16 @@ export function DraftHome({
   hostKey?: string;
   draft: Home;
   onDraft: (home: Home) => void;
+  /**
+   * Where the conversation will run, among the paired machines. Picking one
+   * switches to that machine's own draft; nothing typed here moves with it
+   * (ADR-0035 §7). Shown only with two or more machines.
+   */
+  machine?: {
+    readonly value: string;
+    readonly options: readonly { readonly value: string; readonly label: string }[];
+    readonly onChange: (key: string) => void;
+  };
   /** The draft became a conversation, now shown; a failed create does not call it. */
   onCreated: () => void;
   connected: boolean;
@@ -300,7 +311,27 @@ export function DraftHome({
               </>
             }
             footer={
-              <span className="flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+              // Ghost selectors carry their own hover padding; that alone
+              // spaces them, an extra gap reads as three loose controls.
+              <span className="pigui-draft-footer flex w-full min-w-0 flex-wrap items-center gap-y-1">
+                {machine === undefined || machine.options.length < 2 ? null : (
+                  <Selector
+                    isLabelHidden
+                    label="Machine"
+                    placement="below"
+                    variant="ghost"
+                    size="sm"
+                    value={machine.value}
+                    startIcon={<Computer aria-hidden="true" className="size-4 shrink-0 text-muted" />}
+                    options={machine.options.map((option) => ({
+                      ...option,
+                      icon: <Computer aria-hidden="true" className="size-4 shrink-0 text-muted" />,
+                    }))}
+                    onChange={(picked) => {
+                      if (picked !== machine.value) machine.onChange(picked);
+                    }}
+                  />
+                )}
                 <Selector
                   isLabelHidden
                   label="Project"

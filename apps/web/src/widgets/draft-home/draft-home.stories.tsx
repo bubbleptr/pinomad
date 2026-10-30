@@ -46,3 +46,18 @@ export const AddMenu: Story = {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "More actions" }));
   },
 };
+
+/** With several paired machines, the footer also picks where the conversation runs. */
+export const SeveralMachines: Story = {
+  args: {
+    machine: {
+      value: "home",
+      options: [
+        { value: "home", label: "kieran-mbp" },
+        { value: "devbox", label: "omarchy" },
+        { value: "nas", label: "nas" },
+      ],
+      onChange: fn(),
+    },
+  },
+};

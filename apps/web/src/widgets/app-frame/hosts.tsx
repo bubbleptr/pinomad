@@ -20,7 +20,7 @@ import { browserRtcAvailable } from "../../entities/host/browser-rtc.ts";
 import { connectionStatus, hostStatusText, useHostRuntimeInfos, type HostRuntimeInfo } from "../../entities/host/host-runtimes.ts";
 import { useHosts } from "../../entities/host/host-store.ts";
 import { PairingLinkForm } from "../../entities/host/pairing-link-form.tsx";
-import { Check, Computer } from "../../shared/ui/icons.tsx";
+import { Computer } from "../../shared/ui/icons.tsx";
 import { AccountDialog } from "../account/account-dialog.tsx";
 import {
   candidateEndLabel,
@@ -153,18 +153,19 @@ function HostStatusDot({ connected }: { connected: boolean }) {
 }
 
 /**
- * The sidebar's hosts button: a list of each paired host's name and
- * connection status. Picking another host focuses it; its runtime keeps
- * running either way.
+ * The sidebar's hosts button: each paired host's name and connection status —
+ * the only place the sidebar shows it (#213). Picking a host brings its group
+ * into view; focus stays where it is (#427).
  */
-export function HostsMenu() {
+export function HostsMenu({ onLocate }: { onLocate?: (hostKey: string) => void }) {
   const paired = usePairedHosts();
   return (
     <DropdownMenu
       hasChevron={false}
       placement="above"
       alignment="end"
-      menuWidth={240}
+      // As wide as the longest "name status" line; no fixed width to pad out.
+      menuWidth="max-content"
       button={{
         icon: <Computer aria-hidden="true" />,
         isIconOnly: true,
@@ -174,23 +175,24 @@ export function HostsMenu() {
         variant: "ghost",
       }}
     >
-      {paired.hosts.map((host) => {
-        const connected = paired.isConnected(host);
-        return (
-          <DropdownMenuItem
-            key={host.hostKey}
-            icon={<HostStatusDot connected={connected} />}
-            label={
-              <>
-                {paired.label(host)}
-                <VisuallyHidden>{`(${hostStatusText(paired.info(host)).toLowerCase()})`}</VisuallyHidden>
-              </>
-            }
-            endContent={paired.isCurrent(host) ? <Check aria-hidden="true" className="size-4" /> : undefined}
-            onClick={paired.isCurrent(host) ? undefined : () => paired.focusHost(host.hostKey)}
-          />
-        );
-      })}
+      {paired.hosts.map((host) => (
+        <DropdownMenuItem
+          key={host.hostKey}
+          icon={<HostStatusDot connected={paired.isConnected(host)} />}
+          label={
+            <>
+              {paired.label(host)}
+              {/* Seen after the name; the hidden copy keeps the accessible
+                  name "<host> (<status>)" without reading it twice. */}
+              <span aria-hidden="true" className="ms-2 text-muted">
+                {hostStatusText(paired.info(host))}
+              </span>
+              <VisuallyHidden>{`(${hostStatusText(paired.info(host)).toLowerCase()})`}</VisuallyHidden>
+            </>
+          }
+          {...(onLocate === undefined ? {} : { onClick: () => onLocate(host.hostKey) })}
+        />
+      ))}
     </DropdownMenu>
   );
 }

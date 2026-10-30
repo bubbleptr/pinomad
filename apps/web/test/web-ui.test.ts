@@ -1484,23 +1484,15 @@ it("organizes conversations under projects and chats", async () => {
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
-  // With no projects the section's empty state is an Add project row; the
-  // section header's "+" is pinned — visible without hovering.
-  const addRow = page.locator("button.astryx-side-nav-item", { hasText: "Add project" });
-  await addRow.waitFor();
-  // waitFor's default state is "visible": the pinned "+" needs no hover.
-  await page
-    .locator(".pigui-sidenav-section-header")
-    .getByRole("button", { name: "Add project", exact: true })
-    .waitFor();
+  // A machine with nothing yet says so; projects are added from its header.
+  await page.locator("button.astryx-side-nav-item", { hasText: "No conversations" }).waitFor();
 
   // Add the project through the folder picker; the draft for it opens right after.
-  await addRow.click();
+  await page.getByRole("button", { name: /^Add project on / }).click();
   await pickFolder(page, await realpath(project.path));
   await page.getByRole("dialog").getByRole("button", { name: "Add project", exact: true }).click();
   await page.getByRole("group", { name: projectName }).waitFor();
   await expect.poll(() => page.locator("h1").textContent()).toBe(`New conversation in ${projectName}`);
-  await expect.poll(async () => await addRow.count()).toBe(0);
   await prompt(page).fill("project work");
   await prompt(page).press("Enter");
   await page.getByText("project answer", { exact: true }).waitFor();
@@ -2398,7 +2390,7 @@ it("keeps the Add project picker open with the host's error on failure", async (
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
   const page = await openPage(host, 1280, webOrigin);
 
-  await page.locator(".pigui-sidenav-section-header").getByRole("button", { name: "Add project", exact: true }).click();
+  await page.getByRole("button", { name: /^Add project on / }).click();
   const dialog = page.getByRole("dialog");
   await dialog.waitFor();
   const victim = join(await realpath(parent.path), "victim");
@@ -3007,20 +2999,27 @@ it("switches between paired hosts on the desktop bridge", async () => {
   const socketsABeforeSwitch = sockets.a;
   await openHostsMenu(page);
   await page.getByRole("menuitem", { name: `${labelB} (connected)`, exact: true }).waitFor();
-  await page.getByRole("menuitem", { name: `${labelA} (connected)`, exact: true }).click();
-  await page.getByRole("button", { name: "hello A", exact: true }).waitFor();
+  await page.getByRole("menuitem", { name: `${labelA} (connected)`, exact: true }).waitFor();
+  await page.keyboard.press("Escape");
+  // Every machine lists its own conversations; opening one focuses its machine.
+  const groupA = page.getByRole("group", { name: labelA, exact: true });
+  await groupA.getByRole("button", { name: "hello A", exact: true }).click();
+  await page.getByText("host A answer", { exact: true }).waitFor();
   expect(sockets.a).toBe(socketsABeforeSwitch);
 
   // A host that drops keeps its last view and reconnects in the background;
-  // focus lands on it with the disconnect banner, and the menu still switches
-  // to the healthy host without touching A's connection.
+  // focusing it shows the disconnect banner, and A's group still opens A's
+  // conversation without touching A's connection.
   await hostB.close();
   await openHostsMenu(page);
-  await page.getByRole("menuitem", { name: `${labelB} (offline)`, exact: true }).click();
+  await page.getByRole("menuitem", { name: `${labelB} (offline)`, exact: true }).waitFor();
+  await page.keyboard.press("Escape");
+  const hosts = await openSettings(page, "Hosts");
+  await hosts.getByRole("button", { name: `Switch to ${labelB}`, exact: true }).click();
+  await page.keyboard.press("Escape");
   await page.getByText("Host connection lost", { exact: true }).waitFor();
-  await openHostsMenu(page);
-  await page.getByRole("menuitem", { name: `${labelA} (connected)`, exact: true }).click();
-  await page.getByRole("button", { name: "hello A", exact: true }).waitFor();
+  await groupA.getByRole("button", { name: "hello A", exact: true }).click();
+  await page.getByText("host A answer", { exact: true }).waitFor();
   expect(sockets.a).toBe(socketsABeforeSwitch);
 });
 
