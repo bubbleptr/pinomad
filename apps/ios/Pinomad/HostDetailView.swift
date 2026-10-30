@@ -3,7 +3,7 @@ import SwiftUI
 
 /// One paired host's connection settings: the Auto / Direct only / Relay
 /// only choice and, while it is the connected host, the coordinator's RTC
-/// status. Reached from the ⓘ in Settings → Paired Hosts, connected or not.
+/// status. Reached from the ⓘ in Settings → Hosts, connected or not.
 struct HostDetailView: View {
     let model: AppModel
     let hostKey: String

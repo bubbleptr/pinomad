@@ -417,6 +417,10 @@ final class AppModel {
         } else {
             closeSession()
             phase = .pairing
+            // As in `fail`: the pairing page replaces the list, and pages
+            // pushed over it (Settings, after forgetting the last host)
+            // would lose their destination.
+            navPath = []
         }
         advancePushTarget()
     }

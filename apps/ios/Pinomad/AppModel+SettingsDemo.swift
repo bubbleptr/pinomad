@@ -5,12 +5,18 @@ import PinomadCore
 /// `PINOMAD_DEMO_SETTINGS`: the settings pages without a host — two paired
 /// machines (the first connected, renamed, with three devices, this one
 /// among them), a chat, and one archived root. `failed`
-/// shows the first machine's failure page instead; `account` adds a
-/// signed-in account (its calls never leave the app). The addresses are
+/// shows the first machine's failure page instead; `pairing` the first-run
+/// page with nothing paired; `account` adds a signed-in account (its calls
+/// never leave the app). The addresses are
 /// `.invalid` and the injected hosts block switching and forgetting, so
 /// nothing reaches the keychain or the network.
 extension AppModel {
     func startSettingsDemo(_ mode: String) {
+        if mode == "pairing" {
+            useDevHosts(StoredHosts(hosts: [], activeHostKey: nil))
+            phase = .pairing
+            return
+        }
         // A fixed key, so the devices list can mark this device.
         let privateKey = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE"
         useDevHosts(StoredHosts(
