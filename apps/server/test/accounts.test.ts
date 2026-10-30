@@ -660,6 +660,44 @@ describe("push token registration (ADR-0036)", () => {
     expect(accounts.pushTokenOwner(TOKEN, "production")).toBeUndefined();
   });
 
+  it("does not register a token for a session revoked while its body was still arriving", async () => {
+    const { relay, accounts } = await startServer();
+    const token = (await login(relay)).json.token as string;
+    const body = JSON.stringify({ apns: TOKEN, environment: "production" });
+    const half = body.length >> 1;
+
+    // Headers and half the body go out first; the server authenticates on
+    // the headers and then waits for the rest.
+    let resolveStatus: (status: number) => void = () => {};
+    const status = new Promise<number>((resolve) => (resolveStatus = resolve));
+    const slow = httpRequest(
+      {
+        host: "127.0.0.1",
+        port: relay.port,
+        path: "/api/push-tokens",
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-length": String(Buffer.byteLength(body)) },
+      },
+      (response) => {
+        response.resume();
+        resolveStatus(response.statusCode ?? 0);
+      },
+    );
+    await new Promise<void>((resolve) => slow.write(body.slice(0, half), () => resolve()));
+
+    // Signing out everywhere lands before the body completes.
+    const revoked = await api(relay, {
+      method: "POST",
+      path: "/api/sessions/revoke-all",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(revoked.status).toBe(204);
+
+    slow.end(body.slice(half));
+    expect(await status).toBe(401);
+    expect(accounts.pushTokenOwner(TOKEN, "production")).toBeUndefined();
+  });
+
   it("treats a registration unrefreshed for 90 days as gone, and a refresh keeps it", async () => {
     let clock = 1_000;
     const { accounts } = await startServer({ now: () => clock });

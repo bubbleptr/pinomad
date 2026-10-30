@@ -360,6 +360,12 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
         deny(400, "invalid_request");
         return;
       }
+      // The session may have been revoked while the body trickled in; a
+      // registration written now would outlive "sign out everywhere".
+      if (accounts.authenticate(token!) === undefined) {
+        deny(401, "unauthenticated");
+        return;
+      }
       if (pathname === "/api/push-tokens") accounts.registerPushToken(session.userId, apns, environment);
       else accounts.removePushToken(session.userId, apns, environment);
       send(204);
