@@ -173,9 +173,10 @@ describe("CustomEndpointForm editing an endpoint", () => {
   });
 
   it("saves a model added by hand", async () => {
-    const { answer, addModel, save, savedModels } = setup(OLLAMA);
+    const { controller, answer, addModel, save, savedModels } = setup(OLLAMA);
     await answer([]);
     await addModel("llama3.3:70b");
+    expect(controller.saveCustomProvider).not.toHaveBeenCalled();
     await save();
 
     expect([...(savedModels() ?? [])].sort()).toEqual(["devstral:24b", "gpt-oss:120b", "llama3.3:70b"]);
