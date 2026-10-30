@@ -2,6 +2,7 @@ import { Avatar } from "@astryxdesign/core/Avatar";
 import { Button } from "@astryxdesign/core/Button";
 import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
+import { Icon } from "@astryxdesign/core/Icon";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
@@ -13,7 +14,7 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { familyStatus, taskGroupsOf, type FamilyStatus } from "@pinomad/client/family.ts";
 import { useAppUpdate } from "../../entities/app-update/use-app-update.ts";
-import { ArchiveArrowDown, Bot, ChatBubble, ChevronRight, FolderAdd, FolderClosed, FolderOpenState, MoreHorizontal, Pencil, Plus, Settings, Trash2, UserCircle } from "../../shared/ui/icons.tsx";
+import { ArchiveArrowDown, Bot, ChatBubble, FolderAdd, FolderClosed, FolderOpenState, MoreHorizontal, Pencil, Plus, Settings, Trash2, UserCircle } from "../../shared/ui/icons.tsx";
 import { AnimatedNewChat, AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
 import { AddProjectDialog, RemoveProjectDialog } from "./project-dialogs.tsx";
 import { RenameConversationDialog } from "./rename-dialog.tsx";
@@ -197,11 +198,14 @@ function SidebarSectionHeader({
         onClick={onToggle}
       >
         <span className="pigui-sidenav-section-toggle__title">{title}</span>
-        <ChevronRight
+        {/* The same chevron glyph the selectors use, so every disclosure reads alike. */}
+        <span
           aria-hidden="true"
           className="pigui-sidenav-section-toggle__chevron"
           data-expanded={expanded ? "true" : "false"}
-        />
+        >
+          <Icon icon="chevronRight" size="sm" color="inherit" />
+        </span>
       </button>
       <HStack className={pinnedActions ? undefined : "pigui-sidenav-hover-actions"} gap={0.5} vAlign="center">
         {actions}
@@ -252,7 +256,9 @@ function FoldIndicator({
       data-expanded={expanded ? "true" : "false"}
     >
       <StateIcon className="pigui-project-expansion-indicator__state" />
-      <ChevronRight className="pigui-project-expansion-indicator__chevron" />
+      <span className="pigui-project-expansion-indicator__chevron">
+        <Icon icon="chevronRight" size="sm" color="inherit" />
+      </span>
     </span>
   );
 }

@@ -415,12 +415,19 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Optical alignment: 12px lowercase text sits visually low beside the
+     24px action icons even when their boxes share a center line. */
+  translate: 0 -1px;
 }
 
 .pigui-sidenav-section-toggle__chevron {
+  display: inline-flex;
   width: var(--pigui-sidebar-icon-size);
   height: var(--pigui-sidebar-icon-size);
   flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  translate: 0 -1px;
   opacity: 0;
   transition:
     opacity 120ms ease-out,
@@ -502,8 +509,17 @@ body {
 }
 
 .pigui-project-expansion-indicator__chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   opacity: 0;
   rotate: 0deg;
+}
+
+/* The draft footer's ghost selectors sit side by side in one capsule; their
+   default 12px inline padding left wide gaps between them. */
+.pigui-draft-footer .astryx-selector[data-variant="ghost"]:not(#\#):not(#\#):not(#\#) {
+  padding-inline: var(--spacing-1-5);
 }
 
 .pigui-project-expansion-indicator[data-expanded="true"] .pigui-project-expansion-indicator__chevron {
