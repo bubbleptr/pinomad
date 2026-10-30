@@ -105,9 +105,14 @@ export function AppFrame({
     });
   }, []);
   const openNav = useCallback((): void => setNavOpen(true), []);
+  // Project folds, rename and remove-project dialogs belong to one host. The
+  // SideNav shell stays mounted; this content subtree is replaced on focus so
+  // A's pending action can never be confirmed against B's remote.
+  const sidebarKey = `host:${hostKey ?? "local"}`;
   const sidebar =
     view !== undefined && remote !== undefined ? (
       <SidebarContent
+        key={sidebarKey}
         view={view}
         remote={remote}
         {...(hostKey === undefined ? {} : { hostKey })}
@@ -119,7 +124,11 @@ export function AppFrame({
         onSelect={() => setNavOpen(false)}
       />
     ) : (
-      <SidebarUnavailable {...(onNewChat === undefined ? {} : { onNewChat })} />
+      <SidebarUnavailable
+        key={sidebarKey}
+        {...(onNewChat === undefined ? {} : { onNewChat })}
+        onSelect={() => setNavOpen(false)}
+      />
     );
 
   return (

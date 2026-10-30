@@ -368,14 +368,23 @@ function ConversationRow({
  * What the sidebar can render before the focused host has a view. The global
  * New chat still works — it selects a connected host by itself.
  */
-export function SidebarUnavailable({ onNewChat }: { onNewChat?: () => void }) {
+export function SidebarUnavailable({
+  onNewChat,
+  onSelect,
+}: {
+  onNewChat?: () => void;
+  onSelect?: () => void;
+}) {
   return (
     <SideNavSection isHeaderHidden title="New chat">
       <SideNavItem
         icon={<AnimatedNewChat className="size-4" />}
         label="New chat"
         isDisabled={onNewChat === undefined}
-        onClick={onNewChat}
+        onClick={() => {
+          onNewChat?.();
+          onSelect?.();
+        }}
       />
     </SideNavSection>
   );

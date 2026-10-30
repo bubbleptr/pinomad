@@ -52,6 +52,9 @@ type SectionId = Section["id"];
 
 const sectionTitle = (id: SectionId): string => SECTIONS.find((section) => section.id === id)!.title;
 
+const isHostSection = (id: SectionId): boolean =>
+  SECTIONS.find((section) => section.id === id)?.group === "host";
+
 const sectionIcon = (Icon: Section["icon"]): ReactNode => (
   <Icon aria-hidden="true" style={{ width: "var(--spacing-4)", height: "var(--spacing-4)" }} />
 );
@@ -90,9 +93,11 @@ export function SettingsDialog({
   const connected = view?.connection === "connected";
   const { hosts } = useHosts();
   const hasUpdater = window.pinomadDesktop?.updates !== undefined;
-  // A host that is not ready has no settings streams to show; land on the
-  // device's own hosts instead of asking for a view that does not exist.
-  const active = !hostAvailable ? "hosts" : section ?? (connected ? "providers" : "hosts");
+  // A host that is not ready has no settings streams to show; fall back only
+  // when the selected section is host-scoped. "This device" sections (Hosts,
+  // Updates) stay reachable while the focused host is connecting or failed.
+  const selected = section ?? (connected ? "providers" : "hosts");
+  const active = !hostAvailable && isHostSection(selected) ? "hosts" : selected;
   // The cached name of the host this connection reaches — a token client
   // reaches none of the stored ones, whichever pairing is selected.
   const stored = hosts.find((host) => host.hostKey === hostKey);
@@ -191,6 +196,10 @@ export function SettingsDialog({
               sectionList
             ) : (
               <SectionPage
+                // Host-scoped pages carry form and navigation state, so a
+                // focus switch must remount them instead of handing A's
+                // half-filled form to B's remote. Device sections stay put.
+                key={isHostSection(active) ? `host:${hostKey ?? "local"}` : undefined}
                 {...(view === undefined ? {} : { view })}
                 {...(remote === undefined ? {} : { remote })}
                 {...(device === undefined ? {} : { device })}

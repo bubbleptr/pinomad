@@ -91,6 +91,19 @@ const connected = (options: RemoteDurableOptions): Promise<RemoteDurable> => {
   return Promise.resolve({ ...fakeRemote(fakeView({} as never)), close: () => {} });
 };
 
+/** Distinct remotes per host, so a cross-host call is visible to the test. */
+function connectedHosts() {
+  const remotes = new Map<string, RemoteDurable>();
+  const connect = (options: RemoteDurableOptions): Promise<RemoteDurable> => {
+    const url = "candidates" in options ? options.candidates[0]?.url ?? "" : "";
+    const hostKey = url.includes("omarchy") ? DEVBOX_HOST.hostKey : HOME_HOST.hostKey;
+    const remote = { ...fakeRemote(fakeView({} as never)), close: () => {} };
+    remotes.set(hostKey, remote);
+    return Promise.resolve(remote);
+  };
+  return { connect, remotes };
+}
+
 describe("the app frame across hosts", () => {
   it("keeps the sidebar mounted while focus moves between connected hosts", async () => {
     const registry = createHostRuntimeRegistry();
@@ -110,6 +123,62 @@ describe("the app frame across hosts", () => {
 
     await waitFor(() => expect(screen.getByTestId("workbench").dataset.host).toBe(DEVBOX_HOST.hostKey));
     expect(screen.getByRole("navigation")).toBe(sidebar);
+  });
+
+  it("drops host-private sidebar state when focus moves", async () => {
+    const registry = createHostRuntimeRegistry();
+    const { connect, remotes } = connectedHosts();
+    render(
+      <Harness
+        hosts={[HOME_HOST, DEVBOX_HOST]}
+        initialFocus={{ hostKey: HOME_HOST.hostKey, conversationId: id(2) }}
+        connect={connect}
+        registry={registry}
+      />,
+    );
+    await waitFor(() => expect(screen.getByTestId("workbench").dataset.host).toBe(HOME_HOST.hostKey));
+    await waitFor(() => expect(registry.get(DEVBOX_HOST.hostKey)?.phase).toBe("ready"));
+
+    await userEvent.click(screen.getByRole("button", { name: "Project actions for pinomad" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Remove project" }));
+    expect(await screen.findByText("Remove project pinomad?")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "focus-devbox" }));
+    await waitFor(() => expect(screen.getByTestId("workbench").dataset.host).toBe(DEVBOX_HOST.hostKey));
+
+    expect(screen.queryByText("Remove project pinomad?")).toBeNull();
+    expect(remotes.get(DEVBOX_HOST.hostKey)!.controller.removeProject).not.toHaveBeenCalled();
+  });
+
+  it("resets a host settings form when focus moves", async () => {
+    const registry = createHostRuntimeRegistry();
+    const { connect, remotes } = connectedHosts();
+    render(
+      <Harness
+        hosts={[HOME_HOST, DEVBOX_HOST]}
+        initialFocus={{ hostKey: HOME_HOST.hostKey, conversationId: id(2) }}
+        connect={connect}
+        registry={registry}
+      />,
+    );
+    await waitFor(() => expect(screen.getByTestId("workbench").dataset.host).toBe(HOME_HOST.hostKey));
+    await waitFor(() => expect(registry.get(DEVBOX_HOST.hostKey)?.phase).toBe("ready"));
+
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    await userEvent.click(within(dialog).getByRole("button", { name: /Custom endpoint/ }));
+    const name = within(dialog).getByLabelText("Name");
+    const baseUrl = within(dialog).getByLabelText("Base URL");
+    await userEvent.type(name, "Host A endpoint");
+    await userEvent.type(baseUrl, "http://a.example/v1");
+    expect(name).toHaveValue("Host A endpoint");
+
+    await userEvent.click(screen.getByRole("button", { name: "focus-devbox" }));
+    await waitFor(() => expect(screen.getByTestId("workbench").dataset.host).toBe(DEVBOX_HOST.hostKey));
+
+    expect(within(dialog).queryByLabelText("Base URL")).toBeNull();
+    expect(within(dialog).queryByLabelText("Name")).toBeNull();
+    expect(remotes.get(DEVBOX_HOST.hostKey)!.controller.saveCustomProvider).not.toHaveBeenCalled();
   });
 
   it("keeps navigation reachable on a phone while the focused host is connecting", async () => {
@@ -133,6 +202,9 @@ describe("the app frame across hosts", () => {
     );
     await userEvent.click(await screen.findByRole("button", { name: "Open navigation" }));
     expect(await screen.findByRole("button", { name: "Settings" })).toBeInTheDocument();
+    // The drawer's New chat must close the drawer on the way out.
+    await userEvent.click(screen.getByRole("button", { name: "New chat" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Settings" })).toBeNull());
   });
 
   it("keeps the sidebar and footer while the focused host is still connecting", async () => {
@@ -152,6 +224,34 @@ describe("the app frame across hosts", () => {
     expect(within(dialog).getByRole("button", { name: "Hosts" })).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Providers" })).toBeNull();
     expect(within(dialog).getByText("Pair a host")).toBeInTheDocument();
+  });
+
+  it("keeps the device Updates section while the focused host is connecting", async () => {
+    const previous = window.pinomadDesktop;
+    const status = { state: "idle" as const, currentVersion: "0.1.0" };
+    window.pinomadDesktop = {
+      ...(previous ?? {}),
+      updates: {
+        status: async () => status,
+        check: async () => status,
+        install: async () => status,
+        onStatus: () => () => {},
+      },
+    } as NonNullable<typeof window.pinomadDesktop>;
+    try {
+      const registry = createHostRuntimeRegistry();
+      const connect = vi.fn(() => new Promise<RemoteDurable>(() => {}));
+      render(
+        <Harness hosts={[HOME_HOST]} initialFocus={{ hostKey: HOME_HOST.hostKey }} connect={connect} registry={registry} />,
+      );
+      await userEvent.click(await screen.findByRole("button", { name: "Settings" }));
+      const dialog = await screen.findByRole("dialog", { name: "Settings" });
+      await userEvent.click(within(dialog).getByRole("button", { name: "Updates" }));
+      expect(await within(dialog).findByText("Check for updates")).toBeInTheDocument();
+      expect(within(dialog).queryByText("Pair a host")).toBeNull();
+    } finally {
+      window.pinomadDesktop = previous;
+    }
   });
 
   it.each([
