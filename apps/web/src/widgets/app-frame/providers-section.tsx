@@ -16,7 +16,7 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { ProviderLogo } from "../../entities/provider/provider-logo.tsx";
 import { ArrowLeft, ChevronRight, MoreHorizontal } from "../../shared/ui/icons.tsx";
-import { CustomEndpointForm, RemoveEndpoint } from "./custom-endpoint-form.tsx";
+import { CustomEndpointForm } from "./custom-endpoint-form.tsx";
 import { InlineError, LoginPanel } from "./provider-login.tsx";
 
 type OAuth = NonNullable<ProviderInfo["oauth"]>;
@@ -133,8 +133,15 @@ function ProviderPages({ providers, remote, connected }: { providers: HostProvid
       const existing = page.at === "custom" ? byId(page.id) : undefined;
       body = (
         <SubPage title={existing === undefined ? "Custom endpoint" : `Edit ${existing.name}`} onBack={home}>
-          <CustomEndpointForm existing={existing} providers={providers.providers} remote={remote} connected={connected} onDone={home} onCancel={home} />
-          {existing === undefined ? null : <RemoveEndpoint providerId={existing.id} remote={remote} connected={connected} onRemoved={home} />}
+          <CustomEndpointForm
+            existing={existing}
+            providers={providers.providers}
+            remote={remote}
+            connected={connected}
+            onDone={home}
+            onCancel={home}
+            onRemoved={home}
+          />
         </SubPage>
       );
       break;

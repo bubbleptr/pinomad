@@ -165,3 +165,24 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+
+/* Custom endpoint models: dropdown and hand entry, each with its button in a column beside it. */
+.endpoint-models {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  column-gap: var(--spacing-2);
+}
+
+.endpoint-models__status {
+  grid-column: 1;
+}
+
+.endpoint-models__add {
+  grid-column: 1;
+  margin-block-start: var(--spacing-2);
+}
+
+.endpoint-models__add + * {
+  margin-block-start: var(--spacing-2);
+}
