@@ -24,13 +24,14 @@ struct PairingSources: View {
             .controlSize(.large)
 
             // The system paste control: reading the pasteboard from a tap
-            // on it needs no permission prompt.
+            // on it needs no permission prompt. It draws its own filled
+            // capsule, so a neutral tint keeps Scan the one primary action.
             PasteButton(payloadType: String.self) { strings in
                 guard let pasted = strings.first else { return }
                 Task { @MainActor in submit(pasted) }
             }
             .buttonBorderShape(.capsule)
-            .buttonStyle(.tactile(.glass))
+            .tint(Color(.tertiarySystemFill))
             .controlSize(.large)
 
             if invalid {
