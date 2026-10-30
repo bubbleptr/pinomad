@@ -7,18 +7,21 @@ import PinomadCore
 /// family whose subagents roll up into its row and one archived root; the
 /// second with a chat and a project; the third still connecting. `old`
 /// connects the first as a 5.2 host, which has no folder picker; `offline`
-/// fails the third instead. `draft`, `settings` and `tile` open the first
-/// machine's draft, Settings, or the cross-machine Needs Answer list.
+/// fails the third instead, and a `studio` prefix lists the third first.
+/// `draft`, `settings`, `machine`, `tile` and `unavailable` open the first
+/// machine's draft, Settings, the third machine's settings, the
+/// cross-machine Needs Answer list, or the failed third machine's page.
 extension AppModel {
     func startLayoutDemo(_ mode: String) {
-        useDevHosts(StoredHosts(
-            hosts: [
-                HostRecord(url: "ws://mbp:7777", hostKey: "demo-mbp", privateKey: "", name: "mbp"),
-                HostRecord(url: "ws://omarchy:7777", hostKey: "demo-omarchy", privateKey: "", name: "omarchy"),
-                HostRecord(url: "ws://studio:7777", hostKey: "demo-studio", privateKey: "", name: "studio"),
-            ],
-            activeHostKey: "demo-mbp"
-        ))
+        var hosts = [
+            HostRecord(url: "ws://mbp:7777", hostKey: "demo-mbp", privateKey: "", name: "mbp"),
+            HostRecord(url: "ws://omarchy:7777", hostKey: "demo-omarchy", privateKey: "", name: "omarchy"),
+            HostRecord(url: "ws://studio:7777", hostKey: "demo-studio", privateKey: "", name: "studio"),
+        ]
+        // The simulator can't be scrolled from a script: lead with the
+        // third machine when its state is what the screenshot is about.
+        if mode.hasPrefix("studio") { hosts.insert(hosts.removeLast(), at: 0) }
+        useDevHosts(StoredHosts(hosts: hosts, activeHostKey: "demo-mbp"))
         let now = Date.now.timeIntervalSince1970 * 1000
         let minute = 60_000.0
         func summary(
@@ -98,13 +101,15 @@ extension AppModel {
             notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
             agents: nil, conversation: nil
         ), on: "demo-omarchy")
-        if mode == "offline" {
+        if mode.hasSuffix("offline") || mode == "unavailable" {
             failDevHost("demo-studio", .unreachable("Couldn't reach studio:7777."))
         }
         switch mode {
         case "draft": navPath = [.newConversation(hostKey: "demo-mbp")]
         case "settings": navPath = [.settings]
+        case "machine": navPath = [.settings, .machine("demo-studio")]
         case "tile": navPath = [.conversations(hostKey: nil, filter: .needsAnswer)]
+        case "unavailable": navPath = [.machineUnavailable("demo-studio")]
         default: break
         }
     }
