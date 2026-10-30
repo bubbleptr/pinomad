@@ -57,7 +57,14 @@ extension AppModel {
         guard let runtime = runtimes[hostKey] else { return "Not connected" }
         switch runtime.phase {
         case .connecting: return "Connecting"
-        case .connected: return runtime.isConnectedNow ? "Connected" : "Reconnecting"
+        case .connected:
+            guard runtime.isConnectedNow else { return "Reconnecting" }
+            switch runtime.rtcStatus?.path {
+            case "p2p": return "Connected · P2P"
+            case "relay": return "Connected · Relay"
+            case "direct": return "Connected · Direct"
+            default: return "Connected · Local"
+            }
         case .failed: return "Offline"
         }
     }

@@ -158,18 +158,10 @@ struct AccountView: View {
     private func accountAction(_ row: AccountHostRow) -> some View {
         switch row.action {
         case .connect(let hostKey):
-            if hostKey == model.currentHostKey && model.connected {
-                Text("Connected")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            } else {
-                Button("Connect") {
-                    model.switchHost(hostKey)
-                    dismiss()
-                }
-                .buttonStyle(.tactile(.glass))
-                .controlSize(.small)
-            }
+            // Already paired, so already connecting with the rest (#429).
+            Text(model.connectionLabel(for: hostKey))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         case .pair, .rePair:
             if model.accountPairingHostId == row.hostId {
                 ProgressView().controlSize(.small)

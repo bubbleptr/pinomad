@@ -84,24 +84,21 @@ public func pushForgetPlan(
 public enum PushTargetAction: Equatable, Sendable {
     /// The host is no longer paired — nothing to open.
     case drop
-    /// The right host is selected but has not finished connecting and
-    /// loading its conversations.
+    /// The host has not finished connecting and loading its conversations.
     case wait
-    case switchHost(String)
     case open(ConversationRef)
 }
 
-/// Decide a tap against the live focus. Moving to another host only changes
-/// focus; its connection is already running. The pending tap stays queued
-/// until that host is ready, so a slow connect does not drop it.
+/// Decide a tap. Every paired host is already connected (#429), so the
+/// focus plays no part: opening the conversation moves it. The pending tap
+/// stays queued until that host is ready, so a slow connect neither drops
+/// it nor moves the screen early.
 public func pushTargetAction(
     _ target: PushTarget,
     storedHostKeys: Set<String>,
-    focus: HostFocus?,
     hostReady: Bool
 ) -> PushTargetAction {
     guard storedHostKeys.contains(target.hostKey) else { return .drop }
-    guard focus?.hostKey == target.hostKey else { return .switchHost(target.hostKey) }
     guard hostReady else { return .wait }
     return .open(ConversationRef(hostKey: target.hostKey, conversationId: target.conversationId))
 }

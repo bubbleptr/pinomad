@@ -38,8 +38,8 @@ extension AppModel {
     }
 
     /// Route the pending tap: drop it when the host is no longer paired,
-    /// focus another stored host (never reconnecting it), wait for that
-    /// host's first view, then open its conversation exactly once.
+    /// wait for that host's first view, then open its conversation exactly
+    /// once — the screen moves only then, straight to it (#429).
     func advancePushTarget() {
         guard hostsLoaded, let target = pendingPush else { return }
         var storedHostKeys = Set(hosts.hosts.map(\.hostKey))
@@ -49,18 +49,12 @@ extension AppModel {
         let action = pushTargetAction(
             target,
             storedHostKeys: storedHostKeys,
-            focus: runtimeTable.focus,
             hostReady: runtime?.isConnectedNow == true && runtime?.snapshot != nil)
         switch action {
         case .drop:
             pendingPush = nil
         case .wait:
             break
-        case .switchHost(let hostKey):
-            // Keep the target pending: the ready callback asks again.
-            focus(on: hostKey)
-            if runtimeTable.focus?.hostKey != hostKey { pendingPush = nil }
-            else { advancePushTarget() }
         case .open(let ref):
             pendingPush = nil
             navPath = [.conversation(ref)]

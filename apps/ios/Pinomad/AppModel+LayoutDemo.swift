@@ -7,7 +7,8 @@ import PinomadCore
 /// family whose subagents roll up into its row and one archived root; the
 /// second with a chat and a project; the third still connecting. `old`
 /// connects the first as a 5.2 host, which has no folder picker; `offline`
-/// fails the third instead.
+/// fails the third instead. `draft`, `settings` and `tile` open the first
+/// machine's draft, Settings, or the cross-machine Needs Answer list.
 extension AppModel {
     func startLayoutDemo(_ mode: String) {
         useDevHosts(StoredHosts(
@@ -99,6 +100,12 @@ extension AppModel {
         ), on: "demo-omarchy")
         if mode == "offline" {
             failDevHost("demo-studio", .unreachable("Couldn't reach studio:7777."))
+        }
+        switch mode {
+        case "draft": navPath = [.newConversation(hostKey: "demo-mbp")]
+        case "settings": navPath = [.settings]
+        case "tile": navPath = [.conversations(hostKey: nil, filter: .needsAnswer)]
+        default: break
         }
     }
 }

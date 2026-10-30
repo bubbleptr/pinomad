@@ -956,6 +956,8 @@ final class AppModel {
             isCreatingConversation: isFocused && runtime.creating) {
             runtime.clearConversation()
         }
+        // A tap may be waiting for this host's first view, focused or not.
+        if pendingPush?.hostKey == runtime.hostKey { advancePushTarget() }
         guard isFocused else { return }
         syncPhase()
         updatePushVisibility()
@@ -968,7 +970,6 @@ final class AppModel {
                 "conv-\(conversation.id)-\(conversation.chat.count)", host: runtime.hostKey)
         }
         PerfLog.shared.flush()
-        advancePushTarget()
     }
 
     private func syncPhase() {
@@ -1101,22 +1102,6 @@ final class AppModel {
 
     func refreshLiveRtcStatus() {
         focusedRuntime?.refreshLiveRtcStatus()
-    }
-
-    /// "Connected · P2P" / "Relay" / "Direct" / "Local" for the focused
-    /// host; nil when nothing is connected.
-    var connectedSummary: String? {
-        guard focusedRuntime?.phase == .connected, let snapshot, snapshot.connection == .connected,
-              !snapshot.unauthorized
-        else { return nil }
-        let path: String
-        switch rtcStatus?.path {
-        case "p2p": path = "P2P"
-        case "relay": path = "Relay"
-        case "direct": path = "Direct"
-        default: path = "Local"
-        }
-        return "Connected · \(path)"
     }
 
     /// Whether one host's runtime is connected, for per-host status rows.

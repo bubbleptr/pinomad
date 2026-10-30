@@ -188,6 +188,10 @@ extension AppModel {
         hostSupportsCall(hostMinor: runtimes[hostKey]?.hostMinor ?? 0, method: method)
     }
 
+    func hostSupports(_ feature: HostFeature, on hostKey: String) -> Bool {
+        hostSupportsFeature(hostMinor: runtimes[hostKey]?.hostMinor ?? 0, feature: feature)
+    }
+
     /// The host's own words for a request-class rejection.
     func describe(_ error: Error) -> String {
         switch error {

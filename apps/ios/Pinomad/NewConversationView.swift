@@ -161,6 +161,11 @@ struct NewConversationView: View {
             refreshMentions()
         }
         .onChange(of: model.phase) { _, _ in mentions.close() }
+        // Another machine's draft: the caret and menus belong to the old text.
+        .onChange(of: model.currentHostKey) { _, _ in
+            mentions.close()
+            selection = NSRange(location: (draft.wrappedValue as NSString).length, length: 0)
+        }
         .onChange(of: focused) { _, isFocused in
             if isFocused { refreshMentions() } else { mentions.close() }
         }
@@ -349,10 +354,15 @@ struct NewConversationView: View {
 
     /// Where the draft will run, floating above the card: one container so
     /// the checkout chip melts out of the project chip when a project is
-    /// picked rather than popping in.
+    /// picked rather than popping in. The machine leads once there is more
+    /// than one to pick from.
     private var location: some View {
         GlassEffectContainer(spacing: 8) {
             HStack(spacing: 8) {
+                if model.machines.count > 1 {
+                    machineMenu
+                        .glassEffectID("machine", in: chips)
+                }
                 projectMenu
                     .glassEffectID("home", in: chips)
                 if case .project = model.draftHome {
@@ -364,6 +374,38 @@ struct NewConversationView: View {
             }
         }
         .animation(.snappy(duration: 0.25), value: model.draftHome)
+    }
+
+    /// Picking a machine shows that machine's own draft; nothing typed here
+    /// moves with it (ADR-0035 §7). Never disabled: another machine is the
+    /// way out when this one is down.
+    private var machineMenu: some View {
+        Menu {
+            Picker("Machine", selection: Binding(
+                get: { model.currentHostKey ?? "" },
+                set: { switchMachine(to: $0) }
+            )) {
+                ForEach(model.machines, id: \.hostKey) { host in
+                    Label(model.machineLabel(host.hostKey), image: .monitor).tag(host.hostKey)
+                }
+            }
+        } label: {
+            LocationChip(icon: .monitor, label: model.currentHostKey.map(model.machineLabel) ?? "Machine")
+        }
+        .tint(.secondary)
+    }
+
+    /// The page stays; its route names the other machine, which moves the
+    /// focus and with it every draft read here.
+    private func switchMachine(to hostKey: String) {
+        guard hostKey != model.currentHostKey,
+              case .newConversation? = model.navPath.last
+        else { return }
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            model.navPath[model.navPath.count - 1] = .newConversation(hostKey: hostKey)
+        }
     }
 
     private var projectMenu: some View {
