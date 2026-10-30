@@ -202,6 +202,9 @@ struct SettingsSheet: View {
                 }
         }
         .environment(\.popToProviders, PopToProvidersAction(stack: "settings") { path.popToProviders() })
+        // This stack isn't navPath; the focus must follow it all the same.
+        .onChange(of: path) { _, path in model.followVisiblePage(path.last) }
+        .onDisappear { model.followVisiblePage(model.navPath.last) }
     }
 }
 

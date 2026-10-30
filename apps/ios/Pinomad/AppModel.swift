@@ -121,7 +121,7 @@ final class AppModel {
     /// page pushed for another machine never renders, or runs its onAppear,
     /// against the previous machine's state.
     var navPath: [Route] = [] {
-        didSet { navigationChanged() }
+        didSet { followVisiblePage(navPath.last) }
     }
     /// Live answer streams, one set per host. Reading through the focused
     /// runtime means a non-focused host's snapshot can never feed them.
@@ -451,15 +451,17 @@ final class AppModel {
         updatePushVisibility()
     }
 
-    /// Keep focus on what the stack actually shows (#429): a conversation
+    /// Keep focus on what a stack actually shows (#429): a conversation
     /// page owns its ref, another host-scoped page focuses that host's draft,
     /// and a page of no host keeps the host but releases its conversation.
     /// Never touches the stack — this is what replaces an explicit switch,
     /// and what makes the push banner rule depend on the visible conversation.
-    private func navigationChanged() {
+    /// The root stack calls it on every change; the settings sheet's own
+    /// stack calls it too, and hands back to the root's top when it closes.
+    func followVisiblePage(_ top: Route?) {
         guard !pairingOwnsFocus else { return }
         let previousHost = runtimeTable.focus?.hostKey
-        let released = runtimeTable.followPage(navPath.last?.page)
+        let released = runtimeTable.followPage(top?.page)
         if let released { runtimes[released.hostKey]?.clearConversation() }
         if let hostKey = runtimeTable.focus?.hostKey, hostKey != previousHost {
             if runtimes[hostKey] == nil, let host = hosts.hosts.first(where: { $0.hostKey == hostKey }) {
