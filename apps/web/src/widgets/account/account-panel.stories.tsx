@@ -16,9 +16,14 @@ export const SignedIn: Story = { decorators: [withAccount(signedIn())] };
 
 export const SignedOut: Story = { decorators: [withAccount({ status: "signed-out", mode: "cookie" })] };
 
-/** Clients that pick their server (the desktop app) ask for it, prefilled from the last session. */
+/** Clients that pick their server (the desktop app) start from the official one. */
 export const SignedOutPickServer: Story = {
-  decorators: [withAccount({ status: "signed-out", mode: "bearer", serverOrigin: "https://pinomad.si" })],
+  decorators: [withAccount({ status: "signed-out", mode: "bearer" })],
+};
+
+/** After signing out of a self-hosted server, the field keeps that server. */
+export const SignedOutSelfHosted: Story = {
+  decorators: [withAccount({ status: "signed-out", mode: "bearer", serverOrigin: "https://nomad.example.com" })],
 };
 
 export const Checking: Story = { decorators: [withAccount({ status: "checking" })] };
