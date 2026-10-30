@@ -11,8 +11,11 @@ struct ConversationsPage: View {
     let hostKey: String?
     let filter: ConversationFilter
 
-    /// The row being renamed, and the title being typed.
+    /// The row being renamed, its title when the alert opened, and the
+    /// title being typed. The old title is kept here, not looked up again:
+    /// the row may leave a status list while the alert is up.
     @State private var renaming: ConversationRef?
+    @State private var renamingFrom = ""
     @State private var newTitle = ""
     @State private var renameError: String?
     @State private var query = ""
@@ -151,6 +154,7 @@ struct ConversationsPage: View {
                     if model.hostSupports("renameConversation", on: ref.hostKey) {
                         Button("Rename", image: .pencil) {
                             newTitle = displayName(summary: entry.node.summary)
+                            renamingFrom = newTitle
                             renameError = nil
                             renaming = ref
                         }
@@ -169,14 +173,9 @@ struct ConversationsPage: View {
     /// Rename is request-class: a refusal comes back as the host's reason,
     /// shown in the alert, which stays up for another try.
     private func saveRename() {
-        guard let ref = renaming,
-              let summary = rows.first(where: { $0.ref == ref })?.node.summary
-        else {
-            renaming = nil
-            return
-        }
+        guard let ref = renaming else { return }
         let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty, title != displayName(summary: summary) else {
+        guard !title.isEmpty, title != renamingFrom else {
             renaming = nil
             return
         }
