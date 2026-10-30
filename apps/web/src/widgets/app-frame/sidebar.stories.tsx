@@ -28,6 +28,7 @@ const meta = {
     draftingChat: false,
     shownId: PARSER_ID,
     onDraft: fn(),
+    onNewChat: fn(),
     onOpen: fn(),
   },
   render: (args) => (

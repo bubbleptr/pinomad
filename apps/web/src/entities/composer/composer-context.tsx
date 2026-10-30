@@ -26,6 +26,17 @@ export function useComposerSlotState(slot: ComposerSlot): ComposerSlotState {
   return useSyncExternalStore(slot.subscribe, slot.snapshot);
 }
 
+// Stable no-ops let a caller subscribe to a slot that does not exist yet (a
+// host still connecting) without breaking the hook order.
+const noSubscribe = (): (() => void) => () => {};
+const noSnapshot = (): undefined => undefined;
+
+export function useOptionalComposerSlotState(
+  slot: ComposerSlot | undefined,
+): ComposerSlotState | undefined {
+  return useSyncExternalStore(slot?.subscribe ?? noSubscribe, slot?.snapshot ?? noSnapshot);
+}
+
 /** A private slot for hooks used outside a host runtime (side panel, stories, tests). */
 export function useLocalComposerSlot(): ComposerSlot {
   const store = useRef<HostComposerStore | undefined>(undefined);

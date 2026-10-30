@@ -1,39 +1,62 @@
 import { AppShell } from "@astryxdesign/core/AppShell";
+import { Button } from "@astryxdesign/core/Button";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { MobileNav } from "@astryxdesign/core/MobileNav";
 import { SideNav } from "@astryxdesign/core/SideNav";
 import { ToastViewport, useToast } from "@astryxdesign/core/Toast";
-import { Button } from "@astryxdesign/core/Button";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { ConversationSummary, DurableView, Notice } from "@pinomad/protocol/view.ts";
 import type { KeyPair } from "@pinomad/protocol/noise.ts";
-import { isBusy } from "@pinomad/protocol/transcript.ts";
+import type { Home } from "@pinomad/protocol/organization.ts";
+import { displayName } from "@pinomad/client/family.ts";
 import { hostWindowChrome } from "../../shared/host-chrome.ts";
-import { displayName, rootOf } from "@pinomad/client/family.ts";
-import { currentAgentOf } from "../../entities/conversation/current-agent.ts";
-import type { ConversationNode, Home } from "@pinomad/protocol/organization.ts";
 import { AppleReminder } from "../../shared/ui/icons.tsx";
 import { AnimatedSidebar, AnimatedSidebarRight } from "../../shared/ui/animated-icons.tsx";
-import { SidebarContent, SidebarFooter, SidebarHeaderBand } from "./sidebar.tsx";
+import {
+  SidebarContent,
+  SidebarFooter,
+  SidebarHeaderBand,
+  SidebarUnavailable,
+} from "./sidebar.tsx";
 import { SettingsDialog } from "./settings-dialog.tsx";
 import { AccountDialog } from "../account/account-dialog.tsx";
-import { SidePanel, type PanelTab } from "../side-panel/side-panel.tsx";
-import { OverviewCard } from "../overview/overview-card.tsx";
 
 const SIDEBAR_OPEN_KEY = "pinomad.sidebar.open";
 
 const readSidebarOpen = (): boolean =>
   typeof window === "undefined" || window.localStorage.getItem(SIDEBAR_OPEN_KEY) !== "false";
 
-const anyAtWork = (nodes: readonly ConversationNode[]): boolean =>
-  nodes.some((node) => node.summary.status === "running" || node.summary.status === "needs-answer" || anyAtWork(node.children));
+/** Frame actions the main column needs: it renders the header but not the shell. */
+interface FrameChrome {
+  readonly sidebarOpen: boolean;
+  readonly toggleSidebar: () => void;
+  readonly openNav: () => void;
+}
+
+const defaultFrameChrome: FrameChrome = {
+  sidebarOpen: true,
+  toggleSidebar: () => {},
+  openNav: () => {},
+};
+
+const FrameChromeContext = createContext<FrameChrome>(defaultFrameChrome);
+
+export const useFrameChrome = (): FrameChrome => useContext(FrameChromeContext);
 
 /**
- * The app frame: Astryx AppShell (wash sidebar vs elevated main) + in-flow
- * 40px header + optional side panel, mirroring Pace's widgets/app-frame.
- * Owns frame chrome state (sidebar/panel/nav); Workbench owns content state.
+ * The app frame: Astryx AppShell, sidebar, mobile drawer, and the dialogs that
+ * belong to this client rather than one host. It outlives every host runtime,
+ * so a host connecting, failing or losing focus cannot remove the sidebar.
  */
 export function AppFrame({
   view,
@@ -41,60 +64,30 @@ export function AppFrame({
   device,
   hostKey,
   onReconnect,
-  narrow,
-  drafting,
   draftingChat,
-  draftLabel,
-  conversation,
   shownId,
-  summary,
-  parentSummary,
-  banner,
   onDraft,
-  onOpenChanges,
-  overviewOpen,
-  onOverviewChange,
-  panelOpen,
-  panelTab,
-  onPanelOpen,
-  onPanelTab,
-  openInPanel,
-  openInMain,
   onOpen,
+  onNewChat,
+  narrow,
   children,
 }: {
-  view: DurableView;
-  remote: RemoteDurable;
+  /** The focused host's snapshot; absent while it is connecting or failed. */
+  view?: DurableView;
+  remote?: RemoteDurable;
   device?: KeyPair;
-  /** The stored pairing this connection authenticates as — absent for token clients. */
+  /** The stored pairing this focus belongs to — absent for token clients. */
   hostKey?: string;
   /** Remount the connection after a terminal close (for example Direct only). */
   onReconnect?: () => void;
-  narrow: boolean;
-  drafting: boolean;
+  /** The focused host is showing its plain-chat draft. */
   draftingChat: boolean;
-  draftLabel: string;
-  /** Undefined while the opened conversation is still loading (or failed to). */
-  conversation: DurableView["conversation"];
-  /** The conversation the main column is on — set at once on open, before its view lands. */
   shownId: ConversationId | undefined;
-  summary: ConversationSummary | undefined;
-  parentSummary: ConversationSummary | undefined;
-  banner?: ReactNode;
   onDraft: (home: Home) => void;
-  onOpenChanges: () => void;
-  /** The overview card's open state lives in Workbench — starting a conversation opens it. */
-  overviewOpen: boolean;
-  onOverviewChange: (open: boolean) => void;
-  /** The side panel's open state and tab live in Workbench — chat entries reach them too. */
-  panelOpen: boolean;
-  panelTab: PanelTab;
-  onPanelOpen: (open: boolean) => void;
-  onPanelTab: (tab: PanelTab) => void;
-  openInPanel: (id: ConversationId, tab: "threads" | "tasks") => void;
-  openInMain: (id: ConversationId) => void;
-  /** Show a conversation in the main column; Workbench tracks it while it loads. */
   onOpen: (id: ConversationId) => void;
+  /** The global New chat picks a host by itself instead of following focus. */
+  onNewChat?: () => void;
+  narrow: boolean;
   children: ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(readSidebarOpen);
@@ -105,204 +98,132 @@ export function AppFrame({
   // corner: whichever band sits there reserves the inset and drags the window.
   const chrome = hostWindowChrome();
   const sidebarOwnsCorner = chrome.reserveMacTrafficLights && !narrow && sidebarOpen;
-  const toggleSidebar = (): void => {
-    window.localStorage.setItem(SIDEBAR_OPEN_KEY, String(!sidebarOpen));
-    setSidebarOpen(!sidebarOpen);
-  };
-  // A fork or subagent of the shown family still at work: the closed panel's
-  // button carries a dot so the activity is not out of sight entirely.
-  const root = shownId === undefined ? undefined : rootOf(view.organized, shownId);
-  const liveActivity = root !== undefined && anyAtWork(root.children);
-  // A subagent's role comes from the delegating call; a top-level conversation
-  // or fork shows the agent it currently runs as.
-  const headerAgent =
-    summary === undefined ? undefined : summary.kind === "subagent" ? summary.role : currentAgentOf(summary);
-  const openTasks = (id?: ConversationId): void => {
-    if (id !== undefined) return openInPanel(id, "tasks");
-    void remote.controller.showSide(undefined);
-    onPanelTab("tasks");
-    onPanelOpen(true);
-  };
-
-  const sidebar = (
-    <SidebarContent
-      view={view}
-      remote={remote}
-      {...(hostKey === undefined ? {} : { hostKey })}
-      draftingChat={draftingChat}
-      shownId={shownId}
-      onDraft={onDraft}
-      onOpen={onOpen}
-      onSelect={() => setNavOpen(false)}
-    />
-  );
+  const toggleSidebar = useCallback((): void => {
+    setSidebarOpen((open) => {
+      window.localStorage.setItem(SIDEBAR_OPEN_KEY, String(!open));
+      return !open;
+    });
+  }, []);
+  const openNav = useCallback((): void => setNavOpen(true), []);
+  // Project folds, rename and remove-project dialogs belong to one host. The
+  // SideNav shell stays mounted; this content subtree is replaced on focus so
+  // A's pending action can never be confirmed against B's remote.
+  const sidebarKey = `host:${hostKey ?? "local"}`;
+  const sidebar =
+    view !== undefined && remote !== undefined ? (
+      <SidebarContent
+        key={sidebarKey}
+        view={view}
+        remote={remote}
+        {...(hostKey === undefined ? {} : { hostKey })}
+        draftingChat={draftingChat}
+        shownId={shownId}
+        onDraft={onDraft}
+        {...(onNewChat === undefined ? {} : { onNewChat })}
+        onOpen={onOpen}
+        onSelect={() => setNavOpen(false)}
+      />
+    ) : (
+      <SidebarUnavailable
+        key={sidebarKey}
+        {...(onNewChat === undefined ? {} : { onNewChat })}
+        onSelect={() => setNavOpen(false)}
+      />
+    );
 
   return (
     // The viewport wraps the workbench so every descendant's useToast reaches
     // the same top-layer stack, not Astryx's detached fallback.
     <ToastViewport position="topEnd" inset={{ top: 48 }} isTopLayer>
-      <AppShell
-        className="pigui-app-layout text-foreground"
-        contentPadding={0}
-        mobileNav={false}
-        variant="elevated"
-        sideNav={
-          // Offcanvas on purpose: closed means fully removed — no icon rail.
-          narrow || !sidebarOpen ? undefined : (
-            <SideNav
-              resizable={{ defaultWidth: 260, minWidth: 240, maxWidth: 320, autoSaveId: "pinomad-app-shell" }}
-              header={
-                <SidebarHeaderBand
-                  onCollapse={toggleSidebar}
-                  safeLeft={sidebarOwnsCorner ? chrome.safeLeft : undefined}
-                />
-              }
-              footer={
-                <SidebarFooter
-                  onOpenSettings={() => setSettingsOpen(true)}
-                  onOpenAccount={() => setAccountOpen(true)}
-                />
-              }
-            >
-              {sidebar}
-            </SideNav>
-          )
-        }
-      >
-        <div className="flex h-full min-h-0 min-w-0 flex-col">
-          <FrameHeader
-            narrow={narrow}
-            sidebarOpen={sidebarOpen}
-            safeLeft={chrome.reserveMacTrafficLights && !sidebarOwnsCorner ? chrome.safeLeft : undefined}
-            onToggleSidebar={toggleSidebar}
-            onOpenNav={() => setNavOpen(true)}
-            title={drafting ? draftLabel : displayName(summary)}
-            agent={headerAgent}
-            parentSummary={parentSummary}
-            onBackToParent={onOpen}
-            showOverview={shownId !== undefined}
-            overviewOpen={overviewOpen}
-            onOverviewChange={onOverviewChange}
-            panelOpen={panelOpen}
-            onPanelChange={onPanelOpen}
-            liveActivity={liveActivity}
-          />
-          {banner}
-          <div className="flex min-h-0 min-w-0 flex-1">
-            {/* ChatLayout's scroll area needs a flex column parent so its
-                flex-1/min-h-0 clips instead of stretching to content. */}
-            <div className="@container relative flex min-h-0 min-w-0 flex-1 flex-col">
-              {children}
-              {overviewOpen && conversation !== undefined ? (
-                <OverviewCard
-                  view={view}
-                  remote={remote}
-                  conversation={conversation}
-                  narrow={narrow}
-                  busy={isBusy(conversation)}
-                  onOpenChanges={onOpenChanges}
-                  onOpenTasks={openTasks}
-                  onClose={() => onOverviewChange(false)}
-                />
-              ) : null}
-            </div>
-            {!narrow ? (
-              <SidePanel
-                view={view}
-                remote={remote}
-                shownId={shownId}
-                narrow={false}
-                open={panelOpen}
-                onOpenChange={onPanelOpen}
-                tab={panelTab}
-                onTabChange={onPanelTab}
-                openInPanel={openInPanel}
-                onOpenInMain={openInMain}
-              />
-            ) : null}
-          </div>
-        </div>
-      </AppShell>
-      {narrow ? (
-        // The drawer is a top-layer <dialog>, outside .pigui-app-layout's DOM —
-        // give it the scoping class so the sidebar rules reach it too.
-        <MobileNav
+      <FrameChromeContext.Provider value={{ sidebarOpen, toggleSidebar, openNav }}>
+        <AppShell
           className="pigui-app-layout text-foreground"
-          isOpen={navOpen}
-          onOpenChange={setNavOpen}
-          header={<span className="text-sm font-semibold">PiNomad</span>}
+          contentPadding={0}
+          mobileNav={false}
+          variant="elevated"
+          sideNav={
+            // Offcanvas on purpose: closed means fully removed — no icon rail.
+            narrow || !sidebarOpen ? undefined : (
+              <SideNav
+                resizable={{ defaultWidth: 260, minWidth: 240, maxWidth: 320, autoSaveId: "pinomad-app-shell" }}
+                header={
+                  <SidebarHeaderBand
+                    onCollapse={toggleSidebar}
+                    safeLeft={sidebarOwnsCorner ? chrome.safeLeft : undefined}
+                  />
+                }
+                footer={
+                  <SidebarFooter
+                    onOpenSettings={() => setSettingsOpen(true)}
+                    onOpenAccount={() => setAccountOpen(true)}
+                  />
+                }
+              >
+                {sidebar}
+              </SideNav>
+            )
+          }
         >
-          {sidebar}
-          <SidebarFooter
-            onOpenSettings={() => setSettingsOpen(true)}
-            onOpenAccount={() => setAccountOpen(true)}
-            onSelect={() => setNavOpen(false)}
+          {children}
+        </AppShell>
+        {narrow && (view === undefined || view.unauthorized === true) ? (
+          // The workbench header (and its navigation button) exists only when
+          // it paints the column. A phone still needs a way into the drawer
+          // while the focused host is connecting, failed, or revoked.
+          <div
+            className="pinomad-drag fixed inset-x-0 top-0 z-30 flex h-10 items-center gap-1 px-3"
+            style={chrome.reserveMacTrafficLights ? { paddingLeft: chrome.safeLeft } : undefined}
+          >
+            <IconButton
+              icon={<AnimatedSidebar className="size-4" />}
+              label="Open navigation"
+              size="sm"
+              variant="ghost"
+              onClick={openNav}
+            />
+            <span className="text-sm font-semibold">PiNomad</span>
+          </div>
+        ) : null}
+        {narrow ? (
+          // The drawer is a top-layer <dialog>, outside .pigui-app-layout's DOM —
+          // give it the scoping class so the sidebar rules reach it too.
+          <MobileNav
+            className="pigui-app-layout text-foreground"
+            isOpen={navOpen}
+            onOpenChange={setNavOpen}
+            header={<span className="text-sm font-semibold">PiNomad</span>}
+          >
+            {sidebar}
+            <SidebarFooter
+              onOpenSettings={() => setSettingsOpen(true)}
+              onOpenAccount={() => setAccountOpen(true)}
+              onSelect={() => setNavOpen(false)}
+            />
+          </MobileNav>
+        ) : null}
+        {settingsOpen ? (
+          <SettingsDialog
+            {...(view === undefined ? {} : { view })}
+            {...(remote === undefined ? {} : { remote })}
+            {...(device === undefined ? {} : { device })}
+            {...(hostKey === undefined ? {} : { hostKey })}
+            {...(onReconnect === undefined ? {} : { onReconnect })}
+            onClose={() => setSettingsOpen(false)}
           />
-        </MobileNav>
-      ) : null}
-      {narrow ? (
-        <SidePanel
-          view={view}
-          remote={remote}
-          shownId={shownId}
-          narrow
-          open={panelOpen}
-          onOpenChange={onPanelOpen}
-          tab={panelTab}
-          onTabChange={onPanelTab}
-          openInPanel={openInPanel}
-          onOpenInMain={openInMain}
-        />
-      ) : null}
-      {settingsOpen ? (
-        <SettingsDialog
-          view={view}
-          remote={remote}
-          device={device}
-          hostKey={hostKey}
-          onReconnect={onReconnect}
-          onClose={() => setSettingsOpen(false)}
-        />
-      ) : null}
-      {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}
-      {/* Every notice the workbench learns about also lands as a toast —
-          rejected commands only surface as notices otherwise, and the panel
-          that lists them starts closed. */}
-      <NoticeToasts notices={view.notices} />
+        ) : null}
+        {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}
+      </FrameChromeContext.Provider>
     </ToastViewport>
   );
 }
 
-function NoticeToasts({ notices }: { notices: readonly Notice[] }) {
-  const toast = useToast();
-  // Notices already present at mount are history the dock shows; only toast
-  // what arrives after. The last seen id survives re-renders and switches.
-  const seenRef = useRef<number | undefined>(undefined);
-  useEffect(() => {
-    const latest = notices[notices.length - 1]?.id;
-    if (seenRef.current === undefined) {
-      seenRef.current = latest ?? -1;
-      return;
-    }
-    for (const notice of notices) {
-      if (notice.id <= seenRef.current) continue;
-      toast({
-        body: notice.message,
-        type: notice.level === "error" ? "error" : "info",
-        uniqueID: String(notice.id),
-      });
-    }
-    if (latest !== undefined) seenRef.current = latest;
-  }, [notices, toast]);
-  return null;
-}
-
-function FrameHeader({
+/**
+ * The in-flow 40px header above the main column. It lives in the Workbench
+ * because its title and buttons follow the shown conversation; the frame
+ * supplies the sidebar actions through context.
+ */
+export function FrameHeader({
   narrow,
-  sidebarOpen,
-  safeLeft,
-  onToggleSidebar,
-  onOpenNav,
   title,
   agent,
   parentSummary,
@@ -315,11 +236,6 @@ function FrameHeader({
   liveActivity,
 }: {
   narrow: boolean;
-  sidebarOpen: boolean;
-  /** Left inset reserved for the macOS traffic lights; absent off-desktop. */
-  safeLeft?: string;
-  onToggleSidebar: () => void;
-  onOpenNav: () => void;
   title: string;
   /** The agent the shown conversation runs as; for a subagent, its call-given role. */
   agent?: string;
@@ -332,6 +248,11 @@ function FrameHeader({
   onPanelChange: (open: boolean) => void;
   liveActivity: boolean;
 }) {
+  const { sidebarOpen, toggleSidebar, openNav } = useFrameChrome();
+  const chrome = hostWindowChrome();
+  const sidebarOwnsCorner = chrome.reserveMacTrafficLights && !narrow && sidebarOpen;
+  const safeLeft =
+    chrome.reserveMacTrafficLights && !sidebarOwnsCorner ? chrome.safeLeft : undefined;
   return (
     <div
       className="pinomad-drag flex h-10 shrink-0 items-center gap-1 border-b border-border px-3"
@@ -343,7 +264,7 @@ function FrameHeader({
           label="Open navigation"
           size="sm"
           variant="ghost"
-          onClick={onOpenNav}
+          onClick={openNav}
         />
       ) : sidebarOpen ? null : (
         <IconButton
@@ -351,7 +272,7 @@ function FrameHeader({
           label="Expand sidebar"
           size="sm"
           variant="ghost"
-          onClick={onToggleSidebar}
+          onClick={toggleSidebar}
         />
       )}
       <h1 className="min-w-0 flex-1 truncate text-sm font-normal">
@@ -410,4 +331,28 @@ function FrameHeader({
       </span>
     </div>
   );
+}
+
+export function NoticeToasts({ notices }: { notices: readonly Notice[] }) {
+  const toast = useToast();
+  // Notices already present at mount are history the dock shows; only toast
+  // what arrives after. The last seen id survives re-renders and switches.
+  const seenRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    const latest = notices[notices.length - 1]?.id;
+    if (seenRef.current === undefined) {
+      seenRef.current = latest ?? -1;
+      return;
+    }
+    for (const notice of notices) {
+      if (notice.id <= seenRef.current) continue;
+      toast({
+        body: notice.message,
+        type: notice.level === "error" ? "error" : "info",
+        uniqueID: String(notice.id),
+      });
+    }
+    if (latest !== undefined) seenRef.current = latest;
+  }, [notices, toast]);
+  return null;
 }

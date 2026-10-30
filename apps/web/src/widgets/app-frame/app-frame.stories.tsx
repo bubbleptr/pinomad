@@ -1,5 +1,6 @@
 import { ChatLayout } from "@astryxdesign/core/Chat";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { ConversationId } from "@earendil-works/pi-durable";
 import { fn } from "storybook/test";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -19,7 +20,7 @@ import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
 import { ComposerSkeleton, ConversationSkeleton } from "../chat/conversation-skeleton.tsx";
 import { ConversationComposer } from "../composer/conversation-composer.tsx";
 import { DraftHome } from "../draft-home/draft-home.tsx";
-import { AppFrame } from "./app-frame.tsx";
+import { AppFrame, FrameHeader, NoticeToasts } from "./app-frame.tsx";
 
 /**
  * The main column App puts inside the frame: the transcript over its
@@ -79,6 +80,44 @@ function MainColumn({
   );
 }
 
+/** Mimics Workbench: the frame owns the shell, this owns the header and column. */
+function Body({
+  view,
+  remote,
+  narrow,
+  shownId,
+  loading,
+}: {
+  view: DurableView;
+  remote: RemoteDurable;
+  narrow: boolean;
+  shownId: ConversationId | undefined;
+  loading: boolean;
+}) {
+  return (
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
+      <FrameHeader
+        narrow={narrow}
+        title={loading ? "A conversation that is opening" : "Fix the parser's trailing-comma bug"}
+        parentSummary={undefined}
+        onBackToParent={fn()}
+        showOverview={shownId !== undefined}
+        overviewOpen={false}
+        onOverviewChange={fn()}
+        panelOpen={false}
+        onPanelChange={fn()}
+        liveActivity={false}
+      />
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <div className="@container relative flex min-h-0 min-w-0 flex-1 flex-col">
+          <MainColumn view={view} remote={remote} narrow={narrow} loading={loading} />
+        </div>
+      </div>
+      <NoticeToasts notices={view.notices} />
+    </div>
+  );
+}
+
 const view = fakeView();
 
 const meta = {
@@ -100,37 +139,29 @@ const meta = {
     remote: fakeRemote(view),
     device: SELF,
     hostKey: HOME_HOST.hostKey,
-    narrow: false,
-    drafting: false,
     draftingChat: false,
-    draftLabel: "New conversation",
-    conversation: view.conversation,
     shownId: PARSER_ID,
-    summary: summaryOf(PARSER_ID),
-    parentSummary: undefined,
     onDraft: fn(),
-    onOpenChanges: fn(),
-    overviewOpen: false,
-    onOverviewChange: fn(),
-    panelOpen: false,
-    panelTab: "threads",
-    onPanelOpen: fn(),
-    onPanelTab: fn(),
-    openInPanel: fn(),
-    openInMain: fn(),
     onOpen: fn(),
+    onNewChat: fn(),
+    narrow: false,
     children: null,
   },
-  render: (args) => (
-    <AppFrame {...args}>
-      <MainColumn
-        view={args.view}
-        remote={args.remote}
-        narrow={args.narrow}
-        loading={args.conversation === undefined && args.shownId !== undefined}
-      />
-    </AppFrame>
-  ),
+  render: (args) => {
+    const storyView = args.view ?? view;
+    const storyRemote = args.remote ?? fakeRemote(storyView);
+    return (
+      <AppFrame {...args}>
+        <Body
+          view={storyView}
+          remote={storyRemote}
+          narrow={args.narrow}
+          shownId={args.shownId}
+          loading={args.shownId !== undefined && storyView.conversation === undefined}
+        />
+      </AppFrame>
+    );
+  },
 } satisfies Meta<typeof AppFrame>;
 
 export default meta;
@@ -138,15 +169,21 @@ type Story = StoryObj<typeof meta>;
 
 export const Conversation: Story = {};
 
-export const WithOverviewAndPanel: Story = { args: { overviewOpen: true, panelOpen: true } };
-
 const drafting = fakeView({ conversation: undefined, home: undefined, checkout: undefined, docs: [] });
 export const Drafting: Story = {
-  args: { view: drafting, remote: fakeRemote(drafting), drafting: true, conversation: undefined, shownId: undefined, summary: undefined },
+  args: {
+    view: drafting,
+    remote: fakeRemote(drafting),
+    draftingChat: true,
+    shownId: undefined,
+  },
 };
 
 /** A conversation opened from the sidebar, before its view lands: title and selection move at once. */
-export const Opening: Story = { args: { conversation: undefined } };
+const opening = fakeView({ conversation: undefined });
+export const Opening: Story = {
+  args: { view: opening, remote: fakeRemote(opening), shownId: PARSER_ID },
+};
 
 /** Every notice also lands as a toast. */
 const noticed = fakeView({ notices: [{ id: 1, level: "error", message: "Model anthropic/claude-opus-5-5 is overloaded; retrying in 8s" }] });

@@ -146,7 +146,7 @@ function HostRuntime({
   useEffect(() => {
     if (registry === undefined || state.status === "ready") return;
     if (state.status === "connecting") {
-      registry.publish(host.hostKey, { phase: "connecting", retry });
+      registry.publish(host.hostKey, { phase: "connecting", retry, composer });
       return;
     }
     registry.publish(host.hostKey, {
@@ -155,8 +155,9 @@ function HostRuntime({
       unauthorized: state.unauthorized,
       ...(state.mismatch === undefined ? {} : { mismatch: state.mismatch }),
       retry,
+      composer,
     });
-  }, [host.hostKey, registry, retry, state]);
+  }, [composer, host.hostKey, registry, retry, state]);
 
   useEffect(
     () => () => {
@@ -175,6 +176,7 @@ function HostRuntime({
           host={host}
           remote={state.remote}
           device={device}
+          composer={composer}
           focused={focused}
           focusTarget={focusTarget}
           retry={retry}
@@ -278,6 +280,7 @@ function ReadyHost({
   host,
   remote,
   device,
+  composer,
   focused,
   focusTarget,
   retry,
@@ -286,6 +289,7 @@ function ReadyHost({
   host: StoredHost;
   remote: RemoteDurable;
   device: KeyPair;
+  composer: HostComposerStore;
   focused: boolean;
   focusTarget: ConversationId | undefined;
   retry: () => void;
@@ -295,8 +299,8 @@ function ReadyHost({
   const registry = useContext(HostRuntimesContext);
   const { focusConversation, focusDraft, forget } = useHosts();
   useEffect(() => {
-    registry?.publish(host.hostKey, { phase: "ready", remote, view, retry });
-  }, [host.hostKey, registry, remote, retry, view]);
+    registry?.publish(host.hostKey, { phase: "ready", remote, view, retry, composer });
+  }, [composer, host.hostKey, registry, remote, retry, view]);
   useEffect(
     () => () => {
       registry?.remove(host.hostKey);
