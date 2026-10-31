@@ -1073,3 +1073,118 @@ describe("invite sign-up (#449)", () => {
     await mint(second.relay, token);
   });
 });
+
+describe("deleting an account (#451)", () => {
+  const bearer = (token: unknown): Record<string, string> => ({ authorization: `Bearer ${token as string}` });
+  const remove = (relay: Relay, headers: Record<string, string>, body: unknown) =>
+    api(relay, { method: "POST", path: "/api/me/delete", headers, body });
+
+  /** Signs up "bob" through an admin invite; resolves to bob's bearer token and the invite code. */
+  async function signUpBob(relay: Relay): Promise<{ readonly token: string; readonly invite: string }> {
+    const admin = (await login(relay)).json.token as string;
+    const invite = (await api(relay, { method: "POST", path: "/api/invites", headers: bearer(admin) })).json.code as string;
+    const response = await api(relay, {
+      method: "POST",
+      path: "/api/register",
+      body: { invite, username: "bob", password: GOOD_PASSWORD },
+    });
+    return { token: response.json.token as string, invite };
+  }
+
+  /** A host bound to `userId` whose control connection stays open; `closed` resolves to its close code. */
+  async function liveHost(relay: Relay, accounts: Accounts, userId: number): Promise<{ readonly keys: KeyPair; readonly closed: Promise<number> }> {
+    const keys = ed25519.keygen();
+    const db = new DatabaseSync(accounts.dbPath);
+    db.prepare("INSERT INTO hosts (host_id, user_id, noise_public_key, name, joined_at, last_seen_at) VALUES (?, ?, 'k', 'h', 1, 1)").run(
+      relayHostId(keys.publicKey),
+      userId,
+    );
+    db.close();
+    const socket = new WebSocket(`${relay.url}/host`);
+    sockets.add(socket);
+    const closed = once(socket, "close").then(([code]) => code as number);
+    const challengeP = once(socket, "message");
+    await once(socket, "open");
+    const challenge = decodeRelayToHost(asText((await challengeP)[0]));
+    if (challenge.t !== "challenge") throw new Error("expected challenge");
+    const hostId = relayHostId(keys.publicKey);
+    socket.send(encodeRelayFrame({ t: "register", hostId, signature: signRelayChallenge(keys.secretKey, { relayOrigin: ORIGIN, hostId, nonce: challenge.nonce }) }));
+    const [data] = await once(socket, "message");
+    expect(decodeRelayToHost(asText(data)).t).toBe("registered");
+    return { keys, closed };
+  }
+
+  it("deletes the account and everything under it, and disconnects its hosts at once", async () => {
+    const { relay, accounts } = await startServer();
+    const bob = await signUpBob(relay);
+    const host = await liveHost(relay, accounts, 2);
+    accounts.registerPushToken(2, "aa".repeat(32), "production");
+
+    const response = await remove(relay, bearer(bob.token), { password: GOOD_PASSWORD });
+    expect(response.status).toBe(204);
+
+    expect(await host.closed).toBe(RELAY_CLOSE.hostNotAllowed);
+    expect(await tryRegister(relay, host.keys)).toBe(RELAY_CLOSE.hostNotAllowed);
+    expect((await api(relay, { path: "/api/me", headers: bearer(bob.token) })).status).toBe(401);
+    expect((await login(relay, "bob")).status).toBe(401);
+    expect(accounts.pushTokenOwner("aa".repeat(32), "production")).toBeUndefined();
+    // The invite stays used, with nobody behind it; the name is free again.
+    const invites = (await api(relay, { path: "/api/invites", headers: bearer((await login(relay)).json.token) })).json as unknown as {
+      usedAt?: number;
+      usedBy?: string;
+    }[];
+    expect(invites).toHaveLength(1);
+    expect(invites[0]!.usedAt).toBeTypeOf("number");
+    expect(invites[0]!.usedBy).toBeUndefined();
+  });
+
+  it("clears the same-origin page's cookie", async () => {
+    const { relay } = await startServer();
+    await signUpBob(relay);
+    const cookie = sessionCookie(await login(relay, "bob", GOOD_PASSWORD, { origin: ORIGIN }));
+    const response = await remove(relay, { cookie, origin: ORIGIN }, { password: GOOD_PASSWORD });
+    expect(response.status).toBe(204);
+    expect(String(response.headers["set-cookie"])).toContain("Max-Age=0");
+  });
+
+  it("refuses a wrong password without deleting anything, under the login lockout", async () => {
+    const { relay } = await startServer({ limits: { userMaxFailures: 2, ipMaxAttempts: 100 } });
+    const bob = await signUpBob(relay);
+    for (let i = 0; i < 2; i += 1) {
+      const response = await remove(relay, bearer(bob.token), { password: WRONG });
+      expect(response.status).toBe(403);
+      expect(response.json.error).toBe("wrong_password");
+    }
+    expect((await remove(relay, bearer(bob.token), { password: GOOD_PASSWORD })).status).toBe(429);
+    expect((await api(relay, { path: "/api/me", headers: bearer(bob.token) })).status).toBe(200);
+  });
+
+  it("does not delete an account whose password changed while it was being checked", async () => {
+    const { relay, accounts } = await startServer();
+    const bob = await signUpBob(relay);
+    const pending = accounts.deleteAccount({ userId: 2, username: "bob", password: GOOD_PASSWORD });
+    const db = new DatabaseSync(accounts.dbPath);
+    db.prepare("UPDATE users SET password_hash = 'scrypt$reset-meanwhile' WHERE id = 2").run();
+    db.close();
+    expect(await pending).toEqual({ status: "refused", reason: "wrong_password" });
+    expect(accounts.authenticate(bob.token)).toBeDefined();
+  });
+
+  it("keeps the server's admin account, which alone mints invites", async () => {
+    const { relay } = await startServer();
+    const admin = (await login(relay)).json.token as string;
+    const response = await remove(relay, bearer(admin), { password: GOOD_PASSWORD });
+    expect(response.status).toBe(403);
+    expect(response.json.error).toBe("admin_account");
+    expect((await api(relay, { path: "/api/me", headers: bearer(admin) })).status).toBe(200);
+  });
+
+  it("refuses malformed bodies and anonymous callers", async () => {
+    const { relay } = await startServer();
+    const bob = await signUpBob(relay);
+    expect((await remove(relay, bearer(bob.token), {})).status).toBe(400);
+    expect((await remove(relay, bearer(bob.token), { password: "x".repeat(2000) })).status).toBe(400);
+    expect((await remove(relay, bearer("nope"), { password: GOOD_PASSWORD })).status).toBe(401);
+    expect((await api(relay, { path: "/api/me/delete", headers: bearer(bob.token) })).status).toBe(405);
+  });
+});

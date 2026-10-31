@@ -110,6 +110,12 @@ export type ChangePasswordResult =
   | { readonly status: "refused"; readonly reason: "wrong_password" | "weak_password" }
   | { readonly status: "limited" };
 
+export type DeleteAccountResult =
+  /** The account's hosts, whose control connections lost their authorization. */
+  | { readonly status: "ok"; readonly hostIds: readonly string[] }
+  | { readonly status: "refused"; readonly reason: "wrong_password" | "admin_account" }
+  | { readonly status: "limited" };
+
 export type RegisterResult =
   | { readonly status: "ok"; readonly token: string; readonly expiresAt: number }
   | {
@@ -180,6 +186,14 @@ export interface Accounts {
     readonly currentPassword: string;
     readonly newPassword: string;
   }): Promise<ChangePasswordResult>;
+  /**
+   * Deletes the account after checking its password (#451). Sessions, join
+   * tokens, host bindings and push registrations go with it; invites it used
+   * stay used. Devices the hosts registered stay registered: revoking them
+   * is the host's call (ADR-0022 §6). The admin account is kept, since it
+   * alone mints invites.
+   */
+  deleteAccount(args: { readonly userId: number; readonly username: string; readonly password: string }): Promise<DeleteAccountResult>;
   /** True when hostId is bound to an account — the only way a host registers. */
   hasHost(hostId: string): boolean;
   /** Mints a single-use join token for a logged-in user; only its SHA-256 is stored. */
@@ -510,6 +524,33 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
     (db.prepare("SELECT password_hash AS passwordHash FROM users WHERE id = ?").get(userId) as { passwordHash: string } | undefined)
       ?.passwordHash;
 
+  /**
+   * Re-authentication for account changes: the password must match under the
+   * same username lockout as login, with the same in-task re-check and bump
+   * so queued guesses see each other. Hands back the hash it verified, which
+   * the caller's write must still find.
+   */
+  const checkPassword = async (
+    userId: number,
+    username: string,
+    password: string,
+  ): Promise<"limited" | "wrong_password" | { readonly verifiedHash: string }> => {
+    if (userFailures.isOver(username, limits.userMaxFailures)) return "limited";
+    const stored = currentHash(userId);
+    const outcome = await gate.run(async (): Promise<"limited" | "wrong_password" | "ok"> => {
+      if (userFailures.isOver(username, limits.userMaxFailures)) return "limited";
+      if (!(await verifyPassword(password, stored ?? DUMMY_HASH)) || stored === undefined) {
+        userFailures.bump(username, limits.userWindowMs);
+        return "wrong_password";
+      }
+      return "ok";
+    });
+    if (outcome === undefined || outcome === "limited") return "limited";
+    if (outcome === "wrong_password") return "wrong_password";
+    userFailures.reset(username);
+    return { verifiedHash: stored! };
+  };
+
   const inviteState = (codeHash: string): "ok" | "invalid_invite" | "invite_expired" => {
     const row = db.prepare("SELECT expires_at AS expiresAt, used_at AS usedAt FROM invites WHERE code_hash = ?").get(codeHash) as
       | { expiresAt: number; usedAt: number | null }
@@ -671,26 +712,18 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       if (length < MIN_PASSWORD_CODEPOINTS || length > MAX_PASSWORD_CODEPOINTS) {
         return { status: "refused", reason: "weak_password" };
       }
-      if (userFailures.isOver(username, limits.userMaxFailures)) return { status: "limited" };
-      const stored = currentHash(userId);
-      // Same in-task re-check and bump as login, so queued guesses see each other.
-      const outcome = await gate.run(async (): Promise<"limited" | "wrong_password" | string> => {
-        if (userFailures.isOver(username, limits.userMaxFailures)) return "limited";
-        if (!(await verifyPassword(currentPassword, stored ?? DUMMY_HASH)) || stored === undefined) {
-          userFailures.bump(username, limits.userWindowMs);
-          return "wrong_password";
-        }
-        return hashPassword(newPassword);
-      });
-      if (outcome === undefined || outcome === "limited") return { status: "limited" };
-      if (outcome === "wrong_password") return { status: "refused", reason: "wrong_password" };
+      const checked = await checkPassword(userId, username, currentPassword);
+      if (checked === "limited") return { status: "limited" };
+      if (checked === "wrong_password") return { status: "refused", reason: "wrong_password" };
+      const hash = await gate.run(() => hashPassword(newPassword));
+      if (hash === undefined) return { status: "limited" };
       // Swap only the hash that was verified: a reset or another change that
       // committed while scrypt ran wins, and the old password no longer does.
       db.exec("BEGIN IMMEDIATE");
       try {
         const swapped = db
           .prepare("UPDATE users SET password_hash = ? WHERE id = ? AND password_hash = ?")
-          .run(outcome, userId, stored!);
+          .run(hash, userId, checked.verifiedHash);
         if (Number(swapped.changes) !== 1) {
           db.exec("ROLLBACK");
           return { status: "refused", reason: "wrong_password" };
@@ -701,8 +734,35 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
         db.exec("ROLLBACK");
         throw error;
       }
-      userFailures.reset(username);
       return { status: "ok" };
+    },
+
+    async deleteAccount({ userId, username, password }) {
+      const user = db.prepare("SELECT admin FROM users WHERE id = ?").get(userId) as { admin: number } | undefined;
+      if (user?.admin === 1) return { status: "refused", reason: "admin_account" };
+      const checked = await checkPassword(userId, username, password);
+      if (checked === "limited") return { status: "limited" };
+      if (checked === "wrong_password") return { status: "refused", reason: "wrong_password" };
+      // Same compare-and-swap as a password change: a reset that committed
+      // while scrypt ran means the password typed here no longer holds.
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const hostIds = (db.prepare("SELECT host_id AS hostId FROM hosts WHERE user_id = ?").all(userId) as { hostId: string }[]).map(
+          (row) => row.hostId,
+        );
+        // ON DELETE CASCADE takes sessions, join tokens, hosts and push
+        // registrations; invites it used keep their row with used_by NULL.
+        const deleted = db.prepare("DELETE FROM users WHERE id = ? AND password_hash = ?").run(userId, checked.verifiedHash);
+        if (Number(deleted.changes) !== 1) {
+          db.exec("ROLLBACK");
+          return { status: "refused", reason: "wrong_password" };
+        }
+        db.exec("COMMIT");
+        return { status: "ok", hostIds };
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
     },
 
     revokeAllSessions(userId) {
