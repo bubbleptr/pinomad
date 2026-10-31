@@ -1,7 +1,9 @@
 // The server's HTTP account API (ADR-0022 §2), mounted on the same port as the
-// splice sockets and the static web client: POST /api/login, POST /api/logout,
-// POST /api/sessions/revoke-all, GET /api/me, POST /api/join-tokens,
-// POST /api/push-tokens and POST /api/push-tokens/remove (ADR-0036).
+// splice sockets and the static web client: POST /api/login, POST /api/register,
+// POST /api/logout, POST /api/sessions/revoke-all, GET /api/me,
+// POST /api/join-tokens, POST /api/push-tokens and POST /api/push-tokens/remove
+// (ADR-0036), and for the admin GET/POST /api/invites and
+// POST /api/invites/revoke (#449).
 //
 // Two credential styles share the routes, decided by the request's Origin:
 // the same-origin web client gets a Secure+HttpOnly+SameSite=Strict host-only
@@ -173,10 +175,12 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
 
   // A Bearer request carries its own credential, so no Origin check. Anything
   // else that mutates (the ambient-cookie path, or an anonymous probe) must be
-  // same-origin — except login, which also answers desktop and Origin-less
-  // native callers in token mode (its own branch picks the response style).
+  // same-origin — except login and register, which also answer desktop and
+  // Origin-less native callers in token mode (their branch picks the response
+  // style).
   const bearer = (request.headers.authorization ?? "").startsWith("Bearer ");
-  const loginTokenMode = pathname === "/api/login" && (origin === undefined || origin === DESKTOP_ORIGIN);
+  const loginTokenMode =
+    (pathname === "/api/login" || pathname === "/api/register") && (origin === undefined || origin === DESKTOP_ORIGIN);
   if (MUTATING.has(method) && !bearer && !loginTokenMode && origin !== ctx.publicOrigin) {
     deny(403, "origin_mismatch");
     return;
@@ -228,9 +232,102 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     const cookieMode = origin === ctx.publicOrigin;
     send(
       200,
+      {
+        user: { username },
+        ...(result.admin ? { admin: true } : {}),
+        expiresAt: result.expiresAt,
+        ...(cookieMode ? {} : { token: result.token }),
+      },
+      cookieMode ? { "set-cookie": setSessionCookie(result.token) } : undefined,
+    );
+    return;
+  }
+
+  if (pathname === "/api/register") {
+    if (method !== "POST") {
+      deny(405, "method_not_allowed", { allow: "POST" });
+      return;
+    }
+    const body = await readJson(request);
+    if (!body.ok) {
+      deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
+      return;
+    }
+    const value = body.value as { invite?: unknown; username?: unknown; password?: unknown } | null;
+    if (typeof value?.invite !== "string" || typeof value.username !== "string" || typeof value.password !== "string") {
+      deny(400, "invalid_request");
+      return;
+    }
+    const { invite, username } = value as { invite: string; username: string; password: string };
+    const result = await accounts.register({
+      invite,
+      username,
+      password: value.password,
+      ip: clientIp(request, ctx.trustProxy),
+    });
+    if (result.status === "limited") {
+      deny(429, "rate_limited");
+      return;
+    }
+    if (result.status === "refused") {
+      const status =
+        result.reason === "invalid_invite" || result.reason === "invite_expired"
+          ? 403
+          : result.reason === "username_taken"
+            ? 409
+            : 400;
+      deny(status, result.reason);
+      return;
+    }
+    // Lands signed in, in the same credential style login would have used.
+    const cookieMode = origin === ctx.publicOrigin;
+    send(
+      200,
       { user: { username }, expiresAt: result.expiresAt, ...(cookieMode ? {} : { token: result.token }) },
       cookieMode ? { "set-cookie": setSessionCookie(result.token) } : undefined,
     );
+    return;
+  }
+
+  if (pathname === "/api/invites" || pathname === "/api/invites/revoke") {
+    const allowed = pathname === "/api/invites" ? ["GET", "POST"] : ["POST"];
+    if (!allowed.includes(method)) {
+      deny(405, "method_not_allowed", { allow: allowed.join(", ") });
+      return;
+    }
+    const token = sessionToken(request);
+    const session = token === undefined ? undefined : accounts.authenticate(token);
+    if (session === undefined) {
+      deny(401, "unauthenticated");
+      return;
+    }
+    if (!session.admin) {
+      deny(403, "forbidden");
+      return;
+    }
+    if (pathname === "/api/invites") {
+      if (method === "GET") send(200, accounts.listInvites());
+      else send(200, accounts.createInvite(session.userId));
+      return;
+    }
+    const body = await readJson(request);
+    if (!body.ok) {
+      deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
+      return;
+    }
+    const id = (body.value as { id?: unknown } | null)?.id;
+    if (typeof id !== "number" || !Number.isSafeInteger(id)) {
+      deny(400, "invalid_request");
+      return;
+    }
+    // The session may have been revoked while the body trickled in, as on
+    // the push-token routes.
+    if (accounts.authenticate(token!)?.admin !== true) {
+      deny(401, "unauthenticated");
+      return;
+    }
+    if (accounts.revokeInvite(id)) send(204);
+    else deny(404, "not_found");
     return;
   }
 
@@ -342,7 +439,8 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       return;
     }
     if (pathname === "/api/me") {
-      send(200, { user: { username: session.username } });
+      // `admin` only appears when true, so regular accounts see the old shape.
+      send(200, { user: { username: session.username }, ...(session.admin ? { admin: true } : {}) });
       return;
     }
     if (pathname === "/api/push-tokens" || pathname === "/api/push-tokens/remove") {

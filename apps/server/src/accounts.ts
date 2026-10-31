@@ -1,8 +1,9 @@
 // Server accounts (ADR-0022 §2): the server persists users, sessions, join
-// tokens, host bindings, and the APNs tokens each account's devices registered
-// (ADR-0036) in <dataDir>/server.sqlite, guarded by the same
-// one-process-per-directory lock the host uses. Secrets never reach the DB in
-// the clear — passwords are scrypt hashes, session and join tokens are SHA-256.
+// tokens, host bindings, the APNs tokens each account's devices registered
+// (ADR-0036), and sign-up invites (#449) in <dataDir>/server.sqlite, guarded
+// by the same one-process-per-directory lock the host uses. Secrets never
+// reach the DB in the clear — passwords are scrypt hashes, session, join and
+// invite tokens are SHA-256.
 //
 // `node:sqlite` needs Node: the server runs on Node like the host, not Bun.
 
@@ -16,7 +17,7 @@ import { normalizeHostName } from "@pinomad/protocol/settings.ts";
 import { lockDataDir } from "./lock.ts";
 
 const DB_FILE = "server.sqlite";
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 // Sessions die 30 days after issue and are never renewed — a stolen token has a
 // hard ceiling, and re-logging-in is the only way forward.
@@ -25,6 +26,14 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 // Join tokens are short-lived and single-use (ADR-0022 §3): a leaked one is
 // only useful for minutes and only once.
 const JOIN_TOKEN_TTL_MS = 10 * 60 * 1000;
+
+// Invites go out over chat or mail and wait for the recipient, so they live a
+// week; each one creates at most one account (#449).
+const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Signed-up names are lowercase so two accounts can't differ only in case.
+// The bootstrap account predates this rule and keeps whatever it was given.
+const SIGN_UP_USERNAME = /^[a-z0-9][a-z0-9._-]{1,31}$/;
 
 // Push registrations (ADR-0036 §2, §5): the app refreshes its token on every
 // connect and foreground, so one untouched for 90 days belongs to a device
@@ -92,9 +101,26 @@ export interface AccountsOptions {
 }
 
 export type LoginResult =
-  | { readonly status: "ok"; readonly token: string; readonly expiresAt: number }
+  | { readonly status: "ok"; readonly token: string; readonly expiresAt: number; readonly admin: boolean }
   | { readonly status: "invalid" }
   | { readonly status: "limited" };
+
+export type RegisterResult =
+  | { readonly status: "ok"; readonly token: string; readonly expiresAt: number }
+  | {
+      readonly status: "refused";
+      readonly reason: "invalid_invite" | "invite_expired" | "invalid_username" | "weak_password" | "username_taken";
+    }
+  | { readonly status: "limited" };
+
+/** An invite as the admin lists it; the code itself is never stored. */
+export interface InviteRow {
+  readonly id: number;
+  readonly createdAt: number;
+  readonly expiresAt: number;
+  readonly usedAt?: number;
+  readonly usedBy?: string;
+}
 
 export type JoinHostResult =
   | { readonly status: "joined"; readonly username: string }
@@ -114,8 +140,25 @@ export interface Accounts {
   /** Server database path — tests write join_tokens rows directly. */
   readonly dbPath: string;
   login(username: string, password: string, ip: string): Promise<LoginResult>;
+  /**
+   * Creates an account from an unspent invite and signs it in (#449). Counts
+   * against the same per-address limit as login.
+   */
+  register(args: {
+    readonly invite: string;
+    readonly username: string;
+    readonly password: string;
+    readonly ip: string;
+  }): Promise<RegisterResult>;
   /** Resolves a session token to its user, or undefined when unknown/expired. */
-  authenticate(token: string): { readonly userId: number; readonly username: string } | undefined;
+  authenticate(
+    token: string,
+  ): { readonly userId: number; readonly username: string; readonly admin: boolean } | undefined;
+  /** Mints a single-use sign-up invite; only its SHA-256 is stored. Callers check admin. */
+  createInvite(userId: number): { readonly code: string; readonly expiresAt: number };
+  listInvites(): InviteRow[];
+  /** Deletes an unspent invite; false when it doesn't exist or was already used. */
+  revokeInvite(id: number): boolean;
   logout(token: string): void;
   revokeAllSessions(userId: number): void;
   /** True when hostId is bound to an account — the only way a host registers. */
@@ -237,6 +280,28 @@ function migrate(db: DatabaseSync): void {
       );
       CREATE INDEX push_tokens_user ON push_tokens (user_id, updated_at);
       PRAGMA user_version = 2;
+      COMMIT;
+    `);
+  }
+  if (version < 3) {
+    // The first account is the operator's (the bootstrap one); it alone
+    // mints invites.
+    db.exec(`
+      BEGIN;
+      ALTER TABLE users ADD COLUMN admin INTEGER NOT NULL DEFAULT 0;
+      UPDATE users SET admin = 1 WHERE id = (SELECT MIN(id) FROM users);
+      -- AUTOINCREMENT: minting sweeps expired invites, and a reused id would
+      -- let a revoke from a stale list hit a code already sent to someone.
+      CREATE TABLE invites (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code_hash TEXT NOT NULL UNIQUE,
+        created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        used_at INTEGER,
+        used_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+      );
+      PRAGMA user_version = 3;
       COMMIT;
     `);
   }
@@ -372,7 +437,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       assertUsernamePolicy(options.bootstrapUser);
       assertPasswordPolicy(options.bootstrapPassword);
       const hash = await hashPassword(options.bootstrapPassword);
-      db.prepare("INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)").run(
+      db.prepare("INSERT INTO users (username, password_hash, created_at, admin) VALUES (?, ?, ?, 1)").run(
         options.bootstrapUser,
         hash,
         now(),
@@ -397,6 +462,30 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
   const ipAttempts = new WindowedCounter(limits.counterMaxEntries, now);
   const userFailures = new WindowedCounter(limits.counterMaxEntries, now);
 
+  const issueSession = (userId: number): { readonly token: string; readonly expiresAt: number } => {
+    db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(now());
+    const token = randomBytes(32).toString("base64url");
+    const expiresAt = now() + SESSION_TTL_MS;
+    db.prepare("INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)").run(
+      sha256Hex(token),
+      userId,
+      now(),
+      expiresAt,
+    );
+    return { token, expiresAt };
+  };
+
+  const inviteState = (codeHash: string): "ok" | "invalid_invite" | "invite_expired" => {
+    const row = db.prepare("SELECT expires_at AS expiresAt, used_at AS usedAt FROM invites WHERE code_hash = ?").get(codeHash) as
+      | { expiresAt: number; usedAt: number | null }
+      | undefined;
+    if (row === undefined || row.usedAt !== null) return "invalid_invite";
+    return row.expiresAt <= now() ? "invite_expired" : "ok";
+  };
+
+  const usernameTaken = (username: string): boolean =>
+    db.prepare("SELECT 1 AS x FROM users WHERE lower(username) = ?").get(username) !== undefined;
+
   return {
     dbPath: join(options.dataDir, DB_FILE),
 
@@ -406,8 +495,8 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       // checking existence first would leak which usernames are real.
       if (userFailures.isOver(username, limits.userMaxFailures)) return { status: "limited" };
       const user = db
-        .prepare("SELECT id, username, password_hash AS passwordHash FROM users WHERE username = ?")
-        .get(username) as { id: number; username: string; passwordHash: string } | undefined;
+        .prepare("SELECT id, username, password_hash AS passwordHash, admin FROM users WHERE username = ?")
+        .get(username) as { id: number; username: string; passwordHash: string; admin: number } | undefined;
       // Re-check inside the task: a burst queues requests that all pass the
       // first check; once earlier failures lock the name, queued work must
       // refuse instead of still verifying (and possibly issuing a session).
@@ -425,27 +514,104 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       if (outcome === undefined || outcome === "limited") return { status: "limited" };
       if (outcome === "invalid") return { status: "invalid" };
       userFailures.reset(username);
-      db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(now());
-      const token = randomBytes(32).toString("base64url");
-      const expiresAt = now() + SESSION_TTL_MS;
-      db.prepare("INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)").run(
-        sha256Hex(token),
-        outcome,
+      return { status: "ok", ...issueSession(outcome), admin: user?.admin === 1 };
+    },
+
+    async register({ invite, username, password, ip }) {
+      if (ipAttempts.hit(ip, limits.ipMaxAttempts, limits.ipWindowMs)) return { status: "limited" };
+      const codeHash = sha256Hex(invite);
+      // The invite goes first: only someone holding one learns whether a
+      // username is taken.
+      const invited = inviteState(codeHash);
+      if (invited !== "ok") return { status: "refused", reason: invited };
+      if (!SIGN_UP_USERNAME.test(username)) return { status: "refused", reason: "invalid_username" };
+      const length = [...password].length;
+      if (length < MIN_PASSWORD_CODEPOINTS || length > MAX_PASSWORD_CODEPOINTS) {
+        return { status: "refused", reason: "weak_password" };
+      }
+      if (usernameTaken(username)) return { status: "refused", reason: "username_taken" };
+      const hash = await gate.run(() => hashPassword(password));
+      if (hash === undefined) return { status: "limited" };
+      // Hashing yielded, so another sign-up may have spent the invite or taken
+      // the name meanwhile: check both again and claim them in one transaction.
+      db.exec("BEGIN");
+      try {
+        const again = inviteState(codeHash);
+        const failure = again !== "ok" ? again : usernameTaken(username) ? "username_taken" : undefined;
+        if (failure !== undefined) {
+          db.exec("ROLLBACK");
+          return { status: "refused", reason: failure };
+        }
+        const userId = Number(
+          db.prepare("INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)").run(username, hash, now())
+            .lastInsertRowid,
+        );
+        // Conditional like joinHost's claim, so both single-use paths read the same.
+        const claimed = db
+          .prepare("UPDATE invites SET used_at = ?, used_by = ? WHERE code_hash = ? AND used_at IS NULL")
+          .run(now(), userId, codeHash);
+        if (Number(claimed.changes) !== 1) {
+          db.exec("ROLLBACK");
+          return { status: "refused", reason: "invalid_invite" };
+        }
+        const session = issueSession(userId);
+        db.exec("COMMIT");
+        return { status: "ok", ...session };
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+
+    createInvite(userId) {
+      // Expired invites nobody used are dead weight in the admin's list.
+      db.prepare("DELETE FROM invites WHERE used_at IS NULL AND expires_at <= ?").run(now());
+      const code = randomBytes(16).toString("base64url");
+      const expiresAt = now() + INVITE_TTL_MS;
+      db.prepare("INSERT INTO invites (code_hash, created_by, created_at, expires_at) VALUES (?, ?, ?, ?)").run(
+        sha256Hex(code),
+        userId,
         now(),
         expiresAt,
       );
-      return { status: "ok", token, expiresAt };
+      return { code, expiresAt };
+    },
+
+    listInvites() {
+      const rows = db
+        .prepare(
+          `SELECT i.id AS id, i.created_at AS createdAt, i.expires_at AS expiresAt, i.used_at AS usedAt, u.username AS usedBy
+           FROM invites i LEFT JOIN users u ON u.id = i.used_by ORDER BY i.created_at DESC, i.id DESC`,
+        )
+        .all() as unknown as {
+        id: number;
+        createdAt: number;
+        expiresAt: number;
+        usedAt: number | null;
+        usedBy: string | null;
+      }[];
+      return rows.map((row) => ({
+        id: row.id,
+        createdAt: row.createdAt,
+        expiresAt: row.expiresAt,
+        ...(row.usedAt === null ? {} : { usedAt: row.usedAt }),
+        ...(row.usedBy === null ? {} : { usedBy: row.usedBy }),
+      }));
+    },
+
+    revokeInvite(id) {
+      return Number(db.prepare("DELETE FROM invites WHERE id = ? AND used_at IS NULL").run(id).changes) > 0;
     },
 
     authenticate(token) {
       const row = db
         .prepare(
-          `SELECT s.user_id AS userId, u.username AS username, s.expires_at AS expiresAt
+          `SELECT s.user_id AS userId, u.username AS username, u.admin AS admin, s.expires_at AS expiresAt
            FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?`,
         )
-        .get(sha256Hex(token)) as { userId: number; username: string; expiresAt: number } | undefined;
+        .get(sha256Hex(token)) as { userId: number; username: string; admin: number; expiresAt: number } | undefined;
       if (row === undefined || row.expiresAt <= now()) return undefined;
-      return { userId: row.userId, username: row.username };
+      return { userId: row.userId, username: row.username, admin: row.admin === 1 };
     },
 
     logout(token) {
