@@ -36,10 +36,22 @@ function fakeModel(initial: AccountState): AccountModel & { setState(next: Accou
       return () => listeners.delete(listener);
     },
     login: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
+    register: vi.fn(() => Promise.resolve({ ok: false as const, error: { code: "invalid_invite", status: 403 } })),
     logout: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     revokeAll: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     refreshHosts: vi.fn(() => Promise.resolve({ ok: true as const, value: [] })),
     createJoinToken: vi.fn(() => Promise.reject(new Error("unused"))),
+    listInvites: vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        value: [
+          { id: 2, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 },
+          { id: 1, createdAt: 0, expiresAt: Date.now() + 1000, usedAt: 1, usedBy: "bob" },
+        ],
+      }),
+    ),
+    createInvite: vi.fn(() => Promise.resolve({ ok: true as const, value: { code: "fresh-code", expiresAt: Date.now() + 86_400_000 } })),
+    revokeInvite: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     pairHost: vi.fn(() => Promise.resolve({ ok: false as const, error: { code: "host_timeout" } })),
     retryUnsavedHost: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     hostRejected: vi.fn(),
@@ -51,6 +63,7 @@ function signedIn(hosts: AccountHostMatch[], rejectedHostKeys: string[] = []): E
     status: "signed-in",
     mode: "cookie",
     user: "kieran",
+    admin: false,
     serverOrigin: "https://nomad.example",
     hosts,
     rejectedHostKeys,
@@ -164,6 +177,46 @@ describe("AccountPanel", () => {
     });
     expect(model.retryUnsavedHost).toHaveBeenCalledWith("h1");
     expect(focusHost).toHaveBeenCalledWith(KEY_A);
+  });
+});
+
+describe("invite sign-up (#449)", () => {
+  it("switches to sign-up and sends the invite, name and password", async () => {
+    const model = fakeModel({ status: "signed-out", mode: "cookie" });
+    renderPanel(model);
+    await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
+    await userEvent.type(screen.getByLabelText("Invite code"), " code-1 ");
+    await userEvent.type(screen.getByLabelText("Username"), "bob");
+    await userEvent.type(screen.getByLabelText("Password"), "long password here");
+    await act(async () => {
+      await userEvent.click(screen.getByRole("button", { name: "Create account" }));
+    });
+    expect(model.register).toHaveBeenCalledWith({ invite: "code-1", username: "bob", password: "long password here" });
+    expect(screen.getByText(/invite code isn't valid/)).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("button", { name: "Sign in instead" }));
+    expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
+  });
+
+  it("hides invites from accounts that aren't the admin", async () => {
+    const plain = fakeModel(signedIn([]));
+    renderPanel(plain);
+    expect(screen.queryByText("Invites")).toBeNull();
+    expect(plain.listInvites).not.toHaveBeenCalled();
+  });
+
+  it("lists invites, creates one, and revokes an unused one", async () => {
+    const model = fakeModel({ ...signedIn([]), admin: true });
+    renderPanel(model);
+    expect(await screen.findByText("Used by bob")).toBeTruthy();
+    await act(async () => {
+      await userEvent.click(screen.getByRole("button", { name: "Create invite" }));
+    });
+    expect(screen.getByText("fresh-code")).toBeTruthy();
+    await act(async () => {
+      await userEvent.click(screen.getByRole("button", { name: "Revoke" }));
+    });
+    expect(model.revokeInvite).toHaveBeenCalledWith(2);
   });
 });
 

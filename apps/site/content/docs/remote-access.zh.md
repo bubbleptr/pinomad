@@ -155,7 +155,7 @@ pinomad server --public-origin https://relay.example.com --data-dir /var/lib/pin
 - 新用户名只能用小写字母、数字和 `. _ -`，2–32 位，不能和已有用户名只差大小写；密码规则和首个账号相同（至少 12 位）。
 - 注册接口 `POST /api/register` 和登录共用按地址的限速。
 
-邀请码是经 HTTP 发的，服务端不用停：
+管理员登录 Web 或桌面端后，账号面板里有 **Invites**：**Create invite** 生成邀请码，列表里能看到谁用了哪个，没用掉的可以 **Revoke**。邀请码是经 HTTP 发的，服务端不用停，所以也可以直接调接口：
 
 ```sh
 # 以管理员登录，拿到 bearer token（不带 Origin 时回 token 而不是 cookie）

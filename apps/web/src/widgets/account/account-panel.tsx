@@ -10,7 +10,7 @@ import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Token } from "@astryxdesign/core/Token";
 import { useEffect, useState } from "react";
-import type { AccountError, AccountHostMatch, JoinToken } from "@pinomad/client/account.ts";
+import type { AccountError, AccountHostMatch, AccountInvite, CreatedInvite, JoinToken } from "@pinomad/client/account.ts";
 import type { StoredHost } from "@pinomad/client/stored-host.ts";
 import { relativeTime } from "@pinomad/client/family.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
@@ -59,6 +59,18 @@ export function accountErrorMessage(error: AccountError): string {
       return "This app can't connect to any address the host offered. The page may block an insecure ws:// path; try the desktop app or a secure address.";
     case "pairing_not_saved":
       return "Paired, but this device couldn't save the pairing.";
+    case "invalid_invite":
+      return "This invite code isn't valid. It may have been used or revoked.";
+    case "invite_expired":
+      return "This invite code has expired. Ask for a new one.";
+    case "invalid_username":
+      return "Use 2–32 lowercase letters, digits, dots, dashes or underscores, starting with a letter or digit.";
+    case "weak_password":
+      return "Use a password of at least 12 characters.";
+    case "username_taken":
+      return "That username is taken.";
+    case "forbidden":
+      return "Only the server's admin can do this.";
     default:
       return `Something went wrong (${error.code}).`;
   }
@@ -75,6 +87,7 @@ export function AccountPanel() {
   // Lives here, not in SignedIn: a failed sign-out still lands signed-out,
   // and the warning has to survive that unmount.
   const [signOutWarning, setSignOutWarning] = useState<string>();
+  const [signingUp, setSigningUp] = useState(false);
   switch (state.status) {
     case "unavailable":
       return null;
@@ -91,7 +104,11 @@ export function AccountPanel() {
           {signOutWarning === undefined ? null : (
             <Banner status="warning" title="Sign-out not confirmed" description={signOutWarning} />
           )}
-          <SignInForm account={account} state={state} />
+          {signingUp ? (
+            <SignUpForm account={account} state={state} onSignIn={() => setSigningUp(false)} />
+          ) : (
+            <SignInForm account={account} state={state} onSignUp={() => setSigningUp(true)} />
+          )}
         </VStack>
       );
     case "signed-in":
@@ -99,7 +116,15 @@ export function AccountPanel() {
   }
 }
 
-function SignInForm({ account, state }: { account: AccountModel; state: Extract<AccountState, { status: "signed-out" }> }) {
+function SignInForm({
+  account,
+  state,
+  onSignUp,
+}: {
+  account: AccountModel;
+  state: Extract<AccountState, { status: "signed-out" }>;
+  onSignUp: () => void;
+}) {
   // Bearer clients (desktop) pick their server, starting from the last one or
   // the official one; a cookie page is the server.
   const asksOrigin = state.mode === "bearer";
@@ -139,7 +164,90 @@ function SignInForm({ account, state }: { account: AccountModel; state: Extract<
       <TextInput label="Username" value={username} onChange={setUsername} onEnter={submit} width="100%" />
       <TextInput label="Password" type="password" value={password} onChange={setPassword} onEnter={submit} width="100%" />
       {error === undefined ? null : <Banner status="error" title="Couldn't sign in" description={accountErrorMessage(error)} />}
-      <Button label="Sign in" variant="primary" isLoading={busy} isDisabled={!ready} onClick={submit} />
+      <HStack gap={2} vAlign="center" hAlign="between">
+        <Button label="Sign in" variant="primary" isLoading={busy} isDisabled={!ready} onClick={submit} />
+        <Button label="Create an account" variant="ghost" onClick={onSignUp} />
+      </HStack>
+    </VStack>
+  );
+}
+
+/** Sign-up with an invite from the server's admin (#449); lands signed in. */
+function SignUpForm({
+  account,
+  state,
+  onSignIn,
+}: {
+  account: AccountModel;
+  state: Extract<AccountState, { status: "signed-out" }>;
+  onSignIn: () => void;
+}) {
+  const asksOrigin = state.mode === "bearer";
+  const [origin, setOrigin] = useState(state.serverOrigin ?? OFFICIAL_SERVER_ORIGIN);
+  const [invite, setInvite] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<AccountError>();
+  const ready =
+    invite.trim() !== "" && username.trim() !== "" && password !== "" && (!asksOrigin || origin.trim() !== "");
+  const submit = (): void => {
+    if (!ready || busy) return;
+    setBusy(true);
+    setError(undefined);
+    void account
+      .register({
+        invite: invite.trim(),
+        username: username.trim(),
+        password,
+        ...(asksOrigin ? { serverOrigin: origin.trim() } : {}),
+      })
+      .then((result) => {
+        setBusy(false);
+        if (!result.ok) setError(result.error);
+      });
+  };
+  return (
+    <VStack gap={3} style={{ width: "100%" }}>
+      <VStack gap={1}>
+        <Heading level={3}>Create an account</Heading>
+        <Text type="supporting">You need an invite code from the server's admin.</Text>
+      </VStack>
+      {asksOrigin ? (
+        <TextInput
+          label="Server"
+          placeholder="https://nomad.example.com"
+          value={origin}
+          onChange={setOrigin}
+          onEnter={submit}
+          width="100%"
+        />
+      ) : null}
+      <TextInput label="Invite code" value={invite} onChange={setInvite} onEnter={submit} width="100%" />
+      <TextInput
+        label="Username"
+        description="Lowercase letters, digits, dots, dashes or underscores"
+        value={username}
+        onChange={setUsername}
+        onEnter={submit}
+        width="100%"
+      />
+      <TextInput
+        label="Password"
+        description="At least 12 characters"
+        type="password"
+        value={password}
+        onChange={setPassword}
+        onEnter={submit}
+        width="100%"
+      />
+      {error === undefined ? null : (
+        <Banner status="error" title="Couldn't create the account" description={accountErrorMessage(error)} />
+      )}
+      <HStack gap={2} vAlign="center" hAlign="between">
+        <Button label="Create account" variant="primary" isLoading={busy} isDisabled={!ready} onClick={submit} />
+        <Button label="Sign in instead" variant="ghost" onClick={onSignIn} />
+      </HStack>
     </VStack>
   );
 }
@@ -184,6 +292,7 @@ function SignedIn({
         <Banner status="error" title="Couldn't pair" description={accountErrorMessage(actionError)} />
       )}
       <AddHost account={account} />
+      {state.admin ? <Invites account={account} /> : null}
       <SignOut account={account} onWarning={onSignOutWarning} />
     </VStack>
   );
@@ -361,6 +470,99 @@ function JoinCommand({ token, onRenew, onDone }: { token: JoinToken; onRenew: ()
         <Button label="Done" variant="ghost" size="sm" onClick={onDone} />
       </HStack>
     </VStack>
+  );
+}
+
+/** "Just now" or "3d ago" — relativeTime's past form for sentences. */
+const ago = (at: number, now: number): string => {
+  const span = relativeTime(at, now);
+  return span === "now" ? "just now" : `${span} ago`;
+};
+
+/** The admin's sign-up invites (#449): mint one, see who used which, revoke unused ones. */
+function Invites({ account }: { account: AccountModel }) {
+  const now = useNow(60_000);
+  const [invites, setInvites] = useState<readonly AccountInvite[]>();
+  const [created, setCreated] = useState<CreatedInvite>();
+  const [error, setError] = useState<AccountError>();
+  const [busy, setBusy] = useState(false);
+  const load = (): Promise<void> =>
+    account.listInvites().then((result) => {
+      if (result.ok) setInvites(result.value);
+      else setError(result.error);
+    });
+  // One load per mount; create and revoke reload explicitly.
+  useEffect(() => {
+    void load();
+  }, [account]);
+  const create = (): void => {
+    setBusy(true);
+    setError(undefined);
+    void account.createInvite().then(async (result) => {
+      setBusy(false);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setCreated(result.value);
+      await load();
+    });
+  };
+  const revoke = (id: number): void => {
+    setError(undefined);
+    void account.revokeInvite(id).then(async (result) => {
+      if (!result.ok) setError(result.error);
+      await load();
+    });
+  };
+  return (
+    <VStack gap={2}>
+      <HStack gap={2} vAlign="center" hAlign="between">
+        <Text weight="semibold">Invites</Text>
+        <Button label="Create invite" variant="secondary" size="sm" isLoading={busy} onClick={create} />
+      </HStack>
+      {created === undefined ? null : (
+        <VStack gap={2}>
+          <Text type="supporting">Send this code to the person you're inviting. It won't be shown again.</Text>
+          <CodeBlock code={created.code} hasCopyButton isWrapped />
+          <HStack gap={2} vAlign="center" hAlign="between">
+            <Text type="supporting">Works once · expires in {relativeTime(now, created.expiresAt)}</Text>
+            <Button label="Done" variant="ghost" size="sm" onClick={() => setCreated(undefined)} />
+          </HStack>
+        </VStack>
+      )}
+      {invites === undefined || invites.length === 0 ? (
+        invites === undefined ? null : <Text type="supporting">No invites yet. Each one lets one person create an account.</Text>
+      ) : (
+        <List density="compact">
+          {invites.map((invite) => (
+            <InviteRow key={invite.id} invite={invite} now={now} onRevoke={() => revoke(invite.id)} />
+          ))}
+        </List>
+      )}
+      {error === undefined ? null : <Banner status="error" title="Couldn't update invites" description={accountErrorMessage(error)} />}
+    </VStack>
+  );
+}
+
+function InviteRow({ invite, now, onRevoke }: { invite: AccountInvite; now: number; onRevoke: () => void }) {
+  if (invite.usedAt !== undefined) {
+    return (
+      <ListItem
+        label={invite.usedBy === undefined ? "Used" : `Used by ${invite.usedBy}`}
+        description={`Signed up ${ago(invite.usedAt, now)}`}
+      />
+    );
+  }
+  if (invite.expiresAt <= now) {
+    return <ListItem label="Expired" description={`Created ${ago(invite.createdAt, now)}`} />;
+  }
+  return (
+    <ListItem
+      label="Unused"
+      description={`Created ${ago(invite.createdAt, now)} · expires in ${relativeTime(now, invite.expiresAt)}`}
+      endContent={<Button label="Revoke" variant="ghost" size="sm" onClick={onRevoke} />}
+    />
   );
 }
 
