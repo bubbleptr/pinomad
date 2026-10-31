@@ -57,4 +57,4 @@ cd apps/site && bun run build && bun run preview
 
 从别的机器搬过来的步骤见[远程访问](https://pinomad.si/zh/docs/remote-access/)的"搬到另一台机器"，换域名见"更换服务端域名"。
 
-托管实例现在不开放注册（ADR-0022），落地页上的 "Open the web app" 对访客来说只能看到登录页；开放注册前它主要给作者自己和已配对的设备用。
+托管实例凭邀请码注册（#449）：管理员在账号面板的 Invites 里生成邀请码，没有邀请码的访客点落地页上的 "Open the web app" 只能看到登录页。

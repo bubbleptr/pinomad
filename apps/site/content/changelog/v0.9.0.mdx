@@ -1,0 +1,44 @@
+---
+title: Every machine at once, invite sign-up, and push tied to your account
+version: v0.9.0
+date: 2026-10-31
+---
+
+**Before you upgrade**
+
+- Push notifications now go only to iPhones signed in to the same account as the host. After upgrading, sign in on the iPhone (Settings → Sign in) with the account your hosts joined, and keep push on for each host. An iPhone that is only paired by QR code no longer gets notifications.
+- Upgrade the host and the server together; older clients show that an update is needed.
+
+**Accounts**
+
+- Sign up with an invite code: the sign-in form has **Create an account**, and you are signed in as soon as the account exists. Each code works once and expires after 7 days.
+- The server's admin account gets an **Invites** section to create codes, see who used them, and revoke unused ones. A self-hosted server that never creates a code stays closed to sign-up.
+- The desktop app's sign-in form starts with the official server, `https://app.pinomad.si`, so you only type a username and password. The field stays editable for self-hosted servers.
+
+**Multiple machines**
+
+- Web and desktop stay connected to every paired host at once; switching machines no longer reconnects or reloads.
+- The sidebar groups conversations by machine, then by project. A Machine picker on the draft starts a conversation on another machine.
+- Hosts on your account are paired automatically once you sign in, unless you removed them from this device before.
+- iOS holds a connection to every paired host. The home page lists each machine with its chats and projects, a draft can pick its machine, and Settings opens each machine's own page.
+- Conversation lists and search across machines show which machine each conversation is on.
+
+**Conversations**
+
+- Opening a conversation switches at once and shows a skeleton until it loads, on web, desktop, and iOS. If it can't be opened, you see why instead of a page that never finishes.
+- The draft's checkout choice is a single **worktree** checkbox: checked creates a Git worktree, unchecked works in the project folder.
+
+**Providers**
+
+- Custom endpoints list the models the endpoint offers in a searchable dropdown; check the ones to use, or add an ID by hand.
+- Custom endpoint models are saved with the context window, output limit, reasoning, and image input the endpoint reports, instead of generic defaults.
+
+**iOS**
+
+- Settings lists each host once, with **Add Host** at the end; pairing is **Scan QR Code** or **Paste**.
+- "Connecting…" appears in the navigation bar only when a reconnect takes longer than a moment, instead of a banner on every return from the background.
+- The draft composer slides down with the keyboard on send instead of flashing.
+
+**Security**
+
+- The web client is served with a Content Security Policy and related headers, from the server and from the host.
