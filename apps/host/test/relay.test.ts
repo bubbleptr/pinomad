@@ -553,6 +553,20 @@ describe("relay link device reports (ADR-0037)", () => {
     finish();
     expect(await ackP).toEqual({ t: "device-revoked", publicKey: KEY });
   });
+
+  it("never acks a revocation the host refused", async () => {
+    const server = await fakeServer({ features: ["name", "device-reports"] });
+    let refuse!: (error: Error) => void;
+    const link = startLink(server, () => new Promise<void>((_resolve, reject) => (refuse = reject)));
+    await registered(link);
+    server.send({ t: "revoke-device", publicKey: KEY });
+    await until(() => refuse !== undefined);
+    refuse(new Error("revocation refused: rebinding"));
+    // The pairing answer is sent after the refusal settled; no ack precedes it.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(await probe(server, "probe")).toMatchObject({ t: "pairing-refused", requestId: "probe" });
+    expect(server.frames().filter((frame) => frame.t === "device-revoked")).toEqual([]);
+  });
 });
 
 describe("relay link host name (issue #212)", () => {

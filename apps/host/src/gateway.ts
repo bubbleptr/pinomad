@@ -587,6 +587,19 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   });
   if (secure?.relay !== undefined) {
     const relayOrigin = secure.relay.origin;
+    /**
+     * The binding this control connection may act for, re-read on every
+     * account request: a re-join rewrites server.json before the host
+     * restarts, so the link can outlive its server by minutes, and only
+     * the server server.json names now may vouch devices in or ask for them
+     * to be revoked. A refusal reason otherwise.
+     */
+    const currentBinding = async (): Promise<{ readonly binding: string } | { readonly refused: string }> => {
+      const config = await readServerConfig(options.dataDir).catch(() => undefined);
+      if (config?.binding === undefined) return { refused: "not_joined" };
+      if (normalizeOrigin(config.origin) !== normalizeOrigin(relayOrigin)) return { refused: "rebinding" };
+      return { binding: config.binding };
+    };
     // `link` is assigned before any state change can fire — transitions only
     // ever happen from async socket events.
     let link!: RelayLink;
@@ -611,14 +624,10 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       // reasons here are for the client's message, not enforcement.
       accountOffer: async (requestId) => {
         if (!options.settings.value.acceptAccountDevices) return { ok: false, reason: "disabled" };
-        const config = await readServerConfig(options.dataDir).catch(() => undefined);
-        if (config?.binding === undefined) return { ok: false, reason: "not_joined" };
-        // A re-join rewrites server.json before the host restarts: this link
-        // still belongs to the previous server, and minting under the new
-        // binding would hand it invites the admission check would honor.
-        if (normalizeOrigin(config.origin) !== normalizeOrigin(relayOrigin)) {
-          return { ok: false, reason: "rebinding" };
-        }
+        // Minting under a newer binding for the previous server would hand
+        // it invites the admission check would honor.
+        const bound = await currentBinding();
+        if ("refused" in bound) return { ok: false, reason: bound.refused };
         // Same candidates as the QR invite, minted at answer time so the LAN
         // probe is fresh. Validate before spending an offer; a malformed set
         // must refuse this answer instead of killing the relay control.
@@ -629,15 +638,19 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
         } catch {
           return { ok: false, reason: "invalid_endpoint" };
         }
-        const { secret, expiresAt } = secure.offers.createAccount(config.binding, requestId);
+        const { secret, expiresAt } = secure.offers.createAccount(bound.binding, requestId);
         return { ok: true, secret, expiresAt, ...(endpointSet === undefined ? {} : { endpointSet }) };
       },
       // ADR-0037 §3: the account kicked a device. The same path as the
       // `revokeDevice` call — revocation record, push registration, live
       // connections — so the host's own rules still hold: a later QR scan
-      // can bring the device back.
+      // can bring the device back. A server the host is leaving gets no
+      // revocation and no ack (CWE-863): it keeps the request, which dies
+      // with its account binding.
       deviceReports: {
         revoke: async (publicKey) => {
+          const bound = await currentBinding();
+          if ("refused" in bound) throw new Error(`revocation refused: ${bound.refused}`);
           await revokeDevice(options.harness, publicKey, context);
           closeDevice(publicKey);
         },
