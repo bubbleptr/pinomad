@@ -129,6 +129,7 @@ pub fn cot(json: &Json) -> CotView {
 }
 
 use pinomad_core::account::{AccountHost, AccountHostPairing, AccountOp, AccountOpKind, PairingOffer};
+use pinomad_core::frames::{ApnsEnvironment, ApnsPushToken};
 use pinomad_core::endpoints::{parse_endpoint_set, ParsedEndpointSet};
 use pinomad_core::model::{ModelPick, ModelRef};
 use pinomad_core::stored_host::StoredHost;
@@ -164,7 +165,7 @@ pub fn stored_host(json: &Json) -> StoredHost {
     }
 }
 
-/// The op the request-shape cases name: `{kind, username?, password?, hostId?}`.
+/// The op the request-shape cases name: `{kind, username?, password?, hostId?, apns?, environment?}`.
 pub fn account_op(json: &Json) -> AccountOp {
     match account_op_kind(&text(json.get("kind")).unwrap_or_default()) {
         AccountOpKind::Login => AccountOp::Login {
@@ -179,6 +180,19 @@ pub fn account_op(json: &Json) -> AccountOp {
         AccountOpKind::RevokeAllSessions => AccountOp::RevokeAllSessions,
         AccountOpKind::CreateJoinToken => AccountOp::CreateJoinToken,
         AccountOpKind::ListHosts => AccountOp::ListHosts,
+        AccountOpKind::RegisterPushToken => AccountOp::RegisterPushToken { token: push_token(json) },
+        AccountOpKind::RemovePushToken => AccountOp::RemovePushToken { token: push_token(json) },
+    }
+}
+
+fn push_token(json: &Json) -> ApnsPushToken {
+    ApnsPushToken {
+        apns: text(json.get("apns")).unwrap_or_default(),
+        environment: match text(json.get("environment")).as_deref() {
+            Some("production") => ApnsEnvironment::Production,
+            Some("development") => ApnsEnvironment::Development,
+            other => panic!("unknown APNs environment {other:?}"),
+        },
     }
 }
 
@@ -192,6 +206,8 @@ pub fn account_op_kind(name: &str) -> AccountOpKind {
         "createJoinToken" => AccountOpKind::CreateJoinToken,
         "listHosts" => AccountOpKind::ListHosts,
         "requestPairing" => AccountOpKind::RequestPairing,
+        "registerPushToken" => AccountOpKind::RegisterPushToken,
+        "removePushToken" => AccountOpKind::RemovePushToken,
         other => panic!("unknown account op kind {other}"),
     }
 }

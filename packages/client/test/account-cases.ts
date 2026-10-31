@@ -31,6 +31,7 @@ const OFFER_SECRET = key(25);
 export type AccountOpDesc =
   | { kind: "login"; username: string; password: string }
   | { kind: "requestPairing"; hostId: string }
+  | { kind: "registerPushToken" | "removePushToken"; apns: string; environment: "production" | "development" }
   | { kind: "me" | "logout" | "revokeAllSessions" | "createJoinToken" | "listHosts" };
 
 export interface RequestCase {
@@ -59,6 +60,19 @@ export const REQUEST_CASES: RequestCase[] = [
   // hostId goes through encodeURIComponent — space, slash, and ampersand.
   { name: "pairing-encoded-id", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "requestPairing", hostId: "id a/b&c" } },
   { name: "pairing-plain-id", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "requestPairing", hostId: HOST_ID_A } },
+  // The token rides in the body, never the URL — proxy access logs keep URLs.
+  {
+    name: "push-token-register",
+    origin: ACCOUNT_ORIGIN,
+    token: "tok",
+    op: { kind: "registerPushToken", apns: "ab".repeat(32), environment: "development" },
+  },
+  {
+    name: "push-token-remove",
+    origin: ACCOUNT_ORIGIN,
+    token: "tok",
+    op: { kind: "removePushToken", apns: "cd".repeat(32), environment: "production" },
+  },
 ];
 
 export interface ResponseCase {
@@ -126,6 +140,10 @@ export const RESPONSE_CASES: ResponseCase[] = [
   { name: "pairing-offline", kind: "requestPairing", status: 409, body: '{"error":"host_offline"}' },
   { name: "pairing-key-mismatch", kind: "requestPairing", status: 409, body: '{"error":"key_mismatch"}' },
   { name: "pairing-host-timeout", kind: "requestPairing", status: 504, body: '{"error":"host_timeout"}' },
+  { name: "push-token-register-204", kind: "registerPushToken", status: 204, body: null },
+  { name: "push-token-register-invalid", kind: "registerPushToken", status: 400, body: '{"error":"invalid_request"}' },
+  { name: "push-token-remove-204", kind: "removePushToken", status: 204, body: null },
+  { name: "push-token-remove-401", kind: "removePushToken", status: 401, body: '{"error":"unauthenticated"}' },
 ];
 
 export interface ProbeCase {

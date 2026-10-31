@@ -5,7 +5,7 @@
 // satisfy it — and never touches a DOM-only API.
 
 import { encodeEndpointSetParam, parseEndpointSet, type EndpointSet } from "@pinomad/protocol/endpoints.ts";
-import { UNAUTHORIZED_CLOSE_CODE } from "@pinomad/protocol/frames.ts";
+import { UNAUTHORIZED_CLOSE_CODE, type ApnsPushToken } from "@pinomad/protocol/frames.ts";
 import { generateKeyPair, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { pairingFragment, parsePairParam } from "@pinomad/protocol/pairing-link.ts";
 import {
@@ -244,6 +244,9 @@ export interface AccountClient {
   createJoinToken(): Promise<AccountResult<JoinToken>>;
   listHosts(): Promise<AccountResult<readonly AccountHost[]>>;
   requestPairing(hostId: string): Promise<AccountResult<PairingOffer>>;
+  /** Record this device's APNs token under the signed-in account (ADR-0036). */
+  registerPushToken(token: ApnsPushToken): Promise<AccountResult<void>>;
+  removePushToken(token: ApnsPushToken): Promise<AccountResult<void>>;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -411,6 +414,14 @@ export function createAccountClient(options: {
         expiresAt: value.expiresAt,
         ...(endpointSet === undefined ? {} : { endpointSet }),
       });
+    },
+    registerPushToken: async (token) => {
+      const result = await request("/api/push-tokens", "POST", { apns: token.apns, environment: token.environment });
+      return result.ok ? ok(undefined) : result;
+    },
+    removePushToken: async (token) => {
+      const result = await request("/api/push-tokens/remove", "POST", { apns: token.apns, environment: token.environment });
+      return result.ok ? ok(undefined) : result;
     },
   };
 }
