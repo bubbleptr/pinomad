@@ -6,7 +6,13 @@ import SwiftUI
 /// login, and an insecure address never leaves it at all. The root of the
 /// account sheet while signed out; a successful login swaps that sheet to
 /// the account's hosts.
+///
+/// The address starts at the last server signed in to, or the official one,
+/// and is probed on appear so the form opens on the credentials.
 struct AccountLoginView: View {
+    /// The hosted PiNomad server; self-hosters change the address.
+    static let officialServerOrigin = "https://app.pinomad.si"
+
     let model: AppModel
 
     @Environment(\.dismiss) private var dismiss
@@ -85,7 +91,7 @@ struct AccountLoginView: View {
             } header: {
                 Text("Server")
             } footer: {
-                Text("Accounts need https://. For local testing, http://127.0.0.1 also works.")
+                Text("To use your own server, change the address. Accounts need https://; for local testing, http://127.0.0.1 also works.")
             }
 
             if phase == .enabled {
@@ -146,8 +152,9 @@ struct AccountLoginView: View {
         }
         .interactiveDismissDisabled(busy)
         .task {
-            if origin.isEmpty { origin = model.accountRecord?.serverOrigin ?? "" }
+            if origin.isEmpty { origin = model.accountRecord?.serverOrigin ?? Self.officialServerOrigin }
             if username.isEmpty { username = model.accountRecord?.username ?? "" }
+            if phase == .idle { probe() }
         }
     }
 
