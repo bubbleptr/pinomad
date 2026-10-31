@@ -638,6 +638,7 @@ export function fakeAccount(state: AccountState): AccountModel {
     register: fn(async () => ({ ok: true as const, value: undefined })),
     logout: fn(async () => ({ ok: true as const, value: undefined })),
     revokeAll: fn(async () => ({ ok: true as const, value: undefined })),
+    changePassword: fn(async () => ({ ok: true as const, value: undefined })),
     refreshHosts: fn(async () => ({ ok: true as const, value: [] })),
     createJoinToken: fn(async () => ({
       ok: true as const,

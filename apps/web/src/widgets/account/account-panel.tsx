@@ -67,6 +67,8 @@ export function accountErrorMessage(error: AccountError): string {
       return "Use 2–32 lowercase letters, digits, dots, dashes or underscores, starting with a letter or digit.";
     case "weak_password":
       return "Use a password of at least 12 characters.";
+    case "wrong_password":
+      return "The current password is wrong.";
     case "username_taken":
       return "That username is taken.";
     case "forbidden":
@@ -306,6 +308,7 @@ function SignedIn({
       )}
       <AddHost account={account} />
       {state.admin ? <Invites account={account} /> : null}
+      <ChangePassword account={account} />
       <SignOut account={account} onWarning={onSignOutWarning} />
     </VStack>
   );
@@ -576,6 +579,79 @@ function InviteRow({ invite, now, onRevoke }: { invite: AccountInvite; now: numb
       description={`Created ${ago(invite.createdAt, now)} · expires in ${relativeTime(now, invite.expiresAt)}`}
       endContent={<Button label="Revoke" variant="ghost" size="sm" onClick={onRevoke} />}
     />
+  );
+}
+
+/**
+ * "Change password" (#450): this session stays, the account's others end. A
+ * forgotten password has no form here — the server's admin resets it.
+ */
+function ChangePassword({ account }: { account: AccountModel }) {
+  const [open, setOpen] = useState(false);
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<AccountError>();
+  const [changed, setChanged] = useState(false);
+  const ready = current !== "" && next !== "";
+  const close = (): void => {
+    setOpen(false);
+    setCurrent("");
+    setNext("");
+    setError(undefined);
+  };
+  const submit = (): void => {
+    if (!ready || busy) return;
+    setBusy(true);
+    setError(undefined);
+    void account.changePassword({ currentPassword: current, newPassword: next }).then((result) => {
+      setBusy(false);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      close();
+      setChanged(true);
+    });
+  };
+  if (!open) {
+    return (
+      <VStack gap={1}>
+        <HStack gap={2}>
+          <Button
+            label="Change password"
+            variant="ghost"
+            onClick={() => {
+              setChanged(false);
+              setOpen(true);
+            }}
+          />
+        </HStack>
+        {changed ? <Text type="supporting">Password changed. Your other devices were signed out.</Text> : null}
+      </VStack>
+    );
+  }
+  return (
+    <VStack gap={2}>
+      <Text weight="semibold">Change password</Text>
+      <TextInput label="Current password" type="password" value={current} onChange={setCurrent} onEnter={submit} width="100%" />
+      <TextInput
+        label="New password"
+        description="At least 12 characters. Your other devices will be signed out."
+        type="password"
+        value={next}
+        onChange={setNext}
+        onEnter={submit}
+        width="100%"
+      />
+      {error === undefined ? null : (
+        <Banner status="error" title="Couldn't change the password" description={accountErrorMessage(error)} />
+      )}
+      <HStack gap={2}>
+        <Button label="Change password" variant="primary" isLoading={busy} isDisabled={!ready} onClick={submit} />
+        <Button label="Cancel" variant="ghost" onClick={close} />
+      </HStack>
+    </VStack>
   );
 }
 

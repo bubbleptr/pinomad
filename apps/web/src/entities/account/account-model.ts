@@ -104,6 +104,8 @@ export interface AccountModel {
   logout(): Promise<AccountResult<void>>;
   /** Revokes every session of the account including this one — always lands signed-out. */
   revokeAll(): Promise<AccountResult<void>>;
+  /** Signs out the account's other sessions; this one stays (#450). */
+  changePassword(input: { currentPassword: string; newPassword: string }): Promise<AccountResult<void>>;
   refreshHosts(): Promise<AccountResult<readonly AccountHostMatch[]>>;
   createJoinToken(): Promise<AccountResult<JoinToken>>;
   /** Admin only (#449). */
@@ -641,6 +643,8 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       return refresh(client, state.user);
     },
 
+    changePassword: ({ currentPassword, newPassword }) =>
+      authed((active) => active.changePassword(currentPassword, newPassword)),
     createJoinToken: () => authed((active) => active.createJoinToken()),
     listInvites: () => authed((active) => active.listInvites()),
     createInvite: () => authed((active) => active.createInvite()),
