@@ -322,7 +322,11 @@ extension AppModel {
     func accountSignOut(everywhere: Bool) async {
         guard let session = accountSession, let api = accountAPI() else { return }
         accountBusy = true
-        defer { accountBusy = false }
+        serverPushPaused = true
+        defer {
+            accountBusy = false
+            serverPushPaused = false
+        }
         accountSignOutWarning = nil
         let failure: AccountFailure?
         var pushRemoved = true

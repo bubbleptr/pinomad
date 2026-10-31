@@ -85,7 +85,7 @@ extension AppModel {
     /// the server only delivers a host's push to a token recorded under the
     /// host's account. A failure waits for the next occasion.
     func syncServerPushToken() {
-        guard let session = accountSession, let api = accountAPI() else { return }
+        guard !serverPushPaused, let session = accountSession, let api = accountAPI() else { return }
         if serverPushInFlight {
             serverPushPending = true
             return
@@ -109,10 +109,11 @@ extension AppModel {
             send = { await api.removePushToken(token) }
         }
         serverPushInFlight = true
-        Task { [weak self] in
+        serverPushTask = Task { [weak self] in
             let result = await send()
             guard let self else { return }
             self.serverPushInFlight = false
+            self.serverPushTask = nil
             if self.accountSession == session {
                 switch result {
                 case .success:
@@ -134,10 +135,12 @@ extension AppModel {
         }
     }
 
-    /// Signing out removes the record while the bearer still works. False
-    /// when a recorded token could not be removed — the account's hosts may
-    /// still reach this device.
+    /// Signing out removes the record while the bearer still works, after
+    /// any register already in flight has landed (the caller pauses new
+    /// ones). False when a recorded token could not be removed — the
+    /// account's hosts may still reach this device.
     func removeServerPushToken(api: AccountAPI, serverOrigin: String) async -> Bool {
+        while let task = serverPushTask { await task.value }
         guard case .remove(let token) = serverPushAction(
             enabled: false,
             serverOrigin: serverOrigin,

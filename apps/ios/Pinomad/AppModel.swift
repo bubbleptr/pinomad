@@ -288,6 +288,10 @@ final class AppModel {
     /// the same way: one request in flight, at most one queued.
     var serverPushInFlight = false
     var serverPushPending = false
+    var serverPushTask: Task<Void, Never>?
+    /// Set while signing out: a register sent now could land after the
+    /// removal and outlive the session.
+    var serverPushPaused = false
     var serverPushError: String?
     var forgettingHosts: Set<String> = []
     let monitor = NetworkMonitor()
