@@ -17,7 +17,17 @@ export default defineConfig({
       prerender: { enabled: true, crawlLinks: true, autoSubfolderIndex: true, failOnError: true },
       // Not linked from any page, so the crawler can't find them. The 404 pages
       // become 404.html / zh/404.html after the build (scripts/not-found.ts).
-      pages: [{ path: "/api/search.json" }, { path: "/404/" }, { path: "/zh/404/" }],
+      // The privacy policy and terms are linked from the footer, but the apps and
+      // App Store point at these exact paths, so they don't depend on the crawl.
+      pages: [
+        { path: "/api/search.json" },
+        { path: "/404/" },
+        { path: "/zh/404/" },
+        { path: "/privacy/" },
+        { path: "/terms/" },
+        { path: "/zh/privacy/" },
+        { path: "/zh/terms/" },
+      ],
       router: {
         codeSplittingOptions: {
           // Route configs are imported by the entry and their static imports are
