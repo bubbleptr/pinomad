@@ -984,17 +984,20 @@ export async function resetPassword(options: {
         `the running server's database schema (${schemaVersion(db)}) differs from this build's (${SCHEMA_VERSION}); restart the server on this version first`,
       );
     }
-    const users = (
-      options.user === undefined
-        ? db.prepare("SELECT id FROM users").all()
-        : db.prepare("SELECT id FROM users WHERE username = ?").all(options.user)
-    ) as { id: number }[];
-    if (users.length === 0) throw new Error(options.user === undefined ? "no account exists yet" : `no such account: ${options.user}`);
-    if (users.length > 1) throw new Error("more than one account exists — pass --user");
-    const userId = users[0]!.id;
+    // Hash first, then find the account inside the write: once accounts can
+    // be deleted (#451) a freed id goes to the next sign-up, so an id read
+    // before scrypt yields could name someone else by the time it's written.
     const hash = await hashPassword(options.password);
     db.exec("BEGIN IMMEDIATE");
     try {
+      const users = (
+        options.user === undefined
+          ? db.prepare("SELECT id FROM users").all()
+          : db.prepare("SELECT id FROM users WHERE username = ?").all(options.user)
+      ) as { id: number }[];
+      if (users.length === 0) throw new Error(options.user === undefined ? "no account exists yet" : `no such account: ${options.user}`);
+      if (users.length > 1) throw new Error("more than one account exists — pass --user");
+      const userId = users[0]!.id;
       db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hash, userId);
       dropCredentials(db, userId);
       db.exec("COMMIT");
