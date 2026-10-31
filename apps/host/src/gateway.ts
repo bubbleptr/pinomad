@@ -384,6 +384,15 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   };
   let remote: RemoteListener | undefined;
   let relay: RelayLink | undefined;
+  /** Close every live connection of a revoked device, business or signal (ADR-0033 §3). */
+  const closeDevice = (publicKey: string): void => {
+    for (const connection of [...connections]) {
+      if (connection.devicePublicKey === publicKey) {
+        connection.closeConnection(UNAUTHORIZED_CLOSE_CODE, "device revoked");
+      }
+    }
+    rtc?.closeDevice(publicKey);
+  };
   // One LAN probe supplies both the pairing page and its direct candidate. The
   // relay stays first in Auto order, but a loopback relay is client-local and
   // never enters the published set, exactly like a loopback direct address.
@@ -418,14 +427,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
         rtc?.closeOwner(self);
         void self.dispose();
       },
-      closeDevice: (publicKey) => {
-        for (const connection of [...connections]) {
-          if (connection.devicePublicKey === publicKey) {
-            connection.closeConnection(UNAUTHORIZED_CLOSE_CODE, "device revoked");
-          }
-        }
-        rtc?.closeDevice(publicKey);
-      },
+      closeDevice,
       rtcOffer: (owner, key, attempt, sdp) => {
         if (rtc === undefined) throw new Error("WebRTC is not available on this host");
         return rtc.offer({ owner, ...(key === undefined ? {} : { deviceKey: key }), attempt, sdp });
@@ -523,6 +525,8 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     acceptAccountDevices: () => options.settings.value.acceptAccountDevices,
     serverBinding: async (): Promise<string | undefined> =>
       await readServerBinding(options.dataDir).catch(() => undefined),
+    // Account offers only come from the relay link, which reports them back.
+    accountAdmitted: (requestId: string, publicKey: string) => relay?.reportAdmitted(requestId, publicKey),
   };
   const secure = options.secure;
   const handshakeHandlers: SecureHandshakeHandlers = {
@@ -605,7 +609,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       // over this control connection. These are early answers only — the real
       // admission check runs again inside admitDevice's commit, so refusal
       // reasons here are for the client's message, not enforcement.
-      accountOffer: async () => {
+      accountOffer: async (requestId) => {
         if (!options.settings.value.acceptAccountDevices) return { ok: false, reason: "disabled" };
         const config = await readServerConfig(options.dataDir).catch(() => undefined);
         if (config?.binding === undefined) return { ok: false, reason: "not_joined" };
@@ -625,8 +629,18 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
         } catch {
           return { ok: false, reason: "invalid_endpoint" };
         }
-        const { secret, expiresAt } = secure.offers.createAccount(config.binding);
+        const { secret, expiresAt } = secure.offers.createAccount(config.binding, requestId);
         return { ok: true, secret, expiresAt, ...(endpointSet === undefined ? {} : { endpointSet }) };
+      },
+      // ADR-0037 §3: the account kicked a device. The same path as the
+      // `revokeDevice` call — revocation record, push registration, live
+      // connections — so the host's own rules still hold: a later QR scan
+      // can bring the device back.
+      deviceReports: {
+        revoke: async (publicKey) => {
+          await revokeDevice(options.harness, publicKey, context);
+          closeDevice(publicKey);
+        },
       },
       onStateChange: (state) => {
         // stdout JSON lines in the same style as main.ts's `ready` event, so
@@ -865,6 +879,8 @@ interface AdmissionPolicy {
   readonly harness: Harness;
   readonly acceptAccountDevices: () => boolean;
   readonly serverBinding: () => Promise<string | undefined>;
+  /** An account offer the server asked for as `requestId` admitted `publicKey` (ADR-0037 §2). */
+  readonly accountAdmitted: (requestId: string, publicKey: string) => void;
 }
 
 /**
@@ -1044,6 +1060,10 @@ function secureHandshake(
         if (purpose === "signal" && decision.outcome !== "registered") {
           carrier.close(UNAUTHORIZED_CLOSE_CODE, "unauthorized");
           return undefined;
+        }
+        // Committed, so true whatever happens to this socket next.
+        if (decision.outcome === "admitted" && decision.requestId !== undefined) {
+          policy.accountAdmitted(decision.requestId, deviceKey);
         }
         const { message, result } = responder.writeMessage2(encodeHostHello({ v: 1 }));
         return {

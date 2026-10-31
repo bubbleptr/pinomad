@@ -60,8 +60,18 @@ export interface RelayLink {
    * of throwing — the caller maps them to retry/drop.
    */
   sendPush(request: Omit<PushFrame, "t" | "requestId">): Promise<PushVerdict>;
+  /**
+   * Tells the server which public key the account offer it asked for as
+   * `requestId` admitted (ADR-0037 §2). Sent only on connections whose
+   * `registered` declared "device-reports"; until one is up the report waits
+   * in memory (the newest 64), and a restart loses it.
+   */
+  reportAdmitted(requestId: string, publicKey: string): void;
   close(): Promise<void>;
 }
+
+/** Admission reports held while no reporting connection is up (ADR-0037 §2). */
+const MAX_UNSENT_REPORTS = 64;
 
 /** An http(s) relay origin as the ws(s) base the host dials. */
 export function relayWsBase(origin: string): string {
@@ -95,7 +105,14 @@ export function startRelayLink(options: {
    * link without one refuses any request as `unavailable`, which only a
    * misbehaving server should ever send (feature-gated servers don't ask).
    */
-  accountOffer?(): Promise<AccountOfferResult>;
+  accountOffer?(requestId: string): Promise<AccountOfferResult>;
+  /**
+   * Revocations the account asks for (ADR-0037 §3): `revoke` runs the host's
+   * own revocation, and the link acks with `device-revoked` once it resolved.
+   * Its presence is the "device-reports" declaration on register, which also
+   * lets the server receive `reportAdmitted`'s reports.
+   */
+  readonly deviceReports?: { revoke(publicKey: string): Promise<void> };
   /**
    * The host's current display name (issue #212): every register carries it,
    * and renames ride a `name` frame on connections whose `registered`
@@ -120,6 +137,10 @@ export function startRelayLink(options: {
   const minDelay = options.reconnectDelayMs?.min ?? 1_000;
   const maxDelay = options.reconnectDelayMs?.max ?? 30_000;
   const maxPendingAccepts = options.maxPendingAccepts ?? 16;
+  const features = [
+    ...(options.accountOffer === undefined ? [] : ["pairing"]),
+    ...(options.deviceReports === undefined ? [] : ["device-reports"]),
+  ];
 
   let state: RelayLinkState = { status: "connecting" };
   let stopped = false;
@@ -138,6 +159,10 @@ export function startRelayLink(options: {
   // survive a reconnect.
   let reportedName: string | undefined;
   let nameDeclared = false;
+  // Same lifetime for the server's "device-reports" declaration; the reports
+  // themselves outlive connections, bounded, until one declares it.
+  let reportsDeclared = false;
+  const unsentReports: { readonly requestId: string; readonly publicKey: string }[] = [];
   // Push requests bound to the control that sent them (ADR-0025 §4): a close
   // settles every one as retry, and a result that arrives late finds no entry.
   const pushes = new Map<string, { readonly socket: WebSocket; readonly settle: (verdict: PushVerdict) => void }>();
@@ -187,6 +212,7 @@ export function startRelayLink(options: {
     control = socket;
     pushEnvironments = undefined;
     nameDeclared = false;
+    reportsDeclared = false;
     reportedName = undefined;
     watch(socket);
     // Attached synchronously on purpose: the relay sends `challenge` the
@@ -231,8 +257,9 @@ export function startRelayLink(options: {
             noisePublicKey,
             // Capability negotiation (ADR-0022 §4): feature-gated requests
             // would crash an old host's decoder, so the server only sends
-            // them to controls that declared "pairing".
-            ...(options.accountOffer === undefined ? {} : { features: ["pairing"] }),
+            // them to controls that declared "pairing" (and revoke-device to
+            // ones that declared "device-reports", ADR-0037 §5).
+            ...(features.length === 0 ? {} : { features }),
             ...(reportedName === undefined ? {} : { name: reportedName }),
           }),
         );
@@ -242,6 +269,12 @@ export function startRelayLink(options: {
         delay = minDelay;
         pushEnvironments = frame.push;
         nameDeclared = frame.features?.includes("name") === true;
+        reportsDeclared = options.deviceReports !== undefined && frame.features?.includes("device-reports") === true;
+        if (reportsDeclared) {
+          for (const report of unsentReports.splice(0)) {
+            socket.send(encodeRelayFrame({ t: "device-admitted", ...report }));
+          }
+        }
         // A rename inside the register → registered window left reportedName
         // stale: top it up now that the capability is known (issue #212).
         const current = options.hostName?.value;
@@ -274,7 +307,7 @@ export function startRelayLink(options: {
           refused("unavailable");
           break;
         }
-        void accountOffer().then(
+        void accountOffer(frame.requestId).then(
           (result) => {
             // The answer is worthless off the asking connection: a replaced or
             // dead control means the server already dropped the request.
@@ -317,6 +350,25 @@ export function startRelayLink(options: {
         );
         break;
       }
+      case "revoke-device": {
+        // Only a link that declared the feature is ever asked; anything else
+        // is a misbehaving server, and there is nothing to revoke with.
+        const reports = options.deviceReports;
+        if (reports === undefined) break;
+        const { publicKey } = frame;
+        // The ack goes out only once the revocation committed, and only on
+        // the connection that asked: without it the server asks again after
+        // the next register, and revoking twice is harmless.
+        void reports.revoke(publicKey).then(
+          () => {
+            if (socket === control && socket.readyState === WebSocket.OPEN) {
+              socket.send(encodeRelayFrame({ t: "device-revoked", publicKey }));
+            }
+          },
+          () => {},
+        );
+        break;
+      }
       case "incoming": {
         // Past the cap the device just times out at the relay (4610) — the
         // host keeps its accept budget instead of hoarding dying sockets.
@@ -343,6 +395,7 @@ export function startRelayLink(options: {
     control = undefined;
     pushEnvironments = undefined;
     nameDeclared = false;
+    reportsDeclared = false;
     reportedName = undefined;
     // Everything in flight settles as retry: the request dies with its
     // connection, and any push-result that still arrives is ignored (ADR-0025 §4).
@@ -414,6 +467,16 @@ export function startRelayLink(options: {
         });
         socket.send(encodeRelayFrame({ t: "push", requestId, ...request }));
       });
+    },
+    reportAdmitted(requestId, publicKey) {
+      if (options.deviceReports === undefined) return;
+      const socket = control;
+      if (reportsDeclared && socket !== undefined && socket.readyState === WebSocket.OPEN) {
+        socket.send(encodeRelayFrame({ t: "device-admitted", requestId, publicKey }));
+        return;
+      }
+      unsentReports.push({ requestId, publicKey });
+      if (unsentReports.length > MAX_UNSENT_REPORTS) unsentReports.shift();
     },
     close() {
       stopped = true;

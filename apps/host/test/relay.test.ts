@@ -449,6 +449,112 @@ describe("relay link push", () => {
   });
 });
 
+describe("relay link device reports (ADR-0037)", () => {
+  const KEY = "K".repeat(43);
+
+  const startLink = (
+    server: Awaited<ReturnType<typeof fakeServer>>,
+    revoke?: (publicKey: string) => Promise<void>,
+    accountOffer?: (requestId: string) => Promise<AccountOfferResult>,
+  ): RelayLink => {
+    const link = startRelayLink({
+      origin: server.origin,
+      signingKey: ed25519.keygen(),
+      noisePublicKey: generateKeyPair().publicKey,
+      accept: () => {},
+      accountOffer: accountOffer ?? (async () => ({ ok: false, reason: "disabled" })),
+      ...(revoke === undefined ? {} : { deviceReports: { revoke } }),
+      reconnectDelayMs: QUICK_RECONNECT,
+    });
+    defer(() => link.close());
+    return link;
+  };
+  const registered = (link: RelayLink) => until(() => link.state().status === "registered");
+  /** A pairing ask the link always answers: proves every frame sent before it has arrived. */
+  const probe = async (server: Awaited<ReturnType<typeof fakeServer>>, requestId: string) => {
+    const answer = server.nextMessage();
+    server.send({ t: "pairing-request", requestId });
+    return answer;
+  };
+
+  it("declares device-reports only when it can revoke on request", async () => {
+    const reporting = await fakeServer();
+    startLink(reporting, async () => {});
+    expect((await reporting.register).features).toEqual(["pairing", "device-reports"]);
+
+    const plain = await fakeServer();
+    startLink(plain);
+    expect((await plain.register).features).toEqual(["pairing"]);
+  });
+
+  it("hands the server's requestId to the offer source", async () => {
+    const server = await fakeServer({ features: ["name", "device-reports"] });
+    const asked: string[] = [];
+    startLink(server, async () => {}, async (requestId) => {
+      asked.push(requestId);
+      return { ok: true, secret: "s", expiresAt: 1 };
+    });
+    await server.register;
+    expect(await probe(server, "req-7")).toMatchObject({ t: "pairing", requestId: "req-7" });
+    expect(asked).toEqual(["req-7"]);
+  });
+
+  it("reports an admitted device at once, or after the next registered that declares the feature", async () => {
+    const server = await fakeServer({ features: ["name", "device-reports"] });
+    const link = startLink(server, async () => {});
+    await registered(link);
+    link.reportAdmitted("req-1", KEY);
+    expect(await server.nextMessage()).toEqual({ t: "device-admitted", requestId: "req-1", publicKey: KEY });
+
+    // Down: held in memory, sent behind the next registered.
+    server.closeControl();
+    await until(() => link.state().status === "connecting");
+    link.reportAdmitted("req-2", KEY);
+    await until(() => server.registers().length === 2);
+    expect(await server.nextMessage()).toEqual({ t: "device-admitted", requestId: "req-2", publicKey: KEY });
+  });
+
+  it("never sends a report to a server that didn't declare device-reports", async () => {
+    const server = await fakeServer({ features: ["name"] });
+    const link = startLink(server, async () => {});
+    await registered(link);
+    link.reportAdmitted("req-1", KEY);
+    expect(await probe(server, "probe")).toMatchObject({ t: "pairing-refused", requestId: "probe" });
+    expect(server.frames().filter((frame) => frame.t === "device-admitted")).toEqual([]);
+  });
+
+  it("keeps only the newest reports while disconnected", async () => {
+    const server = await fakeServer({ features: ["name", "device-reports"], holdRegistered: true });
+    const link = startLink(server, async () => {});
+    await server.register;
+    for (let i = 0; i < 70; i += 1) link.reportAdmitted(`req-${i}`, KEY);
+    server.send({ t: "registered", features: ["name", "device-reports"] });
+    await registered(link);
+    await probe(server, "probe");
+    const sent = server.frames().filter((frame) => frame.t === "device-admitted").map((frame) => frame.requestId);
+    expect(sent).toHaveLength(64);
+    expect(sent[0]).toBe("req-6");
+    expect(sent.at(-1)).toBe("req-69");
+  });
+
+  it("revokes on request and acks once the revocation is done", async () => {
+    const server = await fakeServer({ features: ["name", "device-reports"] });
+    const revoked: string[] = [];
+    let finish!: () => void;
+    const link = startLink(server, (publicKey) => {
+      revoked.push(publicKey);
+      return new Promise<void>((resolve) => (finish = resolve));
+    });
+    await registered(link);
+    const ackP = server.nextMessage();
+    server.send({ t: "revoke-device", publicKey: KEY });
+    await until(() => revoked.length === 1);
+    expect(server.messages()).toEqual([]);
+    finish();
+    expect(await ackP).toEqual({ t: "device-revoked", publicKey: KEY });
+  });
+});
+
 describe("relay link host name (issue #212)", () => {
   const nameSource = (initial: string): Published<string | undefined> =>
     new Published<string | undefined>(initial, (a, b) => a === b);
