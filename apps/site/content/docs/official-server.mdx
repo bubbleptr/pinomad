@@ -62,9 +62,9 @@ If you forgot your password, there's no reset email, because the server doesn't 
 
 ## Devices on your account
 
-The account panel on the web and in the Mac app lists every browser and app that has signed in to your account: its name, when it last signed in, and the hosts it joined through the account, with its state on each (registered, waiting for the host to revoke it, or revoked). The one you're using is marked **This device**.
+The account panel on the web and in the Mac app, and the iPhone's account page, list every browser and app that has signed in to your account: its name, when it last signed in, and the hosts it joined through the account, with its state on each (registered, waiting for the host to revoke it, or revoked). The one you're using is marked **This device** (**This iPhone** on the phone).
 
-If you lose a device, click **Remove** next to it and enter your password. The server signs it out of your account and asks each host it joined through the account to revoke it. A host that's online does it right away; one that's offline does it the next time it connects. The host still has the final say: you can pair the device with it again later with a QR code. To remove the device you're using, sign out instead.
+If you lose a device, click or tap **Remove** next to it and enter your password. The server signs it out of your account and asks each host it joined through the account to revoke it. A host that's online does it right away; one that's offline does it the next time it connects. The host still has the final say: you can pair the device with it again later with a QR code. To remove the device you're using, sign out instead.
 
 The server only knows what went through the account:
 
@@ -74,6 +74,6 @@ The server only knows what went through the account:
 
 ## Delete your account
 
-To delete your account, sign in on the web or in the Mac app, click **Delete account** at the bottom of the account panel, and enter your password. The server deletes the account along with its sessions, host bindings and push registrations, and every device is signed out. The admin account can't be deleted.
+To delete your account, click **Delete account** at the bottom of the account panel on the web or in the Mac app, or tap **Delete Account** at the bottom of the iPhone's account page, and enter your password. The server deletes the account along with its sessions, host bindings and push registrations, and every device is signed out. The admin account can't be deleted.
 
 Hosts joined to the account lose their connection to the server right away. To reach one through a server again, run `pinomad join` on it with another account. Your devices stay registered on each host, because the host keeps that list itself: a device that reaches the host directly (same network or Tailscale) still connects. To remove a device, revoke it in the host's Settings → Devices, or remove it under **Devices** before you delete the account.

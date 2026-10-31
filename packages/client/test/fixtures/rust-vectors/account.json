@@ -148,6 +148,36 @@
         "newPassword": "nouveau mot de passe é ✓"
       },
       "expect": "{\"url\":\"https://relay.example.com/api/password\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"currentPassword\\\":\\\"old \\\\\\\"pw\\\\\\\"\\\\n\\\",\\\"newPassword\\\":\\\"nouveau mot de passe é ✓\\\"}\"}}"
+    },
+    {
+      "name": "delete-account",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "deleteAccount",
+        "password": "pw \"q\"\\\t✓"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/me/delete\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"password\\\":\\\"pw \\\\\\\"q\\\\\\\"\\\\\\\\\\\\t✓\\\"}\"}}"
+    },
+    {
+      "name": "list-devices",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "listDevices"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/devices\",\"init\":{\"method\":\"GET\",\"headers\":{\"authorization\":\"Bearer tok\"}}}"
+    },
+    {
+      "name": "kick-device",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "kickDevice",
+        "id": 1234,
+        "password": "pé \"x\"\n"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/devices/1234/kick\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"password\\\":\\\"pé \\\\\\\"x\\\\\\\"\\\\n\\\"}\"}}"
     }
   ],
   "responses": [
@@ -164,6 +194,20 @@
       "status": 200,
       "body": "{\"user\":{\"username\":\"admin\"},\"expiresAt\":1}",
       "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"admin\"},\"expiresAt\":1}}"
+    },
+    {
+      "name": "login-admin",
+      "kind": "login",
+      "status": 200,
+      "body": "{\"user\":{\"username\":\"admin\"},\"admin\":true,\"expiresAt\":1,\"token\":\"t\"}",
+      "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"admin\"},\"admin\":true,\"expiresAt\":1,\"token\":\"t\"}}"
+    },
+    {
+      "name": "login-admin-not-true",
+      "kind": "login",
+      "status": 200,
+      "body": "{\"user\":{\"username\":\"a\"},\"admin\":\"yes\",\"expiresAt\":1,\"token\":\"t\"}",
+      "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"a\"},\"expiresAt\":1,\"token\":\"t\"}}"
     },
     {
       "name": "login-201",
@@ -213,6 +257,13 @@
       "status": 200,
       "body": "{\"user\":{\"username\":\"admin\"}}",
       "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"admin\"}}}"
+    },
+    {
+      "name": "me-admin",
+      "kind": "me",
+      "status": 200,
+      "body": "{\"user\":{\"username\":\"admin\"},\"admin\":true}",
+      "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"admin\"},\"admin\":true}}"
     },
     {
       "name": "me-user-null",
@@ -430,6 +481,132 @@
       "status": 400,
       "body": "{\"error\":\"weak_password\"}",
       "expect": "{\"ok\":false,\"error\":{\"code\":\"weak_password\",\"status\":400}}"
+    },
+    {
+      "name": "delete-account-204",
+      "kind": "deleteAccount",
+      "status": 204,
+      "body": null,
+      "expect": "{\"ok\":true}"
+    },
+    {
+      "name": "delete-account-wrong",
+      "kind": "deleteAccount",
+      "status": 403,
+      "body": "{\"error\":\"wrong_password\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"wrong_password\",\"status\":403}}"
+    },
+    {
+      "name": "delete-account-admin",
+      "kind": "deleteAccount",
+      "status": 403,
+      "body": "{\"error\":\"admin_account\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"admin_account\",\"status\":403}}"
+    },
+    {
+      "name": "delete-account-rate-limited",
+      "kind": "deleteAccount",
+      "status": 429,
+      "body": "{\"error\":\"rate_limited\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"rate_limited\",\"status\":429}}"
+    },
+    {
+      "name": "delete-account-401",
+      "kind": "deleteAccount",
+      "status": 401,
+      "body": "{\"error\":\"unauthenticated\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"unauthenticated\",\"status\":401}}"
+    },
+    {
+      "name": "devices-ok",
+      "kind": "listDevices",
+      "status": 200,
+      "body": "[{\"id\":3,\"name\":\"iPhone\",\"createdAt\":1,\"lastSeenAt\":5,\"current\":true,\"hosts\":[{\"hostId\":\"h1\",\"name\":\"omarchy\",\"state\":\"registered\"},{\"hostId\":\"h2\",\"name\":\"studio\",\"state\":\"revoking\"}]},{\"id\":2,\"createdAt\":1,\"lastSeenAt\":2,\"current\":false,\"kickedAt\":4,\"hosts\":[{\"hostId\":\"h1\",\"name\":\"omarchy\",\"state\":\"revoked\"}]}]",
+      "expect": "{\"ok\":true,\"value\":[{\"id\":3,\"name\":\"iPhone\",\"createdAt\":1,\"lastSeenAt\":5,\"current\":true,\"hosts\":[{\"hostId\":\"h1\",\"name\":\"omarchy\",\"state\":\"registered\"},{\"hostId\":\"h2\",\"name\":\"studio\",\"state\":\"revoking\"}]},{\"id\":2,\"createdAt\":1,\"lastSeenAt\":2,\"current\":false,\"kickedAt\":4,\"hosts\":[{\"hostId\":\"h1\",\"name\":\"omarchy\",\"state\":\"revoked\"}]}]}"
+    },
+    {
+      "name": "devices-empty",
+      "kind": "listDevices",
+      "status": 200,
+      "body": "[]",
+      "expect": "{\"ok\":true,\"value\":[]}"
+    },
+    {
+      "name": "devices-not-array",
+      "kind": "listDevices",
+      "status": 200,
+      "body": "{}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "devices-id-string",
+      "kind": "listDevices",
+      "status": 200,
+      "body": "[{\"id\":\"1\",\"createdAt\":1,\"lastSeenAt\":1,\"current\":false,\"hosts\":[]}]",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "devices-name-number",
+      "kind": "listDevices",
+      "status": 200,
+      "body": "[{\"id\":1,\"name\":4,\"createdAt\":1,\"lastSeenAt\":1,\"current\":false,\"hosts\":[]}]",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "devices-kicked-string",
+      "kind": "listDevices",
+      "status": 200,
+      "body": "[{\"id\":1,\"createdAt\":1,\"lastSeenAt\":1,\"current\":false,\"kickedAt\":\"x\",\"hosts\":[]}]",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "devices-bad-state",
+      "kind": "listDevices",
+      "status": 200,
+      "body": "[{\"id\":1,\"createdAt\":1,\"lastSeenAt\":1,\"current\":false,\"hosts\":[{\"hostId\":\"h\",\"name\":\"n\",\"state\":\"gone\"}]}]",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "devices-404",
+      "kind": "listDevices",
+      "status": 404,
+      "body": "{\"error\":\"not_found\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"not_found\",\"status\":404}}"
+    },
+    {
+      "name": "kick-204",
+      "kind": "kickDevice",
+      "status": 204,
+      "body": null,
+      "expect": "{\"ok\":true}"
+    },
+    {
+      "name": "kick-wrong",
+      "kind": "kickDevice",
+      "status": 403,
+      "body": "{\"error\":\"wrong_password\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"wrong_password\",\"status\":403}}"
+    },
+    {
+      "name": "kick-current",
+      "kind": "kickDevice",
+      "status": 409,
+      "body": "{\"error\":\"current_device\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"current_device\",\"status\":409}}"
+    },
+    {
+      "name": "kick-not-found",
+      "kind": "kickDevice",
+      "status": 404,
+      "body": "{\"error\":\"not_found\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"not_found\",\"status\":404}}"
+    },
+    {
+      "name": "kick-rate-limited",
+      "kind": "kickDevice",
+      "status": 429,
+      "body": "{\"error\":\"rate_limited\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"rate_limited\",\"status\":429}}"
     }
   ],
   "probe": [

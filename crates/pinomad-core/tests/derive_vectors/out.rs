@@ -524,8 +524,8 @@ pub fn patch_files_json(files: &[pinomad_core::patch::PatchFile]) -> Json {
 // ─── Account client ─────────────────────────────────────────────────────────
 
 use pinomad_core::account::{
-    AccountError, AccountHost, AccountHostMatch, AccountHttpRequest, AccountValue, JoinToken,
-    LoginSuccess, PairingOffer,
+    AccountDevice, AccountError, AccountHost, AccountHostMatch, AccountHttpRequest, AccountMe, AccountValue,
+    JoinToken, LoginSuccess, PairingOffer,
 };
 
 /// The `{url, init}` the capture fetch recorded — `init` keys in the
@@ -555,12 +555,17 @@ fn account_user_json(user: &pinomad_core::account::AccountUser) -> Json {
 /// The per-op success payload, in the reference's key order.
 fn account_value_json(value: &AccountValue) -> Json {
     match value {
-        AccountValue::Login(LoginSuccess { user, expires_at, token }) => obj(&[
+        // `admin` only when true, spread right after `user`.
+        AccountValue::Login(LoginSuccess { user, admin, expires_at, token }) => obj(&[
             ("user", Some(account_user_json(user))),
+            ("admin", admin.then_some(Json::Bool(true))),
             ("expiresAt", Some(num(*expires_at))),
             ("token", token.as_deref().map(s)),
         ]),
-        AccountValue::Me(user) => obj(&[("user", Some(account_user_json(user)))]),
+        AccountValue::Me(AccountMe { user, admin }) => obj(&[
+            ("user", Some(account_user_json(user))),
+            ("admin", admin.then_some(Json::Bool(true))),
+        ]),
         // Handled by `account_result_json` — `value` is absent, not null.
         AccountValue::Unit => Json::Null,
         AccountValue::JoinToken(JoinToken { token, expires_at, command }) => obj(&[
@@ -569,6 +574,7 @@ fn account_value_json(value: &AccountValue) -> Json {
             ("command", Some(s(command))),
         ]),
         AccountValue::Hosts(hosts) => Json::array(hosts.iter().map(account_host_json).collect()),
+        AccountValue::Devices(devices) => Json::array(devices.iter().map(account_device_json).collect()),
         AccountValue::PairingOffer(PairingOffer { url, host_key, secret, expires_at, endpoint_set }) => {
             let mut fields = vec![
                 ("url", Some(s(url))),
@@ -610,6 +616,31 @@ fn account_host_json(host: &AccountHost) -> Json {
         ("lastSeenAt", Some(num(host.last_seen_at))),
         ("pairing", Some(s(host.pairing.as_str()))),
         ("deviceReports", host.device_reports.map(Json::Bool)),
+    ])
+}
+
+/// A `GET /api/devices` row as `listDevices` rebuilds it: `name` and
+/// `kickedAt` only when present.
+fn account_device_json(device: &AccountDevice) -> Json {
+    let hosts = device
+        .hosts
+        .iter()
+        .map(|host| {
+            obj(&[
+                ("hostId", Some(s(&host.host_id))),
+                ("name", Some(s(&host.name))),
+                ("state", Some(s(host.state.as_str()))),
+            ])
+        })
+        .collect();
+    obj(&[
+        ("id", Some(num(device.id))),
+        ("name", device.name.as_deref().map(s)),
+        ("createdAt", Some(num(device.created_at))),
+        ("lastSeenAt", Some(num(device.last_seen_at))),
+        ("current", Some(Json::Bool(device.current))),
+        ("kickedAt", device.kicked_at.map(num)),
+        ("hosts", Some(Json::array(hosts))),
     ])
 }
 

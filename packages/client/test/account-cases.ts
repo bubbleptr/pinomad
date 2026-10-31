@@ -33,7 +33,9 @@ export type AccountOpDesc =
   | { kind: "requestPairing"; hostId: string }
   | { kind: "registerPushToken" | "removePushToken"; apns: string; environment: "production" | "development" }
   | { kind: "changePassword"; currentPassword: string; newPassword: string }
-  | { kind: "me" | "logout" | "revokeAllSessions" | "createJoinToken" | "listHosts" };
+  | { kind: "deleteAccount"; password: string }
+  | { kind: "kickDevice"; id: number; password: string }
+  | { kind: "me" | "logout" | "revokeAllSessions" | "createJoinToken" | "listHosts" | "listDevices" };
 
 export interface RequestCase {
   name: string;
@@ -94,6 +96,11 @@ export const REQUEST_CASES: RequestCase[] = [
     token: "tok",
     op: { kind: "changePassword", currentPassword: "old \"pw\"\n", newPassword: "nouveau mot de passe é ✓" },
   },
+  // The password again, escaped like any body string (#451).
+  { name: "delete-account", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "deleteAccount", password: "pw \"q\"\\\t✓" } },
+  { name: "list-devices", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "listDevices" } },
+  // The server's numeric id goes into the path as `${id}` (#452).
+  { name: "kick-device", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "kickDevice", id: 1234, password: "pé \"x\"\n" } },
 ];
 
 export interface ResponseCase {
@@ -103,6 +110,22 @@ export interface ResponseCase {
   /** The response body text; null stands for a body that never arrived (204, or a failed read). */
   body: string | null;
 }
+
+const DEVICE_ROWS = JSON.stringify([
+  {
+    id: 3,
+    name: "iPhone",
+    createdAt: 1,
+    lastSeenAt: 5,
+    current: true,
+    hosts: [
+      { hostId: "h1", name: "omarchy", state: "registered" },
+      { hostId: "h2", name: "studio", state: "revoking" },
+    ],
+  },
+  // Nameless (a client from before #452) and removed, revoked on its one host.
+  { id: 2, createdAt: 1, lastSeenAt: 2, current: false, kickedAt: 4, hosts: [{ hostId: "h1", name: "omarchy", state: "revoked" }] },
+]);
 
 const HOST_ROW = JSON.stringify({
   hostId: HOST_ID_A,
@@ -117,6 +140,9 @@ export const RESPONSE_CASES: ResponseCase[] = [
   { name: "login-ok-token", kind: "login", status: 200, body: '{"user":{"username":"admin"},"expiresAt":1700000000000,"token":"the-token"}' },
   // A cookie-style answer (no token) is still a valid login for the parser.
   { name: "login-ok-no-token", kind: "login", status: 200, body: '{"user":{"username":"admin"},"expiresAt":1}' },
+  // `admin` counts only as `true` (#449); anything else is a regular account.
+  { name: "login-admin", kind: "login", status: 200, body: '{"user":{"username":"admin"},"admin":true,"expiresAt":1,"token":"t"}' },
+  { name: "login-admin-not-true", kind: "login", status: 200, body: '{"user":{"username":"a"},"admin":"yes","expiresAt":1,"token":"t"}' },
   { name: "login-201", kind: "login", status: 201, body: '{"user":{"username":"a"},"expiresAt":2,"token":"t"}' },
   { name: "login-user-not-object", kind: "login", status: 200, body: '{"user":"x","expiresAt":1}' },
   { name: "login-missing-expiry", kind: "login", status: 200, body: '{"user":{"username":"a"}}' },
@@ -124,6 +150,7 @@ export const RESPONSE_CASES: ResponseCase[] = [
   { name: "login-invalid-credentials", kind: "login", status: 401, body: '{"error":"invalid_credentials"}' },
   { name: "login-401-no-body", kind: "login", status: 401, body: null },
   { name: "me-ok", kind: "me", status: 200, body: '{"user":{"username":"admin"}}' },
+  { name: "me-admin", kind: "me", status: 200, body: '{"user":{"username":"admin"},"admin":true}' },
   { name: "me-user-null", kind: "me", status: 200, body: '{"user":null}' },
   // A fully-read body that isn't JSON is still a 2xx transport-wise — the
   // endpoint's shape check turns it into invalid_response.
@@ -177,6 +204,42 @@ export const RESPONSE_CASES: ResponseCase[] = [
   // 403, not 401: a mistyped current password must not read as signed out.
   { name: "change-password-wrong", kind: "changePassword", status: 403, body: '{"error":"wrong_password"}' },
   { name: "change-password-weak", kind: "changePassword", status: 400, body: '{"error":"weak_password"}' },
+  // Deleting the account: the 403s are refusals, not sign-outs (#451).
+  { name: "delete-account-204", kind: "deleteAccount", status: 204, body: null },
+  { name: "delete-account-wrong", kind: "deleteAccount", status: 403, body: '{"error":"wrong_password"}' },
+  { name: "delete-account-admin", kind: "deleteAccount", status: 403, body: '{"error":"admin_account"}' },
+  { name: "delete-account-rate-limited", kind: "deleteAccount", status: 429, body: '{"error":"rate_limited"}' },
+  { name: "delete-account-401", kind: "deleteAccount", status: 401, body: '{"error":"unauthenticated"}' },
+  // The device list (#452): every host state, a nameless and a removed row.
+  { name: "devices-ok", kind: "listDevices", status: 200, body: DEVICE_ROWS },
+  { name: "devices-empty", kind: "listDevices", status: 200, body: "[]" },
+  { name: "devices-not-array", kind: "listDevices", status: 200, body: "{}" },
+  { name: "devices-id-string", kind: "listDevices", status: 200, body: '[{"id":"1","createdAt":1,"lastSeenAt":1,"current":false,"hosts":[]}]' },
+  {
+    name: "devices-name-number",
+    kind: "listDevices",
+    status: 200,
+    body: '[{"id":1,"name":4,"createdAt":1,"lastSeenAt":1,"current":false,"hosts":[]}]',
+  },
+  {
+    name: "devices-kicked-string",
+    kind: "listDevices",
+    status: 200,
+    body: '[{"id":1,"createdAt":1,"lastSeenAt":1,"current":false,"kickedAt":"x","hosts":[]}]',
+  },
+  {
+    name: "devices-bad-state",
+    kind: "listDevices",
+    status: 200,
+    body: '[{"id":1,"createdAt":1,"lastSeenAt":1,"current":false,"hosts":[{"hostId":"h","name":"n","state":"gone"}]}]',
+  },
+  // Servers from before #452 have no device list.
+  { name: "devices-404", kind: "listDevices", status: 404, body: '{"error":"not_found"}' },
+  { name: "kick-204", kind: "kickDevice", status: 204, body: null },
+  { name: "kick-wrong", kind: "kickDevice", status: 403, body: '{"error":"wrong_password"}' },
+  { name: "kick-current", kind: "kickDevice", status: 409, body: '{"error":"current_device"}' },
+  { name: "kick-not-found", kind: "kickDevice", status: 404, body: '{"error":"not_found"}' },
+  { name: "kick-rate-limited", kind: "kickDevice", status: 429, body: '{"error":"rate_limited"}' },
 ];
 
 export interface ProbeCase {

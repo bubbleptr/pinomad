@@ -149,6 +149,8 @@ struct AccountLoginView: View {
                         .foregroundStyle(.red)
                 }
             }
+
+            LegalLinksSection()
         }
         .navigationTitle("Sign In")
         .navigationBarTitleDisplayMode(.inline)

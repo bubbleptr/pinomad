@@ -272,6 +272,14 @@ final class AppModel {
     /// really abandon a handshake that already started.
     var automaticPairingRuntimes: [String: HostRuntime] = [:]
     var accountRejectedHostKeys: Set<String> = []
+    /// This install's account device id, sent with every sign-in (ADR-0037 §1).
+    let accountDeviceIds = AccountDeviceIdSource(store: KeychainAccountDeviceIdStore())
+    /// The account's devices (#452); nil until the first answer.
+    var accountDevices: [AccountDevice]?
+    var accountDevicesError: String?
+    /// The server predates the device list (404): the section stays hidden.
+    var accountDevicesUnsupported = false
+    var accountDevicesGeneration: UInt64 = 0
     /// Push switches, permission, APNs token, and the system callbacks.
     let push = PushCenter.shared
     var pushError: String?
@@ -308,6 +316,8 @@ final class AppModel {
     var pendingPromptFile: String?
     var openHostDetailAfterReady = false
     var devShowsModelSheet = false
+    /// `PINOMAD_DEMO_ACCOUNT`: the account page a demo opens on.
+    var devAccountPage: String?
     var devHostsInjected = false
     private var developmentRuntime: HostRuntime?
 

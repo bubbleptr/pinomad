@@ -168,7 +168,7 @@ pub fn stored_host(json: &Json) -> StoredHost {
 }
 
 /// The op the request-shape cases name: `{kind, username?, password?, device?, hostId?, apns?,
-/// environment?, currentPassword?, newPassword?}`.
+/// environment?, currentPassword?, newPassword?, id?}`.
 pub fn account_op(json: &Json) -> AccountOp {
     match account_op_kind(&text(json.get("kind")).unwrap_or_default()) {
         AccountOpKind::Login => AccountOp::Login {
@@ -192,6 +192,14 @@ pub fn account_op(json: &Json) -> AccountOp {
         AccountOpKind::ChangePassword => AccountOp::ChangePassword {
             current_password: text(json.get("currentPassword")).unwrap_or_default(),
             new_password: text(json.get("newPassword")).unwrap_or_default(),
+        },
+        AccountOpKind::DeleteAccount => AccountOp::DeleteAccount {
+            password: text(json.get("password")).unwrap_or_default(),
+        },
+        AccountOpKind::ListDevices => AccountOp::ListDevices,
+        AccountOpKind::KickDevice => AccountOp::KickDevice {
+            id: num(json.get("id")).unwrap_or_default(),
+            password: text(json.get("password")).unwrap_or_default(),
         },
     }
 }
@@ -220,6 +228,9 @@ pub fn account_op_kind(name: &str) -> AccountOpKind {
         "registerPushToken" => AccountOpKind::RegisterPushToken,
         "removePushToken" => AccountOpKind::RemovePushToken,
         "changePassword" => AccountOpKind::ChangePassword,
+        "deleteAccount" => AccountOpKind::DeleteAccount,
+        "listDevices" => AccountOpKind::ListDevices,
+        "kickDevice" => AccountOpKind::KickDevice,
         other => panic!("unknown account op kind {other}"),
     }
 }

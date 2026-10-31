@@ -15,7 +15,7 @@ use url::{Host, Url};
 
 use crate::endpoints::{parse_endpoint_set, EndpointSet, ParsedEndpointSet};
 use crate::frames::ApnsPushToken;
-use crate::json::{Json, JsonObject};
+use crate::json::{number_to_json, Json, JsonObject};
 use crate::pairing_link::encode_uri_component;
 use crate::stored_host::StoredHost;
 use crate::u16str::U16String;
@@ -37,7 +37,9 @@ pub struct AccountDeviceClaim {
 /// the platform has one, its device claim (ADR-0037 §1);
 /// `RequestPairing` carries the account-bound hostId; the push-token pair
 /// carries this device's APNs token (ADR-0036); `ChangePassword` carries
-/// both passwords (#450).
+/// both passwords (#450); `DeleteAccount` and `KickDevice` carry the
+/// password again (#451, ADR-0037 §3), `KickDevice` also the server's id
+/// from `ListDevices`.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum AccountOp {
@@ -56,6 +58,9 @@ pub enum AccountOp {
     RegisterPushToken { token: ApnsPushToken },
     RemovePushToken { token: ApnsPushToken },
     ChangePassword { current_password: String, new_password: String },
+    DeleteAccount { password: String },
+    ListDevices,
+    KickDevice { id: f64, password: String },
 }
 
 /// Which endpoint an answer belongs to — `account_response` picks its shape
@@ -73,6 +78,9 @@ pub enum AccountOpKind {
     RegisterPushToken,
     RemovePushToken,
     ChangePassword,
+    DeleteAccount,
+    ListDevices,
+    KickDevice,
 }
 
 /// One header on the request the platform sends, in the reference's order.
@@ -108,12 +116,15 @@ impl AccountOp {
             AccountOp::RegisterPushToken { .. } => AccountOpKind::RegisterPushToken,
             AccountOp::RemovePushToken { .. } => AccountOpKind::RemovePushToken,
             AccountOp::ChangePassword { .. } => AccountOpKind::ChangePassword,
+            AccountOp::DeleteAccount { .. } => AccountOpKind::DeleteAccount,
+            AccountOp::ListDevices => AccountOpKind::ListDevices,
+            AccountOp::KickDevice { .. } => AccountOpKind::KickDevice,
         }
     }
 
     fn method(&self) -> &'static str {
         match self {
-            AccountOp::Me | AccountOp::ListHosts => "GET",
+            AccountOp::Me | AccountOp::ListHosts | AccountOp::ListDevices => "GET",
             _ => "POST",
         }
     }
@@ -134,13 +145,18 @@ impl AccountOp {
             AccountOp::RegisterPushToken { .. } => "/api/push-tokens".to_string(),
             AccountOp::RemovePushToken { .. } => "/api/push-tokens/remove".to_string(),
             AccountOp::ChangePassword { .. } => "/api/password".to_string(),
+            AccountOp::DeleteAccount { .. } => "/api/me/delete".to_string(),
+            AccountOp::ListDevices => "/api/devices".to_string(),
+            // `${id}` — the number as JS prints it.
+            AccountOp::KickDevice { id, .. } => format!("/api/devices/{}/kick", number_to_json(*id)),
         }
     }
 
     /// `JSON.stringify(body)`, byte-identical to the reference's literal
     /// order: `{username, password, device?: {id, name?}}` for login, `{apns, environment}` for the
-    /// push-token pair — the token stays out of the URL — and
-    /// `{currentPassword, newPassword}` for a password change.
+    /// push-token pair — the token stays out of the URL —
+    /// `{currentPassword, newPassword}` for a password change, and
+    /// `{password}` for deleting the account or kicking a device.
     fn body(&self) -> Option<String> {
         match self {
             AccountOp::Login { username, password, device } => {
@@ -167,6 +183,11 @@ impl AccountOp {
                 let mut object = JsonObject::new();
                 object.set(U16String::from_str("currentPassword"), Json::from(current_password.as_str()));
                 object.set(U16String::from_str("newPassword"), Json::from(new_password.as_str()));
+                Some(Json::Object(Arc::new(object)).to_json())
+            }
+            AccountOp::DeleteAccount { password } | AccountOp::KickDevice { password, .. } => {
+                let mut object = JsonObject::new();
+                object.set(U16String::from_str("password"), Json::from(password.as_str()));
                 Some(Json::Object(Arc::new(object)).to_json())
             }
             _ => None,
@@ -227,8 +248,66 @@ pub struct AccountUser {
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct LoginSuccess {
     pub user: AccountUser,
+    /// The server's admin account (#449) — only a literal `true` counts.
+    #[cfg_attr(feature = "ffi", uniffi(default = false))]
+    pub admin: bool,
     pub expires_at: f64,
     pub token: Option<String>,
+}
+
+/// `GET /api/me` — the user, and whether it is the server's admin (#449).
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct AccountMe {
+    pub user: AccountUser,
+    #[cfg_attr(feature = "ffi", uniffi(default = false))]
+    pub admin: bool,
+}
+
+/// One account device's standing on a host it joined through the account
+/// (ADR-0037 §6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
+pub enum AccountDeviceHostState {
+    Registered,
+    /// The server asked the host to revoke it and the host hasn't confirmed.
+    Revoking,
+    Revoked,
+}
+
+impl AccountDeviceHostState {
+    /// The wire string the reference uses.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AccountDeviceHostState::Registered => "registered",
+            AccountDeviceHostState::Revoking => "revoking",
+            AccountDeviceHostState::Revoked => "revoked",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct AccountDeviceHost {
+    pub host_id: String,
+    pub name: String,
+    pub state: AccountDeviceHostState,
+}
+
+/// One row of `GET /api/devices` (#452).
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct AccountDevice {
+    /// The server's id, which `KickDevice` takes — not the claim's own id.
+    pub id: f64,
+    /// Absent for clients that never said (older apps, sessions from before #452).
+    pub name: Option<String>,
+    pub created_at: f64,
+    pub last_seen_at: f64,
+    /// The device whose session made this request.
+    pub current: bool,
+    pub kicked_at: Option<f64>,
+    pub hosts: Vec<AccountDeviceHost>,
 }
 
 /// `POST /api/join-tokens` — the one-use token and the ready-to-show
@@ -303,12 +382,13 @@ pub struct PairingOffer {
 #[derive(Clone, Debug, PartialEq)]
 pub enum AccountValue {
     Login(LoginSuccess),
-    /// `me` — just the user.
-    Me(AccountUser),
-    /// `logout`, `revokeAllSessions`, the push-token pair and `changePassword` answer nothing.
+    Me(AccountMe),
+    /// `logout`, `revokeAllSessions`, the push-token pair, `changePassword`,
+    /// `deleteAccount` and `kickDevice` answer nothing.
     Unit,
     JoinToken(JoinToken),
     Hosts(Vec<AccountHost>),
+    Devices(Vec<AccountDevice>),
     PairingOffer(PairingOffer),
 }
 
@@ -368,6 +448,57 @@ fn user_body(value: &Json) -> Option<AccountUser> {
     })
 }
 
+/// `value.admin === true`.
+fn admin_flag(value: &Json) -> bool {
+    matches!(value.get("admin"), Some(Json::Bool(true)))
+}
+
+/// An optional member: absent is `None`, present but not a number is malformed.
+fn optional_num(value: &Json, key: &str) -> Result<Option<f64>, AccountError> {
+    match value.get(key) {
+        None => Ok(None),
+        Some(Json::Number(n)) => Ok(Some(*n)),
+        Some(_) => Err(AccountError::invalid()),
+    }
+}
+
+/// `isDevice` — any member of the wrong type, or a host state outside the
+/// three, makes the whole list `invalid_response`.
+fn decode_device(entry: &Json) -> Result<AccountDevice, AccountError> {
+    let name = match entry.get("name") {
+        None => None,
+        Some(Json::String(name)) => Some(name.to_string_lossy()),
+        Some(_) => return Err(AccountError::invalid()),
+    };
+    let current = match entry.get("current") {
+        Some(Json::Bool(current)) => *current,
+        _ => return Err(AccountError::invalid()),
+    };
+    let entries = entry.get("hosts").and_then(Json::as_array).ok_or_else(AccountError::invalid)?;
+    let mut hosts = Vec::with_capacity(entries.len());
+    for host in entries.iter() {
+        hosts.push(AccountDeviceHost {
+            host_id: str_field(host, "hostId").ok_or_else(AccountError::invalid)?,
+            name: str_field(host, "name").ok_or_else(AccountError::invalid)?,
+            state: match str_field(host, "state").as_deref() {
+                Some("registered") => AccountDeviceHostState::Registered,
+                Some("revoking") => AccountDeviceHostState::Revoking,
+                Some("revoked") => AccountDeviceHostState::Revoked,
+                _ => return Err(AccountError::invalid()),
+            },
+        });
+    }
+    Ok(AccountDevice {
+        id: num_field(entry, "id").ok_or_else(AccountError::invalid)?,
+        name,
+        created_at: num_field(entry, "createdAt").ok_or_else(AccountError::invalid)?,
+        last_seen_at: num_field(entry, "lastSeenAt").ok_or_else(AccountError::invalid)?,
+        current,
+        kicked_at: optional_num(entry, "kickedAt")?,
+        hosts,
+    })
+}
+
 /// The endpoint's own shape check on a parsed 2xx body (`None` = a body that
 /// didn't parse or never arrived).
 fn decode_value(kind: AccountOpKind, value: Option<&Json>) -> Result<AccountValue, AccountError> {
@@ -375,16 +506,26 @@ fn decode_value(kind: AccountOpKind, value: Option<&Json>) -> Result<AccountValu
     match kind {
         AccountOpKind::Login => Ok(AccountValue::Login(LoginSuccess {
             user: user_body(value).ok_or_else(AccountError::invalid)?,
+            admin: admin_flag(value),
             expires_at: num_field(value, "expiresAt").ok_or_else(AccountError::invalid)?,
             token: str_field(value, "token"),
         })),
-        AccountOpKind::Me => Ok(AccountValue::Me(user_body(value).ok_or_else(AccountError::invalid)?)),
+        AccountOpKind::Me => Ok(AccountValue::Me(AccountMe {
+            user: user_body(value).ok_or_else(AccountError::invalid)?,
+            admin: admin_flag(value),
+        })),
         // `result.ok ? ok(undefined)` — any 2xx answers the void ops.
         AccountOpKind::Logout
         | AccountOpKind::RevokeAllSessions
         | AccountOpKind::RegisterPushToken
         | AccountOpKind::RemovePushToken
-        | AccountOpKind::ChangePassword => Ok(AccountValue::Unit),
+        | AccountOpKind::ChangePassword
+        | AccountOpKind::DeleteAccount
+        | AccountOpKind::KickDevice => Ok(AccountValue::Unit),
+        AccountOpKind::ListDevices => {
+            let entries = value.as_array().ok_or_else(AccountError::invalid)?;
+            Ok(AccountValue::Devices(entries.iter().map(decode_device).collect::<Result<_, _>>()?))
+        }
         AccountOpKind::CreateJoinToken => Ok(AccountValue::JoinToken(JoinToken {
             token: str_field(value, "token").ok_or_else(AccountError::invalid)?,
             expires_at: num_field(value, "expiresAt").ok_or_else(AccountError::invalid)?,
