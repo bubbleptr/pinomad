@@ -4,7 +4,7 @@
 // — the committed fixtures are ground truth the Rust side replays.
 import { keyPairFromPrivate } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
-import type { AccountHost, PairingOffer } from "../src/account.ts";
+import type { AccountDeviceClaim, AccountHost, PairingOffer } from "../src/account.ts";
 import type { StoredHost } from "../src/stored-host.ts";
 
 const key = (fill: number) => toBase64Url(keyPairFromPrivate(new Uint8Array(32).fill(fill)).publicKey);
@@ -29,7 +29,7 @@ const OFFER_KEY = key(24);
 const OFFER_SECRET = key(25);
 
 export type AccountOpDesc =
-  | { kind: "login"; username: string; password: string }
+  | { kind: "login"; username: string; password: string; device?: AccountDeviceClaim }
   | { kind: "requestPairing"; hostId: string }
   | { kind: "registerPushToken" | "removePushToken"; apns: string; environment: "production" | "development" }
   | { kind: "changePassword"; currentPassword: string; newPassword: string }
@@ -53,6 +53,18 @@ export const REQUEST_CASES: RequestCase[] = [
   },
   // No token yet (the login form's own submission): no authorization header.
   { name: "login-no-token", origin: ACCOUNT_ORIGIN, op: { kind: "login", username: "u", password: "p" } },
+  // The device claim rides after the credentials (ADR-0037 §1); a nameless one
+  // carries only its id, and a name keeps its non-ASCII bytes.
+  {
+    name: "login-device",
+    origin: ACCOUNT_ORIGIN,
+    op: { kind: "login", username: "u", password: "p", device: { id: "Qm3xV8rT2kLp9wYz4nHc1A", name: "Kieran's iPhone \u2014 \u00e9" } },
+  },
+  {
+    name: "login-device-unnamed",
+    origin: ACCOUNT_ORIGIN,
+    op: { kind: "login", username: "u", password: "p", device: { id: "Qm3xV8rT2kLp9wYz4nHc1A" } },
+  },
   { name: "me", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "me" } },
   { name: "logout", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "logout" } },
   { name: "revoke-all", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "revokeAllSessions" } },
@@ -127,6 +139,14 @@ export const RESPONSE_CASES: ResponseCase[] = [
   { name: "join-ok", kind: "createJoinToken", status: 200, body: '{"token":"jt","expiresAt":9,"command":"pinomad join https://x jt"}' },
   { name: "join-missing-command", kind: "createJoinToken", status: 200, body: '{"token":"jt","expiresAt":9}' },
   { name: "hosts-ok", kind: "listHosts", status: 200, body: `[${HOST_ROW}]` },
+  // deviceReports is additive (#452): a boolean passes through, anything else is malformed.
+  { name: "hosts-device-reports", kind: "listHosts", status: 200, body: `[${HOST_ROW.slice(0, -1)},"deviceReports":false}]` },
+  {
+    name: "hosts-device-reports-bad",
+    kind: "listHosts",
+    status: 200,
+    body: `[${HOST_ROW.slice(0, -1)},"deviceReports":"no"}]`,
+  },
   { name: "hosts-empty", kind: "listHosts", status: 200, body: "[]" },
   { name: "hosts-not-array", kind: "listHosts", status: 200, body: "{}" },
   { name: "hosts-bad-entry", kind: "listHosts", status: 200, body: '[{"hostId":"x"}]' },

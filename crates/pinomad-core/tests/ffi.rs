@@ -1936,6 +1936,7 @@ fn account_request_builds_bearer_http() {
         AccountOp::Login {
             username: "ad min".to_string(),
             password: "p\"w".to_string(),
+            device: None,
         },
     );
     assert_eq!(request.method, "POST");
@@ -2109,6 +2110,7 @@ fn account_pairing_link_and_host_matching() {
         online: true,
         last_seen_at: 1.0,
         pairing: AccountHostPairing::Available,
+        device_reports: None,
     };
     // Linked entry: same origin+hostId, matching key → paired, not linkable.
     let linked = StoredHost {

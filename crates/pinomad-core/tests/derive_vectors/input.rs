@@ -128,7 +128,9 @@ pub fn cot(json: &Json) -> CotView {
     }
 }
 
-use pinomad_core::account::{AccountHost, AccountHostPairing, AccountOp, AccountOpKind, PairingOffer};
+use pinomad_core::account::{
+    AccountDeviceClaim, AccountHost, AccountHostPairing, AccountOp, AccountOpKind, PairingOffer,
+};
 use pinomad_core::frames::{ApnsEnvironment, ApnsPushToken};
 use pinomad_core::endpoints::{parse_endpoint_set, ParsedEndpointSet};
 use pinomad_core::model::{ModelPick, ModelRef};
@@ -165,13 +167,17 @@ pub fn stored_host(json: &Json) -> StoredHost {
     }
 }
 
-/// The op the request-shape cases name: `{kind, username?, password?, hostId?, apns?, environment?,
-/// currentPassword?, newPassword?}`.
+/// The op the request-shape cases name: `{kind, username?, password?, device?, hostId?, apns?,
+/// environment?, currentPassword?, newPassword?}`.
 pub fn account_op(json: &Json) -> AccountOp {
     match account_op_kind(&text(json.get("kind")).unwrap_or_default()) {
         AccountOpKind::Login => AccountOp::Login {
             username: text(json.get("username")).unwrap_or_default(),
             password: text(json.get("password")).unwrap_or_default(),
+            device: json.get("device").map(|device| AccountDeviceClaim {
+                id: text(device.get("id")).unwrap_or_default(),
+                name: text(device.get("name")),
+            }),
         },
         AccountOpKind::RequestPairing => AccountOp::RequestPairing {
             host_id: text(json.get("hostId")).unwrap_or_default(),
@@ -231,6 +237,10 @@ pub fn account_host(json: &Json) -> AccountHost {
             Some("host_too_old") => AccountHostPairing::HostTooOld,
             Some("key_mismatch") => AccountHostPairing::KeyMismatch,
             _ => AccountHostPairing::Available,
+        },
+        device_reports: match json.get("deviceReports") {
+            Some(Json::Bool(reports)) => Some(*reports),
+            _ => None,
         },
     }
 }

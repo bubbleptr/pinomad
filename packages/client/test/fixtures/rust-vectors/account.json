@@ -23,6 +23,35 @@
       "expect": "{\"url\":\"https://relay.example.com/api/login\",\"init\":{\"method\":\"POST\",\"headers\":{\"content-type\":\"application/json\"},\"body\":\"{\\\"username\\\":\\\"u\\\",\\\"password\\\":\\\"p\\\"}\"}}"
     },
     {
+      "name": "login-device",
+      "origin": "https://relay.example.com",
+      "token": null,
+      "op": {
+        "kind": "login",
+        "username": "u",
+        "password": "p",
+        "device": {
+          "id": "Qm3xV8rT2kLp9wYz4nHc1A",
+          "name": "Kieran's iPhone — é"
+        }
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/login\",\"init\":{\"method\":\"POST\",\"headers\":{\"content-type\":\"application/json\"},\"body\":\"{\\\"username\\\":\\\"u\\\",\\\"password\\\":\\\"p\\\",\\\"device\\\":{\\\"id\\\":\\\"Qm3xV8rT2kLp9wYz4nHc1A\\\",\\\"name\\\":\\\"Kieran's iPhone — é\\\"}}\"}}"
+    },
+    {
+      "name": "login-device-unnamed",
+      "origin": "https://relay.example.com",
+      "token": null,
+      "op": {
+        "kind": "login",
+        "username": "u",
+        "password": "p",
+        "device": {
+          "id": "Qm3xV8rT2kLp9wYz4nHc1A"
+        }
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/login\",\"init\":{\"method\":\"POST\",\"headers\":{\"content-type\":\"application/json\"},\"body\":\"{\\\"username\\\":\\\"u\\\",\\\"password\\\":\\\"p\\\",\\\"device\\\":{\\\"id\\\":\\\"Qm3xV8rT2kLp9wYz4nHc1A\\\"}}\"}}"
+    },
+    {
       "name": "me",
       "origin": "https://relay.example.com",
       "token": "tok",
@@ -261,6 +290,20 @@
       "status": 200,
       "body": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"sweuhmDvrtTWpl9mQIlokupKHwB1VVxInRMSouFnfCg\",\"online\":true,\"lastSeenAt\":7,\"pairing\":\"available\"}]",
       "expect": "{\"ok\":true,\"value\":[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"sweuhmDvrtTWpl9mQIlokupKHwB1VVxInRMSouFnfCg\",\"online\":true,\"lastSeenAt\":7,\"pairing\":\"available\"}]}"
+    },
+    {
+      "name": "hosts-device-reports",
+      "kind": "listHosts",
+      "status": 200,
+      "body": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"sweuhmDvrtTWpl9mQIlokupKHwB1VVxInRMSouFnfCg\",\"online\":true,\"lastSeenAt\":7,\"pairing\":\"available\",\"deviceReports\":false}]",
+      "expect": "{\"ok\":true,\"value\":[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"sweuhmDvrtTWpl9mQIlokupKHwB1VVxInRMSouFnfCg\",\"online\":true,\"lastSeenAt\":7,\"pairing\":\"available\",\"deviceReports\":false}]}"
+    },
+    {
+      "name": "hosts-device-reports-bad",
+      "kind": "listHosts",
+      "status": 200,
+      "body": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"sweuhmDvrtTWpl9mQIlokupKHwB1VVxInRMSouFnfCg\",\"online\":true,\"lastSeenAt\":7,\"pairing\":\"available\",\"deviceReports\":\"no\"}]",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
     },
     {
       "name": "hosts-empty",

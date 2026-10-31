@@ -3,7 +3,7 @@
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import type { AccountHost, AccountHostMatch } from "@pinomad/client/account.ts";
+import type { AccountDevice, AccountHost, AccountHostMatch } from "@pinomad/client/account.ts";
 import type { StoredHost } from "@pinomad/client/stored-host.ts";
 import { AccountContext } from "../../entities/account/account-context.tsx";
 import { HostsContext } from "../../entities/host/host-store.ts";
@@ -54,6 +54,8 @@ function fakeModel(initial: AccountState): AccountModel & { setState(next: Accou
     revokeInvite: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     changePassword: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     deleteAccount: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
+    listDevices: vi.fn(() => Promise.resolve({ ok: true as const, value: [] as readonly AccountDevice[] })),
+    kickDevice: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     pairHost: vi.fn(() => Promise.resolve({ ok: false as const, error: { code: "host_timeout" } })),
     retryUnsavedHost: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     hostRejected: vi.fn(),
@@ -328,6 +330,86 @@ describe("invite sign-up (#449)", () => {
       await userEvent.click(screen.getByRole("button", { name: "Revoke" }));
     });
     expect(model.revokeInvite).toHaveBeenCalledWith(2);
+  });
+});
+
+describe("account devices (#452)", () => {
+  const HOUR = 3_600_000;
+  const DEVICES: AccountDevice[] = [
+    { id: 1, name: "Mac Chrome", createdAt: 0, lastSeenAt: Date.now(), current: true, hosts: [] },
+    {
+      id: 2,
+      name: "iPhone",
+      createdAt: 0,
+      lastSeenAt: Date.now() - 3 * HOUR,
+      current: false,
+      hosts: [
+        { hostId: "h1", name: "omarchy", state: "registered" },
+        { hostId: "h2", name: "studio", state: "revoking" },
+      ],
+    },
+    { id: 3, createdAt: 0, lastSeenAt: Date.now() - 48 * HOUR, current: false, kickedAt: Date.now() - HOUR, hosts: [{ hostId: "h1", name: "omarchy", state: "revoked" }] },
+  ];
+  const withDevices = (devices: AccountDevice[], hosts: AccountHostMatch[] = []) => {
+    const model = fakeModel(signedIn(hosts));
+    vi.mocked(model.listDevices).mockResolvedValue({ ok: true, value: devices });
+    return model;
+  };
+  const deviceRow = async (name: string) => (await screen.findByText(name)).closest("li")!;
+
+  it("lists the account's devices with their state on each host; this device can't be removed", async () => {
+    renderPanel(withDevices(DEVICES));
+    const current = await deviceRow("Mac Chrome");
+    expect(within(current).getByText("This device")).toBeTruthy();
+    expect(within(current).queryByRole("button", { name: "Remove" })).toBeNull();
+    const phone = row("iPhone");
+    expect(within(phone).getByText(/Last sign-in 3h ago/)).toBeTruthy();
+    expect(within(phone).getByText(/omarchy: registered/)).toBeTruthy();
+    expect(within(phone).getByText(/studio: waiting for the host/)).toBeTruthy();
+    expect(within(phone).getByRole("button", { name: "Remove" })).toBeTruthy();
+    const unknown = row("Unknown device");
+    expect(within(unknown).getByText("Removed")).toBeTruthy();
+    expect(within(unknown).getByText(/omarchy: revoked/)).toBeTruthy();
+    expect(within(unknown).queryByRole("button", { name: "Remove" })).toBeNull();
+  });
+
+  it("removes a device after the password and reloads the list", async () => {
+    const plain = host({ name: "box" });
+    const legacy = host({ name: "attic", hostId: "a".repeat(43), deviceReports: false });
+    const model = withDevices(DEVICES, [
+      { host: plain, status: "paired", stored: stored(KEY_A), linkable: false, autoRegister: false },
+      { host: legacy, status: "unpaired", linkable: false, autoRegister: false },
+    ]);
+    renderPanel(model);
+    await userEvent.click(within(await deviceRow("iPhone")).getByRole("button", { name: "Remove" }));
+    expect(screen.getByText(/asks each host it joined through your account to revoke it/)).toBeTruthy();
+    // Hosts that don't report devices can't be asked; the form names them.
+    expect(screen.getByText(/attic can't be asked/)).toBeTruthy();
+    await act(async () => {
+      await userEvent.type(screen.getByLabelText("Password"), "my password{Enter}");
+    });
+    expect(model.kickDevice).toHaveBeenCalledWith({ id: 2, password: "my password" });
+    expect(model.listDevices).toHaveBeenCalledTimes(2);
+    expect(screen.queryByLabelText("Password")).toBeNull();
+  });
+
+  it("keeps the form when the password is wrong", async () => {
+    const model = withDevices(DEVICES);
+    vi.mocked(model.kickDevice).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
+    renderPanel(model);
+    await userEvent.click(within(await deviceRow("iPhone")).getByRole("button", { name: "Remove" }));
+    await userEvent.type(screen.getByLabelText("Password"), "wrong{Enter}");
+    expect(await screen.findByText("The current password is wrong.")).toBeTruthy();
+    expect(screen.getByLabelText("Password")).toBeTruthy();
+    expect(model.listDevices).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides the section on a server that predates account devices", async () => {
+    const model = fakeModel(signedIn([]));
+    vi.mocked(model.listDevices).mockResolvedValue({ ok: false, error: { code: "not_found", status: 404 } });
+    renderPanel(model);
+    await act(async () => {});
+    expect(screen.queryByText("Devices")).toBeNull();
   });
 });
 

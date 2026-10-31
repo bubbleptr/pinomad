@@ -1,7 +1,7 @@
 ---
 title: Privacy policy
 description: What the official PiNomad server at app.pinomad.si stores, what it can't see, how long it keeps things, and what happens when you delete your account.
-date: 2026-10-31
+date: 2026-11-01
 ---
 
 This policy covers the official PiNomad server at `app.pinomad.si`, run by PiNomad's author, and this website, `pinomad.si`. PiNomad is open source and anyone can run their own server. If you use a server someone else runs, including one you run yourself, its operator is responsible for it and this policy doesn't apply.
@@ -11,7 +11,7 @@ This policy covers the official PiNomad server at `app.pinomad.si`, run by PiNom
 ## In short
 
 - Your agent runs on your own machine (the host). Conversations, files and commands travel between your devices and your host end-to-end encrypted. The server forwards them as ciphertext and can't read them.
-- The server stores your account (a username and a password hash), the hosts on your account, your sign-in sessions, and push registrations from the iPhone app.
+- The server stores your account (a username and a password hash), the hosts on your account, your sign-in sessions, the devices you sign in on and which hosts they joined, and push registrations from the iPhone app.
 - No email address, no real name, no analytics, no ads. Nothing is sold or shared.
 - When you delete your account, the server's records of it go with it.
 
@@ -22,6 +22,8 @@ All of this lives in one database on the server.
 - **Account:** your username, your password as a scrypt hash (never the password itself), when the account was created, and whether it is the admin account.
 - **Sign-in sessions:** one for each browser or app you sign in on: a SHA-256 hash of the session token, when it was issued and when it expires.
 - **Hosts on your account:** for each host you join with `pinomad join`: its ID, its public key (used to set up the encrypted channel), its display name (by default the machine's hostname), when it joined and when it last connected.
+- **Devices on your account:** for each browser or app that signs in: an ID the app generated at random on that device (it isn't derived from the hardware), the name the app gives itself (such as "Mac Chrome" or "Mac Desktop"), when it first and last signed in, and, if you removed it, when. The server uses this to list your devices and to remove one from your hosts.
+- **Devices on your hosts:** when a device pairs with a host through your account, which device asked, which host, and when the host's invite expires. Once the host admits the device it reports the public key it admitted it under, and the server keeps that key so it can later ask the host to revoke it. After you remove a device, the server also keeps each revocation a host hasn't confirmed yet.
 - **Host join commands:** the one-time command from **Add a host**, stored as a SHA-256 hash with the account that made it, when it was made, when it expires and when it was used.
 - **Push registrations:** for an iPhone with push turned on: the device token Apple gave the app, whether it's a production or development build, the account it belongs to, and when the app last refreshed it. The server uses this to check that a host only sends notifications to devices signed in to the same account.
 - **Invites:** a SHA-256 hash of each invite code, who created it, when it was created and expires, and when it was used and by which account.
@@ -30,7 +32,7 @@ All of this lives in one database on the server.
 
 - **Your work.** Prompts, model replies, files, tool calls, terminal output and your model provider sign-ins stay on your host and your devices. Between them, everything goes over an end-to-end encrypted channel (Noise). When a device can't reach your host directly, the server forwards that channel's ciphertext and keeps none of it.
 - **Notification content.** A push notification carries only the conversation title and the event (waiting for your answer, finished, failed), never the question or the reply. The title passes through the server and Apple's push service on its way to your phone. The server doesn't store it.
-- **Pairing details.** When you pair a device through your account, the server passes the host's one-time invite and its network addresses to your device and doesn't keep them.
+- **Pairing details.** When you pair a device through your account, the server passes the host's one-time invite and its network addresses to your device and keeps neither the invite nor the addresses (only the record described under "Devices on your hosts").
 
 ## What passes through without being kept
 
@@ -54,6 +56,8 @@ If you don't want to extend that trust, turn off **Accept devices from your acco
 - **Account:** until you delete it.
 - **Hosts:** until you run `pinomad leave` on the host, join it to another account, or delete your account.
 - **Sessions:** 30 days from sign-in, never extended. Signing out removes that session; **Sign out everywhere** removes all of them; changing your password removes all but the one you're using.
+- **Devices on your account:** until you delete your account. A removed device stays listed as removed. An unnamed entry from an older app is cleared at a later sign-in once it has no session and no host record.
+- **Devices on your hosts:** a pairing the host never reports is cleared a day after its invite expires. The rest stay until the host leaves your account (`pinomad leave`), joins another account, or you delete your account. A pending revocation is removed when the host confirms it.
 - **Host join commands:** they expire after 10 minutes, and expired ones are cleared the next time anyone makes one.
 - **Push registrations:** removed when you turn push off or sign out on the phone, use **Sign out everywhere**, change your password, delete your account, or when Apple reports the token is no longer valid. A registration the app hasn't refreshed for 90 days is ignored and then cleared. An account keeps at most 32.
 - **Invites:** an unused invite expires after 7 days and is cleared later. A used invite stays on record as used.
@@ -63,9 +67,9 @@ If you don't want to extend that trust, turn off **Accept devices from your acco
 
 You can delete your account at any time; the server asks for your password first. If your app doesn't offer the option yet, ask the operator (see Contact).
 
-Deleting the account removes, in one step, your account, its sessions, its host join commands, the bindings of your hosts and its push registrations. Your hosts are disconnected from the server right away and can't connect through it again until you join them to another account. Invites you used stay marked as used, without your name.
+Deleting the account removes, in one step, your account, its sessions, its devices and their records on your hosts, its host join commands, the bindings of your hosts and its push registrations. Your hosts are disconnected from the server right away and can't connect through it again until you join them to another account. Invites you used stay marked as used, without your name.
 
-What it doesn't touch: the list of paired devices on each host. Each host keeps its own list and is the one that decides who gets in, so devices stay paired there until you revoke them in the host's Devices page. Everything else on your hosts is yours and was never on the server.
+What it doesn't touch: the list of paired devices on each host. Each host keeps its own list and is the one that decides who gets in, so devices stay paired there until you revoke them in the host's Devices page. To have your hosts revoke a device first, remove it under **Devices** in the account panel before deleting the account. Everything else on your hosts is yours and was never on the server.
 
 The admin account can't be deleted this way, because only it can create invites.
 
@@ -75,7 +79,7 @@ The admin account can't be deleted this way, because only it can create invites.
 
 - The web app at `app.pinomad.si` sets one cookie on `pinomad.si`, `pinomad_app=1`, in browsers that have used it. It holds no account information; it only makes the site's **Sign in** link read **Open web app** and send the home page straight to the app.
 - The docs remember your light or dark theme in your browser's local storage.
-- The web app itself keeps you signed in with a session cookie that scripts can't read, and stores your paired hosts in the browser's local storage.
+- The web app itself keeps you signed in with a session cookie that scripts can't read, and stores your paired hosts in the browser's local storage, along with the random device ID it sends when you sign in.
 
 ## Where data is stored
 

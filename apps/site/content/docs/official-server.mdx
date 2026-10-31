@@ -60,8 +60,20 @@ To change your password, click **Change password** in the account panel on the w
 
 If you forgot your password, there's no reset email, because the server doesn't store an email address. Ask the server's admin (whoever sent your invite) to reset it. They give you a new password; sign in with it, then change it to one only you know.
 
+## Devices on your account
+
+The account panel on the web and in the Mac app lists every browser and app that has signed in to your account: its name, when it last signed in, and the hosts it joined through the account, with its state on each (registered, waiting for the host to revoke it, or revoked). The one you're using is marked **This device**.
+
+If you lose a device, click **Remove** next to it and enter your password. The server signs it out of your account and asks each host it joined through the account to revoke it. A host that's online does it right away; one that's offline does it the next time it connects. The host still has the final say: you can pair the device with it again later with a QR code. To remove the device you're using, sign out instead.
+
+The server only knows what went through the account:
+
+- A device paired with a QR code, or paired through the account before your host and the server supported this list, isn't on it. Revoke it in the host's Settings → Devices.
+- A host running an older version doesn't report the devices it admits, so the server can't ask it to revoke one. The Remove form names those hosts; revoke the device there, or update the host with `pinomad upgrade` so later pairings are covered.
+- Apps from before this list show up as **Unknown device**, once per sign-in.
+
 ## Delete your account
 
 To delete your account, sign in on the web or in the Mac app, click **Delete account** at the bottom of the account panel, and enter your password. The server deletes the account along with its sessions, host bindings and push registrations, and every device is signed out. The admin account can't be deleted.
 
-Hosts joined to the account lose their connection to the server right away. To reach one through a server again, run `pinomad join` on it with another account. Your devices stay registered on each host, because the host keeps that list itself: a device that reaches the host directly (same network or Tailscale) still connects. To remove a device, revoke it in the host's Settings → Devices.
+Hosts joined to the account lose their connection to the server right away. To reach one through a server again, run `pinomad join` on it with another account. Your devices stay registered on each host, because the host keeps that list itself: a device that reaches the host directly (same network or Tailscale) still connects. To remove a device, revoke it in the host's Settings → Devices, or remove it under **Devices** before you delete the account.

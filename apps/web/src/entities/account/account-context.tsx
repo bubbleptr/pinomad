@@ -18,6 +18,8 @@ const noAccount: AccountModel = {
   changePassword: unavailable,
   deleteAccount: unavailable,
   refreshHosts: unavailable,
+  listDevices: unavailable,
+  kickDevice: unavailable,
   createJoinToken: unavailable,
   listInvites: unavailable,
   createInvite: unavailable,

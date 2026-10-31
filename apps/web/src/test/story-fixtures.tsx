@@ -6,7 +6,7 @@ import type { Decorator } from "@storybook/react-vite";
 import { useEffect, useState, type ReactNode } from "react";
 import { fn } from "storybook/test";
 import type { ConversationId, ConversationView, EntryRecord } from "@earendil-works/pi-durable";
-import type { AccountHost, AccountHostMatch, AccountInvite } from "@pinomad/client/account.ts";
+import type { AccountDevice, AccountHost, AccountHostMatch, AccountInvite } from "@pinomad/client/account.ts";
 import type { StoredHost } from "@pinomad/client/stored-host.ts";
 import type { HostProviders, LoginFlow, LoginMethod, ProviderInfo } from "@pinomad/protocol/auth.ts";
 import { PROTOCOL } from "@pinomad/protocol/frames.ts";
@@ -611,6 +611,57 @@ export const ACCOUNT_HOSTS: readonly AccountHostMatch[] = [
   },
 ];
 
+/**
+ * The account's devices (#452): this browser, a phone and a desktop in use, a
+ * lost phone removed an hour ago that the offline studio hasn't revoked yet,
+ * and an unnamed sign-in from an older app.
+ */
+export const ACCOUNT_DEVICES: readonly AccountDevice[] = [
+  {
+    id: 5,
+    name: "Mac Chrome",
+    createdAt: now - 30 * 24 * 60 * MINUTE,
+    lastSeenAt: now - 2 * MINUTE,
+    current: true,
+    hosts: [
+      { hostId: "h".repeat(43), name: "kieran-mbp", state: "registered" },
+      { hostId: "o".repeat(43), name: "omarchy", state: "registered" },
+    ],
+  },
+  {
+    id: 4,
+    name: "iPhone",
+    createdAt: now - 20 * 24 * 60 * MINUTE,
+    lastSeenAt: now - 3 * 60 * MINUTE,
+    current: false,
+    hosts: [
+      { hostId: "h".repeat(43), name: "kieran-mbp", state: "registered" },
+      { hostId: "o".repeat(43), name: "omarchy", state: "registered" },
+    ],
+  },
+  {
+    id: 3,
+    name: "Mac Desktop",
+    createdAt: now - 12 * 24 * 60 * MINUTE,
+    lastSeenAt: now - 5 * 24 * 60 * MINUTE,
+    current: false,
+    hosts: [{ hostId: "h".repeat(43), name: "kieran-mbp", state: "registered" }],
+  },
+  {
+    id: 2,
+    name: "iPhone",
+    createdAt: now - 90 * 24 * 60 * MINUTE,
+    lastSeenAt: now - 9 * 24 * 60 * MINUTE,
+    current: false,
+    kickedAt: now - 60 * MINUTE,
+    hosts: [
+      { hostId: "h".repeat(43), name: "kieran-mbp", state: "revoked" },
+      { hostId: "s".repeat(43), name: "studio", state: "revoking" },
+    ],
+  },
+  { id: 1, createdAt: now - 40 * 24 * 60 * MINUTE, lastSeenAt: now - 40 * 24 * 60 * MINUTE, current: false, hosts: [] },
+];
+
 export const ACCOUNT_INVITES: readonly AccountInvite[] = [
   { id: 3, createdAt: now - 5 * MINUTE, expiresAt: now + 7 * 24 * 60 * MINUTE - 5 * MINUTE },
   { id: 2, createdAt: now - 3 * 24 * 60 * MINUTE, expiresAt: now + 4 * 24 * 60 * MINUTE, usedAt: now - 2 * 24 * 60 * MINUTE, usedBy: "alex" },
@@ -641,6 +692,8 @@ export function fakeAccount(state: AccountState): AccountModel {
     changePassword: fn(async () => ({ ok: true as const, value: undefined })),
     deleteAccount: fn(async () => ({ ok: true as const, value: undefined })),
     refreshHosts: fn(async () => ({ ok: true as const, value: [] })),
+    listDevices: fn(async () => ({ ok: true as const, value: ACCOUNT_DEVICES })),
+    kickDevice: fn(async () => ({ ok: true as const, value: undefined })),
     createJoinToken: fn(async () => ({
       ok: true as const,
       value: { token: "join-7f3a9c", expiresAt: Date.now() + 10 * MINUTE, command: "pinomad join https://pinomad.si join-7f3a9c" },

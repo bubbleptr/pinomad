@@ -10,7 +10,15 @@ import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Token } from "@astryxdesign/core/Token";
 import { useEffect, useState } from "react";
-import type { AccountError, AccountHostMatch, AccountInvite, CreatedInvite, JoinToken } from "@pinomad/client/account.ts";
+import type {
+  AccountDevice,
+  AccountDeviceHost,
+  AccountError,
+  AccountHostMatch,
+  AccountInvite,
+  CreatedInvite,
+  JoinToken,
+} from "@pinomad/client/account.ts";
 import type { StoredHost } from "@pinomad/client/stored-host.ts";
 import { relativeTime } from "@pinomad/client/family.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
@@ -69,6 +77,8 @@ export function accountErrorMessage(error: AccountError): string {
       return "Use a password of at least 12 characters.";
     case "wrong_password":
       return "The current password is wrong.";
+    case "current_device":
+      return "That's the device you're using. Sign out instead.";
     case "admin_account":
       return "The server's admin account can't be deleted.";
     case "username_taken":
@@ -318,6 +328,7 @@ function SignedIn({
         <Banner status="error" title="Couldn't pair" description={accountErrorMessage(actionError)} />
       )}
       <AddHost account={account} />
+      <Devices account={account} hosts={state.hosts} />
       {state.admin ? <Invites account={account} /> : null}
       <ChangePassword account={account} />
       <SignOut account={account} onNotice={onNotice} />
@@ -594,6 +605,175 @@ function InviteRow({ invite, now, onRevoke }: { invite: AccountInvite; now: numb
   );
 }
 
+/** A device's standing on one host, as the row says it (ADR-0037 §6). */
+const DEVICE_HOST_STATE: Record<AccountDeviceHost["state"], string> = {
+  registered: "registered",
+  revoking: "waiting for the host to revoke",
+  revoked: "revoked",
+};
+
+/**
+ * The account's devices (#452, ADR-0037): every install that signed in, where
+ * it joined through the account, and Remove — which signs it out of the
+ * account and asks those hosts to revoke it. Hidden on servers that predate
+ * the list.
+ */
+function Devices({ account, hosts }: { account: AccountModel; hosts: readonly AccountHostMatch[] }) {
+  const now = useNow(60_000);
+  const [devices, setDevices] = useState<readonly AccountDevice[]>();
+  const [error, setError] = useState<AccountError>();
+  const [unsupported, setUnsupported] = useState(false);
+  const [removing, setRemoving] = useState<AccountDevice>();
+  const load = (): Promise<void> =>
+    account.listDevices().then((result) => {
+      if (result.ok) {
+        setDevices(result.value);
+        setError(undefined);
+      } else if (result.error.status === 404) setUnsupported(true);
+      else setError(result.error);
+    });
+  // One load per mount; Refresh and a removal reload explicitly.
+  useEffect(() => {
+    void load();
+  }, [account]);
+  if (unsupported) return null;
+  return (
+    <VStack gap={2}>
+      <HStack gap={2} vAlign="center" hAlign="between">
+        <Text weight="semibold">Devices</Text>
+        <Button label="Refresh" variant="ghost" size="sm" onClick={() => void load()} />
+      </HStack>
+      {error === undefined ? null : (
+        <Banner status="warning" title="Couldn't load devices" description={accountErrorMessage(error)} />
+      )}
+      {devices === undefined || devices.length === 0 ? null : (
+        <List density="compact">
+          {devices.map((device) => (
+            <DeviceRow
+              key={device.id}
+              device={device}
+              now={now}
+              isBusy={removing !== undefined}
+              onRemove={() => setRemoving(device)}
+            />
+          ))}
+        </List>
+      )}
+      {removing === undefined ? null : (
+        <RemoveDevice
+          account={account}
+          device={removing}
+          hosts={hosts}
+          onClose={(removed) => {
+            setRemoving(undefined);
+            if (removed) void load();
+          }}
+        />
+      )}
+    </VStack>
+  );
+}
+
+function DeviceRow({
+  device,
+  now,
+  isBusy,
+  onRemove,
+}: {
+  device: AccountDevice;
+  now: number;
+  isBusy: boolean;
+  onRemove: () => void;
+}) {
+  const signIn = `Last sign-in ${ago(device.lastSeenAt, now)}`;
+  const end = device.current ? (
+    <Token label="This device" size="sm" />
+  ) : device.kickedAt !== undefined ? (
+    <Token label="Removed" color="gray" size="sm" />
+  ) : (
+    <Button label="Remove" variant="ghost" size="sm" isDisabled={isBusy} onClick={onRemove} />
+  );
+  return (
+    <ListItem
+      label={device.name ?? "Unknown device"}
+      description={
+        <VStack gap={0}>
+          <Text type="inherit">
+            {device.kickedAt === undefined ? signIn : `${signIn} · removed ${ago(device.kickedAt, now)}`}
+          </Text>
+          {device.hosts.length === 0 ? null : (
+            <Text type="inherit">
+              {device.hosts.map((host) => `${host.name}: ${DEVICE_HOST_STATE[host.state]}`).join(" · ")}
+            </Text>
+          )}
+        </VStack>
+      }
+      endContent={end}
+    />
+  );
+}
+
+/** "A", "A and B", "A, B and C". */
+const listNames = (names: readonly string[]): string =>
+  names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+
+/**
+ * The password again, as for deleting the account (ADR-0037 §3): a session
+ * left on a lost phone mustn't be able to remove the owner's other devices.
+ */
+function RemoveDevice({
+  account,
+  device,
+  hosts,
+  onClose,
+}: {
+  account: AccountModel;
+  device: AccountDevice;
+  hosts: readonly AccountHostMatch[];
+  onClose: (removed: boolean) => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<AccountError>();
+  const name = device.name ?? "this device";
+  // A host that doesn't report devices never shows up in device.hosts, so
+  // there's no telling whether this device joined it: name them all.
+  const unreachable = hosts.filter((match) => match.host.deviceReports === false).map((match) => match.host.name);
+  const submit = (): void => {
+    if (password === "" || busy) return;
+    setBusy(true);
+    setError(undefined);
+    void account.kickDevice({ id: device.id, password }).then((result) => {
+      setBusy(false);
+      // Already gone (removed from another device): the reload shows it.
+      if (result.ok || result.error.code === "not_found") onClose(true);
+      else setError(result.error);
+    });
+  };
+  return (
+    <VStack gap={2}>
+      <Text weight="semibold">Remove {name}</Text>
+      <Text type="supporting">
+        This signs {name} out of your account and asks each host it joined through your account to revoke it. Hosts that
+        are offline revoke it when they reconnect.
+        {unreachable.length === 0
+          ? null
+          : unreachable.length === 1
+            ? ` The host ${unreachable[0]} can't be asked. If ${name} joined it, revoke it in that host's Devices.`
+            : ` The hosts ${listNames(unreachable)} can't be asked. If ${name} joined them, revoke it in each one's Devices.`}
+      </Text>
+      <TextInput label="Password" type="password" value={password} onChange={setPassword} onEnter={submit} width="100%" />
+      {error === undefined ? null : (
+        <Banner status="error" title="Couldn't remove the device" description={accountErrorMessage(error)} />
+      )}
+      <HStack gap={2}>
+        <Button label="Remove device" variant="destructive" isLoading={busy} isDisabled={password === ""} onClick={submit} />
+        <Button label="Cancel" variant="ghost" onClick={() => onClose(false)} />
+      </HStack>
+    </VStack>
+  );
+}
+
 /**
  * "Change password" (#450): this session stays, the account's others end. A
  * forgotten password has no form here — the server's admin resets it.
@@ -707,7 +887,7 @@ function SignOut({ account, onNotice }: { account: AccountModel; onNotice: (noti
           }}
         />
       </HStack>
-      <Text type="supporting">Signing out doesn't unpair this device from its hosts. Revoke it in Devices.</Text>
+      <Text type="supporting">Signing out doesn't unpair this device from its hosts. Remove it from another device, or revoke it on each host.</Text>
     </VStack>
   );
 }

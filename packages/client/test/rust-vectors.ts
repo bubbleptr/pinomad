@@ -590,7 +590,7 @@ const respondFetch = (status: number, body: string | null): AccountFetch => () =
 const invokeOp = (client: AccountClient, op: AccountOpDesc): Promise<unknown> => {
   switch (op.kind) {
     case "login":
-      return client.login(op.username, op.password);
+      return client.login(op.username, op.password, op.device);
     case "requestPairing":
       return client.requestPairing(op.hostId);
     case "me":
