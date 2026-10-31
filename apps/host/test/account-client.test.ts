@@ -5,7 +5,7 @@
 // invite. Also pinned: a host that 4401s a stored device never gets a fresh
 // invite minted behind the user's back.
 import { hostname } from "node:os";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/protocol/noise.ts";
 import {
   connectRemoteDurable,
@@ -170,6 +170,44 @@ describe("account client against a real server", () => {
     expect(matchAccountHosts(server.origin, hosts, store, [], true)[0]).toMatchObject({ status: "paired", linkable: false, autoRegister: false });
     const remote = await connectDevice(record.url, record.hostKey, record.privateKey);
     expect(remote.view.current().connection).toBe("connected");
+  });
+
+  it("claims devices at login, lists them with their hosts, and kicks one from the host (#452)", async () => {
+    const server = await startServer();
+    const { host, hostId } = await joinedHost(server);
+    const observer = await connectTo(defer, host);
+    const signIn = async (id: string, name: string) =>
+      bearerClient(server.origin, unwrap(await bearerClient(server.origin).login("admin", GOOD_PASSWORD, { id, name })).token);
+    const laptop = await signIn("L".repeat(22), "Mac Chrome");
+    const phone = await signIn("P".repeat(22), "iPhone");
+    const paired = await pairViaAccount(phone, hostId, "iPhone");
+    if (!paired.ok) throw new Error("pairing failed");
+    await waitForView(observer.view, (view) => view.devices.length === 1);
+
+    // A second login on the same install is the same account device.
+    const again = await signIn("L".repeat(22), "Mac Chrome");
+    const listed = async () => unwrap(await again.listDevices());
+    // The host's device-admitted report lands asynchronously.
+    await vi.waitFor(async () => expect((await listed()).find((d) => d.name === "iPhone")?.hosts).toHaveLength(1));
+    const devices = await listed();
+    expect(devices).toHaveLength(2);
+    expect(devices.find((d) => d.name === "Mac Chrome")).toMatchObject({ current: true, hosts: [] });
+    const target = devices.find((d) => d.name === "iPhone")!;
+    expect(target).toMatchObject({ current: false, hosts: [{ hostId, state: "registered" }] });
+
+    expect(await laptop.kickDevice(target.id, "wrong password")).toEqual({ ok: false, error: { code: "wrong_password", status: 403 } });
+    const self = devices.find((d) => d.current)!;
+    expect(await laptop.kickDevice(self.id, GOOD_PASSWORD)).toEqual({ ok: false, error: { code: "current_device", status: 409 } });
+    unwrap(await laptop.kickDevice(target.id, GOOD_PASSWORD));
+
+    // The host revokes it and confirms; the phone's session is gone.
+    await waitForView(observer.view, (view) => view.devices.length === 0);
+    await vi.waitFor(async () =>
+      expect((await listed()).find((d) => d.id === target.id)).toMatchObject({ kickedAt: expect.any(Number), hosts: [{ state: "revoked" }] }),
+    );
+    const gone = await phone.me();
+    expect(gone.ok === false && isUnauthenticated(gone.error)).toBe(true);
+    expect(unwrap(await laptop.listHosts())[0]).toMatchObject({ deviceReports: true });
   });
 
   it("cookie mode: the token never enters the response body, the jar carries the session", async () => {
