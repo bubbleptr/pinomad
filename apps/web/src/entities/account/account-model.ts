@@ -106,6 +106,12 @@ export interface AccountModel {
   revokeAll(): Promise<AccountResult<void>>;
   /** Signs out the account's other sessions; this one stays (#450). */
   changePassword(input: { currentPassword: string; newPassword: string }): Promise<AccountResult<void>>;
+  /**
+   * Deletes the account and lands signed-out (#451); a refusal or a failed
+   * request keeps the session. Pairings stay: the device's registration on
+   * each host is the host's to revoke.
+   */
+  deleteAccount(input: { password: string }): Promise<AccountResult<void>>;
   refreshHosts(): Promise<AccountResult<readonly AccountHostMatch[]>>;
   createJoinToken(): Promise<AccountResult<JoinToken>>;
   /** Admin only (#449). */
@@ -595,11 +601,23 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     return { ok: true, value: undefined };
   };
 
-  /** An account call that signs out when the server says the session is gone. */
-  const authed = async <T,>(call: (active: AccountClient) => Promise<AccountResult<T>>): Promise<AccountResult<T>> => {
+  /**
+   * An account call that signs out when the server says the session is gone.
+   * `onSuccess` runs only while the session that made the call is current.
+   */
+  const authed = async <T,>(
+    call: (active: AccountClient) => Promise<AccountResult<T>>,
+    onSuccess?: () => void,
+  ): Promise<AccountResult<T>> => {
     if (client === undefined) return fail("unauthenticated");
-    const result = await call(client);
-    if (!result.ok && isUnauthenticated(result.error)) signedOut();
+    const active = client;
+    const started = epoch;
+    const result = await call(active);
+    // Signed out (and maybe into another account) while this ran: the answer
+    // belongs to the old session and must not touch the new one.
+    if (!live(active, started)) return result;
+    if (result.ok) onSuccess?.();
+    else if (isUnauthenticated(result.error)) signedOut();
     return result;
   };
 
@@ -645,6 +663,15 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
 
     changePassword: ({ currentPassword, newPassword }) =>
       authed((active) => active.changePassword(currentPassword, newPassword)),
+    // Unlike revokeAll, a failure keeps the session: the account may still exist.
+    deleteAccount: ({ password }) =>
+      authed(
+        (active) => active.deleteAccount(password),
+        () => {
+          if (mode === "bearer") void deps.bridge?.account?.clear().catch(() => undefined);
+          signedOut();
+        },
+      ),
     createJoinToken: () => authed((active) => active.createJoinToken()),
     listInvites: () => authed((active) => active.listInvites()),
     createInvite: () => authed((active) => active.createInvite()),

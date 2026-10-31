@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { userEvent, within } from "storybook/test";
+import { fn, userEvent, within } from "storybook/test";
 import { ACCOUNT_HOSTS, HOME_HOST, signedIn, withAccount, withHosts } from "../../test/story-fixtures.tsx";
 import { AccountPanel } from "./account-panel.tsx";
 
@@ -40,6 +40,28 @@ export const ChangingPassword: Story = {
   decorators: [withAccount(signedIn())],
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "Change password" }));
+  },
+};
+
+/** Deleting the account (#451): the password again, and what stays on the hosts. */
+export const DeletingAccount: Story = {
+  decorators: [withAccount(signedIn())],
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Delete account" }));
+  },
+};
+
+/** A wrong password keeps the session and the form. */
+export const DeleteAccountWrongPassword: Story = {
+  decorators: [
+    withAccount(signedIn(), {
+      deleteAccount: fn(async () => ({ ok: false as const, error: { code: "wrong_password", status: 403 } })),
+    }),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Delete account" }));
+    await userEvent.type(canvas.getByLabelText("Password"), "not my password{Enter}");
   },
 };
 

@@ -509,6 +509,120 @@ describe("account model", () => {
     expect(JSON.parse(calls[4]!.init!.body as string)).toEqual({ currentPassword: "pw", newPassword: "a long new password" });
   });
 
+  it("deletes the account and lands signed-out; a refusal or a network failure keeps the session (#451)", async () => {
+    const { model, calls, store } = makeModel({
+      fake: fakeFetch(
+        { status: 401 },
+        { status: 200, body: { user: { username: "bob" } } },
+        { status: 200, body: [] },
+        { status: 403, body: { error: "wrong_password" } },
+        { status: 0 },
+        { status: 204 },
+      ),
+      store: hosts([storedHost({ account: { serverOrigin: ORIGIN, hostId: "h1" } })]),
+    });
+    await vi.waitFor(() => expect(model.state.status).toBe("signed-in"));
+    expect(await model.deleteAccount({ password: "nope" })).toEqual({ ok: false, error: { code: "wrong_password", status: 403 } });
+    expect(model.state.status).toBe("signed-in");
+    expect(await model.deleteAccount({ password: "pw" })).toEqual({ ok: false, error: { code: "network" } });
+    expect(model.state.status).toBe("signed-in");
+    expect((await model.deleteAccount({ password: "pw" })).ok).toBe(true);
+    expect(calls[5]!.url).toBe(`${ORIGIN}/api/me/delete`);
+    expect(JSON.parse(calls[5]!.init!.body as string)).toEqual({ password: "pw" });
+    expect(model.state).toEqual({ status: "signed-out", mode: "cookie", serverOrigin: ORIGIN });
+    // The device's registration on each host is the host's to revoke: the pairing stays.
+    expect(store.stored).toHaveLength(1);
+  });
+
+  it("bearer account deletion clears the stored token (#451)", async () => {
+    let cleared = 0;
+    const account = {
+      get: () => Promise.resolve({ serverOrigin: ORIGIN, token: "tok" }),
+      save: () => Promise.resolve(),
+      clear: () => {
+        cleared += 1;
+        return Promise.resolve();
+      },
+    };
+    const bridge = { hosts: { list: () => Promise.resolve([]), save: () => Promise.resolve(), remove: () => Promise.resolve() }, account } as unknown as DesktopBridge;
+    const { model } = makeModel({ fake: fakeFetch(
+      { status: 200, body: { user: { username: "bob" } } },
+      { status: 200, body: [] },
+      { status: 204 },
+    ), bridge });
+    await vi.waitFor(() => expect(model.state.status).toBe("signed-in"));
+    expect((await model.deleteAccount({ password: "pw" })).ok).toBe(true);
+    expect(model.state).toMatchObject({ status: "signed-out", mode: "bearer", serverOrigin: ORIGIN });
+    expect(cleared).toBe(1);
+  });
+
+  describe("an answer that lands after sign-out and a new sign-in belongs to the old session", () => {
+    // Bearer mode: the stored token is what a stale result could wipe.
+    const setup = (path: string) => {
+      let token: string | undefined = "a-token";
+      const account = {
+        get: () => Promise.resolve(token === undefined ? undefined : { serverOrigin: ORIGIN, token }),
+        save: (saved: { token: string }) => {
+          token = saved.token;
+          return Promise.resolve();
+        },
+        clear: () => {
+          token = undefined;
+          return Promise.resolve();
+        },
+      };
+      const bridge = { hosts: { list: () => Promise.resolve([]), save: () => Promise.resolve(), remove: () => Promise.resolve() }, account } as unknown as DesktopBridge;
+      let answer!: (response: { status: number; body?: unknown }) => void;
+      const deferred = new Promise<{ status: number; body?: unknown }>((resolve) => {
+        answer = resolve;
+      });
+      const respond = (r: { status: number; body?: unknown }) => ({
+        status: r.status,
+        json: () => Promise.resolve(r.body),
+        text: () => Promise.resolve(JSON.stringify(r.body)),
+      });
+      const impl: AccountFetch = async (url) => {
+        const route = url.slice(ORIGIN.length);
+        if (route === path) return respond(await deferred);
+        if (route === "/api/me") return respond({ status: 200, body: { user: { username: "alice" } } });
+        if (route === "/api/hosts") return respond({ status: 200, body: [] });
+        if (route === "/api/logout") return respond({ status: 204 });
+        if (route === "/api/login") return respond({ status: 200, body: { user: { username: "bob" }, expiresAt: 1, token: "b-token" } });
+        throw new Error(`unexpected ${route}`);
+      };
+      const { model } = makeModel({ fake: { impl, calls: [] }, bridge });
+      return { model, answer, token: () => token };
+    };
+
+    const switchToBob = async (model: AccountModel): Promise<void> => {
+      await model.logout();
+      expect((await model.login({ username: "bob", password: "pw", serverOrigin: ORIGIN })).ok).toBe(true);
+      expect(model.state).toMatchObject({ status: "signed-in", user: "bob" });
+    };
+
+    it("a delete's success doesn't sign the new account out or clear its token (#451)", async () => {
+      const { model, answer, token } = setup("/api/me/delete");
+      await vi.waitFor(() => expect(model.state).toMatchObject({ status: "signed-in", user: "alice" }));
+      const deleting = model.deleteAccount({ password: "pw" });
+      await switchToBob(model);
+      answer({ status: 204 });
+      expect((await deleting).ok).toBe(true);
+      expect(model.state).toMatchObject({ status: "signed-in", user: "bob" });
+      expect(token()).toBe("b-token");
+    });
+
+    it("a password change's 401 doesn't sign the new account out (#450)", async () => {
+      const { model, answer, token } = setup("/api/password");
+      await vi.waitFor(() => expect(model.state).toMatchObject({ status: "signed-in", user: "alice" }));
+      const changing = model.changePassword({ currentPassword: "pw", newPassword: "a long new password" });
+      await switchToBob(model);
+      answer({ status: 401, body: { error: "unauthenticated" } });
+      expect((await changing).ok).toBe(false);
+      expect(model.state).toMatchObject({ status: "signed-in", user: "bob" });
+      expect(token()).toBe("b-token");
+    });
+  });
+
   it("revokeAll signs out everywhere including this session", async () => {
     const { model } = makeModel({ fake: fakeFetch(
       { status: 401 },

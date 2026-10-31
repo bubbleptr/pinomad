@@ -59,3 +59,9 @@ A notification carries only the conversation title and the event, never the ques
 To change your password, click **Change password** in the account panel on the web or in the Mac app, or tap **Change Password** on the iPhone's account page. Enter your current password and a new one (at least 12 characters). This device stays signed in, and your other devices are signed out. Sign in on them again with the new password, and on the iPhone that also turns push back on.
 
 If you forgot your password, there's no reset email, because the server doesn't store an email address. Ask the server's admin (whoever sent your invite) to reset it. They give you a new password; sign in with it, then change it to one only you know.
+
+## Delete your account
+
+To delete your account, sign in on the web or in the Mac app, click **Delete account** at the bottom of the account panel, and enter your password. The server deletes the account along with its sessions, host bindings and push registrations, and every device is signed out. The admin account can't be deleted.
+
+Hosts joined to the account lose their connection to the server right away. To reach one through a server again, run `pinomad join` on it with another account. Your devices stay registered on each host, because the host keeps that list itself: a device that reaches the host directly (same network or Tailscale) still connects. To remove a device, revoke it in the host's Settings → Devices.
