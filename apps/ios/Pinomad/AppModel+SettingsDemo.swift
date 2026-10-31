@@ -7,7 +7,8 @@ import PinomadCore
 /// among them), a chat, and one archived root. `failed`
 /// fails the first machine and opens its failure page; `pairing` the first-run
 /// page with nothing paired; `account` adds a signed-in account (its calls
-/// never leave the app). The addresses are
+/// never leave the app); `signed-out` only the remembered account a sign-out
+/// leaves behind, with no session. The addresses are
 /// `.invalid` and the injected hosts block switching and forgetting, so
 /// nothing reaches the keychain or the network.
 extension AppModel {
@@ -30,6 +31,9 @@ extension AppModel {
             accountRecord = AccountRecord(
                 serverOrigin: "https://accounts.invalid", username: "kieran",
                 token: "demo", expiresAt: Date.now.addingTimeInterval(86_400).timeIntervalSince1970 * 1000)
+        }
+        if mode == "signed-out" {
+            accountRecord = AccountRecord(serverOrigin: "https://accounts.invalid", username: "kieran")
         }
         if mode == "failed" {
             failDevHost("demo-mbp", .unreachable("Couldn't reach mbp.invalid:7777."))
