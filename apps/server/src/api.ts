@@ -61,6 +61,8 @@ export interface ApiContext {
   readonly pairing: PairingBroker;
   /** Closes a host's control connection once its account binding is gone. */
   readonly disconnectHost: (hostId: string) => void;
+  /** Drops a deleted account's relay limit state: users.id is reusable, so a new account must not inherit it (#453). */
+  readonly forgetAccount: (userId: number) => void;
 }
 
 const SESSION_COOKIE = "__Host-pinomad-session";
@@ -497,6 +499,7 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       // The bindings are gone, and with them the hosts' authorization: close
       // their control connections now rather than at their next register.
       for (const hostId of result.hostIds) ctx.disconnectHost(hostId);
+      ctx.forgetAccount(session.userId);
       send(204, undefined, { "set-cookie": clearSessionCookie });
       return;
     }

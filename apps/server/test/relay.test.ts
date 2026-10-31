@@ -2,6 +2,7 @@ import { once } from "node:events";
 import { mkdir, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket, type ClientOptions } from "ws";
@@ -11,6 +12,7 @@ import {
   RELAY_CLOSE,
   relayHostId,
   signRelayChallenge,
+  signRelayChallengeV2,
   type RegisterFrame,
 } from "@pinomad/protocol/relay.ts";
 import { openAccounts, type Accounts } from "../src/accounts.ts";
@@ -456,5 +458,241 @@ describe("relay web client serving", () => {
   it("keeps plain 404s when webRoot is unset", async () => {
     const relay = await start();
     expect((await get(relay, "/")).status).toBe(404);
+  });
+});
+
+describe("relay limits (issue #453)", () => {
+  /** A device the host was told about (`incoming`), not yet accepted. */
+  async function dial(relay: Relay, control: WebSocket, path = `/c/${hostId}`): Promise<{ device: WebSocket; connId: string }> {
+    const incomingP = once(control, "message");
+    const device = connect(relay, path);
+    await once(device, "open");
+    const incoming = decodeRelayToHost(asText((await incomingP)[0]));
+    if (incoming.t !== "incoming") throw new Error("expected incoming");
+    return { device, connId: incoming.connId };
+  }
+
+  async function accept(relay: Relay, connId: string): Promise<WebSocket> {
+    const host = connect(relay, `/accept/${connId}`);
+    await once(host, "open");
+    return host;
+  }
+
+  /** The host's first frame through the splice is IK message 2 — it authenticates the device. */
+  async function authenticate(device: WebSocket, host: WebSocket): Promise<void> {
+    const arrived = once(device, "message");
+    host.send(Buffer.from([2]));
+    await arrived;
+  }
+
+  /** A device the relay refuses outright: it opens, then closes. */
+  async function refused(relay: Relay, path = `/c/${hostId}`): Promise<[number, string]> {
+    const device = connect(relay, path);
+    await once(device, "open");
+    return closeEvent(device);
+  }
+
+  it("refuses a device past the per-host cap with 4629 and never announces it", async () => {
+    const relay = await start({ acceptTimeoutMs: 5_000, limits: { perHost: 2 } });
+    const control = await registerHost(relay);
+    await dial(relay, control);
+    await dial(relay, control);
+    let announced = false;
+    control.on("message", () => (announced = true));
+    expect((await refused(relay))[0]).toBe(RELAY_CLOSE.tooManyConnections);
+    expect(announced).toBe(false);
+  });
+
+  it("still answers 4604 for an offline host, not a cap", async () => {
+    const relay = await start({ acceptTimeoutMs: 5_000, limits: { perHost: 1 } });
+    expect((await refused(relay, `/c/${relayHostId(ed25519.keygen().publicKey)}`))[0]).toBe(RELAY_CLOSE.hostOffline);
+  });
+
+  it("frees a slot when a device goes away", async () => {
+    const relay = await start({ acceptTimeoutMs: 5_000, limits: { perHost: 1 } });
+    const control = await registerHost(relay);
+    const { device, connId } = await dial(relay, control);
+    const host = await accept(relay, connId);
+    const hostClosed = closeEvent(host);
+    device.close();
+    await hostClosed;
+    await dial(relay, control);
+  });
+
+  it("caps connections per account across its hosts", async () => {
+    const { relay, accounts } = await startWithAccounts({ acceptTimeoutMs: 5_000, limits: { perAccount: 2 } });
+    const otherKeys = ed25519.keygen();
+    const otherId = relayHostId(otherKeys.publicKey);
+    accounts.joinHost({ token: accounts.createJoinToken(1).token, hostId: otherId, noisePublicKey: "B".repeat(43) });
+    const control = await registerHost(relay);
+    const otherControl = await registerHost(relay, otherKeys);
+    await dial(relay, control);
+    await dial(relay, otherControl, `/c/${otherId}`);
+    expect((await refused(relay, `/c/${otherId}`))[0]).toBe(RELAY_CLOSE.tooManyConnections);
+  });
+
+  it("holds unauthenticated devices to the smaller cap; an authenticated one no longer counts", async () => {
+    const relay = await start({ acceptTimeoutMs: 5_000, limits: { perHost: 3, unauthenticatedPerHost: 1 } });
+    const control = await registerHost(relay);
+    const first = await dial(relay, control);
+    // Pending (no accept yet) is unauthenticated.
+    expect((await refused(relay))[0]).toBe(RELAY_CLOSE.tooManyConnections);
+    // Spliced, but the host has sent nothing yet: still unauthenticated.
+    const host = await accept(relay, first.connId);
+    expect((await refused(relay))[0]).toBe(RELAY_CLOSE.tooManyConnections);
+    await authenticate(first.device, host);
+    await dial(relay, control);
+  });
+
+  it("closes a splice whose host never answers the handshake with 4608, on both sides", async () => {
+    const relay = await start({ acceptTimeoutMs: 5_000, limits: { handshakeTimeoutMs: 200 } });
+    const control = await registerHost(relay);
+    // Authenticated first: its deadline would have fired before the silent one's.
+    const answered = await dial(relay, control);
+    const answeredHost = await accept(relay, answered.connId);
+    await authenticate(answered.device, answeredHost);
+
+    const silent = await dial(relay, control);
+    const silentHost = await accept(relay, silent.connId);
+    const hostClosed = closeEvent(silentHost);
+    expect((await closeEvent(silent.device))[0]).toBe(RELAY_CLOSE.handshakeTimeout);
+    expect((await hostClosed)[0]).toBe(RELAY_CLOSE.handshakeTimeout);
+    expect(answered.device.readyState).toBe(WebSocket.OPEN);
+  });
+
+  it("closes a pending device with 4608 when the handshake deadline beats the accept timeout", async () => {
+    const relay = await start({ acceptTimeoutMs: 5_000, limits: { handshakeTimeoutMs: 100 } });
+    const control = await registerHost(relay);
+    const { device } = await dial(relay, control);
+    expect((await closeEvent(device))[0]).toBe(RELAY_CLOSE.handshakeTimeout);
+  });
+
+  it("closes both sides with 4630 once the account's byte budget runs out, and refuses new devices until it refills", async () => {
+    let now = 0;
+    const relay = await start({ acceptTimeoutMs: 5_000, limits: { accountBytesPerSecond: 100, accountBurstBytes: 1000 }, now: () => now });
+    const control = await registerHost(relay);
+    const { device, connId } = await dial(relay, control);
+    const host = await accept(relay, connId);
+    await authenticate(device, host);
+
+    const hostClosed = closeEvent(host);
+    device.send(new Uint8Array(2000));
+    expect((await closeEvent(device))[0]).toBe(RELAY_CLOSE.trafficLimit);
+    expect((await hostClosed)[0]).toBe(RELAY_CLOSE.trafficLimit);
+
+    expect((await refused(relay))[0]).toBe(RELAY_CLOSE.trafficLimit);
+    now = 60_000;
+    await dial(relay, control);
+  });
+
+  it("never charges a device's bytes before the host answers, so a stranger can't drain the owner's budget", async () => {
+    const relay = await start({ acceptTimeoutMs: 5_000, limits: { accountBytesPerSecond: 1, accountBurstBytes: 1000 }, now: () => 0 });
+    const control = await registerHost(relay);
+    const { device, connId } = await dial(relay, control);
+    // Buffered before accept, then forwarded to a host that hasn't answered.
+    device.send(new Uint8Array(1500));
+    const host = connect(relay, `/accept/${connId}`);
+    // The buffered frame goes out during the upgrade: listen before `open`.
+    const forwarded = once(host, "message");
+    await once(host, "open");
+    await forwarded;
+    const second = once(host, "message");
+    device.send(new Uint8Array(1500));
+    await second;
+    // The budget is untouched: the host's answer goes through.
+    await authenticate(device, host);
+    expect(device.readyState).toBe(WebSocket.OPEN);
+  });
+
+  it("closes a device that streams past its handshake allowance to a silent host with 4630", async () => {
+    const relay = await start({ acceptTimeoutMs: 5_000, limits: { handshakeBytes: 1000 } });
+    const control = await registerHost(relay);
+    const { device, connId } = await dial(relay, control);
+    const host = await accept(relay, connId);
+    const first = once(host, "message");
+    device.send(new Uint8Array(600)); // a handshake-sized first message passes
+    await first;
+    const hostClosed = closeEvent(host);
+    device.send(new Uint8Array(600));
+    const [code, reason] = await closeEvent(device);
+    expect(code).toBe(RELAY_CLOSE.trafficLimit);
+    expect(reason).toMatch(/handshake/);
+    expect((await hostClosed)[0]).toBe(RELAY_CLOSE.trafficLimit);
+  });
+
+  it("lifts the handshake allowance once the host answers", async () => {
+    const relay = await start({ acceptTimeoutMs: 5_000, limits: { handshakeBytes: 1000 } });
+    const control = await registerHost(relay);
+    const { device, connId } = await dial(relay, control);
+    const host = await accept(relay, connId);
+    const first = once(host, "message");
+    device.send(new Uint8Array(600));
+    await first;
+    await authenticate(device, host);
+    const after = once(host, "message");
+    device.send(new Uint8Array(4000));
+    await after;
+    expect(device.readyState).toBe(WebSocket.OPEN);
+  });
+
+  /** Runs a one-shot `join` op for `keys` with `token`; resolves to the reply frame's type. */
+  async function joinOp(relay: Relay, keys: KeyPair, token: string): Promise<string> {
+    const socket = connect(relay, "/host");
+    const challengeP = once(socket, "message");
+    await once(socket, "open");
+    const challenge = decodeRelayToHost(asText((await challengeP)[0]));
+    if (challenge.t !== "challenge") throw new Error("expected challenge");
+    const id = relayHostId(keys.publicKey);
+    const args = { relayOrigin: ORIGIN, hostId: id, nonce: challenge.nonce };
+    const noisePublicKey = "C".repeat(43);
+    const reply = once(socket, "message");
+    socket.send(
+      encodeRelayFrame({
+        t: "register",
+        hostId: id,
+        signature: signRelayChallenge(keys.secretKey, args),
+        signatureV2: signRelayChallengeV2(keys.secretKey, { ...args, noisePublicKey }),
+        noisePublicKey,
+        op: "join",
+        joinToken: token,
+      }),
+    );
+    return decodeRelayToHost(asText((await reply)[0])).t;
+  }
+
+  it("closes a host's devices when it moves to another account, and re-admits them under the new one", async () => {
+    const { relay, accounts } = await startWithAccounts({ acceptTimeoutMs: 5_000, limits: { perAccount: 1 } });
+    const db = new DatabaseSync(accounts.dbPath);
+    const second = Number(db.prepare("INSERT INTO users (username, password_hash, created_at) VALUES ('second', 'x', 1)").run().lastInsertRowid);
+    db.close();
+    // Account 2 already owns another host; account 1 owns `hostId`.
+    const otherKeys = ed25519.keygen();
+    const otherId = relayHostId(otherKeys.publicKey);
+    accounts.joinHost({ token: accounts.createJoinToken(second).token, hostId: otherId, noisePublicKey: "B".repeat(43) });
+    const control = await registerHost(relay);
+    await registerHost(relay, otherKeys);
+
+    const { device, connId } = await dial(relay, control);
+    const host = await accept(relay, connId);
+    await authenticate(device, host);
+    const deviceClosed = closeEvent(device);
+    expect(await joinOp(relay, hostKeys, accounts.createJoinToken(second).token)).toBe("joined");
+    expect((await deviceClosed)[0]).toBe(RELAY_CLOSE.replaced);
+
+    // The reconnect counts against account 2, whose single slot it now holds.
+    await dial(relay, control);
+    expect((await refused(relay, `/c/${otherId}`))[0]).toBe(RELAY_CLOSE.tooManyConnections);
+  });
+
+  it("closes a host's devices when it leaves its account", async () => {
+    const relay = await start({ acceptTimeoutMs: 5_000 });
+    const control = await registerHost(relay);
+    const { device, connId } = await dial(relay, control);
+    const host = await accept(relay, connId);
+    await authenticate(device, host);
+    const deviceClosed = closeEvent(device);
+    const socket = await openControl(relay, hostKeys, { register: { op: "leave" } });
+    expect((await nextControl(socket)).t).toBe("left");
+    expect((await deviceClosed)[0]).toBe(RELAY_CLOSE.hostNotAllowed);
   });
 });

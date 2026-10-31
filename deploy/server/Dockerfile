@@ -17,5 +17,7 @@ EXPOSE 8080
 # PINOMAD_SERVER_USER / PINOMAD_SERVER_PASSWORD: create the one account on first start.
 # --trust-proxy: the platform terminates TLS; account traffic is refused unless
 #   the proxy's X-Forwarded-Proto says https.
+# PINOMAD_SERVER_RELAY_*: optional splice caps and per-account traffic budget
+#   (remote-access.zh.md "中继限额"); unset keeps the loose self-host defaults.
 # The server keeps splice state in memory and locks its data dir: run exactly one instance.
 CMD ["sh", "-c", "exec pinomad server --listen 0.0.0.0 --port \"$PORT\" --public-origin \"$PINOMAD_PUBLIC_ORIGIN\" --trust-proxy"]

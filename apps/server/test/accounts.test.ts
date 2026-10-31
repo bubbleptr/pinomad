@@ -17,7 +17,7 @@ import {
   type RegisterFrame,
 } from "@pinomad/protocol/relay.ts";
 import { openAccounts, resetPassword, type Accounts, type LoginLimits } from "../src/accounts.ts";
-import { startRelay, type Relay } from "../src/relay.ts";
+import { startRelay, type Relay, type RelayOptions } from "../src/relay.ts";
 import { lockDataDir } from "../src/lock.ts";
 import { removeTempDir, tempDir } from "./support.ts";
 
@@ -56,6 +56,8 @@ async function startServer(options?: {
   readonly now?: () => number;
   readonly limits?: LoginLimits;
   readonly lockStaleMs?: number;
+  /** Relay splice limits and their clock (issue #453). */
+  readonly relay?: Pick<RelayOptions, "limits" | "now">;
 }): Promise<Started> {
   const dataDir = options?.dataDir ?? (await tempDir(dirs));
   const bootstrap = options?.bootstrap ?? { user: "admin", password: GOOD_PASSWORD };
@@ -75,6 +77,7 @@ async function startServer(options?: {
     webRoot: options?.webRoot,
     accounts,
     trustProxy: options?.trustProxy ?? false,
+    ...options?.relay,
   });
   relays.push(relay);
   return { relay, accounts, dataDir };
@@ -1079,20 +1082,24 @@ describe("deleting an account (#451)", () => {
   const remove = (relay: Relay, headers: Record<string, string>, body: unknown) =>
     api(relay, { method: "POST", path: "/api/me/delete", headers, body });
 
-  /** Signs up "bob" through an admin invite; resolves to bob's bearer token and the invite code. */
-  async function signUpBob(relay: Relay): Promise<{ readonly token: string; readonly invite: string }> {
+  /** Signs up `username` (bob by default) through an admin invite; resolves to its bearer token and the invite code. */
+  async function signUpBob(relay: Relay, username = "bob"): Promise<{ readonly token: string; readonly invite: string }> {
     const admin = (await login(relay)).json.token as string;
     const invite = (await api(relay, { method: "POST", path: "/api/invites", headers: bearer(admin) })).json.code as string;
     const response = await api(relay, {
       method: "POST",
       path: "/api/register",
-      body: { invite, username: "bob", password: GOOD_PASSWORD },
+      body: { invite, username, password: GOOD_PASSWORD },
     });
     return { token: response.json.token as string, invite };
   }
 
   /** A host bound to `userId` whose control connection stays open; `closed` resolves to its close code. */
-  async function liveHost(relay: Relay, accounts: Accounts, userId: number): Promise<{ readonly keys: KeyPair; readonly closed: Promise<number> }> {
+  async function liveHost(
+    relay: Relay,
+    accounts: Accounts,
+    userId: number,
+  ): Promise<{ readonly keys: KeyPair; readonly socket: WebSocket; readonly closed: Promise<number> }> {
     const keys = ed25519.keygen();
     const db = new DatabaseSync(accounts.dbPath);
     db.prepare("INSERT INTO hosts (host_id, user_id, noise_public_key, name, joined_at, last_seen_at) VALUES (?, ?, 'k', 'h', 1, 1)").run(
@@ -1111,8 +1118,53 @@ describe("deleting an account (#451)", () => {
     socket.send(encodeRelayFrame({ t: "register", hostId, signature: signRelayChallenge(keys.secretKey, { relayOrigin: ORIGIN, hostId, nonce: challenge.nonce }) }));
     const [data] = await once(socket, "message");
     expect(decodeRelayToHost(asText(data)).t).toBe("registered");
-    return { keys, closed };
+    return { keys, socket, closed };
   }
+
+  /** A device spliced to `host` and authenticated by a first host frame (issue #453). */
+  async function splicedDevice(
+    relay: Relay,
+    host: { readonly keys: KeyPair; readonly socket: WebSocket },
+  ): Promise<{ readonly device: WebSocket; readonly accept: WebSocket }> {
+    const incomingP = once(host.socket, "message");
+    const device = new WebSocket(`${relay.url}/c/${relayHostId(host.keys.publicKey)}`);
+    sockets.add(device);
+    await once(device, "open");
+    const incoming = decodeRelayToHost(asText((await incomingP)[0]));
+    if (incoming.t !== "incoming") throw new Error("expected incoming");
+    const accept = new WebSocket(`${relay.url}/accept/${incoming.connId}`);
+    sockets.add(accept);
+    await once(accept, "open");
+    const answered = once(device, "message");
+    accept.send(Buffer.from([2]));
+    await answered;
+    return { device, accept };
+  }
+
+  const closeCode = (socket: WebSocket): Promise<number> => once(socket, "close").then(([code]) => code as number);
+
+  it("closes the account's splices and forgets its traffic budget, so a new account reusing its id starts fresh", async () => {
+    const { relay, accounts } = await startServer({ relay: { limits: { accountBytesPerSecond: 1, accountBurstBytes: 1000 }, now: () => 0 } });
+    const bob = await signUpBob(relay);
+    const host = await liveHost(relay, accounts, 2);
+    const drained = await splicedDevice(relay, host);
+    const survivor = await splicedDevice(relay, host);
+    const drainedClosed = closeCode(drained.device);
+    drained.device.send(new Uint8Array(2000));
+    expect(await drainedClosed).toBe(RELAY_CLOSE.trafficLimit);
+
+    const survivorClosed = closeCode(survivor.device);
+    expect((await remove(relay, bearer(bob.token), { password: GOOD_PASSWORD })).status).toBe(204);
+    expect(await survivorClosed).toBe(RELAY_CLOSE.hostNotAllowed);
+
+    // users.id has no AUTOINCREMENT: carol gets bob's id back, but not his debt.
+    const carol = await signUpBob(relay, "carol");
+    expect(accounts.authenticate(carol.token)?.userId).toBe(2);
+    const fresh = await splicedDevice(relay, await liveHost(relay, accounts, 2));
+    const forwarded = once(fresh.accept, "message");
+    fresh.device.send(new Uint8Array(900));
+    await forwarded;
+  });
 
   it("deletes the account and everything under it, and disconnects its hosts at once", async () => {
     const { relay, accounts } = await startServer();

@@ -113,6 +113,7 @@ WantedBy=multi-user.target
 |---|---|
 | `PINOMAD_PUBLIC_ORIGIN` | 客户端打开的 https origin，比如 `https://nomad.example.com` |
 | `PINOMAD_SERVER_USER` / `PINOMAD_SERVER_PASSWORD` | 第一次启动时建出唯一的用户（密码至少 12 位）；之后留着也没关系，用户已存在时不再读 |
+| `PINOMAD_SERVER_RELAY_*` | 可选，中继限额，见下面的「中继限额」 |
 
 配好变量和持久卷，绑定自定义域名，DNS 指向平台给的地址；用 Cloudflare 时建议**关掉代理（灰云）**，橙云会让国内访问多绕一圈，证书由平台自己签。域名生效后验证：
 
@@ -214,6 +215,26 @@ HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（
 `POST /api/hosts/:hostId/pairing` 让服务端经宿主的控制连接要一份一次性邀请。宿主必须在 register 里声明 `features: ["pairing"]` 才会被问——旧宿主的解码器遇到不认识的帧会断开，所以服务端只对声明过的控制连接发 `pairing-request`。成功返回 `{url, hostKey, secret, expiresAt, endpointSet?}`：客户端拼 `pair=<hostKey>.<secret>&url=<url>`，照 ADR-0008 的 IK 流程经 `/c/<hostId>` 连上宿主。`endpointSet` 是宿主当前公布的可远程访问的中继 / 直连候选（回环地址不会进入集合），服务端只转发、不持久化；旧宿主不返回它，旧客户端也会忽略它，账号配对继续按 `url` 走单中继。错误：宿主不属于本账号或不存在 → 404；离线 → 409 `host_offline`；太旧或公钥不一致 → 409 `host_too_old` / `key_mismatch`；宿主拒绝 → 409，错误码是宿主给的原因（`disabled` 是开关关闭、`not_joined` 是没加入账号）；10 秒没应答 → 504 `host_timeout`；在途请求超限（每台宿主 4 个、每个会话 2 个）→ 429 `rate_limited`。提前拒绝只是给客户端看的错误，真正是否准入仍由宿主的 `admitDevice` 在握手时判定——被吊销的公钥照走邀请但登记时被拒。
 
 凭据形态按请求的 `Origin` 分两类：同源（Origin 等于 `--public-origin`）登录只种 `Secure`+`HttpOnly`+`SameSite=Strict` 的 host-only cookie，响应体不含令牌，页面 JS 拿不到它——代价是靠 cookie 的改动类请求必须带同源 Origin；桌面端（`Origin: app://pinomad`）和没有 Origin 的客户端（移动端、CLI）只在响应体拿到 `token`，不种 cookie，之后用 `Authorization: Bearer`。带 Bearer 的请求不做 Origin 校验（没有环境凭据就没有 CSRF）。CORS 只放行 `app://pinomad`（预检回 `Access-Control-Allow-Origin`、`Allow-Methods: GET, POST`、`Allow-Headers: authorization, content-type`，不带 credentials），其它源不加 CORS 头。旧版服务端的纯 `--allow-host` 模式下 `/api/*` 回 JSON 404 `{error:"accounts_disabled"}`，客户端据此判断服务端没开账号。
+
+### 中继限额
+
+服务端对经 `/c/<hostId>` 转接的设备连接设了几道限额，防止服务端被当成通用转发器。每项都可以用参数或环境变量设置（参数优先），`0` 表示不限。默认值很宽，自部署一般碰不到：
+
+| 参数 / 环境变量 | 默认 | 含义 |
+|---|---|---|
+| `--relay-max-per-host` / `PINOMAD_SERVER_RELAY_MAX_PER_HOST` | `64` | 每台宿主同时的设备连接数（等待接入的和已接通的都算） |
+| `--relay-max-per-account` / `PINOMAD_SERVER_RELAY_MAX_PER_ACCOUNT` | `256` | 同一账号下所有宿主的设备连接数合计 |
+| `--relay-max-unauthenticated-per-host` / `PINOMAD_SERVER_RELAY_MAX_UNAUTHENTICATED_PER_HOST` | `32` | 每台宿主还没完成握手的设备连接数；宿主自己最多同时处理 16 个未完成的接入，所以不要设到 16 以下 |
+| `--relay-handshake-timeout` / `PINOMAD_SERVER_RELAY_HANDSHAKE_TIMEOUT` | `30`（秒） | 设备从连上起多久内必须完成握手；宿主自己的接入和握手各有 10 秒，这一项是兜底，不要短于 20 秒 |
+| `--relay-handshake-bytes` / `PINOMAD_SERVER_RELAY_HANDSHAKE_BYTES` | `64k` | 每条设备连接在握手完成前最多能发的字节数（握手第一条消息连同配对邀请不到 1 KiB） |
+| `--relay-account-rate` / `PINOMAD_SERVER_RELAY_ACCOUNT_RATE` | `4m`（每秒） | 每个账号经中继的持续流量，两个方向合计 |
+| `--relay-account-burst` / `PINOMAD_SERVER_RELAY_ACCOUNT_BURST` | `1g` | 每个账号可以一次用掉的流量，用完后按上一项的速度恢复 |
+
+字节数可以带 `k` / `m` / `g` 后缀（按 1024 进位），格式不对时服务端拒绝启动。实际生效的值写在启动日志的 `{"event":"ready",…,"relayLimits":{…}}` 里。
+
+- 服务端看不到加密内容，「完成握手」是按宿主的行为判断的：宿主只在认可设备（已登记的公钥或有效的配对邀请）后才回 Noise 握手的第二条消息，否则直接以 4401 或 1008 关闭；所以宿主经转接发出第一条消息起，这条连接就算已认证。
+- 超限时连接以 46xx 关闭码断开，并带上原因：连接数满了是 `4629`（新连接连上后立即关闭，宿主收不到 `incoming`）；握手超时是 `4608`（设备和宿主两侧一起关）；流量用完是 `4630`，这个账号正在转接的连接会在下一条消息时断开，新连接在额度恢复前直接拒绝，断开重连不会重置额度；握手前发的字节超过上一项时也是 `4630`，原因写明是握手前的数据太多。宿主退出账号（`leave`）或账号被删除时，它的设备连接以 `4603` 断开；宿主在线时换绑到另一个账号，已有的设备连接以 `4609` 断开，重连后计入新账号。客户端把这些当作普通断线，按退避自动重连。
+- 流量额度是令牌桶：额度先满，转发时扣减，按速率恢复到上限。设备在握手完成前发的字节不计入账号额度，否则知道 hostId 的陌生人就能耗光宿主所属账号的额度；这部分流量改由每条连接的握手字节上限兜住。账号删除后它的额度状态随之清掉，新账号即使拿到同一个用户 id 也从满额开始。默认值大约是每个账号每天 340 GiB，相当于不限；对外开放的服务端可以收紧，例如每台宿主 16 条、每个账号 32 条、握手 20 秒、`--relay-account-rate 128k --relay-account-burst 256m`（大约每天 10 GiB）。
 
 ### 推送通知（ADR-0025、0036）
 
