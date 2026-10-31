@@ -1,6 +1,7 @@
 // The server's HTTP account API (ADR-0022 §2), mounted on the same port as the
 // splice sockets and the static web client: POST /api/login, POST /api/logout,
-// POST /api/sessions/revoke-all, GET /api/me, POST /api/join-tokens.
+// POST /api/sessions/revoke-all, GET /api/me, POST /api/join-tokens,
+// POST /api/push-tokens and POST /api/push-tokens/remove (ADR-0036).
 //
 // Two credential styles share the routes, decided by the request's Origin:
 // the same-origin web client gets a Secure+HttpOnly+SameSite=Strict host-only
@@ -13,7 +14,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { relayWsBase } from "@pinomad/host/src/relay-link.ts";
-import { MAX_PASSWORD_CODEPOINTS, MAX_USERNAME_CODEPOINTS, type Accounts } from "./accounts.ts";
+import { MAX_PASSWORD_CODEPOINTS, MAX_USERNAME_CODEPOINTS, normalizeApnsToken, type Accounts } from "./accounts.ts";
 
 /** Whether a bound host can serve a pairing ask right now (ADR-0022 §4). */
 export type PairingStatus = "available" | "offline" | "host_too_old" | "key_mismatch";
@@ -325,7 +326,9 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     pathname === "/api/me" ||
     pathname === "/api/logout" ||
     pathname === "/api/sessions/revoke-all" ||
-    pathname === "/api/join-tokens"
+    pathname === "/api/join-tokens" ||
+    pathname === "/api/push-tokens" ||
+    pathname === "/api/push-tokens/remove"
   ) {
     const expected = pathname === "/api/me" ? "GET" : "POST";
     if (method !== expected) {
@@ -340,6 +343,32 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     }
     if (pathname === "/api/me") {
       send(200, { user: { username: session.username } });
+      return;
+    }
+    if (pathname === "/api/push-tokens" || pathname === "/api/push-tokens/remove") {
+      // POST bodies, never the URL: proxies log URLs, and a token is a send
+      // capability within its account.
+      const body = await readJson(request);
+      if (!body.ok) {
+        deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
+        return;
+      }
+      const value = body.value as { apns?: unknown; environment?: unknown } | null;
+      const apns = typeof value?.apns === "string" ? normalizeApnsToken(value.apns) : undefined;
+      const environment = value?.environment;
+      if (apns === undefined || (environment !== "production" && environment !== "development")) {
+        deny(400, "invalid_request");
+        return;
+      }
+      // The session may have been revoked while the body trickled in; a
+      // registration written now would outlive "sign out everywhere".
+      if (accounts.authenticate(token!) === undefined) {
+        deny(401, "unauthenticated");
+        return;
+      }
+      if (pathname === "/api/push-tokens") accounts.registerPushToken(session.userId, apns, environment);
+      else accounts.removePushToken(session.userId, apns, environment);
+      send(204);
       return;
     }
     if (pathname === "/api/join-tokens") {

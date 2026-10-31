@@ -191,7 +191,7 @@ HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（
 
 凭据形态按请求的 `Origin` 分两类：同源（Origin 等于 `--public-origin`）登录只种 `Secure`+`HttpOnly`+`SameSite=Strict` 的 host-only cookie，响应体不含令牌，页面 JS 拿不到它——代价是靠 cookie 的改动类请求必须带同源 Origin；桌面端（`Origin: app://pinomad`）和没有 Origin 的客户端（移动端、CLI）只在响应体拿到 `token`，不种 cookie，之后用 `Authorization: Bearer`。带 Bearer 的请求不做 Origin 校验（没有环境凭据就没有 CSRF）。CORS 只放行 `app://pinomad`（预检回 `Access-Control-Allow-Origin`、`Allow-Methods: GET, POST`、`Allow-Headers: authorization, content-type`，不带 credentials），其它源不加 CORS 头。旧版服务端的纯 `--allow-host` 模式下 `/api/*` 回 JSON 404 `{error:"accounts_disabled"}`，客户端据此判断服务端没开账号。
 
-### 推送通知（ADR-0025）
+### 推送通知（ADR-0025、0036）
 
 推送由服务端直连 APNs：宿主经自己的账号控制连接请服务端发，APNs 密钥（`.p8`）只存在服务端，宿主上不用配任何东西，只要已经 `pinomad join` 进账号。不配下面的变量时服务端照常运行，只是不向宿主声明推送能力。
 
@@ -206,6 +206,7 @@ HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（
 - `_KEY` 是 PEM 文本本身，不是文件路径。服务端认真实换行，也认字面的 `\n`。有的容器平台的变量只存单行，直接粘多行内容会丢掉换行，启动日志报 `apns: the … key is not a valid EC private key`；先把 `.p8` 转成用字面 `\n` 连接的一行再粘：`awk 'NR>1{printf "\\n"} {printf "%s", $0}' AuthKey_XXXXXXXXXX.p8 | pbcopy`（Linux 换成 `wl-copy`），不加引号。
 - 服务端按环境各持一条到 APNs 的 HTTP/2 长连接（production 打 `api.push.apple.com`，development 打 `api.sandbox.push.apple.com`），断了自己重建；provider token 用 `node:crypto` 签 ES256，缓存在进程里。
 - 推送负载只带标题和事件类型（"Waiting for your answer" / "Finished" / "Failed"），不带对话内容。
+- 服务端只推给登记在发起宿主同一账号下的 token（ADR-0036）：设备登录账号后经 `POST /api/push-tokens` 登记，别的 token 回 `rejected`（`token_not_registered`），宿主日志里是 `push: send to …… rejected: token_not_registered`。数据目录里因此多存了每个 token 的环境、所属账号和最近一次登记时间；90 天没刷新的登记作废，「退出所有会话」和 `pinomad server passwd` 会清掉这个账号的全部登记。
 
 ### 升级
 

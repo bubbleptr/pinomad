@@ -605,3 +605,133 @@ describe("host registration with accounts", () => {
     expect(await tryRegister(relay, ed25519.keygen())).toBe(RELAY_CLOSE.hostNotAllowed);
   });
 });
+
+describe("push token registration (ADR-0036)", () => {
+  const TOKEN = "aa".repeat(32);
+  const register = (relay: Relay, token: string, body: unknown, path = "/api/push-tokens") =>
+    api(relay, { method: "POST", path, headers: { authorization: `Bearer ${token}` }, body });
+
+  it("registers and removes a token for the logged-in account", async () => {
+    const { relay, accounts } = await startServer();
+    const token = (await login(relay)).json.token as string;
+    expect((await register(relay, token, { apns: TOKEN.toUpperCase(), environment: "production" })).status).toBe(204);
+    expect(accounts.pushTokenOwner(TOKEN, "production")).toBe(1);
+    expect(accounts.pushTokenOwner(TOKEN, "development")).toBeUndefined();
+
+    expect((await register(relay, token, { apns: TOKEN, environment: "production" }, "/api/push-tokens/remove")).status).toBe(204);
+    expect(accounts.pushTokenOwner(TOKEN, "production")).toBeUndefined();
+  });
+
+  it("refuses anonymous callers and malformed tokens", async () => {
+    const { relay } = await startServer();
+    expect((await api(relay, { method: "POST", path: "/api/push-tokens", headers: { authorization: "Bearer nope" }, body: { apns: TOKEN, environment: "production" } })).status).toBe(401);
+    const token = (await login(relay)).json.token as string;
+    for (const body of [
+      { apns: "not hex", environment: "production" },
+      { apns: "abc", environment: "production" },
+      { apns: "aa".repeat(129), environment: "production" },
+      { apns: TOKEN, environment: "sandbox" },
+      { apns: TOKEN },
+    ]) {
+      const response = await register(relay, token, body);
+      expect(response.status).toBe(400);
+      expect(response.json.error).toBe("invalid_request");
+    }
+    expect((await api(relay, { path: "/api/push-tokens", headers: { authorization: `Bearer ${token}` } })).status).toBe(405);
+  });
+
+  it("removes only the caller's own registration", async () => {
+    const { accounts } = await startServer();
+    const db = new DatabaseSync(accounts.dbPath);
+    const other = Number(
+      db.prepare("INSERT INTO users (username, password_hash, created_at) VALUES ('bob', 'scrypt$x', 1)").run().lastInsertRowid,
+    );
+    db.close();
+    accounts.registerPushToken(other, TOKEN, "production");
+    accounts.removePushToken(1, TOKEN, "production");
+    expect(accounts.pushTokenOwner(TOKEN, "production")).toBe(other);
+  });
+
+  it("clears the account's tokens on revoke-all", async () => {
+    const { relay, accounts } = await startServer();
+    const token = (await login(relay)).json.token as string;
+    await register(relay, token, { apns: TOKEN, environment: "production" });
+    await api(relay, { method: "POST", path: "/api/sessions/revoke-all", headers: { authorization: `Bearer ${token}` } });
+    expect(accounts.pushTokenOwner(TOKEN, "production")).toBeUndefined();
+  });
+
+  it("does not register a token for a session revoked while its body was still arriving", async () => {
+    const { relay, accounts } = await startServer();
+    const token = (await login(relay)).json.token as string;
+    const body = JSON.stringify({ apns: TOKEN, environment: "production" });
+    const half = body.length >> 1;
+
+    // Headers and half the body go out first; the server authenticates on
+    // the headers and then waits for the rest.
+    let resolveStatus: (status: number) => void = () => {};
+    const status = new Promise<number>((resolve) => (resolveStatus = resolve));
+    const slow = httpRequest(
+      {
+        host: "127.0.0.1",
+        port: relay.port,
+        path: "/api/push-tokens",
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-length": String(Buffer.byteLength(body)) },
+      },
+      (response) => {
+        response.resume();
+        resolveStatus(response.statusCode ?? 0);
+      },
+    );
+    await new Promise<void>((resolve) => slow.write(body.slice(0, half), () => resolve()));
+
+    // Signing out everywhere lands before the body completes.
+    const revoked = await api(relay, {
+      method: "POST",
+      path: "/api/sessions/revoke-all",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(revoked.status).toBe(204);
+
+    slow.end(body.slice(half));
+    expect(await status).toBe(401);
+    expect(accounts.pushTokenOwner(TOKEN, "production")).toBeUndefined();
+  });
+
+  it("treats a registration unrefreshed for 90 days as gone, and a refresh keeps it", async () => {
+    let clock = 1_000;
+    const { accounts } = await startServer({ now: () => clock });
+    accounts.registerPushToken(1, TOKEN, "production");
+    clock += 89 * DAY;
+    accounts.registerPushToken(1, TOKEN, "production");
+    clock += 89 * DAY;
+    expect(accounts.pushTokenOwner(TOKEN, "production")).toBe(1);
+    clock += 2 * DAY;
+    expect(accounts.pushTokenOwner(TOKEN, "production")).toBeUndefined();
+  });
+
+  it("keeps at most 32 tokens per account, evicting the least recently refreshed", async () => {
+    let clock = 1_000;
+    const { accounts } = await startServer({ now: () => clock });
+    const tokens = Array.from({ length: 33 }, (_, i) => i.toString(16).padStart(64, "0"));
+    for (const token of tokens) {
+      accounts.registerPushToken(1, token, "production");
+      clock += 1;
+    }
+    expect(accounts.pushTokenOwner(tokens[0]!, "production")).toBeUndefined();
+    expect(accounts.pushTokenOwner(tokens[1]!, "production")).toBe(1);
+    expect(accounts.pushTokenOwner(tokens[32]!, "production")).toBe(1);
+  });
+
+  it("adds the push_tokens table to a schema-1 database", async () => {
+    const first = await startServer();
+    await stop(first);
+    const db = new DatabaseSync(join(first.dataDir, "server.sqlite"));
+    db.exec("DROP TABLE push_tokens; PRAGMA user_version = 1;");
+    db.close();
+
+    const second = await startServer({ dataDir: first.dataDir, bootstrap: {} });
+    second.accounts.registerPushToken(1, TOKEN, "production");
+    expect(second.accounts.pushTokenOwner(TOKEN, "production")).toBe(1);
+  });
+});

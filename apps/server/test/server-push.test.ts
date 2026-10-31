@@ -1,6 +1,6 @@
 // Server push over the control connection (ADR-0025 §3-4): `registered`
 // declares the configured environments, every `push` is re-checked against
-// the account binding, per-host and
+// the account binding and the token's owner (ADR-0036), per-host and
 // global in-flight caps answer `retry`, and a malformed push is a protocol
 // violation like any other. Raw /host sockets stand in for hosts.
 import { once } from "node:events";
@@ -78,9 +78,15 @@ function fakeApnsSender(
 async function startServer(options?: {
   readonly push?: ApnsSender;
   readonly pushLimits?: { perHost?: number; total?: number };
+  readonly now?: () => number;
 }): Promise<{ relay: Relay; accounts: Accounts }> {
   const dataDir = await tempDir(dirs);
-  const accounts = await openAccounts({ dataDir, bootstrapUser: "admin", bootstrapPassword: GOOD_PASSWORD });
+  const accounts = await openAccounts({
+    dataDir,
+    bootstrapUser: "admin",
+    bootstrapPassword: GOOD_PASSWORD,
+    ...(options?.now === undefined ? {} : { now: options.now }),
+  });
   const relay = await startRelay({
     port: 0,
     publicOrigin: ORIGIN,
@@ -131,25 +137,36 @@ async function controlFor(relay: Relay, keys: KeyPair, overrides?: Partial<Regis
   return socket;
 }
 
-/** Writes a hosts row bound to the account; returns the Ed25519 keypair owning it. */
-function bindHost(accounts: Accounts): KeyPair {
+/** Writes a hosts row bound to `userId` (the bootstrap admin by default); returns the Ed25519 keypair owning it. */
+function bindHost(accounts: Accounts, userId = 1): KeyPair {
   const keys = ed25519.keygen();
   const db = new DatabaseSync(accounts.dbPath);
   db.prepare(
-    "INSERT INTO hosts (host_id, user_id, noise_public_key, name, joined_at, last_seen_at) VALUES (?, 1, ?, 'test-host', 1, 1)",
-  ).run(relayHostId(keys.publicKey), NOISE_KEY);
+    "INSERT INTO hosts (host_id, user_id, noise_public_key, name, joined_at, last_seen_at) VALUES (?, ?, ?, 'test-host', 1, 1)",
+  ).run(relayHostId(keys.publicKey), userId, NOISE_KEY);
   db.close();
   return keys;
+}
+
+/** A second account straight in the table — pushes only need its id, never a login. */
+function addUser(accounts: Accounts, username: string): number {
+  const db = new DatabaseSync(accounts.dbPath);
+  const result = db
+    .prepare("INSERT INTO users (username, password_hash, created_at) VALUES (?, 'scrypt$x', 1)")
+    .run(username);
+  db.close();
+  return Number(result.lastInsertRowid);
 }
 
 const closeEvent = (socket: WebSocket): Promise<[number, string]> =>
   once(socket, "close").then(([code, reason]) => [code as number, (reason as Buffer).toString()]);
 
+const TOKEN = "aa".repeat(32);
 const NOTIFICATION = { title: "T", body: "Finished", collapseId: "ab".repeat(16), hostKey: "k", conversationId: 1 };
 const pushFrame = (overrides?: Partial<PushFrame>): PushFrame => ({
   t: "push",
   requestId: "req-1",
-  token: "aa".repeat(32),
+  token: TOKEN,
   environment: "production",
   notification: NOTIFICATION,
   ...overrides,
@@ -174,17 +191,20 @@ describe("push declaration and authorization", () => {
   });
 
   it("forwards a bound host's push and returns the classified verdict", async () => {
+    const gone = "bb".repeat(32);
     const apns = fakeApnsSender(async ({ token }) =>
-      token === "gone" ? { result: "unregistered", reason: "Unregistered", unregisteredAt: 4242 } : { result: "accepted", reason: "ok" },
+      token === gone ? { result: "unregistered", reason: "Unregistered", unregisteredAt: 4242 } : { result: "accepted", reason: "ok" },
     );
     const { relay, accounts } = await startServer({ push: apns.sender });
+    accounts.registerPushToken(1, TOKEN, "production");
+    accounts.registerPushToken(1, gone, "production");
     const control = await controlFor(relay, bindHost(accounts), { noisePublicKey: NOISE_KEY });
     await nextFrame(control);
 
     control.send(encodeRelayFrame(pushFrame()));
     expect(await nextFrame(control)).toEqual({ t: "push-result", requestId: "req-1", result: "accepted", reason: "ok" });
 
-    control.send(encodeRelayFrame(pushFrame({ requestId: "req-2", token: "gone" })));
+    control.send(encodeRelayFrame(pushFrame({ requestId: "req-2", token: gone })));
     expect(await nextFrame(control)).toEqual({
       t: "push-result",
       requestId: "req-2",
@@ -192,7 +212,7 @@ describe("push declaration and authorization", () => {
       reason: "Unregistered",
       unregisteredAt: 4242,
     });
-    expect(apns.calls.map((call) => call.token)).toEqual(["aa".repeat(32), "gone"]);
+    expect(apns.calls.map((call) => call.token)).toEqual([TOKEN, gone]);
   });
 
   it("rejects a push once the host's binding is gone, even on a live control", async () => {
@@ -244,6 +264,7 @@ describe("push declaration and authorization", () => {
         : Promise.resolve({ result: "accepted", reason: "ok" }),
     );
     const { relay, accounts } = await startServer({ push: apns.sender, pushLimits: { perHost: 1 } });
+    accounts.registerPushToken(1, TOKEN, "production");
     const keys = bindHost(accounts);
     const control = await controlFor(relay, keys, { noisePublicKey: NOISE_KEY });
     await nextFrame(control);
@@ -266,6 +287,82 @@ describe("push declaration and authorization", () => {
   });
 });
 
+describe("push token ownership (ADR-0036)", () => {
+  async function boundControl(options?: { readonly now?: () => number; readonly apns?: ReturnType<typeof fakeApnsSender> }) {
+    const apns = options?.apns ?? fakeApnsSender();
+    const { relay, accounts } = await startServer({ push: apns.sender, ...(options?.now === undefined ? {} : { now: options.now }) });
+    const control = await controlFor(relay, bindHost(accounts), { noisePublicKey: NOISE_KEY });
+    await nextFrame(control);
+    return { apns, accounts, control };
+  }
+
+  const notRegistered = (requestId = "req-1") => ({
+    t: "push-result",
+    requestId,
+    result: "rejected",
+    reason: "token_not_registered",
+  });
+
+  it("rejects a token no account registered, without calling APNs", async () => {
+    const { apns, control } = await boundControl();
+    control.send(encodeRelayFrame(pushFrame()));
+    expect(await nextFrame(control)).toEqual(notRegistered());
+    expect(apns.calls).toHaveLength(0);
+  });
+
+  it("rejects a token registered under another account", async () => {
+    const { apns, accounts, control } = await boundControl();
+    accounts.registerPushToken(addUser(accounts, "mallory"), TOKEN, "production");
+    control.send(encodeRelayFrame(pushFrame()));
+    expect(await nextFrame(control)).toEqual(notRegistered());
+    expect(apns.calls).toHaveLength(0);
+  });
+
+  it("matches the environment and ignores token case", async () => {
+    const { apns, accounts, control } = await boundControl();
+    accounts.registerPushToken(1, TOKEN.toUpperCase(), "development");
+    control.send(encodeRelayFrame(pushFrame()));
+    expect(await nextFrame(control)).toEqual(notRegistered());
+    accounts.registerPushToken(1, TOKEN.toUpperCase(), "production");
+    control.send(encodeRelayFrame(pushFrame({ requestId: "req-2" })));
+    expect(await nextFrame(control)).toMatchObject({ requestId: "req-2", result: "accepted" });
+    expect(apns.calls).toHaveLength(1);
+  });
+
+  it("follows the token to the account that registered it last", async () => {
+    const { accounts, control } = await boundControl();
+    accounts.registerPushToken(1, TOKEN, "production");
+    control.send(encodeRelayFrame(pushFrame()));
+    expect(await nextFrame(control)).toMatchObject({ result: "accepted" });
+    // The device logged into another account and registered there; its
+    // logout from this one never reached the server.
+    accounts.registerPushToken(addUser(accounts, "bob"), TOKEN, "production");
+    control.send(encodeRelayFrame(pushFrame({ requestId: "req-2" })));
+    expect(await nextFrame(control)).toEqual(notRegistered("req-2"));
+  });
+
+  it("forgets its registration on a 410 only when the registration is older", async () => {
+    let clock = 1_000;
+    let unregisteredAt = 0;
+    const apns = fakeApnsSender(async () => ({ result: "unregistered", reason: "Unregistered", unregisteredAt }));
+    const { accounts, control } = await boundControl({ now: () => clock, apns });
+    accounts.registerPushToken(1, TOKEN, "production");
+
+    // A late 410 from before the latest refresh leaves the registration alone.
+    unregisteredAt = 500;
+    control.send(encodeRelayFrame(pushFrame()));
+    expect(await nextFrame(control)).toMatchObject({ result: "unregistered", unregisteredAt: 500 });
+    expect(accounts.pushTokenOwner(TOKEN, "production")).toBe(1);
+
+    // A 410 newer than the registration drops it; the verdict still reaches the host.
+    clock = 3_000;
+    unregisteredAt = 2_000;
+    control.send(encodeRelayFrame(pushFrame({ requestId: "req-2" })));
+    expect(await nextFrame(control)).toMatchObject({ requestId: "req-2", result: "unregistered" });
+    expect(accounts.pushTokenOwner(TOKEN, "production")).toBeUndefined();
+  });
+});
+
 describe("push framing discipline", () => {
   it("closes a control that sends a malformed push", async () => {
     const { relay, accounts } = await startServer({ push: fakeApnsSender().sender });
@@ -278,6 +375,7 @@ describe("push framing discipline", () => {
 
   it("answers a push after ignoring replies to never-asked requestIds", async () => {
     const { relay, accounts } = await startServer({ push: fakeApnsSender().sender });
+    accounts.registerPushToken(1, TOKEN, "production");
     const control = await controlFor(relay, bindHost(accounts), { noisePublicKey: NOISE_KEY });
     await nextFrame(control);
     // A pairing reply for a request the server never sent settles nothing —

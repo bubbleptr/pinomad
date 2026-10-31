@@ -252,7 +252,8 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
 
   /**
    * One host's `push` frame (ADR-0025 §4-5): re-checked against the account
-   * binding on every send, then classified back to the asking control.
+   * binding on every send, and the token must be registered under that same
+   * account (ADR-0036 §3), then classified back to the asking control.
    * Nothing about the token or the notification reaches the log; the counters
    * keep pushes from crowding the control connections.
    */
@@ -273,12 +274,17 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
         socket.send(encodeRelayFrame({ t: "push-result", requestId: frame.requestId, ...verdict }));
       }
     };
-    if (accounts?.hasHost(hostId) !== true) {
+    const owner = accounts?.hostOwner(hostId);
+    if (accounts === undefined || owner === undefined) {
       finish({ result: "rejected", reason: "unauthorized" });
       return;
     }
     if (apns === undefined || !pushEnvironments.includes(frame.environment)) {
       finish({ result: "unavailable", reason: "environment not configured" });
+      return;
+    }
+    if (accounts.pushTokenOwner(frame.token, frame.environment) !== owner) {
+      finish({ result: "rejected", reason: "token_not_registered" });
       return;
     }
     const perHost = pushInflightHosts.get(hostId) ?? 0;
@@ -290,7 +296,14 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
     pushInflightHosts.set(hostId, perHost + 1);
     void apns
       .send({ token: frame.token, environment: frame.environment, notification: frame.notification })
-      .then(finish, () => finish({ result: "retry", reason: "server error" }))
+      .then((verdict) => {
+        // The server's own registration follows APNs too, with the same late-410
+        // guard the host applies to its registry.
+        if (verdict.result === "unregistered") {
+          accounts.forgetPushToken(frame.token, frame.environment, verdict.unregisteredAt);
+        }
+        finish(verdict);
+      }, () => finish({ result: "retry", reason: "server error" }))
       .finally(() => {
         pushInflightTotal -= 1;
         const left = (pushInflightHosts.get(hostId) ?? 1) - 1;
