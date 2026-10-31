@@ -407,6 +407,8 @@ extension AppModel {
         case .success(let devices):
             accountDevices = devices
             accountDevicesError = nil
+            // A server upgraded since an earlier 404 shows the list again.
+            accountDevicesUnsupported = false
         case .failure(let failure) where failure.status == 404:
             accountDevicesUnsupported = true
         case .failure(let failure) where failure.clearsSession:
@@ -456,6 +458,10 @@ extension AppModel {
         defer {
             accountBusy = false
             serverPushPaused = false
+            // A token APNs issued while paused was dropped, not queued: catch
+            // up now. After a deletion there's no session, so this sends
+            // nothing; a newer session or a refused deletion registers.
+            syncServerPushToken()
         }
         while let task = serverPushTask { await task.value }
         switch await api.deleteAccount(password: password) {
