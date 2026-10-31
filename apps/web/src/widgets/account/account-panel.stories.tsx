@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { userEvent, within } from "storybook/test";
 import { ACCOUNT_HOSTS, HOME_HOST, signedIn, withAccount, withHosts } from "../../test/story-fixtures.tsx";
 import { AccountPanel } from "./account-panel.tsx";
 
@@ -25,6 +26,17 @@ export const SignedOutPickServer: Story = {
 export const SignedOutSelfHosted: Story = {
   decorators: [withAccount({ status: "signed-out", mode: "bearer", serverOrigin: "https://nomad.example.com" })],
 };
+
+/** Sign-up with an invite code: the sign-in form's "Create an account" switches to it. */
+export const SignUp: Story = {
+  decorators: [withAccount({ status: "signed-out", mode: "bearer" })],
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Create an account" }));
+  },
+};
+
+/** The server's admin also manages sign-up invites: one unused, one used, one expired. */
+export const SignedInAdmin: Story = { decorators: [withAccount(signedIn({ admin: true }))] };
 
 export const Checking: Story = { decorators: [withAccount({ status: "checking" })] };
 

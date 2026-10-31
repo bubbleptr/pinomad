@@ -273,6 +273,53 @@ const stored = (overrides?: Partial<StoredHost>): StoredHost => ({
   ...overrides,
 });
 
+describe("sign-up and invites (#449)", () => {
+  it("signs up with an invite and reads the session like a login", async () => {
+    const fetch = fakeFetch({ status: 200, body: { user: { username: "bob" }, expiresAt: 9, token: "t" } });
+    const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer" }, fetch: fetch.impl });
+    const result = await client.register("code", "bob", "long password here");
+    expect(result).toEqual({ ok: true, value: { user: { username: "bob" }, expiresAt: 9, token: "t" } });
+    expect(fetch.calls[0]!.url).toBe(`${ORIGIN}/api/register`);
+    expect(JSON.parse(fetch.calls[0]!.init!.body!)).toEqual({ invite: "code", username: "bob", password: "long password here" });
+
+    const refused = await bearer([{ status: 403, body: { error: "invite_expired" } }]).register("c", "bob", "x");
+    expect(refused).toEqual({ ok: false, error: { code: "invite_expired", status: 403 } });
+  });
+
+  it("carries the admin flag from login and /api/me, absent for everyone else", async () => {
+    const admin = await bearer([{ status: 200, body: { user: { username: "a" }, admin: true, expiresAt: 1, token: "t" } }]).login("a", "p");
+    expect(admin.ok && admin.value.admin).toBe(true);
+    const plain = await bearer([{ status: 200, body: { user: { username: "b" }, expiresAt: 1, token: "t" } }]).login("b", "p");
+    expect(plain.ok && plain.value.admin).toBeUndefined();
+    expect(await bearer([{ status: 200, body: { user: { username: "a" }, admin: true } }]).me()).toEqual({
+      ok: true,
+      value: { user: { username: "a" }, admin: true },
+    });
+    expect(await bearer([{ status: 200, body: { user: { username: "b" } } }]).me()).toEqual({
+      ok: true,
+      value: { user: { username: "b" } },
+    });
+  });
+
+  it("lists, creates and revokes invites, refusing malformed rows", async () => {
+    const rows = [
+      { id: 2, createdAt: 5, expiresAt: 10 },
+      { id: 1, createdAt: 1, expiresAt: 8, usedAt: 3, usedBy: "bob" },
+    ];
+    expect(await bearer([{ status: 200, body: rows }]).listInvites()).toEqual({ ok: true, value: rows });
+    expect((await bearer([{ status: 200, body: [{ id: "1", createdAt: 1, expiresAt: 2 }] }]).listInvites()).ok).toBe(false);
+    expect(await bearer([{ status: 200, body: { code: "c", expiresAt: 4 } }]).createInvite()).toEqual({
+      ok: true,
+      value: { code: "c", expiresAt: 4 },
+    });
+    const fetch = fakeFetch({ status: 204 });
+    const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer", token: "t" }, fetch: fetch.impl });
+    expect(await client.revokeInvite(7)).toEqual({ ok: true, value: undefined });
+    expect(fetch.calls[0]!.url).toBe(`${ORIGIN}/api/invites/revoke`);
+    expect(JSON.parse(fetch.calls[0]!.init!.body!)).toEqual({ id: 7 });
+  });
+});
+
 describe("matchAccountHosts", () => {
   it("pairs a linked entry, adopts an unlinked twin, and leaves strangers unpaired", async () => {
     const linked = stored({ account: { serverOrigin: `${ORIGIN}/`, hostId: HOST_ID } });

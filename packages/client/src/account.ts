@@ -3,6 +3,9 @@
 // and server-vouched pairing asks. Shared by web and desktop, so it
 // takes fetch as an injected minimal surface — DOM and undici both
 // satisfy it — and never touches a DOM-only API.
+//
+// crates/pinomad-core replays this client for iOS, except sign-up and the
+// admin's invite ops (#449): only web and desktop offer those.
 
 import { encodeEndpointSetParam, parseEndpointSet, type EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { UNAUTHORIZED_CLOSE_CODE, type ApnsPushToken } from "@pinomad/protocol/frames.ts";
@@ -201,6 +204,8 @@ export interface AccountUser {
 
 export interface LoginSuccess {
   readonly user: AccountUser;
+  /** The server's admin account, which mints invites (#449). Absent for everyone else. */
+  readonly admin?: true;
   readonly expiresAt: number;
   /** Present only in bearer mode — cookie-mode sessions never expose the token to JS. */
   readonly token?: string;
@@ -211,6 +216,21 @@ export interface JoinToken {
   readonly expiresAt: number;
   /** The ready-to-show command for the "add a host" flow (`pinomad join …`). */
   readonly command: string;
+}
+
+/** A sign-up invite as the admin lists it; the code is only shown at creation. */
+export interface AccountInvite {
+  readonly id: number;
+  readonly createdAt: number;
+  readonly expiresAt: number;
+  readonly usedAt?: number;
+  /** Absent on a used invite whose account was since deleted. */
+  readonly usedBy?: string;
+}
+
+export interface CreatedInvite {
+  readonly code: string;
+  readonly expiresAt: number;
 }
 
 /** One account-bound host row as GET /api/hosts reports it. */
@@ -238,7 +258,9 @@ export interface AccountClient {
   /** The normalized origin every request targets. */
   readonly origin: string;
   login(username: string, password: string): Promise<AccountResult<LoginSuccess>>;
-  me(): Promise<AccountResult<{ readonly user: AccountUser }>>;
+  /** Creates an account from an invite and signs it in, like login (#449). */
+  register(invite: string, username: string, password: string): Promise<AccountResult<LoginSuccess>>;
+  me(): Promise<AccountResult<{ readonly user: AccountUser; readonly admin?: true }>>;
   logout(): Promise<AccountResult<void>>;
   revokeAllSessions(): Promise<AccountResult<void>>;
   createJoinToken(): Promise<AccountResult<JoinToken>>;
@@ -247,15 +269,27 @@ export interface AccountClient {
   /** Record this device's APNs token under the signed-in account (ADR-0036). */
   registerPushToken(token: ApnsPushToken): Promise<AccountResult<void>>;
   removePushToken(token: ApnsPushToken): Promise<AccountResult<void>>;
+  /** Admin only (403 `forbidden` otherwise). */
+  listInvites(): Promise<AccountResult<readonly AccountInvite[]>>;
+  createInvite(): Promise<AccountResult<CreatedInvite>>;
+  revokeInvite(id: number): Promise<AccountResult<void>>;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
-const userBody = (value: unknown): { readonly user: AccountUser } | undefined => {
+const userBody = (value: unknown): { readonly user: AccountUser; readonly admin?: true } | undefined => {
   if (!isRecord(value) || !isRecord(value.user) || typeof value.user.username !== "string") return undefined;
-  return { user: { username: value.user.username } };
+  return { user: { username: value.user.username }, ...(value.admin === true ? { admin: true as const } : {}) };
 };
+
+const isInvite = (value: unknown): value is AccountInvite =>
+  isRecord(value) &&
+  typeof value.id === "number" &&
+  typeof value.createdAt === "number" &&
+  typeof value.expiresAt === "number" &&
+  (value.usedAt === undefined || typeof value.usedAt === "number") &&
+  (value.usedBy === undefined || typeof value.usedBy === "string");
 
 /**
  * A client for one server's account API. `credentials` picks how requests
@@ -310,22 +344,25 @@ export function createAccountClient(options: {
     return fail(code, response.status);
   };
 
+  const session = (result: AccountResult<unknown>): AccountResult<LoginSuccess> => {
+    if (!result.ok) return result;
+    const base = userBody(result.value);
+    if (base === undefined || !isRecord(result.value) || typeof result.value.expiresAt !== "number") {
+      return fail("invalid_response");
+    }
+    const token = result.value.token;
+    return ok({
+      ...base,
+      expiresAt: result.value.expiresAt,
+      ...(typeof token === "string" ? { token } : {}),
+    });
+  };
+
   return {
     origin,
-    login: async (username, password) => {
-      const result = await request("/api/login", "POST", { username, password });
-      if (!result.ok) return result;
-      const base = userBody(result.value);
-      if (base === undefined || !isRecord(result.value) || typeof result.value.expiresAt !== "number") {
-        return fail("invalid_response");
-      }
-      const token = result.value.token;
-      return ok({
-        ...base,
-        expiresAt: result.value.expiresAt,
-        ...(typeof token === "string" ? { token } : {}),
-      });
-    },
+    login: async (username, password) => session(await request("/api/login", "POST", { username, password })),
+    register: async (invite, username, password) =>
+      session(await request("/api/register", "POST", { invite, username, password })),
     me: async () => {
       const result = await request("/api/me", "GET");
       if (!result.ok) return result;
@@ -421,6 +458,33 @@ export function createAccountClient(options: {
     },
     removePushToken: async (token) => {
       const result = await request("/api/push-tokens/remove", "POST", { apns: token.apns, environment: token.environment });
+      return result.ok ? ok(undefined) : result;
+    },
+    listInvites: async () => {
+      const result = await request("/api/invites", "GET");
+      if (!result.ok) return result;
+      if (!Array.isArray(result.value) || !result.value.every(isInvite)) return fail("invalid_response");
+      return ok(
+        result.value.map((invite) => ({
+          id: invite.id,
+          createdAt: invite.createdAt,
+          expiresAt: invite.expiresAt,
+          ...(invite.usedAt === undefined ? {} : { usedAt: invite.usedAt }),
+          ...(invite.usedBy === undefined ? {} : { usedBy: invite.usedBy }),
+        })),
+      );
+    },
+    createInvite: async () => {
+      const result = await request("/api/invites", "POST");
+      if (!result.ok) return result;
+      const value = result.value;
+      if (!isRecord(value) || typeof value.code !== "string" || typeof value.expiresAt !== "number") {
+        return fail("invalid_response");
+      }
+      return ok({ code: value.code, expiresAt: value.expiresAt });
+    },
+    revokeInvite: async (id) => {
+      const result = await request("/api/invites/revoke", "POST", { id });
       return result.ok ? ok(undefined) : result;
     },
   };

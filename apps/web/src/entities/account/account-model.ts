@@ -15,8 +15,11 @@ import {
   type AccountError,
   type AccountFetch,
   type AccountHostMatch,
+  type AccountInvite,
   type AccountResult,
+  type CreatedInvite,
   type JoinToken,
+  type LoginSuccess,
   type PairConnectArgs,
 } from "@pinomad/client/account.ts";
 import { clientDeviceName } from "../../address.ts";
@@ -66,6 +69,8 @@ export type AccountState =
       readonly status: "signed-in";
       readonly mode: AccountMode;
       readonly user: string;
+      /** The server's admin account, which mints sign-up invites (#449). */
+      readonly admin: boolean;
       readonly serverOrigin: string;
       /** The account's hosts matched against stored pairings (packages/client matchAccountHosts). */
       readonly hosts: readonly AccountHostMatch[];
@@ -89,11 +94,22 @@ export interface AccountModel {
   subscribe(listener: () => void): () => void;
   /** Bearer mode needs `serverOrigin` unless a stored session already names one. */
   login(input: { username: string; password: string; serverOrigin?: string }): Promise<AccountResult<void>>;
+  /** Creates an account from an invite and signs in, same origin rules as login (#449). */
+  register(input: {
+    invite: string;
+    username: string;
+    password: string;
+    serverOrigin?: string;
+  }): Promise<AccountResult<void>>;
   logout(): Promise<AccountResult<void>>;
   /** Revokes every session of the account including this one — always lands signed-out. */
   revokeAll(): Promise<AccountResult<void>>;
   refreshHosts(): Promise<AccountResult<readonly AccountHostMatch[]>>;
   createJoinToken(): Promise<AccountResult<JoinToken>>;
+  /** Admin only (#449). */
+  listInvites(): Promise<AccountResult<readonly AccountInvite[]>>;
+  createInvite(): Promise<AccountResult<CreatedInvite>>;
+  revokeInvite(id: number): Promise<AccountResult<void>>;
   /**
    * The explicit "pair this account host" action: vouched offer → the usual
    * IK pairing → persisted with its account link. It removes the host from the
@@ -163,6 +179,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   let client: AccountClient | undefined;
   let mode: AccountMode = deps.bridge === undefined ? "cookie" : "bearer";
   let lastOrigin: string | undefined;
+  let admin = false;
   const rejected = new Set<string>();
   const declined = deps.declined ?? browserDeclined;
   const autoRegisterEnabled = deps.autoRegister !== false;
@@ -210,6 +227,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
 
   const signedOut = (): void => {
     client = undefined;
+    admin = false;
     epoch += 1;
     for (const flight of flights.values()) flight.cancelled = true;
     flights.clear();
@@ -231,6 +249,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     status: "signed-in",
     mode,
     user,
+    admin,
     serverOrigin: active.origin,
     hosts,
     rejectedHostKeys: [...rejected],
@@ -465,6 +484,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
         return;
       }
       client = candidate;
+      admin = me.value.admin === true;
       await refresh(candidate, me.value.user.username);
       return;
     }
@@ -484,6 +504,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     }
     client = candidate;
     lastOrigin = deps.origin;
+    admin = me.value.admin === true;
     await refresh(candidate, me.value.user.username);
   };
   void init();
@@ -536,6 +557,50 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     return { ok: true, value: enriched };
   };
 
+  /** Login and sign-up share everything but the call that mints the session. */
+  const signIn = async (
+    serverOrigin: string | undefined,
+    call: (candidate: AccountClient) => Promise<AccountResult<LoginSuccess>>,
+  ): Promise<AccountResult<void>> => {
+    let candidate: AccountClient;
+    if (mode === "cookie") {
+      candidate = createAccountClient({ origin: deps.origin, credentials: { mode: "cookie" }, fetch: deps.fetch });
+    } else {
+      const origin = serverOrigin ?? lastOrigin;
+      if (origin === undefined) return fail("origin_required");
+      if (!isSecureServerOrigin(origin)) return fail("insecure_origin");
+      candidate = createAccountClient({ origin, credentials: { mode: "bearer" }, fetch: deps.fetch });
+    }
+    const result = await call(candidate);
+    if (!result.ok) return result;
+    if (mode === "bearer") {
+      if (result.value.token === undefined) return fail("invalid_response");
+      candidate = createAccountClient({
+        origin: candidate.origin,
+        credentials: { mode: "bearer", token: result.value.token },
+        fetch: deps.fetch,
+      });
+      lastOrigin = candidate.origin;
+      // Persist after login succeeds; a bridge without account storage just
+      // keeps this session in memory.
+      void deps.bridge?.account
+        ?.save({ serverOrigin: candidate.origin, token: result.value.token })
+        .catch((error: unknown) => console.error("Could not persist the account session", error));
+    }
+    client = candidate;
+    admin = result.value.admin === true;
+    await refresh(candidate, result.value.user.username);
+    return { ok: true, value: undefined };
+  };
+
+  /** An account call that signs out when the server says the session is gone. */
+  const authed = async <T,>(call: (active: AccountClient) => Promise<AccountResult<T>>): Promise<AccountResult<T>> => {
+    if (client === undefined) return fail("unauthenticated");
+    const result = await call(client);
+    if (!result.ok && isUnauthenticated(result.error)) signedOut();
+    return result;
+  };
+
   return {
     get state() {
       return state;
@@ -547,36 +612,11 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       };
     },
 
-    login: async ({ username, password, serverOrigin }) => {
-      let candidate: AccountClient;
-      if (mode === "cookie") {
-        candidate = createAccountClient({ origin: deps.origin, credentials: { mode: "cookie" }, fetch: deps.fetch });
-      } else {
-        const origin = serverOrigin ?? lastOrigin;
-        if (origin === undefined) return fail("origin_required");
-        if (!isSecureServerOrigin(origin)) return fail("insecure_origin");
-        candidate = createAccountClient({ origin, credentials: { mode: "bearer" }, fetch: deps.fetch });
-      }
-      const result = await candidate.login(username, password);
-      if (!result.ok) return result;
-      if (mode === "bearer") {
-        if (result.value.token === undefined) return fail("invalid_response");
-        candidate = createAccountClient({
-          origin: candidate.origin,
-          credentials: { mode: "bearer", token: result.value.token },
-          fetch: deps.fetch,
-        });
-        lastOrigin = candidate.origin;
-        // Persist after login succeeds; a bridge without account storage just
-        // keeps this session in memory.
-        void deps.bridge?.account
-          ?.save({ serverOrigin: candidate.origin, token: result.value.token })
-          .catch((error: unknown) => console.error("Could not persist the account session", error));
-      }
-      client = candidate;
-      await refresh(candidate, result.value.user.username);
-      return { ok: true, value: undefined };
-    },
+    login: ({ username, password, serverOrigin }) =>
+      signIn(serverOrigin, (candidate) => candidate.login(username, password)),
+
+    register: ({ invite, username, password, serverOrigin }) =>
+      signIn(serverOrigin, (candidate) => candidate.register(invite, username, password)),
 
     logout: async () => {
       if (client === undefined) return fail("unauthenticated");
@@ -601,12 +641,10 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       return refresh(client, state.user);
     },
 
-    createJoinToken: async () => {
-      if (client === undefined) return fail("unauthenticated");
-      const result = await client.createJoinToken();
-      if (!result.ok && isUnauthenticated(result.error)) signedOut();
-      return result;
-    },
+    createJoinToken: () => authed((active) => active.createJoinToken()),
+    listInvites: () => authed((active) => active.listInvites()),
+    createInvite: () => authed((active) => active.createInvite()),
+    revokeInvite: (id) => authed((active) => active.revokeInvite(id)),
 
     pairHost,
 
