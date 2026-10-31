@@ -1,7 +1,7 @@
 // Ported from Pace's entities/checkout/checkout-strategy-picker.tsx (PiGUI
 // commit 15b9084): the draft's worktree/project-folder picker.
-import { Selector } from "@astryxdesign/core/Selector";
-import { Computer, FolderGitTwo } from "@/shared/ui/icons";
+import { CheckboxInput } from "@astryxdesign/core/CheckboxInput";
+import { Tooltip } from "@astryxdesign/core/Tooltip";
 
 export type CheckoutMode = "worktree" | "local";
 
@@ -16,35 +16,18 @@ export function CheckoutStrategyPicker({
   isDisabled?: boolean;
 }) {
   return (
-    // Two short fixed labels: beside a long project name, the name truncates instead.
-    <div className="max-w-full shrink-0" data-testid="checkout-strategy-picker">
-      <Selector
-        isLabelHidden
-        label="Where to work"
-        placement="below"
-        isDisabled={isDisabled}
-        options={[
-          {
-            value: "worktree",
-            label: "Git worktree",
-            icon: <FolderGitTwo aria-hidden="true" className="size-4 shrink-0 text-muted" />,
-          },
-          {
-            value: "local",
-            label: "Project folder",
-            icon: <Computer aria-hidden="true" className="size-4 shrink-0 text-muted" />,
-          },
-        ]}
-        size="sm"
-        startIcon={
-          value === "worktree"
-            ? <FolderGitTwo aria-hidden="true" className="size-4 shrink-0 text-muted" />
-            : <Computer aria-hidden="true" className="size-4 shrink-0 text-muted" />
-        }
-        value={value}
-        variant="ghost"
-        onChange={(picked) => onChange(picked === "worktree" ? "worktree" : "local")}
-      />
+    // The label stays "worktree" either way: the checkmark is the selected
+    // state, and unchecked means the project folder itself.
+    <div className="inline-flex max-w-full shrink-0" data-testid="checkout-strategy-picker">
+      <Tooltip content="Use a Git worktree; when off, work in the project folder." isEnabled={!isDisabled}>
+        <CheckboxInput
+          isDisabled={isDisabled}
+          label="worktree"
+          size="sm"
+          value={value === "worktree"}
+          onChange={(checked) => onChange(checked ? "worktree" : "local")}
+        />
+      </Tooltip>
     </div>
   );
 }

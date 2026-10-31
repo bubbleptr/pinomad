@@ -1714,8 +1714,14 @@ it("summarizes changes and subagents in the overview card and links to their det
   await page.getByRole("button", { name: "New chat", exact: true }).click();
   await page.getByRole("combobox", { name: "Project", exact: true }).click();
   await page.getByRole("option", { name: repoName, exact: true }).click();
-  await page.getByRole("combobox", { name: "Where to work", exact: true }).click();
-  await page.getByRole("option", { name: "Project folder", exact: true }).click();
+  // The checkout choice is one worktree checkbox: checked by default, and
+  // unchecking it works in the project folder itself.
+  const checkout = page.getByRole("checkbox", { name: "worktree", exact: true });
+  await checkout.waitFor();
+  expect(await checkout.isChecked()).toBe(true);
+  expect(await page.getByRole("combobox", { name: "Where to work" }).count()).toBe(0);
+  await checkout.click();
+  expect(await checkout.isChecked()).toBe(false);
   await prompt(page).fill("delegate");
   await prompt(page).press("Enter");
   await page.getByText("parent final", { exact: true }).waitFor();
@@ -2316,7 +2322,9 @@ it("shows where a conversation runs in the overview and honors the draft checkou
   await page.getByRole("button", { name: "New chat", exact: true }).click();
   await page.getByRole("combobox", { name: "Project", exact: true }).click();
   await page.getByRole("option", { name: repoName, exact: true }).click();
-  await page.getByRole("combobox", { name: "Where to work", exact: true }).waitFor();
+  const checkout = page.getByRole("checkbox", { name: "worktree", exact: true });
+  await checkout.waitFor();
+  expect(await checkout.isChecked()).toBe(true);
   await prompt(page).fill("tree hi");
   await prompt(page).press("Enter");
   await page.getByText("tree done", { exact: true }).waitFor();
@@ -2329,8 +2337,10 @@ it("shows where a conversation runs in the overview and honors the draft checkou
   await page.getByRole("button", { name: "New chat", exact: true }).click();
   await page.getByRole("combobox", { name: "Project", exact: true }).click();
   await page.getByRole("option", { name: plainName, exact: true }).click();
-  await page.getByRole("combobox", { name: "Where to work", exact: true }).click();
-  await page.getByRole("option", { name: "Project folder", exact: true }).click();
+  await checkout.waitFor();
+  expect(await checkout.isChecked()).toBe(true);
+  await checkout.click();
+  expect(await checkout.isChecked()).toBe(false);
   await prompt(page).fill("direct hi");
   await prompt(page).press("Enter");
   await page.getByText("direct done", { exact: true }).waitFor();
