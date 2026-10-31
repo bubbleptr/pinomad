@@ -4,9 +4,8 @@
 // takes fetch as an injected minimal surface — DOM and undici both
 // satisfy it — and never touches a DOM-only API.
 //
-// crates/pinomad-core replays this client for iOS, except sign-up, the
-// admin's invite ops (#449), account deletion and the device list (#451, #452):
-// only web and desktop offer those so far.
+// crates/pinomad-core replays this client for iOS, except sign-up and the
+// admin's invite ops (#449): only web and desktop offer those so far.
 
 import { encodeEndpointSetParam, parseEndpointSet, type EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { UNAUTHORIZED_CLOSE_CODE, type ApnsPushToken } from "@pinomad/protocol/frames.ts";

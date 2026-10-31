@@ -9,9 +9,9 @@ use crate::account as core;
 use crate::ffi::hosts::{EndpointSet, StoredHost, StoredHostAccount};
 
 pub use crate::account::{
-    AccountError, AccountHost, AccountHostPairing, AccountHostRef, AccountHostStatus, AccountHttpHeader,
-    AccountHttpRequest, AccountOp, AccountOpKind, AccountUser, AccountsProbe, JoinToken,
-    LoginSuccess,
+    AccountDevice, AccountDeviceHost, AccountDeviceHostState, AccountError, AccountHost, AccountHostPairing,
+    AccountHostRef, AccountHostStatus, AccountHttpHeader, AccountHttpRequest, AccountMe, AccountOp,
+    AccountOpKind, AccountUser, AccountsProbe, JoinToken, LoginSuccess,
 };
 
 /// The pairing answer at the boundary: the core's typed value plus the
@@ -53,10 +53,11 @@ impl PairingOffer {
 #[derive(Clone, Debug, PartialEq, uniffi::Enum)]
 pub enum AccountValue {
     Login(LoginSuccess),
-    Me(AccountUser),
+    Me(AccountMe),
     Unit,
     JoinToken(JoinToken),
     Hosts(Vec<AccountHost>),
+    Devices(Vec<AccountDevice>),
     PairingOffer(PairingOffer),
 }
 
@@ -67,6 +68,7 @@ fn value_from_core(value: core::AccountValue) -> AccountValue {
         core::AccountValue::Unit => AccountValue::Unit,
         core::AccountValue::JoinToken(value) => AccountValue::JoinToken(value),
         core::AccountValue::Hosts(value) => AccountValue::Hosts(value),
+        core::AccountValue::Devices(value) => AccountValue::Devices(value),
         core::AccountValue::PairingOffer(value) => {
             AccountValue::PairingOffer(PairingOffer::from_core(&value))
         }
