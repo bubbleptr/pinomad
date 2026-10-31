@@ -290,8 +290,10 @@ function migrate(db: DatabaseSync): void {
       BEGIN;
       ALTER TABLE users ADD COLUMN admin INTEGER NOT NULL DEFAULT 0;
       UPDATE users SET admin = 1 WHERE id = (SELECT MIN(id) FROM users);
+      -- AUTOINCREMENT: minting sweeps expired invites, and a reused id would
+      -- let a revoke from a stale list hit a code already sent to someone.
       CREATE TABLE invites (
-        id INTEGER PRIMARY KEY,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         code_hash TEXT NOT NULL UNIQUE,
         created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         created_at INTEGER NOT NULL,

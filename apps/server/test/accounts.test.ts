@@ -885,6 +885,49 @@ describe("invite sign-up (#449)", () => {
     expect((await api(relay, { path: "/api/hosts", headers: bearer(await adminToken(relay)) })).json).toHaveLength(1);
   });
 
+  it("never hands a swept invite's id to a new one, so a stale revoke can't hit it", async () => {
+    let clock = 1_000;
+    const { relay } = await startServer({ now: () => clock });
+    const token = await adminToken(relay);
+    await mint(relay, token);
+    const [old] = (await api(relay, { path: "/api/invites", headers: bearer(token) })).json as unknown as { id: number }[];
+    clock += 8 * DAY;
+    // Minting sweeps the expired invite; the new one must not reuse its id.
+    const fresh = await mint(relay, token);
+    const revoked = await api(relay, { method: "POST", path: "/api/invites/revoke", headers: bearer(token), body: { id: old!.id } });
+    expect(revoked.status).toBe(404);
+    expect((await signUp(relay, { invite: fresh, username: "bob", password: GOOD_PASSWORD })).status).toBe(200);
+  });
+
+  it("does not revoke an invite for a session revoked while its body was still arriving", async () => {
+    const { relay } = await startServer();
+    const token = await adminToken(relay);
+    const code = await mint(relay, token);
+    const [invite] = (await api(relay, { path: "/api/invites", headers: bearer(token) })).json as unknown as { id: number }[];
+    const body = JSON.stringify({ id: invite!.id });
+
+    let resolveStatus: (status: number) => void = () => {};
+    const status = new Promise<number>((resolve) => (resolveStatus = resolve));
+    const slow = httpRequest(
+      {
+        host: "127.0.0.1",
+        port: relay.port,
+        path: "/api/invites/revoke",
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-length": String(Buffer.byteLength(body)) },
+      },
+      (response) => {
+        response.resume();
+        resolveStatus(response.statusCode ?? 0);
+      },
+    );
+    await new Promise<void>((resolve) => slow.write(body.slice(0, 2), () => resolve()));
+    expect((await api(relay, { method: "POST", path: "/api/sessions/revoke-all", headers: bearer(token) })).status).toBe(204);
+    slow.end(body.slice(2));
+    expect(await status).toBe(401);
+    expect((await signUp(relay, { invite: code, username: "bob", password: GOOD_PASSWORD })).status).toBe(200);
+  });
+
   it("marks the first user admin when upgrading a schema-2 database", async () => {
     const first = await startServer();
     await stop(first);

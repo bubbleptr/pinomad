@@ -320,6 +320,12 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       deny(400, "invalid_request");
       return;
     }
+    // The session may have been revoked while the body trickled in, as on
+    // the push-token routes.
+    if (accounts.authenticate(token!)?.admin !== true) {
+      deny(401, "unauthenticated");
+      return;
+    }
     if (accounts.revokeInvite(id)) send(204);
     else deny(404, "not_found");
     return;
