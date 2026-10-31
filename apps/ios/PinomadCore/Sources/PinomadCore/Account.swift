@@ -36,20 +36,27 @@ public struct AccountRecord: Codable, Equatable, Sendable {
     public var username: String
     public var token: String?
     public var expiresAt: Double?
+    /// The server's admin account, as of the sign-in (#449). Records saved
+    /// before #451 have none and read as a regular account.
+    public var admin: Bool?
 
-    public init(serverOrigin: String, username: String, token: String? = nil, expiresAt: Double? = nil) {
+    public init(
+        serverOrigin: String, username: String, token: String? = nil, expiresAt: Double? = nil, admin: Bool? = nil
+    ) {
         self.serverOrigin = serverOrigin
         self.username = username
         self.token = token
         self.expiresAt = expiresAt
+        self.admin = admin
     }
 
-    public init(session: AccountSession) {
+    public init(session: AccountSession, admin: Bool = false) {
         self.init(
             serverOrigin: session.serverOrigin,
             username: session.username,
             token: session.token,
-            expiresAt: session.expiresAt)
+            expiresAt: session.expiresAt,
+            admin: admin ? true : nil)
     }
 
     public var session: AccountSession? {
@@ -143,6 +150,110 @@ public struct KeychainAccountStore: AccountStore {
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw AccountStoreError.keychain(status)
         }
+    }
+}
+
+// MARK: - Account device
+
+/// Where this install's account device id lives (ADR-0037 §1).
+public protocol AccountDeviceIdStore: Sendable {
+    func load() throws -> String?
+    func save(_ id: String) throws
+}
+
+/// Its own generic-password item beside the account and host items, with
+/// the same ThisDeviceOnly lifetime: like the host pairings, it survives a
+/// reinstall on this iPhone (the same phone stays the same account device)
+/// but never moves to another phone through a backup.
+public struct KeychainAccountDeviceIdStore: AccountDeviceIdStore {
+    private let service: String
+    private let account: String
+
+    public init(
+        service: String = "build.kieran.pinomad.device",
+        account: String = "pinomad.accountDevice.v1"
+    ) {
+        self.service = service
+        self.account = account
+    }
+
+    private var query: [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
+    }
+
+    public func load() throws -> String? {
+        var request = query
+        request[kSecReturnData as String] = true
+        request[kSecMatchLimit as String] = kSecMatchLimitOne
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(request as CFDictionary, &item)
+        switch status {
+        case errSecItemNotFound: return nil
+        case errSecSuccess:
+            guard let data = item as? Data else { throw AccountStoreError.corrupt }
+            return String(decoding: data, as: UTF8.self)
+        default: throw AccountStoreError.keychain(status)
+        }
+    }
+
+    public func save(_ id: String) throws {
+        let data = Data(id.utf8)
+        var request = query
+        request[kSecValueData as String] = data
+        let status = SecItemAdd(request as CFDictionary, nil)
+        if status == errSecDuplicateItem {
+            let updated = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+            guard updated == errSecSuccess else { throw AccountStoreError.keychain(updated) }
+        } else if status != errSecSuccess {
+            throw AccountStoreError.keychain(status)
+        }
+    }
+}
+
+/// This install's account device id: 128 random bits as base64url,
+/// generated once and sent with every sign-in so the server keeps one
+/// account device per install across sessions. A tag inside the account,
+/// not a credential. A keychain that can't be read or written costs only
+/// the reuse: the id still holds for this run, and the next run's sign-in
+/// shows up as another device.
+public final class AccountDeviceIdSource {
+    private let store: any AccountDeviceIdStore
+    private var cached: String?
+
+    public init(store: any AccountDeviceIdStore) {
+        self.store = store
+    }
+
+    public func id() -> String {
+        if let cached { return cached }
+        if let stored = try? store.load(), Self.isValid(stored) {
+            cached = stored
+            return stored
+        }
+        let fresh = Self.generate()
+        try? store.save(fresh)
+        cached = fresh
+        return fresh
+    }
+
+    /// What the server accepts (22–64 base64url characters); a stored value
+    /// outside it would 400 every sign-in.
+    public static func isValid(_ id: String) -> Bool {
+        (22...64).contains(id.count) && id.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
+    }
+
+    static func generate() -> String {
+        var generator = SystemRandomNumberGenerator()
+        let bytes = (0..<16).map { _ in UInt8.random(in: .min ... .max, using: &generator) }
+        return Data(bytes).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 }
 
@@ -262,17 +373,21 @@ public struct AccountAPI: Sendable {
         self.transport = transport
     }
 
-    public func login(username: String, password: String) async -> Result<LoginSuccess, AccountFailure> {
-        switch await request(.login(username: username, password: password), kind: .login) {
+    /// `device` ties the session to this install's account device (ADR-0037
+    /// §1); older servers ignore it.
+    public func login(
+        username: String, password: String, device: AccountDeviceClaim? = nil
+    ) async -> Result<LoginSuccess, AccountFailure> {
+        switch await request(.login(username: username, password: password, device: device), kind: .login) {
         case .success(.login(let value)): return .success(value)
         case .failure(let failure): return .failure(failure)
         default: return .failure(.invalidResponse)
         }
     }
 
-    public func me() async -> Result<AccountUser, AccountFailure> {
+    public func me() async -> Result<AccountMe, AccountFailure> {
         switch await request(.me, kind: .me) {
-        case .success(.me(let user)): return .success(user)
+        case .success(.me(let me)): return .success(me)
         case .failure(let failure): return .failure(failure)
         default: return .failure(.invalidResponse)
         }
@@ -329,6 +444,37 @@ public struct AccountAPI: Sendable {
     /// Keeps this session and signs out the account's others (#450).
     public func changePassword(current: String, new: String) async -> Result<Void, AccountFailure> {
         switch await request(.changePassword(currentPassword: current, newPassword: new), kind: .changePassword) {
+        case .success(.unit): return .success(())
+        case .failure(let failure): return .failure(failure)
+        default: return .failure(.invalidResponse)
+        }
+    }
+
+    /// Deletes the signed-in account and ends this session (#451). 403
+    /// `wrong_password` and `admin_account` are refusals, not sign-outs.
+    public func deleteAccount(password: String) async -> Result<Void, AccountFailure> {
+        switch await request(.deleteAccount(password: password), kind: .deleteAccount) {
+        case .success(.unit): return .success(())
+        case .failure(let failure): return .failure(failure)
+        default: return .failure(.invalidResponse)
+        }
+    }
+
+    /// The account's devices (#452); 404 on servers that predate them.
+    public func listDevices() async -> Result<[AccountDevice], AccountFailure> {
+        switch await request(.listDevices, kind: .listDevices) {
+        case .success(.devices(let devices)): return .success(devices)
+        case .failure(let failure): return .failure(failure)
+        default: return .failure(.invalidResponse)
+        }
+    }
+
+    /// Signs a device out of the account and asks every host it joined
+    /// through the account to revoke it (ADR-0037 §3). 403 `wrong_password`
+    /// is a refusal, not a sign-out; 409 `current_device` means sign out
+    /// instead.
+    public func kickDevice(id: Double, password: String) async -> Result<Void, AccountFailure> {
+        switch await request(.kickDevice(id: id, password: password), kind: .kickDevice) {
         case .success(.unit): return .success(())
         case .failure(let failure): return .failure(failure)
         default: return .failure(.invalidResponse)
@@ -422,6 +568,9 @@ public struct AccountHostRow: Identifiable, Equatable, Sendable {
     public let status: AccountHostRowStatus
     public let action: AccountHostAction
     public let storedHostKey: String?
+    /// False when the server can't ask this host to revoke a device
+    /// (ADR-0037 §5); nil from servers older than #452.
+    public let deviceReports: Bool?
 
     public init(
         hostId: String,
@@ -430,7 +579,8 @@ public struct AccountHostRow: Identifiable, Equatable, Sendable {
         pairing: AccountHostPairing,
         status: AccountHostRowStatus,
         action: AccountHostAction,
-        storedHostKey: String?
+        storedHostKey: String?,
+        deviceReports: Bool? = nil
     ) {
         self.hostId = hostId
         self.name = name
@@ -439,6 +589,7 @@ public struct AccountHostRow: Identifiable, Equatable, Sendable {
         self.status = status
         self.action = action
         self.storedHostKey = storedHostKey
+        self.deviceReports = deviceReports
     }
 
     public var id: String { hostId }
@@ -524,7 +675,8 @@ public enum AccountHosts {
                 pairing: match.host.pairing,
                 status: status,
                 action: action,
-                storedHostKey: storedKey)
+                storedHostKey: storedKey,
+                deviceReports: match.host.deviceReports)
         }
 
         return AccountReconciliation(
@@ -536,9 +688,49 @@ public enum AccountHosts {
 
 }
 
+// MARK: - Devices
+
+extension AccountDevice: Identifiable {}
+
+extension AccountDevice {
+    /// Remove is for another device still on the account: this one signs
+    /// out instead (the server answers 409), and a removed one is gone.
+    public var removable: Bool { !current && kickedAt == nil }
+}
+
 // MARK: - Copy
 
 public enum AccountCopy {
+    public static func deviceHostState(_ state: AccountDeviceHostState) -> String {
+        switch state {
+        case .registered: "Registered"
+        case .revoking: "Waiting for the host"
+        case .revoked: "Revoked"
+        }
+    }
+
+    /// What removing `name` does. A host that doesn't report devices never
+    /// shows up in a device's hosts, so there's no telling whether this
+    /// device joined it: every such host is named (ADR-0037 §5).
+    public static func removeDeviceExplanation(name: String, hosts: [AccountHostRow]) -> String {
+        let base = "This signs \(name) out of your account and asks each host it joined through your account to revoke it. Hosts that are offline revoke it when they reconnect."
+        let unreachable = hosts.filter { $0.deviceReports == false }.map(\.name)
+        switch unreachable.count {
+        case 0: return base
+        case 1: return base + " \(unreachable[0]) can't be asked. If \(name) joined it, revoke it on that host."
+        default:
+            let names = unreachable.dropLast().joined(separator: ", ") + " and " + unreachable[unreachable.count - 1]
+            return base + " \(names) can't be asked. If \(name) joined them, revoke it on each one."
+        }
+    }
+
+    public static func deleteAccountExplanation(server: String) -> String {
+        "This deletes your account on \(server) and signs you out everywhere. Hosts on your account are disconnected from the server; run pinomad join on each to connect it again. This iPhone and your other devices stay paired with their hosts until you revoke them there."
+    }
+
+    public static let accountDeletedNotice =
+        "Account deleted. This iPhone is still paired with your hosts. To remove it, revoke it in each host's Devices."
+
     public static let signOutExplanation =
         "Signing out stops the server from vouching for this device and from delivering its notifications. Paired hosts stay paired."
 
@@ -573,6 +765,8 @@ public enum AccountCopy {
         case "pairing_not_saved": "Paired, but this device couldn't save the pairing."
         case "wrong_password": "The current password is wrong."
         case "weak_password": "Use a password of at least 12 characters."
+        case "current_device": "That's the device you're using. Sign out instead."
+        case "admin_account": "The server's admin account can't be deleted."
         default: "Something went wrong (" + failure.code + ")."
         }
     }

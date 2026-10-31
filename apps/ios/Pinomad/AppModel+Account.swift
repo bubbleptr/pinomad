@@ -1,5 +1,6 @@
 import Foundation
 import PinomadCore
+import UIKit
 
 /// Account actions (ADR-0022): one server at a time, a bearer token in the
 /// keychain, and the host list matched against this device's pairings. The
@@ -75,7 +76,10 @@ extension AppModel {
         accountBusy = true
         defer { accountBusy = false }
         let api = AccountAPI(origin: server, transport: accountTransport)
-        switch await api.login(username: user, password: password) {
+        // The model, not UIDevice.name: that one is the owner's own label
+        // ("Kieran's iPhone") and would be personal data on the server.
+        let device = AccountDeviceClaim(id: accountDeviceIds.id(), name: UIDevice.current.model)
+        switch await api.login(username: user, password: password, device: device) {
         case .failure(let failure):
             rememberSignedOut(serverOrigin: server, username: user)
             accountError = AccountCopy.message(failure)
@@ -91,7 +95,7 @@ extension AppModel {
                 username: value.user.username,
                 token: token,
                 expiresAt: value.expiresAt)
-            let record = AccountRecord(session: session)
+            let record = AccountRecord(session: session, admin: value.admin)
             // A new account starts a new registration epoch; work started
             // for the previous session must not land on this one.
             invalidateAccountPairing()
@@ -100,6 +104,7 @@ extension AppModel {
             accountSignOutWarning = nil
             accountError = nil
             accountHostsError = nil
+            clearAccountDevices()
             var saveError: String?
             do {
                 try accountStore.save(record)
@@ -119,6 +124,10 @@ extension AppModel {
     /// registration — it is not an empty list (ADR-0035 §5).
     func accountRefreshHosts() async {
         guard let session = accountSession, let api = accountAPI() else {
+            #if DEBUG
+            // A demo account keeps the rows it was given.
+            if devHostsInjected, accountSession != nil { return }
+            #endif
             accountRows = []
             return
         }
@@ -386,6 +395,96 @@ extension AppModel {
         }
     }
 
+    /// Load the account's devices (#452). Only the latest ask lands, so a
+    /// slow answer from before a removal can't bring the old list back.
+    func accountRefreshDevices() async {
+        guard let session = accountSession, let api = accountAPI() else { return }
+        accountDevicesGeneration &+= 1
+        let generation = accountDevicesGeneration
+        let result = await api.listDevices()
+        guard accountSession == session, generation == accountDevicesGeneration else { return }
+        switch result {
+        case .success(let devices):
+            accountDevices = devices
+            accountDevicesError = nil
+        case .failure(let failure) where failure.status == 404:
+            accountDevicesUnsupported = true
+        case .failure(let failure) where failure.clearsSession:
+            accountSignOutWarning = endAccountSession(notice: AccountCopy.message(failure))
+        case .failure(let failure):
+            accountDevicesError = AccountCopy.message(failure)
+        }
+    }
+
+    /// Remove another device from the account and ask its hosts to revoke it
+    /// (ADR-0037 §3), then reload the list to show where that stands.
+    func accountKickDevice(_ device: AccountDevice, password: String) async -> AccountFailure? {
+        guard let session = accountSession, let api = accountAPI() else {
+            return AccountFailure(code: "unauthenticated")
+        }
+        let result = await api.kickDevice(id: device.id, password: password)
+        guard accountSession == session else { return nil }
+        switch result {
+        case .success:
+            await accountRefreshDevices()
+            return nil
+        case .failure(let failure) where failure.code == "not_found":
+            // Already gone (removed from another device): the reload shows it.
+            await accountRefreshDevices()
+            return nil
+        case .failure(let failure):
+            if failure.clearsSession {
+                accountSignOutWarning = endAccountSession(notice: AccountCopy.message(failure))
+            }
+            return failure
+        }
+    }
+
+    /// Delete the account (#451). The server ends every session and drops
+    /// the account's push registrations, this device's included, so the
+    /// record goes too and nothing registers again: the session is gone.
+    /// Paired hosts stay paired (ADR-0022 §6). A late success must not end a
+    /// newer session.
+    func accountDeleteAccount(password: String) async -> AccountFailure? {
+        guard let session = accountSession, let api = accountAPI() else {
+            return AccountFailure(code: "unauthenticated")
+        }
+        accountBusy = true
+        // A register sent meanwhile could land after the deletion; let one
+        // already in flight land first.
+        serverPushPaused = true
+        defer {
+            accountBusy = false
+            serverPushPaused = false
+        }
+        while let task = serverPushTask { await task.value }
+        switch await api.deleteAccount(password: password) {
+        case .success:
+            push.setServerRegistration(serverRegistration(
+                afterServerDropped: ServerPushAccount(serverOrigin: session.serverOrigin, username: session.username),
+                recorded: push.serverRegistration))
+            guard accountSession == session else { return nil }
+            let warning = endAccountSession(notice: AccountCopy.accountDeletedNotice)
+            // The username went with the account; the next sign-in keeps
+            // only the server.
+            rememberSignedOut(serverOrigin: session.serverOrigin, username: "")
+            accountSignOutWarning = warning
+            return nil
+        case .failure(let failure):
+            if failure.clearsSession, accountSession == session {
+                accountSignOutWarning = endAccountSession(notice: AccountCopy.message(failure))
+            }
+            return failure
+        }
+    }
+
+    func clearAccountDevices() {
+        accountDevicesGeneration &+= 1
+        accountDevices = nil
+        accountDevicesError = nil
+        accountDevicesUnsupported = false
+    }
+
     /// Pair one account host through a server-vouched offer, then the same
     /// IK handshake a QR link drives. The reader's explicit join removes a
     /// decline and wins over an automatic round already in flight.
@@ -516,7 +615,8 @@ extension AppModel {
                 pairing: row.pairing,
                 status: .rejected,
                 action: .rePair,
-                storedHostKey: row.storedHostKey)
+                storedHostKey: row.storedHostKey,
+                deviceReports: row.deviceReports)
         }
     }
 
@@ -539,7 +639,8 @@ extension AppModel {
                 pairing: row.pairing,
                 status: .unpaired,
                 action: .pair,
-                storedHostKey: nil)
+                storedHostKey: nil,
+                deviceReports: row.deviceReports)
         }
     }
 
@@ -577,6 +678,7 @@ extension AppModel {
         let cleared = record.clearingToken()
         accountRecord = cleared
         accountRows = []
+        clearAccountDevices()
         accountHostsError = nil
         accountError = nil
         accountSignOutWarning = nil

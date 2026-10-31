@@ -31,6 +31,7 @@ extension AppModel {
             accountRecord = AccountRecord(
                 serverOrigin: "https://accounts.invalid", username: "kieran",
                 token: "demo", expiresAt: Date.now.addingTimeInterval(86_400).timeIntervalSince1970 * 1000)
+            startAccountDevicesDemo()
         }
         if mode == "signed-out" {
             accountRecord = AccountRecord(serverOrigin: "https://accounts.invalid", username: "kieran")
@@ -74,6 +75,43 @@ extension AppModel {
             notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
             agents: nil, conversation: nil
         ))
+    }
+
+    /// The account's hosts and devices (#452): this iPhone, a Mac whose
+    /// removal one host hasn't confirmed, a removed iPad, and an old app's
+    /// nameless entry. `old-host` doesn't report devices, so the Remove
+    /// form names it.
+    private func startAccountDevicesDemo() {
+        let now = Date.now.timeIntervalSince1970 * 1000
+        let minute = 60_000.0
+        accountRows = [
+            AccountHostRow(
+                hostId: "demo-mbp", name: "mbp", online: true, pairing: .available, status: .paired,
+                action: .connect(hostKey: "demo-mbp"), storedHostKey: "demo-mbp", deviceReports: true),
+            AccountHostRow(
+                hostId: "demo-old", name: "old-host", online: false, pairing: .offline, status: .unpaired,
+                action: .pair, storedHostKey: nil, deviceReports: false),
+        ]
+        accountDevices = [
+            AccountDevice(
+                id: 3, name: "iPhone", createdAt: now - 9 * 86_400_000, lastSeenAt: now - 5 * minute,
+                current: true, kickedAt: nil,
+                hosts: [AccountDeviceHost(hostId: "demo-mbp", name: "mbp", state: .registered)]),
+            AccountDevice(
+                id: 4, name: "Mac Desktop", createdAt: now - 30 * 86_400_000, lastSeenAt: now - 2 * 86_400_000,
+                current: false, kickedAt: nil,
+                hosts: [
+                    AccountDeviceHost(hostId: "demo-mbp", name: "mbp", state: .registered),
+                    AccountDeviceHost(hostId: "demo-studio", name: "studio", state: .revoking),
+                ]),
+            AccountDevice(
+                id: 2, name: "iPad", createdAt: now - 60 * 86_400_000, lastSeenAt: now - 20 * 86_400_000,
+                current: false, kickedAt: now - 3 * 86_400_000,
+                hosts: [AccountDeviceHost(hostId: "demo-mbp", name: "mbp", state: .revoked)]),
+            AccountDevice(
+                id: 1, name: nil, createdAt: now - 90 * 86_400_000, lastSeenAt: now - 45 * 86_400_000,
+                current: false, kickedAt: nil, hosts: []),
+        ]
     }
 }
 #endif

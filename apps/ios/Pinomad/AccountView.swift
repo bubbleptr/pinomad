@@ -2,9 +2,10 @@ import PinomadCore
 import SwiftUI
 
 /// The one account (ADR-0022), opened from the avatar. Signed out, this is
-/// the login form; signed in, the hosts the account vouches for and the two
-/// ways to sign out. One sheet either way, so signing in lands on the
-/// account's hosts instead of closing.
+/// the login form; signed in, the hosts the account vouches for, the devices
+/// signed in to it (#452), the two ways to sign out and deleting the account
+/// (#451). One sheet either way, so signing in lands on the account's hosts
+/// instead of closing.
 struct AccountView: View {
     let model: AppModel
 
@@ -12,6 +13,19 @@ struct AccountView: View {
     @State private var pendingAccountPair: AccountHostRow?
     @State private var confirmingSignOutEverywhere = false
     @State private var passwordChanged = false
+    @State private var removingDevice: AccountDevice?
+    #if DEBUG
+    /// `PINOMAD_DEMO_ACCOUNT=delete` opens on the Delete Account form.
+    @State private var devDeleting = false
+    /// `PINOMAD_DEMO_ACCOUNT=bottom`, read up front: the sheet's own task
+    /// clears the page it was asked for.
+    @State private var devOpensAtBottom: Bool
+
+    init(model: AppModel) {
+        self.model = model
+        _devOpensAtBottom = State(initialValue: model.devAccountPage == "bottom")
+    }
+    #endif
 
     var body: some View {
         NavigationStack {
@@ -30,86 +44,138 @@ struct AccountView: View {
     }
 
     private func signedIn(_ session: AccountSession) -> some View {
-        List {
-            Section {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(session.username)
-                    Text(hostOf(session.serverOrigin))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                if let notice = model.accountNotice {
-                    Text(notice)
-                        .font(.footnote)
-                        .foregroundStyle(.orange)
-                }
-            }
-
-            Section("Hosts on Your Account") {
-                if model.accountRefreshing && model.accountRows.isEmpty {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text("Loading hosts…")
-                            .font(.footnote)
+        ScrollViewReader { proxy in
+            List {
+                Section {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(session.username)
+                        Text(hostOf(session.serverOrigin))
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                } else if model.accountRows.isEmpty, model.accountHostsError == nil {
-                    Text("No hosts on this account yet.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(model.accountRows) { row in
-                        accountRow(row)
+
+                    if let notice = model.accountNotice {
+                        Text(notice)
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
                     }
                 }
 
-                if let error = model.accountHostsError ?? model.accountError {
-                    Text(error)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
+                Section("Hosts on Your Account") {
+                    if model.accountRefreshing && model.accountRows.isEmpty {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Loading hosts…")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else if model.accountRows.isEmpty, model.accountHostsError == nil {
+                        Text("No hosts on this account yet.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(model.accountRows) { row in
+                            accountRow(row)
+                        }
+                    }
+
+                    if let error = model.accountHostsError ?? model.accountError {
+                        Text(error)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
                 }
+
+                // Hidden on servers that predate the device list.
+                if !model.accountDevicesUnsupported {
+                    devicesSection
+                }
+
+                Section {
+                    NavigationLink("Change Password") {
+                        ChangePasswordView(model: model) { passwordChanged = true }
+                    }
+                    .disabled(model.accountBusy)
+                } footer: {
+                    if passwordChanged {
+                        Text("Password changed. Your other devices were signed out.")
+                    }
+                }
+
+                Section {
+                    if let warning = model.accountSignOutWarning {
+                        Text(warning)
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                    }
+
+                    Button("Sign out", role: .destructive) {
+                        Task { await model.accountSignOut(everywhere: false) }
+                    }
+                    .disabled(model.accountBusy)
+
+                    Button("Sign out everywhere", role: .destructive) {
+                        confirmingSignOutEverywhere = true
+                    }
+                    .disabled(model.accountBusy)
+                } footer: {
+                    Text(AccountCopy.signOutExplanation)
+                }
+
+                // The server refuses to delete its admin account.
+                if model.accountRecord?.admin != true {
+                    Section {
+                        NavigationLink {
+                            DeleteAccountView(model: model, server: hostOf(session.serverOrigin))
+                        } label: {
+                            Text("Delete Account")
+                                .foregroundStyle(model.accountBusy ? Color.secondary : Color.red)
+                        }
+                        .disabled(model.accountBusy)
+                        .id("delete-account")
+                    }
+                }
+
+                LegalLinksSection()
             }
-
-            Section {
-                NavigationLink("Change Password") {
-                    ChangePasswordView(model: model) { passwordChanged = true }
-                }
-                .disabled(model.accountBusy)
-            } footer: {
-                if passwordChanged {
-                    Text("Password changed. Your other devices were signed out.")
-                }
+            #if DEBUG
+            .task {
+                // `PINOMAD_DEMO_ACCOUNT=bottom` opens scrolled to Delete Account.
+                guard devOpensAtBottom else { return }
+                try? await Task.sleep(for: .milliseconds(300))
+                proxy.scrollTo("delete-account", anchor: .top)
             }
-
-            Section {
-                if let warning = model.accountSignOutWarning {
-                    Text(warning)
-                        .font(.footnote)
-                        .foregroundStyle(.orange)
-                }
-
-                Button("Sign out", role: .destructive) {
-                    Task { await model.accountSignOut(everywhere: false) }
-                }
-                .disabled(model.accountBusy)
-
-                Button("Sign out everywhere", role: .destructive) {
-                    confirmingSignOutEverywhere = true
-                }
-                .disabled(model.accountBusy)
-            } footer: {
-                Text(AccountCopy.signOutExplanation)
-            }
+            #endif
         }
         .navigationTitle("Account")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(item: $removingDevice) { device in
+            RemoveDeviceView(model: model, device: device)
+        }
         .refreshable {
             await model.refreshHostsAndAccount()
+            await model.accountRefreshDevices()
         }
         .task {
-            await model.accountRefreshHosts()
+            #if DEBUG
+            let page = model.devAccountPage
+            model.devAccountPage = nil
+            switch page {
+            case "remove": removingDevice = model.accountDevices?.first(where: \.removable)
+            case "delete": devDeleting = true
+            default: break
+            }
+            #endif
+            // Side by side: a slow host list mustn't hold the devices back.
+            async let hosts: Void = model.accountRefreshHosts()
+            async let devices: Void = model.accountRefreshDevices()
+            _ = await (hosts, devices)
         }
+        #if DEBUG
+        .navigationDestination(isPresented: $devDeleting) {
+            DeleteAccountView(model: model, server: hostOf(session.serverOrigin))
+        }
+        #endif
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Done") { dismiss() }
@@ -138,6 +204,77 @@ struct AccountView: View {
         } message: {
             Text("Your account is signed out on every device, and each one needs to sign in again before it gets notifications. Paired hosts stay paired.")
         }
+    }
+
+    private var devicesSection: some View {
+        Section {
+            if let devices = model.accountDevices {
+                ForEach(devices) { device in
+                    deviceRow(device)
+                }
+            } else if model.accountDevicesError == nil {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading devices…")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let error = model.accountDevicesError {
+                Text(error)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+        } header: {
+            Text("Devices")
+        } footer: {
+            Text("Every app and browser signed in to your account, and the hosts each joined through it.")
+        }
+    }
+
+    private func deviceRow(_ device: AccountDevice) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(device.current ? "This iPhone" : device.name ?? "Unknown device")
+                Text(signInLine(device))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if !device.hosts.isEmpty {
+                    Text(device.hosts
+                        .map { "\($0.name): \(AccountCopy.deviceHostState($0.state))" }
+                        .joined(separator: " · "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            if device.removable {
+                Button("Remove") { removingDevice = device }
+                    .buttonStyle(.tactile(.glass))
+                    .controlSize(.small)
+                    .disabled(model.accountBusy)
+            } else if device.kickedAt != nil {
+                Text("Removed")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .swipeActions {
+            if device.removable, !model.accountBusy {
+                Button("Remove", role: .destructive) { removingDevice = device }
+            }
+        }
+    }
+
+    private func signInLine(_ device: AccountDevice) -> String {
+        let signIn = "Last sign-in " + relative(device.lastSeenAt)
+        guard let kickedAt = device.kickedAt else { return signIn }
+        return signIn + " · removed " + relative(kickedAt)
+    }
+
+    private func relative(_ epochMs: Double) -> String {
+        Date(timeIntervalSince1970: epochMs / 1000).formatted(.relative(presentation: .named))
     }
 
     @ViewBuilder
@@ -210,6 +347,24 @@ struct AccountView: View {
             if await model.pairViaAccount(hostId: row.hostId) {
                 dismiss()
             }
+        }
+    }
+}
+
+/// The official server's privacy policy and terms (#455), at the foot of
+/// the account screens. A self-hosted server's operator answers for its
+/// own; the pages say so.
+struct LegalLinksSection: View {
+    var body: some View {
+        Section {
+        } footer: {
+            HStack(spacing: 6) {
+                Link("Privacy Policy", destination: URL(string: "https://pinomad.si/privacy/")!)
+                Text("·")
+                Link("Terms of Service", destination: URL(string: "https://pinomad.si/terms/")!)
+            }
+            .font(.footnote)
+            .frame(maxWidth: .infinity)
         }
     }
 }

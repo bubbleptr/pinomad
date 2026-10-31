@@ -108,6 +108,13 @@ extension AppModel {
             // The settings pages over two demo machines; `failed` opens on
             // the first machine's failure page.
             startSettingsDemo(mode)
+            // With `account`: open the account sheet (`devices`), or push
+            // the Remove form for the first removable device (`remove`) or
+            // the Delete Account form (`delete`).
+            if let page = env["PINOMAD_DEMO_ACCOUNT"] {
+                devAccountPage = page
+                present(.account)
+            }
             return true
         }
         if let mode = env["PINOMAD_DEMO_LAYOUT"] {

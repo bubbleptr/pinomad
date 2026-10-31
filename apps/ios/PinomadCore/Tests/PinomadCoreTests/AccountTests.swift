@@ -296,6 +296,162 @@ struct AccountTests {
         #expect(transport.requests[0].url == "https://relay.example.com/api/password")
     }
 
+    // MARK: - Deleting the account and removing devices (#451, #452)
+
+    @Test func deletingTheAccountSendsThePasswordAgain() async {
+        let transport = StubAccountTransport()
+        transport.outcome = .response(AccountHTTPResponse(status: 204, body: Data()))
+        let api = AccountAPI(origin: "https://relay.example.com", token: "tok", transport: transport)
+        let result = await api.deleteAccount(password: "pw")
+        guard case .success = result else {
+            Issue.record("expected success, got \(result)")
+            return
+        }
+        #expect(transport.requests[0].method == "POST")
+        #expect(transport.requests[0].url == "https://relay.example.com/api/me/delete")
+        #expect(transport.requests[0].body == #"{"password":"pw"}"#)
+    }
+
+    /// A wrong password and the admin's refusal are 403s: the session they
+    /// were typed into stays, and each says why.
+    @Test func refusedDeletionKeepsTheSession() async {
+        let transport = StubAccountTransport()
+        let api = AccountAPI(origin: "https://relay.example.com", token: "tok", transport: transport)
+        for (code, copy) in [
+            ("wrong_password", "The current password is wrong."),
+            ("admin_account", "The server's admin account can't be deleted."),
+        ] {
+            transport.outcome = .response(AccountHTTPResponse(status: 403, body: Data(#"{"error":"\#(code)"}"#.utf8)))
+            guard case .failure(let failure) = await api.deleteAccount(password: "pw") else {
+                Issue.record("expected \(code)")
+                continue
+            }
+            #expect(failure == AccountFailure(code: code, status: 403))
+            #expect(!failure.clearsSession)
+            #expect(AccountCopy.message(failure) == copy)
+        }
+    }
+
+    @Test func devicesParseWithTheirStandingOnEachHost() async {
+        let transport = StubAccountTransport()
+        transport.outcome = .response(AccountHTTPResponse(status: 200, body: Data(#"""
+            [{"id":3,"name":"iPhone","createdAt":1,"lastSeenAt":5,"current":true,"hosts":[{"hostId":"h1","name":"omarchy","state":"revoking"}]},
+             {"id":7,"createdAt":1,"lastSeenAt":2,"current":false,"hosts":[]},
+             {"id":2,"createdAt":1,"lastSeenAt":2,"current":false,"kickedAt":4,"hosts":[]}]
+            """#.utf8)))
+        let api = AccountAPI(origin: "https://relay.example.com", token: "tok", transport: transport)
+        guard case .success(let devices) = await api.listDevices() else {
+            Issue.record("expected devices")
+            return
+        }
+        #expect(transport.requests[0].method == "GET")
+        #expect(transport.requests[0].url == "https://relay.example.com/api/devices")
+        #expect(devices.map(\.id) == [3, 7, 2])
+        #expect(devices[0].hosts == [AccountDeviceHost(hostId: "h1", name: "omarchy", state: .revoking)])
+        #expect(devices[1].name == nil)
+        // Only another device still on the account can be removed: this
+        // one signs out instead, and a removed one is already gone.
+        #expect(devices.map(\.removable) == [false, true, false])
+    }
+
+    @Test func removingADeviceTargetsTheServersId() async {
+        let transport = StubAccountTransport()
+        transport.outcome = .response(AccountHTTPResponse(status: 204, body: Data()))
+        let api = AccountAPI(origin: "https://relay.example.com", token: "tok", transport: transport)
+        guard case .success = await api.kickDevice(id: 12, password: "pw") else {
+            Issue.record("expected success")
+            return
+        }
+        #expect(transport.requests[0].url == "https://relay.example.com/api/devices/12/kick")
+        #expect(transport.requests[0].body == #"{"password":"pw"}"#)
+
+        transport.outcome = .response(AccountHTTPResponse(status: 409, body: Data(#"{"error":"current_device"}"#.utf8)))
+        guard case .failure(let failure) = await api.kickDevice(id: 3, password: "pw") else {
+            Issue.record("expected current_device")
+            return
+        }
+        #expect(!failure.clearsSession)
+        #expect(AccountCopy.message(failure) == "That's the device you're using. Sign out instead.")
+    }
+
+    @Test func signInClaimsThisDevice() async {
+        let transport = StubAccountTransport()
+        transport.outcome = .response(AccountHTTPResponse(
+            status: 200, body: Data(#"{"user":{"username":"a"},"admin":true,"expiresAt":1,"token":"t"}"#.utf8)))
+        let api = AccountAPI(origin: "https://relay.example.com", transport: transport)
+        let result = await api.login(
+            username: "a", password: "p", device: AccountDeviceClaim(id: "AAAAAAAAAAAAAAAAAAAAAA", name: "iPhone"))
+        guard case .success(let value) = result else {
+            Issue.record("expected a login, got \(result)")
+            return
+        }
+        #expect(value.admin)
+        #expect(transport.requests[0].body
+            == #"{"username":"a","password":"p","device":{"id":"AAAAAAAAAAAAAAAAAAAAAA","name":"iPhone"}}"#)
+    }
+
+    /// A host that doesn't report devices can't be asked to revoke one, so
+    /// the explanation names it; reporting hosts and older servers aren't.
+    @Test func removalNamesHostsThatCantBeAsked() {
+        func row(_ name: String, _ reports: Bool?) -> AccountHostRow {
+            AccountHostRow(
+                hostId: name, name: name, online: true, pairing: .available, status: .paired,
+                action: .pair, storedHostKey: nil, deviceReports: reports)
+        }
+        let none = AccountCopy.removeDeviceExplanation(name: "Mac", hosts: [row("mbp", true), row("old", nil)])
+        #expect(!none.contains("can't be asked"))
+        let one = AccountCopy.removeDeviceExplanation(name: "Mac", hosts: [row("mbp", true), row("studio", false)])
+        #expect(one.hasSuffix("studio can't be asked. If Mac joined it, revoke it on that host."))
+        let two = AccountCopy.removeDeviceExplanation(
+            name: "Mac", hosts: [row("a", false), row("b", false), row("c", false)])
+        #expect(two.contains("a, b and c can't be asked."))
+    }
+
+    /// A record saved before the admin flag existed still decodes, as a
+    /// regular account.
+    @Test func recordFromBeforeTheAdminFlagDecodes() throws {
+        let data = Data(#"{"serverOrigin":"https://x.example","username":"k","token":"t","expiresAt":1}"#.utf8)
+        let record = try JSONDecoder().decode(AccountRecord.self, from: data)
+        #expect(record.admin == nil)
+        #expect(record.session != nil)
+        #expect(AccountRecord(session: record.session!, admin: true).admin == true)
+    }
+
+    // MARK: - Device id
+
+    /// Generated once, then the same id for every sign-in — across app runs
+    /// too, since the next run reads it back from the store.
+    @Test func deviceIdIsGeneratedOnceAndKept() {
+        let store = MemoryDeviceIdStore()
+        let id = AccountDeviceIdSource(store: store).id()
+        #expect(id.count == 22)
+        #expect(AccountDeviceIdSource.isValid(id))
+        #expect(store.saves == 1)
+        #expect(AccountDeviceIdSource(store: store).id() == id)
+        #expect(store.saves == 1)
+    }
+
+    /// A stored value the server would refuse is replaced, not sent.
+    @Test func invalidStoredDeviceIdIsReplaced() {
+        let store = MemoryDeviceIdStore()
+        store.value = "short"
+        let id = AccountDeviceIdSource(store: store).id()
+        #expect(id != "short")
+        #expect(store.value == id)
+        #expect(!AccountDeviceIdSource.isValid("has space in it 0123456789"))
+        #expect(!AccountDeviceIdSource.isValid(String(repeating: "a", count: 65)))
+        #expect(AccountDeviceIdSource.isValid(String(repeating: "a", count: 64)))
+    }
+
+    /// A keychain that fails costs only the reuse across runs: this run
+    /// keeps one id.
+    @Test func failingStoreStillKeepsOneIdForThisRun() {
+        let store = MemoryDeviceIdStore()
+        store.fails = true
+        let source = AccountDeviceIdSource(store: store)
+        #expect(source.id() == source.id())
+    }
+
     @Test func insecureOriginNeverReachesTheTransport() async {
         let transport = StubAccountTransport()
         let api = AccountAPI(origin: "http://127.example.com", token: "tok", transport: transport)
@@ -361,6 +517,23 @@ private func accountHost(
     pairing: AccountHostPairing
 ) -> AccountHost {
     AccountHost(hostId: id, name: id, noisePublicKey: key, online: true, lastSeenAt: 1, pairing: pairing)
+}
+
+private final class MemoryDeviceIdStore: AccountDeviceIdStore, @unchecked Sendable {
+    var value: String?
+    var fails = false
+    var saves = 0
+
+    func load() throws -> String? {
+        if fails { throw AccountStoreError.keychain(-25300) }
+        return value
+    }
+
+    func save(_ id: String) throws {
+        if fails { throw AccountStoreError.keychain(-25300) }
+        value = id
+        saves += 1
+    }
 }
 
 private enum StubOutcome {
