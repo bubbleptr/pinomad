@@ -5,12 +5,12 @@
 //
 //   PINOMAD_SERVER_USER=… PINOMAD_SERVER_PASSWORD=… bun run server -- --public-origin ORIGIN   # first start
 //   bun run server -- --public-origin ORIGIN --data-dir DIR
-//   bun run server -- passwd [--data-dir DIR]                          # new password on stdin
+//   bun run server -- passwd [--data-dir DIR] [--user NAME]            # reset a password; new one on stdin
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { commandHint, webRoot } from "@pinomad/host/src/distribution.ts";
-import { changePassword, openAccounts } from "./accounts.ts";
+import { openAccounts, resetPassword } from "./accounts.ts";
 import { loadApnsConfig, openApns } from "./apns.ts";
 import { startRelay } from "./relay.ts";
 
@@ -45,7 +45,7 @@ async function passwdMain(argv: readonly string[]): Promise<void> {
   }
   const dataDir = resolveDataDir(values["data-dir"]);
   const password = (await readStdin(16 * 1024)).replace(/[\r\n]+$/, "");
-  await changePassword({ dataDir, user: values.user, password });
+  await resetPassword({ dataDir, user: values.user, password });
   console.log(JSON.stringify({ event: "passwd", dataDir }));
 }
 
@@ -72,7 +72,7 @@ export async function main(argv: readonly string[]): Promise<void> {
   if (values["public-origin"] === undefined) {
     console.error(
       `usage: ${commandHint("server")} --public-origin ORIGIN [--data-dir DIR] [--trust-proxy] [--port 7430] [--listen 127.0.0.1]\n` +
-        `       ${commandHint("server")} passwd [--data-dir DIR] [--user NAME]   (server stopped; new password on stdin)\n` +
+        `       ${commandHint("server")} passwd [--data-dir DIR] [--user NAME]   (reset a password, server running or not; new password on stdin)\n` +
         "       env: PINOMAD_SERVER_USER, PINOMAD_SERVER_PASSWORD, PINOMAD_SERVER_DATA_DIR",
     );
     process.exit(1);

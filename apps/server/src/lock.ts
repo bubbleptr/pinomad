@@ -1,6 +1,8 @@
 // Data-directory lock, same mechanism as the host (apps/host/src/host.ts):
 // proper-lockfile on the directory itself. SQLite has no cross-process writer
 // protection worth trusting here — a second server would corrupt state.
+// `server passwd` beside a running server is the one deliberate exception:
+// a single short transaction through SQLite's own WAL locking (#450).
 // Duplicated rather than shared so the host is untouched.
 
 import lockfile from "proper-lockfile";
@@ -9,6 +11,10 @@ import lockfile from "proper-lockfile";
 // contender's stale value gets broken. Holders refresh every stale/2, so every
 // participant must use the same stale value — a smaller one would steal a live
 // lock; that's why callers only tune retries, never stale below the default.
+
+/** True for lockDataDir's "another process holds it" failure, as opposed to any other error. */
+export const isDataDirInUse = (error: unknown): boolean =>
+  (error as { cause?: { code?: string } }).cause?.code === "ELOCKED";
 
 /** Locks `dir`; the returned function releases. Throws when another process holds a fresh lock. */
 export async function lockDataDir(

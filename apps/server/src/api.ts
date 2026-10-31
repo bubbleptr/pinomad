@@ -1,6 +1,6 @@
 // The server's HTTP account API (ADR-0022 §2), mounted on the same port as the
 // splice sockets and the static web client: POST /api/login, POST /api/register,
-// POST /api/logout, POST /api/sessions/revoke-all, GET /api/me,
+// POST /api/logout, POST /api/sessions/revoke-all, GET /api/me, POST /api/password (#450),
 // POST /api/join-tokens, POST /api/push-tokens and POST /api/push-tokens/remove
 // (ADR-0036), and for the admin GET/POST /api/invites and
 // POST /api/invites/revoke (#449).
@@ -423,6 +423,7 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     pathname === "/api/me" ||
     pathname === "/api/logout" ||
     pathname === "/api/sessions/revoke-all" ||
+    pathname === "/api/password" ||
     pathname === "/api/join-tokens" ||
     pathname === "/api/push-tokens" ||
     pathname === "/api/push-tokens/remove"
@@ -466,6 +467,43 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       }
       if (pathname === "/api/push-tokens") accounts.registerPushToken(session.userId, apns, environment);
       else accounts.removePushToken(session.userId, apns, environment);
+      send(204);
+      return;
+    }
+    if (pathname === "/api/password") {
+      const body = await readJson(request);
+      if (!body.ok) {
+        deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
+        return;
+      }
+      const value = body.value as { currentPassword?: unknown; newPassword?: unknown } | null;
+      // Same bound as login: an over-long current password can't match, and
+      // must not reach scrypt.
+      if (
+        typeof value?.currentPassword !== "string" ||
+        typeof value.newPassword !== "string" ||
+        [...value.currentPassword].length > MAX_PASSWORD_CODEPOINTS
+      ) {
+        deny(400, "invalid_request");
+        return;
+      }
+      const result = await accounts.changePassword({
+        userId: session.userId,
+        username: session.username,
+        keepToken: token!,
+        currentPassword: value.currentPassword,
+        newPassword: value.newPassword,
+      });
+      if (result.status === "limited") {
+        deny(429, "rate_limited");
+        return;
+      }
+      if (result.status === "refused") {
+        // 403, not 401: clients treat 401 as "signed out", and a mistyped
+        // current password must not sign the caller out.
+        deny(result.reason === "wrong_password" ? 403 : 400, result.reason);
+        return;
+      }
       send(204);
       return;
     }
