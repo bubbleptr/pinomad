@@ -13,6 +13,7 @@ import { commandHint, webRoot } from "@pinomad/host/src/distribution.ts";
 import { openAccounts, resetPassword } from "./accounts.ts";
 import { loadApnsConfig, openApns } from "./apns.ts";
 import { startRelay } from "./relay.ts";
+import { DEFAULT_RELAY_LIMITS, readRelayLimits, RELAY_LIMIT_OPTIONS, type RelayLimits } from "./relay-limits.ts";
 
 /** Newest arg wins: flag, then PINOMAD_SERVER_DATA_DIR, then the default. */
 function resolveDataDir(flag: string | undefined): string {
@@ -66,6 +67,7 @@ export async function main(argv: readonly string[]): Promise<void> {
       "public-origin": { type: "string" },
       "data-dir": { type: "string" },
       "trust-proxy": { type: "boolean", default: false },
+      ...Object.fromEntries(RELAY_LIMIT_OPTIONS.map((option) => [option.flag, { type: "string" as const }])),
     },
   });
 
@@ -73,8 +75,20 @@ export async function main(argv: readonly string[]): Promise<void> {
     console.error(
       `usage: ${commandHint("server")} --public-origin ORIGIN [--data-dir DIR] [--trust-proxy] [--port 7430] [--listen 127.0.0.1]\n` +
         `       ${commandHint("server")} passwd [--data-dir DIR] [--user NAME]   (reset a password, server running or not; new password on stdin)\n` +
-        "       env: PINOMAD_SERVER_USER, PINOMAD_SERVER_PASSWORD, PINOMAD_SERVER_DATA_DIR",
+        "       env: PINOMAD_SERVER_USER, PINOMAD_SERVER_PASSWORD, PINOMAD_SERVER_DATA_DIR\n" +
+        "       relay limits (flag or env, 0 = off): " +
+        RELAY_LIMIT_OPTIONS.map((option) => `--${option.flag} / ${option.env}`).join(", "),
     );
+    process.exit(1);
+  }
+
+  // Splice caps and the per-account byte budget (issue #453): checked before
+  // anything opens, so a typo fails the start instead of running unlimited.
+  let limits: Partial<RelayLimits>;
+  try {
+    limits = readRelayLimits(values, process.env);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
 
@@ -105,6 +119,7 @@ export async function main(argv: readonly string[]): Promise<void> {
     accounts,
     trustProxy: values["trust-proxy"],
     ...(apns === undefined ? {} : { push: apns }),
+    limits,
   });
   console.log(
     JSON.stringify({
@@ -112,6 +127,7 @@ export async function main(argv: readonly string[]): Promise<void> {
       url: relay.url,
       publicOrigin: values["public-origin"],
       push: apns?.environments ?? [],
+      relayLimits: { ...DEFAULT_RELAY_LIMITS, ...limits },
     }),
   );
 

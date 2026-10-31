@@ -19,10 +19,16 @@ pub mod close_codes {
     pub const HOST_OFFLINE: u16 = 4604;
     /// An accept channel named a connId the relay no longer tracks.
     pub const UNKNOWN_CONNECTION: u16 = 4605;
+    /// The device's handshake did not complete within the server's deadline.
+    pub const HANDSHAKE_TIMEOUT: u16 = 4608;
     /// This control connection was superseded by a newer registration.
     pub const REPLACED: u16 = 4609;
     /// The host did not accept the incoming device in time.
     pub const ACCEPT_TIMEOUT: u16 = 4610;
+    /// A concurrent-connection cap for the host or its account is full.
+    pub const TOO_MANY_CONNECTIONS: u16 = 4629;
+    /// The account's relay traffic budget is spent; it refills over time.
+    pub const TRAFFIC_LIMIT: u16 = 4630;
 }
 
 /// `relayHostId` — the hostId is the base64url of the host's 32-byte

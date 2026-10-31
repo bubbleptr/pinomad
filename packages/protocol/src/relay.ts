@@ -10,14 +10,22 @@ import { fromBase64Url, toBase64Url } from "./secure-channel.ts";
 import { HOST_NAME_MAX_UNITS } from "./settings.ts";
 
 // 46xx so relay close codes never collide with the host's own
-// (UNAUTHORIZED_CLOSE_CODE = 4401 in frames.ts).
+// (UNAUTHORIZED_CLOSE_CODE = 4401 in frames.ts). Clients treat any code they
+// don't know like an ordinary drop and reconnect with backoff (ADR-0018 §4),
+// so adding one here never strands an older client.
 export const RELAY_CLOSE = {
   badSignature: 4601,
   hostNotAllowed: 4603,
   hostOffline: 4604,
   unknownConnection: 4605,
+  /** The device's handshake did not complete within the server's deadline (issue #453). */
+  handshakeTimeout: 4608,
   replaced: 4609,
   acceptTimeout: 4610,
+  /** A concurrent-connection cap for the host or its account is full (issue #453). */
+  tooManyConnections: 4629,
+  /** The account's relay traffic budget is spent; it refills over time (issue #453). */
+  trafficLimit: 4630,
 } as const;
 
 /** The APNs environment a token was issued under — the build's `aps-environment` entitlement (ADR-0025 §7). */
