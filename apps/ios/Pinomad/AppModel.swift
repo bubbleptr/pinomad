@@ -914,6 +914,7 @@ final class AppModel {
             guard let self else { return }
             if runtime === self.focusedRuntime { self.syncPhase() }
             self.syncPushToken(for: runtime)
+            self.syncServerPushToken()
             self.advancePushTarget()
         }
         runtime.onSnapshot = { [weak self] runtime, snapshot in
@@ -942,6 +943,10 @@ final class AppModel {
         }
         runtime.onConnectedEdge = { [weak self] runtime in
             self?.syncPushToken(for: runtime)
+            // A connect is also a retry point for the server record: a
+            // register that failed while offline must not wait for the next
+            // foreground (ADR-0036 §5). Bursts collapse to one queued sync.
+            self?.syncServerPushToken()
         }
         runtime.onConnectedView = { [weak self] runtime in
             self?.retryQueuedEditIfNeeded(for: runtime)

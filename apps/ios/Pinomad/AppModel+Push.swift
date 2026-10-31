@@ -90,9 +90,10 @@ extension AppModel {
             serverPushPending = true
             return
         }
+        let account = ServerPushAccount(serverOrigin: session.serverOrigin, username: session.username)
         let action = serverPushAction(
             enabled: push.isEnabled,
-            serverOrigin: session.serverOrigin,
+            account: account,
             deviceToken: push.deviceToken,
             environment: push.environment,
             recorded: push.serverRegistration)
@@ -102,8 +103,7 @@ extension AppModel {
             return
         case .register(let token):
             // Remember the attempt before it goes out, like the host flag.
-            push.setServerRegistration(
-                ServerPushRegistration(serverOrigin: session.serverOrigin, token: token))
+            push.setServerRegistration(ServerPushRegistration(account: account, token: token))
             send = { await api.registerPushToken(token) }
         case .remove(let token):
             send = { await api.removePushToken(token) }
@@ -118,7 +118,7 @@ extension AppModel {
                 switch result {
                 case .success:
                     if case .remove(let token) = action {
-                        self.forgetServerRegistration(token, serverOrigin: session.serverOrigin)
+                        self.forgetServerRegistration(token, account: account)
                     }
                     self.serverPushError = nil
                 case .failure(let failure) where failure.clearsSession:
@@ -139,24 +139,24 @@ extension AppModel {
     /// any register already in flight has landed (the caller pauses new
     /// ones). False when a recorded token could not be removed — the
     /// account's hosts may still reach this device.
-    func removeServerPushToken(api: AccountAPI, serverOrigin: String) async -> Bool {
+    func removeServerPushToken(api: AccountAPI, account: ServerPushAccount) async -> Bool {
         while let task = serverPushTask { await task.value }
         guard case .remove(let token) = serverPushAction(
             enabled: false,
-            serverOrigin: serverOrigin,
+            account: account,
             deviceToken: nil,
             environment: push.environment,
             recorded: push.serverRegistration)
         else { return true }
         guard case .success = await api.removePushToken(token) else { return false }
-        forgetServerRegistration(token, serverOrigin: serverOrigin)
+        forgetServerRegistration(token, account: account)
         return true
     }
 
     /// Drop the record only if it is still the one just removed: a register
     /// queued meanwhile wrote a newer one.
-    func forgetServerRegistration(_ token: ApnsPushToken, serverOrigin: String) {
-        if push.serverRegistration == ServerPushRegistration(serverOrigin: serverOrigin, token: token) {
+    func forgetServerRegistration(_ token: ApnsPushToken, account: ServerPushAccount) {
+        if push.serverRegistration == ServerPushRegistration(account: account, token: token) {
             push.setServerRegistration(nil)
         }
     }

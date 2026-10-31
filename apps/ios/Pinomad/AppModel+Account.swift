@@ -340,7 +340,9 @@ extension AppModel {
             case .failure(let error): failure = error
             }
         } else {
-            pushRemoved = await removeServerPushToken(api: api, serverOrigin: session.serverOrigin)
+            pushRemoved = await removeServerPushToken(
+                api: api,
+                account: ServerPushAccount(serverOrigin: session.serverOrigin, username: session.username))
             switch await api.logout() {
             case .success: failure = nil
             case .failure(let error): failure = error

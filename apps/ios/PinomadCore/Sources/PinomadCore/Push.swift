@@ -34,16 +34,29 @@ public func pushRegistrationAction(
     return mayHaveRegistration ? .unregister : .none
 }
 
+/// The signed-in account a server registration belongs to. The server
+/// scopes removal to the caller's account, so the username matters as much
+/// as the origin.
+public struct ServerPushAccount: Codable, Equatable, Sendable {
+    public let serverOrigin: String
+    public let username: String
+
+    public init(serverOrigin: String, username: String) {
+        self.serverOrigin = serverOrigin
+        self.username = username
+    }
+}
+
 /// What this device last asked an account server to record (ADR-0036).
 /// Kept so turning the switch off or signing out removes exactly that
 /// token, even after APNs has issued a new one.
 public struct ServerPushRegistration: Codable, Equatable, Sendable {
-    public let serverOrigin: String
+    public let account: ServerPushAccount
     public let apns: String
     public let production: Bool
 
-    public init(serverOrigin: String, token: ApnsPushToken) {
-        self.serverOrigin = serverOrigin
+    public init(account: ServerPushAccount, token: ApnsPushToken) {
+        self.account = account
         apns = token.apns
         production = token.environment == .production
     }
@@ -65,21 +78,23 @@ public enum ServerPushAction: Equatable, Sendable {
 /// The account server's half of push (ADR-0036): the server only forwards
 /// a host's push to a token recorded under the host's account, so while the
 /// switch is on and a session exists, every occasion registers. Signing
-/// out asks with `enabled: false` — removal needs the session it was
-/// recorded under, so a record from another server is left to expire.
+/// out asks with `enabled: false`. Removal needs the account it was
+/// recorded under: the server answers 204 to another account's removal
+/// without touching the row, so a record from another account is kept until
+/// that account signs in again, or it expires.
 public func serverPushAction(
     enabled: Bool,
-    serverOrigin: String?,
+    account: ServerPushAccount?,
     deviceToken: String?,
     environment: ApnsEnvironment,
     recorded: ServerPushRegistration?
 ) -> ServerPushAction {
-    guard let serverOrigin else { return .none }
+    guard let account else { return .none }
     if enabled {
         guard let deviceToken, !deviceToken.isEmpty else { return .none }
         return .register(ApnsPushToken(apns: deviceToken, environment: environment))
     }
-    guard let recorded, recorded.serverOrigin == serverOrigin else { return .none }
+    guard let recorded, recorded.account == account else { return .none }
     return .remove(recorded.token)
 }
 
