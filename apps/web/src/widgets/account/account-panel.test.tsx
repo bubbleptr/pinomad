@@ -74,6 +74,24 @@ describe("AccountPanel", () => {
     expect(screen.queryByLabelText("Server")).toBeNull();
   });
 
+  it("signs a fresh desktop in to the official server without asking for an address", async () => {
+    const model = fakeModel({ status: "signed-out", mode: "bearer" });
+    renderPanel(model);
+    await userEvent.type(screen.getByLabelText("Username"), "kieran");
+    await userEvent.type(screen.getByLabelText("Password"), "pw{Enter}");
+    expect(model.login).toHaveBeenCalledWith({ username: "kieran", password: "pw", serverOrigin: "https://app.pinomad.si" });
+  });
+
+  it("signs in to a self-hosted server once the user edits the address", async () => {
+    const model = fakeModel({ status: "signed-out", mode: "bearer" });
+    renderPanel(model);
+    await userEvent.clear(screen.getByLabelText("Server"));
+    await userEvent.type(screen.getByLabelText("Server"), "https://nomad.example");
+    await userEvent.type(screen.getByLabelText("Username"), "kieran");
+    await userEvent.type(screen.getByLabelText("Password"), "pw{Enter}");
+    expect(model.login).toHaveBeenCalledWith({ username: "kieran", password: "pw", serverOrigin: "https://nomad.example" });
+  });
+
   it("prefills and submits the server address in bearer mode", async () => {
     const model = fakeModel({ status: "signed-out", mode: "bearer", serverOrigin: "https://nomad.example" });
     renderPanel(model);

@@ -16,6 +16,7 @@ import { relativeTime } from "@pinomad/client/family.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import type { AccountModel, AccountState } from "../../entities/account/account-model.ts";
 import { useHosts } from "../../entities/host/host-store.ts";
+import { OFFICIAL_SERVER_ORIGIN } from "../../shared/official-server.ts";
 import { useNow } from "../../shared/use-now.ts";
 
 /** Server and model error codes in words. Unknown codes fall through to the raw code. */
@@ -99,9 +100,10 @@ export function AccountPanel() {
 }
 
 function SignInForm({ account, state }: { account: AccountModel; state: Extract<AccountState, { status: "signed-out" }> }) {
-  // Bearer clients (desktop) pick their server; a cookie page is the server.
+  // Bearer clients (desktop) pick their server, starting from the last one or
+  // the official one; a cookie page is the server.
   const asksOrigin = state.mode === "bearer";
-  const [origin, setOrigin] = useState(state.serverOrigin ?? "");
+  const [origin, setOrigin] = useState(state.serverOrigin ?? OFFICIAL_SERVER_ORIGIN);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
