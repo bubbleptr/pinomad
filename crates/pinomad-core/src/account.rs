@@ -22,14 +22,31 @@ use crate::u16str::U16String;
 
 // ─── Requests ───────────────────────────────────────────────────────────────
 
-/// One account call. `Login` carries the submitted credentials;
+/// This install's claim at login (ADR-0037 §1): the random id it generated
+/// once and keeps — 22–64 base64url characters, or the server answers 400 —
+/// plus an optional label.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct AccountDeviceClaim {
+    pub id: String,
+    #[cfg_attr(feature = "ffi", uniffi(default = None))]
+    pub name: Option<String>,
+}
+
+/// One account call. `Login` carries the submitted credentials and, when
+/// the platform has one, its device claim (ADR-0037 §1);
 /// `RequestPairing` carries the account-bound hostId; the push-token pair
 /// carries this device's APNs token (ADR-0036); `ChangePassword` carries
 /// both passwords (#450).
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum AccountOp {
-    Login { username: String, password: String },
+    Login {
+        username: String,
+        password: String,
+        #[cfg_attr(feature = "ffi", uniffi(default = None))]
+        device: Option<AccountDeviceClaim>,
+    },
     Me,
     Logout,
     RevokeAllSessions,
@@ -121,15 +138,23 @@ impl AccountOp {
     }
 
     /// `JSON.stringify(body)`, byte-identical to the reference's literal
-    /// order: `{username, password}` for login, `{apns, environment}` for the
+    /// order: `{username, password, device?: {id, name?}}` for login, `{apns, environment}` for the
     /// push-token pair — the token stays out of the URL — and
     /// `{currentPassword, newPassword}` for a password change.
     fn body(&self) -> Option<String> {
         match self {
-            AccountOp::Login { username, password } => {
+            AccountOp::Login { username, password, device } => {
                 let mut object = JsonObject::new();
                 object.set(U16String::from_str("username"), Json::from(username.as_str()));
                 object.set(U16String::from_str("password"), Json::from(password.as_str()));
+                if let Some(device) = device {
+                    let mut claim = JsonObject::new();
+                    claim.set(U16String::from_str("id"), Json::from(device.id.as_str()));
+                    if let Some(name) = &device.name {
+                        claim.set(U16String::from_str("name"), Json::from(name.as_str()));
+                    }
+                    object.set(U16String::from_str("device"), Json::Object(Arc::new(claim)));
+                }
                 Some(Json::Object(Arc::new(object)).to_json())
             }
             AccountOp::RegisterPushToken { token } | AccountOp::RemovePushToken { token } => {
@@ -251,6 +276,10 @@ pub struct AccountHost {
     /// Epoch ms of the last register heartbeat.
     pub last_seen_at: f64,
     pub pairing: AccountHostPairing,
+    /// As of the host's latest register: `Some(false)` means the server can't
+    /// ask it to revoke a device (ADR-0037 §5). `None` from older servers.
+    #[cfg_attr(feature = "ffi", uniffi(default = None))]
+    pub device_reports: Option<bool>,
 }
 
 /// The answer to `POST /api/hosts/:hostId/pairing` — the vouched one-time
@@ -382,6 +411,11 @@ fn decode_value(kind: AccountOpKind, value: Option<&Json>) -> Result<AccountValu
                     },
                     last_seen_at: num_field(entry, "lastSeenAt").ok_or_else(AccountError::invalid)?,
                     pairing,
+                    device_reports: match entry.get("deviceReports") {
+                        None => None,
+                        Some(Json::Bool(reports)) => Some(*reports),
+                        Some(_) => return Err(AccountError::invalid()),
+                    },
                 });
             }
             Ok(AccountValue::Hosts(hosts))

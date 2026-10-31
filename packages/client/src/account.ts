@@ -4,8 +4,9 @@
 // takes fetch as an injected minimal surface — DOM and undici both
 // satisfy it — and never touches a DOM-only API.
 //
-// crates/pinomad-core replays this client for iOS, except sign-up and the
-// admin's invite ops (#449): only web and desktop offer those.
+// crates/pinomad-core replays this client for iOS, except sign-up, the
+// admin's invite ops (#449), account deletion and the device list (#451, #452):
+// only web and desktop offer those so far.
 
 import { encodeEndpointSetParam, parseEndpointSet, type EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { UNAUTHORIZED_CLOSE_CODE, type ApnsPushToken } from "@pinomad/protocol/frames.ts";
@@ -242,6 +243,45 @@ export interface AccountHost {
   readonly lastSeenAt: number;
   /** Whether a pairing ask can go to this host right now (server-side verdict). */
   readonly pairing: "available" | "offline" | "host_too_old" | "key_mismatch";
+  /**
+   * As of the host's latest register: false means the server can't ask it to
+   * revoke a device — that happens on the host (ADR-0037 §5). Absent from
+   * servers older than #452.
+   */
+  readonly deviceReports?: boolean;
+}
+
+/**
+ * This install's claim at login and sign-up (ADR-0037 §1): a random id it
+ * generated once and keeps, plus a label. A tag inside the account, not a
+ * credential.
+ */
+export interface AccountDeviceClaim {
+  /** 22–64 base64url characters; the server refuses anything else with 400. */
+  readonly id: string;
+  readonly name?: string;
+}
+
+/** One account device's standing on a host it joined through the account (ADR-0037 §6). */
+export interface AccountDeviceHost {
+  readonly hostId: string;
+  readonly name: string;
+  /** "revoking": the server asked and the host hasn't confirmed yet. */
+  readonly state: "registered" | "revoking" | "revoked";
+}
+
+/** One row of GET /api/devices. */
+export interface AccountDevice {
+  /** The server's id, which kickDevice takes; not the client's own device id. */
+  readonly id: number;
+  /** Absent for clients that never said (older apps, sessions from before #452). */
+  readonly name?: string;
+  readonly createdAt: number;
+  readonly lastSeenAt: number;
+  /** The device whose session made this request. */
+  readonly current: boolean;
+  readonly kickedAt?: number;
+  readonly hosts: readonly AccountDeviceHost[];
 }
 
 /** The answer to POST /api/hosts/:hostId/pairing — the vouched one-time offer. */
@@ -257,9 +297,15 @@ export interface PairingOffer {
 export interface AccountClient {
   /** The normalized origin every request targets. */
   readonly origin: string;
-  login(username: string, password: string): Promise<AccountResult<LoginSuccess>>;
+  /** `device` ties the session to this install's account device (ADR-0037 §1); older servers ignore it. */
+  login(username: string, password: string, device?: AccountDeviceClaim): Promise<AccountResult<LoginSuccess>>;
   /** Creates an account from an invite and signs it in, like login (#449). */
-  register(invite: string, username: string, password: string): Promise<AccountResult<LoginSuccess>>;
+  register(
+    invite: string,
+    username: string,
+    password: string,
+    device?: AccountDeviceClaim,
+  ): Promise<AccountResult<LoginSuccess>>;
   me(): Promise<AccountResult<{ readonly user: AccountUser; readonly admin?: true }>>;
   logout(): Promise<AccountResult<void>>;
   revokeAllSessions(): Promise<AccountResult<void>>;
@@ -272,6 +318,14 @@ export interface AccountClient {
   deleteAccount(password: string): Promise<AccountResult<void>>;
   createJoinToken(): Promise<AccountResult<JoinToken>>;
   listHosts(): Promise<AccountResult<readonly AccountHost[]>>;
+  /** The account's devices (#452); 404 on servers that predate them. */
+  listDevices(): Promise<AccountResult<readonly AccountDevice[]>>;
+  /**
+   * Signs a device out of the account and asks every host it joined through
+   * the account to revoke it (ADR-0037 §3). 403 `wrong_password` is a
+   * refusal, not a sign-out; 409 `current_device` means sign out instead.
+   */
+  kickDevice(id: number, password: string): Promise<AccountResult<void>>;
   requestPairing(hostId: string): Promise<AccountResult<PairingOffer>>;
   /** Record this device's APNs token under the signed-in account (ADR-0036). */
   registerPushToken(token: ApnsPushToken): Promise<AccountResult<void>>;
@@ -289,6 +343,32 @@ const userBody = (value: unknown): { readonly user: AccountUser; readonly admin?
   if (!isRecord(value) || !isRecord(value.user) || typeof value.user.username !== "string") return undefined;
   return { user: { username: value.user.username }, ...(value.admin === true ? { admin: true as const } : {}) };
 };
+
+const DEVICE_HOST_STATES = new Set(["registered", "revoking", "revoked"]);
+
+const isDeviceHost = (value: unknown): value is AccountDeviceHost =>
+  isRecord(value) &&
+  typeof value.hostId === "string" &&
+  typeof value.name === "string" &&
+  typeof value.state === "string" &&
+  DEVICE_HOST_STATES.has(value.state);
+
+const isDevice = (value: unknown): value is AccountDevice =>
+  isRecord(value) &&
+  typeof value.id === "number" &&
+  (value.name === undefined || typeof value.name === "string") &&
+  typeof value.createdAt === "number" &&
+  typeof value.lastSeenAt === "number" &&
+  typeof value.current === "boolean" &&
+  (value.kickedAt === undefined || typeof value.kickedAt === "number") &&
+  Array.isArray(value.hosts) &&
+  value.hosts.every(isDeviceHost);
+
+/** The claim as the body carries it: id first, name only when there is one. */
+const deviceBody = (device: AccountDeviceClaim | undefined) =>
+  device === undefined
+    ? {}
+    : { device: { id: device.id, ...(device.name === undefined ? {} : { name: device.name }) } };
 
 const isInvite = (value: unknown): value is AccountInvite =>
   isRecord(value) &&
@@ -367,9 +447,10 @@ export function createAccountClient(options: {
 
   return {
     origin,
-    login: async (username, password) => session(await request("/api/login", "POST", { username, password })),
-    register: async (invite, username, password) =>
-      session(await request("/api/register", "POST", { invite, username, password })),
+    login: async (username, password, device) =>
+      session(await request("/api/login", "POST", { username, password, ...deviceBody(device) })),
+    register: async (invite, username, password, device) =>
+      session(await request("/api/register", "POST", { invite, username, password, ...deviceBody(device) })),
     me: async () => {
       const result = await request("/api/me", "GET");
       if (!result.ok) return result;
@@ -419,7 +500,8 @@ export function createAccountClient(options: {
           typeof entry.noisePublicKey !== "string" ||
           typeof entry.online !== "boolean" ||
           typeof entry.lastSeenAt !== "number" ||
-          (entry.pairing !== "available" && entry.pairing !== "offline" && entry.pairing !== "host_too_old" && entry.pairing !== "key_mismatch")
+          (entry.pairing !== "available" && entry.pairing !== "offline" && entry.pairing !== "host_too_old" && entry.pairing !== "key_mismatch") ||
+          (entry.deviceReports !== undefined && typeof entry.deviceReports !== "boolean")
         ) {
           return fail("invalid_response");
         }
@@ -430,9 +512,30 @@ export function createAccountClient(options: {
           online: entry.online,
           lastSeenAt: entry.lastSeenAt,
           pairing: entry.pairing,
+          ...(entry.deviceReports === undefined ? {} : { deviceReports: entry.deviceReports }),
         });
       }
       return ok(hosts);
+    },
+    listDevices: async () => {
+      const result = await request("/api/devices", "GET");
+      if (!result.ok) return result;
+      if (!Array.isArray(result.value) || !result.value.every(isDevice)) return fail("invalid_response");
+      return ok(
+        result.value.map((device) => ({
+          id: device.id,
+          ...(device.name === undefined ? {} : { name: device.name }),
+          createdAt: device.createdAt,
+          lastSeenAt: device.lastSeenAt,
+          current: device.current,
+          ...(device.kickedAt === undefined ? {} : { kickedAt: device.kickedAt }),
+          hosts: device.hosts.map((host) => ({ hostId: host.hostId, name: host.name, state: host.state })),
+        })),
+      );
+    },
+    kickDevice: async (id, password) => {
+      const result = await request(`/api/devices/${id}/kick`, "POST", { password });
+      return result.ok ? ok(undefined) : result;
     },
     requestPairing: async (hostId) => {
       const result = await request(`/api/hosts/${encodeURIComponent(hostId)}/pairing`, "POST");

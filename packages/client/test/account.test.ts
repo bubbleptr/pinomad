@@ -337,6 +337,91 @@ describe("sign-up and invites (#449)", () => {
   });
 });
 
+describe("account devices (#452)", () => {
+  const DEVICE_ID = "AAAAAAAAAAAAAAAAAAAAAA";
+
+  it("claims this device at login and sign-up, and only when asked to", async () => {
+    const { impl, calls } = fakeFetch({ status: 200, body: { user: { username: "a" }, expiresAt: 1, token: "t" } });
+    const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer" }, fetch: impl });
+    await client.login("a", "p", { id: DEVICE_ID, name: "Mac Chrome" });
+    await client.register("code", "a", "p", { id: DEVICE_ID });
+    await client.login("a", "p");
+    expect(calls[0]!.init!.body).toBe(`{"username":"a","password":"p","device":{"id":"${DEVICE_ID}","name":"Mac Chrome"}}`);
+    expect(JSON.parse(calls[1]!.init!.body!)).toEqual({ invite: "code", username: "a", password: "p", device: { id: DEVICE_ID } });
+    expect(JSON.parse(calls[2]!.init!.body!)).toEqual({ username: "a", password: "p" });
+  });
+
+  it("lists the account's devices with their standing on each host", async () => {
+    const rows = [
+      {
+        id: 3,
+        name: "Mac Chrome",
+        createdAt: 1,
+        lastSeenAt: 5,
+        current: true,
+        hosts: [
+          { hostId: "h1", name: "omarchy", state: "registered" },
+          { hostId: "h2", name: "studio", state: "revoking" },
+        ],
+      },
+      { id: 2, createdAt: 1, lastSeenAt: 2, current: false, kickedAt: 4, hosts: [{ hostId: "h1", name: "omarchy", state: "revoked" }] },
+    ];
+    const { impl, calls } = fakeFetch({ status: 200, body: rows });
+    const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer", token: "t" }, fetch: impl });
+    expect(await client.listDevices()).toEqual({ ok: true, value: rows });
+    expect(calls[0]!.url).toBe(`${ORIGIN}/api/devices`);
+    expect(calls[0]!.init?.method).toBe("GET");
+  });
+
+  it("refuses device rows that don't match the shape", async () => {
+    const good = { id: 1, createdAt: 1, lastSeenAt: 1, current: false, hosts: [] };
+    for (const bad of [
+      { ...good, id: "1" },
+      { ...good, current: "no" },
+      { ...good, name: 4 },
+      { ...good, kickedAt: "x" },
+      { ...good, hosts: {} },
+      { ...good, hosts: [{ hostId: "h", name: "n", state: "gone" }] },
+    ]) {
+      expect(await bearer([{ status: 200, body: [bad] }]).listDevices()).toEqual({ ok: false, error: { code: "invalid_response" } });
+    }
+    expect(await bearer([{ status: 200, body: {} }]).listDevices()).toEqual({ ok: false, error: { code: "invalid_response" } });
+    expect(await bearer([{ status: 401 }]).listDevices()).toEqual({ ok: false, error: { code: "unauthenticated", status: 401 } });
+  });
+
+  it("kicks a device by the server's id with the password; refusals keep their codes", async () => {
+    const { impl, calls } = fakeFetch(
+      { status: 204 },
+      { status: 403, body: { error: "wrong_password" } },
+      { status: 409, body: { error: "current_device" } },
+      { status: 429, body: { error: "rate_limited" } },
+      { status: 401, body: { error: "unauthenticated" } },
+    );
+    const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer", token: "t" }, fetch: impl });
+    expect(await client.kickDevice(12, "pw")).toEqual({ ok: true, value: undefined });
+    expect(calls[0]!.url).toBe(`${ORIGIN}/api/devices/12/kick`);
+    expect(calls[0]!.init?.method).toBe("POST");
+    expect(JSON.parse(calls[0]!.init!.body!)).toEqual({ password: "pw" });
+    const wrong = await client.kickDevice(12, "nope");
+    expect(wrong).toEqual({ ok: false, error: { code: "wrong_password", status: 403 } });
+    expect(isUnauthenticated((wrong as { error: { code: string } }).error)).toBe(false);
+    expect(await client.kickDevice(3, "pw")).toEqual({ ok: false, error: { code: "current_device", status: 409 } });
+    expect(await client.kickDevice(12, "pw")).toEqual({ ok: false, error: { code: "rate_limited", status: 429 } });
+    const gone = await client.kickDevice(12, "pw");
+    expect(gone.ok === false && isUnauthenticated(gone.error)).toBe(true);
+  });
+
+  it("reads whether a host reports devices, absent on older servers", async () => {
+    const host = { hostId: "h", name: "n", noisePublicKey: "k", online: true, lastSeenAt: 1, pairing: "available" };
+    expect(await bearer([{ status: 200, body: [{ ...host, deviceReports: false }] }]).listHosts()).toEqual({
+      ok: true,
+      value: [{ ...host, deviceReports: false }],
+    });
+    expect(await bearer([{ status: 200, body: [host] }]).listHosts()).toEqual({ ok: true, value: [host] });
+    expect((await bearer([{ status: 200, body: [{ ...host, deviceReports: "yes" }] }]).listHosts()).ok).toBe(false);
+  });
+});
+
 describe("matchAccountHosts", () => {
   it("pairs a linked entry, adopts an unlinked twin, and leaves strangers unpaired", async () => {
     const linked = stored({ account: { serverOrigin: `${ORIGIN}/`, hostId: HOST_ID } });
