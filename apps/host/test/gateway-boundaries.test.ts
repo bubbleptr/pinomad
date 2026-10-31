@@ -217,6 +217,13 @@ describe("gateway boundaries", () => {
     expect(index.status).toBe(200);
     expect(index.headers.get("cache-control")).toBe("no-cache");
     expect(await index.text()).toContain("pinomad");
+    // The page holds device keys: no inline or foreign script, no framing.
+    const csp = index.headers.get("content-security-policy") ?? "";
+    expect(csp).toContain("default-src 'self'");
+    expect(csp).toContain("script-src 'self';");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(index.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(index.headers.get("referrer-policy")).toBe("no-referrer");
 
     const own = await socketTo(gateway.url, host.token, `http://127.0.0.1:${port}`);
     // The hello may already be collected; wait on the frames array, not a listener.

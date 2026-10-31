@@ -21,8 +21,33 @@ const WEB_TYPES: Readonly<Record<string, string>> = {
 
 const NOT_BUILT = "Web client not built: run bun run build";
 
+// The page holds login sessions and device keys, so nothing outside the
+// bundle may run in it. Directives beyond default-src, each for a need:
+// - style-src 'unsafe-inline': Astryx injects its theme and highlight <style>
+//   elements at runtime, so neither a hash nor a nonce can cover them.
+// - img-src data:: message images and placeholders are data: URLs.
+// - connect-src ws: wss:: a host's remote candidates can be any socket URL
+//   (endpoints.ts); account fetches stay same-origin (bearer mode is desktop-only).
+// - object-src, base-uri, form-action: not covered by default-src.
+const SECURITY_HEADERS: Readonly<Record<string, string>> = {
+  "content-security-policy": [
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data:",
+    "connect-src 'self' ws: wss:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join("; "),
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "no-referrer",
+};
+
 /** The listener's HTTP side: the built web client, nothing else. */
 export async function serveWebClient(request: IncomingMessage, response: ServerResponse, webRoot: string | undefined): Promise<void> {
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) response.setHeader(name, value);
   if (request.method !== "GET" && request.method !== "HEAD") {
     response.writeHead(405).end();
     return;
