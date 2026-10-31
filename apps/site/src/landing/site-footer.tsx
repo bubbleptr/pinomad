@@ -32,6 +32,12 @@ export function SiteFooter({ lang, t }: { lang: Lang; t: LandingCopy["footer"] }
               <a href={`${githubUrl}/blob/main/LICENSE`}>{t.license}</a>
             </li>
             <li>
+              <a href={localized(lang, "/privacy/")}>{t.privacy}</a>
+            </li>
+            <li>
+              <a href={localized(lang, "/terms/")}>{t.terms}</a>
+            </li>
+            <li>
               <a href={other.href} hrefLang={other.hrefLang} lang={other.hrefLang}>
                 {other.text}
               </a>

@@ -7,7 +7,9 @@ import { notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { staticFunctionMiddleware } from "@tanstack/start-static-server-functions";
 import type { Lang } from "./i18n.ts";
-import { blog, blogPosts, changelog, releases, source } from "./source.ts";
+import { blog, blogPosts, changelog, legal, releases, source } from "./source.ts";
+
+export type LegalSlug = "privacy" | "terms";
 
 export const loadDocsPage = createServerFn({ method: "GET" })
   .middleware([staticFunctionMiddleware])
@@ -67,7 +69,27 @@ export const loadBlogPost = createServerFn({ method: "GET" })
     };
   });
 
-export const loadChangelog = createServerFn({ method: "GET" })
+export const loadLegalPage = createServerFn({ method: "GET" })
+  .middleware([staticFunctionMiddleware])
+  .validator((input: { lang: Lang; slug: LegalSlug }) => input)
+  .handler(({ data: { lang, slug } }) => {
+    const page = legal.getPage([slug], lang);
+    if (!page) throw notFound();
+    const english = legal.getPage([slug], "en");
+    const chinese = legal.getPage([slug], "zh");
+    return {
+      path: page.path,
+      url: page.url,
+      title: page.data.title,
+      description: page.data.description,
+      alternates: {
+        en: english?.locale === "en" ? english.url : undefined,
+        zh: chinese?.locale === "zh" ? chinese.url : undefined,
+      },
+    };
+  });
+
+export const loadChangelog =createServerFn({ method: "GET" })
   .middleware([staticFunctionMiddleware])
   .validator((lang: Lang) => lang)
   .handler(({ data: lang }) =>

@@ -48,3 +48,22 @@ export const changelog = loader({
   baseUrl: "/changelog",
   i18n,
 });
+
+// The privacy policy and terms (`privacy.mdx`, `privacy.zh.mdx`), at fixed
+// top-level paths (/privacy/, /zh/terms/) that the apps and App Store link to.
+export const legalPages = defineCollections({
+  type: "doc",
+  dir: "content/legal",
+  async: true,
+  schema: z.object({
+    title: z.string(),
+    description: z.string(),
+    date: z.iso.date(),
+  }),
+});
+
+export const legal = loader({
+  source: legalPages.toFumadocsSource(),
+  baseUrl: "/",
+  i18n,
+});

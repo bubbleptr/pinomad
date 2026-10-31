@@ -91,7 +91,7 @@ export interface LandingCopy {
     star: string;
     starNote: string;
   };
-  footer: { sign: string; nav: string; docs: string; license: string };
+  footer: { sign: string; nav: string; docs: string; license: string; privacy: string; terms: string };
 }
 
 const models = ["Anthropic", "OpenAI", "Google", "DeepSeek", "xAI", "Mistral"];
@@ -272,6 +272,8 @@ export const copy: Record<Lang, LandingCopy> = {
       nav: "Footer",
       docs: "Docs",
       license: "License",
+      privacy: "Privacy",
+      terms: "Terms",
     },
   },
   zh: {
@@ -447,6 +449,8 @@ export const copy: Record<Lang, LandingCopy> = {
       nav: "页脚",
       docs: "文档",
       license: "许可证",
+      privacy: "隐私政策",
+      terms: "服务条款",
     },
   },
 };
