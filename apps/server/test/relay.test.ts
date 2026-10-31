@@ -103,7 +103,7 @@ async function openControl(
 /** openControl plus awaiting `registered` — the happy path. */
 async function registerHost(relay: Relay, keys?: KeyPair, register?: Partial<RegisterFrame>): Promise<WebSocket> {
   const socket = await openControl(relay, keys, { register });
-  expect(await nextControl(socket)).toEqual({ t: "registered", push: [], features: ["name"] });
+  expect(await nextControl(socket)).toEqual({ t: "registered", push: [], features: ["name", "device-reports"] });
   return socket;
 }
 

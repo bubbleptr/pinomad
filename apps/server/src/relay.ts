@@ -307,6 +307,20 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
   }
 
   /**
+   * Asks a host to revoke every key it still owes (ADR-0037 §3), on its live
+   * control and only when that control declared "device-reports" — an older
+   * host's decoder would close on the frame. Rows stay until the host acks,
+   * so re-sending after each register (or a second kick) is harmless.
+   */
+  function sendRevocations(hostId: string): void {
+    const control = controls.get(hostId);
+    if (accounts === undefined || control?.features?.includes("device-reports") !== true) return;
+    for (const publicKey of accounts.pendingRevocations(hostId)) {
+      control.socket.send(encodeRelayFrame({ t: "revoke-device", publicKey }));
+    }
+  }
+
+  /**
    * One host's `push` frame (ADR-0025 §4-5): re-checked against the account
    * binding on every send, and the token must be registered under that same
    * account (ADR-0036 §3), then classified back to the asking control.
@@ -434,8 +448,9 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
         return;
       }
       if (hostId !== undefined) {
-        // After `registered`, a control may only answer pairing asks — and a
-        // reply counts only on the exact socket that carried the request, so
+        // After `registered`, a control may answer pairing asks, send pushes,
+        // names and device reports — and a pairing reply counts only on the
+        // exact socket that carried the request, so
         // a replaced connection can't resolve a new one's pendings. Late or
         // unknown requestIds are ignored; anything else is a violation.
         let answer: HostToRelay;
@@ -447,6 +462,19 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
         }
         if (answer.t === "push") {
           handlePush(socket, hostId, answer);
+          return;
+        }
+        // Device reports are facts about this hostId whichever of its
+        // connections carries them (ADR-0037 §2-3); the account layer checks
+        // the requestId belongs to this host.
+        if (answer.t === "device-admitted") {
+          if (accounts?.recordAdmission(hostId, answer.requestId, answer.publicKey) === "revoke") {
+            sendRevocations(hostId);
+          }
+          return;
+        }
+        if (answer.t === "device-revoked") {
+          accounts?.confirmRevocation(hostId, answer.publicKey);
           return;
         }
         if (answer.t === "name") {
@@ -463,6 +491,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
             answer.t === "pairing"
               ? {
                   status: "ok",
+                  requestId: answer.requestId,
                   secret: answer.secret,
                   expiresAt: answer.expiresAt,
                   ...(answer.endpointSet === undefined ? {} : { endpointSet: answer.endpointSet }),
@@ -534,7 +563,9 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
       });
       // A bound host's successful register is also its heartbeat for the
       // account: keep last_seen_at fresh so /api/hosts can report online age.
-      accounts?.markHostSeen(hostId);
+      // Whether it reports devices is remembered too, so the account page can
+      // tell while the host is offline (ADR-0037 §5).
+      accounts?.markHostSeen(hostId, frame.features?.includes("device-reports") === true);
       // The register's name is the host's current one (issue #212); absent
       // means the host predates it and the row keeps what join wrote.
       if (frame.name !== undefined) accounts?.renameHost(hostId, frame.name);
@@ -542,8 +573,11 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
       // (ADR-0025 §4) — an empty list means "push-aware, nothing configured",
       // which the host must distinguish from a pre-push server. `features`
       // declares the post-admission frames this build accepts: hosts send
-      // `name` only to a connection that lists it.
-      socket.send(encodeRelayFrame({ t: "registered", push: pushEnvironments, features: ["name"] }));
+      // `name` only to a connection that lists it, and device reports only
+      // with "device-reports" (ADR-0037 §5).
+      socket.send(encodeRelayFrame({ t: "registered", push: pushEnvironments, features: ["name", "device-reports"] }));
+      // Kicks that happened while it was away (ADR-0037 §3).
+      sendRevocations(hostId);
     });
 
     socket.once("close", () => {
@@ -670,6 +704,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
         pairing,
         disconnectHost,
         forgetAccount: (userId) => limiter.forgetAccount(accountKey(userId)),
+        sendRevocations,
       }).catch(() => {
         if (!response.headersSent) response.writeHead(500);
         response.end();

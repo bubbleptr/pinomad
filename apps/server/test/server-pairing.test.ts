@@ -136,7 +136,7 @@ async function controlFor(
   const { socket, nonce } = await dialHost(relay);
   socket.send(encodeRelayFrame(registerFrame(keys, nonce, overrides)));
   // Bound hosts always get the push declaration — [] here (no APNs configured).
-  expect(await nextFrame(socket)).toEqual({ t: "registered", push: [], features: ["name"] });
+  expect(await nextFrame(socket)).toEqual({ t: "registered", push: [], features: ["name", "device-reports"] });
   return socket;
 }
 
@@ -179,7 +179,7 @@ describe("GET /api/hosts", () => {
     const hostId = relayHostId(keys.publicKey);
     const offline = await api(relay, { path: "/api/hosts", headers: bearer(session) });
     expect(offline.json).toEqual([
-      { hostId, name: "test-host", noisePublicKey: NOISE_KEY, online: false, lastSeenAt: 1, pairing: "offline" },
+      { hostId, name: "test-host", noisePublicKey: NOISE_KEY, online: false, lastSeenAt: 1, pairing: "offline", deviceReports: false },
     ]);
 
     await controlFor(relay, keys, { noisePublicKey: NOISE_KEY, features: ["pairing"] });
