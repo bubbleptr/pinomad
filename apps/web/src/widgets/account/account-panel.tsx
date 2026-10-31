@@ -758,7 +758,9 @@ function RemoveDevice({
         are offline revoke it when they reconnect.
         {unreachable.length === 0
           ? null
-          : ` ${listNames(unreachable)} can't be asked. If ${name} joined ${unreachable.length === 1 ? "it" : "them"}, revoke it in ${unreachable.length === 1 ? "that host's" : "each host's"} Devices.`}
+          : unreachable.length === 1
+            ? ` The host ${unreachable[0]} can't be asked. If ${name} joined it, revoke it in that host's Devices.`
+            : ` The hosts ${listNames(unreachable)} can't be asked. If ${name} joined them, revoke it in each one's Devices.`}
       </Text>
       <TextInput label="Password" type="password" value={password} onChange={setPassword} onEnter={submit} width="100%" />
       {error === undefined ? null : (
@@ -885,7 +887,7 @@ function SignOut({ account, onNotice }: { account: AccountModel; onNotice: (noti
           }}
         />
       </HStack>
-      <Text type="supporting">Signing out doesn't unpair this device from its hosts. Revoke it in Devices.</Text>
+      <Text type="supporting">Signing out doesn't unpair this device from its hosts. Remove it from another device, or revoke it on each host.</Text>
     </VStack>
   );
 }
