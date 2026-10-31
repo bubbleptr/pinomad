@@ -16,8 +16,8 @@ struct AccountLoginView: View {
     let model: AppModel
 
     @Environment(\.dismiss) private var dismiss
-    @State private var origin = ""
-    @State private var username = ""
+    @State private var origin: String
+    @State private var username: String
     @State private var password = ""
     @State private var phase = ProbePhase.idle
     @State private var error: String?
@@ -29,6 +29,14 @@ struct AccountLoginView: View {
         case enabled
         case disabled
         case unreachable
+    }
+
+    init(model: AppModel) {
+        self.model = model
+        // Seeded here rather than on appear: assigning in `.task` would fire
+        // the address field's onChange and reset the probe it starts.
+        _origin = State(initialValue: model.accountRecord?.serverOrigin ?? Self.officialServerOrigin)
+        _username = State(initialValue: model.accountRecord?.username ?? "")
     }
 
     var body: some View {
@@ -152,8 +160,6 @@ struct AccountLoginView: View {
         }
         .interactiveDismissDisabled(busy)
         .task {
-            if origin.isEmpty { origin = model.accountRecord?.serverOrigin ?? Self.officialServerOrigin }
-            if username.isEmpty { username = model.accountRecord?.username ?? "" }
             if phase == .idle { probe() }
         }
     }
@@ -174,6 +180,9 @@ struct AccountLoginView: View {
         let normalized = normalizeServerOrigin(origin: server)
         Task {
             let verdict = await model.probeAccountServer(normalized)
+            // A verdict for an address the field no longer holds is stale.
+            guard normalizeServerOrigin(origin: origin.trimmingCharacters(in: .whitespacesAndNewlines))
+                == normalized else { return }
             switch verdict {
             case .enabled:
                 phase = .enabled
