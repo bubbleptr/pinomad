@@ -6,12 +6,18 @@ import SwiftUI
 /// login, and an insecure address never leaves it at all. The root of the
 /// account sheet while signed out; a successful login swaps that sheet to
 /// the account's hosts.
+///
+/// The address starts at the last server signed in to, or the official one,
+/// and is probed on appear so the form opens on the credentials.
 struct AccountLoginView: View {
+    /// The hosted PiNomad server; self-hosters change the address.
+    static let officialServerOrigin = "https://app.pinomad.si"
+
     let model: AppModel
 
     @Environment(\.dismiss) private var dismiss
-    @State private var origin = ""
-    @State private var username = ""
+    @State private var origin: String
+    @State private var username: String
     @State private var password = ""
     @State private var phase = ProbePhase.idle
     @State private var error: String?
@@ -23,6 +29,14 @@ struct AccountLoginView: View {
         case enabled
         case disabled
         case unreachable
+    }
+
+    init(model: AppModel) {
+        self.model = model
+        // Seeded here rather than on appear: assigning in `.task` would fire
+        // the address field's onChange and reset the probe it starts.
+        _origin = State(initialValue: model.accountRecord?.serverOrigin ?? Self.officialServerOrigin)
+        _username = State(initialValue: model.accountRecord?.username ?? "")
     }
 
     var body: some View {
@@ -85,7 +99,7 @@ struct AccountLoginView: View {
             } header: {
                 Text("Server")
             } footer: {
-                Text("Accounts need https://. For local testing, http://127.0.0.1 also works.")
+                Text("To use your own server, change the address. Accounts need https://; for local testing, http://127.0.0.1 also works.")
             }
 
             if phase == .enabled {
@@ -146,8 +160,7 @@ struct AccountLoginView: View {
         }
         .interactiveDismissDisabled(busy)
         .task {
-            if origin.isEmpty { origin = model.accountRecord?.serverOrigin ?? "" }
-            if username.isEmpty { username = model.accountRecord?.username ?? "" }
+            if phase == .idle { probe() }
         }
     }
 
@@ -167,6 +180,9 @@ struct AccountLoginView: View {
         let normalized = normalizeServerOrigin(origin: server)
         Task {
             let verdict = await model.probeAccountServer(normalized)
+            // A verdict for an address the field no longer holds is stale.
+            guard normalizeServerOrigin(origin: origin.trimmingCharacters(in: .whitespacesAndNewlines))
+                == normalized else { return }
             switch verdict {
             case .enabled:
                 phase = .enabled
