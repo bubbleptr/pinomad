@@ -24,7 +24,7 @@ export const RELAY_CLOSE = {
   acceptTimeout: 4610,
   /** A concurrent-connection cap for the host or its account is full (issue #453). */
   tooManyConnections: 4629,
-  /** The account's relay traffic budget is spent; it refills over time (issue #453). */
+  /** A relay traffic limit was hit: the account budget (refills over time) or a device's handshake allowance (issue #453). */
   trafficLimit: 4630,
 } as const;
 

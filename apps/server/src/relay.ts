@@ -167,6 +167,9 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
   const pushInflightHosts = new Map<string, number>();
   const limits: RelayLimits = { ...DEFAULT_RELAY_LIMITS, ...options.limits };
   const limiter = createRelayLimiter(limits, options.now);
+  const accountKey = (userId: number): string => `account:${userId}`;
+  /** Live device sockets per hostId, pending or spliced — what a rebind or leave closes. */
+  const hostDevices = new Map<string, Set<WebSocket>>();
 
   interface ControlEntry {
     readonly socket: WebSocket;
@@ -205,10 +208,11 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
    * that answers anyone anyway can only spend its own account's caps and
    * byte budget.
    *
-   * Device bytes before that point are deliberately free: anyone who knows a
-   * hostId can send them, and charging them would let a stranger drain the
-   * owner's budget. They stay bounded by the pre-accept buffer, the
-   * unauthenticated cap, and the host closing a handshake it rejects.
+   * Device bytes before that point never touch the account budget: anyone
+   * who knows a hostId can send them, and charging them would let a stranger
+   * drain the owner's budget. The lease charges them to a small
+   * per-connection handshake allowance instead, so a host that accepts and
+   * stays silent can't turn the splice into a free one-way pipe.
    */
   function splice(host: WebSocket, device: WebSocket, lease: RelayLease, handshakeTimer: NodeJS.Timeout | undefined): void {
     let authenticated = false;
@@ -220,9 +224,10 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
           lease.authenticate();
           clearTimeout(handshakeTimer);
         }
-        if (authenticated && !lease.charge(rawLength(data))) {
-          device.close(RELAY_CLOSE.trafficLimit, "account traffic limit");
-          host.close(RELAY_CLOSE.trafficLimit, "account traffic limit");
+        const refusal = lease.charge(rawLength(data));
+        if (refusal !== undefined) {
+          device.close(refusal.code, refusal.reason);
+          host.close(refusal.code, refusal.reason);
           return;
         }
         to.send(data, { binary: isBinary }, () => {
@@ -286,9 +291,19 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
 
   const pairing: PairingBroker = { status: pairingStatus, request: requestPairing };
 
-  /** A host whose account binding is gone loses its control connection; pairing asks on it die with it. */
+  /**
+   * A host whose account binding is gone loses its control connection, and
+   * pairing asks on it die with it. Its device connections go too: their
+   * leases count against the account the binding belonged to.
+   */
   function disconnectHost(hostId: string): void {
     controls.get(hostId)?.socket.close(RELAY_CLOSE.hostNotAllowed);
+    closeHostDevices(hostId, RELAY_CLOSE.hostNotAllowed, "host left its account");
+  }
+
+  /** Closes every device connection (pending or spliced) to `hostId`; closing a device propagates to its accept socket. */
+  function closeHostDevices(hostId: string, code: number, reason: string): void {
+    for (const device of hostDevices.get(hostId) ?? []) device.close(code, reason);
   }
 
   /**
@@ -373,6 +388,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
         answer({ t: "refused", reason: "bad_request" });
         return;
       }
+      const previousOwner = accounts.hostOwner(frame.hostId);
       const result = accounts.joinHost({
         token: frame.joinToken,
         hostId: frame.hostId,
@@ -385,6 +401,11 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
         // before the new binding's invites could reach them.
         for (const request of pairingRequests.values()) {
           if (request.hostId === frame.hostId) request.settle({ status: "gone" });
+        }
+        // Device leases captured the old owner at admission; close them so
+        // they reconnect, and count, under the new one.
+        if (previousOwner !== undefined && previousOwner !== accounts.hostOwner(frame.hostId)) {
+          closeHostDevices(frame.hostId, RELAY_CLOSE.replaced, "host moved to another account");
         }
       }
       answer(result.status === "joined" ? { t: "joined", username: result.username } : { t: "refused", reason: result.reason });
@@ -555,7 +576,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
     // never a limit. The account keys the shared caps and byte budget; a host
     // whose binding vanished mid-connect falls back to its own key.
     const owner = accounts?.hostOwner(hostId);
-    const admission = limiter.admit(hostId, owner === undefined ? `host:${hostId}` : `account:${owner}`);
+    const admission = limiter.admit(hostId, owner === undefined ? `host:${hostId}` : accountKey(owner));
     if (!admission.ok) {
       socket.close(admission.code, admission.reason);
       return;
@@ -567,9 +588,13 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
       limits.handshakeTimeoutMs > 0
         ? setTimeout(() => socket.close(RELAY_CLOSE.handshakeTimeout, "handshake timeout"), limits.handshakeTimeoutMs)
         : undefined;
+    const devices = hostDevices.get(hostId) ?? new Set<WebSocket>();
+    hostDevices.set(hostId, devices.add(socket));
     socket.once("close", () => {
       clearTimeout(handshakeTimer);
       lease.release();
+      devices.delete(socket);
+      if (devices.size === 0 && hostDevices.get(hostId) === devices) hostDevices.delete(hostId);
     });
     const connId = randomBytes(16).toString("base64url");
     const entry: PendingDevice = {
@@ -612,6 +637,13 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
     const device = entry.socket;
     device.removeListener("message", entry.onMessage);
     device.removeListener("close", entry.onClose);
+    // The pre-accept buffer counts toward the device's handshake allowance.
+    const refusal = entry.lease.charge(entry.bufferedBytes);
+    if (refusal !== undefined) {
+      device.close(refusal.code, refusal.reason);
+      socket.close(refusal.code, refusal.reason);
+      return;
+    }
     splice(socket, device, entry.lease, entry.handshakeTimer);
     for (const { data, isBinary } of entry.buffered) socket.send(data, { binary: isBinary });
   }
@@ -631,7 +663,14 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
         response.end(JSON.stringify({ error: "accounts_disabled" }));
         return;
       }
-      void handleApiRequest(request, response, { accounts, publicOrigin, trustProxy, pairing, disconnectHost }).catch(() => {
+      void handleApiRequest(request, response, {
+        accounts,
+        publicOrigin,
+        trustProxy,
+        pairing,
+        disconnectHost,
+        forgetAccount: (userId) => limiter.forgetAccount(accountKey(userId)),
+      }).catch(() => {
         if (!response.headersSent) response.writeHead(500);
         response.end();
       });

@@ -2,6 +2,7 @@ import { once } from "node:events";
 import { mkdir, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { WebSocket, type ClientOptions } from "ws";
@@ -11,6 +12,7 @@ import {
   RELAY_CLOSE,
   relayHostId,
   signRelayChallenge,
+  signRelayChallengeV2,
   type RegisterFrame,
 } from "@pinomad/protocol/relay.ts";
 import { openAccounts, type Accounts } from "../src/accounts.ts";
@@ -600,5 +602,97 @@ describe("relay limits (issue #453)", () => {
     // The budget is untouched: the host's answer goes through.
     await authenticate(device, host);
     expect(device.readyState).toBe(WebSocket.OPEN);
+  });
+
+  it("closes a device that streams past its handshake allowance to a silent host with 4630", async () => {
+    const relay = await start({ acceptTimeoutMs: 5_000, limits: { handshakeBytes: 1000 } });
+    const control = await registerHost(relay);
+    const { device, connId } = await dial(relay, control);
+    const host = await accept(relay, connId);
+    const first = once(host, "message");
+    device.send(new Uint8Array(600)); // a handshake-sized first message passes
+    await first;
+    const hostClosed = closeEvent(host);
+    device.send(new Uint8Array(600));
+    const [code, reason] = await closeEvent(device);
+    expect(code).toBe(RELAY_CLOSE.trafficLimit);
+    expect(reason).toMatch(/handshake/);
+    expect((await hostClosed)[0]).toBe(RELAY_CLOSE.trafficLimit);
+  });
+
+  it("lifts the handshake allowance once the host answers", async () => {
+    const relay = await start({ acceptTimeoutMs: 5_000, limits: { handshakeBytes: 1000 } });
+    const control = await registerHost(relay);
+    const { device, connId } = await dial(relay, control);
+    const host = await accept(relay, connId);
+    const first = once(host, "message");
+    device.send(new Uint8Array(600));
+    await first;
+    await authenticate(device, host);
+    const after = once(host, "message");
+    device.send(new Uint8Array(4000));
+    await after;
+    expect(device.readyState).toBe(WebSocket.OPEN);
+  });
+
+  /** Runs a one-shot `join` op for `keys` with `token`; resolves to the reply frame's type. */
+  async function joinOp(relay: Relay, keys: KeyPair, token: string): Promise<string> {
+    const socket = connect(relay, "/host");
+    const challengeP = once(socket, "message");
+    await once(socket, "open");
+    const challenge = decodeRelayToHost(asText((await challengeP)[0]));
+    if (challenge.t !== "challenge") throw new Error("expected challenge");
+    const id = relayHostId(keys.publicKey);
+    const args = { relayOrigin: ORIGIN, hostId: id, nonce: challenge.nonce };
+    const noisePublicKey = "C".repeat(43);
+    const reply = once(socket, "message");
+    socket.send(
+      encodeRelayFrame({
+        t: "register",
+        hostId: id,
+        signature: signRelayChallenge(keys.secretKey, args),
+        signatureV2: signRelayChallengeV2(keys.secretKey, { ...args, noisePublicKey }),
+        noisePublicKey,
+        op: "join",
+        joinToken: token,
+      }),
+    );
+    return decodeRelayToHost(asText((await reply)[0])).t;
+  }
+
+  it("closes a host's devices when it moves to another account, and re-admits them under the new one", async () => {
+    const { relay, accounts } = await startWithAccounts({ acceptTimeoutMs: 5_000, limits: { perAccount: 1 } });
+    const db = new DatabaseSync(accounts.dbPath);
+    const second = Number(db.prepare("INSERT INTO users (username, password_hash, created_at) VALUES ('second', 'x', 1)").run().lastInsertRowid);
+    db.close();
+    // Account 2 already owns another host; account 1 owns `hostId`.
+    const otherKeys = ed25519.keygen();
+    const otherId = relayHostId(otherKeys.publicKey);
+    accounts.joinHost({ token: accounts.createJoinToken(second).token, hostId: otherId, noisePublicKey: "B".repeat(43) });
+    const control = await registerHost(relay);
+    await registerHost(relay, otherKeys);
+
+    const { device, connId } = await dial(relay, control);
+    const host = await accept(relay, connId);
+    await authenticate(device, host);
+    const deviceClosed = closeEvent(device);
+    expect(await joinOp(relay, hostKeys, accounts.createJoinToken(second).token)).toBe("joined");
+    expect((await deviceClosed)[0]).toBe(RELAY_CLOSE.replaced);
+
+    // The reconnect counts against account 2, whose single slot it now holds.
+    await dial(relay, control);
+    expect((await refused(relay, `/c/${otherId}`))[0]).toBe(RELAY_CLOSE.tooManyConnections);
+  });
+
+  it("closes a host's devices when it leaves its account", async () => {
+    const relay = await start({ acceptTimeoutMs: 5_000 });
+    const control = await registerHost(relay);
+    const { device, connId } = await dial(relay, control);
+    const host = await accept(relay, connId);
+    await authenticate(device, host);
+    const deviceClosed = closeEvent(device);
+    const socket = await openControl(relay, hostKeys, { register: { op: "leave" } });
+    expect((await nextControl(socket)).t).toBe("left");
+    expect((await deviceClosed)[0]).toBe(RELAY_CLOSE.hostNotAllowed);
   });
 });

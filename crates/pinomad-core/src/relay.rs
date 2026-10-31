@@ -27,7 +27,8 @@ pub mod close_codes {
     pub const ACCEPT_TIMEOUT: u16 = 4610;
     /// A concurrent-connection cap for the host or its account is full.
     pub const TOO_MANY_CONNECTIONS: u16 = 4629;
-    /// The account's relay traffic budget is spent; it refills over time.
+    /// A relay traffic limit was hit: the account budget (refills over time)
+    /// or a device's allowance before its handshake completed.
     pub const TRAFFIC_LIMIT: u16 = 4630;
 }
 

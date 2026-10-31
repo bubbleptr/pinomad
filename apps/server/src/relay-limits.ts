@@ -15,6 +15,12 @@ export interface RelayLimits {
   readonly unauthenticatedPerHost: number;
   /** How long a device may stay unauthenticated, from connect, before the relay closes it. */
   readonly handshakeTimeoutMs: number;
+  /**
+   * Bytes one device may send before its handshake completes. They never
+   * touch the account budget (a stranger who knows the hostId could drain
+   * it), so this per-connection allowance is what bounds them.
+   */
+  readonly handshakeBytes: number;
   /** Sustained relay traffic per account, both directions summed. */
   readonly accountBytesPerSecond: number;
   /** Traffic an account may spend at once before the sustained rate applies. */
@@ -32,6 +38,8 @@ export const DEFAULT_RELAY_LIMITS: RelayLimits = {
   perAccount: 256,
   unauthenticatedPerHost: 32,
   handshakeTimeoutMs: 30_000,
+  // IK message 1 with its hello and a pairing secret is well under 1 KiB.
+  handshakeBytes: 64 * 1024,
   accountBytesPerSecond: 4 * 1024 * 1024,
   accountBurstBytes: 1024 * 1024 * 1024,
 };
@@ -47,6 +55,7 @@ export const RELAY_LIMIT_OPTIONS = [
     unit: "count",
   },
   { field: "handshakeTimeoutMs", flag: "relay-handshake-timeout", env: "PINOMAD_SERVER_RELAY_HANDSHAKE_TIMEOUT", unit: "seconds" },
+  { field: "handshakeBytes", flag: "relay-handshake-bytes", env: "PINOMAD_SERVER_RELAY_HANDSHAKE_BYTES", unit: "bytes" },
   { field: "accountBytesPerSecond", flag: "relay-account-rate", env: "PINOMAD_SERVER_RELAY_ACCOUNT_RATE", unit: "bytes" },
   { field: "accountBurstBytes", flag: "relay-account-burst", env: "PINOMAD_SERVER_RELAY_ACCOUNT_BURST", unit: "bytes" },
 ] as const satisfies readonly { field: keyof RelayLimits; flag: string; env: string; unit: "count" | "seconds" | "bytes" }[];
@@ -79,110 +88,132 @@ export function readRelayLimits(
   return limits;
 }
 
+/** Why the relay refuses or closes a device connection. */
+export interface RelayRefusal {
+  readonly code: number;
+  readonly reason: string;
+}
+
 /** One admitted device connection's share of the counters. */
 export interface RelayLease {
   /** The handshake completed: stop counting against the unauthenticated cap. Idempotent. */
   authenticate(): void;
-  /** Spend `bytes` of the account's budget; false once the budget is overdrawn. */
-  charge(bytes: number): boolean;
+  /**
+   * Spend `bytes`: before authenticate() from this connection's handshake
+   * allowance, after it from the account's budget. A refusal means close.
+   */
+  charge(bytes: number): RelayRefusal | undefined;
   /** Give the slot back. Idempotent. */
   release(): void;
 }
 
-export type RelayAdmission =
-  | { readonly ok: true; readonly lease: RelayLease }
-  | { readonly ok: false; readonly code: number; readonly reason: string };
+export type RelayAdmission = ({ readonly ok: true; readonly lease: RelayLease }) | ({ readonly ok: false } & RelayRefusal);
 
 export interface RelayLimiter {
   /** `account` keys the per-account caps and budget; any stable string per account. */
   admit(hostId: string, account: string): RelayAdmission;
+  /**
+   * The account is gone: drop its counters and budget, so a new account that
+   * reuses the key (users.id is reusable) starts fresh. Leases still open
+   * under it keep a detached copy and can no longer affect the new one.
+   */
+  forgetAccount(account: string): void;
 }
 
-interface Bucket {
+interface HostState {
+  connections: number;
+  unauthenticated: number;
+}
+
+interface AccountState {
+  connections: number;
   /** May go negative: the frame that overdraws is charged, so the debt is repaid before new traffic. */
   tokens: number;
   updatedAt: number;
 }
 
+const TRAFFIC_LIMIT: RelayRefusal = { code: RELAY_CLOSE.trafficLimit, reason: "account traffic limit" };
+const HANDSHAKE_TRAFFIC: RelayRefusal = { code: RELAY_CLOSE.trafficLimit, reason: "too much data before the handshake" };
+
 export function createRelayLimiter(limits: RelayLimits, now: () => number = Date.now): RelayLimiter {
-  const hostCount = new Map<string, number>();
-  const hostUnauthenticated = new Map<string, number>();
-  const accountCount = new Map<string, number>();
-  const buckets = new Map<string, Bucket>();
+  // A lease holds its host's and account's state objects, not their keys:
+  // releasing or charging after forgetAccount touches only the detached copy.
+  const hosts = new Map<string, HostState>();
+  const accounts = new Map<string, AccountState>();
   const rate = limits.accountBytesPerSecond;
   const capacity = limits.accountBurstBytes > 0 ? limits.accountBurstBytes : rate;
 
-  const over = (cap: number, count: number | undefined): boolean => cap > 0 && (count ?? 0) >= cap;
-  const bump = (counts: Map<string, number>, key: string, delta: number): void => {
-    const next = (counts.get(key) ?? 0) + delta;
-    if (next <= 0) counts.delete(key);
-    else counts.set(key, next);
-  };
+  const over = (cap: number, count: number): boolean => cap > 0 && count >= cap;
 
-  /** The account's bucket, refilled up to now; undefined when the budget is off. */
-  function bucket(account: string): Bucket | undefined {
-    if (rate <= 0) return undefined;
+  /** Brings the account's tokens up to now. */
+  function refill(state: AccountState): void {
     const at = now();
-    const existing = buckets.get(account);
-    if (existing === undefined) {
-      const fresh = { tokens: capacity, updatedAt: at };
-      buckets.set(account, fresh);
-      return fresh;
-    }
-    existing.tokens = Math.min(capacity, existing.tokens + ((at - existing.updatedAt) / 1000) * rate);
-    existing.updatedAt = at;
-    return existing;
+    state.tokens = Math.min(capacity, state.tokens + ((at - state.updatedAt) / 1000) * rate);
+    state.updatedAt = at;
   }
 
   return {
     admit(hostId, account) {
-      const budget = bucket(account);
-      if (budget !== undefined && budget.tokens < 0) {
-        return { ok: false, code: RELAY_CLOSE.trafficLimit, reason: "account traffic limit" };
+      const host = hosts.get(hostId) ?? { connections: 0, unauthenticated: 0 };
+      const owner = accounts.get(account) ?? { connections: 0, tokens: capacity, updatedAt: now() };
+      if (rate > 0) {
+        refill(owner);
+        if (owner.tokens < 0) return { ok: false, ...TRAFFIC_LIMIT };
       }
-      if (over(limits.perHost, hostCount.get(hostId))) {
+      if (over(limits.perHost, host.connections)) {
         return { ok: false, code: RELAY_CLOSE.tooManyConnections, reason: "too many connections to this host" };
       }
-      if (over(limits.perAccount, accountCount.get(account))) {
+      if (over(limits.perAccount, owner.connections)) {
         return { ok: false, code: RELAY_CLOSE.tooManyConnections, reason: "too many connections for this account" };
       }
-      if (over(limits.unauthenticatedPerHost, hostUnauthenticated.get(hostId))) {
+      if (over(limits.unauthenticatedPerHost, host.unauthenticated)) {
         return { ok: false, code: RELAY_CLOSE.tooManyConnections, reason: "too many pending handshakes for this host" };
       }
-      bump(hostCount, hostId, 1);
-      bump(accountCount, account, 1);
-      bump(hostUnauthenticated, hostId, 1);
+      hosts.set(hostId, host);
+      accounts.set(account, owner);
+      host.connections += 1;
+      host.unauthenticated += 1;
+      owner.connections += 1;
       let authenticated = false;
       let released = false;
+      let handshakeBytes = 0;
       return {
         ok: true,
         lease: {
           authenticate() {
             if (authenticated || released) return;
             authenticated = true;
-            bump(hostUnauthenticated, hostId, -1);
+            host.unauthenticated -= 1;
           },
           charge(bytes) {
-            const current = bucket(account);
-            if (current === undefined) return true;
-            current.tokens -= bytes;
-            return current.tokens >= 0;
+            if (!authenticated) {
+              handshakeBytes += bytes;
+              return limits.handshakeBytes > 0 && handshakeBytes > limits.handshakeBytes ? HANDSHAKE_TRAFFIC : undefined;
+            }
+            if (rate <= 0) return undefined;
+            refill(owner);
+            owner.tokens -= bytes;
+            return owner.tokens < 0 ? TRAFFIC_LIMIT : undefined;
           },
           release() {
             if (released) return;
             released = true;
-            bump(hostCount, hostId, -1);
-            bump(accountCount, account, -1);
-            if (!authenticated) bump(hostUnauthenticated, hostId, -1);
-            // A full bucket carries no state worth keeping once the account is
-            // idle; one still in debt stays so reconnecting can't reset it.
-            if (!accountCount.has(account)) {
-              const left = bucket(account);
-              if (left !== undefined && left.tokens >= capacity) buckets.delete(account);
+            host.connections -= 1;
+            if (!authenticated) host.unauthenticated -= 1;
+            owner.connections -= 1;
+            if (host.connections === 0 && hosts.get(hostId) === host) hosts.delete(hostId);
+            // An idle account with a full bucket carries nothing worth keeping;
+            // one still in debt stays, so reconnecting can't reset it.
+            if (owner.connections === 0 && accounts.get(account) === owner) {
+              if (rate > 0) refill(owner);
+              if (rate <= 0 || owner.tokens >= capacity) accounts.delete(account);
             }
           },
         },
       };
+    },
+    forgetAccount(account) {
+      accounts.delete(account);
     },
   };
 }
