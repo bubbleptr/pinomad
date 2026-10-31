@@ -144,6 +144,17 @@ struct SettingsView: View {
                 .font(.footnote)
             }
 
+            if model.accountSession == nil {
+                Text("Sign in to the account your hosts joined. The server only delivers notifications to devices signed in to the same account.")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            }
+            if let error = model.serverPushError {
+                Text("Couldn't register this device with the server: \(error)")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+
             if let error = model.pushError {
                 Text(error)
                     .font(.footnote)

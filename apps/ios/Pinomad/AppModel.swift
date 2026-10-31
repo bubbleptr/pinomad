@@ -284,6 +284,11 @@ final class AppModel {
     /// most one queued behind it.
     var pushSyncInFlight: Set<String> = []
     var pushSyncPending: Set<String> = []
+    /// The account server's record of this device (ADR-0036), serialized
+    /// the same way: one request in flight, at most one queued.
+    var serverPushInFlight = false
+    var serverPushPending = false
+    var serverPushError: String?
     var forgettingHosts: Set<String> = []
     let monitor = NetworkMonitor()
     /// Marks each focused snapshot landing on the main actor.

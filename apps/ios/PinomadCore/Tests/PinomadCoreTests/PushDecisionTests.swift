@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import PinomadCore
 
@@ -46,6 +47,61 @@ import Testing
             enabled: true, mayHaveRegistration: false, hostMinor: 9,
             deviceToken: token, environment: .production
         ) == .register(ApnsPushToken(apns: token, environment: .production)))
+    }
+
+    @Test func serverRegistrationFollowsTheSwitchWhileSignedIn() {
+        let server = "https://pinomad.si"
+        let token = "aabbccdd"
+        let current = ApnsPushToken(apns: token, environment: .production)
+        // Signed out: the server has no session to record it under.
+        #expect(serverPushAction(
+            enabled: true, serverOrigin: nil, deviceToken: token,
+            environment: .production, recorded: nil
+        ) == .none)
+        // Every occasion re-sends while on, so the record never ages out.
+        #expect(serverPushAction(
+            enabled: true, serverOrigin: server, deviceToken: token,
+            environment: .production,
+            recorded: ServerPushRegistration(serverOrigin: server, token: current)
+        ) == .register(current))
+        #expect(serverPushAction(
+            enabled: true, serverOrigin: server, deviceToken: nil,
+            environment: .production, recorded: nil
+        ) == .none)
+    }
+
+    @Test func serverRemovalTargetsWhatWasRecordedOnThatServer() {
+        let server = "https://pinomad.si"
+        let old = ApnsPushToken(apns: "0011", environment: .development)
+        let recorded = ServerPushRegistration(serverOrigin: server, token: old)
+        // The switch went off (or the reader is signing out): remove the
+        // token that was sent, even if APNs has issued a new one since.
+        #expect(serverPushAction(
+            enabled: false, serverOrigin: server, deviceToken: "aabb",
+            environment: .production, recorded: recorded
+        ) == .remove(old))
+        // Nothing was ever sent: no request at all.
+        #expect(serverPushAction(
+            enabled: false, serverOrigin: server, deviceToken: "aabb",
+            environment: .production, recorded: nil
+        ) == .none)
+        // A record from another server can't be removed with this session.
+        #expect(serverPushAction(
+            enabled: false, serverOrigin: "https://self.example", deviceToken: "aabb",
+            environment: .production, recorded: recorded
+        ) == .none)
+        #expect(serverPushAction(
+            enabled: false, serverOrigin: nil, deviceToken: "aabb",
+            environment: .production, recorded: recorded
+        ) == .none)
+    }
+
+    @Test func aServerRegistrationSurvivesARoundTripThroughDefaults() throws {
+        let recorded = ServerPushRegistration(
+            serverOrigin: "https://pinomad.si",
+            token: ApnsPushToken(apns: "aabb", environment: .development))
+        let data = try JSONEncoder().encode(recorded)
+        #expect(try JSONDecoder().decode(ServerPushRegistration.self, from: data) == recorded)
     }
 
     @Test func foregroundBannerIsSuppressedOnlyForTheVisibleConversation() {

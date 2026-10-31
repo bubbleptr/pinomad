@@ -72,11 +72,90 @@ extension AppModel {
         push.visibleConversation = runtimeTable.focus?.conversation
     }
 
-    /// Register or clear this device on every connected host at one of the
-    /// occasions ADR-0025 §9 lists. Each host has its own in-flight slot, so
-    /// a slow or failing host never stalls another.
+    /// Register or clear this device on every connected host, and with the
+    /// account server, at one of the occasions ADR-0025 §9 lists. Each host
+    /// has its own in-flight slot, so a slow or failing host never stalls
+    /// another.
     func syncPushToken() {
         for runtime in runtimes.values { syncPushToken(for: runtime) }
+        syncServerPushToken()
+    }
+
+    /// Keep the account server's record in step with the switch (ADR-0036):
+    /// the server only delivers a host's push to a token recorded under the
+    /// host's account. A failure waits for the next occasion.
+    func syncServerPushToken() {
+        guard let session = accountSession, let api = accountAPI() else { return }
+        if serverPushInFlight {
+            serverPushPending = true
+            return
+        }
+        let action = serverPushAction(
+            enabled: push.isEnabled,
+            serverOrigin: session.serverOrigin,
+            deviceToken: push.deviceToken,
+            environment: push.environment,
+            recorded: push.serverRegistration)
+        let send: () async -> Result<Void, AccountFailure>
+        switch action {
+        case .none:
+            return
+        case .register(let token):
+            // Remember the attempt before it goes out, like the host flag.
+            push.setServerRegistration(
+                ServerPushRegistration(serverOrigin: session.serverOrigin, token: token))
+            send = { await api.registerPushToken(token) }
+        case .remove(let token):
+            send = { await api.removePushToken(token) }
+        }
+        serverPushInFlight = true
+        Task { [weak self] in
+            let result = await send()
+            guard let self else { return }
+            self.serverPushInFlight = false
+            if self.accountSession == session {
+                switch result {
+                case .success:
+                    if case .remove(let token) = action {
+                        self.forgetServerRegistration(token, serverOrigin: session.serverOrigin)
+                    }
+                    self.serverPushError = nil
+                case .failure(let failure) where failure.clearsSession:
+                    self.accountSignOutWarning = self.endAccountSession(
+                        notice: "You were signed out. Sign in again.")
+                case .failure(let failure):
+                    self.serverPushError = AccountCopy.message(failure)
+                }
+            }
+            if self.serverPushPending {
+                self.serverPushPending = false
+                self.syncServerPushToken()
+            }
+        }
+    }
+
+    /// Signing out removes the record while the bearer still works. False
+    /// when a recorded token could not be removed — the account's hosts may
+    /// still reach this device.
+    func removeServerPushToken(api: AccountAPI, serverOrigin: String) async -> Bool {
+        guard case .remove(let token) = serverPushAction(
+            enabled: false,
+            serverOrigin: serverOrigin,
+            deviceToken: nil,
+            environment: push.environment,
+            recorded: push.serverRegistration)
+        else { return true }
+        guard case .success = await api.removePushToken(token) else { return false }
+        forgetServerRegistration(token, serverOrigin: serverOrigin)
+        return true
+    }
+
+    /// Drop the record only if it is still the one just removed: a register
+    /// queued meanwhile wrote a newer one.
+    func forgetServerRegistration(_ token: ApnsPushToken, serverOrigin: String) {
+        if push.serverRegistration == ServerPushRegistration(serverOrigin: serverOrigin, token: token) {
+            push.setServerRegistration(nil)
+        }
     }
 
     func syncPushToken(for runtime: HostRuntime) {

@@ -124,7 +124,7 @@ struct AccountView: View {
                 Task { await model.accountSignOut(everywhere: true) }
             }
         } message: {
-            Text("Your account is signed out on every device, and each one needs to sign in again. Paired hosts aren't affected.")
+            Text("Your account is signed out on every device, and each one needs to sign in again before it gets notifications. Paired hosts stay paired.")
         }
     }
 

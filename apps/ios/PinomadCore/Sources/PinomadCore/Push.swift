@@ -34,6 +34,55 @@ public func pushRegistrationAction(
     return mayHaveRegistration ? .unregister : .none
 }
 
+/// What this device last asked an account server to record (ADR-0036).
+/// Kept so turning the switch off or signing out removes exactly that
+/// token, even after APNs has issued a new one.
+public struct ServerPushRegistration: Codable, Equatable, Sendable {
+    public let serverOrigin: String
+    public let apns: String
+    public let production: Bool
+
+    public init(serverOrigin: String, token: ApnsPushToken) {
+        self.serverOrigin = serverOrigin
+        apns = token.apns
+        production = token.environment == .production
+    }
+
+    public var token: ApnsPushToken {
+        ApnsPushToken(apns: apns, environment: production ? .production : .development)
+    }
+}
+
+/// What a server-registration opportunity should send.
+public enum ServerPushAction: Equatable, Sendable {
+    case none
+    /// `POST /api/push-tokens` — also refreshes the server's 90-day record.
+    case register(ApnsPushToken)
+    /// `POST /api/push-tokens/remove` for the recorded token.
+    case remove(ApnsPushToken)
+}
+
+/// The account server's half of push (ADR-0036): the server only forwards
+/// a host's push to a token recorded under the host's account, so while the
+/// switch is on and a session exists, every occasion registers. Signing
+/// out asks with `enabled: false` — removal needs the session it was
+/// recorded under, so a record from another server is left to expire.
+public func serverPushAction(
+    enabled: Bool,
+    serverOrigin: String?,
+    deviceToken: String?,
+    environment: ApnsEnvironment,
+    recorded: ServerPushRegistration?
+) -> ServerPushAction {
+    guard let serverOrigin else { return .none }
+    if enabled {
+        guard let deviceToken, !deviceToken.isEmpty else { return .none }
+        return .register(ApnsPushToken(apns: deviceToken, environment: environment))
+    }
+    guard let recorded, recorded.serverOrigin == serverOrigin else { return .none }
+    return .remove(recorded.token)
+}
+
 /// A foreground banner is suppressed only for the conversation visible on
 /// screen right now; another conversation on the same host, or any push from
 /// another host, still shows (ADR-0035 §9).

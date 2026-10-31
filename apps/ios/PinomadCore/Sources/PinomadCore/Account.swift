@@ -310,6 +310,22 @@ public struct AccountAPI: Sendable {
         }
     }
 
+    public func registerPushToken(_ token: ApnsPushToken) async -> Result<Void, AccountFailure> {
+        switch await request(.registerPushToken(token: token), kind: .registerPushToken) {
+        case .success(.unit): return .success(())
+        case .failure(let failure): return .failure(failure)
+        default: return .failure(.invalidResponse)
+        }
+    }
+
+    public func removePushToken(_ token: ApnsPushToken) async -> Result<Void, AccountFailure> {
+        switch await request(.removePushToken(token: token), kind: .removePushToken) {
+        case .success(.unit): return .success(())
+        case .failure(let failure): return .failure(failure)
+        default: return .failure(.invalidResponse)
+        }
+    }
+
     private func request(
         _ op: AccountOp,
         kind: AccountOpKind
@@ -515,7 +531,7 @@ public enum AccountHosts {
 
 public enum AccountCopy {
     public static let signOutExplanation =
-        "Signing out only stops the server from vouching for this device. Paired hosts aren't affected."
+        "Signing out stops the server from vouching for this device and from delivering its notifications. Paired hosts stay paired."
 
     /// The warning after a sign-out request failed. On this device an
     /// unauthenticated answer just means the local token was already dead;
