@@ -30,7 +30,7 @@ usage: pinomad <command> [args…]
   host --relay URL   remote access via relay (ADR-0015)
   host --faux "answer" [--faux-tps 40]   no real model, for tests
   server --public-origin O [--data-dir D] [--trust-proxy]   run the server
-  server passwd [--data-dir D] [--user U]   change the account password (stdin)
+  server passwd [--data-dir D] [--user U]   reset an account's password (stdin)
   relay …                              old name of server
   service install|uninstall|status|restart|logs   user-level host service
   upgrade [--force] [address flags]    upgrade the package and restart the service

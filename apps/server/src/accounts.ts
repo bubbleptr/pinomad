@@ -14,7 +14,7 @@ import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
 import type { ApnsEnvironment } from "@pinomad/protocol/relay.ts";
 import { normalizeHostName } from "@pinomad/protocol/settings.ts";
-import { lockDataDir } from "./lock.ts";
+import { isDataDirInUse, lockDataDir } from "./lock.ts";
 
 const DB_FILE = "server.sqlite";
 const SCHEMA_VERSION = 3;
@@ -105,6 +105,11 @@ export type LoginResult =
   | { readonly status: "invalid" }
   | { readonly status: "limited" };
 
+export type ChangePasswordResult =
+  | { readonly status: "ok" }
+  | { readonly status: "refused"; readonly reason: "wrong_password" | "weak_password" }
+  | { readonly status: "limited" };
+
 export type RegisterResult =
   | { readonly status: "ok"; readonly token: string; readonly expiresAt: number }
   | {
@@ -161,6 +166,20 @@ export interface Accounts {
   revokeInvite(id: number): boolean;
   logout(token: string): void;
   revokeAllSessions(userId: number): void;
+  /**
+   * Self-service password change (#450): checks the current password under
+   * the same username lockout as login, then swaps the hash and signs out
+   * every other session, so a leaked password leaves no live credential
+   * behind except the caller's.
+   */
+  changePassword(args: {
+    readonly userId: number;
+    readonly username: string;
+    /** The caller's session token, which survives the change. */
+    readonly keepToken: string;
+    readonly currentPassword: string;
+    readonly newPassword: string;
+  }): Promise<ChangePasswordResult>;
   /** True when hostId is bound to an account — the only way a host registers. */
   hasHost(hostId: string): boolean;
   /** Mints a single-use join token for a logged-in user; only its SHA-256 is stored. */
@@ -255,11 +274,23 @@ function assertUsernamePolicy(username: string): void {
   }
 }
 
-function migrate(db: DatabaseSync): void {
+// `server passwd` writes beside a running server (#450): both connections
+// wait out the other's write instead of failing with SQLITE_BUSY.
+const BUSY_TIMEOUT_MS = 5000;
+
+function openDatabase(dataDir: string): DatabaseSync {
+  const db = new DatabaseSync(join(dataDir, DB_FILE));
+  db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA foreign_keys = ON");
-  const row = db.prepare("PRAGMA user_version").get() as { user_version: number } | undefined;
-  const version = row?.user_version ?? 0;
+  return db;
+}
+
+const schemaVersion = (db: DatabaseSync): number =>
+  (db.prepare("PRAGMA user_version").get() as { user_version: number } | undefined)?.user_version ?? 0;
+
+function migrate(db: DatabaseSync): void {
+  const version = schemaVersion(db);
   if (version > SCHEMA_VERSION) {
     throw new Error(`server database schema ${version} is newer than this build (${SCHEMA_VERSION})`);
   }
@@ -427,7 +458,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
   const release = await lockDataDir(options.dataDir, { staleMs: options.lockStaleMs });
   let db: DatabaseSync | undefined;
   try {
-    db = new DatabaseSync(join(options.dataDir, DB_FILE));
+    db = openDatabase(options.dataDir);
     migrate(db);
     const userCount = (db.prepare("SELECT COUNT(*) AS n FROM users").get() as { n: number }).n;
     if (userCount === 0) {
@@ -618,6 +649,39 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(sha256Hex(token));
     },
 
+    async changePassword({ userId, username, keepToken, currentPassword, newPassword }) {
+      const length = [...newPassword].length;
+      if (length < MIN_PASSWORD_CODEPOINTS || length > MAX_PASSWORD_CODEPOINTS) {
+        return { status: "refused", reason: "weak_password" };
+      }
+      if (userFailures.isOver(username, limits.userMaxFailures)) return { status: "limited" };
+      const stored = db.prepare("SELECT password_hash AS passwordHash FROM users WHERE id = ?").get(userId) as
+        | { passwordHash: string }
+        | undefined;
+      // Same in-task re-check and bump as login, so queued guesses see each other.
+      const outcome = await gate.run(async (): Promise<"limited" | "wrong_password" | string> => {
+        if (userFailures.isOver(username, limits.userMaxFailures)) return "limited";
+        if (!(await verifyPassword(currentPassword, stored?.passwordHash ?? DUMMY_HASH)) || stored === undefined) {
+          userFailures.bump(username, limits.userWindowMs);
+          return "wrong_password";
+        }
+        return hashPassword(newPassword);
+      });
+      if (outcome === undefined || outcome === "limited") return { status: "limited" };
+      if (outcome === "wrong_password") return { status: "refused", reason: "wrong_password" };
+      userFailures.reset(username);
+      db.exec("BEGIN");
+      try {
+        db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(outcome, userId);
+        dropCredentials(db, userId, sha256Hex(keepToken));
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+      return { status: "ok" };
+    },
+
     revokeAllSessions(userId) {
       // Signing out everywhere also stops every device of the account from
       // receiving pushes until it logs in and registers again (ADR-0036 §5).
@@ -792,24 +856,51 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
 }
 
 /**
- * `pinomad server passwd`: changes the password while the server is stopped —
- * the directory lock doubles as the "is it running" check. One transaction
- * swaps the hash and drops every session and unused join token, so a leaked
- * password can't leave live credentials behind.
+ * Everything a password change must not leave live (#450): sessions (all but
+ * `keepTokenHash`), unused join tokens, and push registrations, which a
+ * signed-out device would otherwise keep receiving (ADR-0036 §5). Runs inside
+ * the caller's transaction.
  */
-export async function changePassword(options: {
+function dropCredentials(db: DatabaseSync, userId: number, keepTokenHash?: string): void {
+  if (keepTokenHash === undefined) db.prepare("DELETE FROM sessions WHERE user_id = ?").run(userId);
+  else db.prepare("DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?").run(userId, keepTokenHash);
+  db.prepare("DELETE FROM join_tokens WHERE user_id = ? AND used_at IS NULL").run(userId);
+  db.prepare("DELETE FROM push_tokens WHERE user_id = ?").run(userId);
+}
+
+/**
+ * `pinomad server passwd`: the operator resets an account's password, the
+ * way a user who forgot theirs gets back in (#450). Works whether or not the
+ * server is running: a stopped server's directory is locked and migrated as
+ * usual; beside a running one it writes through SQLite's own locking, and
+ * only when the database is on this build's schema, so an upgraded package
+ * never migrates the tables under an older running server. One transaction
+ * swaps the hash and drops the account's credentials, and the running server
+ * reads sessions from the database on every request, so the account is
+ * signed out at once.
+ */
+export async function resetPassword(options: {
   readonly dataDir: string;
   readonly user?: string;
   readonly password: string;
 }): Promise<void> {
   assertPasswordPolicy(options.password);
   await mkdir(options.dataDir, { recursive: true });
-  // retries: 0 fails fast against a running server's fresh lock; the default
-  // stale value must match what servers use or a live lock looks abandoned.
-  const release = await lockDataDir(options.dataDir, { retries: 0 });
-  const db = new DatabaseSync(join(options.dataDir, DB_FILE));
+  // retries: 0 answers "is a server running" at once; the default stale value
+  // must match what servers use or a live lock looks abandoned.
+  const release = await lockDataDir(options.dataDir, { retries: 0 }).catch((error: unknown) => {
+    if (isDataDirInUse(error)) return undefined;
+    throw error;
+  });
+  const db = openDatabase(options.dataDir);
   try {
-    migrate(db);
+    if (release !== undefined) {
+      migrate(db);
+    } else if (schemaVersion(db) !== SCHEMA_VERSION) {
+      throw new Error(
+        `the running server's database schema (${schemaVersion(db)}) differs from this build's (${SCHEMA_VERSION}); restart the server on this version first`,
+      );
+    }
     const users = (
       options.user === undefined
         ? db.prepare("SELECT id FROM users").all()
@@ -819,12 +910,10 @@ export async function changePassword(options: {
     if (users.length > 1) throw new Error("more than one account exists — pass --user");
     const userId = users[0]!.id;
     const hash = await hashPassword(options.password);
-    db.exec("BEGIN");
+    db.exec("BEGIN IMMEDIATE");
     try {
       db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hash, userId);
-      db.prepare("DELETE FROM sessions WHERE user_id = ?").run(userId);
-      db.prepare("DELETE FROM join_tokens WHERE user_id = ? AND used_at IS NULL").run(userId);
-      db.prepare("DELETE FROM push_tokens WHERE user_id = ?").run(userId);
+      dropCredentials(db, userId);
       db.exec("COMMIT");
     } catch (error) {
       db.exec("ROLLBACK");
@@ -832,6 +921,6 @@ export async function changePassword(options: {
     }
   } finally {
     db.close();
-    await release();
+    await release?.();
   }
 }

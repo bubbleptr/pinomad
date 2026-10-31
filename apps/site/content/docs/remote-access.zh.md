@@ -137,15 +137,16 @@ pinomad server --public-origin https://relay.example.com --data-dir /var/lib/pin
 
 - 两个变量缺一个、或密码不到 12 位，启动直接报错；users 表已有用户后启动不再需要它们。数据目录和宿主一样一个目录只允许一个进程，容器平台部署要挂持久卷。
 - 账号 API 和控制连接只走 HTTPS/WSS，明文只留给 localhost 开发。前面有反向代理（Caddy、容器平台）时必须加 `--trust-proxy`：服务端据此信任 `X-Forwarded-Proto` 判定请求是否来自 https，并取 `X-Forwarded-For` 做按 IP 限速；不加的话，经过代理进来的请求会被当成不可信的明文连接拒绝（`/api/*` 回 403，`/host` 升级回 403），限速也只看到代理的地址。
-- 改密码用 `pinomad server passwd`（要求服务端已停，它和数据目录锁互斥），新密码从 stdin 读：
+- 用户登录后可以自己改密码（`POST /api/password`，要填旧密码；旧密码输错和登录共用按用户名的锁定）。改完后当前会话保留，其他会话、没用掉的 join token 和推送登记都作废。
+- 服务端不存邮箱，没有自助找回：忘了密码的用户找管理员，管理员在服务端机器上用 `pinomad server passwd` 重置，新密码从 stdin 读：
 
   ```sh
-  printenv NEW_PASSWORD | pinomad server passwd --data-dir /var/lib/pinomad/server
+  printenv NEW_PASSWORD | pinomad server passwd --data-dir /var/lib/pinomad/server --user <用户名>
   ```
 
-  同一个事务里换掉密码哈希、作废所有登录会话和没用掉的 join token；宿主上已登记的设备不受影响。
+  服务端不用停。同一个事务里换掉密码哈希、作废这个账号的所有登录会话、没用掉的 join token 和推送登记，运行中的服务端下一个请求就认不出旧会话；宿主上已登记的设备不受影响。把新密码交给用户后，让对方登录再自己改一次。服务端开着时，`passwd` 只在数据库版本和这个 `pinomad` 版本一致时才写（升级了包但服务端还没重启的话，先重启）；服务端停着时照常加锁、迁移。
 
-  服务端上有多个账号时要加 `--user <用户名>`。
+  服务端上只有一个账号时可以省略 `--user`。
 
 #### 邀请码注册
 
@@ -228,7 +229,7 @@ HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（
 - `_KEY` 是 PEM 文本本身，不是文件路径。服务端认真实换行，也认字面的 `\n`。有的容器平台的变量只存单行，直接粘多行内容会丢掉换行，启动日志报 `apns: the … key is not a valid EC private key`；先把 `.p8` 转成用字面 `\n` 连接的一行再粘：`awk 'NR>1{printf "\\n"} {printf "%s", $0}' AuthKey_XXXXXXXXXX.p8 | pbcopy`（Linux 换成 `wl-copy`），不加引号。
 - 服务端按环境各持一条到 APNs 的 HTTP/2 长连接（production 打 `api.push.apple.com`，development 打 `api.sandbox.push.apple.com`），断了自己重建；provider token 用 `node:crypto` 签 ES256，缓存在进程里。
 - 推送负载只带标题和事件类型（"Waiting for your answer" / "Finished" / "Failed"），不带对话内容。
-- 服务端只推给登记在发起宿主同一账号下的 token（ADR-0036）：设备登录账号后经 `POST /api/push-tokens` 登记，别的 token 回 `rejected`（`token_not_registered`），宿主日志里是 `push: send to …… rejected: token_not_registered`。数据目录里因此多存了每个 token 的环境、所属账号和最近一次登记时间；90 天没刷新的登记作废，「退出所有会话」和 `pinomad server passwd` 会清掉这个账号的全部登记。
+- 服务端只推给登记在发起宿主同一账号下的 token（ADR-0036）：设备登录账号后经 `POST /api/push-tokens` 登记，别的 token 回 `rejected`（`token_not_registered`），宿主日志里是 `push: send to …… rejected: token_not_registered`。数据目录里因此多存了每个 token 的环境、所属账号和最近一次登记时间；90 天没刷新的登记作废，「退出所有会话」、用户自己改密码和 `pinomad server passwd` 会清掉这个账号的全部登记。
 
 ### 升级
 

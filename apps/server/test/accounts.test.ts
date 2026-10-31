@@ -16,8 +16,9 @@ import {
   signRelayChallenge,
   type RegisterFrame,
 } from "@pinomad/protocol/relay.ts";
-import { changePassword, openAccounts, type Accounts, type LoginLimits } from "../src/accounts.ts";
+import { openAccounts, resetPassword, type Accounts, type LoginLimits } from "../src/accounts.ts";
 import { startRelay, type Relay } from "../src/relay.ts";
+import { lockDataDir } from "../src/lock.ts";
 import { removeTempDir, tempDir } from "./support.ts";
 
 const ORIGIN = "https://relay.example.com";
@@ -491,9 +492,36 @@ describe("desktop origin and legacy mode", () => {
 });
 
 describe("server passwd", () => {
-  it("refuses to change the password while the server holds the data dir", async () => {
-    const { dataDir } = await startServer();
-    await expect(changePassword({ dataDir, password: NEW_PASSWORD })).rejects.toThrow(/already in use|held|running/i);
+  it("resets the password while the server runs, signing the account out at once", async () => {
+    const { relay, accounts, dataDir } = await startServer();
+    const token = (await login(relay)).json.token as string;
+    accounts.registerPushToken(1, "aa".repeat(32), "production");
+
+    await resetPassword({ dataDir, password: NEW_PASSWORD });
+
+    expect((await api(relay, { path: "/api/me", headers: { authorization: `Bearer ${token}` } })).status).toBe(401);
+    expect(accounts.pushTokenOwner("aa".repeat(32), "production")).toBeUndefined();
+    expect((await login(relay, "admin", GOOD_PASSWORD)).status).toBe(401);
+    expect((await login(relay, "admin", NEW_PASSWORD)).status).toBe(200);
+  });
+
+  it("refuses to touch a running server's database when its schema differs from this build", async () => {
+    const dataDir = await tempDir(dirs);
+    const accounts = await openAccounts({ dataDir, bootstrapUser: "admin", bootstrapPassword: GOOD_PASSWORD });
+    await accounts.close();
+    const db = new DatabaseSync(join(dataDir, "server.sqlite"));
+    db.exec("PRAGMA user_version = 2");
+    db.close();
+    // Stands in for an older server still running after the package was upgraded.
+    const release = await lockDataDir(dataDir);
+    try {
+      await expect(resetPassword({ dataDir, password: NEW_PASSWORD })).rejects.toThrow(/schema/i);
+    } finally {
+      await release();
+    }
+    const after = new DatabaseSync(join(dataDir, "server.sqlite"));
+    expect((after.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(2);
+    after.close();
   });
 
   it("swaps the hash and invalidates sessions and unused join tokens", async () => {
@@ -520,8 +548,8 @@ describe("server passwd", () => {
     db.close();
 
     await stop(started);
-    await expect(changePassword({ dataDir, password: "too short" })).rejects.toThrow();
-    await changePassword({ dataDir, password: NEW_PASSWORD });
+    await expect(resetPassword({ dataDir, password: "too short" })).rejects.toThrow();
+    await resetPassword({ dataDir, password: NEW_PASSWORD });
 
     const second = await startServer({ dataDir, bootstrap: {} });
     expect((await login(second.relay, "admin", GOOD_PASSWORD)).status).toBe(401);
@@ -534,6 +562,77 @@ describe("server passwd", () => {
     expect(unused.n).toBe(0);
     expect(used.n).toBe(1);
     verify.close();
+  });
+});
+
+describe("changing the password (#450)", () => {
+  const TOKEN = "bb".repeat(32);
+  const change = (relay: Relay, headers: Record<string, string>, body: unknown) =>
+    api(relay, { method: "POST", path: "/api/password", headers, body });
+
+  it("changes the password, keeps the calling session and signs every other one out", async () => {
+    const { relay, accounts } = await startServer();
+    const current = (await login(relay)).json.token as string;
+    const other = (await login(relay)).json.token as string;
+    accounts.registerPushToken(1, TOKEN, "production");
+    accounts.createJoinToken(1);
+
+    const response = await change(relay, { authorization: `Bearer ${current}` }, {
+      currentPassword: GOOD_PASSWORD,
+      newPassword: NEW_PASSWORD,
+    });
+    expect(response.status).toBe(204);
+
+    expect((await api(relay, { path: "/api/me", headers: { authorization: `Bearer ${current}` } })).status).toBe(200);
+    expect((await api(relay, { path: "/api/me", headers: { authorization: `Bearer ${other}` } })).status).toBe(401);
+    // Devices that were signed out stop receiving pushes until they sign in
+    // again; the caller's own device registers again on its next start.
+    expect(accounts.pushTokenOwner(TOKEN, "production")).toBeUndefined();
+    const db = new DatabaseSync(accounts.dbPath);
+    expect((db.prepare("SELECT COUNT(*) AS n FROM join_tokens WHERE used_at IS NULL").get() as { n: number }).n).toBe(0);
+    db.close();
+    expect((await login(relay, "admin", GOOD_PASSWORD)).status).toBe(401);
+    expect((await login(relay, "admin", NEW_PASSWORD)).status).toBe(200);
+  });
+
+  it("works for the same-origin page's cookie session, which it keeps", async () => {
+    const { relay } = await startServer();
+    const cookie = sessionCookie(await login(relay, "admin", GOOD_PASSWORD, { origin: ORIGIN }));
+    const headers = { cookie, origin: ORIGIN };
+    expect((await change(relay, headers, { currentPassword: GOOD_PASSWORD, newPassword: NEW_PASSWORD })).status).toBe(204);
+    expect((await api(relay, { path: "/api/me", headers })).status).toBe(200);
+    // Ambient cookie, foreign origin: refused before the body is read.
+    expect((await change(relay, { cookie, origin: "https://evil.example" }, { currentPassword: NEW_PASSWORD, newPassword: GOOD_PASSWORD })).status).toBe(403);
+  });
+
+  it("refuses a wrong current password without changing anything, and locks out guessing", async () => {
+    const { relay } = await startServer({ limits: { userMaxFailures: 2, ipMaxAttempts: 100 } });
+    const token = (await login(relay)).json.token as string;
+    const auth = { authorization: `Bearer ${token}` };
+    for (let i = 0; i < 2; i += 1) {
+      const response = await change(relay, auth, { currentPassword: WRONG, newPassword: NEW_PASSWORD });
+      expect(response.status).toBe(403);
+      expect(response.json.error).toBe("wrong_password");
+    }
+    // Same lock as login: a stolen session can't be used to guess the password.
+    expect((await change(relay, auth, { currentPassword: GOOD_PASSWORD, newPassword: NEW_PASSWORD })).status).toBe(429);
+    // A wrong password is not a reason to drop the caller's session.
+    expect((await api(relay, { path: "/api/me", headers: auth })).status).toBe(200);
+  });
+
+  it("refuses a weak new password, malformed bodies and anonymous callers", async () => {
+    const { relay } = await startServer();
+    const token = (await login(relay)).json.token as string;
+    const auth = { authorization: `Bearer ${token}` };
+    const weak = await change(relay, auth, { currentPassword: GOOD_PASSWORD, newPassword: "short" });
+    expect(weak.status).toBe(400);
+    expect(weak.json.error).toBe("weak_password");
+    expect((await change(relay, auth, { currentPassword: GOOD_PASSWORD })).status).toBe(400);
+    expect((await change(relay, auth, "nope")).status).toBe(400);
+    expect((await change(relay, auth, { currentPassword: "x".repeat(2000), newPassword: NEW_PASSWORD })).status).toBe(400);
+    expect((await change(relay, { authorization: "Bearer nope" }, { currentPassword: GOOD_PASSWORD, newPassword: NEW_PASSWORD })).status).toBe(401);
+    expect((await api(relay, { path: "/api/password", headers: auth })).status).toBe(405);
+    expect((await login(relay)).status).toBe(200);
   });
 });
 
