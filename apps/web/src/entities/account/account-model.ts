@@ -12,6 +12,8 @@ import {
   pairViaAccount,
   probeAccounts,
   type AccountClient,
+  type AccountDevice,
+  type AccountDeviceClaim,
   type AccountError,
   type AccountFetch,
   type AccountHostMatch,
@@ -22,7 +24,7 @@ import {
   type LoginSuccess,
   type PairConnectArgs,
 } from "@pinomad/client/account.ts";
-import { clientDeviceName } from "../../address.ts";
+import { accountDeviceName, clientDeviceName } from "../../address.ts";
 import type { DesktopBridge } from "../host/desktop-bridge.ts";
 import { useHosts, type StoredHost } from "../host/host-store.ts";
 import {
@@ -31,6 +33,7 @@ import {
   onAccountRegistrationCancel,
   type DeclinedStore,
 } from "./declined.ts";
+import { browserDeviceId } from "./device-id.ts";
 
 /** How this client authenticates to the account API (ADR-0022 §2). */
 export type AccountMode = "cookie" | "bearer";
@@ -113,6 +116,13 @@ export interface AccountModel {
    */
   deleteAccount(input: { password: string }): Promise<AccountResult<void>>;
   refreshHosts(): Promise<AccountResult<readonly AccountHostMatch[]>>;
+  /** The account's devices (#452). */
+  listDevices(): Promise<AccountResult<readonly AccountDevice[]>>;
+  /**
+   * Signs a device out of the account and asks its hosts to revoke it
+   * (ADR-0037 §3). A refusal keeps this session; the caller reloads the list.
+   */
+  kickDevice(input: { id: number; password: string }): Promise<AccountResult<void>>;
   createJoinToken(): Promise<AccountResult<JoinToken>>;
   /** Admin only (#449). */
   listInvites(): Promise<AccountResult<readonly AccountInvite[]>>;
@@ -148,6 +158,8 @@ export interface AccountModelDeps {
   readonly fetch?: AccountFetch;
   /** Device label for registrations; may resolve over the desktop bridge. */
   readonly name?: () => string | Promise<string>;
+  /** This install's account device claim for login and sign-up (ADR-0037 §1); none when absent. */
+  readonly device?: () => AccountDeviceClaim;
   /** pairViaAccount's transport seam — tests substitute a stub. */
   readonly connect?: (args: PairConnectArgs) => Promise<void>;
   /** Persisted declined identities; defaults to this renderer's localStorage set. */
@@ -633,10 +645,10 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     },
 
     login: ({ username, password, serverOrigin }) =>
-      signIn(serverOrigin, (candidate) => candidate.login(username, password)),
+      signIn(serverOrigin, (candidate) => candidate.login(username, password, deps.device?.())),
 
     register: ({ invite, username, password, serverOrigin }) =>
-      signIn(serverOrigin, (candidate) => candidate.register(invite, username, password)),
+      signIn(serverOrigin, (candidate) => candidate.register(invite, username, password, deps.device?.())),
 
     logout: async () => {
       if (client === undefined) return fail("unauthenticated");
@@ -672,6 +684,8 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
           signedOut();
         },
       ),
+    listDevices: () => authed((active) => active.listDevices()),
+    kickDevice: ({ id, password }) => authed((active) => active.kickDevice(id, password)),
     createJoinToken: () => authed((active) => active.createJoinToken()),
     listInvites: () => authed((active) => active.listInvites()),
     createInvite: () => authed((active) => active.createInvite()),
@@ -717,6 +731,10 @@ export function useAccount(): AccountModel {
       paired,
       removeHost: dropHost,
       name: clientDeviceName,
+      device: () => ({
+        id: browserDeviceId(),
+        name: accountDeviceName(navigator.userAgent, document.documentElement.dataset.pinomadPlatform),
+      }),
     }),
   );
   useSyncExternalStore(model.subscribe, () => model.state);

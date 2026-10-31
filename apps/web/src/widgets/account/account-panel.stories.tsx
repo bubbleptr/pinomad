@@ -65,6 +65,40 @@ export const DeleteAccountWrongPassword: Story = {
   },
 };
 
+/** Removing a device (#452): the password again, and which hosts can't be asked to revoke it. */
+export const RemovingDevice: Story = {
+  decorators: [
+    withAccount(
+      signedIn({
+        hosts: [
+          ...ACCOUNT_HOSTS,
+          // An older host that doesn't report devices: the form names it.
+          { ...ACCOUNT_HOSTS[1]!, host: { ...ACCOUNT_HOSTS[1]!.host, hostId: "a".repeat(43), name: "attic", deviceReports: false } },
+        ],
+      }),
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const row = (await within(canvasElement).findByText("Mac Desktop")).closest("li")!;
+    await userEvent.click(within(row).getByRole("button", { name: "Remove" }));
+  },
+};
+
+/** A wrong password keeps the form; nothing is removed. */
+export const RemoveDeviceWrongPassword: Story = {
+  decorators: [
+    withAccount(signedIn(), {
+      kickDevice: fn(async () => ({ ok: false as const, error: { code: "wrong_password", status: 403 } })),
+    }),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const row = (await canvas.findByText("Mac Desktop")).closest("li")!;
+    await userEvent.click(within(row).getByRole("button", { name: "Remove" }));
+    await userEvent.type(canvas.getByLabelText("Password"), "not my password{Enter}");
+  },
+};
+
 /** The server's admin also manages sign-up invites: one unused, one used, one expired. */
 export const SignedInAdmin: Story = { decorators: [withAccount(signedIn({ admin: true }))] };
 

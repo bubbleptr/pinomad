@@ -134,3 +134,17 @@ export async function clientDeviceName(): Promise<string> {
   }
   return deviceName(navigator.userAgent);
 }
+
+const DESKTOP_PLATFORMS: Record<string, string> = { darwin: "Mac", win32: "Windows", linux: "Linux" };
+
+/**
+ * The label this client claims as an account device (ADR-0037 §1). The same
+ * words its hosts see, minus the desktop's hostname: the account server is
+ * told the kind of client, not the machine's name. `desktopPlatform` is the
+ * preload's platform marker, present only in the desktop app.
+ */
+export function accountDeviceName(userAgent: string, desktopPlatform?: string): string {
+  if (desktopPlatform === undefined) return deviceName(userAgent);
+  const os = DESKTOP_PLATFORMS[desktopPlatform];
+  return os === undefined ? "Desktop" : `${os} Desktop`;
+}

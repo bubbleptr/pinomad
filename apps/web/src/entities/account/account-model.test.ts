@@ -4,7 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
-import type { AccountFetch, AccountFetchInit } from "@pinomad/client/account.ts";
+import type { AccountDeviceClaim, AccountFetch, AccountFetchInit } from "@pinomad/client/account.ts";
 import {
   createAccountModel,
   type AccountLocks,
@@ -12,6 +12,7 @@ import {
   type AccountVisibility,
 } from "./account-model.ts";
 import { createDeclinedStore, type DeclinedStore } from "./declined.ts";
+import { createDeviceIdSource } from "./device-id.ts";
 import type { DesktopBridge } from "../host/desktop-bridge.ts";
 import type { StoredHost } from "../host/host-store.ts";
 
@@ -100,6 +101,7 @@ function makeModel(options: {
   autoRegister?: boolean;
   removeHost?: (hostKey: string) => Promise<void>;
   visibility?: AccountVisibility;
+  device?: () => AccountDeviceClaim;
 }): Setup {
   const store = options.store ?? hosts();
   const paired: StoredHost[] = [];
@@ -120,6 +122,7 @@ function makeModel(options: {
     ...(options.removeHost === undefined ? {} : { removeHost: options.removeHost }),
     ...(options.visibility === undefined ? {} : { visibility: options.visibility }),
     ...(options.bridge === undefined ? {} : { bridge: options.bridge }),
+    ...(options.device === undefined ? {} : { device: options.device }),
   });
   return { model, calls: options.fake.calls, store, paired };
 }
@@ -191,6 +194,74 @@ describe("account model", () => {
     expect(result.ok).toBe(true);
     expect(model.state).toMatchObject({ status: "signed-in", user: "admin", hosts: [] });
     expect(calls[2]!.init?.headers?.authorization).toBeUndefined();
+  });
+
+  it("claims the same account device at every login and sign-up, across reloads (#452)", async () => {
+    const items = new Map<string, string>();
+    const storage = { getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, value: string) => void items.set(key, value) };
+    const page = () => {
+      const deviceId = createDeviceIdSource(() => storage);
+      return () => ({ id: deviceId(), name: "Mac Chrome" });
+    };
+    const signedOut = [{ status: 401 }, { status: 401, body: { error: "unauthenticated" } }];
+    const first = makeModel({
+      fake: fakeFetch(
+        ...signedOut,
+        { status: 200, body: USER }, // login
+        { status: 200, body: [] },
+        { status: 204 }, // logout
+        { status: 200, body: { user: { username: "bob" }, expiresAt: 1 } }, // register
+        { status: 200, body: [] },
+      ),
+      device: page(),
+    });
+    await settled(first.model);
+    expect((await first.model.login({ username: "admin", password: "pw" })).ok).toBe(true);
+    await first.model.logout();
+    expect((await first.model.register({ invite: "code", username: "bob", password: "pw" })).ok).toBe(true);
+    const claims = [first.calls[2]!, first.calls[5]!].map((call) => (JSON.parse(call.init!.body!) as { device: unknown }).device);
+    const id = items.values().next().value as string;
+    expect(claims).toEqual([
+      { id, name: "Mac Chrome" },
+      { id, name: "Mac Chrome" },
+    ]);
+
+    // A reload reads the same id back instead of minting another device.
+    const second = makeModel({
+      fake: fakeFetch(...signedOut, { status: 200, body: USER }, { status: 200, body: [] }),
+      device: page(),
+    });
+    await settled(second.model);
+    await second.model.login({ username: "admin", password: "pw" });
+    expect(JSON.parse(second.calls[2]!.init!.body!)).toEqual({ username: "admin", password: "pw", device: { id, name: "Mac Chrome" } });
+  });
+
+  it("lists the account's devices and kicks one; a kick's refusal keeps the session (#452)", async () => {
+    const devices = [
+      { id: 2, name: "Mac Chrome", createdAt: 1, lastSeenAt: 2, current: true, hosts: [] },
+      { id: 3, createdAt: 1, lastSeenAt: 1, current: false, hosts: [{ hostId: "h1", name: "omarchy", state: "registered" }] },
+    ];
+    const { model, calls } = makeModel({
+      fake: fakeFetch(
+        { status: 401 },
+        { status: 200, body: { user: { username: "bob" } } },
+        { status: 200, body: [] },
+        { status: 200, body: devices },
+        { status: 403, body: { error: "wrong_password" } },
+        { status: 204 },
+        { status: 401, body: { error: "unauthenticated" } },
+      ),
+    });
+    await vi.waitFor(() => expect(model.state.status).toBe("signed-in"));
+    expect(await model.listDevices()).toEqual({ ok: true, value: devices });
+    expect(await model.kickDevice({ id: 3, password: "nope" })).toEqual({ ok: false, error: { code: "wrong_password", status: 403 } });
+    expect(model.state.status).toBe("signed-in");
+    expect((await model.kickDevice({ id: 3, password: "pw" })).ok).toBe(true);
+    expect(calls[5]!.url).toBe(`${ORIGIN}/api/devices/3/kick`);
+    expect(JSON.parse(calls[5]!.init!.body!)).toEqual({ password: "pw" });
+    // The session itself was kicked from elsewhere meanwhile.
+    expect((await model.listDevices()).ok).toBe(false);
+    expect(model.state.status).toBe("signed-out");
   });
 
   it("bearer mode (desktop): restores a stored session, validates the origin on login", async () => {
@@ -607,6 +678,17 @@ describe("account model", () => {
       await switchToBob(model);
       answer({ status: 204 });
       expect((await deleting).ok).toBe(true);
+      expect(model.state).toMatchObject({ status: "signed-in", user: "bob" });
+      expect(token()).toBe("b-token");
+    });
+
+    it("a kick's 401 doesn't sign the new account out (#452)", async () => {
+      const { model, answer, token } = setup("/api/devices/3/kick");
+      await vi.waitFor(() => expect(model.state).toMatchObject({ status: "signed-in", user: "alice" }));
+      const kicking = model.kickDevice({ id: 3, password: "pw" });
+      await switchToBob(model);
+      answer({ status: 401, body: { error: "unauthenticated" } });
+      expect((await kicking).ok).toBe(false);
       expect(model.state).toMatchObject({ status: "signed-in", user: "bob" });
       expect(token()).toBe("b-token");
     });
