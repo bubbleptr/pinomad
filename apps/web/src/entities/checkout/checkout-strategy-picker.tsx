@@ -1,7 +1,7 @@
 // Ported from Pace's entities/checkout/checkout-strategy-picker.tsx (PiGUI
 // commit 15b9084): the draft's worktree/project-folder picker.
-import { Selector } from "@astryxdesign/core/Selector";
-import { Computer, FolderGitTwo } from "@/shared/ui/icons";
+import { ToggleButton } from "@astryxdesign/core/ToggleButton";
+import { FolderGitTwo } from "@/shared/ui/icons";
 
 export type CheckoutMode = "worktree" | "local";
 
@@ -16,34 +16,17 @@ export function CheckoutStrategyPicker({
   isDisabled?: boolean;
 }) {
   return (
-    // Two short fixed labels: beside a long project name, the name truncates instead.
-    <div className="max-w-full shrink-0" data-testid="checkout-strategy-picker">
-      <Selector
-        isLabelHidden
-        label="Where to work"
-        placement="below"
+    // The label stays "worktree" either way: the pressed background is the
+    // selected state, and unpressed means the project folder itself.
+    <div className="inline-flex max-w-full shrink-0" data-testid="checkout-strategy-picker">
+      <ToggleButton
+        icon={<FolderGitTwo aria-hidden="true" className="size-4 shrink-0 text-muted" />}
         isDisabled={isDisabled}
-        options={[
-          {
-            value: "worktree",
-            label: "Git worktree",
-            icon: <FolderGitTwo aria-hidden="true" className="size-4 shrink-0 text-muted" />,
-          },
-          {
-            value: "local",
-            label: "Project folder",
-            icon: <Computer aria-hidden="true" className="size-4 shrink-0 text-muted" />,
-          },
-        ]}
+        isPressed={value === "worktree"}
+        label="worktree"
         size="sm"
-        startIcon={
-          value === "worktree"
-            ? <FolderGitTwo aria-hidden="true" className="size-4 shrink-0 text-muted" />
-            : <Computer aria-hidden="true" className="size-4 shrink-0 text-muted" />
-        }
-        value={value}
-        variant="ghost"
-        onChange={(picked) => onChange(picked === "worktree" ? "worktree" : "local")}
+        tooltip="Use a Git worktree; when off, work in the project folder."
+        onPressedChange={(isPressed) => onChange(isPressed ? "worktree" : "local")}
       />
     </div>
   );
