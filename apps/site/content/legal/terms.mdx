@@ -1,0 +1,54 @@
+---
+title: Terms of service
+description: The rules for using the official PiNomad server at app.pinomad.si.
+date: 2026-10-31
+---
+
+These terms cover the official PiNomad server at `app.pinomad.si`, run by PiNomad's author. By creating an account or using the server, you agree to them. The PiNomad software itself is open source under the [Apache-2.0 license](https://github.com/bubbleptr/pinomad/blob/main/LICENSE); the license, not these terms, covers the code. What the server stores is described in the [privacy policy](/privacy/).
+
+{/* TODO(#455): name the operator (legal name and country) and, if wanted, the governing law. */}
+
+## The service
+
+The server lets your devices find and reach your hosts from anywhere: it holds your account, vouches for your new devices, forwards encrypted traffic when a device can't reach a host directly, and sends push notifications to the iPhone app. Accounts are by invite. The service is free.
+
+It is a personal project run by one person, provided as is:
+
+- There is no guarantee of availability. The server can be slow, go down, lose data, or change without notice.
+- The service may be limited or shut down. If it shuts down for good, that will be announced on the [blog](/blog/) or in the [changelog](/changelog/) ahead of time where possible.
+- Don't make the server the only way to reach your hosts. Local network, tailnet and QR-code pairing all work without it, and you can [run your own server](/zh/docs/remote-access/) (Chinese).
+
+## Your account
+
+- Keep your password to yourself. Anyone signed in to your account can pair a device with your hosts and get the same access you have, including a shell on them.
+- An account is for one person. Don't share it, and don't pass on an invite that was given to you.
+- You're responsible for what runs on your hosts, the models you call, and keeping to your model providers' terms.
+
+## Fair use
+
+The server is for PiNomad traffic between your own devices and your own hosts. Don't:
+
+- use it as a general-purpose proxy, tunnel or VPN, or forward any other traffic through it;
+- try to get into other people's accounts or hosts, or probe or attack the server;
+- get around its usage limits, or send so much traffic or so many connections that it slows down for others;
+- use it for anything illegal.
+
+The server has usage limits on connections and traffic, and they may change. Accounts that break these rules may be limited, suspended or closed, with or without notice.
+
+## Ending
+
+You can delete your account at any time; the [privacy policy](/privacy/#deleting-your-account) explains what that removes. The operator may close an account that breaks these terms, or all accounts if the service shuts down. Your conversations and files are on your hosts, so closing an account doesn't remove them, and the server is no backup of them either.
+
+## Liability
+
+To the extent the law allows, the service comes without warranties of any kind, and the operator isn't liable for losses that come from using it or from not being able to use it.
+
+## Changes
+
+When these terms change, this page is updated along with the effective date at the top. Its full history is public in the [PiNomad repository](https://github.com/bubbleptr/pinomad/commits/main/apps/site/content/legal). If you keep using the server after a change, the new terms apply.
+
+## Contact
+
+Ask the operator who sent you your invite, or open an issue on [GitHub](https://github.com/bubbleptr/pinomad/issues).
+
+{/* TODO(#455): add a contact email address. */}

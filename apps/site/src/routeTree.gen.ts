@@ -16,12 +16,16 @@ import { Route as BlogIndexRouteImport } from './routes/blog/index'
 import { Route as BlogSlugRouteImport } from './routes/blog/$slug'
 import { Route as ChangelogIndexRouteImport } from './routes/changelog/index'
 import { Route as DocsSplatRouteImport } from './routes/docs/$'
+import { Route as PrivacyIndexRouteImport } from './routes/privacy/index'
+import { Route as TermsIndexRouteImport } from './routes/terms/index'
 import { Route as ZhIndexRouteImport } from './routes/zh/index'
 import { Route as Zh404RouteImport } from './routes/zh/404'
 import { Route as ZhBlogIndexRouteImport } from './routes/zh/blog/index'
 import { Route as ZhBlogSlugRouteImport } from './routes/zh/blog/$slug'
 import { Route as ZhChangelogIndexRouteImport } from './routes/zh/changelog/index'
 import { Route as ZhDocsSplatRouteImport } from './routes/zh/docs/$'
+import { Route as ZhPrivacyIndexRouteImport } from './routes/zh/privacy/index'
+import { Route as ZhTermsIndexRouteImport } from './routes/zh/terms/index'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -58,6 +62,16 @@ const DocsSplatRoute = DocsSplatRouteImport.update({
   path: '/docs/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PrivacyIndexRoute = PrivacyIndexRouteImport.update({
+  id: '/privacy/',
+  path: '/privacy/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsIndexRoute = TermsIndexRouteImport.update({
+  id: '/terms/',
+  path: '/terms/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ZhIndexRoute = ZhIndexRouteImport.update({
   id: '/zh/',
   path: '/zh/',
@@ -88,6 +102,16 @@ const ZhDocsSplatRoute = ZhDocsSplatRouteImport.update({
   path: '/zh/docs/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ZhPrivacyIndexRoute = ZhPrivacyIndexRouteImport.update({
+  id: '/zh/privacy/',
+  path: '/zh/privacy/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ZhTermsIndexRoute = ZhTermsIndexRouteImport.update({
+  id: '/zh/terms/',
+  path: '/zh/terms/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -98,11 +122,15 @@ export interface FileRoutesByFullPath {
   '/zh/404': typeof Zh404Route
   '/blog/': typeof BlogIndexRoute
   '/changelog/': typeof ChangelogIndexRoute
+  '/privacy/': typeof PrivacyIndexRoute
+  '/terms/': typeof TermsIndexRoute
   '/zh/': typeof ZhIndexRoute
   '/zh/blog/$slug': typeof ZhBlogSlugRoute
   '/zh/docs/$': typeof ZhDocsSplatRoute
   '/zh/blog/': typeof ZhBlogIndexRoute
   '/zh/changelog/': typeof ZhChangelogIndexRoute
+  '/zh/privacy/': typeof ZhPrivacyIndexRoute
+  '/zh/terms/': typeof ZhTermsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -113,11 +141,15 @@ export interface FileRoutesByTo {
   '/zh/404': typeof Zh404Route
   '/blog': typeof BlogIndexRoute
   '/changelog': typeof ChangelogIndexRoute
+  '/privacy': typeof PrivacyIndexRoute
+  '/terms': typeof TermsIndexRoute
   '/zh': typeof ZhIndexRoute
   '/zh/blog/$slug': typeof ZhBlogSlugRoute
   '/zh/docs/$': typeof ZhDocsSplatRoute
   '/zh/blog': typeof ZhBlogIndexRoute
   '/zh/changelog': typeof ZhChangelogIndexRoute
+  '/zh/privacy': typeof ZhPrivacyIndexRoute
+  '/zh/terms': typeof ZhTermsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -129,11 +161,15 @@ export interface FileRoutesById {
   '/zh/404': typeof Zh404Route
   '/blog/': typeof BlogIndexRoute
   '/changelog/': typeof ChangelogIndexRoute
+  '/privacy/': typeof PrivacyIndexRoute
+  '/terms/': typeof TermsIndexRoute
   '/zh/': typeof ZhIndexRoute
   '/zh/blog/$slug': typeof ZhBlogSlugRoute
   '/zh/docs/$': typeof ZhDocsSplatRoute
   '/zh/blog/': typeof ZhBlogIndexRoute
   '/zh/changelog/': typeof ZhChangelogIndexRoute
+  '/zh/privacy/': typeof ZhPrivacyIndexRoute
+  '/zh/terms/': typeof ZhTermsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -146,11 +182,15 @@ export interface FileRouteTypes {
     | '/zh/404'
     | '/blog/'
     | '/changelog/'
+    | '/privacy/'
+    | '/terms/'
     | '/zh/'
     | '/zh/blog/$slug'
     | '/zh/docs/$'
     | '/zh/blog/'
     | '/zh/changelog/'
+    | '/zh/privacy/'
+    | '/zh/terms/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -161,11 +201,15 @@ export interface FileRouteTypes {
     | '/zh/404'
     | '/blog'
     | '/changelog'
+    | '/privacy'
+    | '/terms'
     | '/zh'
     | '/zh/blog/$slug'
     | '/zh/docs/$'
     | '/zh/blog'
     | '/zh/changelog'
+    | '/zh/privacy'
+    | '/zh/terms'
   id:
     | '__root__'
     | '/'
@@ -176,11 +220,15 @@ export interface FileRouteTypes {
     | '/zh/404'
     | '/blog/'
     | '/changelog/'
+    | '/privacy/'
+    | '/terms/'
     | '/zh/'
     | '/zh/blog/$slug'
     | '/zh/docs/$'
     | '/zh/blog/'
     | '/zh/changelog/'
+    | '/zh/privacy/'
+    | '/zh/terms/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -192,11 +240,15 @@ export interface RootRouteChildren {
   Zh404Route: typeof Zh404Route
   BlogIndexRoute: typeof BlogIndexRoute
   ChangelogIndexRoute: typeof ChangelogIndexRoute
+  PrivacyIndexRoute: typeof PrivacyIndexRoute
+  TermsIndexRoute: typeof TermsIndexRoute
   ZhIndexRoute: typeof ZhIndexRoute
   ZhBlogSlugRoute: typeof ZhBlogSlugRoute
   ZhDocsSplatRoute: typeof ZhDocsSplatRoute
   ZhBlogIndexRoute: typeof ZhBlogIndexRoute
   ZhChangelogIndexRoute: typeof ZhChangelogIndexRoute
+  ZhPrivacyIndexRoute: typeof ZhPrivacyIndexRoute
+  ZhTermsIndexRoute: typeof ZhTermsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -250,6 +302,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/privacy/': {
+      id: '/privacy/'
+      path: '/privacy'
+      fullPath: '/privacy/'
+      preLoaderRoute: typeof PrivacyIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms/': {
+      id: '/terms/'
+      path: '/terms'
+      fullPath: '/terms/'
+      preLoaderRoute: typeof TermsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/zh/': {
       id: '/zh/'
       path: '/zh'
@@ -292,6 +358,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ZhDocsSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/zh/privacy/': {
+      id: '/zh/privacy/'
+      path: '/zh/privacy'
+      fullPath: '/zh/privacy/'
+      preLoaderRoute: typeof ZhPrivacyIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/zh/terms/': {
+      id: '/zh/terms/'
+      path: '/zh/terms'
+      fullPath: '/zh/terms/'
+      preLoaderRoute: typeof ZhTermsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -304,11 +384,15 @@ const rootRouteChildren: RootRouteChildren = {
   Zh404Route: Zh404Route,
   BlogIndexRoute: BlogIndexRoute,
   ChangelogIndexRoute: ChangelogIndexRoute,
+  PrivacyIndexRoute: PrivacyIndexRoute,
+  TermsIndexRoute: TermsIndexRoute,
   ZhIndexRoute: ZhIndexRoute,
   ZhBlogSlugRoute: ZhBlogSlugRoute,
   ZhDocsSplatRoute: ZhDocsSplatRoute,
   ZhBlogIndexRoute: ZhBlogIndexRoute,
   ZhChangelogIndexRoute: ZhChangelogIndexRoute,
+  ZhPrivacyIndexRoute: ZhPrivacyIndexRoute,
+  ZhTermsIndexRoute: ZhTermsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
