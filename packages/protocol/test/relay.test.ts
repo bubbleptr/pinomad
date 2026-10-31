@@ -240,6 +240,39 @@ describe("relay frame codecs", () => {
     }
   });
 
+  it("round-trips the device-report frames (ADR-0037)", () => {
+    const publicKey = toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
+    const admitted = { t: "device-admitted", requestId: "req-1", publicKey } as const;
+    const revoked = { t: "device-revoked", publicKey } as const;
+    const revoke = { t: "revoke-device", publicKey } as const;
+    expect(decodeHostToRelay(encodeRelayFrame(admitted))).toEqual(admitted);
+    expect(decodeHostToRelay(encodeRelayFrame(revoked))).toEqual(revoked);
+    expect(decodeRelayToHost(encodeRelayFrame(revoke))).toEqual(revoke);
+    // Each direction only decodes its own frames.
+    expect(() => decodeRelayToHost(encodeRelayFrame(admitted))).toThrow();
+    expect(() => decodeHostToRelay(encodeRelayFrame(revoke))).toThrow();
+  });
+
+  it("rejects device-report frames whose key or requestId isn't a bounded base64url string", () => {
+    const publicKey = "A".repeat(43);
+    for (const frame of [
+      { t: "device-admitted", publicKey },
+      { t: "device-admitted", requestId: "", publicKey },
+      { t: "device-admitted", requestId: "x".repeat(65), publicKey },
+      { t: "device-admitted", requestId: "req" },
+      { t: "device-admitted", requestId: "req", publicKey: "not base64url!" },
+      { t: "device-admitted", requestId: "req", publicKey: "A".repeat(65) },
+      { t: "device-revoked" },
+      { t: "device-revoked", publicKey: 7 },
+      { t: "device-revoked", publicKey: "" },
+    ]) {
+      expect(() => decodeHostToRelay(JSON.stringify(frame)), JSON.stringify(frame)).toThrow();
+    }
+    for (const frame of [{ t: "revoke-device" }, { t: "revoke-device", publicKey: "a/b" }, { t: "revoke-device", publicKey: "A".repeat(65) }]) {
+      expect(() => decodeRelayToHost(JSON.stringify(frame)), JSON.stringify(frame)).toThrow();
+    }
+  });
+
   it("reads registered's push declaration, tolerating unknown environments", () => {
     expect(decodeRelayToHost(encodeRelayFrame({ t: "registered" }))).toEqual({ t: "registered" });
     expect(
