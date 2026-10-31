@@ -490,6 +490,25 @@ describe("account model", () => {
     expect(model.state.status).toBe("signed-out");
   });
 
+  it("changes the password and stays signed in; a wrong current password doesn't sign out (#450)", async () => {
+    const { model, calls } = makeModel({ fake: fakeFetch(
+      { status: 401 },
+      { status: 200, body: { user: { username: "admin" } } },
+      { status: 200, body: [] },
+      { status: 403, body: { error: "wrong_password" } },
+      { status: 204 },
+    ) });
+    await vi.waitFor(() => expect(model.state.status).toBe("signed-in"));
+    const wrong = await model.changePassword({ currentPassword: "nope", newPassword: "a long new password" });
+    expect(wrong).toEqual({ ok: false, error: { code: "wrong_password", status: 403 } });
+    expect(model.state.status).toBe("signed-in");
+    const changed = await model.changePassword({ currentPassword: "pw", newPassword: "a long new password" });
+    expect(changed.ok).toBe(true);
+    expect(model.state.status).toBe("signed-in");
+    expect(calls[4]!.url).toBe(`${ORIGIN}/api/password`);
+    expect(JSON.parse(calls[4]!.init!.body as string)).toEqual({ currentPassword: "pw", newPassword: "a long new password" });
+  });
+
   it("revokeAll signs out everywhere including this session", async () => {
     const { model } = makeModel({ fake: fakeFetch(
       { status: 401 },

@@ -35,6 +35,14 @@ export const SignUp: Story = {
   },
 };
 
+/** Changing the password (#450): the form opens in place of its button. */
+export const ChangingPassword: Story = {
+  decorators: [withAccount(signedIn())],
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Change password" }));
+  },
+};
+
 /** The server's admin also manages sign-up invites: one unused, one used, one expired. */
 export const SignedInAdmin: Story = { decorators: [withAccount(signedIn({ admin: true }))] };
 

@@ -15,6 +15,7 @@ const noAccount: AccountModel = {
   register: unavailable,
   logout: unavailable,
   revokeAll: unavailable,
+  changePassword: unavailable,
   refreshHosts: unavailable,
   createJoinToken: unavailable,
   listInvites: unavailable,

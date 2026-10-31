@@ -263,6 +263,8 @@ export interface AccountClient {
   me(): Promise<AccountResult<{ readonly user: AccountUser; readonly admin?: true }>>;
   logout(): Promise<AccountResult<void>>;
   revokeAllSessions(): Promise<AccountResult<void>>;
+  /** Keeps this session and signs out the account's others; 403 `wrong_password` doesn't sign out (#450). */
+  changePassword(currentPassword: string, newPassword: string): Promise<AccountResult<void>>;
   createJoinToken(): Promise<AccountResult<JoinToken>>;
   listHosts(): Promise<AccountResult<readonly AccountHost[]>>;
   requestPairing(hostId: string): Promise<AccountResult<PairingOffer>>;
@@ -375,6 +377,10 @@ export function createAccountClient(options: {
     },
     revokeAllSessions: async () => {
       const result = await request("/api/sessions/revoke-all", "POST");
+      return result.ok ? ok(undefined) : result;
+    },
+    changePassword: async (currentPassword, newPassword) => {
+      const result = await request("/api/password", "POST", { currentPassword, newPassword });
       return result.ok ? ok(undefined) : result;
     },
     createJoinToken: async () => {

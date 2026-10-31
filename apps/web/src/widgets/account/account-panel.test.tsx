@@ -52,6 +52,7 @@ function fakeModel(initial: AccountState): AccountModel & { setState(next: Accou
     ),
     createInvite: vi.fn(() => Promise.resolve({ ok: true as const, value: { code: "fresh-code", expiresAt: Date.now() + 86_400_000 } })),
     revokeInvite: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
+    changePassword: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     pairHost: vi.fn(() => Promise.resolve({ ok: false as const, error: { code: "host_timeout" } })),
     retryUnsavedHost: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     hostRejected: vi.fn(),
@@ -215,6 +216,28 @@ describe("invite sign-up (#449)", () => {
     expect(model.register).toHaveBeenCalledWith(expect.objectContaining({ serverOrigin: "https://nomad.example.com" }));
     await userEvent.click(screen.getByRole("button", { name: "Sign in instead" }));
     expect((screen.getByLabelText("Server") as HTMLInputElement).value).toBe("https://nomad.example.com");
+  });
+
+  it("changes the password from the signed-in panel (#450)", async () => {
+    const model = fakeModel(signedIn([]));
+    renderPanel(model);
+    await userEvent.click(screen.getByRole("button", { name: "Change password" }));
+    await userEvent.type(screen.getByLabelText("Current password"), "old password here");
+    await userEvent.type(screen.getByLabelText("New password"), "new password here{Enter}");
+    expect(model.changePassword).toHaveBeenCalledWith({ currentPassword: "old password here", newPassword: "new password here" });
+    expect(await screen.findByText("Password changed. Your other devices were signed out.")).toBeTruthy();
+    expect(screen.queryByLabelText("Current password")).toBeNull();
+  });
+
+  it("keeps the form and says so when the current password is wrong", async () => {
+    const model = fakeModel(signedIn([]));
+    vi.mocked(model.changePassword).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
+    renderPanel(model);
+    await userEvent.click(screen.getByRole("button", { name: "Change password" }));
+    await userEvent.type(screen.getByLabelText("Current password"), "wrong one");
+    await userEvent.type(screen.getByLabelText("New password"), "new password here{Enter}");
+    expect(await screen.findByText("The current password is wrong.")).toBeTruthy();
+    expect(screen.getByLabelText("Current password")).toBeTruthy();
   });
 
   it("hides invites from accounts that aren't the admin", async () => {
