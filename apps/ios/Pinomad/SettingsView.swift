@@ -35,14 +35,14 @@ struct SettingsView: View {
                 Button {
                     model.present(.account)
                 } label: {
-                    Label(model.accountRecord.map { "Account: \($0.username)" } ?? "Sign in",
+                    Label(model.accountSession.map { "Account: \($0.username)" } ?? "Sign in",
                           image: .userRound)
                 }
                 .tint(.primary)
             } header: {
                 Text("Account")
             } footer: {
-                if model.accountRecord == nil {
+                if model.accountSession == nil {
                     Text("Sign in to pair the hosts on your account.")
                 }
             }

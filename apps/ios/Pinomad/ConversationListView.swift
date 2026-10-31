@@ -64,9 +64,11 @@ struct ConversationListView: View {
                 Button {
                     model.present(.account)
                 } label: {
-                    AccountBadge(username: model.accountRecord?.username)
+                    // The live session, not the remembered record: after a
+                    // sign-out the record keeps the name only to prefill login.
+                    AccountBadge(username: model.accountSession?.username)
                 }
-                .accessibilityLabel(model.accountRecord.map { "Account: \($0.username)" } ?? "Account")
+                .accessibilityLabel(model.accountSession.map { "Account: \($0.username)" } ?? "Account")
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Settings", image: .settings) {
