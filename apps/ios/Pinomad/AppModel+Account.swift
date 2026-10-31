@@ -336,7 +336,9 @@ extension AppModel {
             switch await api.revokeAllSessions() {
             case .success:
                 failure = nil
-                push.setServerRegistration(nil)
+                push.setServerRegistration(serverRegistration(
+                    afterServerDropped: ServerPushAccount(serverOrigin: session.serverOrigin, username: session.username),
+                    recorded: push.serverRegistration))
             case .failure(let error): failure = error
             }
         } else {
@@ -359,6 +361,29 @@ extension AppModel {
             : "The server didn't confirm removing this device's notification token, so hosts on the account may still notify it. Sign in again and turn notifications off to remove it."
         let joined = [warning, serverWarning, pushWarning].compactMap { $0 }.joined(separator: "\n")
         accountSignOutWarning = joined.isEmpty ? nil : joined
+    }
+
+    /// Change the account password (#450). This session stays; the server
+    /// signs out the others and drops every push registration of the account,
+    /// this device's included, so a success registers it again right away.
+    func accountChangePassword(current: String, new: String) async -> AccountFailure? {
+        guard let session = accountSession, let api = accountAPI() else {
+            return AccountFailure(code: "unauthenticated")
+        }
+        switch await api.changePassword(current: current, new: new) {
+        case .success:
+            guard accountSession == session else { return nil }
+            push.setServerRegistration(serverRegistration(
+                afterServerDropped: ServerPushAccount(serverOrigin: session.serverOrigin, username: session.username),
+                recorded: push.serverRegistration))
+            syncServerPushToken()
+            return nil
+        case .failure(let failure):
+            if failure.clearsSession, accountSession == session {
+                accountSignOutWarning = endAccountSession(notice: AccountCopy.message(failure))
+            }
+            return failure
+        }
     }
 
     /// Pair one account host through a server-vouched offer, then the same

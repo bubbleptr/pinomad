@@ -32,6 +32,7 @@ export type AccountOpDesc =
   | { kind: "login"; username: string; password: string }
   | { kind: "requestPairing"; hostId: string }
   | { kind: "registerPushToken" | "removePushToken"; apns: string; environment: "production" | "development" }
+  | { kind: "changePassword"; currentPassword: string; newPassword: string }
   | { kind: "me" | "logout" | "revokeAllSessions" | "createJoinToken" | "listHosts" };
 
 export interface RequestCase {
@@ -72,6 +73,14 @@ export const REQUEST_CASES: RequestCase[] = [
     origin: ACCOUNT_ORIGIN,
     token: "tok",
     op: { kind: "removePushToken", apns: "cd".repeat(32), environment: "production" },
+  },
+  // Both passwords ride in the body; quotes, escapes and non-ASCII must
+  // serialize byte-for-byte like JSON.stringify (#450).
+  {
+    name: "change-password",
+    origin: ACCOUNT_ORIGIN,
+    token: "tok",
+    op: { kind: "changePassword", currentPassword: "old \"pw\"\n", newPassword: "nouveau mot de passe é ✓" },
   },
 ];
 
@@ -144,6 +153,10 @@ export const RESPONSE_CASES: ResponseCase[] = [
   { name: "push-token-register-invalid", kind: "registerPushToken", status: 400, body: '{"error":"invalid_request"}' },
   { name: "push-token-remove-204", kind: "removePushToken", status: 204, body: null },
   { name: "push-token-remove-401", kind: "removePushToken", status: 401, body: '{"error":"unauthenticated"}' },
+  { name: "change-password-204", kind: "changePassword", status: 204, body: null },
+  // 403, not 401: a mistyped current password must not read as signed out.
+  { name: "change-password-wrong", kind: "changePassword", status: 403, body: '{"error":"wrong_password"}' },
+  { name: "change-password-weak", kind: "changePassword", status: 400, body: '{"error":"weak_password"}' },
 ];
 
 export interface ProbeCase {

@@ -98,6 +98,16 @@ public func serverPushAction(
     return .remove(recorded.token)
 }
 
+/// What stays recorded after the server dropped every registration of
+/// `account` itself (sign out everywhere, a password change): a record
+/// another account left behind still waits for that account's own removal.
+public func serverRegistration(
+    afterServerDropped account: ServerPushAccount,
+    recorded: ServerPushRegistration?
+) -> ServerPushRegistration? {
+    recorded?.account == account ? nil : recorded
+}
+
 /// A foreground banner is suppressed only for the conversation visible on
 /// screen right now; another conversation on the same host, or any push from
 /// another host, still shows (ADR-0035 §9).

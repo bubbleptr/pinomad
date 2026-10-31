@@ -326,6 +326,15 @@ public struct AccountAPI: Sendable {
         }
     }
 
+    /// Keeps this session and signs out the account's others (#450).
+    public func changePassword(current: String, new: String) async -> Result<Void, AccountFailure> {
+        switch await request(.changePassword(currentPassword: current, newPassword: new), kind: .changePassword) {
+        case .success(.unit): return .success(())
+        case .failure(let failure): return .failure(failure)
+        default: return .failure(.invalidResponse)
+        }
+    }
+
     private func request(
         _ op: AccountOp,
         kind: AccountOpKind
@@ -562,6 +571,8 @@ public enum AccountCopy {
         case "pair_rejected": "The host refused this device. If you revoked it before, pair it with a QR code instead."
         case "invalid_offer": "The host's pairing offer was invalid."
         case "pairing_not_saved": "Paired, but this device couldn't save the pairing."
+        case "wrong_password": "The current password is wrong."
+        case "weak_password": "Use a password of at least 12 characters."
         default: "Something went wrong (" + failure.code + ")."
         }
     }

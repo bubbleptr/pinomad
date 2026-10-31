@@ -165,7 +165,8 @@ pub fn stored_host(json: &Json) -> StoredHost {
     }
 }
 
-/// The op the request-shape cases name: `{kind, username?, password?, hostId?, apns?, environment?}`.
+/// The op the request-shape cases name: `{kind, username?, password?, hostId?, apns?, environment?,
+/// currentPassword?, newPassword?}`.
 pub fn account_op(json: &Json) -> AccountOp {
     match account_op_kind(&text(json.get("kind")).unwrap_or_default()) {
         AccountOpKind::Login => AccountOp::Login {
@@ -182,6 +183,10 @@ pub fn account_op(json: &Json) -> AccountOp {
         AccountOpKind::ListHosts => AccountOp::ListHosts,
         AccountOpKind::RegisterPushToken => AccountOp::RegisterPushToken { token: push_token(json) },
         AccountOpKind::RemovePushToken => AccountOp::RemovePushToken { token: push_token(json) },
+        AccountOpKind::ChangePassword => AccountOp::ChangePassword {
+            current_password: text(json.get("currentPassword")).unwrap_or_default(),
+            new_password: text(json.get("newPassword")).unwrap_or_default(),
+        },
     }
 }
 
@@ -208,6 +213,7 @@ pub fn account_op_kind(name: &str) -> AccountOpKind {
         "requestPairing" => AccountOpKind::RequestPairing,
         "registerPushToken" => AccountOpKind::RegisterPushToken,
         "removePushToken" => AccountOpKind::RemovePushToken,
+        "changePassword" => AccountOpKind::ChangePassword,
         other => panic!("unknown account op kind {other}"),
     }
 }

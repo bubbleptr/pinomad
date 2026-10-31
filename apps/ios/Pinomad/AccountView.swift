@@ -11,6 +11,7 @@ struct AccountView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var pendingAccountPair: AccountHostRow?
     @State private var confirmingSignOutEverywhere = false
+    @State private var passwordChanged = false
 
     var body: some View {
         NavigationStack {
@@ -67,6 +68,17 @@ struct AccountView: View {
                     Text(error)
                         .font(.footnote)
                         .foregroundStyle(.red)
+                }
+            }
+
+            Section {
+                NavigationLink("Change Password") {
+                    ChangePasswordView(model: model) { passwordChanged = true }
+                }
+                .disabled(model.accountBusy)
+            } footer: {
+                if passwordChanged {
+                    Text("Password changed. Your other devices were signed out.")
                 }
             }
 

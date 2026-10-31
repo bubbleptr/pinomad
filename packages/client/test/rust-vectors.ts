@@ -607,6 +607,8 @@ const invokeOp = (client: AccountClient, op: AccountOpDesc): Promise<unknown> =>
       return client.registerPushToken({ apns: op.apns, environment: op.environment });
     case "removePushToken":
       return client.removePushToken({ apns: op.apns, environment: op.environment });
+    case "changePassword":
+      return client.changePassword(op.currentPassword, op.newPassword);
   }
 };
 
@@ -638,7 +640,9 @@ async function accountVector(): Promise<VectorFile> {
             ? { kind: "requestPairing", hostId: "h" }
             : c.kind === "registerPushToken" || c.kind === "removePushToken"
               ? { kind: c.kind, apns: "ab", environment: "production" }
-              : { kind: c.kind };
+              : c.kind === "changePassword"
+                ? { kind: "changePassword", currentPassword: "a", newPassword: "b" }
+                : { kind: c.kind };
       const result = await invokeOp(bearerClient("https://relay.example.com", "tok", respondFetch(c.status, c.body)), op);
       return { name: c.name, kind: c.kind, status: c.status, body: c.body, expect: wire(result) };
     }),

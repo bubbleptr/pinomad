@@ -24,7 +24,8 @@ use crate::u16str::U16String;
 
 /// One account call. `Login` carries the submitted credentials;
 /// `RequestPairing` carries the account-bound hostId; the push-token pair
-/// carries this device's APNs token (ADR-0036).
+/// carries this device's APNs token (ADR-0036); `ChangePassword` carries
+/// both passwords (#450).
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum AccountOp {
@@ -37,6 +38,7 @@ pub enum AccountOp {
     RequestPairing { host_id: String },
     RegisterPushToken { token: ApnsPushToken },
     RemovePushToken { token: ApnsPushToken },
+    ChangePassword { current_password: String, new_password: String },
 }
 
 /// Which endpoint an answer belongs to — `account_response` picks its shape
@@ -53,6 +55,7 @@ pub enum AccountOpKind {
     RequestPairing,
     RegisterPushToken,
     RemovePushToken,
+    ChangePassword,
 }
 
 /// One header on the request the platform sends, in the reference's order.
@@ -87,6 +90,7 @@ impl AccountOp {
             AccountOp::RequestPairing { .. } => AccountOpKind::RequestPairing,
             AccountOp::RegisterPushToken { .. } => AccountOpKind::RegisterPushToken,
             AccountOp::RemovePushToken { .. } => AccountOpKind::RemovePushToken,
+            AccountOp::ChangePassword { .. } => AccountOpKind::ChangePassword,
         }
     }
 
@@ -112,12 +116,14 @@ impl AccountOp {
             }
             AccountOp::RegisterPushToken { .. } => "/api/push-tokens".to_string(),
             AccountOp::RemovePushToken { .. } => "/api/push-tokens/remove".to_string(),
+            AccountOp::ChangePassword { .. } => "/api/password".to_string(),
         }
     }
 
     /// `JSON.stringify(body)`, byte-identical to the reference's literal
     /// order: `{username, password}` for login, `{apns, environment}` for the
-    /// push-token pair — the token stays out of the URL.
+    /// push-token pair — the token stays out of the URL — and
+    /// `{currentPassword, newPassword}` for a password change.
     fn body(&self) -> Option<String> {
         match self {
             AccountOp::Login { username, password } => {
@@ -130,6 +136,12 @@ impl AccountOp {
                 let mut object = JsonObject::new();
                 object.set(U16String::from_str("apns"), Json::from(token.apns.as_str()));
                 object.set(U16String::from_str("environment"), Json::from(token.environment.as_str()));
+                Some(Json::Object(Arc::new(object)).to_json())
+            }
+            AccountOp::ChangePassword { current_password, new_password } => {
+                let mut object = JsonObject::new();
+                object.set(U16String::from_str("currentPassword"), Json::from(current_password.as_str()));
+                object.set(U16String::from_str("newPassword"), Json::from(new_password.as_str()));
                 Some(Json::Object(Arc::new(object)).to_json())
             }
             _ => None,
@@ -264,7 +276,7 @@ pub enum AccountValue {
     Login(LoginSuccess),
     /// `me` — just the user.
     Me(AccountUser),
-    /// `logout`, `revokeAllSessions`, and the push-token pair answer nothing.
+    /// `logout`, `revokeAllSessions`, the push-token pair and `changePassword` answer nothing.
     Unit,
     JoinToken(JoinToken),
     Hosts(Vec<AccountHost>),
@@ -342,7 +354,8 @@ fn decode_value(kind: AccountOpKind, value: Option<&Json>) -> Result<AccountValu
         AccountOpKind::Logout
         | AccountOpKind::RevokeAllSessions
         | AccountOpKind::RegisterPushToken
-        | AccountOpKind::RemovePushToken => Ok(AccountValue::Unit),
+        | AccountOpKind::RemovePushToken
+        | AccountOpKind::ChangePassword => Ok(AccountValue::Unit),
         AccountOpKind::CreateJoinToken => Ok(AccountValue::JoinToken(JoinToken {
             token: str_field(value, "token").ok_or_else(AccountError::invalid)?,
             expires_at: num_field(value, "expiresAt").ok_or_else(AccountError::invalid)?,
