@@ -1,6 +1,7 @@
 // The server's HTTP account API (ADR-0022 §2), mounted on the same port as the
 // splice sockets and the static web client: POST /api/login, POST /api/register,
 // POST /api/logout, POST /api/sessions/revoke-all, GET /api/me, POST /api/password (#450),
+// POST /api/me/delete (#451),
 // POST /api/join-tokens, POST /api/push-tokens and POST /api/push-tokens/remove
 // (ADR-0036), and for the admin GET/POST /api/invites and
 // POST /api/invites/revoke (#449).
@@ -58,6 +59,8 @@ export interface ApiContext {
   readonly trustProxy: boolean;
   /** Server-vouched pairing (ADR-0022 §4) for /api/hosts. */
   readonly pairing: PairingBroker;
+  /** Closes a host's control connection once its account binding is gone. */
+  readonly disconnectHost: (hostId: string) => void;
 }
 
 const SESSION_COOKIE = "__Host-pinomad-session";
@@ -424,6 +427,7 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     pathname === "/api/logout" ||
     pathname === "/api/sessions/revoke-all" ||
     pathname === "/api/password" ||
+    pathname === "/api/me/delete" ||
     pathname === "/api/join-tokens" ||
     pathname === "/api/push-tokens" ||
     pathname === "/api/push-tokens/remove"
@@ -468,6 +472,32 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       if (pathname === "/api/push-tokens") accounts.registerPushToken(session.userId, apns, environment);
       else accounts.removePushToken(session.userId, apns, environment);
       send(204);
+      return;
+    }
+    if (pathname === "/api/me/delete") {
+      const body = await readJson(request);
+      if (!body.ok) {
+        deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
+        return;
+      }
+      const value = body.value as { password?: unknown } | null;
+      if (typeof value?.password !== "string" || [...value.password].length > MAX_PASSWORD_CODEPOINTS) {
+        deny(400, "invalid_request");
+        return;
+      }
+      const result = await accounts.deleteAccount({ userId: session.userId, username: session.username, password: value.password });
+      if (result.status === "limited") {
+        deny(429, "rate_limited");
+        return;
+      }
+      if (result.status === "refused") {
+        deny(403, result.reason);
+        return;
+      }
+      // The bindings are gone, and with them the hosts' authorization: close
+      // their control connections now rather than at their next register.
+      for (const hostId of result.hostIds) ctx.disconnectHost(hostId);
+      send(204, undefined, { "set-cookie": clearSessionCookie });
       return;
     }
     if (pathname === "/api/password") {

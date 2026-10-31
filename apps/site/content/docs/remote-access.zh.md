@@ -138,6 +138,7 @@ pinomad server --public-origin https://relay.example.com --data-dir /var/lib/pin
 - 两个变量缺一个、或密码不到 12 位，启动直接报错；users 表已有用户后启动不再需要它们。数据目录和宿主一样一个目录只允许一个进程，容器平台部署要挂持久卷。
 - 账号 API 和控制连接只走 HTTPS/WSS，明文只留给 localhost 开发。前面有反向代理（Caddy、容器平台）时必须加 `--trust-proxy`：服务端据此信任 `X-Forwarded-Proto` 判定请求是否来自 https，并取 `X-Forwarded-For` 做按 IP 限速；不加的话，经过代理进来的请求会被当成不可信的明文连接拒绝（`/api/*` 回 403，`/host` 升级回 403），限速也只看到代理的地址。
 - 用户登录后可以自己改密码（`POST /api/password`，要填旧密码；旧密码输错和登录共用按用户名的锁定）。改完后当前会话保留，其他会话、没用掉的 join token 和推送登记都作废。
+- 用户可以删除自己的账号（`POST /api/me/delete`，要填密码，输错同样计入锁定）。同一个事务里删掉用户和它的会话、join token、宿主绑定、推送登记；它用过的邀请码保留为「已使用」，只是不再记是谁。账号下宿主的控制连接立刻断开，之后的登记被拒；宿主上已经登记的设备不受影响，要在宿主的 Devices 里吊销。管理员账号不能删（只有它能发邀请码）。
 - 服务端不存邮箱，没有自助找回：忘了密码的用户找管理员，管理员在服务端机器上用 `pinomad server passwd` 重置，新密码从 stdin 读：
 
   ```sh

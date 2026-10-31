@@ -250,6 +250,11 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
 
   const pairing: PairingBroker = { status: pairingStatus, request: requestPairing };
 
+  /** A host whose account binding is gone loses its control connection; pairing asks on it die with it. */
+  function disconnectHost(hostId: string): void {
+    controls.get(hostId)?.socket.close(RELAY_CLOSE.hostNotAllowed);
+  }
+
   /**
    * One host's `push` frame (ADR-0025 §4-5): re-checked against the account
    * binding on every send, and the token must be registered under that same
@@ -356,7 +361,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
     answer({ t: "left" });
     // The binding is gone, and with it the live control connection's
     // authorization: close it now rather than at its next register.
-    controls.get(frame.hostId)?.socket.close(RELAY_CLOSE.hostNotAllowed);
+    disconnectHost(frame.hostId);
   }
 
   function onControl(socket: WebSocket): void {
@@ -568,7 +573,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
         response.end(JSON.stringify({ error: "accounts_disabled" }));
         return;
       }
-      void handleApiRequest(request, response, { accounts, publicOrigin, trustProxy, pairing }).catch(() => {
+      void handleApiRequest(request, response, { accounts, publicOrigin, trustProxy, pairing, disconnectHost }).catch(() => {
         if (!response.headersSent) response.writeHead(500);
         response.end();
       });
