@@ -104,6 +104,23 @@ import Testing
         ) == .none)
     }
 
+    /// Signing out everywhere and changing the password make the server
+    /// drop the caller's account's registrations only: a record another
+    /// account left behind still needs that account's own removal.
+    @Test func aServerWideDropForgetsOnlyThatAccountsRecord() {
+        let kieran = ServerPushAccount(serverOrigin: "https://pinomad.si", username: "kieran")
+        let token = ApnsPushToken(apns: "0011", environment: .production)
+        let mine = ServerPushRegistration(account: kieran, token: token)
+        #expect(serverRegistration(afterServerDropped: kieran, recorded: mine) == nil)
+        let other = ServerPushRegistration(
+            account: ServerPushAccount(serverOrigin: "https://pinomad.si", username: "other"), token: token)
+        #expect(serverRegistration(afterServerDropped: kieran, recorded: other) == other)
+        let elsewhere = ServerPushRegistration(
+            account: ServerPushAccount(serverOrigin: "https://self.example", username: "kieran"), token: token)
+        #expect(serverRegistration(afterServerDropped: kieran, recorded: elsewhere) == elsewhere)
+        #expect(serverRegistration(afterServerDropped: kieran, recorded: nil) == nil)
+    }
+
     @Test func aServerRegistrationSurvivesARoundTripThroughDefaults() throws {
         let recorded = ServerPushRegistration(
             account: ServerPushAccount(serverOrigin: "https://pinomad.si", username: "kieran"),

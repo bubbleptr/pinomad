@@ -336,7 +336,9 @@ extension AppModel {
             switch await api.revokeAllSessions() {
             case .success:
                 failure = nil
-                push.setServerRegistration(nil)
+                push.setServerRegistration(serverRegistration(
+                    afterServerDropped: ServerPushAccount(serverOrigin: session.serverOrigin, username: session.username),
+                    recorded: push.serverRegistration))
             case .failure(let error): failure = error
             }
         } else {
@@ -371,7 +373,9 @@ extension AppModel {
         switch await api.changePassword(current: current, new: new) {
         case .success:
             guard accountSession == session else { return nil }
-            push.setServerRegistration(nil)
+            push.setServerRegistration(serverRegistration(
+                afterServerDropped: ServerPushAccount(serverOrigin: session.serverOrigin, username: session.username),
+                recorded: push.serverRegistration))
             syncServerPushToken()
             return nil
         case .failure(let failure):
