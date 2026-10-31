@@ -55,6 +55,8 @@ it("runs the built client served by the host without CSP violations", async () =
     Object.defineProperty(event, "clipboardData", { value: data });
     document.querySelector('[aria-multiline="true"]')!.dispatchEvent(event);
   });
+  // Enter is ignored while the image is still being prepared.
+  await page.locator('[data-testid="composer-attachments"] [role="group"]').getByRole("img", { name: "Image 1" }).waitFor();
   await prompt.fill("show me code");
   await prompt.press("Enter");
   await page.getByTestId("message-images").getByRole("button", { name: /Image 1/ }).waitFor();
