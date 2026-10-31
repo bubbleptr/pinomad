@@ -145,6 +145,28 @@ pinomad server --public-origin https://relay.example.com --data-dir /var/lib/pin
 
   同一个事务里换掉密码哈希、作废所有登录会话和没用掉的 join token；宿主上已登记的设备不受影响。
 
+  服务端上有多个账号时要加 `--user <用户名>`。
+
+#### 邀请码注册
+
+首次启动建出的账号是管理员，只有它能发邀请码；别人拿邀请码自己注册账号，注册后只看得到自己的宿主。没发过邀请码的服务端没人能注册，行为和以前一样，所以自部署不需要额外的开关。
+
+- 邀请码一次性，7 天过期，服务端只存它的 SHA-256，原文只在生成时出现一次。
+- 新用户名只能用小写字母、数字和 `. _ -`，2–32 位，不能和已有用户名只差大小写；密码规则和首个账号相同（至少 12 位）。
+- 注册接口 `POST /api/register` 和登录共用按地址的限速。
+
+邀请码是经 HTTP 发的，服务端不用停：
+
+```sh
+# 以管理员登录，拿到 bearer token（不带 Origin 时回 token 而不是 cookie）
+TOKEN=$(curl -s https://relay.example.com/api/login -H 'content-type: application/json' \
+  -d '{"username":"<管理员>","password":"<密码>"}' | jq -r .token)
+curl -s -X POST https://relay.example.com/api/invites -H "authorization: Bearer $TOKEN"        # 生成：{ code, expiresAt }
+curl -s https://relay.example.com/api/invites -H "authorization: Bearer $TOKEN"                # 列出：谁用了、何时过期
+curl -s -X POST https://relay.example.com/api/invites/revoke -H "authorization: Bearer $TOKEN" \
+  -H 'content-type: application/json' -d '{"id":<id>}'                                          # 作废没用掉的
+```
+
 #### 宿主加入账号（join / leave）
 
 在已登录的会话里调 `POST /api/join-tokens` 拿一次性令牌（10 分钟有效，只能用一次），然后在要加入的机器上跑：

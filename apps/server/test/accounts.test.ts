@@ -727,11 +727,174 @@ describe("push token registration (ADR-0036)", () => {
     const first = await startServer();
     await stop(first);
     const db = new DatabaseSync(join(first.dataDir, "server.sqlite"));
-    db.exec("DROP TABLE push_tokens; PRAGMA user_version = 1;");
+    db.exec("DROP TABLE invites; ALTER TABLE users DROP COLUMN admin; DROP TABLE push_tokens; PRAGMA user_version = 1;");
     db.close();
 
     const second = await startServer({ dataDir: first.dataDir, bootstrap: {} });
     second.accounts.registerPushToken(1, TOKEN, "production");
     expect(second.accounts.pushTokenOwner(TOKEN, "production")).toBe(1);
+  });
+});
+
+describe("invite sign-up (#449)", () => {
+  const bearer = (token: unknown): Record<string, string> => ({ authorization: `Bearer ${token as string}` });
+  const adminToken = async (relay: Relay): Promise<string> => (await login(relay)).json.token as string;
+  const mint = async (relay: Relay, token: string): Promise<string> => {
+    const response = await api(relay, { method: "POST", path: "/api/invites", headers: bearer(token) });
+    expect(response.status).toBe(200);
+    return response.json.code as string;
+  };
+  const signUp = (relay: Relay, body: unknown, headers?: Record<string, string>) =>
+    api(relay, { method: "POST", path: "/api/register", headers, body });
+
+  it("makes the bootstrap account the admin, and only it", async () => {
+    const { relay } = await startServer();
+    const signedIn = await login(relay);
+    expect(signedIn.json.admin).toBe(true);
+    const token = signedIn.json.token as string;
+    expect((await api(relay, { path: "/api/me", headers: bearer(token) })).json).toEqual({
+      user: { username: "admin" },
+      admin: true,
+    });
+    const code = await mint(relay, token);
+    const bob = await signUp(relay, { invite: code, username: "bob", password: GOOD_PASSWORD });
+    expect(bob.json.admin).toBeUndefined();
+    expect((await api(relay, { path: "/api/me", headers: bearer(bob.json.token) })).json).toEqual({ user: { username: "bob" } });
+    expect((await login(relay, "bob")).json.admin).toBeUndefined();
+    // A regular account can neither mint nor see invites.
+    expect((await api(relay, { method: "POST", path: "/api/invites", headers: bearer(bob.json.token) })).status).toBe(403);
+    expect((await api(relay, { path: "/api/invites", headers: bearer(bob.json.token) })).status).toBe(403);
+    expect((await api(relay, { path: "/api/invites" })).status).toBe(401);
+  });
+
+  it("signs a new user up with an invite and signs them in", async () => {
+    const { relay } = await startServer();
+    const code = await mint(relay, await adminToken(relay));
+
+    // Same response styles as login: a same-origin page gets the cookie only…
+    const page = await signUp(relay, { invite: code, username: "bob", password: GOOD_PASSWORD }, { origin: ORIGIN });
+    expect(page.status).toBe(200);
+    expect(page.json).toMatchObject({ user: { username: "bob" } });
+    expect(page.json.token).toBeUndefined();
+    expect((await api(relay, { path: "/api/me", headers: { cookie: sessionCookie(page), origin: ORIGIN } })).status).toBe(200);
+    expect((await login(relay, "bob")).status).toBe(200);
+
+    // …and the desktop renderer gets a bare token.
+    const second = await mint(relay, await adminToken(relay));
+    const desktop = await signUp(relay, { invite: second, username: "carol", password: GOOD_PASSWORD }, { origin: "app://pinomad" });
+    expect(desktop.status).toBe(200);
+    expect(typeof desktop.json.token).toBe("string");
+    expect(desktop.headers["set-cookie"]).toBeUndefined();
+  });
+
+  it("refuses used, unknown, revoked and expired invites", async () => {
+    let clock = 1_000;
+    const { relay } = await startServer({ now: () => clock });
+    const token = await adminToken(relay);
+    const code = await mint(relay, token);
+    expect((await signUp(relay, { invite: code, username: "bob", password: GOOD_PASSWORD })).status).toBe(200);
+    const reused = await signUp(relay, { invite: code, username: "carol", password: GOOD_PASSWORD });
+    expect(reused.status).toBe(403);
+    expect(reused.json.error).toBe("invalid_invite");
+    expect((await signUp(relay, { invite: "made-up", username: "carol", password: GOOD_PASSWORD })).json.error).toBe("invalid_invite");
+
+    const revoked = await mint(relay, token);
+    const listed = (await api(relay, { path: "/api/invites", headers: bearer(token) })).json as unknown as { id: number; usedAt?: number }[];
+    const unused = listed.find((invite) => invite.usedAt === undefined)!;
+    expect((await api(relay, { method: "POST", path: "/api/invites/revoke", headers: bearer(token), body: { id: unused.id } })).status).toBe(204);
+    expect((await signUp(relay, { invite: revoked, username: "carol", password: GOOD_PASSWORD })).json.error).toBe("invalid_invite");
+
+    const late = await mint(relay, token);
+    clock += 7 * DAY;
+    const expired = await signUp(relay, { invite: late, username: "carol", password: GOOD_PASSWORD });
+    expect(expired.status).toBe(403);
+    expect(expired.json.error).toBe("invite_expired");
+  });
+
+  it("lists invites with who used them, and keeps used ones when revoked", async () => {
+    const { relay } = await startServer();
+    const token = await adminToken(relay);
+    const code = await mint(relay, token);
+    await mint(relay, token);
+    await signUp(relay, { invite: code, username: "bob", password: GOOD_PASSWORD });
+    const listed = (await api(relay, { path: "/api/invites", headers: bearer(token) })).json as unknown as Record<string, unknown>[];
+    expect(listed).toHaveLength(2);
+    const used = listed.find((invite) => invite.usedBy === "bob")!;
+    expect(typeof used.usedAt).toBe("number");
+    // The list never carries the code itself — only its hash is stored.
+    expect(JSON.stringify(listed)).not.toContain(code);
+    expect((await api(relay, { method: "POST", path: "/api/invites/revoke", headers: bearer(token), body: { id: used.id } })).status).toBe(404);
+  });
+
+  it("validates the username and password, and leaves the invite unspent on refusal", async () => {
+    const { relay } = await startServer();
+    const code = await mint(relay, await adminToken(relay));
+    for (const [body, error] of [
+      [{ invite: code, username: "Bob", password: GOOD_PASSWORD }, "invalid_username"],
+      [{ invite: code, username: "b", password: GOOD_PASSWORD }, "invalid_username"],
+      [{ invite: code, username: "bob smith", password: GOOD_PASSWORD }, "invalid_username"],
+      [{ invite: code, username: "bob", password: "short" }, "weak_password"],
+      [{ invite: code, username: "admin", password: GOOD_PASSWORD }, "username_taken"],
+      [{ invite: code, username: "bob" }, "invalid_request"],
+    ] as const) {
+      const response = await signUp(relay, body);
+      expect(response.json.error).toBe(error);
+    }
+    expect((await signUp(relay, { invite: code, username: "bob", password: GOOD_PASSWORD })).status).toBe(200);
+  });
+
+  it("treats usernames that differ only in case as taken", async () => {
+    const { relay } = await startServer({ bootstrap: { user: "Kieran", password: GOOD_PASSWORD } });
+    const token = (await login(relay, "Kieran")).json.token as string;
+    const code = await mint(relay, token);
+    const response = await signUp(relay, { invite: code, username: "kieran", password: GOOD_PASSWORD });
+    expect(response.status).toBe(409);
+    expect(response.json.error).toBe("username_taken");
+  });
+
+  it("spends an invite once when two sign-ups race for it", async () => {
+    const { relay } = await startServer();
+    const code = await mint(relay, await adminToken(relay));
+    const results = await Promise.all([
+      signUp(relay, { invite: code, username: "bob", password: GOOD_PASSWORD }),
+      signUp(relay, { invite: code, username: "carol", password: GOOD_PASSWORD }),
+    ]);
+    expect(results.map((result) => result.status).sort()).toEqual([200, 403]);
+  });
+
+  it("shares the per-address limit with login", async () => {
+    const { relay } = await startServer({ limits: { ipMaxAttempts: 2 } });
+    await login(relay, "admin", WRONG);
+    await signUp(relay, { invite: "made-up", username: "bob", password: GOOD_PASSWORD });
+    const limited = await signUp(relay, { invite: "made-up", username: "bob", password: GOOD_PASSWORD });
+    expect(limited.status).toBe(429);
+  });
+
+  it("keeps accounts apart: a new user sees none of another account's hosts", async () => {
+    const { relay, accounts } = await startServer();
+    const hostId = relayHostId(ed25519.keygen().publicKey);
+    const db = new DatabaseSync(accounts.dbPath);
+    db.prepare("INSERT INTO hosts (host_id, user_id, noise_public_key, name, joined_at, last_seen_at) VALUES (?, 1, 'k', 'admin-host', 1, 1)").run(hostId);
+    db.close();
+    const code = await mint(relay, await adminToken(relay));
+    const bob = (await signUp(relay, { invite: code, username: "bob", password: GOOD_PASSWORD })).json.token;
+
+    expect((await api(relay, { path: "/api/hosts", headers: bearer(bob) })).json).toEqual([]);
+    const pairing = await api(relay, { method: "POST", path: `/api/hosts/${hostId}/pairing`, headers: bearer(bob) });
+    expect(pairing.status).toBe(404);
+    expect((await api(relay, { path: "/api/hosts", headers: bearer(await adminToken(relay)) })).json).toHaveLength(1);
+  });
+
+  it("marks the first user admin when upgrading a schema-2 database", async () => {
+    const first = await startServer();
+    await stop(first);
+    const db = new DatabaseSync(join(first.dataDir, "server.sqlite"));
+    db.exec("DROP TABLE invites; ALTER TABLE users DROP COLUMN admin; PRAGMA user_version = 2;");
+    db.close();
+
+    const second = await startServer({ dataDir: first.dataDir, bootstrap: {} });
+    const token = await adminToken(second.relay);
+    expect((await api(second.relay, { path: "/api/me", headers: bearer(token) })).json.admin).toBe(true);
+    await mint(second.relay, token);
   });
 });
