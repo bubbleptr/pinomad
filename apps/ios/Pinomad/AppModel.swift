@@ -284,6 +284,15 @@ final class AppModel {
     /// most one queued behind it.
     var pushSyncInFlight: Set<String> = []
     var pushSyncPending: Set<String> = []
+    /// The account server's record of this device (ADR-0036), serialized
+    /// the same way: one request in flight, at most one queued.
+    var serverPushInFlight = false
+    var serverPushPending = false
+    var serverPushTask: Task<Void, Never>?
+    /// Set while signing out: a register sent now could land after the
+    /// removal and outlive the session.
+    var serverPushPaused = false
+    var serverPushError: String?
     var forgettingHosts: Set<String> = []
     let monitor = NetworkMonitor()
     /// Marks each focused snapshot landing on the main actor.
@@ -905,6 +914,7 @@ final class AppModel {
             guard let self else { return }
             if runtime === self.focusedRuntime { self.syncPhase() }
             self.syncPushToken(for: runtime)
+            self.syncServerPushToken()
             self.advancePushTarget()
         }
         runtime.onSnapshot = { [weak self] runtime, snapshot in
@@ -933,6 +943,10 @@ final class AppModel {
         }
         runtime.onConnectedEdge = { [weak self] runtime in
             self?.syncPushToken(for: runtime)
+            // A connect is also a retry point for the server record: a
+            // register that failed while offline must not wait for the next
+            // foreground (ADR-0036 §5). Bursts collapse to one queued sync.
+            self?.syncServerPushToken()
         }
         runtime.onConnectedView = { [weak self] runtime in
             self?.retryQueuedEditIfNeeded(for: runtime)

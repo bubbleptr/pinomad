@@ -86,6 +86,28 @@
         "hostId": "c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg"
       },
       "expect": "{\"url\":\"https://relay.example.com/api/hosts/c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg/pairing\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\"}}}"
+    },
+    {
+      "name": "push-token-register",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "registerPushToken",
+        "apns": "abababababababababababababababababababababababababababababababab",
+        "environment": "development"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/push-tokens\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"apns\\\":\\\"abababababababababababababababababababababababababababababababab\\\",\\\"environment\\\":\\\"development\\\"}\"}}"
+    },
+    {
+      "name": "push-token-remove",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "removePushToken",
+        "apns": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+        "environment": "production"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/push-tokens/remove\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"apns\\\":\\\"cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\\\",\\\"environment\\\":\\\"production\\\"}\"}}"
     }
   ],
   "responses": [
@@ -305,6 +327,34 @@
       "status": 504,
       "body": "{\"error\":\"host_timeout\"}",
       "expect": "{\"ok\":false,\"error\":{\"code\":\"host_timeout\",\"status\":504}}"
+    },
+    {
+      "name": "push-token-register-204",
+      "kind": "registerPushToken",
+      "status": 204,
+      "body": null,
+      "expect": "{\"ok\":true}"
+    },
+    {
+      "name": "push-token-register-invalid",
+      "kind": "registerPushToken",
+      "status": 400,
+      "body": "{\"error\":\"invalid_request\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_request\",\"status\":400}}"
+    },
+    {
+      "name": "push-token-remove-204",
+      "kind": "removePushToken",
+      "status": 204,
+      "body": null,
+      "expect": "{\"ok\":true}"
+    },
+    {
+      "name": "push-token-remove-401",
+      "kind": "removePushToken",
+      "status": 401,
+      "body": "{\"error\":\"unauthenticated\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"unauthenticated\",\"status\":401}}"
     }
   ],
   "probe": [

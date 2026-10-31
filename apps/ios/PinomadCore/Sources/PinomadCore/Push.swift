@@ -34,6 +34,70 @@ public func pushRegistrationAction(
     return mayHaveRegistration ? .unregister : .none
 }
 
+/// The signed-in account a server registration belongs to. The server
+/// scopes removal to the caller's account, so the username matters as much
+/// as the origin.
+public struct ServerPushAccount: Codable, Equatable, Sendable {
+    public let serverOrigin: String
+    public let username: String
+
+    public init(serverOrigin: String, username: String) {
+        self.serverOrigin = serverOrigin
+        self.username = username
+    }
+}
+
+/// What this device last asked an account server to record (ADR-0036).
+/// Kept so turning the switch off or signing out removes exactly that
+/// token, even after APNs has issued a new one.
+public struct ServerPushRegistration: Codable, Equatable, Sendable {
+    public let account: ServerPushAccount
+    public let apns: String
+    public let production: Bool
+
+    public init(account: ServerPushAccount, token: ApnsPushToken) {
+        self.account = account
+        apns = token.apns
+        production = token.environment == .production
+    }
+
+    public var token: ApnsPushToken {
+        ApnsPushToken(apns: apns, environment: production ? .production : .development)
+    }
+}
+
+/// What a server-registration opportunity should send.
+public enum ServerPushAction: Equatable, Sendable {
+    case none
+    /// `POST /api/push-tokens` — also refreshes the server's 90-day record.
+    case register(ApnsPushToken)
+    /// `POST /api/push-tokens/remove` for the recorded token.
+    case remove(ApnsPushToken)
+}
+
+/// The account server's half of push (ADR-0036): the server only forwards
+/// a host's push to a token recorded under the host's account, so while the
+/// switch is on and a session exists, every occasion registers. Signing
+/// out asks with `enabled: false`. Removal needs the account it was
+/// recorded under: the server answers 204 to another account's removal
+/// without touching the row, so a record from another account is kept until
+/// that account signs in again, or it expires.
+public func serverPushAction(
+    enabled: Bool,
+    account: ServerPushAccount?,
+    deviceToken: String?,
+    environment: ApnsEnvironment,
+    recorded: ServerPushRegistration?
+) -> ServerPushAction {
+    guard let account else { return .none }
+    if enabled {
+        guard let deviceToken, !deviceToken.isEmpty else { return .none }
+        return .register(ApnsPushToken(apns: deviceToken, environment: environment))
+    }
+    guard let recorded, recorded.account == account else { return .none }
+    return .remove(recorded.token)
+}
+
 /// A foreground banner is suppressed only for the conversation visible on
 /// screen right now; another conversation on the same host, or any push from
 /// another host, still shows (ADR-0035 §9).

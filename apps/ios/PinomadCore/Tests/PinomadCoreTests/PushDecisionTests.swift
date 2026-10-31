@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import PinomadCore
 
@@ -46,6 +47,69 @@ import Testing
             enabled: true, mayHaveRegistration: false, hostMinor: 9,
             deviceToken: token, environment: .production
         ) == .register(ApnsPushToken(apns: token, environment: .production)))
+    }
+
+    @Test func serverRegistrationFollowsTheSwitchWhileSignedIn() {
+        let account = ServerPushAccount(serverOrigin: "https://pinomad.si", username: "kieran")
+        let token = "aabbccdd"
+        let current = ApnsPushToken(apns: token, environment: .production)
+        // Signed out: the server has no session to record it under.
+        #expect(serverPushAction(
+            enabled: true, account: nil, deviceToken: token,
+            environment: .production, recorded: nil
+        ) == .none)
+        // Every occasion re-sends while on, so the record never ages out.
+        #expect(serverPushAction(
+            enabled: true, account: account, deviceToken: token,
+            environment: .production,
+            recorded: ServerPushRegistration(account: account, token: current)
+        ) == .register(current))
+        #expect(serverPushAction(
+            enabled: true, account: account, deviceToken: nil,
+            environment: .production, recorded: nil
+        ) == .none)
+    }
+
+    @Test func serverRemovalTargetsWhatWasRecordedUnderThatAccount() {
+        let account = ServerPushAccount(serverOrigin: "https://pinomad.si", username: "kieran")
+        let old = ApnsPushToken(apns: "0011", environment: .development)
+        let recorded = ServerPushRegistration(account: account, token: old)
+        // The switch went off (or the reader is signing out): remove the
+        // token that was sent, even if APNs has issued a new one since.
+        #expect(serverPushAction(
+            enabled: false, account: account, deviceToken: "aabb",
+            environment: .production, recorded: recorded
+        ) == .remove(old))
+        // Nothing was ever sent: no request at all.
+        #expect(serverPushAction(
+            enabled: false, account: account, deviceToken: "aabb",
+            environment: .production, recorded: nil
+        ) == .none)
+        // The server scopes removal to the caller's account and answers 204
+        // either way: another account on the same server must not "remove"
+        // it and wipe the only evidence the record exists.
+        #expect(serverPushAction(
+            enabled: false,
+            account: ServerPushAccount(serverOrigin: "https://pinomad.si", username: "other"),
+            deviceToken: "aabb", environment: .production, recorded: recorded
+        ) == .none)
+        #expect(serverPushAction(
+            enabled: false,
+            account: ServerPushAccount(serverOrigin: "https://self.example", username: "kieran"),
+            deviceToken: "aabb", environment: .production, recorded: recorded
+        ) == .none)
+        #expect(serverPushAction(
+            enabled: false, account: nil, deviceToken: "aabb",
+            environment: .production, recorded: recorded
+        ) == .none)
+    }
+
+    @Test func aServerRegistrationSurvivesARoundTripThroughDefaults() throws {
+        let recorded = ServerPushRegistration(
+            account: ServerPushAccount(serverOrigin: "https://pinomad.si", username: "kieran"),
+            token: ApnsPushToken(apns: "aabb", environment: .development))
+        let data = try JSONEncoder().encode(recorded)
+        #expect(try JSONDecoder().decode(ServerPushRegistration.self, from: data) == recorded)
     }
 
     @Test func foregroundBannerIsSuppressedOnlyForTheVisibleConversation() {

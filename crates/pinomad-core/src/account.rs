@@ -14,6 +14,7 @@ use std::sync::Arc;
 use url::{Host, Url};
 
 use crate::endpoints::{parse_endpoint_set, EndpointSet, ParsedEndpointSet};
+use crate::frames::ApnsPushToken;
 use crate::json::{Json, JsonObject};
 use crate::pairing_link::encode_uri_component;
 use crate::stored_host::StoredHost;
@@ -22,7 +23,8 @@ use crate::u16str::U16String;
 // ─── Requests ───────────────────────────────────────────────────────────────
 
 /// One account call. `Login` carries the submitted credentials;
-/// `RequestPairing` carries the account-bound hostId.
+/// `RequestPairing` carries the account-bound hostId; the push-token pair
+/// carries this device's APNs token (ADR-0036).
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum AccountOp {
@@ -33,6 +35,8 @@ pub enum AccountOp {
     CreateJoinToken,
     ListHosts,
     RequestPairing { host_id: String },
+    RegisterPushToken { token: ApnsPushToken },
+    RemovePushToken { token: ApnsPushToken },
 }
 
 /// Which endpoint an answer belongs to — `account_response` picks its shape
@@ -47,6 +51,8 @@ pub enum AccountOpKind {
     CreateJoinToken,
     ListHosts,
     RequestPairing,
+    RegisterPushToken,
+    RemovePushToken,
 }
 
 /// One header on the request the platform sends, in the reference's order.
@@ -79,6 +85,8 @@ impl AccountOp {
             AccountOp::CreateJoinToken => AccountOpKind::CreateJoinToken,
             AccountOp::ListHosts => AccountOpKind::ListHosts,
             AccountOp::RequestPairing { .. } => AccountOpKind::RequestPairing,
+            AccountOp::RegisterPushToken { .. } => AccountOpKind::RegisterPushToken,
+            AccountOp::RemovePushToken { .. } => AccountOpKind::RemovePushToken,
         }
     }
 
@@ -102,17 +110,26 @@ impl AccountOp {
             AccountOp::RequestPairing { host_id } => {
                 format!("/api/hosts/{}/pairing", encode_uri_component(host_id))
             }
+            AccountOp::RegisterPushToken { .. } => "/api/push-tokens".to_string(),
+            AccountOp::RemovePushToken { .. } => "/api/push-tokens/remove".to_string(),
         }
     }
 
-    /// `JSON.stringify(body)` — only login carries one, byte-identical to the
-    /// reference's `{username, password}` literal order.
+    /// `JSON.stringify(body)`, byte-identical to the reference's literal
+    /// order: `{username, password}` for login, `{apns, environment}` for the
+    /// push-token pair — the token stays out of the URL.
     fn body(&self) -> Option<String> {
         match self {
             AccountOp::Login { username, password } => {
                 let mut object = JsonObject::new();
                 object.set(U16String::from_str("username"), Json::from(username.as_str()));
                 object.set(U16String::from_str("password"), Json::from(password.as_str()));
+                Some(Json::Object(Arc::new(object)).to_json())
+            }
+            AccountOp::RegisterPushToken { token } | AccountOp::RemovePushToken { token } => {
+                let mut object = JsonObject::new();
+                object.set(U16String::from_str("apns"), Json::from(token.apns.as_str()));
+                object.set(U16String::from_str("environment"), Json::from(token.environment.as_str()));
                 Some(Json::Object(Arc::new(object)).to_json())
             }
             _ => None,
@@ -247,7 +264,7 @@ pub enum AccountValue {
     Login(LoginSuccess),
     /// `me` — just the user.
     Me(AccountUser),
-    /// `logout` and `revokeAllSessions` answer nothing.
+    /// `logout`, `revokeAllSessions`, and the push-token pair answer nothing.
     Unit,
     JoinToken(JoinToken),
     Hosts(Vec<AccountHost>),
@@ -322,7 +339,10 @@ fn decode_value(kind: AccountOpKind, value: Option<&Json>) -> Result<AccountValu
         })),
         AccountOpKind::Me => Ok(AccountValue::Me(user_body(value).ok_or_else(AccountError::invalid)?)),
         // `result.ok ? ok(undefined)` — any 2xx answers the void ops.
-        AccountOpKind::Logout | AccountOpKind::RevokeAllSessions => Ok(AccountValue::Unit),
+        AccountOpKind::Logout
+        | AccountOpKind::RevokeAllSessions
+        | AccountOpKind::RegisterPushToken
+        | AccountOpKind::RemovePushToken => Ok(AccountValue::Unit),
         AccountOpKind::CreateJoinToken => Ok(AccountValue::JoinToken(JoinToken {
             token: str_field(value, "token").ok_or_else(AccountError::invalid)?,
             expires_at: num_field(value, "expiresAt").ok_or_else(AccountError::invalid)?,

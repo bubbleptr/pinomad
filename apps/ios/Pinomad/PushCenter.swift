@@ -39,6 +39,7 @@ final class PushCenter: NSObject, @MainActor UNUserNotificationCenterDelegate {
     private let enabledKey = "push.enabled"
     private let legacyEnabledPrefix = "push.enabled."
     private let registeredPrefix = "push.registered."
+    private let serverRegistrationKey = "push.serverRegistration"
     private let logger = Logger(subsystem: "build.kieran.pinomad", category: "push")
 
     private override init() {
@@ -100,6 +101,22 @@ final class PushCenter: NSObject, @MainActor UNUserNotificationCenterDelegate {
     /// the other hosts' flags stay.
     func forget(_ hostKey: String) {
         defaults.removeObject(forKey: registeredPrefix + hostKey)
+    }
+
+    /// What this device last asked the account server to record (ADR-0036),
+    /// written before the request goes out so a lost answer still gets
+    /// removed later.
+    var serverRegistration: ServerPushRegistration? {
+        defaults.data(forKey: serverRegistrationKey)
+            .flatMap { try? JSONDecoder().decode(ServerPushRegistration.self, from: $0) }
+    }
+
+    func setServerRegistration(_ registration: ServerPushRegistration?) {
+        if let registration, let data = try? JSONEncoder().encode(registration) {
+            defaults.set(data, forKey: serverRegistrationKey)
+        } else {
+            defaults.removeObject(forKey: serverRegistrationKey)
+        }
     }
 
     /// Read the current permission and refresh the APNs token when allowed.

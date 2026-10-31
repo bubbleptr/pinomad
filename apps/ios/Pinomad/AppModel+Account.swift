@@ -106,6 +106,7 @@ extension AppModel {
             } catch {
                 saveError = "Signed in, but the account couldn't be saved to the keychain: \(describe(error))"
             }
+            syncServerPushToken()
             await accountRefreshHosts()
             if let saveError { accountError = saveError }
             return nil
@@ -321,15 +322,27 @@ extension AppModel {
     func accountSignOut(everywhere: Bool) async {
         guard let session = accountSession, let api = accountAPI() else { return }
         accountBusy = true
-        defer { accountBusy = false }
+        serverPushPaused = true
+        defer {
+            accountBusy = false
+            serverPushPaused = false
+        }
         accountSignOutWarning = nil
         let failure: AccountFailure?
+        var pushRemoved = true
         if everywhere {
+            // Revoking every session also clears the account's push tokens
+            // on the server (ADR-0036 §5).
             switch await api.revokeAllSessions() {
-            case .success: failure = nil
+            case .success:
+                failure = nil
+                push.setServerRegistration(nil)
             case .failure(let error): failure = error
             }
         } else {
+            pushRemoved = await removeServerPushToken(
+                api: api,
+                account: ServerPushAccount(serverOrigin: session.serverOrigin, username: session.username))
             switch await api.logout() {
             case .success: failure = nil
             case .failure(let error): failure = error
@@ -342,7 +355,9 @@ extension AppModel {
         guard accountSession == session || (accountSession == nil && keptIdentity) else { return }
         let warning = endAccountSession(notice: nil)
         let serverWarning = AccountCopy.signOutWarning(everywhere: everywhere, failure: failure)
-        let joined = [warning, serverWarning].compactMap { $0 }.joined(separator: "\n")
+        let pushWarning = pushRemoved ? nil
+            : "The server didn't confirm removing this device's notification token, so hosts on the account may still notify it. Sign in again and turn notifications off to remove it."
+        let joined = [warning, serverWarning, pushWarning].compactMap { $0 }.joined(separator: "\n")
         accountSignOutWarning = joined.isEmpty ? nil : joined
     }
 
@@ -532,7 +547,7 @@ extension AppModel {
     /// Clears the in-memory session and the keychain token. Returns a warning
     /// when the keychain still holds the token — the next launch would sign
     /// the reader back in despite this screen saying they are out.
-    private func endAccountSession(notice: String?) -> String? {
+    func endAccountSession(notice: String?) -> String? {
         guard let record = accountRecord else { return nil }
         let cleared = record.clearingToken()
         accountRecord = cleared
@@ -540,6 +555,7 @@ extension AppModel {
         accountHostsError = nil
         accountError = nil
         accountSignOutWarning = nil
+        serverPushError = nil
         accountNotice = notice
         // In-flight registrations belong to the session that just ended.
         accountPairingGeneration &+= 1
