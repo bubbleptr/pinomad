@@ -2,7 +2,7 @@
 # pinned, so the server hosts the same web client build as that release.
 # Bump PINOMAD_VERSION together with the hosts (apps/site/content/docs/remote-access.zh.md "升级").
 FROM node:26-slim
-ARG PINOMAD_VERSION=0.8.0
+ARG PINOMAD_VERSION=0.9.0
 RUN npm install -g pinomad@${PINOMAD_VERSION} && npm cache clean --force
 # Account data (ADR-0022) lives under /data; mount a persistent volume there or
 # every redeploy forgets users, sessions, and host bindings. The data dir is a
