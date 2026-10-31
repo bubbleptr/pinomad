@@ -32,7 +32,7 @@ All of this lives in one database on the server.
 
 - **Your work.** Prompts, model replies, files, tool calls, terminal output and your model provider sign-ins stay on your host and your devices. Between them, everything goes over an end-to-end encrypted channel (Noise). When a device can't reach your host directly, the server forwards that channel's ciphertext and keeps none of it.
 - **Notification content.** A push notification carries only the conversation title and the event (waiting for your answer, finished, failed), never the question or the reply. The title passes through the server and Apple's push service on its way to your phone. The server doesn't store it.
-- **Pairing details.** When you pair a device through your account, the server passes the host's one-time invite and its network addresses to your device and doesn't keep them.
+- **Pairing details.** When you pair a device through your account, the server passes the host's one-time invite and its network addresses to your device and keeps neither the invite nor the addresses (only the record described under "Devices on your hosts").
 
 ## What passes through without being kept
 
@@ -56,7 +56,7 @@ If you don't want to extend that trust, turn off **Accept devices from your acco
 - **Account:** until you delete it.
 - **Hosts:** until you run `pinomad leave` on the host, join it to another account, or delete your account.
 - **Sessions:** 30 days from sign-in, never extended. Signing out removes that session; **Sign out everywhere** removes all of them; changing your password removes all but the one you're using.
-- **Devices on your account:** until you delete your account. A removed device stays listed as removed. An unnamed entry from an older app is cleared once it has no session and no host record.
+- **Devices on your account:** until you delete your account. A removed device stays listed as removed. An unnamed entry from an older app is cleared at a later sign-in once it has no session and no host record.
 - **Devices on your hosts:** a pairing the host never reports is cleared a day after its invite expires. The rest stay until the host leaves your account (`pinomad leave`), joins another account, or you delete your account. A pending revocation is removed when the host confirms it.
 - **Host join commands:** they expire after 10 minutes, and expired ones are cleared the next time anyone makes one.
 - **Push registrations:** removed when you turn push off or sign out on the phone, use **Sign out everywhere**, change your password, delete your account, or when Apple reports the token is no longer valid. A registration the app hasn't refreshed for 90 days is ignored and then cleared. An account keeps at most 32.
