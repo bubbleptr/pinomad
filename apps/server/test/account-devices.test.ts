@@ -47,13 +47,18 @@ interface Started {
   readonly dataDir: string;
 }
 
-async function startServer(options?: { readonly dataDir?: string; readonly limits?: LoginLimits }): Promise<Started> {
+async function startServer(options?: {
+  readonly dataDir?: string;
+  readonly limits?: LoginLimits;
+  readonly now?: () => number;
+}): Promise<Started> {
   const dataDir = options?.dataDir ?? (await tempDir(dirs));
   const accounts = await openAccounts({
     dataDir,
     bootstrapUser: "admin",
     bootstrapPassword: GOOD_PASSWORD,
     ...(options?.limits === undefined ? {} : { limits: options.limits }),
+    ...(options?.now === undefined ? {} : { now: options.now }),
   });
   const relay = await startRelay({ port: 0, publicOrigin: ORIGIN, registerTimeoutMs: 150, accounts });
   relays.push(relay);
@@ -372,6 +377,31 @@ describe("vouching reports (ADR-0037 §2)", () => {
     expect((await devices(started.relay, token))[0]!.hosts.map((host) => host.hostId)).toEqual([relayHostId(otherKeys.publicKey)]);
   });
 
+  it("caps the offer expiry a host reports, so its grace can't be stretched", async () => {
+    let clock = Date.now();
+    const started = await startServer({ now: () => clock });
+    const keys = bindHost(started.accounts);
+    const socket = await control(started.relay, keys);
+    const token = await login(started.relay, { id: PHONE, name: "Phone" });
+    const DAY = 24 * 60 * 60 * 1000;
+    // The offer claims to last ten days; the server keeps at most a few minutes.
+    const requestId = await vouch(started.relay, { keys, socket }, token, clock + 10 * DAY);
+    // Past the capped expiry plus the one-day report grace: ignored.
+    clock += DAY + 10 * 60 * 1000;
+    expect(started.accounts.recordAdmission(relayHostId(keys.publicKey), requestId, DEVICE_KEY)).toBe("ignored");
+  });
+
+  it("still takes a report inside the capped expiry plus grace", async () => {
+    let clock = Date.now();
+    const started = await startServer({ now: () => clock });
+    const keys = bindHost(started.accounts);
+    const socket = await control(started.relay, keys);
+    const token = await login(started.relay, { id: PHONE, name: "Phone" });
+    const requestId = await vouch(started.relay, { keys, socket }, token, clock + 10 * 24 * 60 * 60 * 1000);
+    clock += 24 * 60 * 60 * 1000;
+    expect(started.accounts.recordAdmission(relayHostId(keys.publicKey), requestId, DEVICE_KEY)).toBe("recorded");
+  });
+
   it("reports whether each host sends device reports in /api/hosts", async () => {
     const started = await startServer();
     const reporting = bindHost(started.accounts);
@@ -472,6 +502,41 @@ describe("kicking a device (ADR-0037 §3)", () => {
     const revokeP = nextFrame(socket);
     send(socket, { t: "device-admitted", requestId, publicKey: DEVICE_KEY });
     expect(await revokeP).toEqual({ t: "revoke-device", publicKey: DEVICE_KEY });
+  });
+
+  it("revokes a report that arrives after the kick even when the device signed in again meanwhile", async () => {
+    const started = await startServer();
+    const keys = bindHost(started.accounts);
+    const socket = await control(started.relay, keys);
+    const phone = await login(started.relay, { id: PHONE, name: "Phone" });
+    const laptop = await login(started.relay, { id: LAPTOP, name: "Laptop" });
+    // The host admits the phone but holds the report (its control is down).
+    const requestId = await vouch(started.relay, { keys, socket }, phone);
+    const phoneId = (await devices(started.relay, laptop)).find((device) => device.name === "Phone")!.id;
+    expect((await kick(started.relay, laptop, phoneId)).status).toBe(204);
+
+    // Signing in again un-kicks the device, but the offer it held before the
+    // kick stays revoked.
+    await login(started.relay, { id: PHONE, name: "Phone" });
+    const revokeP = nextFrame(socket);
+    send(socket, { t: "device-admitted", requestId, publicKey: DEVICE_KEY });
+    expect(await revokeP).toEqual({ t: "revoke-device", publicKey: DEVICE_KEY });
+    expect(await hostState(started.relay, laptop, phoneId)).toBe("revoking");
+  });
+
+  it("keeps a vouching made after the re-login out of the old kick", async () => {
+    const started = await startServer();
+    const keys = bindHost(started.accounts);
+    const socket = await control(started.relay, keys);
+    await login(started.relay, { id: PHONE, name: "Phone" });
+    const laptop = await login(started.relay, { id: LAPTOP, name: "Laptop" });
+    const phoneId = (await devices(started.relay, laptop)).find((device) => device.name === "Phone")!.id;
+    expect((await kick(started.relay, laptop, phoneId)).status).toBe(204);
+
+    const back = await login(started.relay, { id: PHONE, name: "Phone" });
+    const requestId = await vouch(started.relay, { keys, socket }, back);
+    send(socket, { t: "device-admitted", requestId, publicKey: DEVICE_KEY });
+    await until(async () => (await hostState(started.relay, laptop, phoneId)) === "registered");
   });
 
   it("lets a kicked device sign in again, without undoing the revocations", async () => {

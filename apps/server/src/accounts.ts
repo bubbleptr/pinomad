@@ -59,6 +59,11 @@ const DEVICE_NAME_MAX_CODEPOINTS = 64;
 // vouching is kept.
 const ADMISSION_REPORT_GRACE_MS = 24 * 60 * 60 * 1000;
 
+// The expiry a host puts on an account offer is its own claim; the server
+// keeps at most the host's offer lifetime (5 minutes) plus slack, so a host
+// can't hold unreported vouchings, or their report window, open longer.
+const MAX_OFFER_TTL_MS = 6 * 60 * 1000;
+
 /** What a client says about itself at sign-in (ADR-0037 §1); `name` is already clipped. */
 export interface DeviceClaim {
   readonly id: string;
@@ -504,7 +509,8 @@ function migrateTo4(db: DatabaseSync): void {
         -- Filled by the host's device-admitted report.
         public_key TEXT,
         admitted_at INTEGER,
-        -- Set when the host acknowledged revoking public_key.
+        -- Set when the account withdrew this vouching (a kick), reported
+        -- yet or not: a report that arrives later is revoked at once.
         revoked_at INTEGER
       );
       CREATE INDEX vouchings_device ON vouchings (device_id);
@@ -1195,7 +1201,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       const rank: Record<DeviceHostState, number> = { registered: 2, revoking: 1, revoked: 0 };
       const hosts = new Map<number, Map<string, { hostId: string; name: string; state: DeviceHostState }>>();
       for (const key of keys) {
-        const state: DeviceHostState = key.revoked === 1 ? "revoked" : key.pending === 1 ? "revoking" : "registered";
+        const state: DeviceHostState = key.pending === 1 ? "revoking" : key.revoked === 1 ? "revoked" : "registered";
         const perDevice = hosts.get(key.deviceId) ?? new Map<string, { hostId: string; name: string; state: DeviceHostState }>();
         hosts.set(key.deviceId, perDevice);
         const seen = perDevice.get(key.hostId);
@@ -1225,7 +1231,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
           requestId,
           session.deviceId,
           hostId,
-          expiresAt,
+          Math.min(expiresAt, now() + MAX_OFFER_TTL_MS),
         );
       }
       return true;
@@ -1236,11 +1242,10 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       try {
         const vouching = db
           .prepare(
-            `SELECT v.expires_at AS expiresAt, v.public_key AS publicKey, d.kicked_at AS kickedAt
-             FROM vouchings v JOIN account_devices d ON d.id = v.device_id
-             WHERE v.request_id = ? AND v.host_id = ?`,
+            `SELECT expires_at AS expiresAt, public_key AS publicKey, revoked_at AS revokedAt
+             FROM vouchings WHERE request_id = ? AND host_id = ?`,
           )
-          .get(requestId, hostId) as { expiresAt: number; publicKey: string | null; kickedAt: number | null } | undefined;
+          .get(requestId, hostId) as { expiresAt: number; publicKey: string | null; revokedAt: number | null } | undefined;
         // A report names one offer, once: another host's requestId, a second
         // report for the same offer, or one long past its offer is not a fact
         // this server vouched for.
@@ -1249,9 +1254,11 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
           return "ignored";
         }
         db.prepare("UPDATE vouchings SET public_key = ?, admitted_at = ? WHERE request_id = ?").run(publicKey, now(), requestId);
-        // Kicked while it held the secret: the host admitted a device the
-        // account no longer vouches for, so the revocation follows at once.
-        if (vouching.kickedAt !== null) {
+        // Kicked while it held the secret: the host admitted a device on an
+        // offer the account withdrew, so the revocation follows at once. A
+        // sign-in since then doesn't matter: it only vouches for offers
+        // handed out after it.
+        if (vouching.revokedAt !== null) {
           db.prepare("INSERT OR IGNORE INTO pending_revocations (host_id, public_key, created_at) VALUES (?, ?, ?)").run(
             hostId,
             publicKey,
@@ -1259,7 +1266,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
           );
         }
         db.exec("COMMIT");
-        return vouching.kickedAt === null ? "recorded" : "revoke";
+        return vouching.revokedAt === null ? "recorded" : "revoke";
       } catch (error) {
         db.exec("ROLLBACK");
         throw error;
@@ -1275,23 +1282,9 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
     },
 
     confirmRevocation(hostId, publicKey) {
-      db.exec("BEGIN");
-      try {
-        // Only a revocation this server asked for is recorded as done: an ack
-        // for anything else changes nothing.
-        const done = db.prepare("DELETE FROM pending_revocations WHERE host_id = ? AND public_key = ?").run(hostId, publicKey);
-        if (Number(done.changes) > 0) {
-          db.prepare("UPDATE vouchings SET revoked_at = ? WHERE host_id = ? AND public_key = ? AND revoked_at IS NULL").run(
-            now(),
-            hostId,
-            publicKey,
-          );
-        }
-        db.exec("COMMIT");
-      } catch (error) {
-        db.exec("ROLLBACK");
-        throw error;
-      }
+      // The vouching was marked withdrawn when the revocation was asked for;
+      // the ack only ends the asking. An ack for anything else changes nothing.
+      db.prepare("DELETE FROM pending_revocations WHERE host_id = ? AND public_key = ?").run(hostId, publicKey);
     },
 
     async kickDevice({ userId, username, password, deviceId, currentDeviceId }) {
@@ -1319,16 +1312,23 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
         sweepVouchings();
         db.prepare("DELETE FROM sessions WHERE device_id = ?").run(deviceId);
         db.prepare("UPDATE account_devices SET kicked_at = ? WHERE id = ?").run(at, deviceId);
-        db.prepare(
-          `INSERT OR IGNORE INTO pending_revocations (host_id, public_key, created_at)
-           SELECT host_id, public_key, ? FROM vouchings
-           WHERE device_id = ? AND public_key IS NOT NULL AND revoked_at IS NULL`,
-        ).run(at, deviceId);
+        // Every key a host reported that the account still vouched for is
+        // asked back; already-withdrawn ones are left alone, so a host that
+        // re-paired a device by QR after an earlier kick keeps it.
         const hostIds = (
           db
             .prepare("SELECT DISTINCT host_id AS hostId FROM vouchings WHERE device_id = ? AND public_key IS NOT NULL AND revoked_at IS NULL")
             .all(deviceId) as { hostId: string }[]
         ).map((row) => row.hostId);
+        db.prepare(
+          `INSERT OR IGNORE INTO pending_revocations (host_id, public_key, created_at)
+           SELECT host_id, public_key, ? FROM vouchings
+           WHERE device_id = ? AND public_key IS NOT NULL AND revoked_at IS NULL`,
+        ).run(at, deviceId);
+        // Then withdraw every offer it holds, reported or not: one a host
+        // reports later is revoked on arrival, whatever the device does
+        // meanwhile (ADR-0037 §2).
+        db.prepare("UPDATE vouchings SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL").run(at, deviceId);
         db.exec("COMMIT");
         return { status: "ok", hostIds };
       } catch (error) {
