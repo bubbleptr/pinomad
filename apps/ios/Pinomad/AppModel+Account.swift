@@ -361,6 +361,27 @@ extension AppModel {
         accountSignOutWarning = joined.isEmpty ? nil : joined
     }
 
+    /// Change the account password (#450). This session stays; the server
+    /// signs out the others and drops every push registration of the account,
+    /// this device's included, so a success registers it again right away.
+    func accountChangePassword(current: String, new: String) async -> AccountFailure? {
+        guard let session = accountSession, let api = accountAPI() else {
+            return AccountFailure(code: "unauthenticated")
+        }
+        switch await api.changePassword(current: current, new: new) {
+        case .success:
+            guard accountSession == session else { return nil }
+            push.setServerRegistration(nil)
+            syncServerPushToken()
+            return nil
+        case .failure(let failure):
+            if failure.clearsSession, accountSession == session {
+                accountSignOutWarning = endAccountSession(notice: AccountCopy.message(failure))
+            }
+            return failure
+        }
+    }
+
     /// Pair one account host through a server-vouched offer, then the same
     /// IK handshake a QR link drives. The reader's explicit join removes a
     /// decline and wins over an automatic round already in flight.

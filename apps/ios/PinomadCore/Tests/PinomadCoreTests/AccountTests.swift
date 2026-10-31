@@ -279,6 +279,23 @@ struct AccountTests {
         #expect(failure == AccountFailure(code: "unauthenticated", status: 401))
     }
 
+    /// A mistyped current password is a 403, not a 401: it must not end the
+    /// session it was typed into (#450).
+    @Test func wrongCurrentPasswordKeepsTheSession() async {
+        let transport = StubAccountTransport()
+        transport.outcome = .response(AccountHTTPResponse(status: 403, body: Data(#"{"error":"wrong_password"}"#.utf8)))
+        let api = AccountAPI(origin: "https://relay.example.com", token: "tok", transport: transport)
+        let result = await api.changePassword(current: "old", new: "a long new password")
+        guard case .failure(let failure) = result else {
+            Issue.record("expected wrong_password, got \(result)")
+            return
+        }
+        #expect(failure == AccountFailure(code: "wrong_password", status: 403))
+        #expect(!failure.clearsSession)
+        #expect(AccountCopy.message(failure) == "The current password is wrong.")
+        #expect(transport.requests[0].url == "https://relay.example.com/api/password")
+    }
+
     @Test func insecureOriginNeverReachesTheTransport() async {
         let transport = StubAccountTransport()
         let api = AccountAPI(origin: "http://127.example.com", token: "tok", transport: transport)
