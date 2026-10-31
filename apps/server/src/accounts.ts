@@ -506,6 +506,10 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
     return { token, expiresAt };
   };
 
+  const currentHash = (userId: number): string | undefined =>
+    (db.prepare("SELECT password_hash AS passwordHash FROM users WHERE id = ?").get(userId) as { passwordHash: string } | undefined)
+      ?.passwordHash;
+
   const inviteState = (codeHash: string): "ok" | "invalid_invite" | "invite_expired" => {
     const row = db.prepare("SELECT expires_at AS expiresAt, used_at AS usedAt FROM invites WHERE code_hash = ?").get(codeHash) as
       | { expiresAt: number; usedAt: number | null }
@@ -544,8 +548,21 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       });
       if (outcome === undefined || outcome === "limited") return { status: "limited" };
       if (outcome === "invalid") return { status: "invalid" };
+      // The hash was read before scrypt yielded; a password change or reset
+      // that committed meanwhile must not be crossed by a session minted from
+      // the old password.
+      db.exec("BEGIN IMMEDIATE");
+      let session: { readonly token: string; readonly expiresAt: number } | undefined;
+      try {
+        if (currentHash(outcome) === user?.passwordHash) session = issueSession(outcome);
+        db.exec("COMMIT");
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+      if (session === undefined) return { status: "invalid" };
       userFailures.reset(username);
-      return { status: "ok", ...issueSession(outcome), admin: user?.admin === 1 };
+      return { status: "ok", ...session, admin: user?.admin === 1 };
     },
 
     async register({ invite, username, password, ip }) {
@@ -655,13 +672,11 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
         return { status: "refused", reason: "weak_password" };
       }
       if (userFailures.isOver(username, limits.userMaxFailures)) return { status: "limited" };
-      const stored = db.prepare("SELECT password_hash AS passwordHash FROM users WHERE id = ?").get(userId) as
-        | { passwordHash: string }
-        | undefined;
+      const stored = currentHash(userId);
       // Same in-task re-check and bump as login, so queued guesses see each other.
       const outcome = await gate.run(async (): Promise<"limited" | "wrong_password" | string> => {
         if (userFailures.isOver(username, limits.userMaxFailures)) return "limited";
-        if (!(await verifyPassword(currentPassword, stored?.passwordHash ?? DUMMY_HASH)) || stored === undefined) {
+        if (!(await verifyPassword(currentPassword, stored ?? DUMMY_HASH)) || stored === undefined) {
           userFailures.bump(username, limits.userWindowMs);
           return "wrong_password";
         }
@@ -669,16 +684,24 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       });
       if (outcome === undefined || outcome === "limited") return { status: "limited" };
       if (outcome === "wrong_password") return { status: "refused", reason: "wrong_password" };
-      userFailures.reset(username);
-      db.exec("BEGIN");
+      // Swap only the hash that was verified: a reset or another change that
+      // committed while scrypt ran wins, and the old password no longer does.
+      db.exec("BEGIN IMMEDIATE");
       try {
-        db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(outcome, userId);
+        const swapped = db
+          .prepare("UPDATE users SET password_hash = ? WHERE id = ? AND password_hash = ?")
+          .run(outcome, userId, stored!);
+        if (Number(swapped.changes) !== 1) {
+          db.exec("ROLLBACK");
+          return { status: "refused", reason: "wrong_password" };
+        }
         dropCredentials(db, userId, sha256Hex(keepToken));
         db.exec("COMMIT");
       } catch (error) {
         db.exec("ROLLBACK");
         throw error;
       }
+      userFailures.reset(username);
       return { status: "ok" };
     },
 

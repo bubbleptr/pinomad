@@ -620,6 +620,39 @@ describe("changing the password (#450)", () => {
     expect((await api(relay, { path: "/api/me", headers: auth })).status).toBe(200);
   });
 
+  // Both reads of the stored hash happen before the first await, so a write
+  // made right after the call lands while the scrypt work is in flight.
+  const replaceHash = (accounts: Accounts): void => {
+    const db = new DatabaseSync(accounts.dbPath);
+    db.prepare("UPDATE users SET password_hash = 'scrypt$reset-meanwhile' WHERE id = 1").run();
+    db.close();
+  };
+
+  it("does not overwrite a password reset that lands while the current one is being checked", async () => {
+    const { relay, accounts } = await startServer();
+    const token = (await login(relay)).json.token as string;
+    const pending = accounts.changePassword({
+      userId: 1,
+      username: "admin",
+      keepToken: token,
+      currentPassword: GOOD_PASSWORD,
+      newPassword: NEW_PASSWORD,
+    });
+    replaceHash(accounts);
+    expect(await pending).toEqual({ status: "refused", reason: "wrong_password" });
+    expect((await login(relay, "admin", NEW_PASSWORD)).status).toBe(401);
+  });
+
+  it("issues no session to a login whose password changed while it was being checked", async () => {
+    const { accounts } = await startServer();
+    const pending = accounts.login("admin", GOOD_PASSWORD, "203.0.113.9");
+    replaceHash(accounts);
+    expect(await pending).toEqual({ status: "invalid" });
+    const db = new DatabaseSync(accounts.dbPath);
+    expect((db.prepare("SELECT COUNT(*) AS n FROM sessions").get() as { n: number }).n).toBe(0);
+    db.close();
+  });
+
   it("refuses a weak new password, malformed bodies and anonymous callers", async () => {
     const { relay } = await startServer();
     const token = (await login(relay)).json.token as string;
