@@ -273,6 +273,37 @@ describe("invite sign-up (#449)", () => {
     expect(screen.getByText("kieran")).toBeTruthy();
   });
 
+  it("drops the deletion notice on the next sign-in, so a later expiry doesn't repeat it", async () => {
+    const model = fakeModel(signedIn([]));
+    vi.mocked(model.deleteAccount).mockImplementationOnce(() => {
+      model.setState({ status: "signed-out", mode: "cookie" });
+      return Promise.resolve({ ok: true, value: undefined });
+    });
+    renderPanel(model);
+    await userEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    await userEvent.type(screen.getByLabelText("Password"), "my password{Enter}");
+    expect(await screen.findByText("Account deleted")).toBeTruthy();
+    act(() => model.setState({ ...signedIn([]), user: "bob" }));
+    act(() => model.setState({ status: "signed-out", mode: "cookie" }));
+    expect(screen.queryByText("Account deleted")).toBeNull();
+  });
+
+  it("says nothing when a deletion lands after signing in to another account", async () => {
+    const model = fakeModel(signedIn([]));
+    let answer!: () => void;
+    vi.mocked(model.deleteAccount).mockImplementationOnce(
+      () => new Promise((resolve) => (answer = () => resolve({ ok: true, value: undefined }))),
+    );
+    renderPanel(model);
+    await userEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    await userEvent.type(screen.getByLabelText("Password"), "my password{Enter}");
+    act(() => model.setState({ status: "signed-out", mode: "cookie" }));
+    act(() => model.setState({ ...signedIn([]), user: "bob" }));
+    await act(async () => answer());
+    act(() => model.setState({ status: "signed-out", mode: "cookie" }));
+    expect(screen.queryByText("Account deleted")).toBeNull();
+  });
+
   it("offers no account deletion to the admin", () => {
     renderPanel(fakeModel({ ...signedIn([]), admin: true }));
     expect(screen.queryByRole("button", { name: "Delete account" })).toBeNull();

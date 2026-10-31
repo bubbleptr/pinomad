@@ -91,6 +91,10 @@ export function AccountPanel() {
   // Lives here, not in SignedIn: a failed sign-out and a deleted account both
   // land signed-out, and what they say has to survive that unmount.
   const [notice, setNotice] = useState<Notice>();
+  // A sign-in ends the story the notice told; a later expiry mustn't repeat it.
+  useEffect(() => {
+    if (state.status === "signed-in") setNotice(undefined);
+  }, [state.status]);
   switch (state.status) {
     case "unavailable":
       return null;
@@ -737,8 +741,10 @@ function DeleteAccount({
     setBusy(true);
     setError(undefined);
     void account.deleteAccount({ password }).then((result) => {
-      // On success the model is already signed-out and this form unmounted.
+      // On success the model is already signed-out and this form unmounted. If
+      // another account signed in meanwhile, the notice would be about the wrong one.
       if (result.ok) {
+        if (account.state.status !== "signed-out") return;
         onNotice({
           status: "success",
           title: "Account deleted",
