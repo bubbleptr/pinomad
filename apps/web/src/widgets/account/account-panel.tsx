@@ -87,7 +87,6 @@ export function AccountPanel() {
   // Lives here, not in SignedIn: a failed sign-out still lands signed-out,
   // and the warning has to survive that unmount.
   const [signOutWarning, setSignOutWarning] = useState<string>();
-  const [signingUp, setSigningUp] = useState(false);
   switch (state.status) {
     case "unavailable":
       return null;
@@ -104,11 +103,7 @@ export function AccountPanel() {
           {signOutWarning === undefined ? null : (
             <Banner status="warning" title="Sign-out not confirmed" description={signOutWarning} />
           )}
-          {signingUp ? (
-            <SignUpForm account={account} state={state} onSignIn={() => setSigningUp(false)} />
-          ) : (
-            <SignInForm account={account} state={state} onSignUp={() => setSigningUp(true)} />
-          )}
+          <SignedOut account={account} state={state} />
         </VStack>
       );
     case "signed-in":
@@ -116,19 +111,37 @@ export function AccountPanel() {
   }
 }
 
+/** Sign-in or sign-up; both forms share the server address the user typed. */
+function SignedOut({ account, state }: { account: AccountModel; state: Extract<AccountState, { status: "signed-out" }> }) {
+  // Bearer clients (desktop) pick their server, starting from the last one or
+  // the official one; a cookie page is the server.
+  const [origin, setOrigin] = useState(state.serverOrigin ?? OFFICIAL_SERVER_ORIGIN);
+  const [signingUp, setSigningUp] = useState(false);
+  const server = state.mode === "bearer" ? { origin, setOrigin } : undefined;
+  return signingUp ? (
+    <SignUpForm account={account} server={server} onSignIn={() => setSigningUp(false)} />
+  ) : (
+    <SignInForm account={account} server={server} onSignUp={() => setSigningUp(true)} />
+  );
+}
+
+/** The Server field's value and setter; absent on a cookie page, which is the server. */
+interface ServerField {
+  readonly origin: string;
+  readonly setOrigin: (origin: string) => void;
+}
+
 function SignInForm({
   account,
-  state,
+  server,
   onSignUp,
 }: {
   account: AccountModel;
-  state: Extract<AccountState, { status: "signed-out" }>;
+  server: ServerField | undefined;
   onSignUp: () => void;
 }) {
-  // Bearer clients (desktop) pick their server, starting from the last one or
-  // the official one; a cookie page is the server.
-  const asksOrigin = state.mode === "bearer";
-  const [origin, setOrigin] = useState(state.serverOrigin ?? OFFICIAL_SERVER_ORIGIN);
+  const asksOrigin = server !== undefined;
+  const origin = server?.origin ?? "";
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -151,16 +164,16 @@ function SignInForm({
         <Heading level={3}>Sign in</Heading>
         <Text type="supporting">See the hosts on your account and connect without a QR code.</Text>
       </VStack>
-      {asksOrigin ? (
+      {server === undefined ? null : (
         <TextInput
           label="Server"
           placeholder="https://nomad.example.com"
-          value={origin}
-          onChange={setOrigin}
+          value={server.origin}
+          onChange={server.setOrigin}
           onEnter={submit}
           width="100%"
         />
-      ) : null}
+      )}
       <TextInput label="Username" value={username} onChange={setUsername} onEnter={submit} width="100%" />
       <TextInput label="Password" type="password" value={password} onChange={setPassword} onEnter={submit} width="100%" />
       {error === undefined ? null : <Banner status="error" title="Couldn't sign in" description={accountErrorMessage(error)} />}
@@ -175,15 +188,15 @@ function SignInForm({
 /** Sign-up with an invite from the server's admin (#449); lands signed in. */
 function SignUpForm({
   account,
-  state,
+  server,
   onSignIn,
 }: {
   account: AccountModel;
-  state: Extract<AccountState, { status: "signed-out" }>;
+  server: ServerField | undefined;
   onSignIn: () => void;
 }) {
-  const asksOrigin = state.mode === "bearer";
-  const [origin, setOrigin] = useState(state.serverOrigin ?? OFFICIAL_SERVER_ORIGIN);
+  const asksOrigin = server !== undefined;
+  const origin = server?.origin ?? "";
   const [invite, setInvite] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -213,16 +226,16 @@ function SignUpForm({
         <Heading level={3}>Create an account</Heading>
         <Text type="supporting">You need an invite code from the server's admin.</Text>
       </VStack>
-      {asksOrigin ? (
+      {server === undefined ? null : (
         <TextInput
           label="Server"
           placeholder="https://nomad.example.com"
-          value={origin}
-          onChange={setOrigin}
+          value={server.origin}
+          onChange={server.setOrigin}
           onEnter={submit}
           width="100%"
         />
-      ) : null}
+      )}
       <TextInput label="Invite code" value={invite} onChange={setInvite} onEnter={submit} width="100%" />
       <TextInput
         label="Username"

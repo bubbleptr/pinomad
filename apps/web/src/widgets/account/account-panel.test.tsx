@@ -198,6 +198,25 @@ describe("invite sign-up (#449)", () => {
     expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
   });
 
+  it("keeps a typed server address when switching between sign-in and sign-up", async () => {
+    const model = fakeModel({ status: "signed-out", mode: "bearer" });
+    renderPanel(model);
+    const server = screen.getByLabelText("Server");
+    await userEvent.clear(server);
+    await userEvent.type(server, "https://nomad.example.com");
+    await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
+    expect((screen.getByLabelText("Server") as HTMLInputElement).value).toBe("https://nomad.example.com");
+    await userEvent.type(screen.getByLabelText("Invite code"), "code-1");
+    await userEvent.type(screen.getByLabelText("Username"), "bob");
+    await userEvent.type(screen.getByLabelText("Password"), "long password here");
+    await act(async () => {
+      await userEvent.click(screen.getByRole("button", { name: "Create account" }));
+    });
+    expect(model.register).toHaveBeenCalledWith(expect.objectContaining({ serverOrigin: "https://nomad.example.com" }));
+    await userEvent.click(screen.getByRole("button", { name: "Sign in instead" }));
+    expect((screen.getByLabelText("Server") as HTMLInputElement).value).toBe("https://nomad.example.com");
+  });
+
   it("hides invites from accounts that aren't the admin", async () => {
     const plain = fakeModel(signedIn([]));
     renderPanel(plain);
