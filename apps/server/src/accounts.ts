@@ -1,6 +1,7 @@
 // Server accounts (ADR-0022 §2): the server persists users, sessions, join
 // tokens, host bindings, the APNs tokens each account's devices registered
-// (ADR-0036), and sign-up invites (#449) in <dataDir>/server.sqlite, guarded
+// (ADR-0036), sign-up invites (#449), and account devices with the keys hosts
+// admitted them under (ADR-0037) in <dataDir>/server.sqlite, guarded
 // by the same one-process-per-directory lock the host uses. Secrets never
 // reach the DB in the clear — passwords are scrypt hashes, session, join and
 // invite tokens are SHA-256.
@@ -17,7 +18,7 @@ import { normalizeHostName } from "@pinomad/protocol/settings.ts";
 import { isDataDirInUse, lockDataDir } from "./lock.ts";
 
 const DB_FILE = "server.sqlite";
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 // Sessions die 30 days after issue and are never renewed — a stolen token has a
 // hard ceiling, and re-logging-in is the only way forward.
@@ -45,6 +46,44 @@ const MAX_PUSH_TOKENS_PER_USER = 32;
 // Apple does not fix the length, so hex up to 256 characters.
 const APNS_TOKEN_PATTERN = /^(?:[0-9a-f]{2})+$/;
 const APNS_TOKEN_MAX_CHARS = 256;
+
+// Account devices (ADR-0037 §1): the client's own ID for itself is 128 random
+// bits in base64url (22 characters); the bound leaves room for a longer one.
+// Names are display labels, clipped like the host clips device names.
+const DEVICE_ID_PATTERN = /^[A-Za-z0-9_-]{22,64}$/;
+const DEVICE_NAME_MAX_CODEPOINTS = 64;
+
+// A host that admitted a device while its control connection was down sends
+// the report after reconnecting (ADR-0037 §2): the offer's expiry plus this
+// grace is how long the server still takes it, and how long an unreported
+// vouching is kept.
+const ADMISSION_REPORT_GRACE_MS = 24 * 60 * 60 * 1000;
+
+// The expiry a host puts on an account offer is its own claim; the server
+// keeps at most the host's offer lifetime (5 minutes) plus slack, so a host
+// can't hold unreported vouchings, or their report window, open longer.
+const MAX_OFFER_TTL_MS = 6 * 60 * 1000;
+
+/** What a client says about itself at sign-in (ADR-0037 §1); `name` is already clipped. */
+export interface DeviceClaim {
+  readonly id: string;
+  readonly name?: string;
+}
+
+/**
+ * Validates the optional `device` of a login or sign-up body: undefined when
+ * absent, "invalid" when malformed, else the claim with a trimmed, clipped
+ * name (blank means unknown).
+ */
+export function parseDeviceClaim(raw: unknown): DeviceClaim | "invalid" | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return "invalid";
+  const { id, name } = raw as { id?: unknown; name?: unknown };
+  if (typeof id !== "string" || !DEVICE_ID_PATTERN.test(id)) return "invalid";
+  if (name !== undefined && typeof name !== "string") return "invalid";
+  const clipped = [...(name ?? "").trim()].slice(0, DEVICE_NAME_MAX_CODEPOINTS).join("").trim();
+  return clipped === "" ? { id } : { id, name: clipped };
+}
 
 /** The lowercase token when `raw` is a plausible APNs device token, else undefined. */
 export function normalizeApnsToken(raw: string): string | undefined {
@@ -145,12 +184,54 @@ export interface HostRow {
   readonly name: string;
   readonly joinedAt: number;
   readonly lastSeenAt: number;
+  /**
+   * Whether the host declared "device-reports" at its latest register
+   * (ADR-0037 §5): without it, devices it admitted can only be revoked on
+   * the host itself.
+   */
+  readonly deviceReports: boolean;
 }
+
+/**
+ * One account device's standing on one host it joined through the account
+ * (ADR-0037 §6): admitted, a revocation the host hasn't acknowledged yet,
+ * or revoked.
+ */
+export type DeviceHostState = "registered" | "revoking" | "revoked";
+
+/** An account device as GET /api/devices lists it, minus the caller-relative `current`. */
+export interface AccountDeviceRow {
+  readonly id: number;
+  /** Absent when the client never said (older clients, sessions from before ADR-0037). */
+  readonly name?: string;
+  readonly createdAt: number;
+  readonly lastSeenAt: number;
+  readonly kickedAt?: number;
+  readonly hosts: readonly { readonly hostId: string; readonly name: string; readonly state: DeviceHostState }[];
+}
+
+export type KickDeviceResult =
+  /** The hosts that now owe a revocation for this device. */
+  | { readonly status: "ok"; readonly hostIds: readonly string[] }
+  | { readonly status: "refused"; readonly reason: "not_found" | "current_device" | "wrong_password" }
+  | { readonly status: "limited" };
+
+/**
+ * A host's report that an account offer admitted `publicKey` (ADR-0037 §2):
+ * "revoke" when the device was kicked meanwhile and the host must revoke it
+ * at once, "ignored" when the request isn't this host's or is long expired.
+ */
+export type AdmissionReportResult = "recorded" | "revoke" | "ignored";
 
 export interface Accounts {
   /** Server database path — tests write join_tokens rows directly. */
   readonly dbPath: string;
-  login(username: string, password: string, ip: string): Promise<LoginResult>;
+  /**
+   * Signs in and ties the session to an account device (ADR-0037 §1): the
+   * one `device` names, created or refreshed and un-kicked, or without a
+   * claim a new unnamed one.
+   */
+  login(username: string, password: string, ip: string, device?: DeviceClaim): Promise<LoginResult>;
   /**
    * Creates an account from an unspent invite and signs it in (#449). Counts
    * against the same per-address limit as login.
@@ -160,11 +241,16 @@ export interface Accounts {
     readonly username: string;
     readonly password: string;
     readonly ip: string;
+    readonly device?: DeviceClaim;
   }): Promise<RegisterResult>;
-  /** Resolves a session token to its user, or undefined when unknown/expired. */
+  /**
+   * Resolves a session token to its user and account device, or undefined
+   * when unknown/expired. `deviceId` is absent only for sessions written
+   * outside this module.
+   */
   authenticate(
     token: string,
-  ): { readonly userId: number; readonly username: string; readonly admin: boolean } | undefined;
+  ): { readonly userId: number; readonly username: string; readonly admin: boolean; readonly deviceId?: number } | undefined;
   /** Mints a single-use sign-up invite; only its SHA-256 is stored. Callers check admin. */
   createInvite(userId: number): { readonly code: string; readonly expiresAt: number };
   listInvites(): InviteRow[];
@@ -233,8 +319,43 @@ export interface Accounts {
    * alone: a host that belongs to someone else looks exactly like "not found".
    */
   hostFor(userId: number, hostId: string): HostRow | undefined;
-  /** Bumps last_seen_at on each successful register; a no-op for unbound hostIds. */
-  markHostSeen(hostId: string): void;
+  /**
+   * Bumps last_seen_at on each successful register and records whether this
+   * register declared "device-reports"; a no-op for unbound hostIds.
+   */
+  markHostSeen(hostId: string, deviceReports: boolean): void;
+  /** The caller's account devices, most recently signed in first (ADR-0037 §6). */
+  listDevices(userId: number): AccountDeviceRow[];
+  /**
+   * Remembers that the session behind `token` was handed an offer the host
+   * minted for `requestId` (ADR-0037 §2), so the host's later report can be
+   * tied to the session's device. False when the session is gone or the
+   * host isn't the session's account's — the offer must not be handed out.
+   */
+  recordVouching(args: {
+    readonly token: string;
+    readonly hostId: string;
+    readonly requestId: string;
+    readonly expiresAt: number;
+  }): boolean;
+  /** A host's `device-admitted` (ADR-0037 §2). */
+  recordAdmission(hostId: string, requestId: string, publicKey: string): AdmissionReportResult;
+  /** Public keys `hostId` still owes a revocation for (ADR-0037 §3). */
+  pendingRevocations(hostId: string): string[];
+  /** A host's `device-revoked`: the pending revocation is done. */
+  confirmRevocation(hostId: string, publicKey: string): void;
+  /**
+   * Kicks one of the caller's devices after checking the password (ADR-0037
+   * §3): its sessions end, it is marked kicked, and every host that reported
+   * admitting it owes a revocation. The caller's own device is refused.
+   */
+  kickDevice(args: {
+    readonly userId: number;
+    readonly username: string;
+    readonly password: string;
+    readonly deviceId: number;
+    readonly currentDeviceId?: number;
+  }): Promise<KickDeviceResult>;
   /**
    * Writes the bound host's current display name, cleaned by the same
    * `normalizeHostName` the host applies (issue #212); a no-op for unbound
@@ -349,6 +470,73 @@ function migrate(db: DatabaseSync): void {
       PRAGMA user_version = 3;
       COMMIT;
     `);
+  }
+  if (version < 4) migrateTo4(db);
+}
+
+/**
+ * Account devices and remote revocation (ADR-0037). A device outlives its
+ * sessions; a vouching ties one account offer (the server's requestId) to the
+ * device it was handed to and, once the host reports it, the public key it
+ * admitted. Sessions from before this schema each get an unnamed device.
+ */
+function migrateTo4(db: DatabaseSync): void {
+  db.exec("BEGIN");
+  try {
+    db.exec(`
+      -- AUTOINCREMENT: ids appear in kick URLs, and a reused one would let a
+      -- stale list kick a device that signed in later.
+      CREATE TABLE account_devices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        -- The client's own ID; NULL for clients that send none, which never
+        -- match each other (SQLite UNIQUE treats NULLs as distinct).
+        client_id TEXT,
+        name TEXT,
+        created_at INTEGER NOT NULL,
+        last_seen_at INTEGER NOT NULL,
+        kicked_at INTEGER,
+        UNIQUE (user_id, client_id)
+      );
+      ALTER TABLE sessions ADD COLUMN device_id INTEGER REFERENCES account_devices(id) ON DELETE CASCADE;
+      CREATE INDEX sessions_device ON sessions (device_id);
+      ALTER TABLE hosts ADD COLUMN device_reports INTEGER NOT NULL DEFAULT 0;
+      CREATE TABLE vouchings (
+        request_id TEXT PRIMARY KEY,
+        device_id INTEGER NOT NULL REFERENCES account_devices(id) ON DELETE CASCADE,
+        host_id TEXT NOT NULL REFERENCES hosts(host_id) ON DELETE CASCADE,
+        expires_at INTEGER NOT NULL,
+        -- Filled by the host's device-admitted report.
+        public_key TEXT,
+        admitted_at INTEGER,
+        -- Set when the account withdrew this vouching (a kick), reported
+        -- yet or not: a report that arrives later is revoked at once.
+        revoked_at INTEGER
+      );
+      CREATE INDEX vouchings_device ON vouchings (device_id);
+      CREATE INDEX vouchings_host_key ON vouchings (host_id, public_key);
+      CREATE TABLE pending_revocations (
+        host_id TEXT NOT NULL REFERENCES hosts(host_id) ON DELETE CASCADE,
+        public_key TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (host_id, public_key)
+      );
+    `);
+    const sessions = db.prepare("SELECT token_hash AS tokenHash, user_id AS userId, created_at AS createdAt FROM sessions").all() as {
+      tokenHash: string;
+      userId: number;
+      createdAt: number;
+    }[];
+    const insert = db.prepare("INSERT INTO account_devices (user_id, created_at, last_seen_at) VALUES (?, ?, ?)");
+    const link = db.prepare("UPDATE sessions SET device_id = ? WHERE token_hash = ?");
+    for (const session of sessions) {
+      const deviceId = insert.run(session.userId, session.createdAt, session.createdAt).lastInsertRowid;
+      link.run(deviceId, session.tokenHash);
+    }
+    db.exec("PRAGMA user_version = 4; COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
   }
 }
 
@@ -507,17 +695,59 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
   const ipAttempts = new WindowedCounter(limits.counterMaxEntries, now);
   const userFailures = new WindowedCounter(limits.counterMaxEntries, now);
 
-  const issueSession = (userId: number): { readonly token: string; readonly expiresAt: number } => {
+  /**
+   * The account device a sign-in lands on (ADR-0037 §1), inside the caller's
+   * transaction: the claimed one, refreshed and no longer kicked — a password
+   * sign-in is the owner taking it back — or a new unnamed one. Unnamed
+   * devices pile up one per sign-in of an older client, so the ones left with
+   * no live session and nothing reported go first.
+   */
+  const deviceForSignIn = (userId: number, claim: DeviceClaim | undefined): number => {
+    const at = now();
+    if (claim === undefined) {
+      db.prepare(
+        `DELETE FROM account_devices WHERE user_id = ? AND client_id IS NULL
+           AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.device_id = account_devices.id AND s.expires_at > ?)
+           AND NOT EXISTS (SELECT 1 FROM vouchings v WHERE v.device_id = account_devices.id)`,
+      ).run(userId, at);
+      return Number(
+        db.prepare("INSERT INTO account_devices (user_id, created_at, last_seen_at) VALUES (?, ?, ?)").run(userId, at, at)
+          .lastInsertRowid,
+      );
+    }
+    const row = db
+      .prepare(
+        `INSERT INTO account_devices (user_id, client_id, name, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (user_id, client_id) DO UPDATE SET
+           name = COALESCE(excluded.name, name), last_seen_at = excluded.last_seen_at, kicked_at = NULL
+         RETURNING id`,
+      )
+      .get(userId, claim.id, claim.name ?? null, at, at) as { id: number };
+    return row.id;
+  };
+
+  const issueSession = (userId: number, device: DeviceClaim | undefined): { readonly token: string; readonly expiresAt: number } => {
     db.prepare("DELETE FROM sessions WHERE expires_at <= ?").run(now());
+    const deviceId = deviceForSignIn(userId, device);
     const token = randomBytes(32).toString("base64url");
     const expiresAt = now() + SESSION_TTL_MS;
-    db.prepare("INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)").run(
+    db.prepare("INSERT INTO sessions (token_hash, user_id, created_at, expires_at, device_id) VALUES (?, ?, ?, ?, ?)").run(
       sha256Hex(token),
       userId,
       now(),
       expiresAt,
+      deviceId,
     );
     return { token, expiresAt };
+  };
+
+  /**
+   * Offers the server forwarded that no host reported within their expiry
+   * plus grace were never used, or were used on a host that will never say:
+   * nothing to show or revoke (ADR-0037 §2).
+   */
+  const sweepVouchings = (): void => {
+    db.prepare("DELETE FROM vouchings WHERE public_key IS NULL AND expires_at <= ?").run(now() - ADMISSION_REPORT_GRACE_MS);
   };
 
   const currentHash = (userId: number): string | undefined =>
@@ -565,7 +795,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
   return {
     dbPath: join(options.dataDir, DB_FILE),
 
-    async login(username, password, ip) {
+    async login(username, password, ip, device) {
       if (ipAttempts.hit(ip, limits.ipMaxAttempts, limits.ipWindowMs)) return { status: "limited" };
       // Username lockout applies to existing and non-existing names alike —
       // checking existence first would leak which usernames are real.
@@ -595,7 +825,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       db.exec("BEGIN IMMEDIATE");
       let session: { readonly token: string; readonly expiresAt: number } | undefined;
       try {
-        if (currentHash(outcome) === user?.passwordHash) session = issueSession(outcome);
+        if (currentHash(outcome) === user?.passwordHash) session = issueSession(outcome, device);
         db.exec("COMMIT");
       } catch (error) {
         db.exec("ROLLBACK");
@@ -606,7 +836,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       return { status: "ok", ...session, admin: user?.admin === 1 };
     },
 
-    async register({ invite, username, password, ip }) {
+    async register({ invite, username, password, ip, device }) {
       if (ipAttempts.hit(ip, limits.ipMaxAttempts, limits.ipWindowMs)) return { status: "limited" };
       const codeHash = sha256Hex(invite);
       // The invite goes first: only someone holding one learns whether a
@@ -643,7 +873,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
           db.exec("ROLLBACK");
           return { status: "refused", reason: "invalid_invite" };
         }
-        const session = issueSession(userId);
+        const session = issueSession(userId, device);
         db.exec("COMMIT");
         return { status: "ok", ...session };
       } catch (error) {
@@ -695,12 +925,19 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
     authenticate(token) {
       const row = db
         .prepare(
-          `SELECT s.user_id AS userId, u.username AS username, u.admin AS admin, s.expires_at AS expiresAt
+          `SELECT s.user_id AS userId, u.username AS username, u.admin AS admin, s.expires_at AS expiresAt, s.device_id AS deviceId
            FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?`,
         )
-        .get(sha256Hex(token)) as { userId: number; username: string; admin: number; expiresAt: number } | undefined;
+        .get(sha256Hex(token)) as
+        | { userId: number; username: string; admin: number; expiresAt: number; deviceId: number | null }
+        | undefined;
       if (row === undefined || row.expiresAt <= now()) return undefined;
-      return { userId: row.userId, username: row.username, admin: row.admin === 1 };
+      return {
+        userId: row.userId,
+        username: row.username,
+        admin: row.admin === 1,
+        ...(row.deviceId === null ? {} : { deviceId: row.deviceId }),
+      };
     },
 
     logout(token) {
@@ -750,8 +987,10 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
         const hostIds = (db.prepare("SELECT host_id AS hostId FROM hosts WHERE user_id = ?").all(userId) as { hostId: string }[]).map(
           (row) => row.hostId,
         );
-        // ON DELETE CASCADE takes sessions, join tokens, hosts and push
-        // registrations; invites it used keep their row with used_by NULL.
+        // ON DELETE CASCADE takes sessions, join tokens, hosts, push
+        // registrations, account devices with their vouchings, and the
+        // hosts' pending revocations; invites it used keep their row with
+        // used_by NULL.
         const deleted = db.prepare("DELETE FROM users WHERE id = ? AND password_hash = ?").run(userId, checked.verifiedHash);
         if (Number(deleted.changes) !== 1) {
           db.exec("ROLLBACK");
@@ -876,6 +1115,15 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
         // A join that reports no name at all stays "Unknown host"; a
         // reported one goes through the shared cleaning like every write.
         const hostName = name === undefined ? "Unknown host" : normalizeHostName(name);
+        // A host moving to another account takes nothing of the old one's
+        // along: which of its devices came in through which account device,
+        // and what it still owes, belonged to that account (ADR-0037).
+        const previousOwner = (db.prepare("SELECT user_id AS userId FROM hosts WHERE host_id = ?").get(hostId) as { userId: number } | undefined)
+          ?.userId;
+        if (previousOwner !== undefined && previousOwner !== row!.userId) {
+          db.prepare("DELETE FROM vouchings WHERE host_id = ?").run(hostId);
+          db.prepare("DELETE FROM pending_revocations WHERE host_id = ?").run(hostId);
+        }
         // Re-joining an already-bound hostId rebinds it (a new account gets it);
         // the upsert is what makes a lost join response safe to retry.
         db.prepare(
@@ -900,31 +1148,193 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
     },
 
     leaveHost(hostId) {
+      // Vouchings and pending revocations go with the row (ON DELETE CASCADE).
       return Number(db.prepare("DELETE FROM hosts WHERE host_id = ?").run(hostId).changes) > 0;
     },
 
     listHosts(userId) {
-      return db
-        .prepare(
-          `SELECT host_id AS hostId, user_id AS userId, noise_public_key AS noisePublicKey,
-                  name, joined_at AS joinedAt, last_seen_at AS lastSeenAt
-           FROM hosts WHERE user_id = ? ORDER BY joined_at`,
-        )
-        .all(userId) as unknown as HostRow[];
+      return (
+        db
+          .prepare(
+            `SELECT host_id AS hostId, user_id AS userId, noise_public_key AS noisePublicKey,
+                    name, joined_at AS joinedAt, last_seen_at AS lastSeenAt, device_reports AS deviceReports
+             FROM hosts WHERE user_id = ? ORDER BY joined_at`,
+          )
+          .all(userId) as unknown as (Omit<HostRow, "deviceReports"> & { deviceReports: number })[]
+      ).map((row) => ({ ...row, deviceReports: row.deviceReports === 1 }));
     },
 
     hostFor(userId, hostId) {
-      return db
+      const row = db
         .prepare(
           `SELECT host_id AS hostId, user_id AS userId, noise_public_key AS noisePublicKey,
-                  name, joined_at AS joinedAt, last_seen_at AS lastSeenAt
+                  name, joined_at AS joinedAt, last_seen_at AS lastSeenAt, device_reports AS deviceReports
            FROM hosts WHERE user_id = ? AND host_id = ?`,
         )
-        .get(userId, hostId) as HostRow | undefined;
+        .get(userId, hostId) as (Omit<HostRow, "deviceReports"> & { deviceReports: number }) | undefined;
+      return row === undefined ? undefined : { ...row, deviceReports: row.deviceReports === 1 };
     },
 
-    markHostSeen(hostId) {
-      db.prepare("UPDATE hosts SET last_seen_at = ? WHERE host_id = ?").run(now(), hostId);
+    markHostSeen(hostId, deviceReports) {
+      db.prepare("UPDATE hosts SET last_seen_at = ?, device_reports = ? WHERE host_id = ?").run(now(), deviceReports ? 1 : 0, hostId);
+    },
+
+    listDevices(userId) {
+      const devices = db
+        .prepare(
+          `SELECT id, name, created_at AS createdAt, last_seen_at AS lastSeenAt, kicked_at AS kickedAt
+           FROM account_devices WHERE user_id = ? ORDER BY last_seen_at DESC, id DESC`,
+        )
+        .all(userId) as unknown as { id: number; name: string | null; createdAt: number; lastSeenAt: number; kickedAt: number | null }[];
+      // One row per reported key; a device that re-joined a host under a new
+      // key has several, and the host shows its best standing.
+      const keys = db
+        .prepare(
+          `SELECT v.device_id AS deviceId, v.host_id AS hostId, h.name AS hostName,
+                  v.revoked_at IS NOT NULL AS revoked,
+                  EXISTS (SELECT 1 FROM pending_revocations p WHERE p.host_id = v.host_id AND p.public_key = v.public_key) AS pending
+           FROM vouchings v JOIN hosts h ON h.host_id = v.host_id JOIN account_devices d ON d.id = v.device_id
+           WHERE d.user_id = ? AND v.public_key IS NOT NULL
+           ORDER BY h.joined_at, v.host_id`,
+        )
+        .all(userId) as unknown as { deviceId: number; hostId: string; hostName: string; revoked: number; pending: number }[];
+      const rank: Record<DeviceHostState, number> = { registered: 2, revoking: 1, revoked: 0 };
+      const hosts = new Map<number, Map<string, { hostId: string; name: string; state: DeviceHostState }>>();
+      for (const key of keys) {
+        const state: DeviceHostState = key.pending === 1 ? "revoking" : key.revoked === 1 ? "revoked" : "registered";
+        const perDevice = hosts.get(key.deviceId) ?? new Map<string, { hostId: string; name: string; state: DeviceHostState }>();
+        hosts.set(key.deviceId, perDevice);
+        const seen = perDevice.get(key.hostId);
+        if (seen === undefined || rank[state] > rank[seen.state]) perDevice.set(key.hostId, { hostId: key.hostId, name: key.hostName, state });
+      }
+      return devices.map((device) => ({
+        id: device.id,
+        ...(device.name === null ? {} : { name: device.name }),
+        createdAt: device.createdAt,
+        lastSeenAt: device.lastSeenAt,
+        ...(device.kickedAt === null ? {} : { kickedAt: device.kickedAt }),
+        hosts: [...(hosts.get(device.id)?.values() ?? [])],
+      }));
+    },
+
+    recordVouching({ token, hostId, requestId, expiresAt }) {
+      sweepVouchings();
+      const session = db
+        .prepare(
+          `SELECT s.device_id AS deviceId FROM sessions s JOIN hosts h ON h.user_id = s.user_id
+           WHERE s.token_hash = ? AND s.expires_at > ? AND h.host_id = ?`,
+        )
+        .get(sha256Hex(token), now(), hostId) as { deviceId: number | null } | undefined;
+      if (session === undefined) return false;
+      if (session.deviceId !== null) {
+        db.prepare("INSERT OR IGNORE INTO vouchings (request_id, device_id, host_id, expires_at) VALUES (?, ?, ?, ?)").run(
+          requestId,
+          session.deviceId,
+          hostId,
+          Math.min(expiresAt, now() + MAX_OFFER_TTL_MS),
+        );
+      }
+      return true;
+    },
+
+    recordAdmission(hostId, requestId, publicKey) {
+      db.exec("BEGIN");
+      try {
+        const vouching = db
+          .prepare(
+            `SELECT expires_at AS expiresAt, public_key AS publicKey, revoked_at AS revokedAt
+             FROM vouchings WHERE request_id = ? AND host_id = ?`,
+          )
+          .get(requestId, hostId) as { expiresAt: number; publicKey: string | null; revokedAt: number | null } | undefined;
+        // A report names one offer, once: another host's requestId, a second
+        // report for the same offer, or one long past its offer is not a fact
+        // this server vouched for.
+        if (vouching === undefined || vouching.publicKey !== null || vouching.expiresAt + ADMISSION_REPORT_GRACE_MS <= now()) {
+          db.exec("ROLLBACK");
+          return "ignored";
+        }
+        db.prepare("UPDATE vouchings SET public_key = ?, admitted_at = ? WHERE request_id = ?").run(publicKey, now(), requestId);
+        // Kicked while it held the secret: the host admitted a device on an
+        // offer the account withdrew, so the revocation follows at once. A
+        // sign-in since then doesn't matter: it only vouches for offers
+        // handed out after it.
+        if (vouching.revokedAt !== null) {
+          db.prepare("INSERT OR IGNORE INTO pending_revocations (host_id, public_key, created_at) VALUES (?, ?, ?)").run(
+            hostId,
+            publicKey,
+            now(),
+          );
+        }
+        db.exec("COMMIT");
+        return vouching.revokedAt === null ? "recorded" : "revoke";
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+
+    pendingRevocations(hostId) {
+      return (
+        db.prepare("SELECT public_key AS publicKey FROM pending_revocations WHERE host_id = ? ORDER BY created_at").all(hostId) as {
+          publicKey: string;
+        }[]
+      ).map((row) => row.publicKey);
+    },
+
+    confirmRevocation(hostId, publicKey) {
+      // The vouching was marked withdrawn when the revocation was asked for;
+      // the ack only ends the asking. An ack for anything else changes nothing.
+      db.prepare("DELETE FROM pending_revocations WHERE host_id = ? AND public_key = ?").run(hostId, publicKey);
+    },
+
+    async kickDevice({ userId, username, password, deviceId, currentDeviceId }) {
+      const owned = (): boolean =>
+        db.prepare("SELECT 1 AS x FROM account_devices WHERE id = ? AND user_id = ?").get(deviceId, userId) !== undefined;
+      // Cheap refusals first: neither costs a scrypt run or a lockout strike.
+      if (!owned()) return { status: "refused", reason: "not_found" };
+      if (deviceId === currentDeviceId) return { status: "refused", reason: "current_device" };
+      const checked = await checkPassword(userId, username, password);
+      if (checked === "limited") return { status: "limited" };
+      if (checked === "wrong_password") return { status: "refused", reason: "wrong_password" };
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        // Same compare-and-swap as a password change: a reset that committed
+        // while scrypt ran means the password typed here no longer holds.
+        if (currentHash(userId) !== checked.verifiedHash) {
+          db.exec("ROLLBACK");
+          return { status: "refused", reason: "wrong_password" };
+        }
+        if (!owned()) {
+          db.exec("ROLLBACK");
+          return { status: "refused", reason: "not_found" };
+        }
+        const at = now();
+        sweepVouchings();
+        db.prepare("DELETE FROM sessions WHERE device_id = ?").run(deviceId);
+        db.prepare("UPDATE account_devices SET kicked_at = ? WHERE id = ?").run(at, deviceId);
+        // Every key a host reported that the account still vouched for is
+        // asked back; already-withdrawn ones are left alone, so a host that
+        // re-paired a device by QR after an earlier kick keeps it.
+        const hostIds = (
+          db
+            .prepare("SELECT DISTINCT host_id AS hostId FROM vouchings WHERE device_id = ? AND public_key IS NOT NULL AND revoked_at IS NULL")
+            .all(deviceId) as { hostId: string }[]
+        ).map((row) => row.hostId);
+        db.prepare(
+          `INSERT OR IGNORE INTO pending_revocations (host_id, public_key, created_at)
+           SELECT host_id, public_key, ? FROM vouchings
+           WHERE device_id = ? AND public_key IS NOT NULL AND revoked_at IS NULL`,
+        ).run(at, deviceId);
+        // Then withdraw every offer it holds, reported or not: one a host
+        // reports later is revoked on arrival, whatever the device does
+        // meanwhile (ADR-0037 §2).
+        db.prepare("UPDATE vouchings SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL").run(at, deviceId);
+        db.exec("COMMIT");
+        return { status: "ok", hostIds };
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
     },
 
     renameHost(hostId, name) {

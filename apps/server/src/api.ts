@@ -1,7 +1,8 @@
 // The server's HTTP account API (ADR-0022 §2), mounted on the same port as the
 // splice sockets and the static web client: POST /api/login, POST /api/register,
 // POST /api/logout, POST /api/sessions/revoke-all, GET /api/me, POST /api/password (#450),
-// POST /api/me/delete (#451),
+// POST /api/me/delete (#451), GET /api/devices and POST /api/devices/:id/kick
+// (ADR-0037),
 // POST /api/join-tokens, POST /api/push-tokens and POST /api/push-tokens/remove
 // (ADR-0036), and for the admin GET/POST /api/invites and
 // POST /api/invites/revoke (#449).
@@ -17,7 +18,13 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { relayWsBase } from "@pinomad/host/src/relay-link.ts";
-import { MAX_PASSWORD_CODEPOINTS, MAX_USERNAME_CODEPOINTS, normalizeApnsToken, type Accounts } from "./accounts.ts";
+import {
+  MAX_PASSWORD_CODEPOINTS,
+  MAX_USERNAME_CODEPOINTS,
+  normalizeApnsToken,
+  parseDeviceClaim,
+  type Accounts,
+} from "./accounts.ts";
 
 /** Whether a bound host can serve a pairing ask right now (ADR-0022 §4). */
 export type PairingStatus = "available" | "offline" | "host_too_old" | "key_mismatch";
@@ -30,6 +37,8 @@ export type PairingStatus = "available" | "offline" | "host_too_old" | "key_mism
 export type PairingRequestResult =
   | {
       readonly status: "ok";
+      /** The server's id for this ask; the host's device-admitted report names it (ADR-0037 §2). */
+      readonly requestId: string;
       readonly secret: string;
       readonly expiresAt: number;
       /** Forwarded from the host's answer; never stored server-side. */
@@ -63,6 +72,12 @@ export interface ApiContext {
   readonly disconnectHost: (hostId: string) => void;
   /** Drops a deleted account's relay limit state: users.id is reusable, so a new account must not inherit it (#453). */
   readonly forgetAccount: (userId: number) => void;
+  /**
+   * Sends a host's pending revocations over its control connection when it is
+   * online and declared "device-reports" (ADR-0037 §3); otherwise they wait
+   * for its next register.
+   */
+  readonly sendRevocations: (hostId: string) => void;
 }
 
 const SESSION_COOKIE = "__Host-pinomad-session";
@@ -212,17 +227,22 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       return;
     }
     const { username, password } = value as { username: string; password: string };
+    // Optional and additive (ADR-0037 §1): older clients send none, and an
+    // older server ignores it. A malformed one is a client bug, refused
+    // rather than silently turned into an unnamed device.
+    const device = parseDeviceClaim((value as { device?: unknown }).device);
     // Same bounds the account layer enforces at creation (accounts.ts) — a
     // field outside them can never match a stored credential.
     if (
       [...username].length === 0 ||
       [...username].length > MAX_USERNAME_CODEPOINTS ||
-      [...password].length > MAX_PASSWORD_CODEPOINTS
+      [...password].length > MAX_PASSWORD_CODEPOINTS ||
+      device === "invalid"
     ) {
       deny(400, "invalid_request");
       return;
     }
-    const result = await accounts.login(username, password, clientIp(request, ctx.trustProxy));
+    const result = await accounts.login(username, password, clientIp(request, ctx.trustProxy), device);
     if (result.status === "limited") {
       deny(429, "rate_limited");
       return;
@@ -258,8 +278,14 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
       return;
     }
-    const value = body.value as { invite?: unknown; username?: unknown; password?: unknown } | null;
-    if (typeof value?.invite !== "string" || typeof value.username !== "string" || typeof value.password !== "string") {
+    const value = body.value as { invite?: unknown; username?: unknown; password?: unknown; device?: unknown } | null;
+    const device = parseDeviceClaim(value?.device);
+    if (
+      typeof value?.invite !== "string" ||
+      typeof value.username !== "string" ||
+      typeof value.password !== "string" ||
+      device === "invalid"
+    ) {
       deny(400, "invalid_request");
       return;
     }
@@ -269,6 +295,7 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       username,
       password: value.password,
       ip: clientIp(request, ctx.trustProxy),
+      ...(device === undefined ? {} : { device }),
     });
     if (result.status === "limited") {
       deny(429, "rate_limited");
@@ -361,6 +388,9 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
             online: pairing !== "offline",
             lastSeenAt: row.lastSeenAt,
             pairing,
+            // As of its latest register: false means devices it admitted
+            // can only be revoked on the host itself (ADR-0037 §5).
+            deviceReports: row.deviceReports,
           };
         }),
       );
@@ -392,6 +422,16 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       deny(404, "not_found");
       return;
     }
+    // Remember which account device this offer goes to before it leaves, so
+    // the host's report can only ever find the row (ADR-0037 §2). A session
+    // that ended while the host answered — kicked, signed out — gets nothing.
+    if (
+      result.status === "ok" &&
+      !accounts.recordVouching({ token: token!, hostId: row.hostId, requestId: result.requestId, expiresAt: result.expiresAt })
+    ) {
+      deny(401, "unauthenticated");
+      return;
+    }
     switch (result.status) {
       case "ok":
         send(200, {
@@ -421,6 +461,66 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
         return;
       // "cancelled": the HTTP client is gone; nothing to answer.
     }
+    return;
+  }
+
+  const deviceKick = /^\/api\/devices\/([1-9][0-9]{0,14})\/kick$/.exec(pathname);
+  if (pathname === "/api/devices" || deviceKick !== null) {
+    const expected = pathname === "/api/devices" ? "GET" : "POST";
+    if (method !== expected) {
+      deny(405, "method_not_allowed", { allow: expected });
+      return;
+    }
+    const token = sessionToken(request);
+    const session = token === undefined ? undefined : accounts.authenticate(token);
+    if (session === undefined) {
+      deny(401, "unauthenticated");
+      return;
+    }
+    if (deviceKick === null) {
+      send(
+        200,
+        accounts.listDevices(session.userId).map((device) => ({ ...device, current: device.id === session.deviceId })),
+      );
+      return;
+    }
+    const body = await readJson(request);
+    if (!body.ok) {
+      deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
+      return;
+    }
+    // The password again, as for deleting the account: a session left on a
+    // lost phone must not be able to kick the owner's other devices.
+    const value = body.value as { password?: unknown } | null;
+    if (typeof value?.password !== "string" || [...value.password].length > MAX_PASSWORD_CODEPOINTS) {
+      deny(400, "invalid_request");
+      return;
+    }
+    // Re-read: the session may have been kicked or signed out while the body
+    // trickled in, and its device is what "current" means.
+    const current = accounts.authenticate(token!);
+    if (current === undefined) {
+      deny(401, "unauthenticated");
+      return;
+    }
+    const result = await accounts.kickDevice({
+      userId: current.userId,
+      username: current.username,
+      password: value.password,
+      deviceId: Number(deviceKick[1]),
+      ...(current.deviceId === undefined ? {} : { currentDeviceId: current.deviceId }),
+    });
+    if (result.status === "limited") {
+      deny(429, "rate_limited");
+      return;
+    }
+    if (result.status === "refused") {
+      // 403 for the password like /api/password: 401 would read as signed out.
+      deny(result.reason === "not_found" ? 404 : result.reason === "current_device" ? 409 : 403, result.reason);
+      return;
+    }
+    for (const hostId of result.hostIds) ctx.sendRevocations(hostId);
+    send(204);
     return;
   }
 

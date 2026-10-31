@@ -206,7 +206,7 @@ pinomad leave [--data-dir DIR]
 - 宿主设置 `acceptAccountDevices`（默认开，协议 5.8，客户端用 `FEATURE_SINCE` 判断宿主是否认识它）控制是否接受服务端担保的设备；关掉后还没用掉的账号邀请立即作废。邀请绑定到 `server.json` 里每次写入生成的随机 `binding` 而不只是地址：`pinomad leave`、换服务端、或重新 join（即使同一地址）后，旧绑定签发的邀请在登记时都会被拒——准入时重新核对当前 `server.json`，不用等重启。
 - 账号来源的设备登记成功时不再向在线设备广播 notice（M8 修订 ADR-0022 §6）：新设备只在 Devices 列表里实时出现，并标出来源「via account」。
 
-HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（`{username, password}`）、`GET /api/me`、`POST /api/logout`、`POST /api/sessions/revoke-all`、`POST /api/join-tokens`（返回 `{token, expiresAt, command}`）、`GET /api/hosts`、`POST /api/hosts/:hostId/pairing`。会话令牌 30 天固定过期；登录有按 IP 限速、按用户名失败锁定和 scrypt 并发上限，触发回 429。
+HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（`{username, password, device?}`）、`GET /api/me`、`POST /api/logout`、`POST /api/sessions/revoke-all`、`POST /api/join-tokens`（返回 `{token, expiresAt, command}`）、`GET /api/hosts`、`POST /api/hosts/:hostId/pairing`、`GET /api/devices`、`POST /api/devices/:id/kick`。会话令牌 30 天固定过期；登录有按 IP 限速、按用户名失败锁定和 scrypt 并发上限，触发回 429。
 
 #### 服务端担保配对（ADR-0022 §4）
 
@@ -215,6 +215,16 @@ HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（
 `POST /api/hosts/:hostId/pairing` 让服务端经宿主的控制连接要一份一次性邀请。宿主必须在 register 里声明 `features: ["pairing"]` 才会被问——旧宿主的解码器遇到不认识的帧会断开，所以服务端只对声明过的控制连接发 `pairing-request`。成功返回 `{url, hostKey, secret, expiresAt, endpointSet?}`：客户端拼 `pair=<hostKey>.<secret>&url=<url>`，照 ADR-0008 的 IK 流程经 `/c/<hostId>` 连上宿主。`endpointSet` 是宿主当前公布的可远程访问的中继 / 直连候选（回环地址不会进入集合），服务端只转发、不持久化；旧宿主不返回它，旧客户端也会忽略它，账号配对继续按 `url` 走单中继。错误：宿主不属于本账号或不存在 → 404；离线 → 409 `host_offline`；太旧或公钥不一致 → 409 `host_too_old` / `key_mismatch`；宿主拒绝 → 409，错误码是宿主给的原因（`disabled` 是开关关闭、`not_joined` 是没加入账号）；10 秒没应答 → 504 `host_timeout`；在途请求超限（每台宿主 4 个、每个会话 2 个）→ 429 `rate_limited`。提前拒绝只是给客户端看的错误，真正是否准入仍由宿主的 `admitDevice` 在握手时判定——被吊销的公钥照走邀请但登记时被拒。
 
 凭据形态按请求的 `Origin` 分两类：同源（Origin 等于 `--public-origin`）登录只种 `Secure`+`HttpOnly`+`SameSite=Strict` 的 host-only cookie，响应体不含令牌，页面 JS 拿不到它——代价是靠 cookie 的改动类请求必须带同源 Origin；桌面端（`Origin: app://pinomad`）和没有 Origin 的客户端（移动端、CLI）只在响应体拿到 `token`，不种 cookie，之后用 `Authorization: Bearer`。带 Bearer 的请求不做 Origin 校验（没有环境凭据就没有 CSRF）。CORS 只放行 `app://pinomad`（预检回 `Access-Control-Allow-Origin`、`Allow-Methods: GET, POST`、`Allow-Headers: authorization, content-type`，不带 credentials），其它源不加 CORS 头。旧版服务端的纯 `--allow-host` 模式下 `/api/*` 回 JSON 404 `{error:"accounts_disabled"}`，客户端据此判断服务端没开账号。
+
+#### 账号设备和踢掉设备（ADR-0037）
+
+服务端记下每台登录过账号的客户端（账号设备）：客户端登录时可以带 `device: {id, name}`（`id` 是客户端本机生成的随机值，22–64 位 base64url；`name` 是显示名，超过 64 个字符截断），同一个 `id` 再登录还是同一台设备，改密码、退出登录、会话过期都不会让它消失。不带 `device` 的旧客户端每次登录算一台名字未知的新设备，已经没有会话、也没经账号进过宿主的会在下次这样登录时清掉；升级到这个版本时已有的每个会话各补一台名字未知的设备。
+
+服务端替某台设备向宿主要邀请时记下这份邀请发给了哪台设备；宿主用它登记成功后，经控制连接报告登记进去的公钥。`GET /api/devices` 列出账号设备：`[{id, name?, createdAt, lastSeenAt, current, kickedAt?, hosts: [{hostId, name, state}]}]`，`state` 是 `registered`（已登记）、`revoking`（等宿主吊销）或 `revoked`（已吊销）。
+
+`POST /api/devices/:id/kick`（`{password}`）踢掉一台设备：要重新输入密码（输错计入和登录共用的锁定，回 403 `wrong_password`，锁定后 429），不能踢当前这台（409 `current_device`，那是退出登录），别的账号的或不存在的 → 404。同一个事务里删掉这台设备的所有会话、标记已踢掉，并请每台报告过它的宿主吊销：在线的宿主立刻收到，离线的下次连上时收到，宿主确认吊销后才算完。宿主仍然是最终裁决的一方，之后在宿主上重新扫码配对照样可以；被踢的设备重新用密码登录会恢复正常，但它在宿主上的旧公钥已经吊销，经账号担保回不去。
+
+这些都要宿主和服务端都是这个版本以上（双方在控制连接上声明 `device-reports`）。旧宿主不报告登记，经它加入的设备只能在宿主的 Devices 里吊销；`GET /api/hosts` 的 `deviceReports` 字段说明宿主最近一次连上时支不支持。本功能之前就配对好的设备，服务端也没有它们的公钥。删除账号时这些记录一起删掉，宿主 `leave` 或加入别的账号时删掉这台宿主的记录。
 
 ### 中继限额
 

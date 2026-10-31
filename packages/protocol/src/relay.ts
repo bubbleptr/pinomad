@@ -49,6 +49,12 @@ export type RelayToHost =
    * "pairing" feature — older hosts' decoders throw on unknown frames.
    */
   | { readonly t: "pairing-request"; readonly requestId: string }
+  /**
+   * The account kicked a device (ADR-0037 §3): revoke this public key and
+   * answer `device-revoked`. Sent only when both sides declared
+   * "device-reports".
+   */
+  | { readonly t: "revoke-device"; readonly publicKey: string }
   | PushResultFrame
   // One-shot account operations (ADR-0022 §3): the server answers an op
   // connection's register with one of these, then closes it.
@@ -62,11 +68,22 @@ export type RelayToHost =
  * server to send pushes (ADR-0025 §3 — only for environments the
  * `registered` frame declared), and report name changes (issue #212 — only
  * when that frame declared the "name" feature, since old decoders close on
- * unknown frames).
+ * unknown frames), and report account-vouched devices (ADR-0037 — only when
+ * both sides declared "device-reports").
  * `signature` stays mandatory — a pre-accounts server verifies only it and
  * ignores everything else (roadmap M3: new host + old server must still work).
  */
-export type HostToRelay = RegisterFrame | PairingAnswerFrame | PushFrame | NameFrame;
+export type HostToRelay = RegisterFrame | PairingAnswerFrame | PushFrame | NameFrame | DeviceReportFrame;
+
+/**
+ * What the host tells the server about devices the account vouched in
+ * (ADR-0037 §2-3), only when both sides declared "device-reports": the public
+ * key an account offer admitted, keyed by its `pairing-request`'s requestId,
+ * and the ack for a `revoke-device`.
+ */
+export type DeviceReportFrame =
+  | { readonly t: "device-admitted"; readonly requestId: string; readonly publicKey: string }
+  | { readonly t: "device-revoked"; readonly publicKey: string };
 
 /** The host's current display name, sent on connections that declared "name" (issue #212). */
 export interface NameFrame {
@@ -169,6 +186,10 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isBoundedString = (value: unknown, max = 64): value is string =>
   isString(value) && value.length > 0 && value.length <= max;
 
+// Device public keys are base64url X25519 keys (43 characters); the bound
+// leaves room without letting a peer send anything else.
+const isDeviceKey = (value: unknown): value is string => isBoundedString(value) && /^[A-Za-z0-9_-]+$/.test(value);
+
 function decodeJson(text: string): unknown {
   try {
     return JSON.parse(text);
@@ -190,6 +211,7 @@ export function decodeRelayToHost(text: string): RelayToHost {
     result?: unknown;
     unregisteredAt?: unknown;
     retryAfterMs?: unknown;
+    publicKey?: unknown;
   };
   switch (value?.t) {
     case "challenge":
@@ -203,6 +225,9 @@ export function decodeRelayToHost(text: string): RelayToHost {
     case "pairing-request":
       if (!isBoundedString(value.requestId)) throw new Error("malformed pairing-request");
       return { t: "pairing-request", requestId: value.requestId };
+    case "revoke-device":
+      if (!isDeviceKey(value.publicKey)) throw new Error("malformed revoke-device");
+      return { t: "revoke-device", publicKey: value.publicKey };
     case "push-result":
       return decodePushResult(value);
     case "joined":
@@ -317,6 +342,7 @@ export function decodeHostToRelay(text: string): HostToRelay {
     token?: unknown;
     environment?: unknown;
     notification?: unknown;
+    publicKey?: unknown;
   };
   switch (value?.t) {
     case "register":
@@ -351,6 +377,12 @@ export function decodeHostToRelay(text: string): HostToRelay {
       // server normalizes again anyway, so bigger means a broken peer.
       if (!isBoundedString(value.name, HOST_NAME_MAX_UNITS)) throw new Error("malformed name");
       return { t: "name", name: value.name };
+    case "device-admitted":
+      if (!isBoundedString(value.requestId) || !isDeviceKey(value.publicKey)) throw new Error("malformed device-admitted");
+      return { t: "device-admitted", requestId: value.requestId, publicKey: value.publicKey };
+    case "device-revoked":
+      if (!isDeviceKey(value.publicKey)) throw new Error("malformed device-revoked");
+      return { t: "device-revoked", publicKey: value.publicKey };
     default:
       throw new Error("unknown host frame");
     }

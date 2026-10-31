@@ -19,7 +19,7 @@ import {
 import { openAccounts, resetPassword, type Accounts, type LoginLimits } from "../src/accounts.ts";
 import { startRelay, type Relay, type RelayOptions } from "../src/relay.ts";
 import { lockDataDir } from "../src/lock.ts";
-import { removeTempDir, tempDir } from "./support.ts";
+import { downgradeToSchema3, removeTempDir, tempDir } from "./support.ts";
 
 const ORIGIN = "https://relay.example.com";
 const GOOD_PASSWORD = "correct horse battery";
@@ -861,6 +861,7 @@ describe("push token registration (ADR-0036)", () => {
   it("adds the push_tokens table to a schema-1 database", async () => {
     const first = await startServer();
     await stop(first);
+    downgradeToSchema3(first.dataDir);
     const db = new DatabaseSync(join(first.dataDir, "server.sqlite"));
     db.exec("DROP TABLE invites; ALTER TABLE users DROP COLUMN admin; DROP TABLE push_tokens; PRAGMA user_version = 1;");
     db.close();
@@ -1066,6 +1067,7 @@ describe("invite sign-up (#449)", () => {
   it("marks the first user admin when upgrading a schema-2 database", async () => {
     const first = await startServer();
     await stop(first);
+    downgradeToSchema3(first.dataDir);
     const db = new DatabaseSync(join(first.dataDir, "server.sqlite"));
     db.exec("DROP TABLE invites; ALTER TABLE users DROP COLUMN admin; PRAGMA user_version = 2;");
     db.close();

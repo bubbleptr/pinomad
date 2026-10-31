@@ -40,8 +40,12 @@ export const RevocationsDoc = defineDoc<{ revoked: string[] }>({
 export type DeviceAdmission =
   /** The public key is already paired; a `pair` payload on it spends no offer. */
   | { readonly outcome: "registered" }
-  /** A new device landed; `entry` is the committed record. */
-  | { readonly outcome: "admitted"; readonly entry: DeviceEntry }
+  /**
+   * A new device landed; `entry` is the committed record. `requestId` is the
+   * server's ask behind an account offer, which the host reports back
+   * (ADR-0037 §2); absent for other offers.
+   */
+  | { readonly outcome: "admitted"; readonly entry: DeviceEntry; readonly requestId?: string }
   | { readonly outcome: "refused" };
 
 /**
@@ -99,7 +103,7 @@ export async function admitDevice(
     if (revocations.revoked.includes(input.publicKey)) {
       revocations.revoked = revocations.revoked.filter((key) => key !== input.publicKey);
     }
-    return { outcome: "admitted", entry };
+    return { outcome: "admitted", entry, ...(offer.requestId === undefined ? {} : { requestId: offer.requestId }) };
   }, context);
 }
 
@@ -172,6 +176,8 @@ export interface PairingOffer {
   readonly source: DeviceSource;
   /** The server binding an account offer was minted under; absent otherwise. */
   readonly binding?: string;
+  /** The server's `pairing-request` id an account offer answered (ADR-0037 §2). */
+  readonly requestId?: string;
 }
 
 /**
@@ -183,8 +189,12 @@ export interface PairingOffer {
 export interface PairingOffers {
   /** A fresh 128-bit offer, single-use; `source` is how it reaches the device. */
   create(source: Exclude<DeviceSource, "account">): { secret: string; expiresAt: number };
-  /** A fresh offer bound to `binding` — the joined server hands it to a device it vouches for. */
-  createAccount(binding: string): { secret: string; expiresAt: number };
+  /**
+   * A fresh offer bound to `binding` — the joined server hands it to a device
+   * it vouches for. `requestId` is the server's ask, reported back once the
+   * offer admits a device.
+   */
+  createAccount(binding: string, requestId?: string): { secret: string; expiresAt: number };
   /** Spends `secret` once; expired, used, or revoked secrets yield undefined. */
   consume(secret: string): PairingOffer | undefined;
   /**
@@ -195,7 +205,7 @@ export interface PairingOffers {
 }
 
 export function pairingOffers(ttlMs = 5 * 60 * 1000): PairingOffers {
-  const live = new Map<string, { expiresAt: number; source: DeviceSource; binding?: string }>();
+  const live = new Map<string, { expiresAt: number } & PairingOffer>();
   const prune = (): void => {
     const now = Date.now();
     for (const [secret, offer] of live) if (offer.expiresAt <= now) live.delete(secret);
@@ -209,7 +219,7 @@ export function pairingOffers(ttlMs = 5 * 60 * 1000): PairingOffers {
   };
   return {
     create: (source) => mint({ source }),
-    createAccount: (binding) => mint({ source: "account", binding }),
+    createAccount: (binding, requestId) => mint({ source: "account", binding, ...(requestId === undefined ? {} : { requestId }) }),
     consume(secret) {
       prune();
       const candidate = Buffer.from(secret);

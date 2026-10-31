@@ -267,6 +267,116 @@ describe("server-vouched pairing end to end", () => {
     expect(ask.json).toEqual({ error: "rebinding" });
   });
 
+  it("kicks a vouched device from the account: the host revokes it and the server sees it revoked (ADR-0037)", async () => {
+    const server = await startServer();
+    const { host, hostId } = await joinedHost(server);
+    const tokenClient = await connectTo(defer, host);
+    const signIn = async (id: string, name: string): Promise<string> =>
+      ((await api(server.relay, {
+        method: "POST",
+        path: "/api/login",
+        body: { username: "admin", password: GOOD_PASSWORD, device: { id, name } },
+      })).json as { token: string }).token;
+    const phone = await signIn("phone-device-id-000001", "Phone");
+    const laptop = await signIn("laptop-device-id-00002", "Laptop");
+    type Listed = { id: number; name: string; kickedAt?: number; hosts: { hostId: string; state: string }[] };
+    const listed = async (): Promise<Listed> =>
+      ((await api(server.relay, { path: "/api/devices", headers: bearer(laptop) })).json as Listed[]).find(
+        (device) => device.name === "Phone",
+      )!;
+    const until = async (predicate: (device: Listed) => boolean): Promise<Listed> => {
+      const deadline = Date.now() + 10_000;
+      for (;;) {
+        const device = await listed();
+        if (predicate(device)) return device;
+        if (Date.now() > deadline) throw new Error(`device never matched: ${JSON.stringify(device)}`);
+        await new Promise((resolve) => setTimeout(resolve, 15));
+      }
+    };
+
+    const offer = (await api(server.relay, { method: "POST", path: `/api/hosts/${hostId}/pairing`, headers: bearer(phone) }))
+      .json as PairingResult;
+    const device = generateKeyPair();
+    const remote = await connectDevice(offer.url, offer.hostKey, device, { secret: offer.secret, name: "phone" });
+    await waitForView(tokenClient.view, (view) => view.devices.length === 1);
+    // The host reported the key it admitted under the phone's offer.
+    const admitted = await until((entry) => entry.hosts.length === 1);
+    expect(admitted.hosts).toEqual([{ hostId, name: normalizeHostName(hostname()), state: "registered" }]);
+    const hosts = (await api(server.relay, { path: "/api/hosts", headers: bearer(laptop) })).json as { deviceReports: boolean }[];
+    expect(hosts[0]!.deviceReports).toBe(true);
+
+    const kicked = await api(server.relay, {
+      method: "POST",
+      path: `/api/devices/${admitted.id}/kick`,
+      headers: bearer(laptop),
+      body: { password: GOOD_PASSWORD },
+    });
+    expect(kicked.status).toBe(204);
+    // The host ran its own revocation: the device is gone from its list and
+    // its live connection was closed, not just left to fail on reconnect.
+    await waitForView(tokenClient.view, (view) => view.devices.length === 0);
+    await waitForView(remote.view, (view) => view.connection === "closed");
+    expect((await until((entry) => entry.hosts[0]!.state === "revoked")).kickedAt).toBeTypeOf("number");
+    expect((await api(server.relay, { path: "/api/me", headers: bearer(phone) })).status).toBe(401);
+
+    // Signing in again un-kicks the device, but the server can't vouch the
+    // revoked key back in: the host still decides.
+    const back = await signIn("phone-device-id-000001", "Phone");
+    const again = (await api(server.relay, { method: "POST", path: `/api/hosts/${hostId}/pairing`, headers: bearer(back) }))
+      .json as PairingResult;
+    await expect(connectDevice(again.url, again.hostKey, device, { secret: again.secret, name: "phone" })).rejects.toThrow();
+  });
+
+  it("ignores a kick from a server the host is leaving for another one", async () => {
+    const server = await startServer();
+    const { host, hostId, dataDir } = await joinedHost(server);
+    const tokenClient = await connectTo(defer, host);
+    const signIn = async (id: string): Promise<string> =>
+      ((await api(server.relay, {
+        method: "POST",
+        path: "/api/login",
+        body: { username: "admin", password: GOOD_PASSWORD, device: { id, name: id } },
+      })).json as { token: string }).token;
+    const phone = await signIn("phone-device-id-000001");
+    const laptop = await signIn("laptop-device-id-00002");
+    type Listed = { id: number; name: string; hosts: { state: string }[] };
+    const phoneEntry = async (): Promise<Listed> =>
+      ((await api(server.relay, { path: "/api/devices", headers: bearer(laptop) })).json as Listed[]).find(
+        (device) => device.name === "phone-device-id-000001",
+      )!;
+
+    const offer = (await api(server.relay, { method: "POST", path: `/api/hosts/${hostId}/pairing`, headers: bearer(phone) }))
+      .json as PairingResult;
+    await connectDevice(offer.url, offer.hostKey, generateKeyPair(), { secret: offer.secret, name: "phone" });
+    await waitForView(tokenClient.view, (view) => view.devices.length === 1);
+    const deadline = Date.now() + 10_000;
+    while ((await phoneEntry()).hosts[0]?.state !== "registered") {
+      if (Date.now() > deadline) throw new Error("the host never reported the phone");
+      await new Promise((resolve) => setTimeout(resolve, 15));
+    }
+
+    // `pinomad join <B>` rewrote server.json and waits for an idle restart:
+    // this control still talks to A, which must no longer revoke devices here.
+    await writeServerConfig(dataDir, { origin: "https://elsewhere.example.com" });
+    const phoneId = (await phoneEntry()).id;
+    const kicked = await api(server.relay, {
+      method: "POST",
+      path: `/api/devices/${phoneId}/kick`,
+      headers: bearer(laptop),
+      body: { password: GOOD_PASSWORD },
+    });
+    expect(kicked.status).toBe(204);
+    // Frames on the control are handled in order: once a pairing ask sent
+    // after the kick is answered, the revoke-device ahead of it was seen.
+    for (let i = 0; i < 2; i += 1) {
+      const ask = await api(server.relay, { method: "POST", path: `/api/hosts/${hostId}/pairing`, headers: bearer(laptop) });
+      expect(ask.json).toEqual({ error: "rebinding" });
+    }
+    expect(tokenClient.view.current().devices).toHaveLength(1);
+    // Not acked either: the server still counts the revocation as owed.
+    expect((await phoneEntry()).hosts[0]!.state).toBe("revoking");
+  });
+
   it("hides and refuses the host for another account", async () => {
     const server = await startServer();
     const { hostId } = await joinedHost(server);
