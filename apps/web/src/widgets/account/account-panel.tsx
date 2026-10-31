@@ -69,6 +69,8 @@ export function accountErrorMessage(error: AccountError): string {
       return "Use a password of at least 12 characters.";
     case "wrong_password":
       return "The current password is wrong.";
+    case "admin_account":
+      return "The server's admin account can't be deleted.";
     case "username_taken":
       return "That username is taken.";
     case "forbidden":
@@ -86,9 +88,9 @@ export function accountErrorMessage(error: AccountError): string {
 export function AccountPanel() {
   const account = useAccountModel();
   const { state } = account;
-  // Lives here, not in SignedIn: a failed sign-out still lands signed-out,
-  // and the warning has to survive that unmount.
-  const [signOutWarning, setSignOutWarning] = useState<string>();
+  // Lives here, not in SignedIn: a failed sign-out and a deleted account both
+  // land signed-out, and what they say has to survive that unmount.
+  const [notice, setNotice] = useState<Notice>();
   switch (state.status) {
     case "unavailable":
       return null;
@@ -102,15 +104,20 @@ export function AccountPanel() {
     case "signed-out":
       return (
         <VStack gap={3} style={{ width: "100%" }}>
-          {signOutWarning === undefined ? null : (
-            <Banner status="warning" title="Sign-out not confirmed" description={signOutWarning} />
-          )}
+          {notice === undefined ? null : <Banner {...notice} />}
           <SignedOut account={account} state={state} />
         </VStack>
       );
     case "signed-in":
-      return <SignedIn account={account} state={state} onSignOutWarning={setSignOutWarning} />;
+      return <SignedIn account={account} state={state} onNotice={setNotice} />;
   }
+}
+
+/** What the signed-out panel says about how it got there. */
+interface Notice {
+  readonly status: "warning" | "success";
+  readonly title: string;
+  readonly description: string;
 }
 
 /** Sign-in or sign-up; both forms share the server address the user typed. */
@@ -270,11 +277,11 @@ function SignUpForm({
 function SignedIn({
   account,
   state,
-  onSignOutWarning,
+  onNotice,
 }: {
   account: AccountModel;
   state: Extract<AccountState, { status: "signed-in" }>;
-  onSignOutWarning: (message: string | undefined) => void;
+  onNotice: (notice: Notice | undefined) => void;
 }) {
   const [actionError, setActionError] = useState<AccountError>();
   const { focusHost } = useHosts();
@@ -309,7 +316,8 @@ function SignedIn({
       <AddHost account={account} />
       {state.admin ? <Invites account={account} /> : null}
       <ChangePassword account={account} />
-      <SignOut account={account} onWarning={onSignOutWarning} />
+      <SignOut account={account} onNotice={onNotice} />
+      {state.admin ? null : <DeleteAccount account={account} server={server} onNotice={onNotice} />}
     </VStack>
   );
 }
@@ -655,9 +663,11 @@ function ChangePassword({ account }: { account: AccountModel }) {
   );
 }
 
-function SignOut({ account, onWarning }: { account: AccountModel; onWarning: (message: string | undefined) => void }) {
+function SignOut({ account, onNotice }: { account: AccountModel; onNotice: (notice: Notice | undefined) => void }) {
   // Signing out everywhere ends every session at once — one extra click to confirm.
   const [confirming, setConfirming] = useState(false);
+  const onWarning = (description: string | undefined): void =>
+    onNotice(description === undefined ? undefined : { status: "warning", title: "Sign-out not confirmed", description });
   useEffect(() => {
     if (!confirming) return;
     const timer = setTimeout(() => setConfirming(false), 5000);
@@ -694,6 +704,75 @@ function SignOut({ account, onWarning }: { account: AccountModel; onWarning: (me
         />
       </HStack>
       <Text type="supporting">Signing out doesn't unpair this device from its hosts. Revoke it in Devices.</Text>
+    </VStack>
+  );
+}
+
+/**
+ * "Delete account" (#451): the password again, then the server deletes the
+ * account and every session. Devices stay registered on the hosts (ADR-0022
+ * §6: revocation lives on the host), so this device keeps its pairings. The
+ * admin account can't be deleted; the panel hides this for it.
+ */
+function DeleteAccount({
+  account,
+  server,
+  onNotice,
+}: {
+  account: AccountModel;
+  server: string;
+  onNotice: (notice: Notice | undefined) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<AccountError>();
+  const close = (): void => {
+    setOpen(false);
+    setPassword("");
+    setError(undefined);
+  };
+  const submit = (): void => {
+    if (password === "" || busy) return;
+    setBusy(true);
+    setError(undefined);
+    void account.deleteAccount({ password }).then((result) => {
+      // On success the model is already signed-out and this form unmounted.
+      if (result.ok) {
+        onNotice({
+          status: "success",
+          title: "Account deleted",
+          description: "This device is still registered on your hosts. To remove it, revoke it in each host's Devices.",
+        });
+        return;
+      }
+      setBusy(false);
+      setError(result.error);
+    });
+  };
+  if (!open) {
+    return (
+      <HStack gap={2}>
+        <Button label="Delete account" variant="ghost" onClick={() => setOpen(true)} />
+      </HStack>
+    );
+  }
+  return (
+    <VStack gap={2}>
+      <Text weight="semibold">Delete account</Text>
+      <Text type="supporting">
+        This deletes your account on {server} and signs you out everywhere. Hosts joined to it are disconnected from the
+        server; run pinomad join on each to connect it again. This device and your others stay registered on their hosts.
+        To remove them, revoke them in each host's Devices.
+      </Text>
+      <TextInput label="Password" type="password" value={password} onChange={setPassword} onEnter={submit} width="100%" />
+      {error === undefined ? null : (
+        <Banner status="error" title="Couldn't delete the account" description={accountErrorMessage(error)} />
+      )}
+      <HStack gap={2}>
+        <Button label="Delete account" variant="destructive" isLoading={busy} isDisabled={password === ""} onClick={submit} />
+        <Button label="Cancel" variant="ghost" onClick={close} />
+      </HStack>
     </VStack>
   );
 }

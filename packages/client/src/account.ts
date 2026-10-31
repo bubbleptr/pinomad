@@ -265,6 +265,11 @@ export interface AccountClient {
   revokeAllSessions(): Promise<AccountResult<void>>;
   /** Keeps this session and signs out the account's others; 403 `wrong_password` doesn't sign out (#450). */
   changePassword(currentPassword: string, newPassword: string): Promise<AccountResult<void>>;
+  /**
+   * Deletes the signed-in account and ends this session (#451). 403
+   * `wrong_password` and `admin_account` are refusals, not sign-outs.
+   */
+  deleteAccount(password: string): Promise<AccountResult<void>>;
   createJoinToken(): Promise<AccountResult<JoinToken>>;
   listHosts(): Promise<AccountResult<readonly AccountHost[]>>;
   requestPairing(hostId: string): Promise<AccountResult<PairingOffer>>;
@@ -381,6 +386,10 @@ export function createAccountClient(options: {
     },
     changePassword: async (currentPassword, newPassword) => {
       const result = await request("/api/password", "POST", { currentPassword, newPassword });
+      return result.ok ? ok(undefined) : result;
+    },
+    deleteAccount: async (password) => {
+      const result = await request("/api/me/delete", "POST", { password });
       return result.ok ? ok(undefined) : result;
     },
     createJoinToken: async () => {

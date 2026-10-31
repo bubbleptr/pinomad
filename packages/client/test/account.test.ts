@@ -231,6 +231,23 @@ describe("account client", () => {
     expect(await client.revokeAllSessions()).toEqual({ ok: true, value: undefined });
   });
 
+  it("deletes the account with its password; the 403 refusals aren't sign-outs (#451)", async () => {
+    const { impl, calls } = fakeFetch(
+      { status: 403, body: { error: "wrong_password" } },
+      { status: 403, body: { error: "admin_account" } },
+      { status: 204 },
+    );
+    const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer", token: "t" }, fetch: impl });
+    const wrong = await client.deleteAccount("nope");
+    expect(wrong).toEqual({ ok: false, error: { code: "wrong_password", status: 403 } });
+    expect(isUnauthenticated((wrong as { error: { code: string } }).error)).toBe(false);
+    expect(await client.deleteAccount("pw")).toEqual({ ok: false, error: { code: "admin_account", status: 403 } });
+    expect(await client.deleteAccount("pw")).toEqual({ ok: true, value: undefined });
+    expect(calls[2]!.url).toBe(`${ORIGIN}/api/me/delete`);
+    expect(calls[2]!.init?.method).toBe("POST");
+    expect(JSON.parse(calls[2]!.init!.body as string)).toEqual({ password: "pw" });
+  });
+
   it("parses the hosts list and join tokens", async () => {
     const host = {
       hostId: "h",

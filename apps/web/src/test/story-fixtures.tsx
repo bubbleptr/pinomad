@@ -639,6 +639,7 @@ export function fakeAccount(state: AccountState): AccountModel {
     logout: fn(async () => ({ ok: true as const, value: undefined })),
     revokeAll: fn(async () => ({ ok: true as const, value: undefined })),
     changePassword: fn(async () => ({ ok: true as const, value: undefined })),
+    deleteAccount: fn(async () => ({ ok: true as const, value: undefined })),
     refreshHosts: fn(async () => ({ ok: true as const, value: [] })),
     createJoinToken: fn(async () => ({
       ok: true as const,
@@ -655,8 +656,8 @@ export function fakeAccount(state: AccountState): AccountModel {
 }
 
 /** Provides the account model App creates once; outside one, account entry points hide. */
-export function withAccount(state: AccountState = signedIn()): Decorator {
-  const model = fakeAccount(state);
+export function withAccount(state: AccountState = signedIn(), actions?: Partial<AccountModel>): Decorator {
+  const model = { ...fakeAccount(state), ...actions };
   return (Story) => (
     <AccountContext.Provider value={model}>
       <Story />

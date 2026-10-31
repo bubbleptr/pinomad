@@ -53,6 +53,7 @@ function fakeModel(initial: AccountState): AccountModel & { setState(next: Accou
     createInvite: vi.fn(() => Promise.resolve({ ok: true as const, value: { code: "fresh-code", expiresAt: Date.now() + 86_400_000 } })),
     revokeInvite: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     changePassword: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
+    deleteAccount: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     pairHost: vi.fn(() => Promise.resolve({ ok: false as const, error: { code: "host_timeout" } })),
     retryUnsavedHost: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     hostRejected: vi.fn(),
@@ -238,6 +239,43 @@ describe("invite sign-up (#449)", () => {
     await userEvent.type(screen.getByLabelText("New password"), "new password here{Enter}");
     expect(await screen.findByText("The current password is wrong.")).toBeTruthy();
     expect(screen.getByLabelText("Current password")).toBeTruthy();
+  });
+
+  it("deletes the account after the password and says the pairings stay (#451)", async () => {
+    const model = fakeModel(signedIn([]));
+    // The fake has no sign-out path of its own; land signed-out like the real model.
+    vi.mocked(model.deleteAccount).mockImplementationOnce(() => {
+      model.setState({ status: "signed-out", mode: "cookie" });
+      return Promise.resolve({ ok: true, value: undefined });
+    });
+    renderPanel(model);
+    await userEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    expect(screen.getByText(/run pinomad join on each/)).toBeTruthy();
+    await userEvent.type(screen.getByLabelText("Password"), "my password{Enter}");
+    expect(model.deleteAccount).toHaveBeenCalledWith({ password: "my password" });
+    expect(await screen.findByText("Account deleted")).toBeTruthy();
+    expect(screen.getByText(/still registered on your hosts/)).toBeTruthy();
+    expect(screen.getByLabelText("Username")).toBeTruthy();
+  });
+
+  it("keeps the session and the form when the password is wrong or the account is the admin's", async () => {
+    const model = fakeModel(signedIn([]));
+    vi.mocked(model.deleteAccount)
+      .mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } })
+      .mockResolvedValueOnce({ ok: false, error: { code: "admin_account", status: 403 } });
+    renderPanel(model);
+    await userEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    await userEvent.type(screen.getByLabelText("Password"), "wrong one{Enter}");
+    expect(await screen.findByText("The current password is wrong.")).toBeTruthy();
+    await userEvent.type(screen.getByLabelText("Password"), "{Enter}");
+    expect(await screen.findByText("The server's admin account can't be deleted.")).toBeTruthy();
+    expect(screen.getByLabelText("Password")).toBeTruthy();
+    expect(screen.getByText("kieran")).toBeTruthy();
+  });
+
+  it("offers no account deletion to the admin", () => {
+    renderPanel(fakeModel({ ...signedIn([]), admin: true }));
+    expect(screen.queryByRole("button", { name: "Delete account" })).toBeNull();
   });
 
   it("hides invites from accounts that aren't the admin", async () => {
