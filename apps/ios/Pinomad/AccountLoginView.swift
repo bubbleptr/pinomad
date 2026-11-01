@@ -11,7 +11,6 @@ import SwiftUI
 /// and is probed on appear so the form opens on the credentials.
 struct AccountLoginView: View {
     /// The hosted PiNomad server; self-hosters change the address.
-    static let officialServerOrigin = "https://app.pinomad.si"
 
     let model: AppModel
 
@@ -35,7 +34,7 @@ struct AccountLoginView: View {
         self.model = model
         // Seeded here rather than on appear: assigning in `.task` would fire
         // the address field's onChange and reset the probe it starts.
-        _origin = State(initialValue: model.accountRecord?.serverOrigin ?? Self.officialServerOrigin)
+        _origin = State(initialValue: model.accountRecord?.serverOrigin ?? OfficialServer.origin)
         _username = State(initialValue: model.accountRecord?.username ?? "")
     }
 

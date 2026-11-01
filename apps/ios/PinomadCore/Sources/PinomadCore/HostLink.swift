@@ -38,9 +38,15 @@ public enum HostLinkCopy {
         case deny
     }
 
-    /// The tokenless command: the host asks for a code to confirm here.
+    /// Install pinomad with its own Node (#499), then `pinomad up` (#498),
+    /// which asks for a code to confirm here. ~/.local/bin goes first on
+    /// PATH: a new Mac doesn't have it, and where npm already installed
+    /// pinomad the script makes no launcher there, so that one runs instead.
+    /// `--origin` always: up otherwise keeps a host on the server it already
+    /// joined.
     public static func joinCommand(serverOrigin: String) -> String {
-        "npm i -g pinomad && pinomad join \(normalizeServerOrigin(origin: serverOrigin))"
+        "curl -fsSL https://pinomad.si/install.sh | sh\n"
+            + "PATH=\"$HOME/.local/bin:$PATH\" pinomad up --origin \(normalizeServerOrigin(origin: serverOrigin))"
     }
 
     /// Both ends of the host id, to compare with the one `pinomad join`
@@ -72,9 +78,9 @@ public enum HostLinkCopy {
     public static func message(_ failure: AccountFailure, stage: Stage) -> String {
         switch (failure.code, stage) {
         case ("not_found", .lookup), ("invalid_request", _):
-            "No host is waiting for this code. Check it against the host, or run pinomad join there again for a new one."
+            "No host is waiting for this code. Check it against the host, or run pinomad up there again for a new one."
         case ("not_found", _):
-            "This code is no longer valid: it expired or was already used. Run pinomad join on the host again."
+            "This code is no longer valid: it expired or was already used. Run pinomad up on the host again."
         case ("rate_limited", _):
             "Too many wrong codes. Wait a few minutes and try again."
         default:

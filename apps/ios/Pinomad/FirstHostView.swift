@@ -53,7 +53,7 @@ struct FirstHostView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Add your first host")
                         .font(.title2.weight(.semibold))
-                    Text("A host is the computer that runs your agents: a Mac or Linux machine with Node 25 or later. Open a terminal there and run:")
+                    Text("A host is the computer that runs your agents: a Mac or Linux machine. Open a terminal there and run:")
                         .foregroundStyle(.secondary)
                 }
 
