@@ -1,7 +1,7 @@
 // The account model against scripted fetches: mode detection, login in both
 // credential styles, host-list matching against the stored hosts, and the
 // "rejected host never auto-repairs" pin.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { generateKeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { AccountDeviceClaim, AccountFetch, AccountFetchInit } from "@pinomad/client/account.ts";
@@ -990,6 +990,97 @@ describe("automatic registration", () => {
     await Promise.resolve();
     expect(store.stored).toEqual([]);
     expect(setup.model.state.status).toBe("signed-out");
+  });
+
+  // A confirmed host joins only after its next poll, the join and a service
+  // restart, and nothing else refreshes a page that already has a host: the
+  // model keeps asking until the host is paired here, whatever the UI does.
+  describe("watching for a host confirmed here (#496)", () => {
+    const hostListCalls = (calls: { url: string; init: AccountFetchInit | undefined }[]): number =>
+      calls.filter((call) => call.url.endsWith("/api/hosts") && (call.init?.method ?? "GET") === "GET").length;
+    const pairedHere = (model: AccountModel): boolean =>
+      model.state.status === "signed-in" && model.state.hosts.some((match) => match.host.hostId === "h1" && match.status === "paired");
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    /** Signed in with no hosts yet; `rows` and `online` script the host's arrival. */
+    async function signedInWatching() {
+      const script = { rows: [] as unknown[], online: false };
+      const base = routeFetch(() => script.rows);
+      const impl: AccountFetch = (url, init) => {
+        if (!script.online && url.endsWith("/api/hosts/h1/pairing")) {
+          base.calls.push({ url, init });
+          return Promise.resolve(response(409, { error: "host_offline" }));
+        }
+        return base.impl(url, init);
+      };
+      const setup = makeModel({ fake: { impl, calls: base.calls }, store: hosts(), autoRegister: true });
+      await vi.waitFor(() => expect(setup.model.state.status).toBe("signed-in"));
+      return { ...setup, script, calls: base.calls, start: hostListCalls(base.calls) };
+    }
+
+    it("refreshes every 5 s until the host joins, comes online and pairs, then stops", async () => {
+      const { model, script, calls, start } = await signedInWatching();
+      model.watchForHost("h1");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(hostListCalls(calls)).toBe(start + 1);
+      await vi.advanceTimersByTimeAsync(25_000);
+      expect(hostListCalls(calls)).toBe(start + 6);
+
+      // Joins at 30 s, offline until its service restarts.
+      script.rows = [{ ...row(), online: false, pairing: "offline" }];
+      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.waitFor(() => {
+        const state = model.state;
+        expect(state.status === "signed-in" ? state.hosts[0]?.status : undefined).toBe("unpaired");
+      });
+
+      script.rows = [row()];
+      script.online = true;
+      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.waitFor(() => expect(pairedHere(model)).toBe(true));
+
+      const settledCalls = hostListCalls(calls);
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(hostListCalls(calls)).toBe(settledCalls);
+    });
+
+    it("gives up after 2 minutes on a host that never shows up", async () => {
+      const { model, calls, start } = await signedInWatching();
+      model.watchForHost("h1");
+      await vi.advanceTimersByTimeAsync(120_000);
+      // One right away, then one every 5 s for 2 minutes.
+      expect(hostListCalls(calls)).toBe(start + 25);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(hostListCalls(calls)).toBe(start + 25);
+    });
+
+    it("stops on sign-out", async () => {
+      const { model, calls } = await signedInWatching();
+      model.watchForHost("h1");
+      await vi.advanceTimersByTimeAsync(10_000);
+      await model.logout();
+      const signedOutCalls = hostListCalls(calls);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(hostListCalls(calls)).toBe(signedOutCalls);
+    });
+
+    it("restarts the window when the same host is confirmed again, without a second timer", async () => {
+      const { model, calls, start } = await signedInWatching();
+      model.watchForHost("h1");
+      await vi.advanceTimersByTimeAsync(60_000);
+      model.watchForHost("h1");
+      await vi.advanceTimersByTimeAsync(0);
+      const restarted = hostListCalls(calls);
+      expect(restarted).toBe(start + 13 + 1);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(hostListCalls(calls)).toBe(restarted + 2);
+    });
   });
 });
 

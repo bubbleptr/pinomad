@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import type { AccountError } from "@pinomad/client/account.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { useHosts } from "../../entities/host/host-store.ts";
-import { accountErrorMessage } from "./account-panel.tsx";
+import { accountErrorMessage } from "./account-error.ts";
 
 /**
  * On the "this device isn't paired" screen: when the refused host belongs to

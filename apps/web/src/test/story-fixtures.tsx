@@ -6,7 +6,7 @@ import type { Decorator } from "@storybook/react-vite";
 import { useEffect, useState, type ReactNode } from "react";
 import { fn } from "storybook/test";
 import type { ConversationId, ConversationView, EntryRecord } from "@earendil-works/pi-durable";
-import type { AccountDevice, AccountHost, AccountHostMatch, AccountInvite } from "@pinomad/client/account.ts";
+import type { AccountDevice, AccountHost, AccountHostMatch, AccountInvite, HostLinkRequest } from "@pinomad/client/account.ts";
 import type { StoredHost } from "@pinomad/client/stored-host.ts";
 import type { HostProviders, LoginFlow, LoginMethod, ProviderInfo } from "@pinomad/protocol/auth.ts";
 import { PROTOCOL } from "@pinomad/protocol/frames.ts";
@@ -668,6 +668,16 @@ export const ACCOUNT_INVITES: readonly AccountInvite[] = [
   { id: 1, createdAt: now - 9 * 24 * 60 * MINUTE, expiresAt: now - 2 * 24 * 60 * MINUTE },
 ];
 
+/** A host that ran `pinomad join` without a token, as the confirm page sees it (#496). */
+export const HOST_LINK_REQUEST: HostLinkRequest = {
+  hostId: "Or-983sVxD715Pir-F61GmSkh4kPJVn1RvqZkt9MnSA",
+  name: "omarchy",
+  os: "Linux (x64)",
+  sourceIp: "203.0.113.7",
+  ipDiffers: false,
+  expiresAt: now + 9 * MINUTE,
+};
+
 export const signedIn = (overrides: Partial<Extract<AccountState, { status: "signed-in" }>> = {}): AccountState => ({
   status: "signed-in",
   mode: "cookie",
@@ -698,6 +708,10 @@ export function fakeAccount(state: AccountState): AccountModel {
       ok: true as const,
       value: { token: "join-7f3a9c", expiresAt: Date.now() + 10 * MINUTE, command: "pinomad join https://pinomad.si join-7f3a9c" },
     })),
+    lookupHostLink: fn(async () => ({ ok: true as const, value: HOST_LINK_REQUEST })),
+    confirmHostLink: fn(async () => ({ ok: true as const, value: undefined })),
+    denyHostLink: fn(async () => ({ ok: true as const, value: undefined })),
+    watchForHost: fn(),
     listInvites: fn(async () => ({ ok: true as const, value: ACCOUNT_INVITES })),
     createInvite: fn(async () => ({ ok: true as const, value: { code: "Qm3xV8rT2kLp9wYz4nHc1A", expiresAt: Date.now() + 7 * 24 * 60 * MINUTE } })),
     revokeInvite: fn(async () => ({ ok: true as const, value: undefined })),

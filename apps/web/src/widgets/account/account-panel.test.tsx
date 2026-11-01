@@ -9,7 +9,8 @@ import { AccountContext } from "../../entities/account/account-context.tsx";
 import { HostsContext } from "../../entities/host/host-store.ts";
 import { fakeHosts } from "../../test/story-fixtures.tsx";
 import type { AccountModel, AccountState } from "../../entities/account/account-model.ts";
-import { AccountPanel, accountErrorMessage } from "./account-panel.tsx";
+import { accountErrorMessage } from "./account-error.ts";
+import { AccountPanel } from "./account-panel.tsx";
 
 const KEY_A = "A".repeat(43);
 const KEY_B = "B".repeat(43);
@@ -40,7 +41,16 @@ function fakeModel(initial: AccountState): AccountModel & { setState(next: Accou
     logout: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     revokeAll: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     refreshHosts: vi.fn(() => Promise.resolve({ ok: true as const, value: [] })),
-    createJoinToken: vi.fn(() => Promise.reject(new Error("unused"))),
+    createJoinToken: vi.fn(() =>
+      Promise.resolve({
+        ok: true as const,
+        value: { token: "join-1", expiresAt: Date.now() + 600_000, command: "npm i -g pinomad && pinomad join https://nomad.example join-1" },
+      }),
+    ),
+    lookupHostLink: vi.fn(() => Promise.reject(new Error("unused"))),
+    confirmHostLink: vi.fn(() => Promise.reject(new Error("unused"))),
+    denyHostLink: vi.fn(() => Promise.reject(new Error("unused"))),
+    watchForHost: vi.fn(),
     listInvites: vi.fn(() =>
       Promise.resolve({
         ok: true as const,
@@ -208,6 +218,21 @@ describe("AccountPanel", () => {
     });
     expect(model.retryUnsavedHost).toHaveBeenCalledWith("h1");
     expect(focusHost).toHaveBeenCalledWith(KEY_A);
+  });
+});
+
+describe("Add a host (#496)", () => {
+  it("shows the command without a token and the code entry, minting a token only under Advanced", async () => {
+    const model = fakeModel(signedIn([]));
+    renderPanel(model);
+    await userEvent.click(screen.getByRole("button", { name: "Add a host" }));
+    expect(screen.getByText("npm i -g pinomad && pinomad join https://nomad.example")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /code/i })).toBeInTheDocument();
+    expect(model.createJoinToken).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: /Advanced: join with a one-time token/ }));
+    expect(model.createJoinToken).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("npm i -g pinomad && pinomad join https://nomad.example join-1")).toBeInTheDocument();
   });
 });
 
