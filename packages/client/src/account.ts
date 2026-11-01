@@ -283,6 +283,22 @@ export interface AccountDevice {
   readonly hosts: readonly AccountDeviceHost[];
 }
 
+/**
+ * A host waiting to join the account (#495), as POST /api/host-link/lookup
+ * describes it for the confirm page.
+ */
+export interface HostLinkRequest {
+  /** The host's id: the fingerprint of its registration key. */
+  readonly hostId: string;
+  readonly name: string;
+  readonly os: string;
+  /** The address the host asked from. */
+  readonly sourceIp: string;
+  /** The host asked from another address than this device's: maybe not the caller's machine. */
+  readonly ipDiffers: boolean;
+  readonly expiresAt: number;
+}
+
 /** The answer to POST /api/hosts/:hostId/pairing — the vouched one-time offer. */
 export interface PairingOffer {
   readonly url: string;
@@ -321,6 +337,17 @@ export interface AccountClient {
    */
   deleteAccount(password: string): Promise<AccountResult<void>>;
   createJoinToken(): Promise<AccountResult<JoinToken>>;
+  /**
+   * The host waiting behind a code typed from its terminal (#495). The code
+   * goes as typed; the server ignores case, dashes and spaces. 404
+   * `not_found` is a wrong, spent or expired code, 429 `rate_limited` the
+   * lockout after too many of those.
+   */
+  lookupHostLink(userCode: string): Promise<AccountResult<HostLinkRequest>>;
+  /** Lets that host join this account; same refusals as lookup. */
+  confirmHostLink(userCode: string): Promise<AccountResult<void>>;
+  /** Turns that host away; same refusals as lookup. */
+  denyHostLink(userCode: string): Promise<AccountResult<void>>;
   listHosts(): Promise<AccountResult<readonly AccountHost[]>>;
   /** The account's devices (#452); 404 on servers that predate them. */
   listDevices(): Promise<AccountResult<readonly AccountDevice[]>>;
@@ -490,6 +517,38 @@ export function createAccountClient(options: {
         return fail("invalid_response");
       }
       return ok({ token: value.token, expiresAt: value.expiresAt, command: value.command });
+    },
+    lookupHostLink: async (userCode) => {
+      const result = await request("/api/host-link/lookup", "POST", { userCode });
+      if (!result.ok) return result;
+      const value = result.value;
+      if (
+        !isRecord(value) ||
+        typeof value.hostId !== "string" ||
+        typeof value.name !== "string" ||
+        typeof value.os !== "string" ||
+        typeof value.sourceIp !== "string" ||
+        typeof value.ipDiffers !== "boolean" ||
+        typeof value.expiresAt !== "number"
+      ) {
+        return fail("invalid_response");
+      }
+      return ok({
+        hostId: value.hostId,
+        name: value.name,
+        os: value.os,
+        sourceIp: value.sourceIp,
+        ipDiffers: value.ipDiffers,
+        expiresAt: value.expiresAt,
+      });
+    },
+    confirmHostLink: async (userCode) => {
+      const result = await request("/api/host-link/confirm", "POST", { userCode });
+      return result.ok ? ok(undefined) : result;
+    },
+    denyHostLink: async (userCode) => {
+      const result = await request("/api/host-link/deny", "POST", { userCode });
+      return result.ok ? ok(undefined) : result;
     },
     listHosts: async () => {
       const result = await request("/api/hosts", "GET");

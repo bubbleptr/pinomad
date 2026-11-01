@@ -525,7 +525,7 @@ pub fn patch_files_json(files: &[pinomad_core::patch::PatchFile]) -> Json {
 
 use pinomad_core::account::{
     AccountDevice, AccountError, AccountHost, AccountHostMatch, AccountHttpRequest, AccountMe, AccountValue,
-    JoinToken, LoginSuccess, PairingOffer,
+    HostLinkRequest, JoinToken, LoginSuccess, PairingOffer,
 };
 
 /// The `{url, init}` the capture fetch recorded — `init` keys in the
@@ -572,6 +572,14 @@ fn account_value_json(value: &AccountValue) -> Json {
             ("token", Some(s(token))),
             ("expiresAt", Some(num(*expires_at))),
             ("command", Some(s(command))),
+        ]),
+        AccountValue::HostLink(HostLinkRequest { host_id, name, os, source_ip, ip_differs, expires_at }) => obj(&[
+            ("hostId", Some(s(host_id))),
+            ("name", Some(s(name))),
+            ("os", Some(s(os))),
+            ("sourceIp", Some(s(source_ip))),
+            ("ipDiffers", Some(Json::Bool(*ip_differs))),
+            ("expiresAt", Some(num(*expires_at))),
         ]),
         AccountValue::Hosts(hosts) => Json::array(hosts.iter().map(account_host_json).collect()),
         AccountValue::Devices(devices) => Json::array(devices.iter().map(account_device_json).collect()),

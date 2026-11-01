@@ -11,7 +11,7 @@ use crate::ffi::hosts::{EndpointSet, StoredHost, StoredHostAccount};
 pub use crate::account::{
     AccountDevice, AccountDeviceHost, AccountDeviceHostState, AccountError, AccountHost, AccountHostPairing,
     AccountHostRef, AccountHostStatus, AccountHttpHeader, AccountHttpRequest, AccountMe, AccountOp,
-    AccountOpKind, AccountUser, AccountsProbe, JoinToken, LoginSuccess,
+    AccountOpKind, AccountUser, AccountsProbe, HostLinkRequest, JoinToken, LoginSuccess,
 };
 
 /// The pairing answer at the boundary: the core's typed value plus the
@@ -56,6 +56,7 @@ pub enum AccountValue {
     Me(AccountMe),
     Unit,
     JoinToken(JoinToken),
+    HostLink(HostLinkRequest),
     Hosts(Vec<AccountHost>),
     Devices(Vec<AccountDevice>),
     PairingOffer(PairingOffer),
@@ -67,6 +68,7 @@ fn value_from_core(value: core::AccountValue) -> AccountValue {
         core::AccountValue::Me(value) => AccountValue::Me(value),
         core::AccountValue::Unit => AccountValue::Unit,
         core::AccountValue::JoinToken(value) => AccountValue::JoinToken(value),
+        core::AccountValue::HostLink(value) => AccountValue::HostLink(value),
         core::AccountValue::Hosts(value) => AccountValue::Hosts(value),
         core::AccountValue::Devices(value) => AccountValue::Devices(value),
         core::AccountValue::PairingOffer(value) => {
