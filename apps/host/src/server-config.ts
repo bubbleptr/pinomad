@@ -20,6 +20,8 @@ export interface ServerConfig {
    * mint until a fresh `pinomad join` stamps one.
    */
   readonly binding?: string;
+  /** The account the host joined, for `pinomad status`; files from before it existed lack it. */
+  readonly username?: string;
 }
 
 /** Trailing slashes never distinguish a server; every comparison normalizes them away. */
@@ -43,20 +45,25 @@ export async function readServerConfig(dataDir: string): Promise<ServerConfig | 
   if (typeof origin !== "string" || origin.trim() === "") {
     throw new Error(`${join(dataDir, SERVER_CONFIG_FILE)} is missing a string "origin"`);
   }
-  const binding = (value as { binding?: unknown }).binding;
+  const { binding, username } = value as { binding?: unknown; username?: unknown };
   return {
     origin,
     ...(typeof binding === "string" && binding !== "" ? { binding } : {}),
+    ...(typeof username === "string" && username !== "" ? { username } : {}),
   };
 }
 
 /** Tmp-then-rename like settings.json: a crash must not leave a truncated file. */
-export async function writeServerConfig(dataDir: string, config: ServerConfig): Promise<void> {
+export async function writeServerConfig(dataDir: string, config: Omit<ServerConfig, "binding">): Promise<void> {
   const path = join(dataDir, SERVER_CONFIG_FILE);
   const tmp = `${path}.tmp-${process.pid}`;
   await writeFile(
     tmp,
-    `${JSON.stringify({ origin: normalizeOrigin(config.origin), binding: randomBytes(16).toString("base64url") })}\n`,
+    `${JSON.stringify({
+      origin: normalizeOrigin(config.origin),
+      binding: randomBytes(16).toString("base64url"),
+      ...(config.username === undefined ? {} : { username: config.username }),
+    })}\n`,
     { mode: 0o600 },
   );
   await rename(tmp, path);

@@ -97,20 +97,23 @@ export function argValue(args: readonly string[], flag: string): string | undefi
   return value;
 }
 
-/** Drops `--relay <value>` and `--relay=<value>` pairs — join/leave rewrite the definition without it. */
-export function withoutRelayArgs(args: readonly string[]): string[] {
+/** Drops every `<flag> <value>` and `<flag>=<value>` pair from a host-args list. */
+export function withoutArg(args: readonly string[], flag: string): string[] {
   const out: string[] = [];
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i]!;
-    if (arg === "--relay") {
+    if (arg === flag) {
       i += 1; // the flag's value
       continue;
     }
-    if (arg.startsWith("--relay=")) continue;
+    if (arg.startsWith(`${flag}=`)) continue;
     out.push(arg);
   }
   return out;
 }
+
+/** join/leave rewrite the definition without `--relay`: server.json names the server now. */
+export const withoutRelayArgs = (args: readonly string[]): string[] => withoutArg(args, "--relay");
 
 // The renderers escape in two layers: systemd doubles % and $ (specifiers and
 // $VAR expansion) then backslash-escapes inside quotes; launchd XML-escapes.

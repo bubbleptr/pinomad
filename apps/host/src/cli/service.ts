@@ -58,30 +58,37 @@ async function install(argv: readonly string[]): Promise<void> {
   console.log(`browser link: ${commandHint("link")}    pairing QR: ${commandHint("pair")}`);
 }
 
-async function status(argv: readonly string[]): Promise<void> {
-  const state = await serviceManager().state();
-  console.log(`service: ${state.installed ? state.detail : "not installed"}`);
-  if (packagedVersion === undefined) {
-    const head = await run("git", ["rev-parse", "--short", "HEAD"], { cwd: repoRoot }).then(
-      ({ stdout }) => stdout.trim(),
-      () => "unknown",
-    );
-    console.log(`checkout: ${head}`);
-  } else {
-    console.log(`version: ${packagedVersion}`);
-  }
+/** `version: 0.12.0`, or the checkout's commit when run from source. */
+export async function versionLine(): Promise<string> {
+  if (packagedVersion !== undefined) return `version: ${packagedVersion}`;
+  const head = await run("git", ["rev-parse", "--short", "HEAD"], { cwd: repoRoot }).then(
+    ({ stdout }) => stdout.trim(),
+    () => "unknown",
+  );
+  return `checkout: ${head}`;
+}
+
+/** Whether the host answers on its loopback port, and how many tasks it runs. */
+export async function reachabilityLine(argv: readonly string[]): Promise<string> {
   try {
     const { url, token } = await hostAddress(argv);
     const remote = await connectToHost(url, token);
     if (remote.view.current().tasks === undefined) await remote.controller.toggleTasks();
     const tasks = remote.view.current().tasks;
     const count = tasks === undefined ? 0 : Object.keys(tasks.tasks).length;
-    console.log(`host: reachable at ${url}, ${count} live task${count === 1 ? "" : "s"}`);
     remote.close();
+    return `host: reachable at ${url}, ${count} live task${count === 1 ? "" : "s"}`;
   } catch (error) {
     if (isParseArgsError(error)) throw error;
-    console.log(`host: unreachable (${message(error)})`);
+    return `host: unreachable (${message(error)})`;
   }
+}
+
+async function status(argv: readonly string[]): Promise<void> {
+  const state = await serviceManager().state();
+  console.log(`service: ${state.installed ? state.detail : "not installed"}`);
+  console.log(await versionLine());
+  console.log(await reachabilityLine(argv));
 }
 
 /**

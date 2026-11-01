@@ -18,6 +18,7 @@ pinomad upgrade [--force]
 
 - `install` 把宿主参数原样写进服务定义；`--data-dir`（或 `PINOMAD_DATA_DIR`，默认 `~/.pinomad`）展开成显式的绝对路径。改参数就是带新参数再跑一次 `install`。装好后用 `pinomad link` 拿本机浏览器链接、`pinomad pair` 发手机配对码。
 - `pinomad join` / `pinomad leave`（见[远程访问](/zh/docs/remote-access/)）也会动服务定义：去掉 `--relay`、其余参数原样保留，然后等空闲重启；join 时服务没装就直接装上。
+- `pinomad up` 把这些收成一条命令：先问其他设备怎么连这台机器（经官方服务端 / 只在局域网和 tailnet / 都要），然后加入账号（浏览器里确认短码）、按需加上 `--remote-port`（默认 7422），最后装好或改写服务，只重启一次；已经加入同一个服务端时不会再要你确认。脚本里用 `--server` / `--lan`、`--no-server` / `--no-lan`、`--yes` 跳过提问，`--origin` 换自部署的服务端。`pinomad status` 查看加入的服务端和账号、局域网端口、服务状态和宿主是否在线。
 - **PATH 在安装时固定**：服务里 agent 的 bash 继承的是安装那一刻终端的 PATH（已经剥掉 `node_modules/.bin` 和 Bun 注入的临时目录）。后来装了新工具、PATH 变了，重新跑一次 `install` 刷新。
 - `restart` 先连上宿主读任务图，有未结束的任务就等它们跑完再重启（Ctrl-C 取消）；`--force` 立即重启，交给 Durable 恢复。打包安装时 `upgrade` 把 `pinomad@latest` 装进运行包所在的 npm 全局前缀（非全局安装会拒绝执行）+ 同样的 restart；源码检出里（`bun run upgrade`）依次 `git pull --ff-only`、`bun install`、`bun run build`，工作区有未提交改动时拒绝执行。前面任何一步失败都直接停下，不重启，服务继续跑旧代码。
 - `uninstall` 只卸载服务，不动数据目录。
