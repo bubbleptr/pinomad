@@ -140,6 +140,38 @@ describe("upHost", () => {
     expect(fake.installs.at(-1)!.hostArgs).toEqual(["--remote-port", "7422"]);
   });
 
+  it("re-running the server path restarts even when the args are the same", async () => {
+    // A join whose idle restart was cancelled (Ctrl-C) left server.json written
+    // and the host still running without it; a re-run must finish that restart.
+    const dir = await dataDir();
+    const started = await startServer();
+    const fake = fakeManager(seededSpec(dir, []));
+    await writeServerConfig(dir, { origin: started.origin, username: "admin" });
+    const outcome = await upHost({ dataDir: dir, origin: started.origin, reach: { server: true, lan: false } }, { manager: fake.manager });
+    expect(outcome.service).toBe("updated");
+    expect(fake.installs.map((spec) => spec.hostArgs)).toEqual([[]]);
+  });
+
+  it("refuses a LAN port outside 1–65535 before writing anything", async () => {
+    for (const port of ["0", "65536", "99999"]) {
+      const dir = await dataDir();
+      const fake = fakeManager(seededSpec(dir, ["--remote-port", "7422"]));
+      await expect(
+        upHost({ dataDir: dir, reach: { server: false, lan: true }, remotePort: port }, { manager: fake.manager }),
+      ).rejects.toThrow(/--remote-port/);
+      expect(fake.installs).toHaveLength(0);
+    }
+  });
+
+  it("without --origin, stays with the server the host already joined", async () => {
+    const dir = await dataDir();
+    await writeServerConfig(dir, { origin: "https://self.example", username: "kieran" });
+    const fake = fakeManager(seededSpec(dir, []));
+    const outcome = await upHost({ dataDir: dir, reach: { server: true, lan: true } }, { manager: fake.manager });
+    expect(outcome.joined).toMatchObject({ origin: "https://self.example", fresh: false });
+    expect(fake.installs.at(-1)!.hostArgs).toEqual(["--remote-port", "7422"]);
+  });
+
   it("refuses to switch servers: leave the old one first", async () => {
     const dir = await dataDir();
     await writeServerConfig(dir, { origin: "https://other.example" });
@@ -217,6 +249,24 @@ describe("pinomad up", () => {
     expect(process.exitCode).toBeUndefined();
     expect(fake.installs.map((spec) => spec.hostArgs)).toEqual([["--remote-port", "7422"]]);
     expect(lines.join("\n")).toContain("pair");
+  });
+
+  it("on a host joined elsewhere, asks about that server and --yes keeps it", async () => {
+    const errors = capture();
+    const dir = await dataDir();
+    await writeServerConfig(dir, { origin: "https://self.example", username: "kieran" });
+    const fake = fakeManager(seededSpec(dir, []));
+    const questions: string[] = [];
+    const ask = async (question: string) => {
+      questions.push(question);
+      return "";
+    };
+    await up(["--data-dir", dir], { manager: fake.manager, interactive: true, ask, log: () => {} });
+    expect(questions[0]).toContain("https://self.example");
+    expect(questions[0]).not.toContain("app.pinomad.si");
+    await up(["--data-dir", dir, "--yes"], { manager: fake.manager, interactive: false, log: () => {} });
+    expect(errors).toEqual([]);
+    expect(process.exitCode).toBeUndefined();
   });
 
   it("--yes takes the server path by default and says which server before the code", async () => {

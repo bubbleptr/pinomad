@@ -82,17 +82,20 @@ export async function upHost(
   const dataDir = resolve(args.dataDir);
   const { reach } = args;
   if (!reach.server && !reach.lan) throw new Error("nothing to set up: choose the server, the LAN, or both");
-  if (args.remotePort !== undefined && !/^\d+$/.test(args.remotePort)) {
-    throw new Error(`--remote-port must be a port number, got ${args.remotePort}`);
+  // Checked before anything is written: the host would only fail at listen().
+  const port = args.remotePort;
+  if (port !== undefined && !(/^\d+$/.test(port) && Number(port) >= 1 && Number(port) <= 65535)) {
+    throw new Error(`--remote-port must be a port number from 1 to 65535, got ${port}`);
   }
   const manager = deps?.manager ?? serviceManager();
   const slot = await openServiceSlot(dataDir, manager);
   const config = await readServerConfig(dataDir);
-  const origin = normalizeOrigin(args.origin ?? OFFICIAL_SERVER_ORIGIN);
+  // Without --origin a joined host stays with its own server.
+  const origin = normalizeOrigin(args.origin ?? config?.origin ?? OFFICIAL_SERVER_ORIGIN);
   if (reach.server && config !== undefined && normalizeOrigin(config.origin) !== origin) {
     throw new Error(
       `this host is joined to ${config.origin} — run \`${commandHint("leave")}\` first to join ${origin}, ` +
-        `or \`${commandHint("up")} --origin ${config.origin}\` to stay`,
+        `or leave out --origin to stay`,
     );
   }
   const lanPort = reach.lan
@@ -112,7 +115,9 @@ export async function upHost(
   }
   // A legacy --relay goes only where server.json takes over from it.
   const edit = reach.server ? (hostArgs: readonly string[]) => lan(withoutRelayArgs(hostArgs)) : lan;
-  const service = await writeService(slot, edit, { changed: false });
+  // The server path always restarts: a join whose idle restart was cancelled
+  // left server.json written but unread, and same args can't tell.
+  const service = await writeService(slot, edit, { changed: reach.server });
   if (!reach.server && config !== undefined) {
     notes.push(`still joined to ${config.origin} — run \`${commandHint("leave")}\` to leave it`);
   }
@@ -188,7 +193,7 @@ export async function main(argv: readonly string[], deps?: UpDeps): Promise<void
   const log = deps?.log ?? ((line: string) => console.log(line));
   try {
     const dataDir = resolve(values["data-dir"] ?? DEFAULT_DATA_DIR);
-    const origin = normalizeOrigin(values.origin ?? OFFICIAL_SERVER_ORIGIN);
+    const origin = normalizeOrigin(values.origin ?? (await readServerConfig(dataDir))?.origin ?? OFFICIAL_SERVER_ORIGIN);
     // Also refuses another data dir's service before anyone is asked anything.
     const current = await currentReach(dataDir, deps);
     let reach = resolveReach({ server: values.server, lan: values.lan }, current);
