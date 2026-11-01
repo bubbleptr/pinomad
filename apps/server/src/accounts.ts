@@ -18,7 +18,7 @@ import { normalizeHostName } from "@pinomad/protocol/settings.ts";
 import { isDataDirInUse, lockDataDir } from "./lock.ts";
 
 const DB_FILE = "server.sqlite";
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 // Sessions die 30 days after issue and are never renewed — a stolen token has a
 // hard ceiling, and re-logging-in is the only way forward.
@@ -298,9 +298,10 @@ export interface Accounts {
   hostOwner(hostId: string): number | undefined;
   /**
    * Registers or refreshes a device's APNs token under `userId` (ADR-0036 §1-2).
-   * A token belongs to one account at a time: registering it moves it here.
+   * A token belongs to one account at a time: registering it moves it here,
+   * tied to `deviceId`, the account device of the session that registered it.
    */
-  registerPushToken(userId: number, token: string, environment: ApnsEnvironment): void;
+  registerPushToken(userId: number, token: string, environment: ApnsEnvironment, deviceId?: number): void;
   /** Drops the registration only when `userId` owns it. */
   removePushToken(userId: number, token: string, environment: ApnsEnvironment): void;
   /** The account a live (refreshed within 90 days) registration belongs to. */
@@ -346,8 +347,9 @@ export interface Accounts {
   confirmRevocation(hostId: string, publicKey: string): void;
   /**
    * Kicks one of the caller's devices after checking the password (ADR-0037
-   * §3): its sessions end, it is marked kicked, and every host that reported
-   * admitting it owes a revocation. The caller's own device is refused.
+   * §3): its sessions and push registrations end, it is marked kicked, and
+   * every host that reported admitting it owes a revocation. The caller's own
+   * device is refused.
    */
   kickDevice(args: {
     readonly userId: number;
@@ -472,6 +474,19 @@ function migrate(db: DatabaseSync): void {
     `);
   }
   if (version < 4) migrateTo4(db);
+  if (version < 5) {
+    // The account device whose session registered the token, so kicking it
+    // drops the token too (ADR-0037 §3). Registrations from before this step
+    // aren't tied to one. SET NULL: when a sign-in sweeps an unused unnamed
+    // device, its registrations become untied instead of being dropped.
+    db.exec(`
+      BEGIN;
+      ALTER TABLE push_tokens ADD COLUMN device_id INTEGER REFERENCES account_devices(id) ON DELETE SET NULL;
+      CREATE INDEX push_tokens_device ON push_tokens (device_id);
+      PRAGMA user_version = 5;
+      COMMIT;
+    `);
+  }
 }
 
 /**
@@ -1029,15 +1044,16 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       return row?.userId;
     },
 
-    registerPushToken(userId, token, environment) {
+    registerPushToken(userId, token, environment, deviceId) {
       const at = now();
       db.exec("BEGIN");
       try {
         db.prepare("DELETE FROM push_tokens WHERE updated_at < ?").run(at - PUSH_TOKEN_TTL_MS);
         db.prepare(
-          `INSERT INTO push_tokens (token, environment, user_id, updated_at) VALUES (?, ?, ?, ?)
-           ON CONFLICT (token, environment) DO UPDATE SET user_id = excluded.user_id, updated_at = excluded.updated_at`,
-        ).run(token.toLowerCase(), environment, userId, at);
+          `INSERT INTO push_tokens (token, environment, user_id, updated_at, device_id) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT (token, environment) DO UPDATE SET
+             user_id = excluded.user_id, updated_at = excluded.updated_at, device_id = excluded.device_id`,
+        ).run(token.toLowerCase(), environment, userId, at, deviceId ?? null);
         db.prepare(
           `DELETE FROM push_tokens WHERE user_id = ? AND rowid NOT IN (
              SELECT rowid FROM push_tokens WHERE user_id = ? ORDER BY updated_at DESC LIMIT ?
@@ -1311,6 +1327,9 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
         const at = now();
         sweepVouchings();
         db.prepare("DELETE FROM sessions WHERE device_id = ?").run(deviceId);
+        // A host without device-reports never revokes it, so its push
+        // registrations must go too, or that host could still push to it.
+        db.prepare("DELETE FROM push_tokens WHERE device_id = ?").run(deviceId);
         db.prepare("UPDATE account_devices SET kicked_at = ? WHERE id = ?").run(at, deviceId);
         // Every key a host reported that the account still vouched for is
         // asked back; already-withdrawn ones are left alone, so a host that

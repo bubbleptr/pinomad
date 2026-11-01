@@ -567,11 +567,12 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       }
       // The session may have been revoked while the body trickled in; a
       // registration written now would outlive "sign out everywhere".
-      if (accounts.authenticate(token!) === undefined) {
+      const current = accounts.authenticate(token!);
+      if (current === undefined) {
         deny(401, "unauthenticated");
         return;
       }
-      if (pathname === "/api/push-tokens") accounts.registerPushToken(session.userId, apns, environment);
+      if (pathname === "/api/push-tokens") accounts.registerPushToken(session.userId, apns, environment, current.deviceId);
       else accounts.removePushToken(session.userId, apns, environment);
       send(204);
       return;
