@@ -5,6 +5,8 @@
 // reinstalls deps + rebuilds. Any failed step stops before the restart, so
 // the service keeps running the old code.
 import { execFile, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs, promisify } from "node:util";
 import { commandHint, globalPrefixOf, packageDir, packagedVersion } from "../distribution.ts";
@@ -16,10 +18,23 @@ import { restartService } from "./service.ts";
 const exec = promisify(execFile);
 const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 
-const step = (command: string, args: readonly string[]): Promise<number> =>
+const step = (command: string, args: readonly string[], binDir?: string): Promise<number> =>
   new Promise((resolve) => {
-    spawn(command, [...args], { cwd: repoRoot, stdio: "inherit" }).once("exit", (code) => resolve(code ?? 1));
+    const env = binDir === undefined ? process.env : { ...process.env, PATH: `${binDir}:${process.env.PATH ?? ""}` };
+    spawn(command, [...args], { cwd: repoRoot, env, stdio: "inherit" }).once("exit", (code) => resolve(code ?? 1));
   });
+
+/**
+ * The npm that ships with the node running pinomad, which is the node the
+ * service runs too. An install-script runtime (#499) has no other npm, and a
+ * different one on PATH could pick native prebuilds for another node. Falls
+ * back to `npm` on PATH when there is none beside it.
+ */
+export function npmBeside(execPath: string): { command: string; args: readonly string[]; binDir?: string } {
+  const binDir = dirname(execPath);
+  const cli = join(binDir, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js");
+  return existsSync(cli) ? { command: execPath, args: [cli], binDir } : { command: "npm", args: [] };
+}
 
 // A source checkout / global install without the service still upgrades
 // fine — just no restart; unsupported platforms (serviceManager throws)
@@ -32,8 +47,8 @@ const serviceInstalled = (): Promise<boolean> =>
 export interface UpgradeDeps {
   /** One-shot exec for the `git status` check; defaults to execFile in the repo root. */
   readonly run?: (command: string, args: readonly string[]) => Promise<{ stdout: string }>;
-  /** A foreground step (npm/git/bun, stdio inherit); injected so tests never run them. */
-  readonly step?: (command: string, args: readonly string[]) => Promise<number>;
+  /** A foreground step (npm/git/bun, stdio inherit), `binDir` first on its PATH; injected so tests never run them. */
+  readonly step?: (command: string, args: readonly string[], binDir?: string) => Promise<number>;
   /** Whether the user service is installed; defaults to asking the platform manager. */
   readonly serviceInstalled?: () => Promise<boolean>;
   /** The post-install restart; defaults to `restartService`. */
@@ -83,7 +98,8 @@ export async function main(argv: readonly string[], deps: UpgradeDeps = {}): Pro
       process.exitCode = 1;
       return;
     }
-    const code = await runStep("npm", ["install", "-g", "--prefix", prefix, "pinomad@latest"]);
+    const npm = npmBeside(process.execPath);
+    const code = await runStep(npm.command, [...npm.args, "install", "-g", "--prefix", prefix, "pinomad@latest"], npm.binDir);
     if (code !== 0) {
       process.exitCode = code;
       return;

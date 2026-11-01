@@ -5,13 +5,15 @@ description: Install the host, open a client, connect your other devices, and ke
 
 ## Quick start
 
-The host needs Node 25+ on macOS or Linux.
+The host runs on macOS or Linux. The install script brings its own Node:
 
 ```sh
-npm i -g pinomad
+curl -fsSL https://pinomad.si/install.sh | sh
 pinomad host        # data and credentials live in ~/.pinomad
 pinomad link        # in another terminal: prints a browser link to the web client
 ```
+
+The script puts Node and pinomad in `~/.pinomad/runtime` and the `pinomad` command in `~/.local/bin`, and prints the line to add to your shell profile if that directory isn't on your PATH. It covers Apple silicon Macs and Linux on x64 or arm64 (glibc). Anywhere else, or to use a Node 25+ you already have, install with `npm i -g pinomad` instead.
 
 Sign in to a model provider under Settings → Providers: a subscription you already pay for (Claude, ChatGPT, Copilot, …), an API key, or your own OpenAI- or Anthropic-compatible endpoint. To click around without one, `pinomad host --faux "hi"` runs a scripted fake model.
 
@@ -54,7 +56,9 @@ pinomad service status
 pinomad upgrade     # install pinomad@latest, wait for running tasks, restart
 ```
 
-Service flags, logs, and platform caveats: [Running as a service](/zh/docs/service/) (Chinese).
+Service flags, logs, and platform caveats: [Running as a service](/zh/docs/service/) (Chinese). `pinomad upgrade` updates pinomad only; running the install script again updates its Node too.
+
+To uninstall a script install, run `pinomad service uninstall`, then delete `~/.pinomad/runtime` and `~/.local/bin/pinomad`. Your data in the rest of `~/.pinomad` stays until you delete it.
 
 ## Clients
 
