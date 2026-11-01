@@ -24,6 +24,7 @@ const noAccount: AccountModel = {
   lookupHostLink: unavailable,
   confirmHostLink: unavailable,
   denyHostLink: unavailable,
+  watchForHost: () => {},
   listInvites: unavailable,
   createInvite: unavailable,
   revokeInvite: unavailable,

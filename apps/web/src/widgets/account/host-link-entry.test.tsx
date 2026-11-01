@@ -32,6 +32,7 @@ function model(actions: Partial<AccountModel> = {}): AccountModel {
     confirmHostLink: vi.fn(() => ok(undefined)),
     denyHostLink: vi.fn(() => ok(undefined)),
     refreshHosts: vi.fn(() => ok([])),
+    watchForHost: vi.fn(),
     ...actions,
   };
 }
@@ -111,7 +112,7 @@ describe("HostLinkEntry", () => {
     expect(codeInput()).toHaveValue("KXHN-BWCV");
   });
 
-  it("confirms, refreshes the hosts and remembers the host so this device doesn't announce it", async () => {
+  it("confirms, has the model watch for the host until it pairs, and remembers it so this device doesn't announce it", async () => {
     const knownHosts = createKnownHostsStore(localStorage);
     const account = { serverOrigin: "https://pinomad.si", user: "kieran" };
     knownHosts.arrivals(account, []);
@@ -122,7 +123,7 @@ describe("HostLinkEntry", () => {
     await user.click(await screen.findByRole("button", { name: "Confirm" }));
     expect(model_.confirmHostLink).toHaveBeenCalledWith("KXHN-BWCV");
     expect(await screen.findByText(/will appear in your hosts and connect on its own/)).toBeInTheDocument();
-    expect(model_.refreshHosts).toHaveBeenCalled();
+    expect(model_.watchForHost).toHaveBeenCalledWith(request().hostId);
     expect(onSettled).toHaveBeenCalledTimes(1);
     expect(knownHosts.arrivals(account, [request().hostId])).toEqual([]);
   });
@@ -136,6 +137,7 @@ describe("HostLinkEntry", () => {
     expect(account.denyHostLink).toHaveBeenCalledWith("KXHN-BWCV");
     expect(await screen.findByText(/Turned e2e-mbp away/)).toBeInTheDocument();
     expect(account.confirmHostLink).not.toHaveBeenCalled();
+    expect(account.watchForHost).not.toHaveBeenCalled();
     expect(onSettled).toHaveBeenCalledTimes(1);
   });
 

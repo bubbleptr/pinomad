@@ -86,7 +86,7 @@ export function HostLinkEntry({
       if (confirm && account.state.status === "signed-in") {
         // This device asked for it; the notice is for hosts someone else let in.
         knownHosts.add({ serverOrigin: account.state.serverOrigin, user: account.state.user }, request.hostId);
-        void account.refreshHosts();
+        account.watchForHost(request.hostId);
       }
       setStep({ kind: confirm ? "confirmed" : "denied", name: request.name });
       onSettled?.();

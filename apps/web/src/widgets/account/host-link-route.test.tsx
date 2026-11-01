@@ -33,6 +33,8 @@ function liveAccount(initial: AccountState): AccountModel & { setState(next: Acc
       ok({ hostId: "h".repeat(43), name: "e2e-mbp", os: "Linux", sourceIp: "203.0.113.7", ipDiffers: false, expiresAt: Date.now() + 60_000 }),
     ),
     denyHostLink: vi.fn(() => ok(undefined)),
+    confirmHostLink: vi.fn(() => ok(undefined)),
+    watchForHost: vi.fn(),
   };
 }
 
@@ -94,5 +96,21 @@ describe("HostLinkRoute", () => {
     await user.click(await screen.findByRole("button", { name: "Deny" }));
     expect(await screen.findByText(/Turned e2e-mbp away/)).toBeInTheDocument();
     expect(window.location.pathname).toBe("/");
+  });
+
+  it("hands the wait for the host to the model, so closing the dialog with Done doesn't end it", async () => {
+    window.history.replaceState(null, "", "/host-link");
+    const account = liveAccount(signedIn());
+    renderRoute(account);
+    const user = userEvent.setup();
+    await user.type(codeInput()!, "KXHNBWCV");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(await screen.findByRole("button", { name: "Confirm" }));
+    await user.click(await screen.findByRole("button", { name: "Done" }));
+    expect(codeInput()).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // The model owns the 5 s / 2 min refresh (account-model.test.ts); nothing here can cancel it.
+    expect(account.watchForHost).toHaveBeenCalledTimes(1);
+    expect(account.watchForHost).toHaveBeenCalledWith("h".repeat(43));
   });
 });

@@ -711,6 +711,7 @@ export function fakeAccount(state: AccountState): AccountModel {
     lookupHostLink: fn(async () => ({ ok: true as const, value: HOST_LINK_REQUEST })),
     confirmHostLink: fn(async () => ({ ok: true as const, value: undefined })),
     denyHostLink: fn(async () => ({ ok: true as const, value: undefined })),
+    watchForHost: fn(),
     listInvites: fn(async () => ({ ok: true as const, value: ACCOUNT_INVITES })),
     createInvite: fn(async () => ({ ok: true as const, value: { code: "Qm3xV8rT2kLp9wYz4nHc1A", expiresAt: Date.now() + 7 * 24 * 60 * MINUTE } })),
     revokeInvite: fn(async () => ({ ok: true as const, value: undefined })),

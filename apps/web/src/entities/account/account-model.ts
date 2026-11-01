@@ -141,6 +141,14 @@ export interface AccountModel {
   lookupHostLink(userCode: string): Promise<AccountResult<HostLinkRequest>>;
   /** Lets that host join the account; it then pairs like any account host. */
   confirmHostLink(userCode: string): Promise<AccountResult<void>>;
+  /**
+   * After a confirm here: refresh the account hosts right away and every 5 s
+   * for up to 2 minutes, until `hostId` is listed and paired on this device.
+   * The host joins only after its next poll, the join and a service restart,
+   * and nothing else refreshes a page that already has a host. Sign-out
+   * stops it; the UI that asked has no say, so closing it doesn't.
+   */
+  watchForHost(hostId: string): void;
   denyHostLink(userCode: string): Promise<AccountResult<void>>;
   /** Admin only (#449). */
   listInvites(): Promise<AccountResult<readonly AccountInvite[]>>;
@@ -192,6 +200,10 @@ export interface AccountModelDeps {
 
 const fail = (code: string): AccountResult<never> => ({ ok: false, error: { code } });
 
+/** watchForHost's pace: a refresh every 5 s, for 2 minutes. */
+const HOST_WATCH_INTERVAL_MS = 5_000;
+const HOST_WATCH_REFRESHES = 120_000 / HOST_WATCH_INTERVAL_MS;
+
 /** Host refusals that mean "do not ask this host again on my behalf". */
 const DECLINED_CODES = new Set(["pair_rejected", "disabled"]);
 
@@ -236,6 +248,8 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   }
   const flights = new Map<string, Flight>();
   let stopVisibility: (() => void) | undefined;
+  /** watchForHost's live watch per hostId, with its pending refresh between ticks. */
+  const hostWatches = new Map<string, { readonly watch: object; readonly timer?: ReturnType<typeof setTimeout> }>();
 
   onAccountRegistrationCancel((hostId) => {
     for (const [key, flight] of flights) {
@@ -277,6 +291,8 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     flights.clear();
     unsaved.clear();
     stopWatching();
+    for (const { timer } of hostWatches.values()) clearTimeout(timer);
+    hostWatches.clear();
   };
 
   const publishSignedOut = (): void =>
@@ -644,6 +660,35 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     return { ok: true, value: enriched };
   };
 
+  const watchForHost = (hostId: string): void => {
+    if (client === undefined) return;
+    const active = client;
+    const started = epoch;
+    // A second confirm of the same host starts its window over: the old
+    // chain stops at its next step, even one waiting on a refresh.
+    const watch = {};
+    const previous = hostWatches.get(hostId);
+    if (previous !== undefined) clearTimeout(previous.timer);
+    hostWatches.set(hostId, { watch });
+    const current = (): boolean => live(active, started) && hostWatches.get(hostId)?.watch === watch;
+    const pairedHere = (): boolean =>
+      state.status === "signed-in"
+      && state.hosts.some((match) => match.host.hostId === hostId && match.status === "paired");
+    const finish = (): void => {
+      if (hostWatches.get(hostId)?.watch === watch) hostWatches.delete(hostId);
+    };
+    const tick = async (refreshesLeft: number): Promise<void> => {
+      // The refresh that lists the host only starts its pairing; the one
+      // after the pairing publishes it as paired, and the next tick sees that.
+      if (!current() || state.status !== "signed-in" || pairedHere()) return finish();
+      await refresh(active, state.user);
+      if (!current()) return;
+      if (pairedHere() || refreshesLeft === 0) return finish();
+      hostWatches.set(hostId, { watch, timer: setTimeout(() => void tick(refreshesLeft - 1), HOST_WATCH_INTERVAL_MS) });
+    };
+    void tick(HOST_WATCH_REFRESHES);
+  };
+
   /** Login and sign-up share everything but the call that mints the session. */
   const signIn = async (
     serverOrigin: string | undefined,
@@ -783,6 +828,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     lookupHostLink: (userCode) => authed((active) => active.lookupHostLink(userCode)),
     confirmHostLink: (userCode) => authed((active) => active.confirmHostLink(userCode)),
     denyHostLink: (userCode) => authed((active) => active.denyHostLink(userCode)),
+    watchForHost,
     listInvites: () => authed((active) => active.listInvites()),
     createInvite: () => authed((active) => active.createInvite()),
     revokeInvite: (id) => authed((active) => active.revokeInvite(id)),
