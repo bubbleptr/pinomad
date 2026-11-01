@@ -231,6 +231,34 @@ describe("pinomad up", () => {
   });
 });
 
+describe("pinomad up on a local-only host", () => {
+  // A plain `service install`: no join, no --remote-port. "Neither path on"
+  // is no default to keep, so the server is.
+  it("--yes and an empty answer both take the server path", async () => {
+    defer(() => {
+      process.exitCode = undefined;
+    });
+    for (const mode of ["yes", "ask"] as const) {
+      const dir = await dataDir();
+      const started = await startServer();
+      const fake = fakeManager(seededSpec(dir, ["--port", "7500"]));
+      const flow = confirmingDeps(started, fake.manager);
+      const questions: string[] = [];
+      await up(["--data-dir", dir, "--origin", started.origin, ...(mode === "yes" ? ["--yes"] : [])], {
+        ...flow.deps,
+        interactive: true,
+        ask: async (question) => {
+          questions.push(question);
+          return "";
+        },
+      });
+      expect(process.exitCode).toBeUndefined();
+      if (mode === "ask") expect(questions[0]).toContain("[1]");
+      expect(await readServerConfig(dir)).toMatchObject({ origin: started.origin, username: "admin" });
+    }
+  });
+});
+
 describe("statusReport", () => {
   it("a fresh host: not joined, LAN off, no service", async () => {
     const report = await statusReport({ dataDir: await dataDir() }, { manager: fakeManager().manager });

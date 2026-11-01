@@ -193,7 +193,8 @@ export async function main(argv: readonly string[], deps?: UpDeps): Promise<void
     const current = await currentReach(dataDir, deps);
     let reach = resolveReach({ server: values.server, lan: values.lan }, current);
     if (reach === undefined) {
-      const fallback = current ?? { server: true, lan: false };
+      // A local-only service has no path on to keep; the server is the default then.
+      const fallback = current !== undefined && (current.server || current.lan) ? current : { server: true, lan: false };
       if (values.yes === true) {
         reach = fallback;
       } else if (!(deps?.interactive ?? (process.stdin.isTTY && process.stdout.isTTY))) {
@@ -206,7 +207,7 @@ export async function main(argv: readonly string[], deps?: UpDeps): Promise<void
     }
     if (!reach.server && !reach.lan) {
       console.error(
-        `${commandHint("up")}: nothing to set up with both --no-server and --no-lan — ` +
+        `${commandHint("up")}: neither the server nor the LAN would be on — ` +
           `\`${commandHint("service")} install\` runs a host only this machine can reach`,
       );
       process.exitCode = 2;
