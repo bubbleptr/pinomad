@@ -1,0 +1,23 @@
+---
+title: Manage your account and remove a lost device from every host
+version: v0.10.0
+date: 2026-11-01
+---
+
+**Before you upgrade**
+
+- Upgrade the host along with the server. A host on an older version doesn't report the devices it admits, so the server can't ask it to revoke one; revoke those in the host's Settings → Devices.
+- The device list only knows sign-ins from after the upgrade. Sign in again on each browser, Mac and iPhone so it shows up. Devices paired with a QR code, or through the account before the upgrade, are still revoked on each host.
+
+**Accounts**
+
+- Change your password from the account panel on the web and in the Mac app, or from the iPhone's account page. This device stays signed in; every other session ends.
+- Delete your account from the same place, after entering your password again. Hosts joined to it lose their connection to the server; devices stay registered on each host until you revoke them there. The admin account can't be deleted.
+- The account panel and the iPhone's account page list every device that has signed in to your account, with its state on each host it joined. **Remove** signs a lost device out and asks each of those hosts to revoke it; a host that's offline does it the next time it connects.
+- The iPhone's sign-in form starts with the official server, `https://app.pinomad.si`, or the last server you signed in to, so you only type a username and password.
+- The privacy policy and terms of service are at [pinomad.si/privacy](https://pinomad.si/privacy/) and [pinomad.si/terms](https://pinomad.si/terms/), linked from the iPhone's sign-in and account pages.
+
+**Self-hosted servers**
+
+- `pinomad server passwd` resets a password while the server is running.
+- The relay has limits on device connections per host and per account, a handshake deadline, and a per-account traffic budget. The defaults are loose; tighten them with the `--relay-*` options or `PINOMAD_SERVER_RELAY_*` variables.
