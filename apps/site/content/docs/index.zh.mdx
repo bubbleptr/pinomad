@@ -5,13 +5,15 @@ description: 装好宿主，打开客户端，连上其他设备，让宿主常�
 
 ## 快速上手
 
-宿主需要 Node 25+，支持 macOS 和 Linux。
+宿主支持 macOS 和 Linux，安装脚本自带 Node：
 
 ```sh
-npm i -g pinomad
+curl -fsSL https://pinomad.si/install.sh | sh
 pinomad host        # 数据和凭据都在 ~/.pinomad
 pinomad link        # 另开一个终端：打印 Web 客户端的浏览器链接
 ```
+
+脚本把 Node 和 pinomad 装进 `~/.pinomad/runtime`，`pinomad` 命令放在 `~/.local/bin`；这个目录不在 PATH 里时，它会打印要加进 shell 配置文件的那一行。支持 Apple 芯片的 Mac 和 x64、arm64 的 Linux（glibc）。其他平台，或者想用自己装的 Node 25+，改用 `npm i -g pinomad`。
 
 模型在 Settings → Providers 里接入：用已经在付费的订阅登录（Claude、ChatGPT、Copilot 等）、填 API key，或者填你自己的 OpenAI / Anthropic 兼容 endpoint。还没有的话，`pinomad host --faux "hi"` 会用一个脚本化的假模型跑起来，可以先点点看。
 
@@ -54,7 +56,9 @@ pinomad service status
 pinomad upgrade     # 装上 pinomad@latest，等正在跑的任务结束后重启
 ```
 
-服务参数、日志和各平台的注意事项见[常驻运行](/zh/docs/service/)。
+服务参数、日志和各平台的注意事项见[常驻运行](/zh/docs/service/)。`pinomad upgrade` 只升级 pinomad；再跑一次安装脚本会连它自带的 Node 一起更新。
+
+卸载脚本装的 pinomad：先 `pinomad service uninstall`，再删掉 `~/.pinomad/runtime` 和 `~/.local/bin/pinomad`。`~/.pinomad` 里其余的数据会留着，要删自己删。
 
 ## 客户端
 

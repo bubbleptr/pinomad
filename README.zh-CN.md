@@ -16,10 +16,10 @@
 
 ## 快速上手
 
-宿主需要 Node 25+，支持 macOS 和 Linux。
+宿主支持 macOS 和 Linux，安装脚本自带 Node（也可以在 Node 25+ 上 `npm i -g pinomad`）：
 
 ```sh
-npm i -g pinomad
+curl -fsSL https://pinomad.si/install.sh | sh
 pinomad host        # 数据和凭据都在 ~/.pinomad
 pinomad link        # 另开一个终端：打印 Web 客户端的浏览器链接
 ```

@@ -1,7 +1,8 @@
 name: Site
 
-# PR gate for pinomad.si (apps/site): typecheck and the prerendered build. The
-# site imports the app icons from apps/web/public, so those trigger it too.
+# PR gate for pinomad.si (apps/site): typecheck, the install script's tests,
+# and the prerendered build. The site imports the app icons from
+# apps/web/public, so those trigger it too.
 # Changes elsewhere in apps/web also rebuild the site through ci.yml's
 # `bun run build`.
 on:
@@ -34,5 +35,6 @@ jobs:
           node-version: "25"
       - run: bun install --frozen-lockfile
       - run: bunx tsc --noEmit -p apps/site
+      - run: bunx vitest run --project site
       - run: bun run build
         working-directory: apps/site

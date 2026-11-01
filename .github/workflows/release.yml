@@ -161,8 +161,46 @@ jobs:
             hdiutil detach "$RUNNER_TEMP/pinomad-dmg"
           fi
 
+  install-script:
+    # apps/site/public/install.sh on every platform it covers, with the package
+    # verify just packed: official Node download, npm install, the launcher,
+    # and a host that starts on that Node.
+    needs: verify
+    strategy:
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm, macos-15]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v6
+        with:
+          name: npm-package
+          path: npm-artifact
+      - name: Install with the script and start the host
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/home"
+          mkdir -p "$HOME"
+          tgz=$(ls "$GITHUB_WORKSPACE"/npm-artifact/pinomad-*.tgz)
+          version=$(basename "$tgz" .tgz)
+          version=${version#pinomad-}
+          PINOMAD_VERSION="$tgz" sh apps/site/public/install.sh
+          bin="$HOME/.local/bin/pinomad"
+          test "$("$bin" --version)" = "$version"
+          log="$RUNNER_TEMP/host.log"
+          "$bin" host --faux hi --data-dir "$RUNNER_TEMP/data" --port 7431 >"$log" 2>&1 &
+          host=$!
+          for _ in $(seq 60); do
+            if grep -q '"event":"ready"' "$log"; then break; fi
+            sleep 1
+          done
+          grep -q '"event":"ready"' "$log" || { cat "$log"; exit 1; }
+          curl -fsS -o /dev/null http://127.0.0.1:7431/
+          kill "$host"
+
   publish:
-    needs: [verify, macos]
+    needs: [verify, macos, install-script]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 30

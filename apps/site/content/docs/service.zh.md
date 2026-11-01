@@ -24,7 +24,7 @@ pinomad upgrade [--force]
 - `uninstall` 只卸载服务，不动数据目录。
 - macOS：宿主以登录会话运行，机器重启后要能自动起来需在系统设置里打开自动登录，并为这台机器关掉睡眠。日志写到 `<数据目录>/logs/host.log`；宿主启动时和之后每 10 分钟检查一次，文件超过 10 MiB 就复制成同目录的 `host.log.1` 并原地截断 `host.log`，保留 `host.log.1` 到 `host.log.3` 三份历史、最老的丢弃（copytruncate，已装好的服务不用重装 plist）。
 - Linux：要在未登录时也运行需自己执行 `loginctl enable-linger`（install 检测到没开会提示）；日志走 `journalctl --user`。开着 ufw 时，局域网设备访问 `--remote-port` 要先放行，比如 `sudo ufw allow from 192.168.0.0/24 to any port 7422 proto tcp`（只走中继就不用开）。
-- **服务绑定安装时的 node 路径**：单元里写的是 node 和包的绝对路径。用 mise / nvm 管理 Node 时，路径里带着具体版本号（`…/node/26.8.2/…`）；换了 Node 版本、旧目录被删后服务就起不来，要用新版本重新 `npm i -g pinomad`，再跑一次 `pinomad service install …`。`pinomad upgrade` 只升 pinomad，装回原来的前缀，不受影响。
+- **服务绑定安装时的 node 路径**：单元里写的是 node 和包的绝对路径。用 mise / nvm 管理 Node 时，路径里带着具体版本号（`…/node/26.8.2/…`）；换了 Node 版本、旧目录被删后服务就起不来，要用新版本重新 `npm i -g pinomad`，再跑一次 `pinomad service install …`。`pinomad upgrade` 只升 pinomad，装回原来的前缀，不受影响。用[安装脚本](/zh/docs/)装的没有这个问题：node 固定在 `~/.pinomad/runtime/node`，重跑脚本更新 Node 时路径不变。
 - 服务模式下**回环端口也用 HTTP 提供构建好的 Web 客户端**。npm 安装时 `pinomad link` 总是指向宿主自己提供的 Web；源码检出里按顺序探测：正在跑的 vite 开发服务器（5199）优先，否则宿主提供 Web 的端口，都没有则仍是 5199。开发时 `bun run start` + vite 照旧。
 - 服务在跑时 `bun run start` 会因为目录锁拿不到而失败（同一数据目录只有一个宿主）；开发时用另一个 `--data-dir`，或先 `uninstall`。
 

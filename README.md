@@ -16,10 +16,10 @@ A self-hosted coding agent built on [Pi Durable](https://www.npmjs.com/package/@
 
 ## Quick start
 
-The host needs Node 25+ on macOS or Linux.
+The host runs on macOS or Linux. The install script brings its own Node (or use `npm i -g pinomad` with Node 25+):
 
 ```sh
-npm i -g pinomad
+curl -fsSL https://pinomad.si/install.sh | sh
 pinomad host        # data and credentials live in ~/.pinomad
 pinomad link        # in another terminal: prints a browser link to the web client
 ```

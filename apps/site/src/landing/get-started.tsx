@@ -5,6 +5,8 @@ import { githubUrl } from "@/lib/nav.ts";
 import type { LandingCopy } from "./copy.tsx";
 import { StarIcon } from "./icons.tsx";
 
+const INSTALL = "curl -fsSL https://pinomad.si/install.sh | sh";
+
 /** The newest changelog entry, read from the changelog when the page is prerendered. */
 export type LatestRelease = { version: string; date: string };
 
@@ -30,12 +32,12 @@ export function GetStarted({ t }: { t: LandingCopy["start"] }) {
         <div className="code-card">
           <div className="code-card-header">
             <span>{t.terminal}</span>
-            <CopyButton text={"npm i -g pinomad\npinomad host\npinomad link"} t={t} />
+            <CopyButton text={`${INSTALL}\npinomad host\npinomad link`} t={t} />
           </div>
           {/* Each run of plain text stays one text node: splitting it shifts the glyphs. */}
           <pre>
             <code>
-              {"npm i -g pinomad\npinomad host   "}
+              {`${INSTALL}\npinomad host   `}
               <span className="comment">{t.hostComment}</span>
               {"\npinomad link   "}
               <span className="comment">{t.linkComment}</span>

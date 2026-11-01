@@ -224,7 +224,7 @@ export const copy: Record<Lang, LandingCopy> = {
     start: {
       eyebrow: "Get started",
       title: "Install, start the host, open a client",
-      lead: "Free and open source under Apache-2.0. The host needs Node 25+ on macOS or Linux.",
+      lead: "Free and open source under Apache-2.0. The host runs on macOS or Linux; the install script brings its own Node.",
       notes: [
         <>
           Sign in with your Claude, ChatGPT, or Copilot subscription, an API key, or a local Ollama or vLLM endpoint under
@@ -402,7 +402,7 @@ export const copy: Record<Lang, LandingCopy> = {
     start: {
       eyebrow: "开始使用",
       title: "三条命令跑起来",
-      lead: "免费开源，Apache-2.0 许可。宿主需要 Node 25+，支持 macOS 和 Linux。",
+      lead: "免费开源，Apache-2.0 许可。宿主支持 macOS 和 Linux，安装脚本自带 Node。",
       notes: [
         <>
           打开客户端后，在 Settings → Providers 登录已有的 Claude / ChatGPT / Copilot 订阅，或填入 API Key、本地
