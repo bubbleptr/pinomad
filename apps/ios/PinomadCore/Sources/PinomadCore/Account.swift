@@ -734,15 +734,21 @@ public enum AccountCopy {
         "Account deleted. This iPhone is still paired with your hosts. To remove it, revoke it in each host's Devices."
 
     public static let signOutExplanation =
-        "Signing out stops the server from vouching for this device and from delivering its notifications. Paired hosts stay paired."
+        "Signing out stops the server from vouching for this device and from delivering its notifications. Paired hosts stay paired unless you remove this iPhone from them."
+
+    /// The shared-device choice beside Sign out (#494).
+    public static let signOutRevokeExplanation =
+        "For a shared or borrowed iPhone: each host it joined through your account revokes it, and it forgets them. Hosts paired with a QR code stay."
 
     /// The warning after a sign-out request failed. On this device an
     /// unauthenticated answer just means the local token was already dead;
-    /// for "everywhere" it proves nothing about the other sessions.
-    public static func signOutWarning(everywhere: Bool, failure: AccountFailure?) -> String? {
-        guard let failure, everywhere || !failure.clearsSession else { return nil }
-        return everywhere
-            ? "Other devices may still be signed in. Sign in and try Sign out everywhere again."
+    /// for "everywhere" it proves nothing about the other sessions, and with
+    /// `revoke` a dead session asked no host to revoke anything.
+    public static func signOutWarning(everywhere: Bool, revoke: Bool = false, failure: AccountFailure?) -> String? {
+        guard let failure, everywhere || revoke || !failure.clearsSession else { return nil }
+        if everywhere { return "Other devices may still be signed in. Sign in and try Sign out everywhere again." }
+        return revoke
+            ? "This iPhone forgot its account hosts, but the server didn't confirm asking them to revoke it. Remove it from another device, or revoke it on each host."
             : "Signed out on this device, but the server didn't confirm. The session will expire on its own within 30 days."
     }
 

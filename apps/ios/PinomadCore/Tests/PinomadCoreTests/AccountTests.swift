@@ -505,6 +505,14 @@ struct AccountTests {
         #expect(AccountCopy.signOutWarning(everywhere: false, failure: .network) != nil)
         #expect(AccountCopy.signOutWarning(everywhere: true, failure: nil) == nil)
     }
+
+    /// A dead session can't have asked the hosts to revoke anything (#494).
+    @Test func signOutWarningKeepsADeadSessionVisibleWhenRevoking() {
+        let dead = AccountFailure(code: "unauthenticated")
+        #expect(AccountCopy.signOutWarning(everywhere: false, revoke: true, failure: dead)?.contains("revoke") == true)
+        #expect(AccountCopy.signOutWarning(everywhere: false, revoke: true, failure: .network)?.contains("revoke") == true)
+        #expect(AccountCopy.signOutWarning(everywhere: false, revoke: true, failure: nil) == nil)
+    }
 }
 
 private func record(_ key: String, account: AccountLink? = nil) -> HostRecord {

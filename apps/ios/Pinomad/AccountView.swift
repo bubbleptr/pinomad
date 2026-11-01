@@ -12,6 +12,8 @@ struct AccountView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var pendingAccountPair: AccountHostRow?
     @State private var confirmingSignOutEverywhere = false
+    /// Sign out also takes this iPhone off the account's hosts (#494).
+    @State private var leavingHosts = false
     @State private var passwordChanged = false
     @State private var removingDevice: AccountDevice?
     #if DEBUG
@@ -109,8 +111,22 @@ struct AccountView: View {
                             .foregroundStyle(.orange)
                     }
 
+                    // Off by default and reset with the view: a host keeps
+                    // every revocation, so each sign-out of your own phone
+                    // would leave a dead key in its device list (#494).
+                    Toggle(isOn: $leavingHosts) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Remove this iPhone from my hosts")
+                            Text(AccountCopy.signOutRevokeExplanation)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .disabled(model.accountBusy)
+
                     Button("Sign out", role: .destructive) {
-                        Task { await model.accountSignOut(everywhere: false) }
+                        let revoke = leavingHosts
+                        Task { await model.accountSignOut(everywhere: false, revoke: revoke) }
                     }
                     .disabled(model.accountBusy)
 

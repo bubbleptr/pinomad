@@ -785,7 +785,9 @@ final class AppModel {
 
     /// Forget one host: close only its runtime, clear its push registration,
     /// and remember the decline if it was an account host (ADR-0035 §5).
-    func forget(_ hostKey: String) {
+    /// `decline: false` is for a shared-device sign-out (#494): the owner
+    /// signing in here again should get the host back on its own.
+    func forget(_ hostKey: String, decline: Bool = true) {
         #if DEBUG
         if devHostsInjected {
             showToast("Demo data: hosts aren't forgotten.")
@@ -818,7 +820,7 @@ final class AppModel {
                     warning = "Forgot this host, but couldn't clear notifications (\(self.describe(error))). Revoke this device on the host's Devices page to stop them."
                 }
             }
-            self.forgetNow(hostKey, record: record, warning: warning)
+            self.forgetNow(hostKey, record: record, warning: warning, decline: decline)
         }
     }
 
@@ -844,7 +846,7 @@ final class AppModel {
         }
     }
 
-    private func forgetNow(_ hostKey: String, record: HostRecord?, warning: String?) {
+    private func forgetNow(_ hostKey: String, record: HostRecord?, warning: String?, decline: Bool) {
         forgettingHosts.remove(hostKey)
         // Cancelling in-flight registrations for this identity is part of
         // forgetting it; a late handshake must not resurrect it.
@@ -863,7 +865,7 @@ final class AppModel {
             lastError = "Couldn't forget this host: \(describe(error))"
             return
         }
-        if let account = record?.account {
+        if decline, let account = record?.account {
             declinedAccountHosts.add(serverOrigin: account.serverOrigin, hostId: account.hostId)
         }
         push.forget(hostKey)

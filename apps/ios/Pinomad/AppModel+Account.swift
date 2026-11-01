@@ -328,7 +328,15 @@ extension AppModel {
     /// Signing out keeps the paired hosts; only the server's guarantee goes
     /// away (ADR-0022 §6). The local token is cleared even when the request
     /// never reaches the server.
-    func accountSignOut(everywhere: Bool) async {
+    ///
+    /// `revoke` (a shared iPhone, #494; plain sign-out only) also asks the
+    /// server to have every host this device joined through the account
+    /// revoke it, and forgets the stored hosts linked to that server. The
+    /// forgetting doesn't depend on the answer: an older server ignores
+    /// `revoke` and still answers 204, and without the hosts' keys this
+    /// device can't connect back either way. QR-paired hosts stay.
+    func accountSignOut(everywhere: Bool, revoke: Bool = false) async {
+        let revoke = revoke && !everywhere
         guard let session = accountSession, let api = accountAPI() else { return }
         accountBusy = true
         serverPushPaused = true
@@ -358,7 +366,7 @@ extension AppModel {
             pushRemoved = await removeServerPushToken(
                 api: api,
                 account: ServerPushAccount(serverOrigin: session.serverOrigin, username: session.username))
-            switch await api.logout() {
+            switch await api.logout(revoke: revoke) {
             case .success: failure = nil
             case .failure(let error): failure = error
             }
@@ -369,11 +377,24 @@ extension AppModel {
             && accountRecord?.username == session.username
         guard accountSession == session || (accountSession == nil && keptIdentity) else { return }
         let warning = endAccountSession(notice: nil)
-        let serverWarning = AccountCopy.signOutWarning(everywhere: everywhere, failure: failure)
+        // After the session ended, so no account refresh can register a
+        // host again while it is being forgotten.
+        if revoke { forgetAccountHosts(serverOrigin: session.serverOrigin) }
+        let serverWarning = AccountCopy.signOutWarning(everywhere: everywhere, revoke: revoke, failure: failure)
         let pushWarning = pushRemoved ? nil
             : "The server didn't confirm removing this device's notification token, so hosts on the account may still notify it. Sign in again and turn notifications off to remove it."
         let joined = [warning, serverWarning, pushWarning].compactMap { $0 }.joined(separator: "\n")
         accountSignOutWarning = joined.isEmpty ? nil : joined
+    }
+
+    /// Forget every stored host linked to `serverOrigin`'s account, without
+    /// declining it (#494). Hosts paired by QR code carry no link and stay.
+    private func forgetAccountHosts(serverOrigin: String) {
+        let origin = normalizeServerOrigin(origin: serverOrigin)
+        for host in hosts.hosts {
+            guard let link = host.account, normalizeServerOrigin(origin: link.serverOrigin) == origin else { continue }
+            forget(host.hostKey, decline: false)
+        }
     }
 
     /// Change the account password (#450). This session stays; the server
