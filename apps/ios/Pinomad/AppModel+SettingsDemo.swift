@@ -7,7 +7,8 @@ import PinomadCore
 /// among them), a chat, and one archived root. `failed`
 /// fails the first machine and opens its failure page; `pairing` the first-run
 /// page with nothing paired; `first-host` the same, signed in to an account
-/// with no hosts (#493); `account` adds a signed-in account (its calls
+/// with no hosts (#493), and `first-host-…` its host-link demos (#497);
+/// `account` adds a signed-in account (its calls
 /// never leave the app); `signed-out` only the remembered account a sign-out
 /// leaves behind, with no session. The addresses are
 /// `.invalid` and the injected hosts block switching and forgetting, so
@@ -19,14 +20,16 @@ extension AppModel {
             phase = .pairing
             return
         }
-        if mode == "first-host" {
+        if mode == "first-host" || mode.hasPrefix("first-host-") {
             useDevHosts(StoredHosts(hosts: [], activeHostKey: nil))
-            accountRecord = AccountRecord(
+            let record = AccountRecord(
                 serverOrigin: "https://accounts.invalid", username: "kieran",
                 token: "demo", expiresAt: Date.now.addingTimeInterval(86_400).timeIntervalSince1970 * 1000)
+            accountRecord = record
             accountRows = []
             accountHostsLoaded = true
             phase = .pairing
+            startHostLinkDemo(mode, session: record.session!)
             return
         }
         // A fixed key, so the devices list can mark this device.
@@ -86,6 +89,52 @@ extension AppModel {
             notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
             agents: nil, conversation: nil
         ))
+    }
+
+    /// The host-link demos (#497) over the first-host home: `first-host-confirm`
+    /// types a code and opens its confirm page, `first-host-ip` one asked
+    /// from another address, `first-host-joined` confirms it, and
+    /// `first-host-notice` has a host join from elsewhere a moment later.
+    private func startHostLinkDemo(_ mode: String, session: AccountSession) {
+        knownAccountHosts.reset(serverOrigin: session.serverOrigin, username: session.username)
+        announceNewHosts([], session: session)
+        switch mode {
+        case "first-host-confirm": devHostLinkCode = "kxhn bwcv"
+        case "first-host-ip": devHostLinkCode = "qrst-vwxz"
+        case "first-host-joined":
+            devHostLinkCode = "kxhnbwcv"
+            devHostLinkConfirms = true
+        case "first-host-notice":
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard let self, self.accountSession == session else { return }
+                let rows = [AccountHostRow(
+                    hostId: "demo-studio", name: "studio", online: true, pairing: .available,
+                    status: .unpaired, action: .pair, storedHostKey: nil)]
+                self.accountRows = rows
+                self.announceNewHosts(rows, session: session)
+            }
+        default: break
+        }
+    }
+
+    /// Two codes are waiting: KXHN-BWCV from this iPhone's network and
+    /// QRST-VWXZ from another one. Any other code isn't.
+    func devHostLinkLookup(_ code: String) async -> Result<HostLinkRequest, AccountFailure> {
+        try? await Task.sleep(for: .milliseconds(400))
+        let expiresAt = (Date.now.timeIntervalSince1970 + 9 * 60 + 12) * 1000
+        switch code {
+        case "KXHNBWCV":
+            return .success(HostLinkRequest(
+                hostId: "Kx3f9Q2aZ8mN1pLr5tVw7yB0cD4eF6gH8iJ0kL2mN4o", name: "studio", os: "macOS 26.1",
+                sourceIp: "203.0.113.7", ipDiffers: false, expiresAt: expiresAt))
+        case "QRSTVWXZ":
+            return .success(HostLinkRequest(
+                hostId: "Pq7RsT1uVw3XyZ5aBc7De9Fg1Hi3Jk5Lm7No9Pq1Rs3", name: "build-box", os: "Linux 6.8 (x64)",
+                sourceIp: "198.51.100.23", ipDiffers: true, expiresAt: expiresAt))
+        default:
+            return .failure(AccountFailure(code: "not_found", status: 404))
+        }
     }
 
     /// The account's hosts and devices (#452): this iPhone, a Mac whose

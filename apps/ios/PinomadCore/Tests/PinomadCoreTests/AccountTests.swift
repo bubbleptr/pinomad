@@ -309,6 +309,59 @@ struct AccountTests {
         #expect(request.headers.contains(AccountHttpHeader(name: "authorization", value: "Bearer tok")))
     }
 
+    /// The typed code (#497) goes to the server as entered, with the
+    /// session's bearer; the answer is the host waiting behind it.
+    @Test func hostLinkLookupSendsTheCodeAndParsesTheHost() async {
+        let transport = StubAccountTransport()
+        transport.outcome = .response(AccountHTTPResponse(
+            status: 200,
+            body: Data(#"{"hostId":"hid","name":"studio","os":"macOS 26.1","sourceIp":"203.0.113.7","ipDiffers":true,"expiresAt":600000}"#.utf8)))
+        let api = AccountAPI(origin: "https://relay.example.com", token: "tok", transport: transport)
+        let result = await api.lookupHostLink(userCode: "KXHNBWCV")
+
+        guard case .success(let request) = result else {
+            Issue.record("expected a host link request, got \(result)")
+            return
+        }
+        #expect(request == HostLinkRequest(
+            hostId: "hid", name: "studio", os: "macOS 26.1", sourceIp: "203.0.113.7",
+            ipDiffers: true, expiresAt: 600_000))
+        let sent = transport.requests[0]
+        #expect(sent.method == "POST")
+        #expect(sent.url == "https://relay.example.com/api/host-link/lookup")
+        #expect(sent.headers.contains(AccountHttpHeader(name: "authorization", value: "Bearer tok")))
+        #expect(sent.body == #"{"userCode":"KXHNBWCV"}"#)
+    }
+
+    @Test func hostLinkConfirmAndDenySettleTheCode() async {
+        let transport = StubAccountTransport()
+        transport.outcome = .response(AccountHTTPResponse(status: 204, body: Data()))
+        let api = AccountAPI(origin: "https://relay.example.com", token: "tok", transport: transport)
+
+        guard case .success = await api.confirmHostLink(userCode: "KXHNBWCV"),
+              case .success = await api.denyHostLink(userCode: "BCDFGHJK")
+        else {
+            Issue.record("expected both to succeed")
+            return
+        }
+        #expect(transport.requests.map(\.url) == [
+            "https://relay.example.com/api/host-link/confirm",
+            "https://relay.example.com/api/host-link/deny",
+        ])
+        #expect(transport.requests.map(\.body) == [#"{"userCode":"KXHNBWCV"}"#, #"{"userCode":"BCDFGHJK"}"#])
+    }
+
+    /// Wrong, used and expired codes are one 404; too many wrong ones a 429.
+    @Test func hostLinkFailuresCarryTheServerCode() async {
+        let transport = StubAccountTransport()
+        transport.outcome = .response(AccountHTTPResponse(status: 404, body: Data(#"{"error":"not_found"}"#.utf8)))
+        let api = AccountAPI(origin: "https://relay.example.com", token: "tok", transport: transport)
+        #expect(await api.lookupHostLink(userCode: "KXHNBWCV").failure == AccountFailure(code: "not_found", status: 404))
+
+        transport.outcome = .response(AccountHTTPResponse(status: 429, body: Data(#"{"error":"rate_limited"}"#.utf8)))
+        #expect(await api.confirmHostLink(userCode: "KXHNBWCV").failure == AccountFailure(code: "rate_limited", status: 429))
+    }
+
     @Test func transportFailureBecomesNetwork() async {
         let transport = StubAccountTransport()
         transport.outcome = .error
@@ -666,4 +719,10 @@ private final class RedirectURLProtocol: URLProtocol, @unchecked Sendable {
     }
 
     override func stopLoading() {}
+}
+
+private extension Result {
+    var failure: Failure? {
+        if case .failure(let failure) = self { failure } else { nil }
+    }
 }
