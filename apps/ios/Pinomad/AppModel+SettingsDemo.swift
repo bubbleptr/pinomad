@@ -6,7 +6,8 @@ import PinomadCore
 /// machines (the first connected, renamed, with three devices, this one
 /// among them), a chat, and one archived root. `failed`
 /// fails the first machine and opens its failure page; `pairing` the first-run
-/// page with nothing paired; `account` adds a signed-in account (its calls
+/// page with nothing paired; `first-host` the same, signed in to an account
+/// with no hosts (#493); `account` adds a signed-in account (its calls
 /// never leave the app); `signed-out` only the remembered account a sign-out
 /// leaves behind, with no session. The addresses are
 /// `.invalid` and the injected hosts block switching and forgetting, so
@@ -15,6 +16,16 @@ extension AppModel {
     func startSettingsDemo(_ mode: String) {
         if mode == "pairing" {
             useDevHosts(StoredHosts(hosts: [], activeHostKey: nil))
+            phase = .pairing
+            return
+        }
+        if mode == "first-host" {
+            useDevHosts(StoredHosts(hosts: [], activeHostKey: nil))
+            accountRecord = AccountRecord(
+                serverOrigin: "https://accounts.invalid", username: "kieran",
+                token: "demo", expiresAt: Date.now.addingTimeInterval(86_400).timeIntervalSince1970 * 1000)
+            accountRows = []
+            accountHostsLoaded = true
             phase = .pairing
             return
         }

@@ -104,6 +104,7 @@ extension AppModel {
             accountSignOutWarning = nil
             accountError = nil
             accountHostsError = nil
+            accountHostsLoaded = false
             clearAccountDevices()
             var saveError: String?
             do {
@@ -129,6 +130,7 @@ extension AppModel {
             if devHostsInjected, accountSession != nil { return }
             #endif
             accountRows = []
+            accountHostsLoaded = false
             return
         }
         if accountRefreshing {
@@ -200,6 +202,7 @@ extension AppModel {
                 }
             }
             accountRows = result.rows
+            accountHostsLoaded = true
             if storedRead { accountHostsError = nil }
             if storedRead {
                 startAutomaticRegistrations(result, session: session)
@@ -690,6 +693,37 @@ extension AppModel {
         }
     }
 
+    /// What the page with no stored host shows, and whether it keeps asking
+    /// for the account's hosts (#493).
+    var noHostHome: NoHostHome {
+        NoHostHome(
+            signedIn: accountSession != nil,
+            accountHosts: accountHostsLoaded ? accountRows : nil,
+            hostsError: accountHostsError)
+    }
+
+    /// Mint the first-host home's one-use join command (#493). A dead
+    /// session signs out here like every other account call.
+    func accountCreateJoinToken() async -> Result<JoinToken, AccountFailure> {
+        #if DEBUG
+        if devHostsInjected, accountSession != nil {
+            let expiresAt = (Date.now.timeIntervalSince1970 + 600) * 1000
+            return .success(JoinToken(
+                token: "demo",
+                expiresAt: expiresAt,
+                command: "npm i -g pinomad && pinomad join https://accounts.invalid 3f9c2a7e5b1d4c8a"))
+        }
+        #endif
+        guard let session = accountSession, let api = accountAPI() else {
+            return .failure(AccountFailure(code: "unauthenticated"))
+        }
+        let result = await api.createJoinToken()
+        if case .failure(let failure) = result, failure.clearsSession, accountSession == session {
+            accountSignOutWarning = endAccountSession(notice: AccountCopy.message(failure))
+        }
+        return result
+    }
+
     /// Refresh the host list and the account list together — pull-to-refresh
     /// and the hosts sheet's first appearance.
     func refreshHostsAndAccount() async {
@@ -724,6 +758,7 @@ extension AppModel {
         let cleared = record.clearingToken()
         accountRecord = cleared
         accountRows = []
+        accountHostsLoaded = false
         clearAccountDevices()
         accountHostsError = nil
         accountError = nil

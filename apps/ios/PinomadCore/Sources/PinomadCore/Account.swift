@@ -419,6 +419,16 @@ public struct AccountAPI: Sendable {
         }
     }
 
+    /// A one-use token and the ready-to-show `pinomad join …` command that
+    /// joins a computer to this account (the first-host home, #493).
+    public func createJoinToken() async -> Result<JoinToken, AccountFailure> {
+        switch await request(.createJoinToken, kind: .createJoinToken) {
+        case .success(.joinToken(let token)): return .success(token)
+        case .failure(let failure): return .failure(failure)
+        default: return .failure(.invalidResponse)
+        }
+    }
+
     public func requestPairing(hostId: String) async -> Result<PairingOffer, AccountFailure> {
         switch await request(.requestPairing(hostId: hostId), kind: .requestPairing) {
         case .success(.pairingOffer(let offer)): return .success(offer)

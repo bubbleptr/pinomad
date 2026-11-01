@@ -13,7 +13,7 @@ struct RootView: View {
                 case .loading:
                     HomeSkeleton()
                 case .pairing:
-                    PairingStartView(model: model)
+                    NoHostPage(model: model)
                 case .connecting:
                     connectingView
                 case .home:
