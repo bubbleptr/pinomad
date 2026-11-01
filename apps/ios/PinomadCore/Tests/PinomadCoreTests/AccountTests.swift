@@ -88,6 +88,37 @@ struct AccountTests {
         #expect(!again.changed)
     }
 
+    /// A shared-device sign-out forgets only keys the account issued (#494):
+    /// the link reconcile adopts onto a QR pairing carries no vouch.
+    @Test func sharedDeviceSignOutKeepsAdoptedQRPairings() {
+        let origin = "https://relay.example.com"
+        let stored = StoredHosts(hosts: [
+            record("qr"),
+            record("issued", account: AccountLink(serverOrigin: origin, hostId: "host2", vouched: true)),
+            record("elsewhere", account: AccountLink(serverOrigin: "https://other.example.com", hostId: "host3", vouched: true)),
+        ], activeHostKey: "qr")
+        let adopted = AccountHosts.reconcile(
+            serverOrigin: origin + "/",
+            hosts: [accountHost("host1", key: "qr", pairing: .available)],
+            stored: stored,
+            rejectedHostKeys: []).stored
+        #expect(adopted.hosts[0].account?.hostId == "host1")
+        #expect(AccountHosts.vouchedHostKeys(serverOrigin: origin + "/", hosts: adopted.hosts) == ["issued"])
+    }
+
+    /// Records written before #494 decode with no vouch, and the field
+    /// stays off the wire until set.
+    @Test func accountLinkVouchIsOptionalOnDisk() throws {
+        let old = try JSONDecoder().decode(
+            AccountLink.self, from: Data(#"{"serverOrigin":"https://x","hostId":"h"}"#.utf8))
+        #expect(old.vouched == nil)
+        let plain = String(decoding: try JSONEncoder().encode(old), as: UTF8.self)
+        #expect(!plain.contains("vouched"))
+        let issued = AccountLink(serverOrigin: "https://x", hostId: "h", vouched: true)
+        #expect(try JSONDecoder().decode(AccountLink.self, from: JSONEncoder().encode(issued)).vouched == true)
+        #expect(issued.unvouched == old)
+    }
+
     /// Automatic registration follows the shared eligibility rule: an
     /// unpaired host qualifies only when it is not declined and the local
     /// list was actually read (ADR-0035 §5).
@@ -504,6 +535,14 @@ struct AccountTests {
         #expect(AccountCopy.signOutWarning(everywhere: true, failure: dead) != nil)
         #expect(AccountCopy.signOutWarning(everywhere: false, failure: .network) != nil)
         #expect(AccountCopy.signOutWarning(everywhere: true, failure: nil) == nil)
+    }
+
+    /// A dead session can't have asked the hosts to revoke anything (#494).
+    @Test func signOutWarningKeepsADeadSessionVisibleWhenRevoking() {
+        let dead = AccountFailure(code: "unauthenticated")
+        #expect(AccountCopy.signOutWarning(everywhere: false, revoke: true, failure: dead)?.contains("revoke") == true)
+        #expect(AccountCopy.signOutWarning(everywhere: false, revoke: true, failure: .network)?.contains("revoke") == true)
+        #expect(AccountCopy.signOutWarning(everywhere: false, revoke: true, failure: nil) == nil)
     }
 }
 
