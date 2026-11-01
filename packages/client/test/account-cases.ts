@@ -35,7 +35,8 @@ export type AccountOpDesc =
   | { kind: "changePassword"; currentPassword: string; newPassword: string }
   | { kind: "deleteAccount"; password: string }
   | { kind: "kickDevice"; id: number; password: string }
-  | { kind: "me" | "logout" | "revokeAllSessions" | "createJoinToken" | "listHosts" | "listDevices" };
+  | { kind: "logout"; revoke?: boolean }
+  | { kind: "me" | "revokeAllSessions" | "createJoinToken" | "listHosts" | "listDevices" };
 
 export interface RequestCase {
   name: string;
@@ -69,6 +70,10 @@ export const REQUEST_CASES: RequestCase[] = [
   },
   { name: "me", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "me" } },
   { name: "logout", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "logout" } },
+  // Only a revoking sign-out carries a body (#494); `revoke: false` is the
+  // plain request, byte for byte.
+  { name: "logout-revoke", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "logout", revoke: true } },
+  { name: "logout-no-revoke", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "logout", revoke: false } },
   { name: "revoke-all", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "revokeAllSessions" } },
   { name: "join-token", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "createJoinToken" } },
   { name: "list-hosts", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "listHosts" } },

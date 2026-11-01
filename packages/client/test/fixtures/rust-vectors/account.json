@@ -70,6 +70,26 @@
       "expect": "{\"url\":\"https://relay.example.com/api/logout\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\"}}}"
     },
     {
+      "name": "logout-revoke",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "logout",
+        "revoke": true
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/logout\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"revoke\\\":true}\"}}"
+    },
+    {
+      "name": "logout-no-revoke",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "logout",
+        "revoke": false
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/logout\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\"}}}"
+    },
+    {
       "name": "revoke-all",
       "origin": "https://relay.example.com",
       "token": "tok",

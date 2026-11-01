@@ -183,7 +183,9 @@ pub fn account_op(json: &Json) -> AccountOp {
             host_id: text(json.get("hostId")).unwrap_or_default(),
         },
         AccountOpKind::Me => AccountOp::Me,
-        AccountOpKind::Logout => AccountOp::Logout,
+        AccountOpKind::Logout => AccountOp::Logout {
+            revoke: matches!(json.get("revoke"), Some(Json::Bool(true))),
+        },
         AccountOpKind::RevokeAllSessions => AccountOp::RevokeAllSessions,
         AccountOpKind::CreateJoinToken => AccountOp::CreateJoinToken,
         AccountOpKind::ListHosts => AccountOp::ListHosts,
