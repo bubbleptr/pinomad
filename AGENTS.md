@@ -12,7 +12,7 @@ iOS 客户端是原生的 `apps/ios`（SwiftUI + `crates/pinomad-core`，ADR-002
 
 改 `packages/protocol` 或 `packages/client` 的客户端侧行为时，同步改 `crates/pinomad-core` 并重新生成对照向量：在仓库根目录跑，协议层的（生成器在 `packages/protocol/test`）用 `PINOMAD_UPDATE_VECTORS=1 bunx vitest run --project protocol rust-vectors`，推导层的（生成器在 `packages/client/test`）用 `PINOMAD_UPDATE_VECTORS=1 bunx vitest run --project client rust-vectors`；在子目录里跑会报 "No test files found"。新鲜度测试会拦下漂移。
 
-界面改动按端分开做：Web 和桌面端（renderer 就是 `apps/web`）在 Linux 上就能开发和验证，一起做；iOS（`apps/ios`）单独做，不和 Web 的界面放进同一个 PR。只改协议或 `packages/client` 时，iOS 侧由上面的 `crates/pinomad-core` 同步规则和 rust-core workflow 的 ios job 兜住。
+界面改动按端分开做：Web 和桌面端（renderer 就是 `apps/web`）在 Linux 上就能开发和验证，一起做；iOS（`apps/ios`）单独做，不和 Web 的界面放进同一个 PR。只改协议或 `packages/client` 时，iOS 侧由上面的 `crates/pinomad-core` 同步规则和 CI 里 cargo job 的对照向量测试兜住；需要同步的改动会碰到 `crates/`，rust-core workflow 的 ios job 随之触发。
 
 查 Astryx 组件的 props、variants 和 token 时，在 `apps/web` 下跑 `bunx astryx component <Name>`（`component --list` 列全部组件，`docs tokens` 查 token）。CLI 版本跟着 `@astryxdesign/core` 走；在仓库根目录跑会拉到 npm 上同名的无关包。不跑 `astryx init`：它会往 AGENTS.md 灌整段英文组件索引。
 

@@ -2,47 +2,53 @@ name: Rust core
 
 # iOS gate for the Rust client core (ADR-0024 §12): builds the xcframework,
 # runs the Swift tests, and builds the app. The Linux checks (typecheck, test,
-# build) live in ci.yml. packages/protocol and packages/client stay in the list
-# because the core mirrors their client-side behavior (AGENTS.md).
+# build) live in ci.yml. packages/protocol and packages/client are not in the
+# list: the Swift side only sees them through the core, and ci.yml's cargo job
+# runs the Rust vector tests whenever they change. A change the core has to
+# mirror touches crates/ and lands here anyway.
+#
+# Pushes to main run it too, so the caches below live on main, where every PR
+# can restore them; a PR's own caches are visible to that PR only.
 on:
   pull_request:
-    paths:
+    paths: &paths
       - "crates/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "rust-toolchain.toml"
-      - "packages/protocol/**"
-      - "packages/client/**"
       - "packages/agent-chat-kit/**"
       - "apps/ios/**"
       - ".github/workflows/rust-core.yml"
+  push:
+    branches: [main]
+    paths: *paths
 
 permissions:
   contents: read
 
 # A new push to the same PR cancels the run still in flight, so stale macOS
-# jobs don't hold the account's macOS concurrency slots.
+# jobs don't hold the account's macOS concurrency slots. Runs on main queue
+# instead: a cancelled run saves no cache.
 concurrency:
-  group: rust-core-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: rust-core-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # ADR-0024 §12: the xcframework and UniFFI bindings only build on macOS.
-  # From a clean checkout: build the core, run PinomadCore's Swift tests
-  # on an iOS simulator, and build the app — all unsigned.
+  # Build the core (or restore it), run PinomadCore's Swift tests on an iOS
+  # simulator, and build the app — all unsigned.
   ios:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v6
-      # Reads rust-toolchain.toml for the pinned channel and the iOS targets.
-      - uses: dtolnay/rust-toolchain@stable
-      - run: apps/ios/scripts/build-core.sh
       # CoreSimulator sometimes hasn't registered the iOS runtime yet when
       # xcodebuild asks, and a name= destination then matches nothing. Wait
-      # for an available iPhone, boot it, and pass it by id.
-      - name: Pick an iOS simulator
-        id: sim
+      # for an available iPhone and boot it in the background while the core
+      # builds; "Wait for the simulator" picks up its id.
+      - name: Boot an iOS simulator in the background
         run: |
+          cat > "$RUNNER_TEMP/boot-sim.sh" <<'EOF'
+          set -euo pipefail
           for attempt in $(seq 1 24); do
             udid=$(xcrun simctl list devices available -j | jq -r '
               [.devices | to_entries[] | select(.key | contains("SimRuntime.iOS"))
@@ -52,14 +58,61 @@ jobs:
             sleep 5
           done
           if [ -z "$udid" ]; then
-            echo "::error::No available iPhone simulator after 2 minutes"
+            echo "No available iPhone simulator after 2 minutes"
             xcrun simctl list runtimes
             xcrun simctl list devices
             exit 1
           fi
           xcrun simctl list devices | grep "$udid"
           xcrun simctl bootstatus "$udid" -b
-          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          echo "$udid" > "$RUNNER_TEMP/sim-udid"
+          EOF
+          nohup bash "$RUNNER_TEMP/boot-sim.sh" > "$RUNNER_TEMP/boot-sim.log" 2>&1 &
+      # The xcframework and the generated bindings are a pure function of the
+      # crates, the toolchain, the build script and the deployment target it
+      # reads from the Xcode project. The runner image goes into the key too,
+      # so a new Xcode forces one clean build. Exact keys only: a partial
+      # match would hand the Swift build a stale core.
+      - name: Compute the core cache key
+        id: core-key
+        run: |
+          target=$(sed -n 's/^[[:space:]]*IPHONEOS_DEPLOYMENT_TARGET = \(.*\);/\1/p' \
+            apps/ios/Pinomad.xcodeproj/project.pbxproj | head -1)
+          echo "suffix=${ImageOS:?}-${ImageVersion:?}-ios$target" >> "$GITHUB_OUTPUT"
+      - name: Restore the built core
+        id: core-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            apps/ios/PinomadCore/Vendor
+            apps/ios/PinomadCore/Sources/PinomadCore/Generated
+          key: ios-core-${{ steps.core-key.outputs.suffix }}-${{ hashFiles('crates/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'apps/ios/scripts/build-core.sh') }}
+      # Reads rust-toolchain.toml for the pinned channel and the iOS targets.
+      - if: steps.core-cache.outputs.cache-hit != 'true'
+        uses: dtolnay/rust-toolchain@stable
+      # Dependency builds (aws-lc-sys's C above all) for a rebuild of the core.
+      # Skipped on a core hit: it would restore nothing and then save a nearly
+      # empty target under the real key.
+      - if: steps.core-cache.outputs.cache-hit != 'true'
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: |
+            . -> target
+            crates/uniffi-bindgen -> target
+      - if: steps.core-cache.outputs.cache-hit != 'true'
+        run: apps/ios/scripts/build-core.sh
+      - name: Wait for the simulator
+        id: sim
+        run: |
+          while [ ! -s "$RUNNER_TEMP/sim-udid" ] && pgrep -f boot-sim.sh > /dev/null; do
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/boot-sim.log"
+          if [ ! -s "$RUNNER_TEMP/sim-udid" ]; then
+            echo "::error::The iOS simulator did not boot"
+            exit 1
+          fi
+          echo "udid=$(cat "$RUNNER_TEMP/sim-udid")" >> "$GITHUB_OUTPUT"
       - name: PinomadCore Swift tests on an iOS simulator
         working-directory: apps/ios/PinomadCore
         run: |
