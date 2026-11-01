@@ -69,6 +69,7 @@ import { HostsFallback } from "./widgets/app-frame/hosts.tsx";
 import { AccountProvider, useAccountModel } from "./entities/account/account-context.tsx";
 import { AccountPanel } from "./widgets/account/account-panel.tsx";
 import { RepairViaAccount } from "./widgets/account/repair-via-account.tsx";
+import { FirstHost } from "./widgets/account/first-host.tsx";
 import { useDurableView, useRemoteDurable } from "./use-remote.ts";
 import { createBrowserRtcPlatform } from "./entities/host/browser-rtc.ts";
 import { secureOptions } from "./entities/host/secure-options.ts";
@@ -436,9 +437,14 @@ export function App() {
 /**
  * Where a client with no stored pairing lands: sign in to pick a host from
  * the account (where this client can reach one), or paste a pairing link.
+ * An account with no hosts at all gets the add-your-first-host home instead;
+ * one whose hosts are only offline or unpaired keeps the panel to pair them.
  */
 function NoHostLink() {
   const account = useAccountModel();
+  if (account.state.status === "signed-in" && account.state.hosts.length === 0) {
+    return <FirstHost state={account.state} />;
+  }
   if (account.state.status === "unavailable") {
     return (
       <VStack gap={4} hAlign="center" style={{ width: "100%", maxWidth: 420 }}>
