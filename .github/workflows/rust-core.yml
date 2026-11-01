@@ -70,15 +70,18 @@ jobs:
           nohup bash "$RUNNER_TEMP/boot-sim.sh" > "$RUNNER_TEMP/boot-sim.log" 2>&1 &
       # The xcframework and the generated bindings are a pure function of the
       # crates, the toolchain, the build script and the deployment target it
-      # reads from the Xcode project. The runner image goes into the key too,
-      # so a new Xcode forces one clean build. Exact keys only: a partial
-      # match would hand the Swift build a stale core.
+      # reads from the Xcode project. The Xcode build goes into the key too, so
+      # a new Xcode forces one clean build; the runner image version doesn't,
+      # since one run can land on an older image than the last during a
+      # rollout. Exact keys only: a partial match would hand the Swift build a
+      # stale core.
       - name: Compute the core cache key
         id: core-key
         run: |
           target=$(sed -n 's/^[[:space:]]*IPHONEOS_DEPLOYMENT_TARGET = \(.*\);/\1/p' \
             apps/ios/Pinomad.xcodeproj/project.pbxproj | head -1)
-          echo "suffix=${ImageOS:?}-${ImageVersion:?}-ios$target" >> "$GITHUB_OUTPUT"
+          xcode=$(xcodebuild -version | awk '{print $NF}' | paste -sd- -)
+          echo "suffix=xcode$xcode-ios$target" >> "$GITHUB_OUTPUT"
       - name: Restore the built core
         id: core-cache
         uses: actions/cache@v6
