@@ -763,6 +763,14 @@ extension AppModel {
         if case .success = result, accountSession == session {
             knownAccountHosts.add(serverOrigin: session.serverOrigin, username: session.username, hostId: hostId)
             accountRefreshAfterPairing()
+            // The host learns of the confirm on its next poll (every 5 s)
+            // and only then finishes joining; Account has no refresh loop of
+            // its own, so ask once more after that.
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(10))
+                guard let self, self.accountSession == session else { return }
+                await self.accountRefreshHosts()
+            }
         }
         return result
     }
