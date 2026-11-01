@@ -20,6 +20,7 @@ import {
   type AccountInvite,
   type AccountResult,
   type CreatedInvite,
+  type HostLinkRequest,
   type JoinToken,
   type LoginSuccess,
   type PairConnectArgs,
@@ -132,6 +133,15 @@ export interface AccountModel {
    */
   kickDevice(input: { id: number; password: string }): Promise<AccountResult<void>>;
   createJoinToken(): Promise<AccountResult<JoinToken>>;
+  /**
+   * The host waiting behind a code typed from its terminal (#496); the code
+   * goes as typed. 404 `not_found` is a wrong, spent or expired code, 429
+   * `rate_limited` the lockout after too many of those.
+   */
+  lookupHostLink(userCode: string): Promise<AccountResult<HostLinkRequest>>;
+  /** Lets that host join the account; it then pairs like any account host. */
+  confirmHostLink(userCode: string): Promise<AccountResult<void>>;
+  denyHostLink(userCode: string): Promise<AccountResult<void>>;
   /** Admin only (#449). */
   listInvites(): Promise<AccountResult<readonly AccountInvite[]>>;
   createInvite(): Promise<AccountResult<CreatedInvite>>;
@@ -770,6 +780,9 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     listDevices: () => authed((active) => active.listDevices()),
     kickDevice: ({ id, password }) => authed((active) => active.kickDevice(id, password)),
     createJoinToken: () => authed((active) => active.createJoinToken()),
+    lookupHostLink: (userCode) => authed((active) => active.lookupHostLink(userCode)),
+    confirmHostLink: (userCode) => authed((active) => active.confirmHostLink(userCode)),
+    denyHostLink: (userCode) => authed((active) => active.denyHostLink(userCode)),
     listInvites: () => authed((active) => active.listInvites()),
     createInvite: () => authed((active) => active.createInvite()),
     revokeInvite: (id) => authed((active) => active.revokeInvite(id)),

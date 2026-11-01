@@ -76,6 +76,15 @@ describe("NoHostLink", () => {
     expect(account.refreshHosts).toHaveBeenCalledTimes(2);
   });
 
+  it("leads with the command without a token and the code entry; a token waits for Advanced (#496)", async () => {
+    const account = liveAccount(signedIn({ hosts: [] }));
+    renderLanding(account);
+    expect(await screen.findByText("npm i -g pinomad && pinomad join https://pinomad.si")).toBeTruthy();
+    expect(screen.getByRole("textbox", { name: /code/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Have a pairing link?" })).toBeTruthy();
+    expect(account.createJoinToken).not.toHaveBeenCalled();
+  });
+
   it("doesn't poll while signed out", async () => {
     const account = liveAccount({ status: "signed-out", mode: "cookie" });
     renderLanding(account);

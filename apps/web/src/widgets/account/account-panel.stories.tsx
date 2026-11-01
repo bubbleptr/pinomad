@@ -35,6 +35,14 @@ export const SignUp: Story = {
   },
 };
 
+/** Add a host (#496): the command without a token, the code field, and the token command under Advanced. */
+export const AddingHost: Story = {
+  decorators: [withAccount(signedIn())],
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Add a host" }));
+  },
+};
+
 /** Changing the password (#450): the form opens in place of its button. */
 export const ChangingPassword: Story = {
   decorators: [withAccount(signedIn())],

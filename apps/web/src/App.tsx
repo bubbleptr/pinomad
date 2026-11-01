@@ -7,7 +7,7 @@ import { useMediaQuery } from "@astryxdesign/core/hooks";
 import { HStack, Layout, LayoutContent, LayoutFooter, VStack } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
-import { useToast } from "@astryxdesign/core/Toast";
+import { ToastViewport, useToast } from "@astryxdesign/core/Toast";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import {
   type CSSProperties,
@@ -68,6 +68,8 @@ import { HostsFallback } from "./widgets/app-frame/hosts.tsx";
 import { AccountProvider } from "./entities/account/account-context.tsx";
 import { RepairViaAccount } from "./widgets/account/repair-via-account.tsx";
 import { NoHostLink } from "./widgets/account/no-host-link.tsx";
+import { HostLinkRoute } from "./widgets/account/host-link-route.tsx";
+import { NewHostNotices } from "./widgets/account/new-host-notice.tsx";
 import { useDurableView, useRemoteDurable } from "./use-remote.ts";
 import { createBrowserRtcPlatform } from "./entities/host/browser-rtc.ts";
 import { secureOptions } from "./entities/host/secure-options.ts";
@@ -426,6 +428,12 @@ export function App() {
               />
             </HostFrame>
           )}
+          {/* Above whichever screen is showing, so a first host pairing (which swaps
+              the no-host screen for the workbench) doesn't close or lose them. */}
+          <HostLinkRoute />
+          <ToastViewport position="topEnd" inset={{ top: 48 }} isTopLayer>
+            <NewHostNotices />
+          </ToastViewport>
         </AccountProvider>
       </HostRuntimesContext.Provider>
     </HostsContext.Provider>

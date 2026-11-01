@@ -6,9 +6,13 @@ import { signedIn, withAccount, withHosts } from "../../test/story-fixtures.tsx"
 import { FirstHost } from "./first-host.tsx";
 
 const noHosts = signedIn({ hosts: [] }) as Extract<AccountState, { status: "signed-in" }>;
-const command = "npm i -g pinomad && pinomad join https://app.pinomad.si join-7f3a9c";
+const command = "npm i -g pinomad && pinomad join https://pinomad.si join-7f3a9c";
 const joinToken = (expiresAt: number) =>
   fn(async () => ({ ok: true as const, value: { token: "join-7f3a9c", expiresAt, command } }));
+
+const openAdvanced = async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+  await userEvent.click(within(canvasElement).getByRole("button", { name: /Advanced: join with a one-time token/ }));
+};
 
 const meta = {
   title: "Widgets/Account/FirstHost",
@@ -30,20 +34,25 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Signed in, no hosts at all: the command is ready to copy. */
+/** Signed in, no hosts at all: the command without a token and the field for the code it prints. */
 export const Default: Story = {};
 
+/** For scripts: the one-time token command, minted only once Advanced opens. */
+export const TokenCommand: Story = { play: openAdvanced };
+
 /** The single-use command ran out; New command mints another. */
-export const Expired: Story = {
+export const TokenExpired: Story = {
   decorators: [withAccount(noHosts, { createJoinToken: joinToken(Date.now() - 1) })],
+  play: openAdvanced,
 };
 
-export const CreateFailed: Story = {
+export const TokenCreateFailed: Story = {
   decorators: [
     withAccount(noHosts, {
       createJoinToken: fn(async () => ({ ok: false as const, error: { code: "network" } })),
     }),
   ],
+  play: openAdvanced,
 };
 
 /** A failed refresh keeps the screen and says why no host shows up yet. */
