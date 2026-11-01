@@ -429,6 +429,35 @@ public struct AccountAPI: Sendable {
         }
     }
 
+    /// The host waiting behind a code typed on this iPhone (#497). Wrong,
+    /// used and expired codes are all 404 `not_found`; repeated wrong ones
+    /// lock the account and address out with 429 `rate_limited`.
+    public func lookupHostLink(userCode: String) async -> Result<HostLinkRequest, AccountFailure> {
+        switch await request(.lookupHostLink(userCode: userCode), kind: .lookupHostLink) {
+        case .success(.hostLink(let request)): return .success(request)
+        case .failure(let failure): return .failure(failure)
+        default: return .failure(.invalidResponse)
+        }
+    }
+
+    /// Joins the waiting host to this account; it finishes `pinomad join`
+    /// on its own.
+    public func confirmHostLink(userCode: String) async -> Result<Void, AccountFailure> {
+        switch await request(.confirmHostLink(userCode: userCode), kind: .confirmHostLink) {
+        case .success(.unit): return .success(())
+        case .failure(let failure): return .failure(failure)
+        default: return .failure(.invalidResponse)
+        }
+    }
+
+    public func denyHostLink(userCode: String) async -> Result<Void, AccountFailure> {
+        switch await request(.denyHostLink(userCode: userCode), kind: .denyHostLink) {
+        case .success(.unit): return .success(())
+        case .failure(let failure): return .failure(failure)
+        default: return .failure(.invalidResponse)
+        }
+    }
+
     public func requestPairing(hostId: String) async -> Result<PairingOffer, AccountFailure> {
         switch await request(.requestPairing(hostId: hostId), kind: .requestPairing) {
         case .success(.pairingOffer(let offer)): return .success(offer)
