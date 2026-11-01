@@ -8,12 +8,20 @@ import { Text } from "@astryxdesign/core/Text";
 import { useState } from "react";
 import type { AccountError, JoinToken } from "@pinomad/client/account.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
+import { OFFICIAL_SERVER_ORIGIN } from "../../shared/official-server.ts";
 import { useNow } from "../../shared/use-now.ts";
 import { accountErrorMessage } from "./account-error.ts";
 import { HostLinkEntry } from "./host-link-entry.tsx";
 
-/** The one-line install-and-join; without a token, the host asks to be confirmed with a code (#495). */
-export const joinCommand = (serverOrigin: string): string => `npm i -g pinomad && pinomad join ${serverOrigin}`;
+/**
+ * Install pinomad with its own Node (#499), then `pinomad up` (#498), which
+ * asks for a code to confirm (#495). The full path because a new Mac has no
+ * ~/.local/bin on PATH; `--origin` because up otherwise joins the official server.
+ */
+export const joinCommand = (serverOrigin: string): string => {
+  const origin = serverOrigin.replace(/\/+$/, "");
+  return `curl -fsSL https://pinomad.si/install.sh | sh\n~/.local/bin/pinomad up${origin === OFFICIAL_SERVER_ORIGIN ? "" : ` --origin ${origin}`}`;
+};
 
 /**
  * How a new host joins this account (#496): the command to run on it, the
@@ -30,7 +38,10 @@ export function AddHostSteps({ serverOrigin }: { serverOrigin: string }) {
         <CodeBlock code={joinCommand(serverOrigin)} hasCopyButton isWrapped width="100%" />
       </VStack>
       <VStack gap={2}>
-        <Text type="supporting">It prints a code. Enter it here to add the host to your account:</Text>
+        <Text type="supporting">
+          It asks how your other devices should reach the host; press Enter to go through this server. Then it prints a
+          code. Enter it here to add the host to your account:
+        </Text>
         <HostLinkEntry />
       </VStack>
       <TokenCommand />

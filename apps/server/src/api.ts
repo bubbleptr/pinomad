@@ -779,12 +779,14 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     }
     if (pathname === "/api/join-tokens") {
       const joinToken = accounts.createJoinToken(session.userId);
-      // The command is what the "add host" UI shows: install the package, then
-      // join this server's origin with the one-time token (ADR-0022 §3).
+      // The command is what the "add host" UI shows: install pinomad with its
+      // own Node (#499), then join this server's origin with the one-time
+      // token (ADR-0022 §3). One line, for scripts; a new Mac has no
+      // ~/.local/bin on PATH, hence the full path.
       send(200, {
         token: joinToken.token,
         expiresAt: joinToken.expiresAt,
-        command: `npm i -g pinomad && pinomad join ${ctx.publicOrigin} ${joinToken.token}`,
+        command: `curl -fsSL https://pinomad.si/install.sh | sh && ~/.local/bin/pinomad join ${ctx.publicOrigin} ${joinToken.token}`,
       });
       return;
     }
