@@ -19,6 +19,8 @@ struct AccountView: View {
     #if DEBUG
     /// `PINOMAD_DEMO_ACCOUNT=delete` opens on the Delete Account form.
     @State private var devDeleting = false
+    /// `PINOMAD_DEMO_ACCOUNT=add` opens on Add a Host.
+    @State private var devAdding = false
     /// `PINOMAD_DEMO_ACCOUNT=bottom`, read up front: the sheet's own task
     /// clears the page it was asked for.
     @State private var devOpensAtBottom: Bool
@@ -88,6 +90,12 @@ struct AccountView: View {
                         Text(error)
                             .font(.footnote)
                             .foregroundStyle(.red)
+                    }
+                }
+
+                Section {
+                    NavigationLink("Add a Host") {
+                        AddAccountHostView(model: model)
                     }
                 }
 
@@ -184,6 +192,7 @@ struct AccountView: View {
             switch page {
             case "remove": removingDevice = model.accountDevices?.first(where: \.removable)
             case "delete": devDeleting = true
+            case "add": devAdding = true
             default: break
             }
             #endif
@@ -195,6 +204,9 @@ struct AccountView: View {
         #if DEBUG
         .navigationDestination(isPresented: $devDeleting) {
             DeleteAccountView(model: model, server: hostOf(session.serverOrigin))
+        }
+        .navigationDestination(isPresented: $devAdding) {
+            AddAccountHostView(model: model)
         }
         #endif
         .toolbar {
@@ -224,6 +236,15 @@ struct AccountView: View {
             }
         } message: {
             Text("Your account is signed out on every device, and each one needs to sign in again before it gets notifications. Paired hosts stay paired.")
+        }
+        // The root shows it while no sheet is up; here while this one is.
+        .alert("New Host Joined", isPresented: Binding(
+            get: { model.newHostNotice != nil },
+            set: { if !$0 { model.newHostNotice = nil } }
+        )) {
+            Button("OK") { model.newHostNotice = nil }
+        } message: {
+            Text((model.newHostNotice ?? "") + "\n\n" + HostLinkCopy.newHostsHint)
         }
     }
 

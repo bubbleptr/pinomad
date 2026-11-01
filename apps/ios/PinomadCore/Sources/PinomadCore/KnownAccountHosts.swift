@@ -20,20 +20,20 @@ public final class KnownAccountHosts {
     }
 
     /// The hosts in `hosts` this iPhone hasn't seen on the account, in list
-    /// order; afterwards the baseline is exactly `hosts`. A host that left
-    /// the account and comes back is a new join, so it is announced again.
+    /// order, which join the baseline. Nothing leaves it: a list can predate
+    /// a host confirmed here a moment ago, and dropping that host would get
+    /// it announced on the next round.
     public func observe(serverOrigin: String, username: String, hosts: [AccountHostRow]) -> [AccountHostRow] {
         var all = read()
         let account = Self.accountKey(serverOrigin: serverOrigin, username: username)
         let known = all[account]
-        let ids = hosts.map(\.hostId)
-        if known != ids {
-            all[account] = ids
+        let seen = Set(known ?? [])
+        let joined = hosts.filter { !seen.contains($0.hostId) }
+        if known == nil || !joined.isEmpty {
+            all[account] = (known ?? []) + joined.map(\.hostId)
             write(all)
         }
-        guard let known else { return [] }
-        let seen = Set(known)
-        return hosts.filter { !seen.contains($0.hostId) }
+        return known == nil ? [] : joined
     }
 
     /// A host confirmed on this iPhone isn't news to it. Before the first

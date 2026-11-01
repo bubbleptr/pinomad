@@ -254,6 +254,11 @@ final class AppModel {
     let accountStore = KeychainAccountStore()
     let accountTransport: any AccountTransport = URLSessionAccountTransport()
     let declinedAccountHosts = DeclinedAccountHosts()
+    /// The account hosts this iPhone has seen, for the one-time "new host
+    /// joined" notice (#497).
+    let knownAccountHosts = KnownAccountHosts()
+    /// That notice, until the reader dismisses it.
+    var newHostNotice: String?
     var accountRecord: AccountRecord?
     var accountRows: [AccountHostRow] = []
     /// This session's host list has answered once: until then an empty
@@ -321,6 +326,10 @@ final class AppModel {
     var devShowsModelSheet = false
     /// `PINOMAD_DEMO_ACCOUNT`: the account page a demo opens on.
     var devAccountPage: String?
+    /// `PINOMAD_DEMO_SETTINGS=first-host-…`: the code the first-host home
+    /// fills in and looks up, and whether it then confirms.
+    var devHostLinkCode: String?
+    var devHostLinkConfirms = false
     var devHostsInjected = false
     private var developmentRuntime: HostRuntime?
 

@@ -106,6 +106,9 @@ extension AppModel {
             accountHostsError = nil
             accountHostsLoaded = false
             clearAccountDevices()
+            // The first list of this sign-in is the baseline: hosts already
+            // on the account aren't news (#497).
+            knownAccountHosts.reset(serverOrigin: session.serverOrigin, username: session.username)
             var saveError: String?
             do {
                 try accountStore.save(record)
@@ -203,6 +206,7 @@ extension AppModel {
             }
             accountRows = result.rows
             accountHostsLoaded = true
+            announceNewHosts(result.rows, session: session)
             if storedRead { accountHostsError = nil }
             if storedRead {
                 startAutomaticRegistrations(result, session: session)
@@ -724,6 +728,66 @@ extension AppModel {
         return result
     }
 
+    /// The one-time notice for hosts that joined the account since this
+    /// iPhone last looked (#497). A host joined through the account pairs
+    /// with every device on its own, so this is where a phished join shows.
+    func announceNewHosts(_ rows: [AccountHostRow], session: AccountSession) {
+        let joined = knownAccountHosts.observe(
+            serverOrigin: session.serverOrigin, username: session.username, hosts: rows)
+        guard !joined.isEmpty else { return }
+        let line = HostLinkCopy.newHostsNotice(joined.map(\.name))
+        // Two rounds before the reader looked: say both.
+        newHostNotice = newHostNotice.map { $0 + "\n" + line } ?? line
+    }
+
+    /// The host waiting behind a code typed on this iPhone (#497).
+    func accountLookupHostLink(_ code: String) async -> Result<HostLinkRequest, AccountFailure> {
+        #if DEBUG
+        if devHostsInjected, accountSession != nil { return await devHostLinkLookup(code) }
+        #endif
+        return await hostLinkCall { api in await api.lookupHostLink(userCode: code) }
+    }
+
+    /// Confirming here is the reader's own act, so this iPhone doesn't
+    /// announce the host when it shows up; the refresh right after lists
+    /// it, and it pairs like any other account host.
+    func accountConfirmHostLink(_ code: String, hostId: String) async -> Result<Void, AccountFailure> {
+        guard let session = accountSession else { return .failure(AccountFailure(code: "unauthenticated")) }
+        #if DEBUG
+        if devHostsInjected {
+            try? await Task.sleep(for: .milliseconds(400))
+            return .success(())
+        }
+        #endif
+        let result = await hostLinkCall { api in await api.confirmHostLink(userCode: code) }
+        if case .success = result, accountSession == session {
+            knownAccountHosts.add(serverOrigin: session.serverOrigin, username: session.username, hostId: hostId)
+            accountRefreshAfterPairing()
+        }
+        return result
+    }
+
+    func accountDenyHostLink(_ code: String) async -> Result<Void, AccountFailure> {
+        #if DEBUG
+        if devHostsInjected, accountSession != nil { return .success(()) }
+        #endif
+        return await hostLinkCall { api in await api.denyHostLink(userCode: code) }
+    }
+
+    /// A dead session signs out here like every other account call.
+    private func hostLinkCall<Value>(
+        _ call: (AccountAPI) async -> Result<Value, AccountFailure>
+    ) async -> Result<Value, AccountFailure> {
+        guard let session = accountSession, let api = accountAPI() else {
+            return .failure(AccountFailure(code: "unauthenticated"))
+        }
+        let result = await call(api)
+        if case .failure(let failure) = result, failure.clearsSession, accountSession == session {
+            accountSignOutWarning = endAccountSession(notice: AccountCopy.message(failure))
+        }
+        return result
+    }
+
     /// Refresh the host list and the account list together — pull-to-refresh
     /// and the hosts sheet's first appearance.
     func refreshHostsAndAccount() async {
@@ -764,6 +828,7 @@ extension AppModel {
         accountError = nil
         accountSignOutWarning = nil
         serverPushError = nil
+        newHostNotice = nil
         accountNotice = notice
         // In-flight registrations belong to the session that just ended.
         accountPairingGeneration &+= 1

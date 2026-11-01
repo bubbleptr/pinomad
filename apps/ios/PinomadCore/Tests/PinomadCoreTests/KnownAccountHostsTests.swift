@@ -82,11 +82,14 @@ struct KnownAccountHostsTests {
             .map(\.hostId) == ["pi"])
     }
 
-    /// A host that left the account and joined again is a new join.
-    @Test func aHostThatLeftAndRejoinedIsAnnouncedAgain() {
+    /// A refresh already on its way when Confirm landed answers without the
+    /// new host; that answer mustn't undo the mark, or the next one would
+    /// announce the host this iPhone just confirmed.
+    @Test func aListFromBeforeTheConfirmKeepsTheMark() {
         let known = KnownAccountHosts(defaults: defaults())
         _ = known.observe(serverOrigin: origin, username: "kieran", hosts: [row("mbp")])
-        _ = known.observe(serverOrigin: origin, username: "kieran", hosts: [])
-        #expect(known.observe(serverOrigin: origin, username: "kieran", hosts: [row("mbp")]).map(\.hostId) == ["mbp"])
+        known.add(serverOrigin: origin, username: "kieran", hostId: "studio")
+        #expect(known.observe(serverOrigin: origin, username: "kieran", hosts: [row("mbp")]).isEmpty)
+        #expect(known.observe(serverOrigin: origin, username: "kieran", hosts: [row("mbp"), row("studio")]).isEmpty)
     }
 }

@@ -62,6 +62,22 @@ struct RootView: View {
         } message: {
             Text(model.pushForgetWarning ?? "")
         }
+        // A host joined the account from somewhere else (#497). It pairs with
+        // this iPhone on its own, so a join the reader didn't make has to be
+        // seen; it waits for any sheet to close (the account sheet shows it
+        // itself) and stays until dismissed.
+        .alert("New Host Joined", isPresented: Binding(
+            get: { model.newHostNotice != nil && model.modal == nil },
+            set: { if !$0 { model.newHostNotice = nil } }
+        )) {
+            Button("OK") { model.newHostNotice = nil }
+            Button("Settings") {
+                model.newHostNotice = nil
+                model.present(.settings)
+            }
+        } message: {
+            Text((model.newHostNotice ?? "") + "\n\n" + HostLinkCopy.newHostsHint)
+        }
     }
 
     /// The home page's shape — where a pairing lands — with what it is

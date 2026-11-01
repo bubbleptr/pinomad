@@ -38,17 +38,13 @@ struct NoHostPage: View {
     }
 }
 
-/// Signed in, and the account has no hosts: the one-use `pinomad join`
-/// command to run on a computer, ready to copy or send there, with a
-/// pairing link one tap away and the account below.
+/// Signed in, and the account has no hosts: the command to run on a
+/// computer and the field for the code it shows (#497), with a pairing link
+/// one tap away and the account below.
 struct FirstHostView: View {
     let model: AppModel
     let refreshError: String?
 
-    @State private var token: JoinToken?
-    @State private var error: String?
-    @State private var busy = false
-    @State private var copied = false
     @State private var pastingLink = false
 
     var body: some View {
@@ -61,11 +57,7 @@ struct FirstHostView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                command
-
-                Text("It installs PiNomad, joins the host to your account and keeps it running as a service. The host then shows up here and connects on its own.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                AddAccountHostContent(model: model)
 
                 if let refreshError {
                     Label {
@@ -113,100 +105,7 @@ struct FirstHostView: View {
             }
             .padding(20)
         }
+        .scrollDismissesKeyboard(.interactively)
         .animation(Motion.reveal, value: pastingLink)
-        // Each command works once: mint on the first appearance only.
-        .task {
-            if token == nil && error == nil { await create() }
-        }
-    }
-
-    @ViewBuilder
-    private var command: some View {
-        if let token {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(token.command)
-                    .font(.footnote.monospaced())
-                    .textSelection(.enabled)
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.fill.tertiary, in: .rect(cornerRadius: 12))
-
-                HStack(spacing: 12) {
-                    Button {
-                        UIPasteboard.general.string = token.command
-                        copied = true
-                    } label: {
-                        Label(copied ? "Copied" : "Copy", image: copied ? .check : .copy)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.tactile(.glassProminent))
-                    .sensoryFeedback(.success, trigger: copied)
-
-                    // AirDrop, Messages or Mail to the computer that will run it.
-                    ShareLink(item: token.command) {
-                        Label("Share", image: .share)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.tactile(.glass))
-                }
-                .controlSize(.large)
-
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    let seconds = PairingCodeCopy.remainingSeconds(expiresAt: token.expiresAt, now: context.date)
-                    if seconds == 0 {
-                        HStack(spacing: 12) {
-                            Text("Expired")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                            Button("New command") { Task { await create() } }
-                                .buttonStyle(.tactile(.bordered))
-                                .controlSize(.small)
-                                .disabled(busy)
-                        }
-                    } else {
-                        Text("Works once · expires in \(PairingCodeCopy.countdown(seconds))")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                }
-
-                if let error {
-                    Text("Couldn't create a new command. \(error)")
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                }
-            }
-        } else if let error {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Couldn't create a join command. \(error)")
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-                Button("Try again") { Task { await create() } }
-                    .buttonStyle(.tactile(.bordered))
-                    .disabled(busy)
-            }
-        } else {
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Creating a command…")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func create() async {
-        busy = true
-        error = nil
-        let result = await model.accountCreateJoinToken()
-        busy = false
-        switch result {
-        case .success(let value):
-            token = value
-            copied = false
-        case .failure(let failure):
-            error = AccountCopy.message(failure)
-        }
     }
 }
