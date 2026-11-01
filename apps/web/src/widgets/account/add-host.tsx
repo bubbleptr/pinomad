@@ -27,7 +27,7 @@ export function AddHostSteps({ serverOrigin }: { serverOrigin: string }) {
       <VStack gap={2}>
         <Text type="supporting">On the computer you want to add, open a terminal and run:</Text>
         {/* No language: shell highlighting splits the server address into colors. */}
-        <CodeBlock code={joinCommand(serverOrigin)} hasCopyButton isWrapped />
+        <CodeBlock code={joinCommand(serverOrigin)} hasCopyButton isWrapped width="100%" />
       </VStack>
       <VStack gap={2}>
         <Text type="supporting">It prints a code. Enter it here to add the host to your account:</Text>
@@ -59,7 +59,11 @@ function TokenCommand() {
     if (next && token === undefined && !busy) create();
   };
   return (
-    <Collapsible trigger="Advanced: join with a one-time token" isOpen={open} onOpenChange={toggle}>
+    <Collapsible
+      trigger={<Text type="supporting">Advanced: join with a one-time token</Text>}
+      isOpen={open}
+      onOpenChange={toggle}
+    >
       <VStack gap={2}>
         <Text type="supporting">For scripts: this command joins without a code to confirm. Anyone who has it can add a host.</Text>
         {token === undefined ? (
@@ -94,7 +98,7 @@ export function JoinCommand({ token, onRenew }: { token: JoinToken; onRenew: () 
   return (
     <VStack gap={2}>
       {/* No language: shell highlighting splits the server address and token into colors. */}
-      <CodeBlock code={token.command} hasCopyButton isWrapped />
+      <CodeBlock code={token.command} hasCopyButton isWrapped width="100%" />
       {seconds === 0 ? (
         <HStack gap={2} vAlign="center">
           <Text type="supporting">Expired</Text>
