@@ -720,7 +720,7 @@ extension AppModel {
             return .success(JoinToken(
                 token: "demo",
                 expiresAt: expiresAt,
-                command: "npm i -g pinomad && pinomad join https://accounts.invalid 3f9c2a7e5b1d4c8a"))
+                command: "curl -fsSL https://pinomad.si/install.sh | sh && ~/.local/bin/pinomad join https://accounts.invalid 3f9c2a7e5b1d4c8a"))
         }
         #endif
         guard let session = accountSession, let api = accountAPI() else {

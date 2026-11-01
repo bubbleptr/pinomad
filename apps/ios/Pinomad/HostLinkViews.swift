@@ -15,7 +15,7 @@ struct AddAccountHostContent: View {
                 JoinCommandBlock(command: HostLinkCopy.joinCommand(serverOrigin: session.serverOrigin))
 
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("It installs PiNomad and shows a code. Enter it here to add the host to your account:")
+                    Text("It installs PiNomad with its own Node, asks how your other devices should reach the host (press Return to go through this server), and shows a code. Enter it here to add the host to your account:")
                         .foregroundStyle(.secondary)
                     HostLinkCodeEntry(model: model)
                 }
@@ -255,7 +255,7 @@ struct HostLinkConfirmView: View {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 let seconds = PairingCodeCopy.remainingSeconds(expiresAt: request.expiresAt, now: context.date)
                 if seconds == 0 {
-                    Text("This code expired. Run pinomad join on the host again for a new one.")
+                    Text("This code expired. Run pinomad up on the host again for a new one.")
                         .font(.footnote)
                         .foregroundStyle(.orange)
                 } else {
@@ -484,7 +484,7 @@ struct AddAccountHostView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("A host is the computer that runs your agents: a Mac or Linux machine with Node 25 or later. Open a terminal there and run:")
+                Text("A host is the computer that runs your agents: a Mac or Linux machine. Open a terminal there and run:")
                     .foregroundStyle(.secondary)
                 AddAccountHostContent(model: model)
             }

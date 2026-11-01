@@ -49,11 +49,17 @@ struct HostLinkTests {
 
     // MARK: - The command
 
-    /// Without a token the host asks for a code: the command is only the
-    /// server, and it is the same every time.
-    @Test func tokenlessCommandNamesTheServer() {
+    /// Install with the script (#499), then `pinomad up` (#498), which asks
+    /// for a code. Off the official server it names the server, or up would
+    /// join the host to the official one.
+    @Test func tokenlessCommandNamesAnyOtherServer() {
         #expect(HostLinkCopy.joinCommand(serverOrigin: "https://accounts.example.com/")
-            == "npm i -g pinomad && pinomad join https://accounts.example.com")
+            == "curl -fsSL https://pinomad.si/install.sh | sh\n~/.local/bin/pinomad up --origin https://accounts.example.com")
+    }
+
+    @Test func tokenlessCommandOnTheOfficialServerLeavesItOut() {
+        #expect(HostLinkCopy.joinCommand(serverOrigin: OfficialServer.origin)
+            == "curl -fsSL https://pinomad.si/install.sh | sh\n~/.local/bin/pinomad up")
     }
 
     // MARK: - The host id

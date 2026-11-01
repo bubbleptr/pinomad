@@ -6,6 +6,12 @@ import Security
 // the keychain session, and the pure decisions the UI reads. Nothing here
 // logs a token or writes one to UserDefaults.
 
+/// The hosted PiNomad server: where sign-in starts, and the server
+/// `pinomad up` joins when no other is named.
+public enum OfficialServer {
+    public static let origin = "https://app.pinomad.si"
+}
+
 // MARK: - Session
 
 /// One live bearer session. The token lives in the keychain and in this
