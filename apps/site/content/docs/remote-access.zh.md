@@ -179,6 +179,8 @@ npm i -g pinomad            # 已经装好就跳过
 pinomad join https://relay.example.com <token> [--name 显示名]
 ```
 
+也可以不带令牌（#495）：`pinomad join https://relay.example.com [--name 显示名]` 打印确认网址 `https://relay.example.com/host-link` 和一个 8 位短码（形如 `WDJB-MJHT`，10 分钟有效），能开浏览器时自动打开这个网址（不带短码），然后每 5 秒问一次服务端。在已登录的会话里输入短码确认后，宿主拿到一个只能由它自己使用的一次性令牌，接下来和带令牌时完全一样；被拒绝或过期就报错退出，什么都不改。确认页面随 Web 和 iOS 客户端提供；在那之前可以直接调 API：先 `POST /api/host-link/lookup {userCode}` 核对宿主名、系统、来源 IP 和 hostId，再 `POST /api/host-link/confirm {userCode}`（或 `/deny` 拒绝）。只确认你自己正在操作的那台机器的短码。
+
 `join` 依次做：建好宿主的 Ed25519 登记密钥和 Noise 密钥（已有就复用）；经一条一次性操作连接向服务端登记（这条连接不会顶替正在跑的控制连接）；把服务端地址写进 `<数据目录>/server.json`；然后安装宿主服务——已安装就重写服务定义、去掉旧的 `--relay` 参数——并按 ADR-0009 等空闲重启。输出会打印宿主指纹（hostId）和加入的账号名。令牌响应丢了就重新生成一个再跑一遍，重复 join 同一台宿主是幂等的。
 
 `--name` 把显示名写进 `<数据目录>/settings.json` 的 `hostName`（清洗后为空会报错退出）：join 上报给服务端的名字就是它，不带 `--name` 时用 settings.json 里已有的名字，都没有则是机器名。之后也可以在客户端的 Settings 里改（宿主经控制连接把新名字同步给服务端）。前台运行的宿主（`bun run host`）不会在运行中重读 settings.json，要重启才生效；服务方式安装的宿主由 join 的重启自动带上。
@@ -206,7 +208,7 @@ pinomad leave [--data-dir DIR]
 - 宿主设置 `acceptAccountDevices`（默认开，协议 5.8，客户端用 `FEATURE_SINCE` 判断宿主是否认识它）控制是否接受服务端担保的设备；关掉后还没用掉的账号邀请立即作废。邀请绑定到 `server.json` 里每次写入生成的随机 `binding` 而不只是地址：`pinomad leave`、换服务端、或重新 join（即使同一地址）后，旧绑定签发的邀请在登记时都会被拒——准入时重新核对当前 `server.json`，不用等重启。
 - 账号来源的设备登记成功时不再向在线设备广播 notice（M8 修订 ADR-0022 §6）：新设备只在 Devices 列表里实时出现，并标出来源「via account」。
 
-HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（`{username, password, device?}`）、`GET /api/me`、`POST /api/logout`、`POST /api/sessions/revoke-all`、`POST /api/join-tokens`（返回 `{token, expiresAt, command}`）、`GET /api/hosts`、`POST /api/hosts/:hostId/pairing`、`GET /api/devices`、`POST /api/devices/:id/kick`。会话令牌 30 天固定过期；登录有按 IP 限速、按用户名失败锁定和 scrypt 并发上限，触发回 429。
+HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（`{username, password, device?}`）、`GET /api/me`、`POST /api/logout`、`POST /api/sessions/revoke-all`、`POST /api/join-tokens`（返回 `{token, expiresAt, command}`）、`POST /api/host-link/start` 和 `POST /api/host-link/poll`（宿主用，不需要登录，按 RFC 8628 回 `authorization_pending`、`slow_down`、`expired_token`、`access_denied` 或 `{token, expiresAt}`）、`POST /api/host-link/lookup`、`POST /api/host-link/confirm`、`POST /api/host-link/deny`（都带 `{userCode}`，要登录）、`GET /api/hosts`、`POST /api/hosts/:hostId/pairing`、`GET /api/devices`、`POST /api/devices/:id/kick`。会话令牌 30 天固定过期；登录有按 IP 限速、按用户名失败锁定和 scrypt 并发上限，触发回 429。`host-link/start` 每个 IP 10 分钟内最多 10 次（429），全服务端同时最多 1000 个未完成的请求（503）；输错短码按账号 15 分钟 10 次、按 IP 15 分钟 30 次锁定（429）。
 
 #### 服务端担保配对（ADR-0022 §4）
 

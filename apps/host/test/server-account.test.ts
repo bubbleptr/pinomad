@@ -10,6 +10,7 @@ import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { openAccounts, type Accounts } from "@pinomad/server/src/accounts.ts";
 import { startRelay, type Relay } from "@pinomad/server/src/relay.ts";
 import { loadHostKey, loadRelayKey } from "../src/devices.ts";
+import { browserCommand } from "../src/cli/host-link.ts";
 import { joinServer } from "../src/cli/join.ts";
 import { leaveServer } from "../src/cli/leave.ts";
 import { probeServerAccounts } from "../src/cli/server-ops.ts";
@@ -28,10 +29,15 @@ interface Started {
   readonly origin: string;
 }
 
-async function startServer(): Promise<Started> {
+async function startServer(options?: { readonly now?: () => number }): Promise<Started> {
   const dir = await tempDir();
   defer(dir.remove);
-  const accounts = await openAccounts({ dataDir: dir.path, bootstrapUser: "admin", bootstrapPassword: GOOD_PASSWORD });
+  const accounts = await openAccounts({
+    dataDir: dir.path,
+    bootstrapUser: "admin",
+    bootstrapPassword: GOOD_PASSWORD,
+    ...(options?.now === undefined ? {} : { now: options.now }),
+  });
   // publicOrigin must be the address hosts dial — the register signs it.
   const port = await freePort();
   const origin = `http://127.0.0.1:${port}`;
@@ -273,6 +279,233 @@ describe("joinServer", () => {
       joinServer({ origin: "http://127.example.com", token: "tok", dataDir: data.path }, { manager: fake.manager }),
     ).rejects.toThrow(/https/);
     expect(await readServerConfig(data.path)).toBeUndefined();
+  });
+});
+
+describe("joinServer without a token (#495)", () => {
+  /**
+   * The server's clock moves only when the host "sleeps" between polls, so
+   * the poll schedule is deterministic. `onSleep` runs on each sleep with the
+   * printed lines so far — where a test plays the person at the browser.
+   */
+  async function deviceFlow(options?: {
+    readonly onSleep?: (call: number, lines: readonly string[], started: Started) => Promise<void>;
+    /** Per sleep call, how far the server's clock moves (default: what was asked). */
+    readonly advance?: (call: number, ms: number) => number;
+    readonly seed?: ServiceSpec;
+    /** How far the host's clock runs ahead of the server's. */
+    readonly hostClockAheadMs?: number;
+  }) {
+    let at = 1_800_000_000_000;
+    const started = await startServer({ now: () => at });
+    const data = await tempDir();
+    defer(data.remove);
+    const fake = fakeManager(options?.seed);
+    const lines: string[] = [];
+    const sleeps: number[] = [];
+    const opened: string[] = [];
+    const requests: string[] = [];
+    const deps = {
+      manager: fake.manager,
+      hostname: "omarchy",
+      fetch: ((input: string | URL | Request, init?: RequestInit) => {
+        requests.push(new URL(String(input)).pathname);
+        return fetch(input, init);
+      }) as typeof fetch,
+      log: (line: string) => lines.push(line),
+      now: () => at + (options?.hostClockAheadMs ?? 0),
+      openBrowser: (url: string) => {
+        opened.push(url);
+        return true;
+      },
+      sleep: async (ms: number) => {
+        const call = sleeps.push(ms) - 1;
+        at += options?.advance?.(call, ms) ?? ms;
+        await options?.onSleep?.(call, lines, started);
+      },
+    };
+    return { started, data, fake, lines, sleeps, opened, requests, deps };
+  }
+
+  const codeIn = (lines: readonly string[]): string => {
+    const match = /\b([BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4})\b/.exec(lines.join("\n"));
+    if (match === null) throw new Error(`no code printed:\n${lines.join("\n")}`);
+    return match[1]!;
+  };
+
+  const asUser = async (started: Started, path: string, userCode: string) => {
+    const login = await api(started.relay, { method: "POST", path: "/api/login", body: { username: "admin", password: GOOD_PASSWORD } });
+    return api(started.relay, { method: "POST", path, headers: { authorization: `Bearer ${login.json.token}` }, body: { userCode } });
+  };
+
+  it("starts a host link, polls until a signed-in user confirms the code, then joins as before", async () => {
+    const flow = await deviceFlow({
+      onSleep: async (call, lines, started) => {
+        if (call !== 1) return;
+        const lookup = await asUser(started, "/api/host-link/lookup", codeIn(lines).toLowerCase());
+        expect(lookup.json).toMatchObject({ name: "omarchy", os: expect.any(String) });
+        expect((await asUser(started, "/api/host-link/confirm", codeIn(lines))).status).toBe(204);
+      },
+    });
+
+    const outcome = await joinServer({ origin: flow.started.origin, dataDir: flow.data.path }, flow.deps);
+
+    expect(outcome.username).toBe("admin");
+    expect(outcome.service).toBe("installed");
+    expect(hostsRow(flow.started.accounts, outcome.hostId)?.name).toBe("omarchy");
+    expect((await readServerConfig(flow.data.path))?.origin).toBe(flow.started.origin);
+    // Printed: which server, where to go, the code, and this host's id.
+    const printed = flow.lines.join("\n");
+    expect(printed).toContain(flow.started.origin);
+    expect(printed).toContain(`${flow.started.origin}/host-link`);
+    expect(printed).toContain(outcome.hostId);
+    // The browser opens on the page, never with the code in the URL.
+    expect(flow.opened).toEqual([`${flow.started.origin}/host-link`]);
+    expect(flow.opened[0]).not.toContain(codeIn(flow.lines));
+    // Pending, pending, confirmed — one poll per interval.
+    expect(flow.sleeps).toEqual([5000, 5000]);
+    expect(flow.requests.filter((path) => path === "/api/host-link/poll")).toHaveLength(2);
+  });
+
+  it("adds 5 s to its interval when told to slow down", async () => {
+    const flow = await deviceFlow({
+      // The first two sleeps come up short on the server's clock: the second
+      // poll arrives too early and gets slow_down.
+      advance: (call, ms) => (call < 2 ? 1000 : ms),
+      onSleep: async (call, lines, started) => {
+        if (call === 2) await asUser(started, "/api/host-link/confirm", codeIn(lines));
+      },
+    });
+    await joinServer({ origin: flow.started.origin, dataDir: flow.data.path }, flow.deps);
+    expect(flow.sleeps).toEqual([5000, 5000, 10000]);
+  });
+
+  it("stops with a clear error when the code is denied, and touches nothing", async () => {
+    const flow = await deviceFlow({
+      onSleep: async (call, lines, started) => {
+        if (call === 0) await asUser(started, "/api/host-link/deny", codeIn(lines));
+      },
+    });
+    await expect(joinServer({ origin: flow.started.origin, dataDir: flow.data.path }, flow.deps)).rejects.toThrow(/denied/i);
+    expect(await readServerConfig(flow.data.path)).toBeUndefined();
+    expect(flow.fake.installs).toHaveLength(0);
+  });
+
+  it("stops with a clear error when nobody confirms in time", async () => {
+    const flow = await deviceFlow();
+    await expect(joinServer({ origin: flow.started.origin, dataDir: flow.data.path }, flow.deps)).rejects.toThrow(/expired/i);
+    expect(flow.fake.installs).toHaveLength(0);
+  });
+
+  it("checks the service slot before asking anyone to confirm", async () => {
+    const flow = await deviceFlow({ seed: seededSpec("/srv/pinomad", []) });
+    await expect(joinServer({ origin: flow.started.origin, dataDir: flow.data.path }, flow.deps)).rejects.toThrow(/srv\/pinomad/);
+    expect(flow.requests).not.toContain("/api/host-link/start");
+    expect(flow.lines).toEqual([]);
+  });
+
+  it("leaves the token path alone: no host link is started", async () => {
+    const flow = await deviceFlow();
+    const token = await joinToken(flow.started);
+    await joinServer({ origin: flow.started.origin, token, dataDir: flow.data.path }, flow.deps);
+    expect(flow.requests.some((path) => path.startsWith("/api/host-link/"))).toBe(false);
+    expect(flow.lines).toEqual([]);
+    expect(flow.opened).toEqual([]);
+  });
+
+  it("says so when the server predates host links", async () => {
+    const flow = await deviceFlow();
+    const old = ((input: string | URL | Request, init?: RequestInit) =>
+      new URL(String(input)).pathname === "/api/host-link/start"
+        ? Promise.resolve(new Response(JSON.stringify({ error: "not_found" }), { status: 404 }))
+        : fetch(input, init)) as typeof fetch;
+    await expect(
+      joinServer({ origin: flow.started.origin, dataDir: flow.data.path }, { ...flow.deps, fetch: old }),
+    ).rejects.toThrow(/join token/i);
+  });
+
+  it("keeps waiting past its own clock's deadline while the server still says pending", async () => {
+    // The host's clock is 5 min ahead: by its own reckoning the code died
+    // long before the server's 10 min are up. Confirmed at 500 s server time.
+    const flow = await deviceFlow({
+      hostClockAheadMs: 5 * 60_000,
+      onSleep: async (call, lines, started) => {
+        if (call === 99) await asUser(started, "/api/host-link/confirm", codeIn(lines));
+      },
+    });
+    const outcome = await joinServer({ origin: flow.started.origin, dataDir: flow.data.path }, flow.deps);
+    expect(outcome.username).toBe("admin");
+    expect(flow.sleeps).toHaveLength(100);
+  });
+
+  it("gives up on its own clock when the server stops answering", async () => {
+    const flow = await deviceFlow();
+    const gone = ((input: string | URL | Request, init?: RequestInit) =>
+      new URL(String(input)).pathname === "/api/host-link/poll"
+        ? Promise.reject(new TypeError("fetch failed"))
+        : flow.deps.fetch(input, init)) as typeof fetch;
+    await expect(
+      joinServer({ origin: flow.started.origin, dataDir: flow.data.path }, { ...flow.deps, fetch: gone }),
+    ).rejects.toThrow(/expired/i);
+    // 10 min of code plus 2 min of grace, at one poll per 5 s.
+    expect(flow.sleeps.length).toBeGreaterThan(140);
+    expect(flow.fake.installs).toHaveLength(0);
+  });
+
+  /** Headers arrive, then the body trickles forever (a half-dead proxy). */
+  const stalledBody = (): Response =>
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"tok'));
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+
+  it("calls a start whose answer never finishes unreachable", async () => {
+    const flow = await deviceFlow();
+    for (const stall of [() => Promise.resolve(stalledBody()), () => new Promise<Response>(() => {})]) {
+      const stalled = ((input: string | URL | Request, init?: RequestInit) =>
+        new URL(String(input)).pathname === "/api/host-link/start" ? stall() : flow.deps.fetch(input, init)) as typeof fetch;
+      await expect(
+        joinServer(
+          { origin: flow.started.origin, dataDir: flow.data.path },
+          { ...flow.deps, fetch: stalled, requestTimeoutMs: 50 },
+        ),
+      ).rejects.toThrow(/cannot reach/i);
+    }
+  });
+
+  it("asks again after a poll whose answer never finishes", async () => {
+    const flow = await deviceFlow({
+      onSleep: async (call, lines, started) => {
+        if (call === 1) await asUser(started, "/api/host-link/confirm", codeIn(lines));
+      },
+    });
+    let polls = 0;
+    const stalled = ((input: string | URL | Request, init?: RequestInit) =>
+      new URL(String(input)).pathname === "/api/host-link/poll" && polls++ === 0
+        ? Promise.resolve(stalledBody())
+        : flow.deps.fetch(input, init)) as typeof fetch;
+    const outcome = await joinServer(
+      { origin: flow.started.origin, dataDir: flow.data.path },
+      { ...flow.deps, fetch: stalled, requestTimeoutMs: 50 },
+    );
+    expect(outcome.username).toBe("admin");
+    expect(polls).toBe(2);
+  });
+});
+
+describe("browserCommand", () => {
+  it("opens with `open` on macOS and `xdg-open` on a Linux desktop, and not over SSH or without a display", () => {
+    expect(browserCommand("darwin", {})).toBe("open");
+    expect(browserCommand("linux", { DISPLAY: ":0" })).toBe("xdg-open");
+    expect(browserCommand("linux", { WAYLAND_DISPLAY: "wayland-0" })).toBe("xdg-open");
+    expect(browserCommand("linux", {})).toBeUndefined();
+    expect(browserCommand("darwin", { SSH_CONNECTION: "1.2.3.4 5 6.7.8.9 22" })).toBeUndefined();
+    expect(browserCommand("linux", { DISPLAY: ":0", SSH_TTY: "/dev/pts/1" })).toBeUndefined();
+    expect(browserCommand("win32", {})).toBeUndefined();
   });
 });
 

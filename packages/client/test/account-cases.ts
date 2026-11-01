@@ -36,6 +36,7 @@ export type AccountOpDesc =
   | { kind: "deleteAccount"; password: string }
   | { kind: "kickDevice"; id: number; password: string }
   | { kind: "logout"; revoke?: boolean }
+  | { kind: "lookupHostLink" | "confirmHostLink" | "denyHostLink"; userCode: string }
   | { kind: "me" | "revokeAllSessions" | "createJoinToken" | "listHosts" | "listDevices" };
 
 export interface RequestCase {
@@ -106,6 +107,11 @@ export const REQUEST_CASES: RequestCase[] = [
   { name: "list-devices", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "listDevices" } },
   // The server's numeric id goes into the path as `${id}` (#452).
   { name: "kick-device", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "kickDevice", id: 1234, password: "pé \"x\"\n" } },
+  // Host links (#495): the code goes as typed — case, dashes and spaces are
+  // the server's to ignore, and quotes still escape like any body string.
+  { name: "host-link-lookup", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "lookupHostLink", userCode: "wdjb-MJHT" } },
+  { name: "host-link-confirm", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "confirmHostLink", userCode: "WDJB MJHT" } },
+  { name: "host-link-deny", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "denyHostLink", userCode: "W\"DJB\n" } },
 ];
 
 export interface ResponseCase {
@@ -245,6 +251,33 @@ export const RESPONSE_CASES: ResponseCase[] = [
   { name: "kick-current", kind: "kickDevice", status: 409, body: '{"error":"current_device"}' },
   { name: "kick-not-found", kind: "kickDevice", status: 404, body: '{"error":"not_found"}' },
   { name: "kick-rate-limited", kind: "kickDevice", status: 429, body: '{"error":"rate_limited"}' },
+  // The host waiting behind a code (#495): every field required, ipDiffers a real boolean.
+  {
+    name: "host-link-lookup-ok",
+    kind: "lookupHostLink",
+    status: 200,
+    body: `{"hostId":"${HOST_ID_A}","name":"omarchy — é","os":"Linux (x64)","sourceIp":"203.0.113.7","ipDiffers":true,"expiresAt":9}`,
+  },
+  {
+    name: "host-link-lookup-same-ip",
+    kind: "lookupHostLink",
+    status: 200,
+    body: `{"hostId":"${HOST_ID_A}","name":"mbp","os":"macOS (arm64)","sourceIp":"::1","ipDiffers":false,"expiresAt":1,"extra":1}`,
+  },
+  {
+    name: "host-link-lookup-ip-differs-string",
+    kind: "lookupHostLink",
+    status: 200,
+    body: `{"hostId":"h","name":"n","os":"o","sourceIp":"i","ipDiffers":"yes","expiresAt":1}`,
+  },
+  { name: "host-link-lookup-missing-os", kind: "lookupHostLink", status: 200, body: `{"hostId":"h","name":"n","sourceIp":"i","ipDiffers":true,"expiresAt":1}` },
+  { name: "host-link-lookup-not-found", kind: "lookupHostLink", status: 404, body: '{"error":"not_found"}' },
+  { name: "host-link-lookup-limited", kind: "lookupHostLink", status: 429, body: '{"error":"rate_limited"}' },
+  { name: "host-link-confirm-204", kind: "confirmHostLink", status: 204, body: null },
+  { name: "host-link-confirm-not-found", kind: "confirmHostLink", status: 404, body: '{"error":"not_found"}' },
+  { name: "host-link-confirm-401", kind: "confirmHostLink", status: 401, body: null },
+  { name: "host-link-deny-204", kind: "denyHostLink", status: 204, body: null },
+  { name: "host-link-deny-limited", kind: "denyHostLink", status: 429, body: '{"error":"rate_limited"}' },
 ];
 
 export interface ProbeCase {

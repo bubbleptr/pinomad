@@ -772,6 +772,14 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
         socket.terminate();
       }
     }
+    // Expired host-link requests carry a host's name, OS and IP (#495): they
+    // go within a ping interval of expiring, even if nobody calls the API.
+    // A failed sweep (a busy database) just waits for the next tick.
+    try {
+      accounts?.sweepExpired();
+    } catch {
+      // Retried on the next interval.
+    }
   }, pingIntervalMs);
 
   return {

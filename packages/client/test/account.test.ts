@@ -432,6 +432,59 @@ describe("account devices (#452)", () => {
   });
 });
 
+describe("host links (#495)", () => {
+  const request = {
+    hostId: "h".repeat(43),
+    name: "omarchy",
+    os: "Linux (x64)",
+    sourceIp: "203.0.113.7",
+    ipDiffers: true,
+    expiresAt: 9,
+  };
+
+  it("looks up the request behind a typed code, sending the code as typed", async () => {
+    const { impl, calls } = fakeFetch({ status: 200, body: request });
+    const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer", token: "t" }, fetch: impl });
+    expect(await client.lookupHostLink("wdjb-mjht")).toEqual({ ok: true, value: request });
+    expect(calls[0]!.url).toBe(`${ORIGIN}/api/host-link/lookup`);
+    expect(calls[0]!.init?.method).toBe("POST");
+    // The server owns normalization; the client never rewrites the code.
+    expect(calls[0]!.init!.body).toBe('{"userCode":"wdjb-mjht"}');
+  });
+
+  it("refuses lookup answers that don't match the shape", async () => {
+    for (const bad of [
+      { ...request, hostId: 1 },
+      { ...request, name: null },
+      { ...request, os: 2 },
+      { ...request, sourceIp: undefined },
+      { ...request, ipDiffers: "yes" },
+      { ...request, expiresAt: "9" },
+    ]) {
+      expect(await bearer([{ status: 200, body: bad }]).lookupHostLink("WDJB-MJHT")).toEqual({
+        ok: false,
+        error: { code: "invalid_response" },
+      });
+    }
+  });
+
+  it("confirms and denies with the code; a wrong code and the lockout keep their codes", async () => {
+    const { impl, calls } = fakeFetch(
+      { status: 204 },
+      { status: 204 },
+      { status: 404, body: { error: "not_found" } },
+      { status: 429, body: { error: "rate_limited" } },
+    );
+    const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer", token: "t" }, fetch: impl });
+    expect(await client.confirmHostLink("WDJB-MJHT")).toEqual({ ok: true, value: undefined });
+    expect(await client.denyHostLink("WDJB-MJHT")).toEqual({ ok: true, value: undefined });
+    expect(calls.map((call) => call.url)).toEqual([`${ORIGIN}/api/host-link/confirm`, `${ORIGIN}/api/host-link/deny`]);
+    expect(JSON.parse(calls[1]!.init!.body!)).toEqual({ userCode: "WDJB-MJHT" });
+    expect(await client.confirmHostLink("BBBB-BBBB")).toEqual({ ok: false, error: { code: "not_found", status: 404 } });
+    expect(await client.lookupHostLink("BBBB-BBBB")).toEqual({ ok: false, error: { code: "rate_limited", status: 429 } });
+  });
+});
+
 describe("matchAccountHosts", () => {
   it("pairs a linked entry, adopts an unlinked twin, and leaves strangers unpaired", async () => {
     const linked = stored({ account: { serverOrigin: `${ORIGIN}/`, hostId: HOST_ID } });

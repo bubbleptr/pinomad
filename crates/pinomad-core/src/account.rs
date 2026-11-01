@@ -39,7 +39,8 @@ pub struct AccountDeviceClaim {
 /// carries this device's APNs token (ADR-0036); `ChangePassword` carries
 /// both passwords (#450); `DeleteAccount` and `KickDevice` carry the
 /// password again (#451, ADR-0037 §3), `KickDevice` also the server's id
-/// from `ListDevices`.
+/// from `ListDevices`; the host-link trio carries the code typed from a
+/// host's terminal, verbatim (#495).
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum AccountOp {
@@ -66,6 +67,9 @@ pub enum AccountOp {
     DeleteAccount { password: String },
     ListDevices,
     KickDevice { id: f64, password: String },
+    LookupHostLink { user_code: String },
+    ConfirmHostLink { user_code: String },
+    DenyHostLink { user_code: String },
 }
 
 /// Which endpoint an answer belongs to — `account_response` picks its shape
@@ -86,6 +90,9 @@ pub enum AccountOpKind {
     DeleteAccount,
     ListDevices,
     KickDevice,
+    LookupHostLink,
+    ConfirmHostLink,
+    DenyHostLink,
 }
 
 /// One header on the request the platform sends, in the reference's order.
@@ -124,6 +131,9 @@ impl AccountOp {
             AccountOp::DeleteAccount { .. } => AccountOpKind::DeleteAccount,
             AccountOp::ListDevices => AccountOpKind::ListDevices,
             AccountOp::KickDevice { .. } => AccountOpKind::KickDevice,
+            AccountOp::LookupHostLink { .. } => AccountOpKind::LookupHostLink,
+            AccountOp::ConfirmHostLink { .. } => AccountOpKind::ConfirmHostLink,
+            AccountOp::DenyHostLink { .. } => AccountOpKind::DenyHostLink,
         }
     }
 
@@ -154,6 +164,9 @@ impl AccountOp {
             AccountOp::ListDevices => "/api/devices".to_string(),
             // `${id}` — the number as JS prints it.
             AccountOp::KickDevice { id, .. } => format!("/api/devices/{}/kick", number_to_json(*id)),
+            AccountOp::LookupHostLink { .. } => "/api/host-link/lookup".to_string(),
+            AccountOp::ConfirmHostLink { .. } => "/api/host-link/confirm".to_string(),
+            AccountOp::DenyHostLink { .. } => "/api/host-link/deny".to_string(),
         }
     }
 
@@ -161,8 +174,9 @@ impl AccountOp {
     /// order: `{username, password, device?: {id, name?}}` for login, `{apns, environment}` for the
     /// push-token pair — the token stays out of the URL —
     /// `{currentPassword, newPassword}` for a password change, and
-    /// `{password}` for deleting the account or kicking a device, and
-    /// `{revoke: true}` for a revoking sign-out.
+    /// `{password}` for deleting the account or kicking a device,
+    /// `{revoke: true}` for a revoking sign-out, and `{userCode}` for the
+    /// host-link trio.
     fn body(&self) -> Option<String> {
         match self {
             AccountOp::Login { username, password, device } => {
@@ -194,6 +208,13 @@ impl AccountOp {
             AccountOp::DeleteAccount { password } | AccountOp::KickDevice { password, .. } => {
                 let mut object = JsonObject::new();
                 object.set(U16String::from_str("password"), Json::from(password.as_str()));
+                Some(Json::Object(Arc::new(object)).to_json())
+            }
+            AccountOp::LookupHostLink { user_code }
+            | AccountOp::ConfirmHostLink { user_code }
+            | AccountOp::DenyHostLink { user_code } => {
+                let mut object = JsonObject::new();
+                object.set(U16String::from_str("userCode"), Json::from(user_code.as_str()));
                 Some(Json::Object(Arc::new(object)).to_json())
             }
             AccountOp::Logout { revoke: true } => {
@@ -331,6 +352,23 @@ pub struct JoinToken {
     pub command: String,
 }
 
+/// `POST /api/host-link/lookup` — the host waiting behind a typed code
+/// (#495), as the confirm page shows it.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct HostLinkRequest {
+    /// The host's id: the fingerprint of its registration key.
+    pub host_id: String,
+    pub name: String,
+    pub os: String,
+    /// The address the host asked from.
+    pub source_ip: String,
+    /// The host asked from another address than this device: maybe not the
+    /// caller's machine.
+    pub ip_differs: bool,
+    pub expires_at: f64,
+}
+
 /// The server-side verdict on whether a pairing ask can reach this host
 /// right now (`GET /api/hosts`'s `pairing` field).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -395,9 +433,11 @@ pub enum AccountValue {
     Login(LoginSuccess),
     Me(AccountMe),
     /// `logout`, `revokeAllSessions`, the push-token pair, `changePassword`,
-    /// `deleteAccount` and `kickDevice` answer nothing.
+    /// `deleteAccount`, `kickDevice`, `confirmHostLink` and `denyHostLink`
+    /// answer nothing.
     Unit,
     JoinToken(JoinToken),
+    HostLink(HostLinkRequest),
     Hosts(Vec<AccountHost>),
     Devices(Vec<AccountDevice>),
     PairingOffer(PairingOffer),
@@ -532,7 +572,20 @@ fn decode_value(kind: AccountOpKind, value: Option<&Json>) -> Result<AccountValu
         | AccountOpKind::RemovePushToken
         | AccountOpKind::ChangePassword
         | AccountOpKind::DeleteAccount
-        | AccountOpKind::KickDevice => Ok(AccountValue::Unit),
+        | AccountOpKind::KickDevice
+        | AccountOpKind::ConfirmHostLink
+        | AccountOpKind::DenyHostLink => Ok(AccountValue::Unit),
+        AccountOpKind::LookupHostLink => Ok(AccountValue::HostLink(HostLinkRequest {
+            host_id: str_field(value, "hostId").ok_or_else(AccountError::invalid)?,
+            name: str_field(value, "name").ok_or_else(AccountError::invalid)?,
+            os: str_field(value, "os").ok_or_else(AccountError::invalid)?,
+            source_ip: str_field(value, "sourceIp").ok_or_else(AccountError::invalid)?,
+            ip_differs: match value.get("ipDiffers") {
+                Some(Json::Bool(differs)) => *differs,
+                _ => return Err(AccountError::invalid()),
+            },
+            expires_at: num_field(value, "expiresAt").ok_or_else(AccountError::invalid)?,
+        })),
         AccountOpKind::ListDevices => {
             let entries = value.as_array().ok_or_else(AccountError::invalid)?;
             Ok(AccountValue::Devices(entries.iter().map(decode_device).collect::<Result<_, _>>()?))
