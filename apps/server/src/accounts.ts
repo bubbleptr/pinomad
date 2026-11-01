@@ -1,14 +1,14 @@
 // Server accounts (ADR-0022 §2): the server persists users, sessions, join
-// tokens, host bindings, the APNs tokens each account's devices registered
+// tokens, host-link requests (#495), host bindings, the APNs tokens each account's devices registered
 // (ADR-0036), sign-up invites (#449), and account devices with the keys hosts
 // admitted them under (ADR-0037) in <dataDir>/server.sqlite, guarded
 // by the same one-process-per-directory lock the host uses. Secrets never
 // reach the DB in the clear — passwords are scrypt hashes, session, join and
-// invite tokens are SHA-256.
+// invite tokens are SHA-256, and so are host-link device and user codes.
 //
 // `node:sqlite` needs Node: the server runs on Node like the host, not Bun.
 
-import { createHash, randomBytes, scrypt, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomInt, scrypt, timingSafeEqual } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -18,7 +18,7 @@ import { normalizeHostName } from "@pinomad/protocol/settings.ts";
 import { isDataDirInUse, lockDataDir } from "./lock.ts";
 
 const DB_FILE = "server.sqlite";
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 // Sessions die 30 days after issue and are never renewed — a stolen token has a
 // hard ceiling, and re-logging-in is the only way forward.
@@ -27,6 +27,32 @@ const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 // Join tokens are short-lived and single-use (ADR-0022 §3): a leaked one is
 // only useful for minutes and only once.
 const JOIN_TOKEN_TTL_MS = 10 * 60 * 1000;
+
+// Host links (#495, RFC 8628): the short code a person types to let a host
+// collect a join token. 8 letters from 20 consonants with no lookalikes —
+// about 34.6 bits, guessable only under the lockout below — shown XXXX-XXXX,
+// alive as long as a join token. The host polls no faster than the interval.
+export const USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ";
+const USER_CODE_LENGTH = 8;
+const HOST_LINK_TTL_MS = JOIN_TOKEN_TTL_MS;
+const HOST_LINK_INTERVAL_S = 5;
+// RFC 8628 §3.5: a host told to slow down adds 5 s to its interval for good.
+const SLOW_DOWN_STEP_S = 5;
+// A poll sent on schedule can still arrive a little early when the previous
+// one was held up on the way; only a gap shorter by more than this is too fast.
+const POLL_SLACK_MS = 1000;
+const HOST_OS_MAX_CODEPOINTS = 64;
+
+/** The canonical form of a typed code, ignoring case, dashes and spaces; undefined when it can't be one. */
+export function normalizeUserCode(input: string): string | undefined {
+  const code = input.replace(/[\s-]/g, "").toUpperCase();
+  if (code.length !== USER_CODE_LENGTH) return undefined;
+  for (const letter of code) if (!USER_CODE_ALPHABET.includes(letter)) return undefined;
+  return code;
+}
+
+/** How a code is shown: XXXX-XXXX. */
+export const formatUserCode = (code: string): string => `${code.slice(0, 4)}-${code.slice(4)}`;
 
 // Invites go out over chat or mail and wait for the recipient, so they live a
 // week; each one creates at most one account (#449).
@@ -129,6 +155,21 @@ export interface LoginLimits {
   readonly counterMaxEntries?: number;
 }
 
+/** Abuse bounds for host links (#495); each has a default. */
+export interface HostLinkLimits {
+  /** Requests one source IP may start per window; default 10 per 10 min. */
+  readonly startMaxPerIp?: number;
+  readonly startWindowMs?: number;
+  /** Unexpired requests at once, server-wide; default 1000. Full → 503. */
+  readonly maxPending?: number;
+  /** Wrong codes (lookup, confirm, deny) per account and per IP before lockout; default 10 and 30 per 15 min. */
+  readonly userMaxFailures?: number;
+  readonly ipMaxFailures?: number;
+  readonly failureWindowMs?: number;
+  /** Cap on each counter map. */
+  readonly counterMaxEntries?: number;
+}
+
 export interface AccountsOptions {
   readonly dataDir: string;
   /** Bootstrap credentials (PINOMAD_SERVER_USER/PASSWORD); required only while the users table is empty. */
@@ -137,6 +178,7 @@ export interface AccountsOptions {
   readonly now?: () => number;
   readonly lockStaleMs?: number;
   readonly limits?: LoginLimits;
+  readonly hostLinkLimits?: HostLinkLimits;
 }
 
 export type LoginResult =
@@ -171,6 +213,44 @@ export interface InviteRow {
   readonly usedAt?: number;
   readonly usedBy?: string;
 }
+
+export type StartHostLinkResult =
+  | {
+      readonly status: "ok";
+      /** The host's secret for polling; only its SHA-256 is stored. */
+      readonly deviceCode: string;
+      /** What the person types, as XXXX-XXXX. */
+      readonly userCode: string;
+      readonly expiresAt: number;
+      /** Seconds between polls (RFC 8628). */
+      readonly interval: number;
+    }
+  | { readonly status: "limited" }
+  | { readonly status: "busy" };
+
+/** A host's poll in RFC 8628 terms: `pending` is authorization_pending, `expired` is expired_token. */
+export type PollHostLinkResult =
+  | { readonly status: "pending" }
+  | { readonly status: "slow_down"; readonly interval: number }
+  | { readonly status: "expired" }
+  | { readonly status: "denied" }
+  | { readonly status: "confirmed"; readonly token: string; readonly expiresAt: number };
+
+/** A pending host link as the confirm page shows it. */
+export interface HostLinkRequest {
+  readonly hostId: string;
+  readonly name: string;
+  readonly os: string;
+  readonly sourceIp: string;
+  /** The host's IP isn't the confirmer's: the page warns that this may not be their machine. */
+  readonly ipDiffers: boolean;
+  readonly expiresAt: number;
+}
+
+export type HostLinkCodeResult<T = Record<never, never>> =
+  | ({ readonly status: "ok" } & T)
+  | { readonly status: "not_found" }
+  | { readonly status: "limited" };
 
 export type JoinHostResult =
   | { readonly status: "joined"; readonly username: string }
@@ -290,6 +370,35 @@ export interface Accounts {
   hasHost(hostId: string): boolean;
   /** Mints a single-use join token for a logged-in user; only its SHA-256 is stored. */
   createJoinToken(userId: number): { readonly token: string; readonly expiresAt: number };
+  /**
+   * A host asks to join without a token (#495): anonymous, so bounded per
+   * source IP and server-wide. Its name, OS and IP are kept only until the
+   * request is confirmed, denied or expires.
+   */
+  startHostLink(args: {
+    readonly hostId: string;
+    readonly name: string;
+    readonly os: string;
+    readonly ip: string;
+  }): StartHostLinkResult;
+  /**
+   * The host's poll. A confirmed request mints its join token here, bound to
+   * the request's hostId, so no plaintext token ever sits in the database; a
+   * confirmed or denied request answers once and is gone.
+   */
+  pollHostLink(deviceCode: string): PollHostLinkResult;
+  /** The pending request behind a typed code; wrong codes count toward the lockout. */
+  lookupHostLink(args: {
+    readonly userId: number;
+    readonly userCode: string;
+    readonly ip: string;
+  }): HostLinkCodeResult<{ readonly request: HostLinkRequest }>;
+  /** Approves a pending request for `userId`'s account and forgets the host's personal data. */
+  confirmHostLink(args: { readonly userId: number; readonly userCode: string; readonly ip: string }): HostLinkCodeResult;
+  /** Refuses a pending request and forgets the host's personal data. */
+  denyHostLink(args: { readonly userId: number; readonly userCode: string; readonly ip: string }): HostLinkCodeResult;
+  /** Deletes expired join tokens and host-link requests; the server also runs it on a timer. */
+  sweepExpired(): void;
   /**
    * Spends a join token and writes or rebinds the hosts row in one transaction —
    * the token must never be consumed without a binding landing beside it.
@@ -493,6 +602,34 @@ function migrate(db: DatabaseSync): void {
       COMMIT;
     `);
   }
+  if (version < 6) {
+    // Host links (#495). A request is pending until a signed-in user
+    // confirms it (user_id set) or denies it; either clears the host's name,
+    // OS and IP, and the row lives on only for the host's last poll. A join
+    // token minted from one is bound to its host_id; tokens from "add a
+    // host" stay bound to none.
+    db.exec(`
+      BEGIN;
+      CREATE TABLE host_link_requests (
+        device_code_hash TEXT PRIMARY KEY,
+        user_code_hash TEXT NOT NULL UNIQUE,
+        host_id TEXT NOT NULL,
+        host_name TEXT,
+        host_os TEXT,
+        source_ip TEXT,
+        state TEXT NOT NULL DEFAULT 'pending',
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        interval_s INTEGER NOT NULL,
+        last_poll_at INTEGER,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
+      CREATE INDEX host_link_requests_expiry ON host_link_requests (expires_at);
+      ALTER TABLE join_tokens ADD COLUMN host_id TEXT;
+      PRAGMA user_version = 6;
+      COMMIT;
+    `);
+  }
 }
 
 /**
@@ -594,6 +731,15 @@ function migrateTo1(db: DatabaseSync): void {
     PRAGMA user_version = 1;
     COMMIT;
   `);
+}
+
+/** A pending host link's columns as the user-code side reads them. */
+interface PendingHostLink {
+  readonly hostId: string;
+  readonly name: string | null;
+  readonly os: string | null;
+  readonly sourceIp: string | null;
+  readonly expiresAt: number;
 }
 
 /** Fixed-window counters with a hard cap: full maps evict the oldest entries instead of growing. */
@@ -715,6 +861,89 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
   const gate = new ScryptGate(limits.scryptConcurrency, limits.scryptQueue);
   const ipAttempts = new WindowedCounter(limits.counterMaxEntries, now);
   const userFailures = new WindowedCounter(limits.counterMaxEntries, now);
+
+  const linkLimits = {
+    startMaxPerIp: options.hostLinkLimits?.startMaxPerIp ?? 10,
+    startWindowMs: options.hostLinkLimits?.startWindowMs ?? 10 * 60_000,
+    maxPending: options.hostLinkLimits?.maxPending ?? 1000,
+    userMaxFailures: options.hostLinkLimits?.userMaxFailures ?? 10,
+    ipMaxFailures: options.hostLinkLimits?.ipMaxFailures ?? 30,
+    failureWindowMs: options.hostLinkLimits?.failureWindowMs ?? 15 * 60_000,
+    counterMaxEntries: options.hostLinkLimits?.counterMaxEntries ?? 4096,
+  };
+  const linkStarts = new WindowedCounter(linkLimits.counterMaxEntries, now);
+  const linkUserFailures = new WindowedCounter(linkLimits.counterMaxEntries, now);
+  const linkIpFailures = new WindowedCounter(linkLimits.counterMaxEntries, now);
+
+  /** Expired one-use credentials: join tokens, and host-link requests with the host's personal data. */
+  const sweepExpired = (): void => {
+    const at = now();
+    db.prepare("DELETE FROM join_tokens WHERE expires_at <= ?").run(at);
+    db.prepare("DELETE FROM host_link_requests WHERE expires_at <= ?").run(at);
+  };
+
+  const mintJoinToken = (userId: number, hostId: string | null): { readonly token: string; readonly expiresAt: number } => {
+    const token = randomBytes(32).toString("base64url");
+    const expiresAt = now() + JOIN_TOKEN_TTL_MS;
+    db.prepare("INSERT INTO join_tokens (token_hash, user_id, created_at, expires_at, host_id) VALUES (?, ?, ?, ?, ?)").run(
+      sha256Hex(token),
+      userId,
+      now(),
+      expiresAt,
+      hostId,
+    );
+    return { token, expiresAt };
+  };
+
+  /**
+   * The user-code half of a host link: the lockout, then the pending request
+   * the code names. A wrong or malformed code counts against both the account
+   * and the IP; a right one clears neither, so settling a request of one's
+   * own can't buy more guesses.
+   */
+  const pendingByCode = (
+    userId: number,
+    userCode: string,
+    ip: string,
+  ): "limited" | "not_found" | { readonly codeHash: string; readonly row: PendingHostLink } => {
+    const userKey = String(userId);
+    if (linkUserFailures.isOver(userKey, linkLimits.userMaxFailures) || linkIpFailures.isOver(ip, linkLimits.ipMaxFailures)) {
+      return "limited";
+    }
+    const code = normalizeUserCode(userCode);
+    const codeHash = code === undefined ? undefined : sha256Hex(code);
+    const row =
+      codeHash === undefined
+        ? undefined
+        : (db
+            .prepare(
+              `SELECT host_id AS hostId, host_name AS name, host_os AS os, source_ip AS sourceIp, expires_at AS expiresAt
+               FROM host_link_requests WHERE user_code_hash = ? AND state = 'pending' AND expires_at > ?`,
+            )
+            .get(codeHash, now()) as PendingHostLink | undefined);
+    if (codeHash === undefined || row === undefined) {
+      linkUserFailures.bump(userKey, linkLimits.failureWindowMs);
+      linkIpFailures.bump(ip, linkLimits.failureWindowMs);
+      return "not_found";
+    }
+    return { codeHash, row };
+  };
+
+  /** Settles a pending request, clearing the host's personal data in the same write. */
+  const settleHostLink = (
+    args: { readonly userId: number; readonly userCode: string; readonly ip: string },
+    state: "confirmed" | "denied",
+  ): HostLinkCodeResult => {
+    const found = pendingByCode(args.userId, args.userCode, args.ip);
+    if (found === "limited" || found === "not_found") return { status: found };
+    const settled = db
+      .prepare(
+        `UPDATE host_link_requests SET state = ?, user_id = ?, host_name = NULL, host_os = NULL, source_ip = NULL
+         WHERE user_code_hash = ? AND state = 'pending' AND expires_at > ?`,
+      )
+      .run(state, state === "confirmed" ? args.userId : null, found.codeHash, now());
+    return Number(settled.changes) === 1 ? { status: "ok" } : { status: "not_found" };
+  };
 
   /**
    * The account device a sign-in lands on (ADR-0037 §1), inside the caller's
@@ -1151,17 +1380,116 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
     createJoinToken(userId) {
       // Sweep dead rows opportunistically, the same convention as expired
       // sessions on login.
-      db.prepare("DELETE FROM join_tokens WHERE expires_at <= ?").run(now());
-      const token = randomBytes(32).toString("base64url");
-      const expiresAt = now() + JOIN_TOKEN_TTL_MS;
-      db.prepare("INSERT INTO join_tokens (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)").run(
-        sha256Hex(token),
-        userId,
-        now(),
-        expiresAt,
-      );
-      return { token, expiresAt };
+      sweepExpired();
+      return mintJoinToken(userId, null);
     },
+
+    startHostLink({ hostId, name, os, ip }) {
+      if (linkStarts.hit(ip, linkLimits.startMaxPerIp, linkLimits.startWindowMs)) return { status: "limited" };
+      sweepExpired();
+      const live = (db.prepare("SELECT COUNT(*) AS n FROM host_link_requests").get() as { n: number }).n;
+      if (live >= linkLimits.maxPending) return { status: "busy" };
+      const deviceCode = randomBytes(32).toString("base64url");
+      const at = now();
+      const expiresAt = at + HOST_LINK_TTL_MS;
+      const insert = db.prepare(
+        `INSERT INTO host_link_requests
+           (device_code_hash, user_code_hash, host_id, host_name, host_os, source_ip, interval_s, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      );
+      // Live codes are unique; with at most maxPending of them among 20^8, a
+      // collision is rare enough that a few redraws always settle it.
+      for (let attempt = 0; ; attempt++) {
+        const code = Array.from({ length: USER_CODE_LENGTH }, () => USER_CODE_ALPHABET[randomInt(USER_CODE_ALPHABET.length)]).join("");
+        try {
+          insert.run(
+            sha256Hex(deviceCode),
+            sha256Hex(code),
+            hostId,
+            normalizeHostName(name),
+            [...os.trim()].slice(0, HOST_OS_MAX_CODEPOINTS).join(""),
+            ip,
+            HOST_LINK_INTERVAL_S,
+            at,
+            expiresAt,
+          );
+          return { status: "ok", deviceCode, userCode: formatUserCode(code), expiresAt, interval: HOST_LINK_INTERVAL_S };
+        } catch (error) {
+          if (attempt >= 4 || !String(error).includes("UNIQUE")) throw error;
+        }
+      }
+    },
+
+    pollHostLink(deviceCode) {
+      const deviceCodeHash = sha256Hex(deviceCode);
+      const at = now();
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const row = db
+          .prepare(
+            `SELECT host_id AS hostId, state, user_id AS userId, interval_s AS intervalS, last_poll_at AS lastPollAt, expires_at AS expiresAt
+             FROM host_link_requests WHERE device_code_hash = ?`,
+          )
+          .get(deviceCodeHash) as
+          | { hostId: string; state: string; userId: number | null; intervalS: number; lastPollAt: number | null; expiresAt: number }
+          | undefined;
+        let result: PollHostLinkResult;
+        if (row === undefined || row.expiresAt <= at) {
+          db.prepare("DELETE FROM host_link_requests WHERE device_code_hash = ?").run(deviceCodeHash);
+          result = { status: "expired" };
+        } else if (row.lastPollAt !== null && at - row.lastPollAt < row.intervalS * 1000 - POLL_SLACK_MS) {
+          const interval = row.intervalS + SLOW_DOWN_STEP_S;
+          db.prepare("UPDATE host_link_requests SET interval_s = ?, last_poll_at = ? WHERE device_code_hash = ?").run(
+            interval,
+            at,
+            deviceCodeHash,
+          );
+          result = { status: "slow_down", interval };
+        } else if (row.state === "pending") {
+          db.prepare("UPDATE host_link_requests SET last_poll_at = ? WHERE device_code_hash = ?").run(at, deviceCodeHash);
+          result = { status: "pending" };
+        } else {
+          // Settled: this poll is the answer, and the request is spent.
+          db.prepare("DELETE FROM host_link_requests WHERE device_code_hash = ?").run(deviceCodeHash);
+          result =
+            row.state === "confirmed" && row.userId !== null
+              ? { status: "confirmed", ...mintJoinToken(row.userId, row.hostId) }
+              : { status: "denied" };
+        }
+        db.exec("COMMIT");
+        return result;
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+
+    lookupHostLink({ userId, userCode, ip }) {
+      const found = pendingByCode(userId, userCode, ip);
+      if (found === "limited" || found === "not_found") return { status: found };
+      const { row } = found;
+      return {
+        status: "ok",
+        request: {
+          hostId: row.hostId,
+          name: row.name ?? "",
+          os: row.os ?? "",
+          sourceIp: row.sourceIp ?? "",
+          ipDiffers: row.sourceIp !== ip,
+          expiresAt: row.expiresAt,
+        },
+      };
+    },
+
+    confirmHostLink(args) {
+      return settleHostLink(args, "confirmed");
+    },
+
+    denyHostLink(args) {
+      return settleHostLink(args, "denied");
+    },
+
+    sweepExpired,
 
     joinHost({ token, hostId, noisePublicKey, name }) {
       const tokenHash = sha256Hex(token);
@@ -1169,10 +1497,15 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       db.exec("BEGIN");
       try {
         const row = db
-          .prepare("SELECT user_id AS userId, expires_at AS expiresAt, used_at AS usedAt FROM join_tokens WHERE token_hash = ?")
-          .get(tokenHash) as { userId: number; expiresAt: number; usedAt: number | null } | undefined;
+          .prepare(
+            "SELECT user_id AS userId, expires_at AS expiresAt, used_at AS usedAt, host_id AS boundHostId FROM join_tokens WHERE token_hash = ?",
+          )
+          .get(tokenHash) as { userId: number; expiresAt: number; usedAt: number | null; boundHostId: string | null } | undefined;
         let failure: "invalid_token" | "expired_token" | undefined;
-        if (row === undefined || row.usedAt !== null) failure = "invalid_token";
+        // A token from a host link joins only the host the user confirmed (#495).
+        if (row === undefined || row.usedAt !== null || (row.boundHostId !== null && row.boundHostId !== hostId)) {
+          failure = "invalid_token";
+        }
         else if (row.expiresAt <= at) failure = "expired_token";
         else {
           // The conditional UPDATE is what makes the token single-use: it
@@ -1405,7 +1738,8 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
 
 /**
  * Everything a password change must not leave live (#450): sessions (all but
- * `keepTokenHash`), unused join tokens, and push registrations, which a
+ * `keepTokenHash`), unused join tokens and the host links that would mint
+ * one (#495), and push registrations, which a
  * signed-out device would otherwise keep receiving (ADR-0036 §5). Runs inside
  * the caller's transaction.
  */
@@ -1413,6 +1747,8 @@ function dropCredentials(db: DatabaseSync, userId: number, keepTokenHash?: strin
   if (keepTokenHash === undefined) db.prepare("DELETE FROM sessions WHERE user_id = ?").run(userId);
   else db.prepare("DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?").run(userId, keepTokenHash);
   db.prepare("DELETE FROM join_tokens WHERE user_id = ? AND used_at IS NULL").run(userId);
+  // A confirmed host link is a join token the host hasn't collected yet.
+  db.prepare("DELETE FROM host_link_requests WHERE user_id = ?").run(userId);
   db.prepare("DELETE FROM push_tokens WHERE user_id = ?").run(userId);
 }
 

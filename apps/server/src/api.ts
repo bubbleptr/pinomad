@@ -6,7 +6,10 @@
 // (ADR-0037),
 // POST /api/join-tokens, POST /api/push-tokens and POST /api/push-tokens/remove
 // (ADR-0036), and for the admin GET/POST /api/invites and
-// POST /api/invites/revoke (#449).
+// POST /api/invites/revoke (#449). Host links (#495, RFC 8628) put a device
+// code in front of the join token: the host CLI calls POST /api/host-link/start
+// and /poll with no credential, a signed-in user POST /api/host-link/lookup,
+// /confirm and /deny.
 //
 // Two credential styles share the routes, decided by the request's Origin:
 // the same-origin web client gets a Secure+HttpOnly+SameSite=Strict host-only
@@ -82,6 +85,8 @@ export interface ApiContext {
 }
 
 const SESSION_COOKIE = "__Host-pinomad-session";
+// A hostId is base64url of 32 bytes, as in the /api/hosts/:hostId routes.
+const HOST_ID_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const MAX_BODY = 8 * 1024;
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 // The desktop renderer's origin — apps/desktop/electron/renderer-files.ts
@@ -210,7 +215,10 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
   const bearer = (request.headers.authorization ?? "").startsWith("Bearer ");
   const loginTokenMode =
     (pathname === "/api/login" || pathname === "/api/register") && (origin === undefined || origin === DESKTOP_ORIGIN);
-  if (MUTATING.has(method) && !bearer && !loginTokenMode && origin !== ctx.publicOrigin) {
+  // The host CLI starts and polls a host link with no credential at all, so
+  // there is nothing to forge; it sends no Origin, and only that is let past.
+  const hostLinkHostMode = (pathname === "/api/host-link/start" || pathname === "/api/host-link/poll") && origin === undefined;
+  if (MUTATING.has(method) && !bearer && !loginTokenMode && !hostLinkHostMode && origin !== ctx.publicOrigin) {
     deny(403, "origin_mismatch");
     return;
   }
@@ -327,6 +335,125 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       { user: { username }, expiresAt: result.expiresAt, ...(cookieMode ? {} : { token: result.token }) },
       cookieMode ? { "set-cookie": setSessionCookie(result.token) } : undefined,
     );
+    return;
+  }
+
+  if (pathname === "/api/host-link/start" || pathname === "/api/host-link/poll") {
+    if (method !== "POST") {
+      deny(405, "method_not_allowed", { allow: "POST" });
+      return;
+    }
+    const body = await readJson(request);
+    if (!body.ok) {
+      deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
+      return;
+    }
+    if (pathname === "/api/host-link/start") {
+      const value = body.value as { hostId?: unknown; name?: unknown; os?: unknown } | null;
+      if (
+        typeof value?.hostId !== "string" ||
+        !HOST_ID_PATTERN.test(value.hostId) ||
+        typeof value.name !== "string" ||
+        typeof value.os !== "string"
+      ) {
+        deny(400, "invalid_request");
+        return;
+      }
+      const result = accounts.startHostLink({
+        hostId: value.hostId,
+        name: value.name,
+        os: value.os,
+        ip: clientIp(request, ctx.trustProxy),
+      });
+      if (result.status === "limited") {
+        deny(429, "rate_limited");
+        return;
+      }
+      if (result.status === "busy") {
+        deny(503, "busy");
+        return;
+      }
+      // The confirm page takes the code typed in, never from the URL: a link
+      // carrying it would be one click from approving someone else's machine.
+      send(200, {
+        deviceCode: result.deviceCode,
+        userCode: result.userCode,
+        verifyUrl: `${ctx.publicOrigin}/host-link`,
+        interval: result.interval,
+        expiresAt: result.expiresAt,
+      });
+      return;
+    }
+    const deviceCode = (body.value as { deviceCode?: unknown } | null)?.deviceCode;
+    if (typeof deviceCode !== "string" || deviceCode.length > 256) {
+      deny(400, "invalid_request");
+      return;
+    }
+    // RFC 8628 §3.5: everything but success is a 400 with an error code.
+    const result = accounts.pollHostLink(deviceCode);
+    switch (result.status) {
+      case "confirmed":
+        send(200, { token: result.token, expiresAt: result.expiresAt });
+        return;
+      case "pending":
+        deny(400, "authorization_pending");
+        return;
+      case "slow_down":
+        send(400, { error: "slow_down", interval: result.interval });
+        return;
+      case "denied":
+        deny(400, "access_denied");
+        return;
+      case "expired":
+        deny(400, "expired_token");
+        return;
+    }
+  }
+
+  if (pathname === "/api/host-link/lookup" || pathname === "/api/host-link/confirm" || pathname === "/api/host-link/deny") {
+    if (method !== "POST") {
+      deny(405, "method_not_allowed", { allow: "POST" });
+      return;
+    }
+    const token = sessionToken(request);
+    if (token === undefined || accounts.authenticate(token) === undefined) {
+      deny(401, "unauthenticated");
+      return;
+    }
+    const body = await readJson(request);
+    if (!body.ok) {
+      deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
+      return;
+    }
+    const userCode = (body.value as { userCode?: unknown } | null)?.userCode;
+    if (typeof userCode !== "string" || userCode.length > 64) {
+      deny(400, "invalid_request");
+      return;
+    }
+    // Re-read: the session may have ended while the body trickled in, and a
+    // confirm must land on an account that is still signed in.
+    const session = accounts.authenticate(token);
+    if (session === undefined) {
+      deny(401, "unauthenticated");
+      return;
+    }
+    const args = { userId: session.userId, userCode, ip: clientIp(request, ctx.trustProxy) };
+    const result =
+      pathname === "/api/host-link/lookup"
+        ? accounts.lookupHostLink(args)
+        : pathname === "/api/host-link/confirm"
+          ? accounts.confirmHostLink(args)
+          : accounts.denyHostLink(args);
+    if (result.status === "limited") {
+      deny(429, "rate_limited");
+      return;
+    }
+    if (result.status === "not_found") {
+      deny(404, "not_found");
+      return;
+    }
+    if ("request" in result) send(200, result.request);
+    else send(204);
     return;
   }
 

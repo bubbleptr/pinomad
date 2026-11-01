@@ -19,11 +19,26 @@ export async function tempDir(dirs: string[], prefix = "pinomad-server-"): Promi
 }
 
 /**
+ * Rewrites a current database back to schema 5: no host-link requests, join
+ * tokens bound to no host (#495).
+ */
+export function downgradeToSchema5(dataDir: string): void {
+  const db = new DatabaseSync(join(dataDir, "server.sqlite"));
+  db.exec(`
+    DROP TABLE host_link_requests;
+    ALTER TABLE join_tokens DROP COLUMN host_id;
+    PRAGMA user_version = 5;
+  `);
+  db.close();
+}
+
+/**
  * Rewrites a current database back to schema 4: push registrations without
  * the account device that made them. SQLite can't drop a column that is in
  * an index or a foreign key, so the table is rebuilt.
  */
 export function downgradeToSchema4(dataDir: string): void {
+  downgradeToSchema5(dataDir);
   const db = new DatabaseSync(join(dataDir, "server.sqlite"));
   db.exec(`
     CREATE TABLE push_tokens_v4 (
