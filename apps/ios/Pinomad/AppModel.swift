@@ -257,8 +257,11 @@ final class AppModel {
     /// The account hosts this iPhone has seen, for the one-time "new host
     /// joined" notice (#497).
     let knownAccountHosts = KnownAccountHosts()
-    /// That notice, until the reader dismisses it.
-    var newHostNotice: String?
+    /// The hosts that notice is about, as persisted until the reader
+    /// dismisses it.
+    var newHostNotices: [PendingAccountHost] = []
+    /// The refreshes after a confirm on this iPhone, until that host pairs.
+    var hostJoinWatch: Task<Void, Never>?
     var accountRecord: AccountRecord?
     var accountRows: [AccountHostRow] = []
     /// This session's host list has answered once: until then an empty

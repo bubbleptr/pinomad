@@ -68,11 +68,11 @@ struct RootView: View {
         // itself) and stays until dismissed.
         .alert("New Host Joined", isPresented: Binding(
             get: { model.newHostNotice != nil && model.modal == nil },
-            set: { if !$0 { model.newHostNotice = nil } }
+            set: { if !$0 { model.dismissNewHostNotice() } }
         )) {
-            Button("OK") { model.newHostNotice = nil }
+            Button("OK") { model.dismissNewHostNotice() }
             Button("Settings") {
-                model.newHostNotice = nil
+                model.dismissNewHostNotice()
                 model.present(.settings)
             }
         } message: {

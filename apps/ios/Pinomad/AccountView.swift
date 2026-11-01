@@ -240,9 +240,9 @@ struct AccountView: View {
         // The root shows it while no sheet is up; here while this one is.
         .alert("New Host Joined", isPresented: Binding(
             get: { model.newHostNotice != nil },
-            set: { if !$0 { model.newHostNotice = nil } }
+            set: { if !$0 { model.dismissNewHostNotice() } }
         )) {
-            Button("OK") { model.newHostNotice = nil }
+            Button("OK") { model.dismissNewHostNotice() }
         } message: {
             Text((model.newHostNotice ?? "") + "\n\n" + HostLinkCopy.newHostsHint)
         }

@@ -34,6 +34,11 @@ extension AppModel {
                 accountNotice = "Your sign-in expired. Sign in again."
             } else {
                 accountRecord = record
+                // A notice the last run found but never got to show (#497).
+                if let session = record.session {
+                    newHostNotices = knownAccountHosts.pending(
+                        serverOrigin: session.serverOrigin, username: session.username)
+                }
             }
         } catch {
             accountRecord = nil
@@ -731,13 +736,15 @@ extension AppModel {
     /// The one-time notice for hosts that joined the account since this
     /// iPhone last looked (#497). A host joined through the account pairs
     /// with every device on its own, so this is where a phished join shows.
+    /// It stays pending, across launches too, until the reader dismisses it.
     func announceNewHosts(_ rows: [AccountHostRow], session: AccountSession) {
-        let joined = knownAccountHosts.observe(
+        newHostNotices = knownAccountHosts.observe(
             serverOrigin: session.serverOrigin, username: session.username, hosts: rows)
-        guard !joined.isEmpty else { return }
-        let line = HostLinkCopy.newHostsNotice(joined.map(\.name))
-        // Two rounds before the reader looked: say both.
-        newHostNotice = newHostNotice.map { $0 + "\n" + line } ?? line
+    }
+
+    /// The notice's text: every host still pending, in the order they joined.
+    var newHostNotice: String? {
+        newHostNotices.isEmpty ? nil : HostLinkCopy.newHostsNotice(newHostNotices.map(\.name))
     }
 
     /// The host waiting behind a code typed on this iPhone (#497).
@@ -749,8 +756,8 @@ extension AppModel {
     }
 
     /// Confirming here is the reader's own act, so this iPhone doesn't
-    /// announce the host when it shows up; the refresh right after lists
-    /// it, and it pairs like any other account host.
+    /// announce the host when it shows up; the join watch keeps refreshing
+    /// until it is listed and paired, like any other account host.
     func accountConfirmHostLink(_ code: String, hostId: String) async -> Result<Void, AccountFailure> {
         guard let session = accountSession else { return .failure(AccountFailure(code: "unauthenticated")) }
         #if DEBUG
@@ -762,17 +769,38 @@ extension AppModel {
         let result = await hostLinkCall { api in await api.confirmHostLink(userCode: code) }
         if case .success = result, accountSession == session {
             knownAccountHosts.add(serverOrigin: session.serverOrigin, username: session.username, hostId: hostId)
-            accountRefreshAfterPairing()
-            // The host learns of the confirm on its next poll (every 5 s)
-            // and only then finishes joining; Account has no refresh loop of
-            // its own, so ask once more after that.
-            Task { [weak self] in
-                try? await Task.sleep(for: .seconds(10))
-                guard let self, self.accountSession == session else { return }
-                await self.accountRefreshHosts()
-            }
+            newHostNotices.removeAll { $0.hostId == hostId }
+            watchHostJoin(hostId, session: session)
         }
         return result
+    }
+
+    /// Refresh every few seconds until the host confirmed here is listed
+    /// and paired with this iPhone (automatic registration runs on a
+    /// refresh), for at most two minutes. The same watch serves the
+    /// first-host home and Account → Add a Host; a newer confirm or the
+    /// session ending cancels it.
+    private func watchHostJoin(_ hostId: String, session: AccountSession) {
+        hostJoinWatch?.cancel()
+        hostJoinWatch = Task { [weak self] in
+            _ = await HostJoinWatch.run(
+                sleep: { try await Task.sleep(for: $0) },
+                poll: { [weak self] in
+                    guard let self, self.accountSession == session else { return .signedOut }
+                    await self.accountRefreshHosts()
+                    guard self.accountSession == session else { return .signedOut }
+                    let paired = self.accountRows.contains { $0.hostId == hostId && $0.status == .paired }
+                    return paired ? .paired : .waiting
+                })
+        }
+    }
+
+    /// The reader has seen the new-host notice: it isn't shown again.
+    func dismissNewHostNotice() {
+        let ids = newHostNotices.map(\.hostId)
+        newHostNotices = []
+        guard !ids.isEmpty, let session = accountSession else { return }
+        knownAccountHosts.dismiss(serverOrigin: session.serverOrigin, username: session.username, hostIds: ids)
     }
 
     func accountDenyHostLink(_ code: String) async -> Result<Void, AccountFailure> {
@@ -836,7 +864,11 @@ extension AppModel {
         accountError = nil
         accountSignOutWarning = nil
         serverPushError = nil
-        newHostNotice = nil
+        // Off screen only: the persisted notice goes with the next sign-in's
+        // new baseline.
+        newHostNotices = []
+        hostJoinWatch?.cancel()
+        hostJoinWatch = nil
         accountNotice = notice
         // In-flight registrations belong to the session that just ended.
         accountPairingGeneration &+= 1
