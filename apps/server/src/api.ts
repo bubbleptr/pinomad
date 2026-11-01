@@ -1,6 +1,7 @@
 // The server's HTTP account API (ADR-0022 §2), mounted on the same port as the
 // splice sockets and the static web client: POST /api/login, POST /api/register,
-// POST /api/logout, POST /api/sessions/revoke-all, GET /api/me, POST /api/password (#450),
+// POST /api/logout (`{ revoke: true }` also takes this device off its hosts, #494),
+// POST /api/sessions/revoke-all, GET /api/me, POST /api/password (#450),
 // POST /api/me/delete (#451), GET /api/devices and POST /api/devices/:id/kick
 // (ADR-0037),
 // POST /api/join-tokens, POST /api/push-tokens and POST /api/push-tokens/remove
@@ -119,8 +120,15 @@ function respond(response: ServerResponse, status: number, body?: unknown, heade
   response.end(body === undefined ? undefined : JSON.stringify(body));
 }
 
-/** Reads the request body fully; "too-large" drains the rest so the 413 still reaches the client. */
-async function readJson(request: IncomingMessage): Promise<{ readonly ok: true; readonly value: unknown } | { readonly ok: false; readonly tooLarge: boolean }> {
+/**
+ * Reads the request body fully; "too-large" drains the rest so the 413 still
+ * reaches the client. With `optional`, an empty body reads as `undefined`
+ * rather than invalid JSON.
+ */
+async function readJson(
+  request: IncomingMessage,
+  optional = false,
+): Promise<{ readonly ok: true; readonly value: unknown } | { readonly ok: false; readonly tooLarge: boolean }> {
   const chunks: Buffer[] = [];
   let size = 0;
   let tooLarge = false;
@@ -133,6 +141,7 @@ async function readJson(request: IncomingMessage): Promise<{ readonly ok: true; 
     }
   }
   if (tooLarge) return { ok: false, tooLarge: true };
+  if (optional && size === 0) return { ok: true, value: undefined };
   try {
     return { ok: true, value: JSON.parse(Buffer.concat(chunks).toString("utf8")) };
   } catch {
@@ -653,7 +662,22 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       return;
     }
     if (pathname === "/api/logout") {
-      accounts.logout(token!);
+      // Clients before #494 send no body: a plain sign-out.
+      const body = await readJson(request, true);
+      if (!body.ok) {
+        deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
+        return;
+      }
+      const value = body.value;
+      const revoke = typeof value === "object" && value !== null ? (value as { revoke?: unknown }).revoke : undefined;
+      if (value === null || (value !== undefined && typeof value !== "object") || (revoke !== undefined && typeof revoke !== "boolean")) {
+        deny(400, "invalid_request");
+        return;
+      }
+      // With `revoke`, this device leaves every host it joined through the
+      // account, as a kick would. No password: it can only withdraw the
+      // caller's own device, never another.
+      for (const hostId of accounts.logout(token!, { revoke: revoke === true })) ctx.sendRevocations(hostId);
       send(204, undefined, { "set-cookie": clearSessionCookie });
       return;
     }

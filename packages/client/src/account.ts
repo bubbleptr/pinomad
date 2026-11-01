@@ -306,7 +306,12 @@ export interface AccountClient {
     device?: AccountDeviceClaim,
   ): Promise<AccountResult<LoginSuccess>>;
   me(): Promise<AccountResult<{ readonly user: AccountUser; readonly admin?: true }>>;
-  logout(): Promise<AccountResult<void>>;
+  /**
+   * Ends this session. `revoke` also has the server ask every host this
+   * device joined through the account to revoke it (#494); a server that
+   * predates it ignores the body and only signs out, with the same answer.
+   */
+  logout(options?: { readonly revoke?: boolean }): Promise<AccountResult<void>>;
   revokeAllSessions(): Promise<AccountResult<void>>;
   /** Keeps this session and signs out the account's others; 403 `wrong_password` doesn't sign out (#450). */
   changePassword(currentPassword: string, newPassword: string): Promise<AccountResult<void>>;
@@ -456,8 +461,8 @@ export function createAccountClient(options: {
       const value = userBody(result.value);
       return value === undefined ? fail("invalid_response") : ok(value);
     },
-    logout: async () => {
-      const result = await request("/api/logout", "POST");
+    logout: async (options) => {
+      const result = await request("/api/logout", "POST", options?.revoke === true ? { revoke: true } : undefined);
       return result.ok ? ok(undefined) : result;
     },
     revokeAllSessions: async () => {

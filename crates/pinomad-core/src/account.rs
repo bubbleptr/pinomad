@@ -50,7 +50,12 @@ pub enum AccountOp {
         device: Option<AccountDeviceClaim>,
     },
     Me,
-    Logout,
+    /// `revoke` also takes this device off every host it joined through
+    /// the account (#494); off, the request is the plain sign-out.
+    Logout {
+        #[cfg_attr(feature = "ffi", uniffi(default = false))]
+        revoke: bool,
+    },
     RevokeAllSessions,
     CreateJoinToken,
     ListHosts,
@@ -108,7 +113,7 @@ impl AccountOp {
         match self {
             AccountOp::Login { .. } => AccountOpKind::Login,
             AccountOp::Me => AccountOpKind::Me,
-            AccountOp::Logout => AccountOpKind::Logout,
+            AccountOp::Logout { .. } => AccountOpKind::Logout,
             AccountOp::RevokeAllSessions => AccountOpKind::RevokeAllSessions,
             AccountOp::CreateJoinToken => AccountOpKind::CreateJoinToken,
             AccountOp::ListHosts => AccountOpKind::ListHosts,
@@ -133,7 +138,7 @@ impl AccountOp {
         match self {
             AccountOp::Login { .. } => "/api/login".to_string(),
             AccountOp::Me => "/api/me".to_string(),
-            AccountOp::Logout => "/api/logout".to_string(),
+            AccountOp::Logout { .. } => "/api/logout".to_string(),
             AccountOp::RevokeAllSessions => "/api/sessions/revoke-all".to_string(),
             AccountOp::CreateJoinToken => "/api/join-tokens".to_string(),
             AccountOp::ListHosts => "/api/hosts".to_string(),
@@ -156,7 +161,8 @@ impl AccountOp {
     /// order: `{username, password, device?: {id, name?}}` for login, `{apns, environment}` for the
     /// push-token pair — the token stays out of the URL —
     /// `{currentPassword, newPassword}` for a password change, and
-    /// `{password}` for deleting the account or kicking a device.
+    /// `{password}` for deleting the account or kicking a device, and
+    /// `{revoke: true}` for a revoking sign-out.
     fn body(&self) -> Option<String> {
         match self {
             AccountOp::Login { username, password, device } => {
@@ -188,6 +194,11 @@ impl AccountOp {
             AccountOp::DeleteAccount { password } | AccountOp::KickDevice { password, .. } => {
                 let mut object = JsonObject::new();
                 object.set(U16String::from_str("password"), Json::from(password.as_str()));
+                Some(Json::Object(Arc::new(object)).to_json())
+            }
+            AccountOp::Logout { revoke: true } => {
+                let mut object = JsonObject::new();
+                object.set(U16String::from_str("revoke"), Json::Bool(true));
                 Some(Json::Object(Arc::new(object)).to_json())
             }
             _ => None,

@@ -667,6 +667,93 @@ describe("push registrations of a kicked device (ADR-0036, ADR-0037 §3)", () =>
   });
 });
 
+describe("signing out with revoke (#494)", () => {
+  const PHONE_APNS = "aa".repeat(32);
+  const LAPTOP_APNS = "bb".repeat(32);
+  const logout = (relay: Relay, token: string, body?: unknown) =>
+    api(relay, { method: "POST", path: "/api/logout", headers: bearer(token), ...(body === undefined ? {} : { body }) });
+  const register = async (relay: Relay, token: string, apns: string): Promise<void> => {
+    const response = await api(relay, { method: "POST", path: "/api/push-tokens", headers: bearer(token), body: { apns, environment: "production" } });
+    expect(response.status).toBe(204);
+  };
+
+  it("takes this device off every host and drops its push registrations, leaving the other devices alone", async () => {
+    const started = await startServer();
+    const keys = bindHost(started.accounts);
+    const socket = await control(started.relay, keys);
+    const { phone, laptop, phoneId } = await admittedPhone(started, { keys, socket });
+    await register(started.relay, phone, PHONE_APNS);
+    await register(started.relay, laptop, LAPTOP_APNS);
+
+    const revokeP = nextFrame(socket);
+    expect((await logout(started.relay, phone, { revoke: true })).status).toBe(204);
+    expect(await revokeP).toEqual({ t: "revoke-device", publicKey: DEVICE_KEY });
+    expect((await api(started.relay, { path: "/api/me", headers: bearer(phone) })).status).toBe(401);
+    expect(started.accounts.pushTokenOwner(PHONE_APNS, "production")).toBeUndefined();
+
+    // The laptop keeps its session and its registration, and sees the phone
+    // the way it would after removing it itself.
+    expect(started.accounts.pushTokenOwner(LAPTOP_APNS, "production")).toBe(1);
+    const list = await devices(started.relay, laptop);
+    const left = list.find((device) => device.id === phoneId)!;
+    expect(left.kickedAt).toBeTypeOf("number");
+    expect(left.hosts[0]!.state).toBe("revoking");
+    expect(list.find((device) => device.current)!.kickedAt).toBeUndefined();
+  });
+
+  it("keeps today's sign-out without the flag: no revocation, the device stays on its hosts", async () => {
+    const started = await startServer();
+    const keys = bindHost(started.accounts);
+    const socket = await control(started.relay, keys);
+    const { phone, laptop, phoneId } = await admittedPhone(started, { keys, socket });
+    await register(started.relay, phone, PHONE_APNS);
+    // An empty body is what every client before #494 sends.
+    expect((await logout(started.relay, phone)).status).toBe(204);
+    const second = await login(started.relay, { id: PHONE, name: "Phone" });
+    expect((await logout(started.relay, second, { revoke: false })).status).toBe(204);
+    const third = await login(started.relay, { id: PHONE, name: "Phone" });
+    expect((await logout(started.relay, third, {})).status).toBe(204);
+
+    expect((await api(started.relay, { path: "/api/me", headers: bearer(phone) })).status).toBe(401);
+    const left = (await devices(started.relay, laptop)).find((device) => device.id === phoneId)!;
+    expect(left.kickedAt).toBeUndefined();
+    expect(left.hosts[0]!.state).toBe("registered");
+    // A plain sign-out never touched push registrations; the client removes its own.
+    expect(started.accounts.pushTokenOwner(PHONE_APNS, "production")).toBe(1);
+    // Nothing was sent: the next frame the host sees is a fresh ask.
+    const probeP = api(started.relay, { method: "POST", path: `/api/hosts/${relayHostId(keys.publicKey)}/pairing`, headers: bearer(laptop) });
+    expect((await nextFrame(socket)).t).toBe("pairing-request");
+    socket.close();
+    await probeP;
+  });
+
+  it("signs back in as a normal device whose old keys stay revoked", async () => {
+    const started = await startServer();
+    const keys = bindHost(started.accounts);
+    const socket = await control(started.relay, keys);
+    const { phone, phoneId } = await admittedPhone(started, { keys, socket });
+    const revokeP = nextFrame(socket);
+    await logout(started.relay, phone, { revoke: true });
+    await revokeP;
+    send(socket, { t: "device-revoked", publicKey: DEVICE_KEY });
+
+    const back = await login(started.relay, { id: PHONE, name: "Phone" });
+    await until(async () => (await hostState(started.relay, back, phoneId)) === "revoked");
+    const self = (await devices(started.relay, back)).find((device) => device.current)!;
+    expect(self.id).toBe(phoneId);
+    expect(self.kickedAt).toBeUndefined();
+  });
+
+  it("refuses a malformed body and keeps the session", async () => {
+    const started = await startServer();
+    const phone = await login(started.relay, { id: PHONE, name: "Phone" });
+    expect((await logout(started.relay, phone, { revoke: "yes" })).status).toBe(400);
+    expect((await logout(started.relay, phone, null)).status).toBe(400);
+    expect((await logout(started.relay, phone, 1)).status).toBe(400);
+    expect((await api(started.relay, { path: "/api/me", headers: bearer(phone) })).status).toBe(200);
+  });
+});
+
 describe("account device records follow their account and hosts", () => {
   const count = (accounts: Accounts, table: string): number => {
     const db = new DatabaseSync(accounts.dbPath);

@@ -393,8 +393,10 @@ public struct AccountAPI: Sendable {
         }
     }
 
-    public func logout() async -> Result<Void, AccountFailure> {
-        switch await request(.logout, kind: .logout) {
+    /// `revoke` also asks every host this device joined through the account
+    /// to revoke it (#494); a server that predates it only signs out.
+    public func logout(revoke: Bool = false) async -> Result<Void, AccountFailure> {
+        switch await request(.logout(revoke: revoke), kind: .logout) {
         case .success(.unit): return .success(())
         case .failure(let failure): return .failure(failure)
         default: return .failure(.invalidResponse)

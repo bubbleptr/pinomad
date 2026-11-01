@@ -231,6 +231,16 @@ describe("account client", () => {
     expect(await client.revokeAllSessions()).toEqual({ ok: true, value: undefined });
   });
 
+  it("sends a body on logout only when asked to revoke this device (#494)", async () => {
+    const { impl, calls } = fakeFetch({ status: 204 });
+    const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer", token: "t" }, fetch: impl });
+    await client.logout();
+    await client.logout({ revoke: false });
+    await client.logout({ revoke: true });
+    // A plain sign-out stays byte-identical to what servers before #494 got.
+    expect(calls.map((call) => call.init?.body)).toEqual([undefined, undefined, '{"revoke":true}']);
+  });
+
   it("deletes the account with its password; the 403 refusals aren't sign-outs (#451)", async () => {
     const { impl, calls } = fakeFetch(
       { status: 403, body: { error: "wrong_password" } },

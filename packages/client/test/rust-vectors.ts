@@ -596,7 +596,7 @@ const invokeOp = (client: AccountClient, op: AccountOpDesc): Promise<unknown> =>
     case "me":
       return client.me();
     case "logout":
-      return client.logout();
+      return client.logout(op.revoke === undefined ? undefined : { revoke: op.revoke });
     case "revokeAllSessions":
       return client.revokeAllSessions();
     case "createJoinToken":

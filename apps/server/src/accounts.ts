@@ -256,7 +256,13 @@ export interface Accounts {
   listInvites(): InviteRow[];
   /** Deletes an unspent invite; false when it doesn't exist or was already used. */
   revokeInvite(id: number): boolean;
-  logout(token: string): void;
+  /**
+   * Ends this session. With `revoke` (#494) the session's account device
+   * also leaves every host, as a kick would (ADR-0037 §3): no password,
+   * since it only ever withdraws the caller's own device. Returns the hosts
+   * that now owe a revocation.
+   */
+  logout(token: string, options?: { readonly revoke?: boolean }): string[];
   revokeAllSessions(userId: number): void;
   /**
    * Self-service password change (#450): checks the current password under
@@ -349,7 +355,7 @@ export interface Accounts {
    * Kicks one of the caller's devices after checking the password (ADR-0037
    * §3): its sessions and push registrations end, it is marked kicked, and
    * every host that reported admitting it owes a revocation. The caller's own
-   * device is refused.
+   * device is refused: that is `logout` with `revoke`.
    */
   kickDevice(args: {
     readonly userId: number;
@@ -765,6 +771,40 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
     db.prepare("DELETE FROM vouchings WHERE public_key IS NULL AND expires_at <= ?").run(now() - ADMISSION_REPORT_GRACE_MS);
   };
 
+  /**
+   * The account stops vouching for a device (ADR-0037 §3), inside the
+   * caller's transaction: its sessions and push registrations end, it is
+   * marked kicked, and every host that reported admitting it owes a
+   * revocation. Returns those hosts.
+   */
+  const withdrawDevice = (deviceId: number): string[] => {
+    const at = now();
+    sweepVouchings();
+    db.prepare("DELETE FROM sessions WHERE device_id = ?").run(deviceId);
+    // A host without device-reports never revokes it, so its push
+    // registrations must go too, or that host could still push to it.
+    db.prepare("DELETE FROM push_tokens WHERE device_id = ?").run(deviceId);
+    db.prepare("UPDATE account_devices SET kicked_at = ? WHERE id = ?").run(at, deviceId);
+    // Every key a host reported that the account still vouched for is
+    // asked back; already-withdrawn ones are left alone, so a host that
+    // re-paired a device by QR after an earlier kick keeps it.
+    const hostIds = (
+      db
+        .prepare("SELECT DISTINCT host_id AS hostId FROM vouchings WHERE device_id = ? AND public_key IS NOT NULL AND revoked_at IS NULL")
+        .all(deviceId) as { hostId: string }[]
+    ).map((row) => row.hostId);
+    db.prepare(
+      `INSERT OR IGNORE INTO pending_revocations (host_id, public_key, created_at)
+       SELECT host_id, public_key, ? FROM vouchings
+       WHERE device_id = ? AND public_key IS NOT NULL AND revoked_at IS NULL`,
+    ).run(at, deviceId);
+    // Then withdraw every offer it holds, reported or not: one a host
+    // reports later is revoked on arrival, whatever the device does
+    // meanwhile (ADR-0037 §2).
+    db.prepare("UPDATE vouchings SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL").run(at, deviceId);
+    return hostIds;
+  };
+
   const currentHash = (userId: number): string | undefined =>
     (db.prepare("SELECT password_hash AS passwordHash FROM users WHERE id = ?").get(userId) as { passwordHash: string } | undefined)
       ?.passwordHash;
@@ -955,8 +995,27 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       };
     },
 
-    logout(token) {
-      db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(sha256Hex(token));
+    logout(token, options) {
+      const tokenHash = sha256Hex(token);
+      if (options?.revoke !== true) {
+        db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash);
+        return [];
+      }
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const session = db.prepare("SELECT device_id AS deviceId FROM sessions WHERE token_hash = ?").get(tokenHash) as
+          | { deviceId: number | null }
+          | undefined;
+        db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash);
+        // A session with no account device (written outside this module)
+        // has nothing to withdraw: it just signs out.
+        const hostIds = session?.deviceId == null ? [] : withdrawDevice(session.deviceId);
+        db.exec("COMMIT");
+        return hostIds;
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
     },
 
     async changePassword({ userId, username, keepToken, currentPassword, newPassword }) {
@@ -1324,30 +1383,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
           db.exec("ROLLBACK");
           return { status: "refused", reason: "not_found" };
         }
-        const at = now();
-        sweepVouchings();
-        db.prepare("DELETE FROM sessions WHERE device_id = ?").run(deviceId);
-        // A host without device-reports never revokes it, so its push
-        // registrations must go too, or that host could still push to it.
-        db.prepare("DELETE FROM push_tokens WHERE device_id = ?").run(deviceId);
-        db.prepare("UPDATE account_devices SET kicked_at = ? WHERE id = ?").run(at, deviceId);
-        // Every key a host reported that the account still vouched for is
-        // asked back; already-withdrawn ones are left alone, so a host that
-        // re-paired a device by QR after an earlier kick keeps it.
-        const hostIds = (
-          db
-            .prepare("SELECT DISTINCT host_id AS hostId FROM vouchings WHERE device_id = ? AND public_key IS NOT NULL AND revoked_at IS NULL")
-            .all(deviceId) as { hostId: string }[]
-        ).map((row) => row.hostId);
-        db.prepare(
-          `INSERT OR IGNORE INTO pending_revocations (host_id, public_key, created_at)
-           SELECT host_id, public_key, ? FROM vouchings
-           WHERE device_id = ? AND public_key IS NOT NULL AND revoked_at IS NULL`,
-        ).run(at, deviceId);
-        // Then withdraw every offer it holds, reported or not: one a host
-        // reports later is revoked on arrival, whatever the device does
-        // meanwhile (ADR-0037 §2).
-        db.prepare("UPDATE vouchings SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL").run(at, deviceId);
+        const hostIds = withdrawDevice(deviceId);
         db.exec("COMMIT");
         return { status: "ok", hostIds };
       } catch (error) {
