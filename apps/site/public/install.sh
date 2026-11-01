@@ -64,6 +64,9 @@ main() {
   bin_dir=${PINOMAD_BIN_DIR:-$HOME/.local/bin}
   mirror=${PINOMAD_NODE_MIRROR:-https://nodejs.org/dist}
   version=${PINOMAD_VERSION:-latest}
+  # Both end up in the launcher, which runs from any directory.
+  case $runtime in /*) ;; *) runtime=$(pwd)/${runtime#./} ;; esac
+  case $bin_dir in /*) ;; *) bin_dir=$(pwd)/${bin_dir#./} ;; esac
   launcher=$bin_dir/pinomad
   node=$runtime/node/bin/node
 
@@ -127,9 +130,16 @@ main() {
 
   # The package's own bin runs `/usr/bin/env node`, which may not exist here.
   mkdir -p "$bin_dir"
+  # The bundled Node goes last on PATH: MCP servers run as `npx …` and the
+  # agent's shell find it on a machine with no other Node, one the user
+  # installed still wins, and `service install` keeps this PATH.
   cat >"$launcher.tmp" <<EOF
 #!/bin/sh
 # $MARKER
+case ":\$PATH:" in
+  *":$runtime/node/bin:"*) ;;
+  *) PATH="\${PATH:+\$PATH:}$runtime/node/bin" && export PATH ;;
+esac
 exec "$node" "$entry" "\$@"
 EOF
   chmod 755 "$launcher.tmp"

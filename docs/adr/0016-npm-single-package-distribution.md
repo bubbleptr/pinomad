@@ -33,6 +33,6 @@ ADR-0009 §2 定过"安装就是源码检出"，把打包发布留到以后：No
 - 这条取代 ADR-0009 §2（不再只是源码检出安装）并修订 §6（打包安装升级走 npm）；§9 的日志约束不变。
 - `pinomad service install` 在打包模式下写进服务定义的是 `$(npm root -g)/pinomad/dist/pinomad.js` + `host` 参数。`npm i -g` 原地替换同一路径，升级后服务定义不用重写；换了 Node 版本管理器或全局前缀时要重新 `install`（和 ADR-0009 §4 固定 Node 路径的道理一样）。
 - 依赖该包的机器只需要 Node 25+，不需要 Bun、不需要仓库；Omarchy 那台宿主上 `npm i -g pinomad` 装的运行实例和任何开发检出互不相干。
-- 修订（#499，安装脚本）：`pinomad.si/install.sh` 把官方 Node（版本和 SHA-256 写死在脚本里）和这个包装进 `~/.pinomad/runtime`：Node 在 `runtime/node`，包是以 `runtime` 为前缀的 npm 全局安装，`~/.local/bin/pinomad` 是用这份 Node 跑包入口的启动脚本，机器上不需要 Node。重跑脚本更新 Node 时整个目录换名替换，`runtime/node/bin/node` 路径不变，服务定义不用重写。决策 4 的升级改用运行中的 node 自带的 npm（`<node 目录>/../lib/node_modules/npm`，没有才用 PATH 上的 `npm`）：这种安装没有别的 npm，另一份 npm 也可能按另一个 Node 选原生预编译包。
+- 修订（#499，安装脚本）：`pinomad.si/install.sh` 把官方 Node（版本和 SHA-256 写死在脚本里）和这个包装进 `~/.pinomad/runtime`：Node 在 `runtime/node`，包是以 `runtime` 为前缀的 npm 全局安装，`~/.local/bin/pinomad` 是用这份 Node 跑包入口的启动脚本，机器上不需要 Node；启动脚本把 `runtime/node/bin` 接在 PATH 末尾，`npx` 起的 MCP 服务器和 agent 的 shell 在没有别的 Node 时也能找到它，用户自己装的 Node 仍然优先，`service install` 也照这个 PATH 固定下来。重跑脚本更新 Node 时整个目录换名替换，`runtime/node/bin/node` 路径不变，服务定义不用重写。决策 4 的升级改用运行中的 node 自带的 npm（`<node 目录>/../lib/node_modules/npm`，没有才用 PATH 上的 `npm`）：这种安装没有别的 npm，另一份 npm 也可能按另一个 Node 选原生预编译包。
 - 发布前置条件：仓库公开、首个版本手动发布、trusted publisher 配置允许 `npm publish`。
 - 源码路径仍是开发主场：`bun run test` 不跑 smoke（smoke 要真连 npm registry，只在 release 流水线里跑）。
