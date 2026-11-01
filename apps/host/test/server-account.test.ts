@@ -293,6 +293,8 @@ describe("joinServer without a token (#495)", () => {
     /** Per sleep call, how far the server's clock moves (default: what was asked). */
     readonly advance?: (call: number, ms: number) => number;
     readonly seed?: ServiceSpec;
+    /** How far the host's clock runs ahead of the server's. */
+    readonly hostClockAheadMs?: number;
   }) {
     let at = 1_800_000_000_000;
     const started = await startServer({ now: () => at });
@@ -311,7 +313,7 @@ describe("joinServer without a token (#495)", () => {
         return fetch(input, init);
       }) as typeof fetch,
       log: (line: string) => lines.push(line),
-      now: () => at,
+      now: () => at + (options?.hostClockAheadMs ?? 0),
       openBrowser: (url: string) => {
         opened.push(url);
         return true;
@@ -420,6 +422,78 @@ describe("joinServer without a token (#495)", () => {
     await expect(
       joinServer({ origin: flow.started.origin, dataDir: flow.data.path }, { ...flow.deps, fetch: old }),
     ).rejects.toThrow(/join token/i);
+  });
+
+  it("keeps waiting past its own clock's deadline while the server still says pending", async () => {
+    // The host's clock is 5 min ahead: by its own reckoning the code died
+    // long before the server's 10 min are up. Confirmed at 500 s server time.
+    const flow = await deviceFlow({
+      hostClockAheadMs: 5 * 60_000,
+      onSleep: async (call, lines, started) => {
+        if (call === 99) await asUser(started, "/api/host-link/confirm", codeIn(lines));
+      },
+    });
+    const outcome = await joinServer({ origin: flow.started.origin, dataDir: flow.data.path }, flow.deps);
+    expect(outcome.username).toBe("admin");
+    expect(flow.sleeps).toHaveLength(100);
+  });
+
+  it("gives up on its own clock when the server stops answering", async () => {
+    const flow = await deviceFlow();
+    const gone = ((input: string | URL | Request, init?: RequestInit) =>
+      new URL(String(input)).pathname === "/api/host-link/poll"
+        ? Promise.reject(new TypeError("fetch failed"))
+        : flow.deps.fetch(input, init)) as typeof fetch;
+    await expect(
+      joinServer({ origin: flow.started.origin, dataDir: flow.data.path }, { ...flow.deps, fetch: gone }),
+    ).rejects.toThrow(/expired/i);
+    // 10 min of code plus 2 min of grace, at one poll per 5 s.
+    expect(flow.sleeps.length).toBeGreaterThan(140);
+    expect(flow.fake.installs).toHaveLength(0);
+  });
+
+  /** Headers arrive, then the body trickles forever (a half-dead proxy). */
+  const stalledBody = (): Response =>
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"tok'));
+        },
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+
+  it("calls a start whose answer never finishes unreachable", async () => {
+    const flow = await deviceFlow();
+    for (const stall of [() => Promise.resolve(stalledBody()), () => new Promise<Response>(() => {})]) {
+      const stalled = ((input: string | URL | Request, init?: RequestInit) =>
+        new URL(String(input)).pathname === "/api/host-link/start" ? stall() : flow.deps.fetch(input, init)) as typeof fetch;
+      await expect(
+        joinServer(
+          { origin: flow.started.origin, dataDir: flow.data.path },
+          { ...flow.deps, fetch: stalled, requestTimeoutMs: 50 },
+        ),
+      ).rejects.toThrow(/cannot reach/i);
+    }
+  });
+
+  it("asks again after a poll whose answer never finishes", async () => {
+    const flow = await deviceFlow({
+      onSleep: async (call, lines, started) => {
+        if (call === 1) await asUser(started, "/api/host-link/confirm", codeIn(lines));
+      },
+    });
+    let polls = 0;
+    const stalled = ((input: string | URL | Request, init?: RequestInit) =>
+      new URL(String(input)).pathname === "/api/host-link/poll" && polls++ === 0
+        ? Promise.resolve(stalledBody())
+        : flow.deps.fetch(input, init)) as typeof fetch;
+    const outcome = await joinServer(
+      { origin: flow.started.origin, dataDir: flow.data.path },
+      { ...flow.deps, fetch: stalled, requestTimeoutMs: 50 },
+    );
+    expect(outcome.username).toBe("admin");
+    expect(polls).toBe(2);
   });
 });
 

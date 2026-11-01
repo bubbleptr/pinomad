@@ -16,10 +16,15 @@ export interface HostLinkDeps {
   /** Where the instructions go; stdout by default. */
   readonly log?: (line: string) => void;
   readonly now?: () => number;
+  /** How long one request may take, body included; default 15 s. */
+  readonly requestTimeoutMs?: number;
 }
 
 // RFC 8628 §3.5: slow_down adds 5 s to the interval for every later poll.
 const SLOW_DOWN_STEP_MS = 5000;
+// A stalled connection, or a proxy that sends headers and then trickles the
+// body, must not hang join: each request gets this long, body read included.
+const REQUEST_TIMEOUT_MS = 15_000;
 // Only when the server stays unreachable does the host give up on its own
 // clock; otherwise the server's expired_token ends the wait. The grace covers
 // a host clock that runs a little ahead of the server's.
@@ -60,14 +65,6 @@ export function hostOsLabel(): string {
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
-const readJson = async (response: Response): Promise<unknown> => {
-  try {
-    return await response.json();
-  } catch {
-    return undefined;
-  }
-};
-
 const errorCode = (body: unknown): string | undefined =>
   isRecord(body) && typeof body.error === "string" ? body.error : undefined;
 
@@ -86,22 +83,51 @@ export async function requestJoinToken(
   const now = deps?.now ?? Date.now;
   const { origin } = args;
 
-  const post = (path: string, body: unknown): Promise<Response> =>
-    fetchImpl(`${origin}${path}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-      // A redirect could replay the device code somewhere else, as on the account API.
-      redirect: "manual",
-    });
+  const timeoutMs = deps?.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
 
-  let started: Response;
-  try {
-    started = await post("/api/host-link/start", { hostId: args.hostId, name: args.name, os: args.os ?? hostOsLabel() });
-  } catch {
-    throw new Error(`cannot reach ${origin} — check the address and that the server is up`);
-  }
-  const body = await readJson(started);
+  /**
+   * One request and its whole body within the time limit. Undefined is "no
+   * usable answer": the fetch failed or the time ran out. A body that isn't
+   * JSON reads as `body: undefined` but still counts as an answer.
+   */
+  const post = async (path: string, payload: unknown): Promise<{ status: number; body: unknown } | undefined> => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // The race covers a fetch or body stream that ignores the abort signal.
+    const expired = new Promise<undefined>((resolve) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        resolve(undefined);
+      }, timeoutMs);
+    });
+    const attempt = (async () => {
+      const response = await fetchImpl(`${origin}${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+        // A redirect could replay the device code somewhere else, as on the account API.
+        redirect: "manual",
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      let body: unknown;
+      try {
+        body = JSON.parse(text);
+      } catch {
+        body = undefined;
+      }
+      return { status: response.status, body };
+    })().catch(() => undefined);
+    try {
+      return await Promise.race([attempt, expired]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  const started = await post("/api/host-link/start", { hostId: args.hostId, name: args.name, os: args.os ?? hostOsLabel() });
+  if (started === undefined) throw new Error(`cannot reach ${origin} — check the address and that the server is up`);
+  const { body } = started;
   if (started.status !== 200) {
     const code = errorCode(body);
     if (started.status === 404) {
@@ -138,29 +164,29 @@ export async function requestJoinToken(
 
   for (;;) {
     await sleep(intervalMs);
-    let response: Response | undefined;
-    try {
-      response = await post("/api/host-link/poll", { deviceCode });
-    } catch {
-      // A dropped connection or a restarting server: keep asking until expiry.
-      response = undefined;
+    const response = await post("/api/host-link/poll", { deviceCode });
+    // A dropped connection, a stalled answer or a restarting server (5xx):
+    // keep asking, until the host's own clock says the code is long dead.
+    if (response === undefined || response.status >= 500) {
+      if (now() > expiresAt + EXPIRY_GRACE_MS) {
+        throw new Error(`the code expired before anyone confirmed it — run the command again for a new one`);
+      }
+      continue;
     }
-    const answer = response === undefined ? undefined : await readJson(response);
-    if (response?.status === 200 && isRecord(answer) && typeof answer.token === "string") {
+    const answer = response.body;
+    if (response.status === 200 && isRecord(answer) && typeof answer.token === "string") {
       log("Confirmed.");
       return answer.token;
     }
-    const code = response?.status === 400 ? errorCode(answer) : undefined;
+    // While the server answers, only its expired_token ends the wait.
+    const code = response.status === 400 ? errorCode(answer) : undefined;
     if (code === "access_denied") throw new Error(`the join was denied on ${origin}`);
     if (code === "expired_token") throw new Error(`the code expired before anyone confirmed it — run the command again for a new one`);
     if (code === "slow_down") {
       const asked = isRecord(answer) && typeof answer.interval === "number" ? answer.interval * 1000 : 0;
       intervalMs = Math.max(intervalMs + SLOW_DOWN_STEP_MS, asked);
-    } else if (code !== "authorization_pending" && response !== undefined && response.status < 500) {
+    } else if (code !== "authorization_pending") {
       throw new Error(`${origin} refused the join: ${code ?? `HTTP ${response.status}`}`);
-    }
-    if (now() > expiresAt + EXPIRY_GRACE_MS) {
-      throw new Error(`the code expired before anyone confirmed it — run the command again for a new one`);
     }
   }
 }
