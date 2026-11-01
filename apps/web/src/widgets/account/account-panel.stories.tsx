@@ -43,6 +43,24 @@ export const ChangingPassword: Story = {
   },
 };
 
+/** Signing out (#494): the shared-computer choice, off until ticked. */
+export const SigningOut: Story = {
+  decorators: [withAccount(signedIn())],
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Sign out" }));
+  },
+};
+
+/** Ticked: this device leaves the account's hosts, so the button turns destructive. */
+export const SigningOutSharedComputer: Story = {
+  decorators: [withAccount(signedIn())],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Sign out" }));
+    await userEvent.click(canvas.getByRole("checkbox", { name: /shared computer/ }));
+  },
+};
+
 /** Deleting the account (#451): the password again, and what stays on the hosts. */
 export const DeletingAccount: Story = {
   decorators: [withAccount(signedIn())],

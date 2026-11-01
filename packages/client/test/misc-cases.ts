@@ -80,6 +80,11 @@ export const HOST_CASES: { name: string; value: unknown }[] = [
   { name: "name-empty", value: { ...valid(), name: "" } },
   { name: "extra-fields", value: { ...valid(), unknownField: "x", nested: { x: 1 } } },
   { name: "account", value: { ...valid(), account: { serverOrigin: "https://relay.example.com", hostId: HOST_KEY_A } } },
+  // Paired through the account's own offer (#494): the flag rides in the link.
+  {
+    name: "account-vouched",
+    value: { ...valid(), account: { serverOrigin: "https://relay.example.com", hostId: HOST_KEY_A, vouched: true } },
+  },
   { name: "account-missing-hostid", value: { ...valid(), account: { serverOrigin: "https://x" } } },
   { name: "account-short-key", value: { ...valid(), account: { serverOrigin: "https://x", hostId: "short" } } },
   { name: "account-junk", value: { ...valid(), account: "junk" } },

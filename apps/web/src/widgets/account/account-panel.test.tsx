@@ -165,6 +165,33 @@ describe("AccountPanel", () => {
     expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
   });
 
+  it("signs out keeping the pairings unless the shared-computer box is ticked (#494)", async () => {
+    const model = fakeModel(signedIn([]));
+    renderPanel(model);
+    await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    const shared = screen.getByRole("checkbox", { name: /shared computer/ });
+    expect(shared).not.toBeChecked();
+    await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(model.logout).toHaveBeenLastCalledWith({ revoke: false });
+
+    await userEvent.click(shared);
+    await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(model.logout).toHaveBeenLastCalledWith({ revoke: true });
+  });
+
+  it("warns when a shared-computer sign-out couldn't forget every host", async () => {
+    const model = fakeModel(signedIn([]));
+    model.logout = vi.fn(() => {
+      model.setState({ status: "signed-out", mode: "cookie" });
+      return Promise.resolve({ ok: false as const, error: { code: "hosts_not_forgotten" } });
+    });
+    renderPanel(model);
+    await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    await userEvent.click(screen.getByRole("checkbox", { name: /shared computer/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(await screen.findByText(/may still connect to them/)).toBeTruthy();
+  });
+
   it("focuses the host once a failed save succeeds on retry", async () => {
     const model = fakeModel({ ...signedIn([]), unsavedHosts: [{ ...stored(KEY_A), account: { serverOrigin: "https://nomad.example", hostId: "h1" } }] });
     const focusHost = vi.fn();

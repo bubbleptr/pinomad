@@ -159,7 +159,7 @@ describe("account client against a real server", () => {
     expect(paired.ok).toBe(true);
     if (!paired.ok) return;
     const record = paired.value;
-    expect(record.account).toEqual({ serverOrigin: server.origin, hostId });
+    expect(record.account).toEqual({ serverOrigin: server.origin, hostId, vouched: true });
     store.push(record);
 
     await waitForView(observer.view, (view) => view.devices.length === 1);

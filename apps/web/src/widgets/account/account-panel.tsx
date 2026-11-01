@@ -1,5 +1,6 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
+import { CheckboxInput } from "@astryxdesign/core/CheckboxInput";
 import { CodeBlock } from "@astryxdesign/core/CodeBlock";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
@@ -16,6 +17,7 @@ import type {
   AccountError,
   AccountHostMatch,
   AccountInvite,
+  AccountResult,
   CreatedInvite,
   JoinToken,
 } from "@pinomad/client/account.ts";
@@ -850,7 +852,23 @@ function ChangePassword({ account }: { account: AccountModel }) {
   );
 }
 
+/** What a sign-out that didn't fully land leaves behind, or undefined when it did. */
+function signOutWarning(result: AccountResult<void>, revoke: boolean): string | undefined {
+  if (result.ok) return undefined;
+  if (result.error.code === "hosts_not_forgotten") {
+    return "Some hosts couldn't be removed from this device, so it may still connect to them. Forget them in the host list, or revoke this device on each host.";
+  }
+  return revoke
+    ? "This device forgot its account hosts, but the server didn't confirm asking them to revoke it. Remove it from another device, or revoke it on each host."
+    : "Signed out on this device, but the server didn't confirm. The session ends on its own within 30 days.";
+}
+
 function SignOut({ account, onNotice }: { account: AccountModel; onNotice: (notice: Notice | undefined) => void }) {
+  // Plain sign-out opens a confirmation holding the shared-computer choice,
+  // off by default: a host's revocation is permanent, so every sign-out of
+  // your own browser would leave a dead key in each host's device list (#494).
+  const [open, setOpen] = useState(false);
+  const [revoke, setRevoke] = useState(false);
   // Signing out everywhere ends every session at once — one extra click to confirm.
   const [confirming, setConfirming] = useState(false);
   const onWarning = (description: string | undefined): void =>
@@ -860,6 +878,38 @@ function SignOut({ account, onNotice }: { account: AccountModel; onNotice: (noti
     const timer = setTimeout(() => setConfirming(false), 5000);
     return () => clearTimeout(timer);
   }, [confirming]);
+  if (open) {
+    return (
+      <VStack gap={2}>
+        <Text weight="semibold">Sign out</Text>
+        <CheckboxInput
+          label="This is a shared computer"
+          description="Also remove this device from the hosts it joined through your account, and forget them here. Hosts paired with a QR code stay."
+          value={revoke}
+          onChange={setRevoke}
+        />
+        <HStack gap={2}>
+          <Button
+            label="Sign out"
+            variant={revoke ? "destructive" : "primary"}
+            onClick={() => {
+              onWarning(undefined);
+              // The model lands signed-out at once; the answer only decides the warning.
+              void account.logout({ revoke }).then((result) => onWarning(signOutWarning(result, revoke)));
+            }}
+          />
+          <Button
+            label="Cancel"
+            variant="ghost"
+            onClick={() => {
+              setOpen(false);
+              setRevoke(false);
+            }}
+          />
+        </HStack>
+      </VStack>
+    );
+  }
   return (
     <VStack gap={1}>
       <HStack gap={2}>
@@ -867,10 +917,8 @@ function SignOut({ account, onNotice }: { account: AccountModel; onNotice: (noti
           label="Sign out"
           variant="ghost"
           onClick={() => {
-            onWarning(undefined);
-            void account.logout().then((result) => {
-              if (!result.ok) onWarning("Signed out on this device, but the server didn't confirm. The session ends on its own within 30 days.");
-            });
+            setConfirming(false);
+            setOpen(true);
           }}
         />
         <Button
@@ -890,7 +938,7 @@ function SignOut({ account, onNotice }: { account: AccountModel; onNotice: (noti
           }}
         />
       </HStack>
-      <Text type="supporting">Signing out doesn't unpair this device from its hosts. Remove it from another device, or revoke it on each host.</Text>
+      <Text type="supporting">Signing out keeps this device paired with its hosts, unless you say it's a shared computer.</Text>
     </VStack>
   );
 }

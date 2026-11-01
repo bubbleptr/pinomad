@@ -104,7 +104,15 @@ export interface AccountModel {
     password: string;
     serverOrigin?: string;
   }): Promise<AccountResult<void>>;
-  logout(): Promise<AccountResult<void>>;
+  /**
+   * Signs out; always lands signed-out, before the server answers. With
+   * `revoke` (a shared computer, #494) the server also asks every host this
+   * device joined through the account to revoke it, and this device forgets
+   * the stored hosts linked to this server, with its keys for them. Hosts
+   * paired by QR code stay. The forgetting doesn't wait on the server: an
+   * older one ignores `revoke` and still answers 204.
+   */
+  logout(options?: { readonly revoke?: boolean }): Promise<AccountResult<void>>;
   /** Revokes every session of the account including this one — always lands signed-out. */
   revokeAll(): Promise<AccountResult<void>>;
   /** Signs out the account's other sessions; this one stays (#450). */
@@ -207,6 +215,11 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   const unsaved = new Map<string, StoredHost>();
   /** Bumped on sign-out and by an explicit cancel; flights compare it before acting. */
   let epoch = 0;
+  /**
+   * A cookie-mode sign-out still waiting on the server. Its answer clears
+   * the session cookie, so a sign-in waits for it rather than lose its own.
+   */
+  let pendingLogout: Promise<void> | undefined;
   interface Flight {
     cancelled: boolean;
     promise: Promise<void>;
@@ -245,7 +258,8 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     stopVisibility = undefined;
   };
 
-  const signedOut = (): void => {
+  /** Ends the session's work: no client, every flight and pending save dropped. */
+  const endSession = (): void => {
     client = undefined;
     admin = false;
     epoch += 1;
@@ -253,11 +267,18 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     flights.clear();
     unsaved.clear();
     stopWatching();
+  };
+
+  const publishSignedOut = (): void =>
     setState({
       status: "signed-out",
       mode,
       ...(lastOrigin === undefined ? {} : { serverOrigin: lastOrigin }),
     });
+
+  const signedOut = (): void => {
+    endSession();
+    publishSignedOut();
   };
 
   const signedInState = (
@@ -278,6 +299,38 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   });
 
   const live = (active: AccountClient, started: number): boolean => client === active && started === epoch;
+
+  /**
+   * Drops every stored host linked to `origin`'s account, closing its
+   * runtime, without declining it: the owner signing in here again later
+   * should get those hosts back on their own (#494). False when any of them
+   * may still be stored.
+   */
+  const forgetAccountHosts = async (origin: string): Promise<boolean> => {
+    let stored: StoredHost[];
+    try {
+      stored = await deps.hosts.list();
+    } catch (error) {
+      console.error("Could not read the paired hosts to forget them", error);
+      return false;
+    }
+    // Only keys the account issued: a QR pairing that later adopted the link
+    // is the host's own, and stays.
+    const vouched = (host: StoredHost): boolean =>
+      host.account?.vouched === true && normalizeServerOrigin(host.account.serverOrigin) === origin;
+    for (const host of stored.filter(vouched)) {
+      await (deps.removeHost?.(host.hostKey) ?? deps.hosts.remove(host.hostKey)).catch((error: unknown) =>
+        console.error("Could not forget a host", error),
+      );
+    }
+    // The app's removal logs and swallows a store failure; read back to know.
+    try {
+      return !(await deps.hosts.list()).some(vouched);
+    } catch (error) {
+      console.error("Could not check the forgotten hosts", error);
+      return false;
+    }
+  };
 
   const deviceName = async (): Promise<string> => (deps.name ?? (() => "This device"))();
 
@@ -532,6 +585,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   const pairHost = async (hostId: string): Promise<AccountResult<StoredHost>> => {
     if (client === undefined) return fail("unauthenticated");
     const active = client;
+    const started = epoch;
     declined.remove({ serverOrigin: active.origin, hostId });
     // An explicit join wins over an automatic round already in flight.
     cancelAccountRegistration(hostId);
@@ -546,6 +600,9 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       handlePairFailure(active, hostId, result.error);
       return result;
     }
+    // Signed out while the handshake ran (a shared-computer sign-out may
+    // already have forgotten this server's hosts): the key must not land.
+    if (!live(active, started)) return fail("stale");
     const enriched = enrich(hostId, result.value);
     clearRejected(enriched.hostKey);
     try {
@@ -584,6 +641,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   ): Promise<AccountResult<void>> => {
     let candidate: AccountClient;
     if (mode === "cookie") {
+      await pendingLogout;
       candidate = createAccountClient({ origin: deps.origin, credentials: { mode: "cookie" }, fetch: deps.fetch });
     } else {
       const origin = serverOrigin ?? lastOrigin;
@@ -650,11 +708,36 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     register: ({ invite, username, password, serverOrigin }) =>
       signIn(serverOrigin, (candidate) => candidate.register(invite, username, password, deps.device?.())),
 
-    logout: async () => {
+    logout: async (options) => {
       if (client === undefined) return fail("unauthenticated");
-      const result = await client.logout();
-      if (mode === "bearer") void deps.bridge?.account?.clear().catch(() => undefined);
-      signedOut();
+      const active = client;
+      const revoke = options?.revoke === true;
+      // The session's work stops before anything is awaited: no refresh or
+      // registration can bring back a host being forgotten.
+      endSession();
+      if (mode === "bearer") {
+        // A bearer sign-out's answer can't touch a newer session: that one
+        // carries its own token and no cookie. Show the sign-in form now.
+        void deps.bridge?.account?.clear().catch(() => undefined);
+        publishSignedOut();
+      } else {
+        // In cookie mode the answer clears the session cookie, and a login
+        // made before it lands would lose its own. Hold the form back until
+        // the request settles.
+        setState({ status: "checking" });
+      }
+      const settled = (async () => ({
+        forgotten: revoke ? await forgetAccountHosts(active.origin) : true,
+        result: await active.logout(revoke ? { revoke: true } : undefined),
+      }))();
+      const waited = settled.then(() => undefined);
+      if (mode === "cookie") pendingLogout = waited;
+      const { forgotten, result } = await settled;
+      if (pendingLogout === waited) pendingLogout = undefined;
+      if (mode === "cookie" && client === undefined && state.status === "checking") publishSignedOut();
+      // A host still stored here is the bigger worry: this device can still
+      // connect to it whatever the server did.
+      if (!forgotten) return fail("hosts_not_forgotten");
       return result.ok ? { ok: true, value: undefined } : result;
     },
 

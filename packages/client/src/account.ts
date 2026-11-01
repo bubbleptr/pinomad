@@ -909,7 +909,9 @@ export async function pairViaAccount(
     url: endpointSet === undefined ? url : preferredLegacyUrl(url, endpointSet),
     hostKey: pair.hostKey,
     privateKey: toBase64Url(device.privateKey),
-    account: { serverOrigin: client.origin, hostId },
+    // `vouched`: the key came from the account's offer, unlike a link the
+    // client adopts later onto a QR pairing (#494).
+    account: { serverOrigin: client.origin, hostId, vouched: true },
     ...(endpointSet === undefined ? {} : { endpointSet }),
   });
 }
