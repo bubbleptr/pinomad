@@ -9,24 +9,19 @@ import { useEffect, useRef, useState } from "react";
 import type { AccountError, JoinToken } from "@pinomad/client/account.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import type { AccountState } from "../../entities/account/account-model.ts";
+import { PairingLinkForm } from "../../entities/host/pairing-link-form.tsx";
 import { AccountDialog } from "./account-dialog.tsx";
 import { accountErrorMessage, JoinCommand } from "./account-panel.tsx";
-
-/**
- * The model refreshes the account's hosts only on sign-in and on a return to
- * the foreground; the join command runs in a terminal beside this window,
- * which never hides it. So this screen asks on its own until a host appears.
- */
-const REFRESH_MS = 10_000;
 
 /** Where the docs explain pairing without an account. */
 const NO_ACCOUNT_DOCS = "https://pinomad.si/docs/";
 
 /**
  * The home of a signed-in client with no hosts at all (#492): the one-time
- * `pinomad join` command, ready to copy. App shows it in place of the account
- * panel; once the new host joins, the refresh lists it, the model pairs it,
- * and App swaps this screen for the workbench.
+ * `pinomad join` command, ready to copy, with the paste-a-pairing-link form
+ * one click away. NoHostLink shows it in place of the account panel and keeps
+ * refreshing the host list; once the new host joins and comes online, the
+ * model pairs it and App swaps this screen for the workbench.
  */
 export function FirstHost({ state }: { state: Extract<AccountState, { status: "signed-in" }> }) {
   const account = useAccountModel();
@@ -34,6 +29,7 @@ export function FirstHost({ state }: { state: Extract<AccountState, { status: "s
   const [error, setError] = useState<AccountError>();
   const [busy, setBusy] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [pastingLink, setPastingLink] = useState(false);
   const create = (): void => {
     setBusy(true);
     setError(undefined);
@@ -50,12 +46,6 @@ export function FirstHost({ state }: { state: Extract<AccountState, { status: "s
     minted.current = true;
     create();
   }, []);
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (document.visibilityState === "visible") void account.refreshHosts();
-    }, REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [account]);
   return (
     <VStack gap={6} style={{ width: "100%", maxWidth: 520 }}>
       <VStack gap={2}>
@@ -101,6 +91,16 @@ export function FirstHost({ state }: { state: Extract<AccountState, { status: "s
             Pair a host directly
           </Link>
         </Text>
+        {pastingLink ? (
+          <VStack gap={2}>
+            <Text type="supporting">Paste a pairing link from pinomad pair or Settings → Devices → Pair a device.</Text>
+            <PairingLinkForm />
+          </VStack>
+        ) : (
+          <HStack>
+            <Button label="Have a pairing link?" variant="ghost" size="sm" onClick={() => setPastingLink(true)} />
+          </HStack>
+        )}
         <HStack gap={2} vAlign="center">
           <Text type="supporting">
             Signed in as {state.user} on {new URL(state.serverOrigin).host}

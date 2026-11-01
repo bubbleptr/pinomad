@@ -812,6 +812,35 @@ describe("automatic registration", () => {
     expect(pairingCalls(fake.calls)).toBe(1);
   });
 
+  it("pairs a host that joined offline on a refresh after it comes online (#492)", async () => {
+    const store = hosts();
+    const declined = createDeclinedStore(localStorage);
+    let online = false;
+    const base = routeFetch(() => [{ ...row(), online, pairing: online ? "available" : "offline" }]);
+    const impl: AccountFetch = (url, init) => {
+      if (!online && url.endsWith("/api/hosts/h1/pairing")) {
+        base.calls.push({ url, init });
+        return Promise.resolve(response(409, { error: "host_offline" }));
+      }
+      return base.impl(url, init);
+    };
+    const setup = makeModel({ fake: { impl, calls: base.calls }, store, declined, autoRegister: true });
+    await vi.waitFor(() => expect(pairingCalls(base.calls)).toBe(1));
+    await vi.waitFor(() => {
+      const state = setup.model.state;
+      expect(state.status === "signed-in" ? state.hosts[0]?.status : undefined).toBe("unpaired");
+    });
+    expect(declined.list()).toEqual([]);
+
+    online = true;
+    await setup.model.refreshHosts();
+    await vi.waitFor(() => {
+      const state = setup.model.state;
+      expect(state.status === "signed-in" ? state.hosts[0]?.status : undefined).toBe("paired");
+    });
+    expect(setup.paired).toHaveLength(1);
+  });
+
   it("adds a host that refuses account vouching to the declined set", async () => {
     const store = hosts();
     const declined = createDeclinedStore(localStorage);

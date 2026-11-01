@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn } from "storybook/test";
+import { fn, userEvent, within } from "storybook/test";
 import type { AccountState } from "../../entities/account/account-model.ts";
 import { Centered } from "../../shared/ui/centered.tsx";
 import { signedIn, withAccount, withHosts } from "../../test/story-fixtures.tsx";
@@ -49,4 +49,11 @@ export const CreateFailed: Story = {
 /** A failed refresh keeps the screen and says why no host shows up yet. */
 export const RefreshFailed: Story = {
   args: { state: { ...noHosts, hostsError: { code: "network" } } },
+};
+
+/** Hosts paired without an account: the pasted-link form, one click under the command. */
+export const PairingLink: Story = {
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Have a pairing link?" }));
+  },
 };
