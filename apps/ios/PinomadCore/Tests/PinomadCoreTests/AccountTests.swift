@@ -286,6 +286,29 @@ struct AccountTests {
         #expect(request.body == nil)
     }
 
+    /// The first-host home's command (#493): minted with the session's
+    /// bearer, shown exactly as the server wrote it.
+    @Test func joinTokenIsMintedAndParsed() async {
+        let transport = StubAccountTransport()
+        transport.outcome = .response(AccountHTTPResponse(
+            status: 201,
+            body: Data(#"{"token":"jt","expiresAt":600000,"command":"npm i -g pinomad && pinomad join https://relay.example.com jt"}"#.utf8)))
+        let api = AccountAPI(origin: "https://relay.example.com", token: "tok", transport: transport)
+        let result = await api.createJoinToken()
+
+        guard case .success(let token) = result else {
+            Issue.record("expected a join token, got \(result)")
+            return
+        }
+        #expect(token == JoinToken(
+            token: "jt", expiresAt: 600_000,
+            command: "npm i -g pinomad && pinomad join https://relay.example.com jt"))
+        let request = transport.requests[0]
+        #expect(request.method == "POST")
+        #expect(request.url == "https://relay.example.com/api/join-tokens")
+        #expect(request.headers.contains(AccountHttpHeader(name: "authorization", value: "Bearer tok")))
+    }
+
     @Test func transportFailureBecomesNetwork() async {
         let transport = StubAccountTransport()
         transport.outcome = .error

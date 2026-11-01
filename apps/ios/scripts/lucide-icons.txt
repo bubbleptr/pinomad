@@ -49,6 +49,7 @@ redo-2
 rotate-cw
 scan-qr-code
 settings
+share
 sparkles
 square
 square-check

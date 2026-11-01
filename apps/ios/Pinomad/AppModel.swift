@@ -256,6 +256,9 @@ final class AppModel {
     let declinedAccountHosts = DeclinedAccountHosts()
     var accountRecord: AccountRecord?
     var accountRows: [AccountHostRow] = []
+    /// This session's host list has answered once: until then an empty
+    /// `accountRows` says nothing about the account (#493).
+    var accountHostsLoaded = false
     var accountHostsError: String?
     var accountError: String?
     var accountNotice: String?
