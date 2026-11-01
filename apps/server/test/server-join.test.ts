@@ -193,7 +193,7 @@ describe("join tokens", () => {
     expect(response.status).toBe(200);
     const { token, expiresAt, command } = response.json as { token: string; expiresAt: number; command: string };
     // One line for scripts; the install script brings its own Node (#499).
-    expect(command).toBe(`curl -fsSL https://pinomad.si/install.sh | sh && ~/.local/bin/pinomad join ${ORIGIN} ${token}`);
+    expect(command).toBe(`curl -fsSL https://pinomad.si/install.sh | sh && PATH="$HOME/.local/bin:$PATH" pinomad join ${ORIGIN} ${token}`);
     expect(expiresAt).toBeGreaterThan(Date.now());
     expect(expiresAt).toBeLessThanOrEqual(Date.now() + 10 * MINUTE + 1000);
   });
