@@ -28,7 +28,7 @@ curl -fsSL https://pinomad.si/install.sh | sh
 
 以后再加一台宿主，在那台机器上跑同样两行。
 
-脚本把 Node 和 pinomad 装进 `~/.pinomad/runtime`，`pinomad` 命令放在 `~/.local/bin`。这个目录不在 PATH 里时（新 Mac 上就不在），脚本会打印要加进 shell 配置文件的那一行；加之前先用完整路径 `~/.local/bin/pinomad`。支持 Apple 芯片的 Mac 和 x64、arm64 的 Linux（glibc）。其他平台，或者想用自己装的 Node 25+，先 `npm i -g pinomad`，再 `pinomad up`。
+脚本把 Node 和 pinomad 装进 `~/.pinomad/runtime`，`pinomad` 命令放在 `~/.local/bin`。这个目录不在 PATH 里时（新 Mac 上就不在），脚本会打印要加进 shell 配置文件的那一行；加之前先用完整路径 `~/.local/bin/pinomad`。支持 Apple 芯片的 Mac 和 x64、arm64 的 Linux（glibc）。其他平台，或者想用自己装的 Node 25+，先 `npm i -g pinomad`，再 `pinomad up`。已经用 npm 装过 pinomad 的，脚本不会动它，也不会建 `~/.local/bin/pinomad`；先 `pinomad upgrade`，再 `pinomad up`。
 
 ## 3. 在其他设备上登录
 

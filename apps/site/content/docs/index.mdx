@@ -28,7 +28,7 @@ The first line installs pinomad with its own Node. `pinomad up` then asks how yo
 
 To add another host later, run the same two lines on that machine.
 
-The script puts Node and pinomad in `~/.pinomad/runtime` and the `pinomad` command in `~/.local/bin`. If that directory isn't on your PATH (it isn't on a new Mac), the script prints the line to add to your shell profile; until then, type the full `~/.local/bin/pinomad`. It covers Apple silicon Macs and Linux on x64 or arm64 (glibc). Anywhere else, or to use a Node 25+ you already have, run `npm i -g pinomad` and then `pinomad up`.
+The script puts Node and pinomad in `~/.pinomad/runtime` and the `pinomad` command in `~/.local/bin`. If that directory isn't on your PATH (it isn't on a new Mac), the script prints the line to add to your shell profile; until then, type the full `~/.local/bin/pinomad`. It covers Apple silicon Macs and Linux on x64 or arm64 (glibc). Anywhere else, or to use a Node 25+ you already have, run `npm i -g pinomad` and then `pinomad up`. If pinomad is already installed with npm, the script leaves it alone and creates no `~/.local/bin/pinomad`; run `pinomad upgrade`, then `pinomad up`.
 
 ## 3. Sign in on your other devices
 

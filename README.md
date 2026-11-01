@@ -24,6 +24,8 @@ A self-hosted coding agent built on [Pi Durable](https://www.npmjs.com/package/@
    ~/.local/bin/pinomad up
    ```
 
+   Already installed with npm? The script leaves that install alone; run `pinomad upgrade`, then `pinomad up`.
+
 3. **Sign in on your other devices** (web, Mac app, iPhone). They pair with your hosts on their own; then connect a model provider under Settings → Providers.
 
 To run without an account (one machine, LAN or tailnet, or your own server), see [Without an account](https://pinomad.si/docs/without-account/).

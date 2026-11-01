@@ -24,6 +24,8 @@
    ~/.local/bin/pinomad up
    ```
 
+   已经用 npm 装过？脚本不会动它；先 `pinomad upgrade`，再 `pinomad up`。
+
 3. **在其他设备上登录**（Web、Mac App、iPhone）：它们会自动配对账号下的宿主；然后在 Settings → Providers 里接入模型。
 
 不想用账号（只在一台机器上、局域网或 tailnet、自己架的服务端），见[不用账号](https://pinomad.si/zh/docs/without-account/)。
