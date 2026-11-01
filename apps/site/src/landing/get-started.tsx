@@ -6,6 +6,8 @@ import type { LandingCopy } from "./copy.tsx";
 import { StarIcon } from "./icons.tsx";
 
 const INSTALL = "curl -fsSL https://pinomad.si/install.sh | sh";
+// The full path: a new Mac doesn't have ~/.local/bin on PATH yet.
+const UP = "~/.local/bin/pinomad up";
 
 /** The newest changelog entry, read from the changelog when the page is prerendered. */
 export type LatestRelease = { version: string; date: string };
@@ -32,15 +34,13 @@ export function GetStarted({ t }: { t: LandingCopy["start"] }) {
         <div className="code-card">
           <div className="code-card-header">
             <span>{t.terminal}</span>
-            <CopyButton text={`${INSTALL}\npinomad host\npinomad link`} t={t} />
+            <CopyButton text={`${INSTALL}\n${UP}`} t={t} />
           </div>
           {/* Each run of plain text stays one text node: splitting it shifts the glyphs. */}
           <pre>
             <code>
-              {`${INSTALL}\npinomad host   `}
-              <span className="comment">{t.hostComment}</span>
-              {"\npinomad link   "}
-              <span className="comment">{t.linkComment}</span>
+              {`${INSTALL}\n${UP}   `}
+              <span className="comment">{t.upComment}</span>
             </code>
           </pre>
         </div>

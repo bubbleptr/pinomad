@@ -82,8 +82,7 @@ export interface LandingCopy {
     copy: string;
     copied: string;
     copyFailed: string;
-    hostComment: string;
-    linkComment: string;
+    upComment: string;
     clientsTitle: string;
     clients: { name: string; body: ReactNode; tag?: string }[];
     latest: (version: string, date: string) => string;
@@ -223,29 +222,29 @@ export const copy: Record<Lang, LandingCopy> = {
     },
     start: {
       eyebrow: "Get started",
-      title: "Install, start the host, open a client",
+      title: "Install the host and add it to your account",
       lead: "Free and open source under Apache-2.0. The host runs on macOS or Linux; the install script brings its own Node.",
       notes: [
         <>
-          Sign in with your Claude, ChatGPT, or Copilot subscription, an API key, or a local Ollama or vLLM endpoint under
-          Settings → Providers. Ready to keep it running? <code>pinomad service install</code> registers the host as a
-          background LaunchAgent on macOS or a systemd service on Linux.
+          <code>pinomad up</code> prints a code. Enter it at app.pinomad.si, signed in to your account (sign-up is by
+          invite), and the host joins your account and keeps running as a service. Sign in on your other devices and
+          they connect on their own, then add your Claude, ChatGPT, or Copilot subscription, an API key, or a local
+          Ollama or vLLM endpoint under Settings → Providers.
         </>,
       ],
-      more: { text: "Full setup guide and service options", href: "/docs/" },
+      more: { text: "Full setup guide, or use it without an account", href: "/docs/" },
       terminal: "Terminal",
       copy: "Copy",
       copied: "Copied",
       copyFailed: "Copy failed",
-      hostComment: "# starts the host on your machine",
-      linkComment: "# in another terminal: prints a web client link",
+      upComment: "# joins your account",
       clientsTitle: "Clients",
       clients: [
         {
           name: "Web",
           body: (
             <>
-              Your host serves it: <code>pinomad link</code> prints the link. Any modern browser.
+              Sign in at app.pinomad.si in any modern browser. Your host serves it too: <code>pinomad link</code>.
             </>
           ),
         },
@@ -259,7 +258,7 @@ export const copy: Record<Lang, LandingCopy> = {
           ),
           tag: "Apple silicon",
         },
-        { name: "iOS", body: "Pairs with your host by scanning a one-time QR code.", tag: "Internal TestFlight only for now" },
+        { name: "iOS", body: "Sign in and it pairs with your hosts on its own.", tag: "Internal TestFlight only for now" },
         { name: "Linux, Windows", body: "Use the web client." },
       ],
       latest: (version, date) => `Latest release: ${version}, ${date}`,
@@ -401,29 +400,28 @@ export const copy: Record<Lang, LandingCopy> = {
     },
     start: {
       eyebrow: "开始使用",
-      title: "三条命令跑起来",
+      title: "两行命令装好宿主",
       lead: "免费开源，Apache-2.0 许可。宿主支持 macOS 和 Linux，安装脚本自带 Node。",
       notes: [
         <>
-          打开客户端后，在 Settings → Providers 登录已有的 Claude / ChatGPT / Copilot 订阅，或填入 API Key、本地
-          Ollama / vLLM 端点。需要常驻后台时，运行 <code>pinomad service install</code> 即可注册为 macOS LaunchAgent 或
-          Linux systemd 服务。
+          <code>pinomad up</code> 会打印一个短码，登录 app.pinomad.si
+          输入它（注册要邀请码），宿主就加入了你的账号，并作为服务常驻运行。其他设备登录同一个账号就会自动连上；再到 Settings
+          → Providers 登录已有的 Claude / ChatGPT / Copilot 订阅，或填入 API Key、本地 Ollama / vLLM 端点。
         </>,
       ],
-      more: { text: "查看完整上手指南与常驻服务配置", href: "/zh/docs/" },
+      more: { text: "查看完整上手指南，以及不用账号的用法", href: "/zh/docs/" },
       terminal: "终端",
       copy: "复制",
       copied: "已复制",
       copyFailed: "复制失败",
-      hostComment: "# 在本机启动宿主",
-      linkComment: "# 另开一个终端，打印 Web 客户端链接",
+      upComment: "# 加入账号",
       clientsTitle: "客户端",
       clients: [
         {
           name: "Web",
           body: (
             <>
-              宿主自带，运行 <code>pinomad link</code> 打印链接，现代浏览器即开即用。
+              现代浏览器打开 app.pinomad.si 登录即可；宿主自己也提供，运行 <code>pinomad link</code>。
             </>
           ),
         },
@@ -436,7 +434,7 @@ export const copy: Record<Lang, LandingCopy> = {
           ),
           tag: "Apple 芯片",
         },
-        { name: "iOS", body: "扫宿主的一次性二维码配对。", tag: "目前仅限 TestFlight 内测" },
+        { name: "iOS", body: "登录后自动配对账号下的宿主。", tag: "目前仅限 TestFlight 内测" },
         { name: "Linux、Windows", body: "直接使用 Web 客户端。" },
       ],
       latest: (version, date) => `最新版本：${version}，${date}`,

@@ -1,70 +1,67 @@
 ---
 title: Getting started
-description: Install the host, open a client, connect your other devices, and keep the host running.
+description: Create an account, add your host with one command, sign in on your other devices, and turn on push.
 ---
 
-## Quick start
+PiNomad comes down to two things: your **host** (the machine that runs the agent) joins your account, and your **devices** sign in to it. The official server at `https://app.pinomad.si` does the rest. Your devices find and reach the host from anywhere, and conversations stay end-to-end encrypted between them; the server only forwards ciphertext when a device can't reach the host directly.
 
-The host runs on macOS or Linux. The install script brings its own Node:
+To use PiNomad without an account (one machine, your local network or tailnet, or a server you run), see [Without an account](/docs/without-account/).
+
+## 1. Create an account
+
+Sign-up is by invite. Open [app.pinomad.si](https://app.pinomad.si/) (or the sign-in form in the Mac app), click **Create an account**, and enter the invite code, a username and a password. You're signed in as soon as the account exists. Username rules and the rest are in [Your account](/docs/official-server/).
+
+## 2. Add your host
+
+On the machine that should run the agent (macOS or Linux), run:
 
 ```sh
 curl -fsSL https://pinomad.si/install.sh | sh
-pinomad host        # data and credentials live in ~/.pinomad
-pinomad link        # in another terminal: prints a browser link to the web client
+~/.local/bin/pinomad up
 ```
 
-The script puts Node and pinomad in `~/.pinomad/runtime` and the `pinomad` command in `~/.local/bin`, and prints the line to add to your shell profile if that directory isn't on your PATH. It covers Apple silicon Macs and Linux on x64 or arm64 (glibc). Anywhere else, or to use a Node 25+ you already have, install with `npm i -g pinomad` instead.
+The first line installs pinomad with its own Node. `pinomad up` then asks how your other devices should reach this host; press Enter to go through the official server. It prints a page to open and a code like `WDJB-MJHT`, and opens the page in your browser when it can:
 
-Sign in to a model provider under Settings → Providers: a subscription you already pay for (Claude, ChatGPT, Copilot, …), an API key, or your own OpenAI- or Anthropic-compatible endpoint. To click around without one, `pinomad host --faux "hi"` runs a scripted fake model.
+1. On the page, signed in to your account, enter the code. **Add a host** in the web or Mac app has the same field.
+2. Check the name and system it shows, and confirm only if you started this on that machine.
+3. Back in the terminal, `pinomad up` adds the host to your account and installs it as a service that starts at boot.
 
-## Connect your other devices
+To add another host later, run the same two lines on that machine.
 
-Open a port for paired devices, then pair each device with its own QR code:
+The script puts Node and pinomad in `~/.pinomad/runtime` and the `pinomad` command in `~/.local/bin`. If that directory isn't on your PATH (it isn't on a new Mac), the script prints the line to add to your shell profile; until then, type the full `~/.local/bin/pinomad`. It covers Apple silicon Macs and Linux on x64 or arm64 (glibc). Anywhere else, or to use a Node 25+ you already have, run `npm i -g pinomad` and then `pinomad up`.
+
+## 3. Sign in on your other devices
+
+Sign in with the same username and password, and the device pairs with every host on your account that's online, with no QR code.
+
+- **Web:** [app.pinomad.si](https://app.pinomad.si/) in any modern browser.
+- **Mac app** (Apple silicon): the signed DMG from [GitHub Releases](https://github.com/bubbleptr/pinomad/releases); it updates itself.
+- **iPhone:** tap **Sign in** in Settings. The app can't create accounts, so sign up on the web or in the Mac app first. The iPhone app is in internal TestFlight for now.
+
+Paired hosts show **Connect**. A host that wasn't paired on its own, for example one you removed from this device before, shows **Pair**; click it to pair.
+
+Then sign in to a model provider under Settings → Providers: a subscription you already pay for (Claude, ChatGPT, Copilot, …), an API key, or your own OpenAI- or Anthropic-compatible endpoint.
+
+## 4. Push notifications
+
+The iPhone app can notify you when a conversation is waiting for your answer, finishes, or fails. Turn it on under Settings → Notifications in the app; it's off by default and covers every host. The iPhone has to be signed in to the same account the host joined. A notification carries only the conversation title and the event, never the question or the reply. The title passes through the server and Apple. More details: [Usage](/zh/docs/usage/) (Chinese).
+
+## Look after the host
 
 ```sh
-pinomad host --remote-port 7422
-pinomad pair        # one-time QR code and link, expires after 5 minutes
-```
-
-Scan the code with the iPhone app, or paste the link into the Mac app. The remote port accepts paired devices only; revoke them under Settings → Devices.
-
-The pairing link always keeps a legacy socket URL and can carry the reachable relay and direct candidates. Without `--public-url` the direct address is the LAN address the host detects; on a tailnet or behind a tunnel, add `--public-url http://<tailnet-ip>:7422` so it points there. When the host is joined to a relay, older clients keep using the relay URL. To reach a host at home from anywhere, [use the official server](/docs/official-server/) or run your own relay on a VPS: see [Remote access](/zh/docs/remote-access/) (Chinese).
-
-## WebRTC direct connections
-
-When a relay is available, clients connect through it first. Once the connection is up, Auto tries a direct WebRTC DataChannel in the background; when it succeeds, conversation data no longer passes through the server. If hole punching fails, the connection stays on the relay. There is no TURN.
-
-The connection mode is per host, under Settings → Hosts → Connection…: Auto (the default), Direct only (never send conversation data through the PiNomad server; the relay is used only to set up the link), or Relay only (never try peer-to-peer). The same panel shows the current path: P2P (with whether each end is on a LAN, tailnet, or public address; full addresses behind Show addresses) or the relay, plus the last failure.
-
-The host reads STUN servers from the `rtcStun` key in `<data dir>/settings.json` and advertises the same list in `hello.rtc`:
-
-```json
-{
-  "rtcStun": ["stun:stun.cloudflare.com:3478"]
-}
-```
-
-The default is Cloudflare's public STUN server. Set it to `[]` to use only host candidates (no STUN), or list your own `stun:` URLs. There is no TURN, so some networks cannot establish P2P; Auto keeps using the relay. If the host's `node-datachannel` native module is missing — for example after an npm install with `--omit=optional` — the host keeps running and simply does not advertise `hello.rtc`.
-
-## Keep it running
-
-Install the host as a user service (LaunchAgent on macOS, systemd user unit on Linux) so it starts at boot and restarts on crash:
-
-```sh
-pinomad service install --remote-port 7422
-pinomad service status
+pinomad status      # the account, LAN port, service, and whether the host answers
 pinomad upgrade     # install pinomad@latest, wait for running tasks, restart
 ```
 
-Service flags, logs, and platform caveats: [Running as a service](/zh/docs/service/) (Chinese). `pinomad upgrade` updates pinomad only; running the install script again updates its Node too.
+`pinomad upgrade` updates pinomad only; running the install script again updates its Node too. Service flags, logs and platform caveats: [Running as a service](/zh/docs/service/) (Chinese).
 
-To uninstall a script install, run `pinomad service uninstall`, then delete `~/.pinomad/runtime` and `~/.local/bin/pinomad`. Your data in the rest of `~/.pinomad` stays until you delete it.
+To uninstall, run `pinomad service uninstall`, then delete `~/.pinomad/runtime` and `~/.local/bin/pinomad`. Your data in the rest of `~/.pinomad` stays until you delete it.
 
 ## Clients
 
 | Client | How to get it |
 |---|---|
-| Web | Served by the host itself (`pinomad link`) and by the relay; any modern browser |
+| Web | [app.pinomad.si](https://app.pinomad.si/); the host also serves it (`pinomad link`) |
 | macOS (Apple silicon) | Signed DMG from [GitHub Releases](https://github.com/bubbleptr/pinomad/releases); updates itself |
 | iOS | Internal TestFlight only for now |
 | Linux, Windows | Use the web client |

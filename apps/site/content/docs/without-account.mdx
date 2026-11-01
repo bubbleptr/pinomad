@@ -1,0 +1,41 @@
+---
+title: Without an account
+description: Run PiNomad on one machine, on your local network or tailnet with QR-code pairing, or through a server you run yourself.
+---
+
+Everything in PiNomad works without the official server. You give up reaching the host from anywhere and push notifications (unless you run your own server), and you pair each device with each host yourself. Install the host as in [Getting started](/docs/), with the same script:
+
+```sh
+curl -fsSL https://pinomad.si/install.sh | sh
+```
+
+## On one machine
+
+```sh
+pinomad host        # data and credentials live in ~/.pinomad
+pinomad link        # in another terminal: prints a browser link to the web client
+```
+
+The link opens the web client the host serves itself, on this machine only. Sign in to a model provider under Settings → Providers. To click around without one, `pinomad host --faux "hi"` runs a scripted fake model. To keep the host running in the background, `pinomad service install` installs it as a service that only this machine can reach.
+
+## On your local network or tailnet
+
+```sh
+pinomad up --lan    # open port 7422 to paired devices and install the service
+pinomad pair        # one-time QR code and link, expires after 5 minutes
+```
+
+Scan the code with the iPhone app, or paste the link into the Mac app. Run `pinomad pair` once per device. The remote port accepts paired devices only; revoke them under Settings → Devices. `--remote-port N` picks another port.
+
+The pairing link carries the host's address. Without `--public-url` it's the LAN address the host detects; on a tailnet or behind a tunnel, give the host `--public-url http://<tailnet-ip>:7422` so it points there. For the service that's `pinomad service install --remote-port 7422 --public-url …`; details in [Remote access](/zh/docs/remote-access/) (Chinese).
+
+A host can be on the LAN and on your account at once: `pinomad up --server --lan`.
+
+## Through your own server
+
+The server that runs app.pinomad.si is in the same package (`pinomad server`), so you can run it on a VPS for your own accounts and relay; push needs your own APNs key. Setting it up is in [Remote access](/zh/docs/remote-access/) (Chinese). Then:
+
+- On the host: `pinomad up --origin https://your-server.example`.
+- On your devices: sign in with the **Server** field set to your server's address instead of `https://app.pinomad.si`.
+
+The rest of [Getting started](/docs/) and [Your account](/docs/official-server/) applies as written.

@@ -16,21 +16,21 @@ A self-hosted coding agent built on [Pi Durable](https://www.npmjs.com/package/@
 
 ## Quick start
 
-The host runs on macOS or Linux. The install script brings its own Node (or use `npm i -g pinomad` with Node 25+):
+1. **Create an account** at [app.pinomad.si](https://app.pinomad.si/) (sign-up is by invite).
+2. **Add your host.** On the machine that should run the agent (macOS or Linux), run the two lines below. `pinomad up` prints a code; enter it on the page it opens, signed in, to add the host to your account. It then runs as a service.
 
-```sh
-curl -fsSL https://pinomad.si/install.sh | sh
-pinomad host        # data and credentials live in ~/.pinomad
-pinomad link        # in another terminal: prints a browser link to the web client
-```
+   ```sh
+   curl -fsSL https://pinomad.si/install.sh | sh
+   ~/.local/bin/pinomad up
+   ```
 
-Sign in to a model provider under Settings → Providers: a subscription you already pay for (Claude, ChatGPT, Copilot, …), an API key, or your own OpenAI- or Anthropic-compatible endpoint. To click around without one, `pinomad host --faux "hi"` runs a scripted fake model.
+3. **Sign in on your other devices** (web, Mac app, iPhone). They pair with your hosts on their own; then connect a model provider under Settings → Providers.
 
-To reach the host from your Mac and iPhone anywhere without running a server, [use the official server](https://pinomad.si/docs/official-server/) at app.pinomad.si.
+To run without an account (one machine, LAN or tailnet, or your own server), see [Without an account](https://pinomad.si/docs/without-account/).
 
 ## Documentation
 
-User docs live on **[pinomad.si/docs](https://pinomad.si/docs/)**: [getting started](https://pinomad.si/docs/) (connecting your other devices, keeping the host running, clients) and [what the agent can do](https://pinomad.si/docs/features/). Usage, remote access, and the service reference are in Chinese for now: [中文文档](https://pinomad.si/zh/docs/).
+User docs live on **[pinomad.si/docs](https://pinomad.si/docs/)**: [getting started](https://pinomad.si/docs/) (account, adding hosts, devices, push), [your account](https://pinomad.si/docs/official-server/), [without an account](https://pinomad.si/docs/without-account/), and [what the agent can do](https://pinomad.si/docs/features/). Usage, remote access, and the service reference are in Chinese for now: [中文文档](https://pinomad.si/zh/docs/).
 
 For contributors (in Chinese):
 
