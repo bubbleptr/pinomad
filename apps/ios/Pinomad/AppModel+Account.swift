@@ -307,7 +307,7 @@ extension AppModel {
                 accountRegistrationInFlight.remove(hostId)
                 return
             }
-            let account = AccountLink(serverOrigin: session.serverOrigin, hostId: hostId)
+            let account = AccountLink(serverOrigin: session.serverOrigin, hostId: hostId, vouched: true)
             guard beginPairing(
                 link: link, account: account, focus: false,
                 autoRegisterHostId: hostId) != nil
@@ -390,11 +390,23 @@ extension AppModel {
     /// Forget every stored host linked to `serverOrigin`'s account, without
     /// declining it (#494). Hosts paired by QR code carry no link and stay.
     private func forgetAccountHosts(serverOrigin: String) {
-        let origin = normalizeServerOrigin(origin: serverOrigin)
-        for host in hosts.hosts {
-            guard let link = host.account, normalizeServerOrigin(origin: link.serverOrigin) == origin else { continue }
-            forget(host.hostKey, decline: false)
+        // Saved pairings, plus account pairings whose keychain write failed:
+        // those live only in memory (a runtime, a retry slot) until saved.
+        var candidates = hosts.hosts
+        for key in unsavedHostKeys {
+            if let host = runtimes[key]?.host { candidates.append(host) }
         }
+        let unsavedOurs = AccountHosts.vouchedHostKeys(
+            serverOrigin: serverOrigin, hosts: Array(unsavedAccountHosts.values))
+        for (hostId, host) in unsavedAccountHosts where unsavedOurs.contains(host.hostKey) {
+            unsavedAccountHosts.removeValue(forKey: hostId)
+        }
+        var keys: [String] = []
+        for key in AccountHosts.vouchedHostKeys(serverOrigin: serverOrigin, hosts: candidates) + unsavedOurs
+        where !keys.contains(key) && hostRecord(for: key) != nil {
+            keys.append(key)
+        }
+        for key in keys { forget(key, decline: false) }
     }
 
     /// Change the account password (#450). This session stays; the server
@@ -586,7 +598,7 @@ extension AppModel {
             }
             return beginPairing(
                 link: link,
-                account: AccountLink(serverOrigin: session.serverOrigin, hostId: hostId),
+                account: AccountLink(serverOrigin: session.serverOrigin, hostId: hostId, vouched: true),
                 focus: true,
                 autoRegisterHostId: nil) != nil
         }
@@ -653,10 +665,13 @@ extension AppModel {
 
     /// Forgetting a stored host leaves the account row for the same host
     /// unpaired, so the list doesn't offer to connect to a key that is gone.
-    /// The declined set is written by the forget path before this runs.
-    func accountHostForgotten(_ hostKey: String) {
+    /// The declined set is written by the forget path before this runs;
+    /// `decline: false` (a shared-device sign-out, #494) leaves it alone.
+    func accountHostForgotten(_ hostKey: String, decline: Bool = true) {
         if let link = hostRecord(for: hostKey)?.account {
-            declinedAccountHosts.add(serverOrigin: link.serverOrigin, hostId: link.hostId)
+            if decline {
+                declinedAccountHosts.add(serverOrigin: link.serverOrigin, hostId: link.hostId)
+            }
             unsavedAccountHosts.removeValue(forKey: link.hostId)
             accountRegistrationInFlight.remove(link.hostId)
         }

@@ -869,7 +869,7 @@ final class AppModel {
             declinedAccountHosts.add(serverOrigin: account.serverOrigin, hostId: account.hostId)
         }
         push.forget(hostKey)
-        accountHostForgotten(hostKey)
+        accountHostForgotten(hostKey, decline: decline)
         runtimes.removeValue(forKey: hostKey)?.close()
         unsavedHostKeys.remove(hostKey)
         let wasFocused = runtimeTable.focus?.hostKey == hostKey

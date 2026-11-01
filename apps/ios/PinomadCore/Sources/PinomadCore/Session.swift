@@ -610,7 +610,12 @@ public final class PinomadSession: @unchecked Sendable {
             try dependencies.hostStore.update { stored in
                 let existing = stored.hosts.first { $0.hostKey == host.hostKey }
                 if record.name == nil { record.name = existing?.name }
-                record.account = pairingAccount ?? existing?.account ?? record.account
+                // A QR re-pair under a new key keeps the link, not the
+                // account's vouch for the old key (#494).
+                let kept = existing.flatMap { old in
+                    old.privateKey == record.privateKey ? old.account : old.account?.unvouched
+                }
+                record.account = pairingAccount ?? kept ?? record.account
                 if record.endpointSet == nil { record.endpointSet = existing?.endpointSet }
                 if record.connectionMode == nil { record.connectionMode = existing?.connectionMode }
                 if record.rtcSignalOnly == nil { record.rtcSignalOnly = existing?.rtcSignalOnly }

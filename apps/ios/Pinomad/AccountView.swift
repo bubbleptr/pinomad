@@ -37,6 +37,9 @@ struct AccountView: View {
                 AccountLoginView(model: model)
             }
         }
+        // Any session change (Sign out everywhere, a dead token, a new
+        // sign-in) starts the shared-device choice off again.
+        .onChange(of: model.accountSession) { leavingHosts = false }
         .onDisappear {
             // Closing the sheet cancels a pairing ask that is still
             // waiting; a late offer must not replace the session the
@@ -126,6 +129,8 @@ struct AccountView: View {
 
                     Button("Sign out", role: .destructive) {
                         let revoke = leavingHosts
+                        // Never carried into the next sign-in on this sheet.
+                        leavingHosts = false
                         Task { await model.accountSignOut(everywhere: false, revoke: revoke) }
                     }
                     .disabled(model.accountBusy)

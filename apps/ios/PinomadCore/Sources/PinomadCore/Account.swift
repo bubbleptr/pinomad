@@ -688,6 +688,18 @@ public enum AccountHosts {
             autoRegisterHostIds: matches.filter(\.autoRegister).map(\.host.hostId))
     }
 
+    /// The hosts a shared-device sign-out forgets (#494): those whose key
+    /// came from `serverOrigin`'s own offer. A link `reconcile` adopted onto
+    /// a QR pairing isn't vouched, so that pairing stays.
+    public static func vouchedHostKeys(serverOrigin: String, hosts: [HostRecord]) -> [String] {
+        let origin = normalizeServerOrigin(origin: serverOrigin)
+        return hosts.compactMap { host in
+            guard let link = host.account, link.vouched == true,
+                  normalizeServerOrigin(origin: link.serverOrigin) == origin
+            else { return nil }
+            return host.hostKey
+        }
+    }
 }
 
 // MARK: - Devices

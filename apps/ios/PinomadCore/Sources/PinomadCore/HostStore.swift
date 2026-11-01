@@ -6,10 +6,22 @@ import Security
 public struct AccountLink: Codable, Sendable, Equatable {
     public var serverOrigin: String
     public var hostId: String
+    /// This device's key came from the account's own offer, so the server
+    /// vouched for it (#494). Absent when the link was adopted onto a QR
+    /// pairing sharing the Noise key, or written before #494; a
+    /// shared-device sign-out keeps such a key. Same field as the web's
+    /// `StoredHostAccount.vouched`.
+    public var vouched: Bool?
 
-    public init(serverOrigin: String, hostId: String) {
+    public init(serverOrigin: String, hostId: String, vouched: Bool = false) {
         self.serverOrigin = serverOrigin
         self.hostId = hostId
+        self.vouched = vouched ? true : nil
+    }
+
+    /// The same link without the vouch: what a re-pair under another key keeps.
+    public var unvouched: AccountLink {
+        AccountLink(serverOrigin: serverOrigin, hostId: hostId)
     }
 }
 
