@@ -7,21 +7,12 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { fauxAssistantMessage, type FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 import { chromium, type Page } from "@playwright/test";
 import type { ConversationId } from "@earendil-works/pi-durable";
-import { fileURLToPath } from "node:url";
-import { createServer } from "vite";
 import { expect, it } from "vitest";
-import { freePort, startFauxHost, useCleanups } from "@pinomad/host/test/support.ts";
+import { startFauxHost, useCleanups } from "@pinomad/host/test/support.ts";
+import { startWeb } from "./support.ts";
 import type { OpenedHost } from "@pinomad/host/src/host.ts";
 
 const defer = useCleanups();
-const webConfig = fileURLToPath(new URL("../vite.config.ts", import.meta.url));
-
-async function startWeb(): Promise<string> {
-  const vite = await createServer({ configFile: webConfig, server: { port: await freePort() }, logLevel: "error" });
-  await vite.listen();
-  defer(() => vite.close());
-  return new URL(vite.resolvedUrls!.local[0]!).origin;
-}
 
 const prompt = (root: Page) =>
   root.getByRole("textbox", { name: "Prompt" }).or(root.getByRole("combobox", { name: "Prompt" }));
@@ -93,7 +84,7 @@ function recordFrame(raw: unknown): Frame | undefined {
 }
 
 it("serves conversation images by ref, fetches on demand, and survives a reload", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
   const snapshots: string[] = [];
   const conversationFrames: string[] = [];
@@ -158,7 +149,7 @@ it("serves conversation images by ref, fetches on demand, and survives a reload"
 });
 
 it("does not withdraw a queued message when its original image cannot load", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const gate = deferred();
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],

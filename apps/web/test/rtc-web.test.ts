@@ -4,7 +4,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { createServer as createNetServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,9 +11,8 @@ import { createInterface } from "node:readline";
 import { chromium, type Page } from "@playwright/test";
 import { pairingFragment } from "@pinomad/protocol/pairing-link.ts";
 import { afterEach, describe, expect, it } from "vitest";
-import { createServer } from "vite";
+import { startWeb } from "./support.ts";
 
-const webConfig = fileURLToPath(new URL("../vite.config.ts", import.meta.url));
 const hostDir = fileURLToPath(new URL("../../host", import.meta.url));
 
 const cleanups: Array<() => Promise<void> | void> = [];
@@ -23,24 +21,6 @@ const defer = (cleanup: () => Promise<void> | void): void => void cleanups.push(
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
-
-function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createNetServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      server.close(() => (typeof address === "object" && address ? resolve(address.port) : reject(new Error("no port"))));
-    });
-  });
-}
-
-async function startWeb(): Promise<string> {
-  const vite = await createServer({ configFile: webConfig, server: { port: await freePort() }, logLevel: "error" });
-  await vite.listen();
-  defer(() => vite.close());
-  return new URL(vite.resolvedUrls!.local[0]!).origin;
-}
 
 interface StartedHost {
   readonly child: ChildProcess;
@@ -138,7 +118,7 @@ describe("web RTC carrier", () => {
       defer(() => rm(dir, { recursive: true, force: true }));
       await writeFile(join(dir, "settings.json"), `${JSON.stringify({ rtcStun: [] })}\n`);
 
-      const webOrigin = await startWeb();
+      const webOrigin = await startWeb(defer);
       const host = await startHost(dir, webOrigin);
       defer(() => stopChild(host.child));
 
