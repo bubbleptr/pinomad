@@ -397,7 +397,8 @@ describe("account model", () => {
     const result = await setup.model.pairHost("h1");
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.account).toEqual({ serverOrigin: ORIGIN, hostId: "h1" });
+    // `vouched`: the key came from the account's own offer (#494).
+    expect(result.value.account).toEqual({ serverOrigin: ORIGIN, hostId: "h1", vouched: true });
     // Account Pair forwards the same candidates into the persisted record.
     expect(result.value.endpointSet).toEqual(endpointSet);
     // The account row's name seeds the stored entry (5.12).
@@ -526,7 +527,7 @@ describe("account model", () => {
     // runtime table is told through the non-declining removal path.
     expect(removed).toEqual([old.hostKey]);
     expect(store.stored.map((each) => each.hostKey)).toEqual([newKey]);
-    expect(store.stored[0]!.account).toEqual({ serverOrigin: ORIGIN, hostId: "h1" });
+    expect(store.stored[0]!.account).toEqual({ serverOrigin: ORIGIN, hostId: "h1", vouched: true });
   });
 
   it("a late refresh never resurrects a signed-out session", async () => {
@@ -808,7 +809,7 @@ describe("automatic registration", () => {
       if (state.status === "signed-in") expect(state.hosts[0]?.status).toBe("paired");
     });
     expect(setup.paired).toHaveLength(1);
-    expect(store.stored[0]!.account).toEqual({ serverOrigin: ORIGIN, hostId: "h1" });
+    expect(store.stored[0]!.account).toEqual({ serverOrigin: ORIGIN, hostId: "h1", vouched: true });
     expect(pairingCalls(fake.calls)).toBe(1);
   });
 
@@ -970,13 +971,32 @@ describe("signing out of a shared computer (#494)", () => {
     json: () => (body === undefined ? Promise.reject(new Error("empty")) : Promise.resolve(body)),
     text: () => Promise.resolve(body === undefined ? "" : JSON.stringify(body)),
   });
-  const linked = (serverOrigin: string, hostId = "h1") => storedHost({ account: { serverOrigin, hostId } });
+  /** Paired through the account's own offer. */
+  const vouched = (serverOrigin: string, hostId = "h1") =>
+    storedHost({ account: { serverOrigin, hostId, vouched: true } });
+  /** A QR pairing that later adopted the account link (same Noise key). */
+  const adopted = (serverOrigin: string, hostId = "h2") => storedHost({ account: { serverOrigin, hostId } });
+  const pairingOffer = {
+    url: "wss://relay.example.com/c/h1",
+    hostKey: toBase64Url(generateKeyPair().publicKey),
+    secret: toBase64Url(generateKeyPair().privateKey),
+    expiresAt: Date.now() + 60_000,
+  };
 
   /**
    * Signed in (cookie mode) with `stored` paired. `logout` answers
-   * /api/logout; `removed` records every host the model drops.
+   * /api/logout; `removed` records every host the model drops, and
+   * `removeHost` can stand in for the app's own removal.
    */
-  const signedInWith = async (stored: StoredHost[], logout: () => Promise<Answer> = () => Promise.resolve(answer(204))) => {
+  const signedInWith = async (
+    stored: StoredHost[],
+    options?: {
+      logout?: () => Promise<Answer>;
+      connect?: () => Promise<void>;
+      removeHost?: (store: ReturnType<typeof hosts>, hostKey: string) => Promise<void>;
+    },
+  ) => {
+    const logout = options?.logout ?? (() => Promise.resolve(answer(204)));
     const store = hosts(stored);
     const removed: string[] = [];
     const calls: { url: string; init: AccountFetchInit | undefined }[] = [];
@@ -986,15 +1006,17 @@ describe("signing out of a shared computer (#494)", () => {
       if (url.endsWith("/api/me")) return Promise.resolve((probed += 1) <= 2 ? answer(401) : answer(200, USER));
       if (url.endsWith("/api/login")) return Promise.resolve(answer(200, USER));
       if (url.endsWith("/api/hosts")) return Promise.resolve(answer(200, []));
+      if (url.endsWith("/api/hosts/h1/pairing")) return Promise.resolve(answer(200, pairingOffer));
       if (url.endsWith("/api/logout")) return logout();
       return Promise.resolve(answer(404, { error: "not_found" }));
     };
     const setup = makeModel({
       fake: { impl, calls },
       store,
+      ...(options?.connect === undefined ? {} : { connect: options.connect }),
       removeHost: (hostKey) => {
         removed.push(hostKey);
-        return store.remove(hostKey);
+        return options?.removeHost?.(store, hostKey) ?? store.remove(hostKey);
       },
     });
     await settled(setup.model);
@@ -1004,20 +1026,23 @@ describe("signing out of a shared computer (#494)", () => {
   };
 
   it("forgets the hosts this server vouched for and asks it to revoke the device; QR pairings stay", async () => {
-    const mine = linked(`${ORIGIN}/`);
+    const mine = vouched(`${ORIGIN}/`);
     const qr = storedHost();
-    const elsewhere = linked("https://other.example.com");
-    const setup = await signedInWith([mine, qr, elsewhere]);
+    // The link alone doesn't make a key the account's: refresh adopts it
+    // onto any QR pairing that shares the Noise key.
+    const qrLinked = adopted(ORIGIN);
+    const elsewhere = vouched("https://other.example.com");
+    const setup = await signedInWith([mine, qr, qrLinked, elsewhere]);
 
     expect(await setup.model.logout({ revoke: true })).toEqual({ ok: true, value: undefined });
     expect(setup.removed).toEqual([mine.hostKey]);
-    expect(setup.store.stored).toEqual([qr, elsewhere]);
+    expect(setup.store.stored).toEqual([qr, qrLinked, elsewhere]);
     expect(setup.logoutBodies()).toEqual(['{"revoke":true}']);
     expect(setup.model.state.status).toBe("signed-out");
   });
 
   it("keeps every pairing on a plain sign-out", async () => {
-    const mine = linked(ORIGIN);
+    const mine = vouched(ORIGIN);
     const setup = await signedInWith([mine]);
     expect(await setup.model.logout()).toEqual({ ok: true, value: undefined });
     expect(setup.removed).toEqual([]);
@@ -1026,29 +1051,65 @@ describe("signing out of a shared computer (#494)", () => {
   });
 
   it("forgets the hosts even when the server can't be reached, and reports the failure", async () => {
-    const setup = await signedInWith([linked(ORIGIN)], () => Promise.reject(new Error("offline")));
+    const setup = await signedInWith([vouched(ORIGIN)], { logout: () => Promise.reject(new Error("offline")) });
     expect(await setup.model.logout({ revoke: true })).toEqual({ ok: false, error: { code: "network" } });
     expect(setup.store.stored).toEqual([]);
     expect(setup.model.state.status).toBe("signed-out");
   });
 
   it("reports hosts it couldn't forget, even when the server confirmed", async () => {
-    const setup = await signedInWith([linked(ORIGIN)]);
+    const setup = await signedInWith([vouched(ORIGIN)]);
     setup.store.setFailList(true);
     expect(await setup.model.logout({ revoke: true })).toEqual({ ok: false, error: { code: "hosts_not_forgotten" } });
     expect(setup.logoutBodies()).toEqual(['{"revoke":true}']);
     expect(setup.model.state.status).toBe("signed-out");
   });
 
-  it("leaves a newer session alone when the server answers late", async () => {
+  it("reads the store back, since the app's removal swallows its own failures", async () => {
+    // App.dropHost logs a failed store.remove and resolves anyway.
+    const setup = await signedInWith([vouched(ORIGIN)], { removeHost: () => Promise.resolve() });
+    expect(await setup.model.logout({ revoke: true })).toEqual({ ok: false, error: { code: "hosts_not_forgotten" } });
+    expect(setup.store.stored).toHaveLength(1);
+  });
+
+  it("holds the sign-in form until a cookie sign-out settles, so its answer can't clear a new session's cookie", async () => {
     let release!: (value: Answer) => void;
-    const setup = await signedInWith([], () => new Promise((resolve) => (release = resolve)));
+    const setup = await signedInWith([], { logout: () => new Promise((resolve) => (release = resolve)) });
     const pending = setup.model.logout({ revoke: true });
     await vi.waitFor(() => expect(setup.logoutBodies()).toHaveLength(1));
-    expect((await setup.model.login({ username: "admin", password: "pw" })).ok).toBe(true);
+    expect(setup.model.state.status).toBe("checking");
 
-    release(answer(401, { error: "unauthenticated" }));
-    expect((await pending).ok).toBe(false);
+    const logins = () => setup.calls.filter((call) => call.url.endsWith("/api/login")).length;
+    const before = logins();
+    const login = setup.model.login({ username: "admin", password: "pw" });
+    await Promise.resolve();
+    expect(logins()).toBe(before);
+
+    release(answer(204));
+    expect((await pending).ok).toBe(true);
+    expect((await login).ok).toBe(true);
+    expect(logins()).toBe(before + 1);
     expect(setup.model.state.status).toBe("signed-in");
+  });
+
+  it("discards a manual pairing that finishes after the sign-out", async () => {
+    let finishHandshake!: () => void;
+    const handshake = new Promise<void>((resolve) => (finishHandshake = resolve));
+    let handshakeStarted!: () => void;
+    const started = new Promise<void>((resolve) => (handshakeStarted = resolve));
+    const setup = await signedInWith([], {
+      connect: () => {
+        handshakeStarted();
+        return handshake;
+      },
+    });
+    const pairing = setup.model.pairHost("h1");
+    await started;
+    expect(await setup.model.logout({ revoke: true })).toEqual({ ok: true, value: undefined });
+
+    finishHandshake();
+    expect(await pairing).toEqual({ ok: false, error: { code: "stale" } });
+    expect(setup.store.stored).toEqual([]);
+    expect(setup.paired).toEqual([]);
   });
 });

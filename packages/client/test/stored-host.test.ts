@@ -111,6 +111,16 @@ describe("connection preferences", () => {
     expect(mergeStoredHost(host, existing)).toEqual(existing);
   });
 
+  it("keeps the account link across a re-pair, but not the vouch for a key it didn't issue (#494)", () => {
+    const link = { serverOrigin: "https://relay.example.com", hostId: HOST_KEY_A };
+    const vouched = { ...valid(), account: { ...link, vouched: true as const } };
+    // The same key saved again (a name or endpoint refresh) is still the account's.
+    expect(mergeStoredHost(vouched, { ...vouched, account: undefined })).toEqual(vouched);
+    // A QR re-pair under a new key keeps the link but drops the vouch.
+    const qr = { ...vouched, privateKey: key(), account: undefined };
+    expect(mergeStoredHost(vouched, qr)).toEqual({ ...qr, account: link });
+  });
+
   it("clears a preference through the update helper", () => {
     const base = valid();
     const host = { ...base, connectionMode: "directOnly" as const, rtcSignalOnly: true };

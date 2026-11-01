@@ -559,7 +559,7 @@ describe("accountPairingFragment + pairViaAccount", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.value.url).toBe("wss://relay.example.com/c/host");
-    expect(result.value.account).toEqual({ serverOrigin: ORIGIN, hostId: HOST_ID });
+    expect(result.value.account).toEqual({ serverOrigin: ORIGIN, hostId: HOST_ID, vouched: true });
     expect(seen.name).toBe("test device");
     expect(seen.url).toBe("wss://relay.example.com/c/host");
   });

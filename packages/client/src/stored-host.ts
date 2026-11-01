@@ -16,6 +16,14 @@ import { fromBase64Url } from "@pinomad/protocol/secure-channel.ts";
 export interface StoredHostAccount {
   readonly serverOrigin: string;
   readonly hostId: string;
+  /**
+   * This device's key on the host came from the account's own offer
+   * (`pairViaAccount`), so the server vouched for it. Absent when the link
+   * was adopted onto a QR pairing that shares the Noise key, or written
+   * before #494: such a key is the host's alone, and a shared-computer
+   * sign-out keeps it.
+   */
+  readonly vouched?: true;
 }
 
 /** One paired host: where to dial and this device's identity on it (base64url, 32 bytes each). */
@@ -108,10 +116,18 @@ export function mergeStoredHost(existing: StoredHost, incoming: StoredHost): Sto
   const endpointSet = incoming.endpointSet ?? existing.endpointSet;
   const connectionMode = incoming.connectionMode ?? existing.connectionMode;
   const rtcSignalOnly = incoming.rtcSignalOnly ?? existing.rtcSignalOnly;
+  // A link the pairing didn't supply survives, but `vouched` describes the
+  // old key: a QR re-pair under a new key isn't the account's (#494).
+  const keptAccount =
+    incoming.account !== undefined || existing.account === undefined
+      ? undefined
+      : incoming.privateKey === existing.privateKey || existing.account.vouched !== true
+        ? existing.account
+        : { serverOrigin: existing.account.serverOrigin, hostId: existing.account.hostId };
   return {
     ...incoming,
     ...(incoming.name === undefined && existing.name !== undefined ? { name: existing.name } : {}),
-    ...(incoming.account === undefined && existing.account !== undefined ? { account: existing.account } : {}),
+    ...(keptAccount === undefined ? {} : { account: keptAccount }),
     ...(endpointSet === undefined ? {} : { endpointSet }),
     ...(connectionMode === undefined ? {} : { connectionMode }),
     ...(rtcSignalOnly === undefined ? {} : { rtcSignalOnly }),

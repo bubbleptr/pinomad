@@ -148,6 +148,11 @@
       "expect": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI\"}}"
     },
     {
+      "name": "account-vouched",
+      "value": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI\",\"vouched\":true}}",
+      "expect": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"account\":{\"serverOrigin\":\"https://relay.example.com\",\"hostId\":\"Xf7dO2vUf2-ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI\",\"vouched\":true}}"
+    },
+    {
       "name": "account-missing-hostid",
       "value": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"account\":{\"serverOrigin\":\"https://x\"}}",
       "expect": "{\"url\":\"ws://192.168.1.5:7422/secure\",\"hostKey\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"privateKey\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\"}"
