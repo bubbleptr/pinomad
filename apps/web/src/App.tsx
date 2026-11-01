@@ -64,11 +64,10 @@ import {
   HostRuntimesContext,
 } from "./entities/host/host-runtimes.ts";
 import { useComposerSlot, useComposerSlotState } from "./entities/composer/composer-context.tsx";
-import { PairingLinkForm } from "./entities/host/pairing-link-form.tsx";
 import { HostsFallback } from "./widgets/app-frame/hosts.tsx";
-import { AccountProvider, useAccountModel } from "./entities/account/account-context.tsx";
-import { AccountPanel } from "./widgets/account/account-panel.tsx";
+import { AccountProvider } from "./entities/account/account-context.tsx";
 import { RepairViaAccount } from "./widgets/account/repair-via-account.tsx";
+import { NoHostLink } from "./widgets/account/no-host-link.tsx";
 import { useDurableView, useRemoteDurable } from "./use-remote.ts";
 import { createBrowserRtcPlatform } from "./entities/host/browser-rtc.ts";
 import { secureOptions } from "./entities/host/secure-options.ts";
@@ -430,34 +429,6 @@ export function App() {
         </AccountProvider>
       </HostRuntimesContext.Provider>
     </HostsContext.Provider>
-  );
-}
-
-/**
- * Where a client with no stored pairing lands: sign in to pick a host from
- * the account (where this client can reach one), or paste a pairing link.
- */
-function NoHostLink() {
-  const account = useAccountModel();
-  if (account.state.status === "unavailable") {
-    return (
-      <VStack gap={4} hAlign="center" style={{ width: "100%", maxWidth: 420 }}>
-        <EmptyState
-          title="No host link"
-          description="Paste a pairing link from pinomad pair or Settings → Devices → Pair a device."
-        />
-        <PairingLinkForm />
-      </VStack>
-    );
-  }
-  return (
-    <VStack gap={6} style={{ width: "100%", maxWidth: 420 }}>
-      <AccountPanel />
-      <VStack gap={2}>
-        <Text type="supporting">Or paste a pairing link from pinomad pair or Settings → Devices → Pair a device.</Text>
-        <PairingLinkForm />
-      </VStack>
-    </VStack>
   );
 }
 

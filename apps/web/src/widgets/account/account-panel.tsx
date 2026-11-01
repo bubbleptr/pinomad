@@ -474,10 +474,14 @@ function AddHost({ account }: { account: AccountModel }) {
       {token === undefined ? (
         <Button label="Add a host" variant="secondary" isLoading={busy} onClick={create} />
       ) : (
-        <JoinCommand token={token} onRenew={create} onDone={() => {
-          setToken(undefined);
-          void account.refreshHosts();
-        }} />
+        <>
+          <Text weight="semibold">Add a host</Text>
+          <Text type="supporting">Run this on the machine you want to add. It installs PiNomad and joins it to your account.</Text>
+          <JoinCommand token={token} onRenew={create} onDone={() => {
+            setToken(undefined);
+            void account.refreshHosts();
+          }} />
+        </>
       )}
       {error === undefined ? null : (
         <Banner status="error" title="Couldn't create a join command" description={accountErrorMessage(error)} />
@@ -486,13 +490,12 @@ function AddHost({ account }: { account: AccountModel }) {
   );
 }
 
-function JoinCommand({ token, onRenew, onDone }: { token: JoinToken; onRenew: () => void; onDone: () => void }) {
+/** A join command with its countdown; New command once it expires, Done only where the caller closes it. */
+export function JoinCommand({ token, onRenew, onDone }: { token: JoinToken; onRenew: () => void; onDone?: () => void }) {
   const now = useNow(1000);
   const seconds = Math.max(0, Math.ceil((token.expiresAt - now) / 1000));
   return (
     <VStack gap={2}>
-      <Text weight="semibold">Add a host</Text>
-      <Text type="supporting">Run this on the machine you want to add. It installs PiNomad and joins it to your account.</Text>
       {/* No language: shell highlighting splits the server address and token into colors. */}
       <CodeBlock code={token.command} hasCopyButton isWrapped />
       <HStack gap={2} vAlign="center" hAlign="between">
@@ -506,7 +509,7 @@ function JoinCommand({ token, onRenew, onDone }: { token: JoinToken; onRenew: ()
             Works once · expires in {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
           </Text>
         )}
-        <Button label="Done" variant="ghost" size="sm" onClick={onDone} />
+        {onDone === undefined ? null : <Button label="Done" variant="ghost" size="sm" onClick={onDone} />}
       </HStack>
     </VStack>
   );
