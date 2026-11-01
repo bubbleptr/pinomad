@@ -9,22 +9,13 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import { chromium } from "@playwright/test";
-import { createServer } from "vite";
 import { expect, it } from "vitest";
-import { fileURLToPath } from "node:url";
-import { freePort, startFauxHost, tempDir, useCleanups } from "@pinomad/host/test/support.ts";
+import { startFauxHost, tempDir, useCleanups } from "@pinomad/host/test/support.ts";
+import { startWeb } from "./support.ts";
 
 const defer = useCleanups();
 const run = promisify(execFile);
-const webConfig = fileURLToPath(new URL("../vite.config.ts", import.meta.url));
 const shotDir = process.env.SKILL_SHOT_DIR;
-
-async function startWeb(): Promise<string> {
-  const vite = await createServer({ configFile: webConfig, server: { port: await freePort() }, logLevel: "error" });
-  await vite.listen();
-  defer(() => vite.close());
-  return new URL(vite.resolvedUrls!.local[0]!).origin;
-}
 
 const SKILL = (name: string, description: string) =>
   `---\nname: ${name}\ndescription: ${description}\n---\n\n${description}.\n`;
@@ -57,7 +48,7 @@ async function shot(page: import("@playwright/test").Page, name: string): Promis
 }
 
 it("offers $name skills grouped by source, binds and paints a pick, and marks the sent bubble", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const dir = await tempDir();
   defer(dir.remove);
   const project = await tempDir();

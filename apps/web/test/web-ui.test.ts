@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import { mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { createModels, type Models } from "@earendil-works/pi-ai/models";
@@ -29,8 +28,8 @@ import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/p
 import type { ConversationNode } from "@pinomad/protocol/organization.ts";
 import type { HostAuth, HostProviders, ProviderInfo } from "@pinomad/protocol/auth.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
-import { createServer } from "vite";
 import { expect, it } from "vitest";
+import { startWeb } from "./support.ts";
 import { coding } from "@pinomad/host/src/extensions/coding.ts";
 import { createSubagent } from "@pinomad/host/src/extensions/subagent.ts";
 import { deriveChat } from "@pinomad/client/cot-view.ts";
@@ -38,14 +37,6 @@ import { isBusy, transcript } from "@pinomad/protocol/transcript.ts";
 
 const defer = useCleanups();
 const run = promisify(execFile);
-const webConfig = fileURLToPath(new URL("../vite.config.ts", import.meta.url));
-
-async function startWeb(): Promise<string> {
-  const vite = await createServer({ configFile: webConfig, server: { port: await freePort() }, logLevel: "error" });
-  await vite.listen();
-  defer(() => vite.close());
-  return new URL(vite.resolvedUrls!.local[0]!).origin;
-}
 
 /** Screenshots are opt-in so a normal test run leaves nothing behind in /tmp. */
 const shotDir = process.env.WEB_UI_SHOT_DIR;
@@ -262,7 +253,7 @@ async function pickFolder(page: Page, target: string): Promise<void> {
 }
 
 it("opens Settings → Devices from the phone drawer", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
   const page = await openPage(host, 390, webOrigin);
 
@@ -276,7 +267,7 @@ it("opens Settings → Devices from the phone drawer", async () => {
 });
 
 it("drills into a Settings section from the phone drawer and back out", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const dir = await tempDir();
   defer(dir.remove);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], dataDir: dir.path });
@@ -303,7 +294,7 @@ it("drills into a Settings section from the phone drawer and back out", async ()
 });
 
 it("changes a queue-mode setting, then resets it to pi's default", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const dir = await tempDir();
   defer(dir.remove);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], dataDir: dir.path });
@@ -328,7 +319,7 @@ it("changes a queue-mode setting, then resets it to pi's default", async () => {
 });
 
 it("opens Settings on Providers and shows host details under About", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
   const page = await openPage(host, 1280, webOrigin);
 
@@ -344,7 +335,7 @@ it("opens Settings on Providers and shows host details under About", async () =>
 });
 
 it("logs a stored login out from the Providers section", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   // A fake ModelAuth: the real auth.json round trip lives in model-auth.test.ts;
   // here the providers stream just needs a login to remove through the real gateway call.
   const anthropic: ProviderInfo = {
@@ -391,7 +382,7 @@ it("logs a stored login out from the Providers section", async () => {
 });
 
 it("keeps the chat usable on a phone with navigation and the side panel still reachable", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
   const page = await openPage(host, 390, webOrigin);
 
@@ -419,7 +410,7 @@ it("keeps the chat usable on a phone with navigation and the side panel still re
 });
 
 it("replaces a draft pick the restarted host no longer offers", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const port = await freePort();
   const dir = await tempDir();
   defer(dir.remove);
@@ -453,7 +444,7 @@ it("replaces a draft pick the restarted host no longer offers", async () => {
 });
 
 it("preserves an unsent follow-up and disables write controls while reconnecting", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["An answer to fork."] });
   const page = await openPage(host, 1280, webOrigin);
   const composer = prompt(page);
@@ -473,7 +464,7 @@ it("preserves an unsent follow-up and disables write controls while reconnecting
 });
 
 it("sends a typed steer from the button without stopping the run, and still stops with empty input", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   // Slow enough that the answer is still streaming when the steer is sent.
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], tokensPerSecond: 20 });
   const observer = await connectTo(defer, host);
@@ -504,7 +495,7 @@ it.each([
   ["thinking-only", fauxAssistantMessage(fauxThinking("Compare the release evidence."))],
   ["tool-only", fauxAssistantMessage(fauxToolCall("search_logs", { release: "v2.3" }), { stopReason: "toolUse" })],
 ])("forks a persisted %s answer from its message action", async (_, message) => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "The fork continued."] });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
@@ -540,7 +531,7 @@ it.each([
 });
 
 it("shows no Fork action inside a fork's transcript", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
   const page = await openPage(host, 1280, webOrigin);
   const composer = prompt(page);
@@ -557,7 +548,7 @@ it("shows no Fork action inside a fork's transcript", async () => {
 });
 
 it("replaces the Fork action with a 1 fork chip once a message is forked", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
   const page = await openPage(host, 1280, webOrigin);
   const composer = prompt(page);
@@ -581,7 +572,7 @@ it("replaces the Fork action with a 1 fork chip once a message is forked", async
 });
 
 it("shows the 1 fork chip for a legacy nested fork inside the panel's thread", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
@@ -626,7 +617,7 @@ it("shows the 1 fork chip for a legacy nested fork inside the panel's thread", a
 });
 
 it("opens the existing fork instead of the dialog when a message was already forked", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
@@ -658,7 +649,7 @@ it("opens the existing fork instead of the dialog when a message was already for
 });
 
 it("forks into the panel's Threads detail and talks to it there", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
     answers: ["parent answer", "fork answer", "side answer"],
@@ -697,7 +688,7 @@ it("forks into the panel's Threads detail and talks to it there", async () => {
 });
 
 it("closes the side detail when the main column switches to another family", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "second answer", "fork answer"] });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
@@ -720,7 +711,7 @@ it("closes the side detail when the main column switches to another family", asy
 });
 
 it("resets the thread composer when the panel switches to another fork", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
     answers: ["first answer", "second answer", "fork one answer", "fork two answer"],
@@ -763,7 +754,7 @@ it("resets the thread composer when the panel switches to another fork", async (
 });
 
 it("shows an empty family in the panel while drafting a new conversation", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
@@ -788,7 +779,7 @@ it("shows an empty family in the panel while drafting a new conversation", async
 });
 
 it("on a phone, Open in main closes the panel dialog too", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 390, webOrigin);
@@ -815,7 +806,7 @@ it("on a phone, Open in main closes the panel dialog too", async () => {
 });
 
 it("shows no Fork action when the shown fork's root left navigation", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
@@ -846,7 +837,7 @@ it("shows no Fork action when the shown fork's root left navigation", async () =
 });
 
 it("renders todo and a pending question card on every page and shares one answer", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
     extensions: [todo, question],
@@ -893,7 +884,7 @@ it("renders todo and a pending question card on every page and shares one answer
 });
 
 it("renders a document that fails its presentation schema as key-value fallback", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], extensions: [todo, question] });
   const owner = await connectTo(defer, host);
   const conversationId = await startChat(owner, "has a bad doc");
@@ -917,7 +908,7 @@ it("renders a document that fails its presentation schema as key-value fallback"
 });
 
 it("shows interruption without a text bubble and never offers a fork for streaming or aborted thinking", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const directory = await tempDir();
   defer(directory.remove);
   const faux = fauxProvider({ tokensPerSecond: 20, tokenSize: { min: 1, max: 1 } });
@@ -964,7 +955,7 @@ it("shows interruption without a text bubble and never offers a fork for streami
 });
 
 it("retries a failed run by resubmitting the user message it answered", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
     answers: [
@@ -989,7 +980,7 @@ it("retries a failed run by resubmitting the user message it answered", async ()
 });
 
 it("sends a pasted image with a message and shows it in the transcript", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
   const page = await openPage(host, 1280, webOrigin);
 
@@ -1026,7 +1017,7 @@ it("sends a pasted image with a message and shows it in the transcript", async (
 });
 
 it("uploads a dropped file, waits for it, and shows it in the bubble", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first", "second"] });
   const page = await openPage(host, 1280, webOrigin);
 
@@ -1059,7 +1050,7 @@ it("uploads a dropped file, waits for it, and shows it in the bubble", async () 
 });
 
 it("keeps at most four dropped images and lets one be removed", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
   const page = await openPage(host, 1280, webOrigin);
 
@@ -1079,7 +1070,7 @@ it("keeps at most four dropped images and lets one be removed", async () => {
 });
 
 it("rejects a rapid second add once the four slots are taken", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
   const page = await openPage(host, 1280, webOrigin);
 
@@ -1115,7 +1106,7 @@ it("rejects a rapid second add once the four slots are taken", async () => {
 });
 
 it("lets a drop that carries only text reach the composer editor", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
   const page = await openPage(host, 1280, webOrigin);
 
@@ -1137,7 +1128,7 @@ it("lets a drop that carries only text reach the composer editor", async () => {
 });
 
 it("creates a conversation from an image-only first message", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
   const page = await openPage(host, 1280, webOrigin);
 
@@ -1152,7 +1143,7 @@ it("creates a conversation from an image-only first message", async () => {
 });
 
 it("resends the failed prompt's images on retry", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
     answers: [
@@ -1180,7 +1171,7 @@ it("resends the failed prompt's images on retry", async () => {
 });
 
 it("refuses images when the model doesn't accept them", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
     fauxModels: [{ id: "faux-text", name: "Faux Text", input: ["text"] }],
@@ -1201,7 +1192,7 @@ it("refuses images when the model doesn't accept them", async () => {
 });
 
 it("rolls a subagent's failure up to the family's root row", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
     extensions: ({ models, modelSummaries }: { models: Models; modelSummaries: () => readonly ModelSummary[] }) => [
@@ -1252,7 +1243,7 @@ it("rolls a subagent's failure up to the family's root row", async () => {
 });
 
 it("opens a subagent's conversation from its card in the panel's Tasks detail", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
     extensions: ({ models, modelSummaries }: { models: Models; modelSummaries: () => readonly ModelSummary[] }) => [
@@ -1294,7 +1285,7 @@ it("opens a subagent's conversation from its card in the panel's Tasks detail", 
 });
 
 it("renders a real edit's diff inside the tool row instead of the raw args", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const project = await tempDir();
   defer(project.remove);
   const projectName = project.path.split("/").at(-1)!;
@@ -1337,7 +1328,7 @@ it("renders a real edit's diff inside the tool row instead of the raw args", asy
 });
 
 it("keeps the chain of thought in place when a grouped tool row takes focus", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const project = await tempDir();
   defer(project.remove);
   const projectName = project.path.split("/").at(-1)!;
@@ -1380,7 +1371,7 @@ it("keeps the chain of thought in place when a grouped tool row takes focus", as
 });
 
 it("creates the draft conversation under the picked project", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const project = await tempDir();
   defer(project.remove);
   const projectName = project.path.split("/").at(-1)!;
@@ -1398,7 +1389,7 @@ it("creates the draft conversation under the picked project", async () => {
 });
 
 it("creates the draft with the picked model and thinking level", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
     fauxModels: [
@@ -1433,7 +1424,7 @@ it("creates the draft with the picked model and thinking level", async () => {
 });
 
 it("changes the model and thinking level from the composer capsule", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
     fauxModels: [
@@ -1473,7 +1464,7 @@ it("changes the model and thinking level from the composer capsule", async () =>
 });
 
 it("organizes conversations under projects and chats", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const project = await tempDir();
   defer(project.remove);
   const projectName = project.path.split("/").at(-1)!;
@@ -1552,7 +1543,7 @@ it("organizes conversations under projects and chats", async () => {
 });
 
 it("leaves a conversation row's title the full width and reveals … on hover and focus", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["done"] });
   const page = await openPage(host, 1280, webOrigin);
   const title = "a conversation title long enough to be truncated by the sidebar";
@@ -1599,7 +1590,7 @@ it("leaves a conversation row's title the full width and reveals … on hover an
 });
 
 it("renames a conversation from its sidebar row menu", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["done"] });
   const page = await openPage(host, 1280, webOrigin);
   await prompt(page).fill("hello");
@@ -1628,7 +1619,7 @@ it("renames a conversation from its sidebar row menu", async () => {
 });
 
 it("keeps the side panel closed until asked and keeps it open across conversations", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "second answer"] });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
@@ -1660,7 +1651,7 @@ it("keeps the side panel closed until asked and keeps it open across conversatio
 });
 
 it("puts the conversation title in the header and the path inside the overview", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["an answer"] });
   const page = await openPage(host, 1280, webOrigin);
 
@@ -1687,7 +1678,7 @@ it("puts the conversation title in the header and the path inside the overview",
 });
 
 it("summarizes changes and subagents in the overview card and links to their detail", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const repo = await tempDir();
   defer(repo.remove);
   const repoName = repo.path.split("/").at(-1)!;
@@ -1761,7 +1752,7 @@ it("summarizes changes and subagents in the overview card and links to their det
 });
 
 it("collapses the sidebar into the header toggle and restores it", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
   const page = await openPage(host, 1280, webOrigin);
 
@@ -1781,7 +1772,7 @@ it("collapses the sidebar into the header toggle and restores it", async () => {
 });
 
 it("creates exactly one conversation when Enter is pressed twice quickly", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["done"] });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
@@ -1801,7 +1792,7 @@ it("creates exactly one conversation when Enter is pressed twice quickly", async
 });
 
 it("disables the follow-up and stop controls while disconnected", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const port = await freePort();
   const dir = await tempDir();
   defer(dir.remove);
@@ -1850,7 +1841,7 @@ it("disables the follow-up and stop controls while disconnected", async () => {
 });
 
 it("starts the draft with /compact from the + menu's Run a command…", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["done"] });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
@@ -1898,7 +1889,7 @@ it("starts the draft with /compact from the + menu's Run a command…", async ()
 });
 
 it("opens the / menu only at the start of the draft and runs /compact without a message", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["done"] });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
@@ -1935,7 +1926,7 @@ it("opens the / menu only at the start of the draft and runs /compact without a 
 });
 
 it("sends near-miss commands as messages and refuses a command with images", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["done", "x answer", "path answer"] });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
@@ -1972,7 +1963,7 @@ it("sends near-miss commands as messages and refuses a command with images", asy
 });
 
 it("offers Steer, Edit, and Withdraw on a queued follow-up and withdraws it", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const gate = deferred();
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
@@ -2008,7 +1999,7 @@ it("offers Steer, Edit, and Withdraw on a queued follow-up and withdraws it", as
 });
 
 it("puts a withdrawn follow-up's text and image back into the composer", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const gate = deferred();
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
@@ -2038,7 +2029,7 @@ it("puts a withdrawn follow-up's text and image back into the composer", async (
 });
 
 it("retries a lost edit withdrawal after reconnect and restores the composer", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const gate = deferred();
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
@@ -2115,7 +2106,7 @@ it("retries a lost edit withdrawal after reconnect and restores the composer", a
 });
 
 it("unlocks the composer when the host rejects an edit withdrawal", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const gate = deferred();
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
@@ -2174,7 +2165,7 @@ it("unlocks the composer when the host rejects an edit withdrawal", async () => 
 });
 
 it("promotes a queued follow-up to Steer and keeps Steer off writes and an idle queue", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const gate = deferred();
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
@@ -2240,7 +2231,7 @@ it("promotes a queued follow-up to Steer and keeps Steer off writes and an idle 
 });
 
 it("shows a queued follow-up above the composer until the run takes it", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
     tokensPerSecond: 60,
@@ -2266,7 +2257,7 @@ it("shows a queued follow-up above the composer until the run takes it", async (
 });
 
 it("keeps the chat scrollbar at the column edge while the conversation clears the overview card", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["clearance done"] });
   const page = await openPage(host, 1280, webOrigin);
   await prompt(page).fill("clearance hi");
@@ -2288,7 +2279,7 @@ it("keeps the chat scrollbar at the column edge while the conversation clears th
 });
 
 it("shows where a conversation runs in the overview and honors the draft checkout picker", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const repoDir = await tempDir();
   defer(repoDir.remove);
   const repoName = repoDir.path.split("/").at(-1)!;
@@ -2356,7 +2347,7 @@ it("shows where a conversation runs in the overview and honors the draft checkou
 });
 
 it("surfaces a failed command as a toast without opening the dock", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const project = await tempDir();
   defer(project.remove);
   const projectName = project.path.split("/").at(-1)!;
@@ -2393,7 +2384,7 @@ it("surfaces a failed command as a toast without opening the dock", async () => 
 });
 
 it("keeps the Add project picker open with the host's error on failure", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const parent = await tempDir();
   defer(parent.remove);
   await mkdir(join(parent.path, "victim"));
@@ -2417,7 +2408,7 @@ it("keeps the Add project picker open with the host's error on failure", async (
 });
 
 it("pairs a phone client through the QR link and survives revoke", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
     answers: ["paired answer"],
@@ -2467,7 +2458,7 @@ it("pairs a phone client through the QR link and survives revoke", async () => {
 });
 
 it("carries the invite's endpoint set through pairing into the stored host", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["paired"], remote: { port: 0 } });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
@@ -2497,7 +2488,7 @@ it("carries the invite's endpoint set through pairing into the stored host", asy
 });
 
 it("carries the endpoint set through a pasted pairing link into the stored host", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
     answers: ["pasted"],
@@ -2531,7 +2522,7 @@ it("carries the endpoint set through a pasted pairing link into the stored host"
 });
 
 it("manages paired devices from Settings → Devices", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
   const tokenClient = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
@@ -2564,7 +2555,7 @@ it("manages paired devices from Settings → Devices", async () => {
 });
 
 it("falls back to the copyable link when an invite is too long for a QR code", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
     remote: { port: 0, publicUrl: `https://example.com/${"a".repeat(1000)}` },
@@ -2581,7 +2572,7 @@ it("falls back to the copyable link when an invite is too long for a QR code", a
 });
 
 it("registers the desktop bridge's device name and shows the pairing minute", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
@@ -2609,7 +2600,7 @@ it("registers the desktop bridge's device name and shows the pairing minute", as
 });
 
 it("explains a loopback pairing link instead of drawing an unusable QR", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   // No remote access: the offer points at 127.0.0.1, which a phone's camera
   // could never reach — Settings → Devices must say so instead of showing a QR.
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
@@ -2623,7 +2614,7 @@ it("explains a loopback pairing link instead of drawing an unusable QR", async (
 });
 
 it("pairs a device by pasting the loopback link on the no-link screen", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["pasted-link hello"] });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
@@ -2648,7 +2639,7 @@ it("pairs a device by pasting the loopback link on the no-link screen", async ()
 });
 
 it("names the host and opens no socket until a pair link is confirmed", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
@@ -2671,7 +2662,7 @@ it("names the host and opens no socket until a pair link is confirmed", async ()
 });
 
 it("drops a pair link back to the no-link screen on Cancel", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
@@ -2689,7 +2680,7 @@ it("drops a pair link back to the no-link screen on Cancel", async () => {
 });
 
 it("re-resolves the address when the hash changes in place", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
@@ -2711,7 +2702,7 @@ it("re-resolves the address when the hash changes in place", async () => {
 });
 
 it("shows a plain connection error — not a forget-pairing prompt — when the host is down", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
@@ -2733,7 +2724,7 @@ it("shows a plain connection error — not a forget-pairing prompt — when the 
 });
 
 it("reuses the stored device key when a spent pairing link is opened again", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
     answers: ["paired answer", "second answer"],
@@ -2779,7 +2770,7 @@ it("reuses the stored device key when a spent pairing link is opened again", asy
 });
 
 it("tells a fresh browser that a spent pairing code was used or expired", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
@@ -2806,7 +2797,7 @@ it("tells a fresh browser that a spent pairing code was used or expired", async 
 });
 
 it("keeps a rejected pairing's recovery button reachable by scrolling on a short viewport", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
   const tokenClient = await connectTo(defer, host);
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
@@ -2881,7 +2872,7 @@ const scrollerOf = async (page: Page, text: string) =>
   });
 
 it("scrolls a long conversation with the mouse wheel over the message column", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const long = Array.from({ length: 150 }, (_, i) => `- line ${i}`).join("\n");
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: [long] });
   const page = await openPage(host, 1280, webOrigin);
@@ -2900,7 +2891,7 @@ it("scrolls a long conversation with the mouse wheel over the message column", a
 });
 
 it("opens a switched conversation at its latest answer instead of the old scroll position", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const long = (tag: string) => Array.from({ length: 150 }, (_, i) => `- ${tag} ${i}`).join("\n");
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: [long("A"), long("B")] });
   const observer = await connectTo(defer, host);
@@ -2936,7 +2927,7 @@ it("opens a switched conversation at its latest answer instead of the old scroll
 });
 
 it("switches between paired hosts on the desktop bridge", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   // Each host carries a settings.json name — the switcher labels stored
   // entries by machine name once the settings stream lands (5.12).
   const dirA = await tempDir();
@@ -3034,7 +3025,7 @@ it("switches between paired hosts on the desktop bridge", async () => {
 });
 
 it("forgets a host from Settings → Hosts only after confirmation", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   // Named like the switch test above: labels are the announced machine names.
   const dirA = await tempDir();
   defer(dirA.remove);
@@ -3108,7 +3099,7 @@ it("forgets a host from Settings → Hosts only after confirmation", async () =>
 });
 
 it("warns and retries when saving a pairing fails on the desktop bridge", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const hostA = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["host A answer"] });
   const tokenA = await connectTo(defer, hostA);
   const { url: pairA } = await tokenA.controller.createPairing();
@@ -3254,7 +3245,7 @@ const fakeUpdatesBridge = `{
 }`;
 
 it("marks Settings when the desktop bridge has an update downloaded and restarts from Settings → Updates", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
 
   const browser = await chromium.launch();
@@ -3287,7 +3278,7 @@ it("marks Settings when the desktop bridge has an update downloaded and restarts
 });
 
 it("checks for updates instead of reloading on a desktop client-older mismatch", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
 
   const browser = await chromium.launch();
@@ -3364,7 +3355,7 @@ it("checks for updates instead of reloading on a desktop client-older mismatch",
 });
 
 it("manages named agents from the Agents settings section", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const dir = await tempDir();
   defer(dir.remove);
   const host = await startFauxHost(defer, {
@@ -3427,7 +3418,7 @@ it("manages named agents from the Agents settings section", async () => {
 });
 
 it("shows the agent editor's name rule and the host's already-exists error inline", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const dir = await tempDir();
   defer(dir.remove);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], dataDir: dir.path });
@@ -3457,7 +3448,7 @@ it("shows the agent editor's name rule and the host's already-exists error inlin
 });
 
 it("lists a hand-written agent file live and reports a bad one as a problem", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const dir = await tempDir();
   defer(dir.remove);
   await mkdir(join(dir.path, "agents"), { recursive: true });
@@ -3493,7 +3484,7 @@ it("lists a hand-written agent file live and reports a bad one as a problem", as
 });
 
 it("keeps a pinned thinking level the model no longer supports visible in the editor", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const dir = await tempDir();
   defer(dir.remove);
   await mkdir(join(dir.path, "agents"), { recursive: true });
@@ -3534,7 +3525,7 @@ it("keeps a pinned thinking level the model no longer supports visible in the ed
 });
 
 it("lists named agents in a @ mention menu and inserts @name as plain text", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const dir = await tempDir();
   defer(dir.remove);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], dataDir: dir.path });
@@ -3583,7 +3574,7 @@ it("lists named agents in a @ mention menu and inserts @name as plain text", asy
 });
 
 it("shows the @ mention menu in a fork thread composer too", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const dir = await tempDir();
   defer(dir.remove);
   await mkdir(join(dir.path, "agents"), { recursive: true });
@@ -3615,7 +3606,7 @@ it("shows the @ mention menu in a fork thread composer too", async () => {
 });
 
 it("shows the named agent a subagent ran as on its done card", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const dir = await tempDir();
   defer(dir.remove);
   await mkdir(join(dir.path, "agents"), { recursive: true });
@@ -3665,7 +3656,7 @@ const pickAgent = async (page: Page, name: RegExp): Promise<void> => {
 };
 
 it("creates the draft with a named agent, switches it, and shows @name on the conversation and its forks", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const dir = await tempDir();
   defer(dir.remove);
   await mkdir(join(dir.path, "agents"), { recursive: true });
@@ -3754,7 +3745,7 @@ it("creates the draft with a named agent, switches it, and shows @name on the co
 });
 
 it("sends only the overridden side once an agent draft's pick is changed", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const dir = await tempDir();
   defer(dir.remove);
   await mkdir(join(dir.path, "agents"), { recursive: true });
@@ -3802,7 +3793,7 @@ it("sends only the overridden side once an agent draft's pick is changed", async
 });
 
 it("resets to inheritance on a new agent and back to the remembered pick on clear", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const dir = await tempDir();
   defer(dir.remove);
   await mkdir(join(dir.path, "agents"), { recursive: true });
@@ -3855,7 +3846,7 @@ it("resets to inheritance on a new agent and back to the remembered pick on clea
 });
 
 it("blocks the draft send while the agent's model is unavailable and unblocks on an override", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const dir = await tempDir();
   defer(dir.remove);
   await mkdir(join(dir.path, "agents"), { recursive: true });
@@ -3893,7 +3884,7 @@ it("blocks the draft send while the agent's model is unavailable and unblocks on
 });
 
 it("completes agents and files in the draft's @ menu, inserting @./path", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const dir = await tempDir();
   defer(dir.remove);
   await mkdir(join(dir.path, "agents"), { recursive: true });
@@ -3925,7 +3916,7 @@ it("completes agents and files in the draft's @ menu, inserting @./path", async 
 });
 
 it("keeps the agent candidates when the draft's file listing fails", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const dir = await tempDir();
   defer(dir.remove);
   await mkdir(join(dir.path, "agents"), { recursive: true });
@@ -3952,7 +3943,7 @@ it("keeps the agent candidates when the draft's file listing fails", async () =>
 });
 
 it("opens the agent and skill menus from the + menu, appending the trigger to the draft", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const dir = await tempDir();
   defer(dir.remove);
   await mkdir(join(dir.path, "agents"), { recursive: true });
@@ -4062,7 +4053,7 @@ async function paintedSkills(composer: Locator): Promise<string[]> {
 }
 
 it("expands only the $skill picked from the menu, not a typed one", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const agentsHome = await userSkill("review", "Review steps");
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
@@ -4128,7 +4119,7 @@ it("expands only the $skill picked from the menu, not a typed one", async () => 
 });
 
 it("restores a queued message's bound skill on Edit", async () => {
-  const webOrigin = await startWeb();
+  const webOrigin = await startWeb(defer);
   const agentsHome = await userSkill("review", "Review steps");
   const gate = deferred();
   const host = await startFauxHost(defer, {
