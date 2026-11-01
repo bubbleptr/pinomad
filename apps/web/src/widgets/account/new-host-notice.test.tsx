@@ -3,7 +3,7 @@
 // a machine they didn't add got in.
 import { ToastViewport } from "@astryxdesign/core/Toast";
 import { act, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { AccountHostMatch } from "@pinomad/client/account.ts";
 import { AccountContext } from "../../entities/account/account-context.tsx";
 import type { AccountModel, AccountState } from "../../entities/account/account-model.ts";
@@ -52,23 +52,46 @@ const renderNotices = (account: AccountModel, knownHosts: KnownHostsStore) =>
 const studio = match("s".repeat(43), "studio");
 const omarchy = match("o".repeat(43), "omarchy");
 
+// Astryx also speaks each toast through a page-wide live region it keeps in
+// document.body: the text lands there a frame after the toast and is cleared
+// two seconds later. That copy is for screen readers, outside the render
+// container that cleanup removes, so these assertions count the toasts only.
+const LIVE_REGION = "[data-astryx-live-region]";
+const toasts = (text: RegExp): HTMLElement[] =>
+  screen.queryAllByText(text).filter((element) => element.closest(LIVE_REGION) === null);
+
+/** Lets the live region's frame fire, so the assertions see what a slow CI runner sees. */
+const nextFrames = () => act(() => new Promise<void>((resolve) => setTimeout(resolve, 50)));
+
 beforeEach(() => localStorage.clear());
+afterEach(() => {
+  for (const region of document.querySelectorAll(LIVE_REGION)) region.textContent = "";
+});
 
 describe("NewHostNotices", () => {
   it("says nothing on the first load after sign-in, then announces a later host once", async () => {
     const knownHosts = createKnownHostsStore(localStorage);
     const account = liveAccount({ status: "checking" });
-    renderNotices(account, knownHosts);
+    const { unmount } = renderNotices(account, knownHosts);
     act(() => account.setState(signedIn({ hosts: [studio] })));
-    expect(screen.queryByText(/joined your account/)).toBeNull();
+    await nextFrames();
+    expect(toasts(/joined your account/)).toHaveLength(0);
 
     act(() => account.setState(signedIn({ hosts: [studio, omarchy] })));
-    expect(await screen.findByText(/New host omarchy joined your account/)).toBeInTheDocument();
-    expect(screen.queryByText(/New host studio/)).toBeNull();
+    await nextFrames();
+    expect(toasts(/New host omarchy joined your account/)).toHaveLength(1);
+    expect(toasts(/New host studio/)).toHaveLength(0);
 
-    // Later refreshes, and the next page load, stay quiet about it.
+    // Later refreshes stay quiet about it…
     act(() => account.setState(signedIn({ hosts: [studio, omarchy] })));
-    expect(screen.getAllByText(/New host omarchy joined your account/)).toHaveLength(1);
+    await nextFrames();
+    expect(toasts(/New host omarchy joined your account/)).toHaveLength(1);
+
+    // …and so does the next page load.
+    unmount();
+    renderNotices(liveAccount(signedIn({ hosts: [studio, omarchy] })), knownHosts);
+    await nextFrames();
+    expect(toasts(/joined your account/)).toHaveLength(0);
   });
 
   it("doesn't seed from a failed first refresh, which lists no hosts", async () => {
@@ -76,13 +99,15 @@ describe("NewHostNotices", () => {
     const account = liveAccount(signedIn({ hosts: [], hostsError: { code: "network" } }));
     renderNotices(account, knownHosts);
     act(() => account.setState(signedIn({ hosts: [studio] })));
-    expect(screen.queryByText(/joined your account/)).toBeNull();
+    await nextFrames();
+    expect(toasts(/joined your account/)).toHaveLength(0);
   });
 
   it("announces a host that joined while this device was away", async () => {
     const knownHosts = createKnownHostsStore(localStorage);
     knownHosts.arrivals({ serverOrigin: "https://pinomad.si", user: "kieran" }, [studio.host.hostId]);
     renderNotices(liveAccount(signedIn({ hosts: [studio, omarchy] })), knownHosts);
-    expect(await screen.findByText(/New host omarchy joined your account/)).toBeInTheDocument();
+    await nextFrames();
+    expect(toasts(/New host omarchy joined your account/)).toHaveLength(1);
   });
 });
