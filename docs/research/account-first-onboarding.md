@@ -187,6 +187,8 @@ Web、Mac App、iPhone 都只是控制面，不带 Node，也不安装或托管�
 
 ## 分期
 
+条目和进度在 [M10 上手简化](https://github.com/bubbleptr/pinomad/milestone/8)（#491–#501），第二期候选在 #502。
+
 **第零期：不改宿主协议，三到四个 PR**
 
 - 修正 `official-server.mdx`、`official-server.zh.mdx` 和 `usage.zh.md` 里"登录后点 Pair"的过时说法。

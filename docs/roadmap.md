@@ -8,6 +8,8 @@
 
 [M9 公开发布](https://github.com/bubbleptr/pinomad/milestone/7)：官方服务端接纳作者以外的用户，不自己部署服务端也能用全部功能。先过 ADR-0025 的开放注册门槛（服务端核对推送 token 归属），再做注册、账号生命周期、多租户安全项和隐私条款，iOS 公开渠道排在账号之后。和 M8 并行，M8 不是它的门槛。
 
+[M10 上手简化](https://github.com/bubbleptr/pinomad/milestone/8)：以「官方服务端 + 账号」为唯一主线，新用户注册、在宿主上跑一行命令并在浏览器里确认、在其他设备上登录就能用，不用预装 Node、复制令牌或扫码；客户端只做控制面，不带宿主。先修过时文档、做没有宿主时的首页和退出登录撤销本机，再做浏览器确认加入，`pinomad up` 和安装脚本跟在它后面，文档改版和桌面端的本机宿主开关排在最后。设计见 `docs/research/account-first-onboarding.md`。
+
 ## 以后
 
 - [Backlog](https://github.com/bubbleptr/pinomad/issues?q=is%3Aopen+is%3Aissue+no%3Amilestone+-label%3Alater+-label%3Atech-debt)：没排进阶段的具体小项
