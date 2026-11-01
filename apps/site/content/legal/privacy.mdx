@@ -25,7 +25,7 @@ All of this lives in one database on the server.
 - **Devices on your account:** for each browser or app that signs in: an ID the app generated at random on that device (it isn't derived from the hardware), the name the app gives itself (such as "Mac Chrome", "Mac Desktop" or "iPhone"), when it first and last signed in, and, if you removed it, when. The server uses this to list your devices and to remove one from your hosts.
 - **Devices on your hosts:** when a device pairs with a host through your account, which device asked, which host, and when the host's invite expires. Once the host admits the device it reports the public key it admitted it under, and the server keeps that key so it can later ask the host to revoke it. After you remove a device, the server also keeps each revocation a host hasn't confirmed yet.
 - **Host join commands:** the one-time command from **Add a host**, stored as a SHA-256 hash with the account that made it, when it was made, when it expires and when it was used.
-- **Push registrations:** for an iPhone with push turned on: the device token Apple gave the app, whether it's a production or development build, the account it belongs to, and when the app last refreshed it. The server uses this to check that a host only sends notifications to devices signed in to the same account.
+- **Push registrations:** for an iPhone with push turned on: the device token Apple gave the app, whether it's a production or development build, the account it belongs to, which device on your account registered it, and when the app last refreshed it. The server uses this to check that a host only sends notifications to devices signed in to the same account.
 - **Invites:** a SHA-256 hash of each invite code, who created it, when it was created and expires, and when it was used and by which account.
 
 ## What the server can't see
@@ -59,7 +59,7 @@ If you don't want to extend that trust, turn off **Accept devices from your acco
 - **Devices on your account:** until you delete your account. A removed device stays listed as removed. An unnamed entry from an older app is cleared at a later sign-in once it has no session and no host record.
 - **Devices on your hosts:** a pairing the host never reports is cleared a day after its invite expires. The rest stay until the host leaves your account (`pinomad leave`), joins another account, or you delete your account. A pending revocation is removed when the host confirms it.
 - **Host join commands:** they expire after 10 minutes, and expired ones are cleared the next time anyone makes one.
-- **Push registrations:** removed when you turn push off or sign out on the phone, use **Sign out everywhere**, change your password, delete your account, or when Apple reports the token is no longer valid. A registration the app hasn't refreshed for 90 days is ignored and then cleared. An account keeps at most 32.
+- **Push registrations:** removed when you turn push off or sign out on the phone, remove the phone under **Devices**, use **Sign out everywhere**, change your password, delete your account, or when Apple reports the token is no longer valid. A registration the app hasn't refreshed for 90 days is ignored and then cleared. An account keeps at most 32.
 - **Invites:** an unused invite expires after 7 days and is cleared later. A used invite stays on record as used.
 - **Sign-in rate limits:** a few minutes, in memory only.
 

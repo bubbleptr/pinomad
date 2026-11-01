@@ -20,7 +20,7 @@ import {
 } from "@pinomad/protocol/relay.ts";
 import { openAccounts, type Accounts, type LoginLimits } from "../src/accounts.ts";
 import { startRelay, type Relay } from "../src/relay.ts";
-import { downgradeToSchema3, removeTempDir, tempDir } from "./support.ts";
+import { downgradeToSchema3, downgradeToSchema4, removeTempDir, tempDir } from "./support.ts";
 
 const ORIGIN = "https://relay.example.com";
 const GOOD_PASSWORD = "correct horse battery";
@@ -592,6 +592,78 @@ describe("kicking a device (ADR-0037 §3)", () => {
     expect((await kick(started.relay, laptop, 1, { password: "x".repeat(2000) })).status).toBe(400);
     expect((await kick(started.relay, "nope", 1)).status).toBe(401);
     expect((await api(started.relay, { path: "/api/devices/1/kick", headers: bearer(laptop) })).status).toBe(405);
+  });
+});
+
+describe("push registrations of a kicked device (ADR-0036, ADR-0037 §3)", () => {
+  const PHONE_APNS = "aa".repeat(32);
+  const LAPTOP_APNS = "bb".repeat(32);
+  const register = async (relay: Relay, token: string, apns: string): Promise<void> => {
+    const response = await api(relay, { method: "POST", path: "/api/push-tokens", headers: bearer(token), body: { apns, environment: "production" } });
+    expect(response.status).toBe(204);
+  };
+  const deviceId = async (relay: Relay, token: string, name: string): Promise<number> =>
+    (await devices(relay, token)).find((device) => device.name === name)!.id;
+
+  // No host in these tests: a host without device-reports never revokes the
+  // phone, so the push registration is all that stands between it and the
+  // kicked phone.
+  it("drops the kicked device's registrations and keeps the other devices'", async () => {
+    const started = await startServer();
+    const phone = await login(started.relay, { id: PHONE, name: "Phone" });
+    const laptop = await login(started.relay, { id: LAPTOP, name: "Laptop" });
+    await register(started.relay, phone, PHONE_APNS);
+    await register(started.relay, laptop, LAPTOP_APNS);
+
+    expect((await kick(started.relay, laptop, await deviceId(started.relay, laptop, "Phone"))).status).toBe(204);
+    expect(started.accounts.pushTokenOwner(PHONE_APNS, "production")).toBeUndefined();
+    expect(started.accounts.pushTokenOwner(LAPTOP_APNS, "production")).toBe(1);
+  });
+
+  it("follows a token to the device that registered it last", async () => {
+    const started = await startServer();
+    // An older app sends no device ID, so each of its sign-ins is a new
+    // unnamed device; the same phone's token moves to the latest one.
+    const before = await login(started.relay);
+    await register(started.relay, before, PHONE_APNS);
+    const after = await login(started.relay);
+    await register(started.relay, after, PHONE_APNS);
+    const laptop = await login(started.relay, { id: LAPTOP, name: "Laptop" });
+    const stale = (await devices(started.relay, before)).find((device) => device.current)!.id;
+
+    expect((await kick(started.relay, laptop, stale)).status).toBe(204);
+    expect(started.accounts.pushTokenOwner(PHONE_APNS, "production")).toBe(1);
+    expect((await api(started.relay, { path: "/api/me", headers: bearer(after) })).status).toBe(200);
+  });
+
+  it("ties the registration to the device again when a kicked phone signs back in", async () => {
+    const started = await startServer();
+    const phone = await login(started.relay, { id: PHONE, name: "Phone" });
+    const laptop = await login(started.relay, { id: LAPTOP, name: "Laptop" });
+    const phoneId = await deviceId(started.relay, laptop, "Phone");
+    await register(started.relay, phone, PHONE_APNS);
+    await kick(started.relay, laptop, phoneId);
+
+    const back = await login(started.relay, { id: PHONE, name: "Phone" });
+    await register(started.relay, back, PHONE_APNS);
+    expect(started.accounts.pushTokenOwner(PHONE_APNS, "production")).toBe(1);
+    await kick(started.relay, laptop, phoneId);
+    expect(started.accounts.pushTokenOwner(PHONE_APNS, "production")).toBeUndefined();
+  });
+
+  it("keeps registrations from before devices were recorded on them through a kick", async () => {
+    const first = await startServer();
+    const phone = await login(first.relay, { id: PHONE, name: "Phone" });
+    await register(first.relay, phone, PHONE_APNS);
+    await stop(first);
+    downgradeToSchema4(first.dataDir);
+
+    const second = await startServer({ dataDir: first.dataDir });
+    expect(second.accounts.pushTokenOwner(PHONE_APNS, "production")).toBe(1);
+    const laptop = await login(second.relay, { id: LAPTOP, name: "Laptop" });
+    expect((await kick(second.relay, laptop, await deviceId(second.relay, laptop, "Phone"))).status).toBe(204);
+    // Nothing ties the old registration to the phone; it ages out as before.
+    expect(second.accounts.pushTokenOwner(PHONE_APNS, "production")).toBe(1);
   });
 });
 
