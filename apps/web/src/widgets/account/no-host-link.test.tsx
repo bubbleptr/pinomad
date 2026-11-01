@@ -79,7 +79,7 @@ describe("NoHostLink", () => {
   it("leads with the command without a token and the code entry; a token waits for Advanced (#496)", async () => {
     const account = liveAccount(signedIn({ hosts: [] }));
     renderLanding(account);
-    expect(await screen.findByText("npm i -g pinomad && pinomad join https://pinomad.si")).toBeTruthy();
+    expect(await screen.findByText(/pinomad up --origin https:\/\/pinomad\.si/)).toBeTruthy();
     expect(screen.getByRole("textbox", { name: /code/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Have a pairing link?" })).toBeTruthy();
     expect(account.createJoinToken).not.toHaveBeenCalled();

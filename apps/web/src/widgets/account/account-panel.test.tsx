@@ -44,7 +44,7 @@ function fakeModel(initial: AccountState): AccountModel & { setState(next: Accou
     createJoinToken: vi.fn(() =>
       Promise.resolve({
         ok: true as const,
-        value: { token: "join-1", expiresAt: Date.now() + 600_000, command: "npm i -g pinomad && pinomad join https://nomad.example join-1" },
+        value: { token: "join-1", expiresAt: Date.now() + 600_000, command: "curl -fsSL https://pinomad.si/install.sh | sh && PATH=\"$HOME/.local/bin:$PATH\" pinomad join https://nomad.example join-1" },
       }),
     ),
     lookupHostLink: vi.fn(() => Promise.reject(new Error("unused"))),
@@ -226,13 +226,13 @@ describe("Add a host (#496)", () => {
     const model = fakeModel(signedIn([]));
     renderPanel(model);
     await userEvent.click(screen.getByRole("button", { name: "Add a host" }));
-    expect(screen.getByText("npm i -g pinomad && pinomad join https://nomad.example")).toBeInTheDocument();
+    expect(screen.getByText(/pinomad up --origin https:\/\/nomad\.example/)).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: /code/i })).toBeInTheDocument();
     expect(model.createJoinToken).not.toHaveBeenCalled();
 
     await userEvent.click(screen.getByRole("button", { name: /Advanced: join with a one-time token/ }));
     expect(model.createJoinToken).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText("npm i -g pinomad && pinomad join https://nomad.example join-1")).toBeInTheDocument();
+    expect(await screen.findByText("curl -fsSL https://pinomad.si/install.sh | sh && PATH=\"$HOME/.local/bin:$PATH\" pinomad join https://nomad.example join-1")).toBeInTheDocument();
   });
 });
 

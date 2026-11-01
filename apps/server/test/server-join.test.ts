@@ -192,7 +192,8 @@ describe("join tokens", () => {
     const response = await api(relay, { method: "POST", path: "/api/join-tokens", headers: { authorization: `Bearer ${session}` } });
     expect(response.status).toBe(200);
     const { token, expiresAt, command } = response.json as { token: string; expiresAt: number; command: string };
-    expect(command).toBe(`npm i -g pinomad && pinomad join ${ORIGIN} ${token}`);
+    // One line for scripts; the install script brings its own Node (#499).
+    expect(command).toBe(`curl -fsSL https://pinomad.si/install.sh | sh && PATH="$HOME/.local/bin:$PATH" pinomad join ${ORIGIN} ${token}`);
     expect(expiresAt).toBeGreaterThan(Date.now());
     expect(expiresAt).toBeLessThanOrEqual(Date.now() + 10 * MINUTE + 1000);
   });

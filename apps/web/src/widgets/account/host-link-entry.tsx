@@ -21,7 +21,7 @@ export function hostLinkErrorMessage(error: AccountError, step: "lookup" | "answ
     case "not_found":
       return step === "lookup"
         ? "No host is waiting with this code. Check it against the host's terminal; codes expire after 10 minutes."
-        : "This host is no longer waiting: its code expired, or it was confirmed or denied elsewhere. Run pinomad join on it again.";
+        : "This host is no longer waiting: its code expired, or it was confirmed or denied elsewhere. Run pinomad up on it again.";
     case "rate_limited":
       return "Too many wrong codes. Wait 15 minutes and try again.";
     case "invalid_request":
@@ -143,7 +143,7 @@ export function HostLinkCodeForm({
     <VStack gap={3} style={{ width: "100%" }}>
       <TextInput
         label="Code from the host"
-        description="The pinomad join command prints it, like KXHN-BWCV."
+        description="The host's terminal shows it, like KXHN-BWCV."
         placeholder="XXXX-XXXX"
         value={formatUserCode(code)}
         onChange={onChange}
@@ -230,7 +230,7 @@ export function HostLinkConfirm({
         </MetadataListItem>
       </MetadataList>
       {expired ? (
-        <Banner status="warning" title="This code has expired" description="Run pinomad join on the host again for a new one." />
+        <Banner status="warning" title="This code has expired" description="Run pinomad up on the host again for a new one." />
       ) : (
         <Text type="supporting" hasTabularNumbers>
           The host's terminal should show the same name and ID. Expires in {Math.floor(seconds / 60)}:
