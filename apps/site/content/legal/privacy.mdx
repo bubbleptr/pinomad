@@ -37,7 +37,7 @@ All of this lives in one database on the server.
 
 ## What passes through without being kept
 
-- **IP addresses.** Like any server, it sees the address of each connection. It keeps addresses in memory to limit sign-in and sign-up attempts; those counters last a few minutes and are gone when the server restarts. Addresses aren't written to the server's own log, and the database only holds the address of a host waiting to join (see above).
+- **IP addresses.** Like any server, it sees the address of each connection. It keeps addresses in memory to limit sign-in, sign-up and host-join attempts; those counters last up to 15 minutes and are gone when the server restarts. Addresses aren't written to the server's own log, and the database only holds the address of a host waiting to join (see above).
 - **Logs.** The server's log records when it starts and, for each push notification, the host ID, the build type, the result and how long it took. It doesn't log notification content, push tokens, passwords, usernames or connections. Logs stay on the server and are rotated by the system.
 
 {/* TODO(#455): confirm the reverse proxy (Caddy) access-log setting and the journald retention, then state how long logs are kept. */}
@@ -63,7 +63,7 @@ If you don't want to extend that trust, turn off **Accept devices from your acco
 - **Hosts waiting to join:** the host's name, system and IP address go when you confirm or deny the request; the rest goes once the host has its answer. A request nobody answers expires after 10 minutes and is cleared within a minute after that.
 - **Push registrations:** removed when you turn push off or sign out on the phone, remove the phone under **Devices**, use **Sign out everywhere**, change your password, delete your account, or when Apple reports the token is no longer valid. A registration the app hasn't refreshed for 90 days is ignored and then cleared. An account keeps at most 32.
 - **Invites:** an unused invite expires after 7 days and is cleared later. A used invite stays on record as used.
-- **Sign-in rate limits:** a few minutes, in memory only.
+- **Rate limits** (sign-in, sign-up, joining hosts): up to 15 minutes, in memory only.
 
 ## Deleting your account
 
