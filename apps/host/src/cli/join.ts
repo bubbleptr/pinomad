@@ -9,22 +9,22 @@
 // when idle (ADR-0009 §5). With no service installed, join installs one —
 // the one-command bring-up this command exists for.
 import { mkdir } from "node:fs/promises";
-import { homedir, hostname } from "node:os";
+import { hostname } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { relayHostId } from "@pinomad/protocol/relay.ts";
 import { cleanHostName, normalizeHostName } from "@pinomad/protocol/settings.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import { loadHostKey, loadRelayKey } from "../devices.ts";
-import { commandHint, hostEntry } from "../distribution.ts";
+import { commandHint } from "../distribution.ts";
 import { openHostSettings } from "../host-settings.ts";
 import { constantValue } from "../host-value.ts";
 import { writeServerConfig } from "../server-config.ts";
-import { argValue, installSpec, withoutRelayArgs, type ServiceSpec } from "../service/definition.ts";
+import { withoutRelayArgs } from "../service/definition.ts";
 import { serviceManager, type ServiceManager } from "../service/manager.ts";
 import { requestJoinToken, type HostLinkDeps } from "./host-link.ts";
 import { assertSecureServerOrigin, probeServerAccounts, runServerOperation } from "./server-ops.ts";
-import { restartService } from "./service.ts";
+import { openServiceSlot, writeService, type ServiceWrite } from "./service-slot.ts";
 import { DEFAULT_DATA_DIR } from "./host-address.ts";
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -41,12 +41,19 @@ export interface JoinOutcome {
   readonly username: string;
   readonly origin: string;
   /** "installed" when no service existed, "updated" after a rewrite + idle restart. */
-  readonly service: "installed" | "updated" | "failed";
+  readonly service: ServiceWrite;
 }
 
 export async function joinServer(
   /** Without `token`, a host link gets one once a signed-in user confirms the printed code. */
-  args: { readonly origin: string; readonly token?: string; readonly dataDir: string; readonly name?: string },
+  args: {
+    readonly origin: string;
+    readonly token?: string;
+    readonly dataDir: string;
+    readonly name?: string;
+    /** Further host-args changes made in the same service write (`pinomad up` sets the LAN port). */
+    readonly editHostArgs?: (hostArgs: readonly string[]) => readonly string[];
+  },
   deps?: JoinDeps,
 ): Promise<JoinOutcome> {
   const origin = args.origin.replace(/\/+$/, "");
@@ -66,17 +73,8 @@ export async function joinServer(
   const hostId = relayHostId(signingKey.publicKey);
 
   // Check the service slot before spending the token: there's exactly one
-  // unit, and rewriting a definition whose data dir is another host's would
-  // take that host offline and leave this join unserved.
-  const manager = deps?.manager ?? serviceManager();
-  const installed = await manager.state().then((state) => state.installed, () => false);
-  const previous = installed ? await manager.read() : undefined;
-  if (previous !== undefined && resolve(previous.dataDir) !== dataDir) {
-    throw new Error(
-      `the installed service uses a different data dir (${previous.dataDir}); ` +
-        `join it with --data-dir ${previous.dataDir} or uninstall the service first`,
-    );
-  }
+  // unit, and it must be this data dir's.
+  const slot = await openServiceSlot(dataDir, deps?.manager ?? serviceManager());
 
   const probe = await probeServerAccounts(origin, deps?.fetch);
   if (probe === "unreachable") throw new Error(`cannot reach ${origin} — check the address and that the server is up`);
@@ -127,40 +125,16 @@ export async function joinServer(
   // side done; re-running join with a fresh token is an idempotent upsert.
   let service: JoinOutcome["service"];
   try {
-    await writeServerConfig(dataDir, { origin });
+    await writeServerConfig(dataDir, { origin, username });
     // --name is a settings override now (issue #212): persist it after the
     // binding landed, before the restart below makes it effective. A host
     // running in the foreground keeps its old name until restarted.
     if (args.name !== undefined) await settings.update({ hostName: args.name });
-    const freshSpec = installSpec(["--data-dir", dataDir], {
-      execPath: process.execPath,
-      env: process.env,
-      home: homedir(),
-      cwd: process.cwd(),
-      mainPath: hostEntry.script,
-      entryArgs: hostEntry.args,
-    });
-    if (!installed) {
-      await manager.install(freshSpec);
-      service = "installed";
-    } else {
-      // server.json now carries the origin — drop a pinned --relay so a later
-      // re-join elsewhere can't contradict the definition.
-      const spec: ServiceSpec =
-        previous === undefined ? freshSpec : { ...previous, hostArgs: withoutRelayArgs(previous.hostArgs) };
-      // Idle-wait must knock on the port the service actually listens on —
-      // the default 7420 would look dead and force a mid-task restart.
-      const port = argValue(spec.hostArgs, "--port");
-      const code = await restartService({
-        force: false,
-        argv: ["--data-dir", dataDir, ...(port === undefined ? [] : ["--url", `ws://127.0.0.1:${port}`])],
-        manager,
-        restart: async () => {
-          await manager.install(spec);
-        },
-      });
-      service = code === 0 ? "updated" : "failed";
-    }
+    // server.json now carries the origin — drop a pinned --relay so a later
+    // re-join elsewhere can't contradict the definition.
+    const edit = args.editHostArgs ?? ((hostArgs: readonly string[]) => hostArgs);
+    // Changed either way: the host reads server.json only at startup.
+    service = await writeService(slot, (hostArgs) => edit(withoutRelayArgs(hostArgs)), { changed: true });
   } catch (error) {
     throw new Error(
       `joined ${username} at ${origin}, but local setup failed: ${message(error)}\n` +

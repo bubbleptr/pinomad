@@ -8,6 +8,8 @@ import { isParseArgsError, reportParseArgsError } from "@pinomad/host/src/cli/ar
 type CommandModule = { main(argv: readonly string[]): Promise<void> };
 
 const COMMANDS: Record<string, () => Promise<CommandModule>> = {
+  up: () => import("@pinomad/host/src/cli/up.ts"),
+  status: () => import("@pinomad/host/src/cli/status.ts"),
   host: () => import("@pinomad/host/src/main.ts"),
   server: () => import("@pinomad/server/src/main.ts"),
   // The old name of `server`. Deployed images run `pinomad relay` (the
@@ -25,6 +27,10 @@ const USAGE = `pinomad — PiNomad host, server, and utilities
 
 usage: pinomad <command> [args…]
 
+  up [--server] [--lan] [--yes]        set this host up: account, LAN, service
+  up --origin URL --remote-port N      server to join (app.pinomad.si), LAN port (7422)
+  up --no-server|--no-lan [--data-dir D]   turn a path off; with no flags, up asks
+  status [--data-dir D]                joined server and account, LAN, service, host
   host [--data-dir DIR] [--port 7420] [--project DIR]…   run the host in the foreground
   host --remote-port PORT [--public-url URL]   remote access, LAN (ADR-0008)
   host --relay URL   remote access via relay (ADR-0015)
@@ -36,7 +42,7 @@ usage: pinomad <command> [args…]
   upgrade [--force] [address flags]    upgrade the package and restart the service
   link [--data-dir D|--url U …]        print the browser link
   pair [--data-dir D|--url U …]        print a pairing QR
-  join <origin> <token> [--data-dir D] join this host to a server account
+  join <origin> [token] [--data-dir D] join this host to a server account
   leave [--data-dir D]                 leave the server account
   --version, -v                        print the version
 `;
