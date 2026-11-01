@@ -1,7 +1,10 @@
 #!/usr/bin/env node
-// `pinomad join <origin> <token>` / `bun run join` — bind this host to a
-// server account (ADR-0022 §3). Order matters: both keys exist before the
-// server is asked, the binding lands before server.json is written, and the
+// `pinomad join <origin> [token]` / `bun run join` — bind this host to a
+// server account (ADR-0022 §3). Without a token the host asks the server for
+// a short code and waits for a signed-in user to confirm it in the browser,
+// which yields the same one-time token (#495, host-link.ts). Order matters:
+// both keys exist before the server is asked, the binding lands before
+// server.json is written, and the
 // service definition is rewritten (dropping a legacy --relay) and restarted
 // when idle (ADR-0009 §5). With no service installed, join installs one —
 // the one-command bring-up this command exists for.
@@ -19,16 +22,17 @@ import { constantValue } from "../host-value.ts";
 import { writeServerConfig } from "../server-config.ts";
 import { argValue, installSpec, withoutRelayArgs, type ServiceSpec } from "../service/definition.ts";
 import { serviceManager, type ServiceManager } from "../service/manager.ts";
+import { requestJoinToken, type HostLinkDeps } from "./host-link.ts";
 import { assertSecureServerOrigin, probeServerAccounts, runServerOperation } from "./server-ops.ts";
 import { restartService } from "./service.ts";
 import { DEFAULT_DATA_DIR } from "./host-address.ts";
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-export interface JoinDeps {
+/** `fetch`, `sleep`, `openBrowser`, `log` and `now` also drive the tokenless host link. */
+export interface JoinDeps extends HostLinkDeps {
   /** Tests inject a fake; production resolves the platform manager lazily. */
   readonly manager?: ServiceManager;
-  readonly fetch?: typeof fetch;
   readonly hostname?: string;
 }
 
@@ -41,7 +45,8 @@ export interface JoinOutcome {
 }
 
 export async function joinServer(
-  args: { readonly origin: string; readonly token: string; readonly dataDir: string; readonly name?: string },
+  /** Without `token`, a host link gets one once a signed-in user confirms the printed code. */
+  args: { readonly origin: string; readonly token?: string; readonly dataDir: string; readonly name?: string },
   deps?: JoinDeps,
 ): Promise<JoinOutcome> {
   const origin = args.origin.replace(/\/+$/, "");
@@ -94,13 +99,17 @@ export async function joinServer(
   });
   const current = settings.value;
   const storedName = current.custom.includes("hostName") ? current.hostName : undefined;
+  const name = normalizeHostName(args.name ?? storedName ?? deps?.hostname ?? hostname());
+  // Last before the server binds anything: every local check above has
+  // passed, so nobody confirms a host that then fails to join.
+  const joinToken = args.token ?? (await requestJoinToken({ origin, hostId, name }, deps));
   const reply = await runServerOperation({
     origin,
     signingKey,
     noisePublicKey: hostKey.publicKey,
     op: "join",
-    joinToken: args.token,
-    name: normalizeHostName(args.name ?? storedName ?? deps?.hostname ?? hostname()),
+    joinToken,
+    name,
   });
   if (reply.t === "refused") {
     throw new Error(
@@ -155,30 +164,37 @@ export async function joinServer(
   } catch (error) {
     throw new Error(
       `joined ${username} at ${origin}, but local setup failed: ${message(error)}\n` +
-        `generate a fresh join token and run the command again (re-joining the same host is safe)`,
+        (args.token === undefined
+          ? `run the command again and confirm the new code (re-joining the same host is safe)`
+          : `generate a fresh join token and run the command again (re-joining the same host is safe)`),
     );
   }
   return { hostId, username, origin, service };
 }
 
-export async function main(argv: readonly string[]): Promise<void> {
+/** `deps` lets a driver script run the real CLI with a fake service manager. */
+export async function main(argv: readonly string[], deps?: JoinDeps): Promise<void> {
   const { values, positionals } = parseArgs({
     args: [...argv],
     allowPositionals: true,
     options: { "data-dir": { type: "string" }, name: { type: "string" } },
   });
   const [origin, token] = positionals;
-  if (origin === undefined || token === undefined) {
-    console.error(`usage: ${commandHint("join")} <server-origin> <join-token> [--data-dir DIR] [--name NAME]`);
+  if (origin === undefined || positionals.length > 2) {
+    console.error(`usage: ${commandHint("join")} <server-origin> [join-token] [--data-dir DIR] [--name NAME]`);
+    console.error("       without a join token, confirm the printed code in the browser where you're signed in");
     process.exit(1);
   }
   try {
-    const outcome = await joinServer({
-      origin,
-      token,
-      dataDir: values["data-dir"] ?? DEFAULT_DATA_DIR,
-      ...(values.name === undefined ? {} : { name: values.name }),
-    });
+    const outcome = await joinServer(
+      {
+        origin,
+        ...(token === undefined ? {} : { token }),
+        dataDir: values["data-dir"] ?? DEFAULT_DATA_DIR,
+        ...(values.name === undefined ? {} : { name: values.name }),
+      },
+      deps,
+    );
     console.log(`host id: ${outcome.hostId}`);
     console.log(`joined ${outcome.username} at ${outcome.origin}`);
     if (outcome.service === "installed") console.log("service installed and started");
