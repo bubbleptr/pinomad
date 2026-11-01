@@ -42,7 +42,7 @@ ADR-0017 选 Expo，主要是为了让移动端直接复用 TypeScript 的 `pack
     - Rust 核心在 Linux 上就能开发和测试，`cargo test`（含互操作测试）进 `bun run test`；发版的 workflow 也要装 Rust。
     - Rust 工具链用 `rust-toolchain.toml` 锁版本，UniFFI 锁精确版本。
     - 绑定、平台层和界面只能在 macOS 上构建，在 mbp 上做，界面改动用模拟器截图确认。`PinomadCore` 包有 Swift 测试，真正调用生成的绑定，验证指令返回值、线程和类型转换，不只是编译通过。
-    - 加一个 PR 触发的 GitHub Actions workflow：Linux 上跑 `cargo test`，macOS 上从干净检出编 xcframework、跑 `PinomadCore` 的 Swift 测试、给模拟器构建 App，都不需要签名凭据。改到 `packages/protocol`、`packages/client`、`crates/`、`apps/ios`、构建脚本、`Cargo.lock` 或这个 workflow 本身的 PR 都要跑它。
+    - 加一个 PR 触发的 GitHub Actions workflow：Linux 上跑 `cargo test`，macOS 上从干净检出编 xcframework、跑 `PinomadCore` 的 Swift 测试、给模拟器构建 App，都不需要签名凭据。改到 `packages/protocol`、`packages/client`、`crates/`、`apps/ios`、构建脚本、`Cargo.lock` 或这个 workflow 本身的 PR 都要跑它。（2026-11-01 修订：只改 `packages/protocol` 或 `packages/client` 时只跑 Linux 的 `cargo test`，对照向量测试已经覆盖到它们，Swift 只经由 Rust 核心接触这两个包；macOS 那一份只在 `crates/`、`apps/ios`、`packages/agent-chat-kit`、构建脚本、Cargo 文件或 workflow 本身变了时跑，合入 `main` 后也跑一遍。xcframework 和绑定按输入缓存：crate、工具链、构建脚本、部署目标或 Xcode 版本任何一个变了就重新从头编。）
     - Kotlin 绑定的冒烟测试等安卓开工时再加，作为安卓的第一件事。
 
 ## 考虑过的方案
