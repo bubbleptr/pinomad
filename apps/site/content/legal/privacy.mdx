@@ -25,6 +25,7 @@ All of this lives in one database on the server.
 - **Devices on your account:** for each browser or app that signs in: an ID the app generated at random on that device (it isn't derived from the hardware), the name the app gives itself (such as "Mac Chrome", "Mac Desktop" or "iPhone"), when it first and last signed in, and, if you removed it, when. The server uses this to list your devices and to remove one from your hosts.
 - **Devices on your hosts:** when a device pairs with a host through your account, which device asked, which host, and when the host's invite expires. Once the host admits the device it reports the public key it admitted it under, and the server keeps that key so it can later ask the host to revoke it. After you remove a device, the server also keeps each revocation a host hasn't confirmed yet.
 - **Host join commands:** the one-time command from **Add a host**, stored as a SHA-256 hash with the account that made it, when it was made, when it expires and when it was used.
+- **Hosts waiting to join:** when you run `pinomad join` without a token, the host's ID, its name, its system (such as "macOS (arm64)") and the IP address it asked from, so the page where you enter the code can show you which machine you are adding. Both codes are stored as SHA-256 hashes. The name, system and IP address are deleted as soon as you confirm or deny the request, and at the latest when it expires after 10 minutes.
 - **Push registrations:** for an iPhone with push turned on: the device token Apple gave the app, whether it's a production or development build, the account it belongs to, which device on your account registered it, and when the app last refreshed it. The server uses this to check that a host only sends notifications to devices signed in to the same account.
 - **Invites:** a SHA-256 hash of each invite code, who created it, when it was created and expires, and when it was used and by which account.
 
@@ -36,7 +37,7 @@ All of this lives in one database on the server.
 
 ## What passes through without being kept
 
-- **IP addresses.** Like any server, it sees the address of each connection. It keeps addresses in memory to limit sign-in and sign-up attempts; those counters last a few minutes and are gone when the server restarts. Addresses aren't written to the database or to the server's own log.
+- **IP addresses.** Like any server, it sees the address of each connection. It keeps addresses in memory to limit sign-in and sign-up attempts; those counters last a few minutes and are gone when the server restarts. Addresses aren't written to the server's own log, and the database only holds the address of a host waiting to join (see above).
 - **Logs.** The server's log records when it starts and, for each push notification, the host ID, the build type, the result and how long it took. It doesn't log notification content, push tokens, passwords, usernames or connections. Logs stay on the server and are rotated by the system.
 
 {/* TODO(#455): confirm the reverse proxy (Caddy) access-log setting and the journald retention, then state how long logs are kept. */}
@@ -59,6 +60,7 @@ If you don't want to extend that trust, turn off **Accept devices from your acco
 - **Devices on your account:** until you delete your account. A removed device stays listed as removed. An unnamed entry from an older app is cleared at a later sign-in once it has no session and no host record.
 - **Devices on your hosts:** a pairing the host never reports is cleared a day after its invite expires. The rest stay until the host leaves your account (`pinomad leave`), joins another account, or you delete your account. A pending revocation is removed when the host confirms it.
 - **Host join commands:** they expire after 10 minutes, and expired ones are cleared the next time anyone makes one.
+- **Hosts waiting to join:** the host's name, system and IP address go when you confirm or deny the request; the rest goes once the host has its answer. A request nobody answers expires after 10 minutes and is cleared within a minute after that.
 - **Push registrations:** removed when you turn push off or sign out on the phone, remove the phone under **Devices**, use **Sign out everywhere**, change your password, delete your account, or when Apple reports the token is no longer valid. A registration the app hasn't refreshed for 90 days is ignored and then cleared. An account keeps at most 32.
 - **Invites:** an unused invite expires after 7 days and is cleared later. A used invite stays on record as used.
 - **Sign-in rate limits:** a few minutes, in memory only.
