@@ -962,3 +962,93 @@ describe("automatic registration", () => {
     expect(setup.model.state.status).toBe("signed-out");
   });
 });
+
+describe("signing out of a shared computer (#494)", () => {
+  type Answer = Awaited<ReturnType<AccountFetch>>;
+  const answer = (status: number, body?: unknown): Answer => ({
+    status,
+    json: () => (body === undefined ? Promise.reject(new Error("empty")) : Promise.resolve(body)),
+    text: () => Promise.resolve(body === undefined ? "" : JSON.stringify(body)),
+  });
+  const linked = (serverOrigin: string, hostId = "h1") => storedHost({ account: { serverOrigin, hostId } });
+
+  /**
+   * Signed in (cookie mode) with `stored` paired. `logout` answers
+   * /api/logout; `removed` records every host the model drops.
+   */
+  const signedInWith = async (stored: StoredHost[], logout: () => Promise<Answer> = () => Promise.resolve(answer(204))) => {
+    const store = hosts(stored);
+    const removed: string[] = [];
+    const calls: { url: string; init: AccountFetchInit | undefined }[] = [];
+    let probed = 0;
+    const impl: AccountFetch = (url, init) => {
+      calls.push({ url, init });
+      if (url.endsWith("/api/me")) return Promise.resolve((probed += 1) <= 2 ? answer(401) : answer(200, USER));
+      if (url.endsWith("/api/login")) return Promise.resolve(answer(200, USER));
+      if (url.endsWith("/api/hosts")) return Promise.resolve(answer(200, []));
+      if (url.endsWith("/api/logout")) return logout();
+      return Promise.resolve(answer(404, { error: "not_found" }));
+    };
+    const setup = makeModel({
+      fake: { impl, calls },
+      store,
+      removeHost: (hostKey) => {
+        removed.push(hostKey);
+        return store.remove(hostKey);
+      },
+    });
+    await settled(setup.model);
+    expect((await setup.model.login({ username: "admin", password: "pw" })).ok).toBe(true);
+    const logoutBodies = () => calls.filter((call) => call.url.endsWith("/api/logout")).map((call) => call.init?.body);
+    return { ...setup, removed, logoutBodies };
+  };
+
+  it("forgets the hosts this server vouched for and asks it to revoke the device; QR pairings stay", async () => {
+    const mine = linked(`${ORIGIN}/`);
+    const qr = storedHost();
+    const elsewhere = linked("https://other.example.com");
+    const setup = await signedInWith([mine, qr, elsewhere]);
+
+    expect(await setup.model.logout({ revoke: true })).toEqual({ ok: true, value: undefined });
+    expect(setup.removed).toEqual([mine.hostKey]);
+    expect(setup.store.stored).toEqual([qr, elsewhere]);
+    expect(setup.logoutBodies()).toEqual(['{"revoke":true}']);
+    expect(setup.model.state.status).toBe("signed-out");
+  });
+
+  it("keeps every pairing on a plain sign-out", async () => {
+    const mine = linked(ORIGIN);
+    const setup = await signedInWith([mine]);
+    expect(await setup.model.logout()).toEqual({ ok: true, value: undefined });
+    expect(setup.removed).toEqual([]);
+    expect(setup.store.stored).toEqual([mine]);
+    expect(setup.logoutBodies()).toEqual([undefined]);
+  });
+
+  it("forgets the hosts even when the server can't be reached, and reports the failure", async () => {
+    const setup = await signedInWith([linked(ORIGIN)], () => Promise.reject(new Error("offline")));
+    expect(await setup.model.logout({ revoke: true })).toEqual({ ok: false, error: { code: "network" } });
+    expect(setup.store.stored).toEqual([]);
+    expect(setup.model.state.status).toBe("signed-out");
+  });
+
+  it("reports hosts it couldn't forget, even when the server confirmed", async () => {
+    const setup = await signedInWith([linked(ORIGIN)]);
+    setup.store.setFailList(true);
+    expect(await setup.model.logout({ revoke: true })).toEqual({ ok: false, error: { code: "hosts_not_forgotten" } });
+    expect(setup.logoutBodies()).toEqual(['{"revoke":true}']);
+    expect(setup.model.state.status).toBe("signed-out");
+  });
+
+  it("leaves a newer session alone when the server answers late", async () => {
+    let release!: (value: Answer) => void;
+    const setup = await signedInWith([], () => new Promise((resolve) => (release = resolve)));
+    const pending = setup.model.logout({ revoke: true });
+    await vi.waitFor(() => expect(setup.logoutBodies()).toHaveLength(1));
+    expect((await setup.model.login({ username: "admin", password: "pw" })).ok).toBe(true);
+
+    release(answer(401, { error: "unauthenticated" }));
+    expect((await pending).ok).toBe(false);
+    expect(setup.model.state.status).toBe("signed-in");
+  });
+});

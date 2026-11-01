@@ -64,7 +64,9 @@ If you forgot your password, there's no reset email, because the server doesn't 
 
 The account panel on the web and in the Mac app, and the iPhone's account page, list every browser and app that has signed in to your account: its name, when it last signed in, and the hosts it joined through the account, with its state on each (registered, waiting for the host to revoke it, or revoked). The one you're using is marked **This device** (**This iPhone** on the phone).
 
-If you lose a device, click or tap **Remove** next to it and enter your password. The server signs it out of your account and asks each host it joined through the account to revoke it. A host that's online does it right away; one that's offline does it the next time it connects. The host still has the final say: you can pair the device with it again later with a QR code. To remove the device you're using, sign out instead.
+If you lose a device, click or tap **Remove** next to it and enter your password. The server signs it out of your account and asks each host it joined through the account to revoke it. A host that's online does it right away; one that's offline does it the next time it connects. The host still has the final say: you can pair the device with it again later with a QR code.
+
+To remove the device you're using, sign out and tick **This is a shared computer**. The server asks each host this device joined through the account to revoke it, the same way Remove does, and the device forgets those hosts along with its keys for them. Hosts you paired with a QR code stay paired. It's off by default: a host keeps every revocation, so ticking it each time you sign out of your own browser would fill each host's device list with dead entries.
 
 The server only knows what went through the account:
 

@@ -104,7 +104,15 @@ export interface AccountModel {
     password: string;
     serverOrigin?: string;
   }): Promise<AccountResult<void>>;
-  logout(): Promise<AccountResult<void>>;
+  /**
+   * Signs out; always lands signed-out, before the server answers. With
+   * `revoke` (a shared computer, #494) the server also asks every host this
+   * device joined through the account to revoke it, and this device forgets
+   * the stored hosts linked to this server, with its keys for them. Hosts
+   * paired by QR code stay. The forgetting doesn't wait on the server: an
+   * older one ignores `revoke` and still answers 204.
+   */
+  logout(options?: { readonly revoke?: boolean }): Promise<AccountResult<void>>;
   /** Revokes every session of the account including this one — always lands signed-out. */
   revokeAll(): Promise<AccountResult<void>>;
   /** Signs out the account's other sessions; this one stays (#450). */
@@ -278,6 +286,31 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   });
 
   const live = (active: AccountClient, started: number): boolean => client === active && started === epoch;
+
+  /**
+   * Drops every stored host linked to `origin`'s account, closing its
+   * runtime, without declining it: the owner signing in here again later
+   * should get those hosts back on their own (#494). False when any of them
+   * may still be stored.
+   */
+  const forgetAccountHosts = async (origin: string): Promise<boolean> => {
+    let stored: StoredHost[];
+    try {
+      stored = await deps.hosts.list();
+    } catch (error) {
+      console.error("Could not read the paired hosts to forget them", error);
+      return false;
+    }
+    let forgotten = true;
+    for (const host of stored) {
+      if (host.account === undefined || normalizeServerOrigin(host.account.serverOrigin) !== origin) continue;
+      await (deps.removeHost?.(host.hostKey) ?? deps.hosts.remove(host.hostKey)).catch((error: unknown) => {
+        console.error("Could not forget a host", error);
+        forgotten = false;
+      });
+    }
+    return forgotten;
+  };
 
   const deviceName = async (): Promise<string> => (deps.name ?? (() => "This device"))();
 
@@ -650,11 +683,19 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     register: ({ invite, username, password, serverOrigin }) =>
       signIn(serverOrigin, (candidate) => candidate.register(invite, username, password, deps.device?.())),
 
-    logout: async () => {
+    logout: async (options) => {
       if (client === undefined) return fail("unauthenticated");
-      const result = await client.logout();
+      const active = client;
+      const revoke = options?.revoke === true;
       if (mode === "bearer") void deps.bridge?.account?.clear().catch(() => undefined);
+      // Signed out before anything is awaited: no refresh can re-register a
+      // host being forgotten, and the answer can't reach a newer session.
       signedOut();
+      const forgotten = revoke ? await forgetAccountHosts(active.origin) : true;
+      const result = await active.logout(revoke ? { revoke: true } : undefined);
+      // A host still stored here is the bigger worry: this device can still
+      // connect to it whatever the server did.
+      if (!forgotten) return fail("hosts_not_forgotten");
       return result.ok ? { ok: true, value: undefined } : result;
     },
 
