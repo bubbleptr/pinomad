@@ -335,6 +335,10 @@ extension AppModel {
         defer {
             accountBusy = false
             serverPushPaused = false
+            // A token APNs issued while paused was dropped, not queued: catch
+            // up now. After a sign-out there's no session, so this sends
+            // nothing; a newer session that started meanwhile registers.
+            syncServerPushToken()
         }
         accountSignOutWarning = nil
         let failure: AccountFailure?

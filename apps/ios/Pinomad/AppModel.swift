@@ -297,8 +297,8 @@ final class AppModel {
     var serverPushInFlight = false
     var serverPushPending = false
     var serverPushTask: Task<Void, Never>?
-    /// Set while signing out: a register sent now could land after the
-    /// removal and outlive the session.
+    /// Set while signing out or deleting the account: a register sent now
+    /// could land after the removal and outlive the session.
     var serverPushPaused = false
     var serverPushError: String?
     var forgettingHosts: Set<String> = []
