@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // `pinomad join <origin> [token]` / `bun run join` — bind this host to a
-// server account (ADR-0022 §3). Without a token the host asks the server for
-// a short code and waits for a signed-in user to confirm it in the browser,
-// which yields the same one-time token (#495, host-link.ts). Order matters:
+// server account (ADR-0022 §3). Without a token a signed-in user confirms
+// this host in the browser — through a redirect back to this machine, or a
+// printed code (#495, #513, host-link.ts) — which yields the same one-time
+// token. Order matters:
 // both keys exist before the server is asked, the binding lands before
 // server.json is written, and the
 // service definition is rewritten (dropping a legacy --relay) and restarted
@@ -29,7 +30,7 @@ import { DEFAULT_DATA_DIR } from "./host-address.ts";
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-/** `fetch`, `sleep`, `openBrowser`, `log` and `now` also drive the tokenless host link. */
+/** `fetch`, `sleep`, `openBrowser`, `loopback`, `log` and `now` also drive the tokenless host link. */
 export interface JoinDeps extends HostLinkDeps {
   /** Tests inject a fake; production resolves the platform manager lazily. */
   readonly manager?: ServiceManager;
@@ -49,6 +50,8 @@ export async function joinServer(
   args: {
     readonly origin: string;
     readonly token?: string;
+    /** Without a token, confirm a printed code (maybe on another device) instead of the browser redirect (#513). */
+    readonly code?: boolean;
     readonly dataDir: string;
     readonly name?: string;
     /** Further host-args changes made in the same service write (`pinomad up` sets the LAN port). */
@@ -100,7 +103,7 @@ export async function joinServer(
   const name = normalizeHostName(args.name ?? storedName ?? deps?.hostname ?? hostname());
   // Last before the server binds anything: every local check above has
   // passed, so nobody confirms a host that then fails to join.
-  const joinToken = args.token ?? (await requestJoinToken({ origin, hostId, name }, deps));
+  const joinToken = args.token ?? (await requestJoinToken({ origin, hostId, name, code: args.code }, deps));
   const reply = await runServerOperation({
     origin,
     signingKey,
@@ -139,7 +142,7 @@ export async function joinServer(
     throw new Error(
       `joined ${username} at ${origin}, but local setup failed: ${message(error)}\n` +
         (args.token === undefined
-          ? `run the command again and confirm the new code (re-joining the same host is safe)`
+          ? `run the command again and confirm it again (re-joining the same host is safe)`
           : `generate a fresh join token and run the command again (re-joining the same host is safe)`),
     );
   }
@@ -151,12 +154,13 @@ export async function main(argv: readonly string[], deps?: JoinDeps): Promise<vo
   const { values, positionals } = parseArgs({
     args: [...argv],
     allowPositionals: true,
-    options: { "data-dir": { type: "string" }, name: { type: "string" } },
+    options: { "data-dir": { type: "string" }, name: { type: "string" }, code: { type: "boolean" } },
   });
   const [origin, token] = positionals;
   if (origin === undefined || positionals.length > 2) {
-    console.error(`usage: ${commandHint("join")} <server-origin> [join-token] [--data-dir DIR] [--name NAME]`);
-    console.error("       without a join token, confirm the printed code in the browser where you're signed in");
+    console.error(`usage: ${commandHint("join")} <server-origin> [join-token] [--code] [--data-dir DIR] [--name NAME]`);
+    console.error("       without a join token, confirm this host in the browser where you're signed in;");
+    console.error("       --code prints a code to confirm instead, from this or another device");
     process.exit(1);
   }
   try {
@@ -164,6 +168,7 @@ export async function main(argv: readonly string[], deps?: JoinDeps): Promise<vo
       {
         origin,
         ...(token === undefined ? {} : { token }),
+        ...(values.code === true ? { code: true } : {}),
         dataDir: values["data-dir"] ?? DEFAULT_DATA_DIR,
         ...(values.name === undefined ? {} : { name: values.name }),
       },

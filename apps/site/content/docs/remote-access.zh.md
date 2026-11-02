@@ -179,7 +179,9 @@ npm i -g pinomad            # 已经装好就跳过
 pinomad join https://relay.example.com <token> [--name 显示名]
 ```
 
-也可以不带令牌（#495）：`pinomad join https://relay.example.com [--name 显示名]` 打印确认网址 `https://relay.example.com/host-link` 和一个 8 位短码（形如 `WDJB-MJHT`，10 分钟有效），能开浏览器时自动打开这个网址（不带短码），然后每 5 秒问一次服务端。在已登录的会话里输入短码确认后，宿主拿到一个只能由它自己使用的一次性令牌，接下来和带令牌时完全一样；被拒绝或过期就报错退出，什么都不改。确认页面随 Web 和 iOS 客户端提供；在那之前可以直接调 API：先 `POST /api/host-link/lookup {userCode}` 核对宿主名、系统、来源 IP 和 hostId，再 `POST /api/host-link/confirm {userCode}`（或 `/deny` 拒绝）。只确认你自己正在操作的那台机器的短码。
+也可以不带令牌（#495）。这台机器能开浏览器时，`pinomad join https://relay.example.com [--name 显示名]` 走浏览器跳转，不用短码，见下一段；开不了浏览器（经 SSH、没有桌面的 Linux）或者加了 `--code` 时，打印确认网址 `https://relay.example.com/host-link` 和一个 8 位短码（形如 `WDJB-MJHT`，10 分钟有效），然后每 5 秒问一次服务端。在已登录的会话里输入短码确认后，宿主拿到一个只能由它自己使用的一次性令牌，接下来和带令牌时完全一样；被拒绝或过期就报错退出，什么都不改。确认页面随 Web 和 iOS 客户端提供；在那之前可以直接调 API：先 `POST /api/host-link/lookup {userCode}` 核对宿主名、系统、来源 IP 和 hostId，再 `POST /api/host-link/confirm {userCode}`（或 `/deny` 拒绝）。只确认你自己正在操作的那台机器的短码。
+
+浏览器跳转（#513，RFC 8252 + PKCE）：宿主先在 `127.0.0.1` 的随机端口上监听，带着回调地址 `http://127.0.0.1:<端口>/callback`、PKCE challenge 和随机 state 发起请求，再打开 `https://relay.example.com/host-link?request=<请求 id>`。网页上登录、核对后确认（或拒绝），浏览器被送回宿主的回调地址，带着一个 2 分钟有效、只能换一次的授权码；宿主核对 state，用 PKCE verifier 向 `POST /api/host-link/token` 换取一次性令牌，接下来和带令牌时一样。state 不对的请求一律 404，宿主继续等。这种方式只在发起的那台电脑上的浏览器里能完成：要在另一台设备上确认，用 `--code`。服务端不支持跳转时（#513 之前的版本会直接回一个短码），宿主自动改用短码。直接调 API 时，对应的 lookup / confirm / deny 请求体是 `{requestId}`，confirm 和 deny 回 `{redirect}`。
 
 `join` 依次做：建好宿主的 Ed25519 登记密钥和 Noise 密钥（已有就复用）；经一条一次性操作连接向服务端登记（这条连接不会顶替正在跑的控制连接）；把服务端地址写进 `<数据目录>/server.json`；然后安装宿主服务——已安装就重写服务定义、去掉旧的 `--relay` 参数——并按 ADR-0009 等空闲重启。输出会打印宿主指纹（hostId）和加入的账号名。令牌响应丢了就重新生成一个再跑一遍，重复 join 同一台宿主是幂等的。
 

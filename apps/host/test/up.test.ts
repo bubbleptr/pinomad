@@ -27,6 +27,7 @@ function confirmingDeps(started: Started, manager = fakeManager().manager) {
       hostname: "omarchy",
       log: (line: string) => lines.push(line),
       openBrowser: () => false,
+      loopback: false,
       fetch: ((input: string | URL | Request, init?: RequestInit) => {
         requests.push(new URL(String(input)).pathname);
         return fetch(input, init);

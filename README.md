@@ -17,7 +17,7 @@ A self-hosted coding agent built on [Pi Durable](https://www.npmjs.com/package/@
 ## Quick start
 
 1. **Create an account** at [app.pinomad.si](https://app.pinomad.si/) (sign-up is by invite).
-2. **Add your host.** On the machine that should run the agent (macOS or Linux), run the two lines below. `pinomad up` prints a code; enter it on the page it opens, signed in, to add the host to your account. It then runs as a service.
+2. **Add your host.** On the machine that should run the agent (macOS or Linux), run the two lines below. `pinomad up` opens a page in your browser; sign in and confirm to add the host to your account. It then runs as a service. Without a browser on that machine (over SSH, say), it prints a code to enter on any signed-in device instead.
 
    ```sh
    curl -fsSL https://pinomad.si/install.sh | sh

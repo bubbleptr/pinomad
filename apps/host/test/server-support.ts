@@ -118,7 +118,9 @@ export const codeIn = (lines: readonly string[]): string => {
 };
 
 /** A signed-in admin calling a host-link endpoint with `userCode`. */
-export const asUser = async (started: Started, path: string, userCode: string) => {
+/** A signed-in admin's host-link call: on a typed code, or on a loopback request's id (#513). */
+export const asUser = async (started: Started, path: string, ref: string | { readonly requestId: string }) => {
   const login = await api(started.relay, { method: "POST", path: "/api/login", body: { username: "admin", password: GOOD_PASSWORD } });
-  return api(started.relay, { method: "POST", path, headers: { authorization: `Bearer ${login.json.token}` }, body: { userCode } });
+  const body = typeof ref === "string" ? { userCode: ref } : ref;
+  return api(started.relay, { method: "POST", path, headers: { authorization: `Bearer ${login.json.token}` }, body });
 };
