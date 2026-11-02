@@ -30,8 +30,8 @@ export function FirstHost({ state }: { state: Extract<AccountState, { status: "s
       <VStack gap={2}>
         <Heading level={2}>Add your first host</Heading>
         <Text type="supporting">
-          A host is the computer that runs your agents: a Mac or Linux machine. The commands install PiNomad with its
-          own Node, join the host to your account and keep it running as a service. The host then shows up here and
+          A host is the computer that runs your agents: a Mac or Linux machine. The command installs PiNomad with its
+          own Node, joins the host to your account and keeps it running as a service. The host then shows up here and
           connects on its own.
         </Text>
       </VStack>
