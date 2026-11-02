@@ -358,7 +358,7 @@ describe("schema 6", () => {
 
     const second = await open({ dataDir: first.dataDir });
     const db = new DatabaseSync(second.accounts.dbPath);
-    expect((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBe(6);
+    expect((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version).toBeGreaterThanOrEqual(6);
     db.close();
     // A token minted before the upgrade is bound to no host and still spends.
     expect(second.accounts.joinHost({ token: token.token, hostId: HOST_ID, noisePublicKey: "k" }).status).toBe("joined");

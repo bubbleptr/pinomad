@@ -18,7 +18,7 @@ import { normalizeHostName } from "@pinomad/protocol/settings.ts";
 import { isDataDirInUse, lockDataDir } from "./lock.ts";
 
 const DB_FILE = "server.sqlite";
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 // Sessions die 30 days after issue and are never renewed — a stolen token has a
 // hard ceiling, and re-logging-in is the only way forward.
@@ -290,6 +290,11 @@ export interface AccountDeviceRow {
   readonly hosts: readonly { readonly hostId: string; readonly name: string; readonly state: DeviceHostState }[];
 }
 
+export type RemoveHostResult =
+  | { readonly status: "ok" }
+  | { readonly status: "refused"; readonly reason: "not_found" | "wrong_password" }
+  | { readonly status: "limited" };
+
 export type KickDeviceResult =
   /** The hosts that now owe a revocation for this device. */
   | { readonly status: "ok"; readonly hostIds: readonly string[] }
@@ -428,6 +433,20 @@ export interface Accounts {
   forgetPushToken(token: string, environment: ApnsEnvironment, unregisteredAt: number): void;
   /** Drops a host's account binding; false when the hostId was never bound. */
   leaveHost(hostId: string): boolean;
+  /**
+   * The account removes one of its hosts after checking the password (#512),
+   * as for kicking a device: a stolen session must not be able to throw the
+   * owner's machines out. The binding goes as with `leaveHost`, and the
+   * hostId is remembered until it joins again, so `wasRemoved` can say so.
+   */
+  removeHost(args: {
+    readonly userId: number;
+    readonly username: string;
+    readonly password: string;
+    readonly hostId: string;
+  }): Promise<RemoveHostResult>;
+  /** True when the account removed this hostId and it hasn't joined since. */
+  wasRemoved(hostId: string): boolean;
   /** Every host bound to a user — GET /api/hosts. */
   listHosts(userId: number): HostRow[];
   /**
@@ -627,6 +646,20 @@ function migrate(db: DatabaseSync): void {
       CREATE INDEX host_link_requests_expiry ON host_link_requests (expires_at);
       ALTER TABLE join_tokens ADD COLUMN host_id TEXT;
       PRAGMA user_version = 6;
+      COMMIT;
+    `);
+  }
+  if (version < 7) {
+    // Hosts the account removed (#512), so one that was offline then learns
+    // it on its next register instead of reading as never joined. Only the
+    // hostId and when: no account, and a re-join deletes the row.
+    db.exec(`
+      BEGIN;
+      CREATE TABLE removed_hosts (
+        host_id TEXT PRIMARY KEY,
+        removed_at INTEGER NOT NULL
+      );
+      PRAGMA user_version = 7;
       COMMIT;
     `);
   }
@@ -1544,6 +1577,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
              joined_at = excluded.joined_at,
              last_seen_at = excluded.last_seen_at`,
         ).run(hostId, row!.userId, noisePublicKey, hostName, at, at);
+        db.prepare("DELETE FROM removed_hosts WHERE host_id = ?").run(hostId);
         const user = db.prepare("SELECT username FROM users WHERE id = ?").get(row!.userId) as
           | { username: string }
           | undefined;
@@ -1558,6 +1592,42 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
     leaveHost(hostId) {
       // Vouchings and pending revocations go with the row (ON DELETE CASCADE).
       return Number(db.prepare("DELETE FROM hosts WHERE host_id = ?").run(hostId).changes) > 0;
+    },
+
+    async removeHost({ userId, username, password, hostId }) {
+      const owned = (): boolean =>
+        db.prepare("SELECT 1 AS x FROM hosts WHERE host_id = ? AND user_id = ?").get(hostId, userId) !== undefined;
+      if (!owned()) return { status: "refused", reason: "not_found" };
+      const checked = await checkPassword(userId, username, password);
+      if (checked === "limited") return { status: "limited" };
+      if (checked === "wrong_password") return { status: "refused", reason: "wrong_password" };
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        // As in kickDevice: a reset during scrypt voids the typed password,
+        // and a re-join during it may have moved the host to another account.
+        if (currentHash(userId) !== checked.verifiedHash) {
+          db.exec("ROLLBACK");
+          return { status: "refused", reason: "wrong_password" };
+        }
+        if (!owned()) {
+          db.exec("ROLLBACK");
+          return { status: "refused", reason: "not_found" };
+        }
+        db.prepare("DELETE FROM hosts WHERE host_id = ?").run(hostId);
+        db.prepare("INSERT INTO removed_hosts (host_id, removed_at) VALUES (?, ?) ON CONFLICT(host_id) DO UPDATE SET removed_at = excluded.removed_at").run(
+          hostId,
+          now(),
+        );
+        db.exec("COMMIT");
+        return { status: "ok" };
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
+
+    wasRemoved(hostId) {
+      return db.prepare("SELECT 1 AS x FROM removed_hosts WHERE host_id = ?").get(hostId) !== undefined;
     },
 
     listHosts(userId) {

@@ -439,3 +439,75 @@ describe("old and new interop", () => {
     expect(seen.at).toBeGreaterThan(1);
   });
 });
+
+describe("removing a host from the account (#512)", () => {
+  const NOISE_KEY = "abcdefghijklmnopqrstuvwx1234567890_-abcdefg";
+
+  async function joined(relay: Relay, session: string): Promise<{ keys: KeyPair; hostId: string }> {
+    const { token } = await mintToken(relay, session);
+    const keys = ed25519.keygen();
+    await register(relay, keys, { op: "join", joinToken: token, noisePublicKey: NOISE_KEY });
+    return { keys, hostId: relayHostId(keys.publicKey) };
+  }
+
+  const removeHost = (relay: Relay, session: string, hostId: string, body: unknown = { password: GOOD_PASSWORD }) =>
+    api(relay, { method: "POST", path: `/api/hosts/${hostId}/remove`, headers: { authorization: `Bearer ${session}` }, body });
+
+  it("unbinds the host and tells its live control it was removed", async () => {
+    const { relay, accounts } = await startServer();
+    const session = await login(relay);
+    const { keys, hostId } = await joined(relay, session);
+    const control = await controlFor(relay, keys, { noisePublicKey: NOISE_KEY });
+
+    const closed = closeEvent(control);
+    expect((await removeHost(relay, session, hostId)).status).toBe(204);
+    expect(hostRow(accounts, hostId)).toBeUndefined();
+    expect((await closed)[0]).toBe(RELAY_CLOSE.hostRemoved);
+    const hosts = await api(relay, { path: "/api/hosts", headers: { authorization: `Bearer ${session}` } });
+    expect(hosts.json).toEqual([]);
+  });
+
+  it("tells a host that was offline when it registers next, and only that host", async () => {
+    const { relay } = await startServer();
+    const session = await login(relay);
+    const { keys, hostId } = await joined(relay, session);
+
+    expect((await removeHost(relay, session, hostId)).status).toBe(204);
+    expect(await register(relay, keys, { noisePublicKey: NOISE_KEY })).toEqual({ closed: RELAY_CLOSE.hostRemoved });
+    // A host that was never bound is still just not allowed.
+    expect(await register(relay, ed25519.keygen(), { noisePublicKey: NOISE_KEY })).toEqual({ closed: RELAY_CLOSE.hostNotAllowed });
+  });
+
+  it("lets a removed host join again, which clears the removal", async () => {
+    const { relay } = await startServer();
+    const session = await login(relay);
+    const { keys, hostId } = await joined(relay, session);
+    expect((await removeHost(relay, session, hostId)).status).toBe(204);
+
+    const { token } = await mintToken(relay, session);
+    expect(await register(relay, keys, { op: "join", joinToken: token, noisePublicKey: NOISE_KEY })).toEqual({
+      frame: { t: "joined", username: "admin" },
+    });
+    await controlFor(relay, keys, { noisePublicKey: NOISE_KEY });
+  });
+
+  it("asks for the password and keeps the host on a wrong one", async () => {
+    const { relay, accounts } = await startServer();
+    const session = await login(relay);
+    const { hostId } = await joined(relay, session);
+
+    expect((await removeHost(relay, session, hostId, {})).status).toBe(400);
+    const wrong = await removeHost(relay, session, hostId, { password: "not the password at all" });
+    expect([wrong.status, wrong.json.error]).toEqual([403, "wrong_password"]);
+    expect(hostRow(accounts, hostId)).toBeDefined();
+    expect((await api(relay, { method: "GET", path: `/api/hosts/${hostId}/remove`, headers: { authorization: `Bearer ${session}` } })).status).toBe(405);
+    expect((await removeHost(relay, "nope", hostId)).status).toBe(401);
+  });
+
+  it("answers not_found for a host outside the account", async () => {
+    const { relay } = await startServer();
+    const session = await login(relay);
+    const response = await removeHost(relay, session, relayHostId(ed25519.keygen().publicKey));
+    expect([response.status, response.json.error]).toEqual([404, "not_found"]);
+  });
+});

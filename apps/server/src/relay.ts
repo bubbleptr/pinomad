@@ -294,10 +294,12 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
   /**
    * A host whose account binding is gone loses its control connection, and
    * pairing asks on it die with it. Its device connections go too: their
-   * leases count against the account the binding belonged to.
+   * leases count against the account the binding belonged to. `removed`
+   * tells the host the account took it out (#512); devices see the usual
+   * 4603 either way.
    */
-  function disconnectHost(hostId: string): void {
-    controls.get(hostId)?.socket.close(RELAY_CLOSE.hostNotAllowed);
+  function disconnectHost(hostId: string, removed = false): void {
+    controls.get(hostId)?.socket.close(removed ? RELAY_CLOSE.hostRemoved : RELAY_CLOSE.hostNotAllowed);
     closeHostDevices(hostId, RELAY_CLOSE.hostNotAllowed, "host left its account");
   }
 
@@ -546,7 +548,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
       // Admission = a host row bound to an account (ADR-0022); a server
       // without accounts admits nobody.
       if (accounts?.hasHost(frame.hostId) !== true) {
-        socket.close(RELAY_CLOSE.hostNotAllowed);
+        socket.close(accounts?.wasRemoved(frame.hostId) === true ? RELAY_CLOSE.hostRemoved : RELAY_CLOSE.hostNotAllowed);
         return;
       }
       hostId = frame.hostId;

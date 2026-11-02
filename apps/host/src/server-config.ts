@@ -5,11 +5,14 @@
 // one could dial a different server than the operator meant. Every write also
 // stamps a fresh random `binding`: the incarnation account offers mint under,
 // so a re-join — even to the same origin — retires outstanding ones.
+// When the account removes the host (#512), server.json gives way to a
+// removal notice that `pinomad status` shows until the next join.
 import { randomBytes } from "node:crypto";
 import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export const SERVER_CONFIG_FILE = "server.json";
+export const REMOVAL_NOTICE_FILE = "server-removed.json";
 
 export interface ServerConfig {
   readonly origin: string;
@@ -22,6 +25,13 @@ export interface ServerConfig {
   readonly binding?: string;
   /** The account the host joined, for `pinomad status`; files from before it existed lack it. */
   readonly username?: string;
+}
+
+/** The server and account that removed this host (#512). */
+export interface RemovalNotice {
+  readonly origin: string;
+  readonly username?: string;
+  readonly removedAt: number;
 }
 
 /** Trailing slashes never distinguish a server; every comparison normalizes them away. */
@@ -54,19 +64,50 @@ export async function readServerConfig(dataDir: string): Promise<ServerConfig | 
 }
 
 /** Tmp-then-rename like settings.json: a crash must not leave a truncated file. */
-export async function writeServerConfig(dataDir: string, config: Omit<ServerConfig, "binding">): Promise<void> {
-  const path = join(dataDir, SERVER_CONFIG_FILE);
+async function writeJsonFile(path: string, value: unknown): Promise<void> {
   const tmp = `${path}.tmp-${process.pid}`;
-  await writeFile(
-    tmp,
-    `${JSON.stringify({
-      origin: normalizeOrigin(config.origin),
-      binding: randomBytes(16).toString("base64url"),
-      ...(config.username === undefined ? {} : { username: config.username }),
-    })}\n`,
-    { mode: 0o600 },
-  );
+  await writeFile(tmp, `${JSON.stringify(value)}\n`, { mode: 0o600 });
   await rename(tmp, path);
+}
+
+export async function writeServerConfig(dataDir: string, config: Omit<ServerConfig, "binding">): Promise<void> {
+  await writeJsonFile(join(dataDir, SERVER_CONFIG_FILE), {
+    origin: normalizeOrigin(config.origin),
+    binding: randomBytes(16).toString("base64url"),
+    ...(config.username === undefined ? {} : { username: config.username }),
+  });
+  await rm(join(dataDir, REMOVAL_NOTICE_FILE), { force: true });
+}
+
+/**
+ * The account at `origin` removed this host (#512): server.json gives way to
+ * a removal notice. Only when server.json still names `origin` — a re-join to
+ * another server may have rewritten it while the old link ran. False when it
+ * didn't.
+ */
+export async function forgetRemovedServer(dataDir: string, origin: string, removedAt = Date.now()): Promise<boolean> {
+  const config = await readServerConfig(dataDir).catch(() => undefined);
+  if (config === undefined || normalizeOrigin(config.origin) !== normalizeOrigin(origin)) return false;
+  await writeJsonFile(join(dataDir, REMOVAL_NOTICE_FILE), {
+    origin: normalizeOrigin(config.origin),
+    ...(config.username === undefined ? {} : { username: config.username }),
+    removedAt,
+  });
+  await removeServerConfig(dataDir);
+  return true;
+}
+
+/** The notice `forgetRemovedServer` left; undefined when there is none or it doesn't parse. */
+export async function readRemovalNotice(dataDir: string): Promise<RemovalNotice | undefined> {
+  let value: unknown;
+  try {
+    value = JSON.parse(await readFile(join(dataDir, REMOVAL_NOTICE_FILE), "utf8"));
+  } catch {
+    return undefined;
+  }
+  const { origin, username, removedAt } = (value ?? {}) as { origin?: unknown; username?: unknown; removedAt?: unknown };
+  if (typeof origin !== "string" || typeof removedAt !== "number") return undefined;
+  return { origin, ...(typeof username === "string" && username !== "" ? { username } : {}), removedAt };
 }
 
 export const removeServerConfig = (dataDir: string): Promise<void> =>

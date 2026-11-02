@@ -97,7 +97,7 @@ import { SubagentDoc } from "./subagent-doc.ts";
 import { attachAutoTitle } from "./auto-title.ts";
 import { TitleDoc } from "./title-doc.ts";
 import { admitDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
-import { normalizeOrigin, readServerBinding, readServerConfig } from "./server-config.ts";
+import { forgetRemovedServer, normalizeOrigin, readServerBinding, readServerConfig, SERVER_CONFIG_FILE } from "./server-config.ts";
 import { attachPushSender, revokeDevice, setPushToken, type PushTimers, type PushTransport } from "./push.ts";
 import { toolTarget } from "@pinomad/protocol/tool-target.ts";
 import { type RelayLink, relayWsBase, startRelayLink } from "./relay-link.ts";
@@ -666,6 +666,16 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
           console.log(JSON.stringify({ event: "relay", status: "registered", origin: link.origin, hostId: link.hostId, push }));
         } else if (state.status === "connecting") {
           console.log(JSON.stringify({ event: "relay", status: "connecting", origin: link.origin }));
+        } else if (state.status === "removed") {
+          // Like `pinomad leave` from the other side (#512): server.json goes,
+          // so a restart doesn't dial this server again, and `pinomad status`
+          // says what happened. The service definition already names no
+          // server — join and up write it without --relay.
+          broadcast("warning", state.reason);
+          console.error(state.reason);
+          forgetRemovedServer(options.dataDir, relayOrigin).catch((error: unknown) => {
+            console.error(`could not remove ${SERVER_CONFIG_FILE}: ${error instanceof Error ? error.message : String(error)}`);
+          });
         } else {
           broadcast("warning", state.reason);
           console.error(state.reason);

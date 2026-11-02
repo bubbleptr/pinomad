@@ -22,6 +22,12 @@ export const RELAY_CLOSE = {
   handshakeTimeout: 4608,
   replaced: 4609,
   acceptTimeout: 4610,
+  /**
+   * Control connections only (#512): the account removed this host, so it
+   * stops redialing and forgets the server. A host that was offline when it
+   * happened gets it on its next register; a re-join clears it.
+   */
+  hostRemoved: 4611,
   /** A concurrent-connection cap for the host or its account is full (issue #453). */
   tooManyConnections: 4629,
   /** A relay traffic limit was hit: the account budget (refills over time) or a device's handshake allowance (issue #453). */

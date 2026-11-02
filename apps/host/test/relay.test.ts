@@ -13,6 +13,7 @@ import { fromBase64Url, secureWebSocketTransport, toBase64Url } from "@pinomad/p
 import { transcript } from "@pinomad/protocol/transcript.ts";
 import { startRelay, type Relay } from "@pinomad/server/src/relay.ts";
 import { loadRelayKey } from "../src/devices.ts";
+import { readRemovalNotice, readServerConfig, writeServerConfig } from "../src/server-config.ts";
 import type { OpenedHost } from "../src/host.ts";
 import { Published, type HostValue } from "../src/host-value.ts";
 import { startRelayLink, type AccountOfferResult, type RelayLink, type RelayLinkState } from "../src/relay-link.ts";
@@ -749,6 +750,71 @@ describe("relay link", () => {
     const tokenClient = await connectTo(defer, host);
     await tokenClient.controller.createConversation({ kind: "chat" }, "still local");
     await waitForView(tokenClient.view, (view) => transcript(view.conversation!).length > 0);
+  });
+
+  /** Signs in as the bound account and removes the host the way the account panel does (#512). */
+  async function removeFromAccount(origin: string, hostId: string): Promise<void> {
+    const signedIn = await fetch(`${origin}/api/login`, {
+      method: "POST",
+      body: JSON.stringify({ username: "admin", password: "correct horse battery" }),
+    });
+    const { token } = (await signedIn.json()) as { token: string };
+    const removed = await fetch(`${origin}/api/hosts/${hostId}/remove`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ password: "correct horse battery" }),
+    });
+    expect(removed.status).toBe(204);
+  }
+
+  async function eventually(check: () => Promise<boolean>): Promise<void> {
+    const deadline = Date.now() + 5_000;
+    while (!(await check())) {
+      if (Date.now() > deadline) throw new Error("condition not met in time");
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
+  it("stops dialing and forgets the server when the account removes the host (#512)", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const { origin, hostId } = await startTestRelay(dir.path);
+    await writeServerConfig(dir.path, { origin, username: "admin" });
+    const host = await startFauxHost(defer, {
+      dataDir: dir.path,
+      relay: { origin, reconnectDelayMs: QUICK_RECONNECT },
+    });
+    await waitForRelayState(host, "registered");
+
+    await removeFromAccount(origin, hostId);
+    const state = await waitForRelayState(host, "removed");
+    if (state.status !== "removed") throw new Error("unreachable");
+    expect(state.reason).toContain(origin);
+    expect(state.reason).toContain("pinomad up");
+    await eventually(async () => (await readServerConfig(dir.path)) === undefined);
+    expect(await readRemovalNotice(dir.path)).toMatchObject({ origin, username: "admin" });
+    // Terminal: several reconnect delays later it still hasn't dialed again.
+    await new Promise((resolve) => setTimeout(resolve, QUICK_RECONNECT.max * 3));
+    expect(host.relay!.state().status).toBe("removed");
+  });
+
+  it("leaves server.json alone when it already names another server", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const { origin, hostId } = await startTestRelay(dir.path);
+    // A re-join to another server rewrote server.json while this link ran.
+    await writeServerConfig(dir.path, { origin: "https://other.example.com" });
+    const host = await startFauxHost(defer, {
+      dataDir: dir.path,
+      relay: { origin, reconnectDelayMs: QUICK_RECONNECT },
+    });
+    await waitForRelayState(host, "registered");
+
+    await removeFromAccount(origin, hostId);
+    await waitForRelayState(host, "removed");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect((await readServerConfig(dir.path))?.origin).toBe("https://other.example.com");
+    expect(await readRemovalNotice(dir.path)).toBeUndefined();
   });
 
   it("disconnects a relay-carried device when it is revoked", async () => {

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { joinServer } from "../src/cli/join.ts";
 import { statusReport } from "../src/cli/status.ts";
 import { main as up, resolveReach, upHost } from "../src/cli/up.ts";
-import { readServerConfig, writeServerConfig } from "../src/server-config.ts";
+import { forgetRemovedServer, readServerConfig, writeServerConfig } from "../src/server-config.ts";
 import { asUser, codeIn, fakeManager, joinToken, seededSpec, startServer, type Started } from "./server-support.ts";
 import { tempDir, useCleanups } from "./support.ts";
 
@@ -315,6 +315,23 @@ describe("statusReport", () => {
     expect(report.server).toBeUndefined();
     expect(report.lanPort).toBeUndefined();
     expect(report.service.installed).toBe(false);
+  });
+
+  it("a host the account removed: which server and account, until it joins again (#512)", async () => {
+    const dir = await dataDir();
+    const started = await startServer();
+    const fake = fakeManager(seededSpec(dir, []));
+    await joinServer({ origin: started.origin, token: await joinToken(started), dataDir: dir }, { manager: fake.manager });
+    expect(await forgetRemovedServer(dir, started.origin)).toBe(true);
+
+    const removed = await statusReport({ dataDir: dir }, { manager: fake.manager });
+    expect(removed.server).toBeUndefined();
+    expect(removed.removed).toMatchObject({ origin: started.origin, username: "admin" });
+
+    await joinServer({ origin: started.origin, token: await joinToken(started), dataDir: dir }, { manager: fake.manager });
+    const rejoined = await statusReport({ dataDir: dir }, { manager: fake.manager });
+    expect(rejoined.server).toMatchObject({ origin: started.origin });
+    expect(rejoined.removed).toBeUndefined();
   });
 
   it("a joined host with LAN on: the server, the account, the port and the service", async () => {
