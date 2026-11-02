@@ -96,12 +96,15 @@ export async function stopService({
   manager = serviceManager(),
   connect = connectToHost,
   log = (line: string) => console.log(line),
+  logError = (line: string) => console.error(line),
 }: {
   force: boolean;
   argv: readonly string[];
   manager?: ServiceManager;
   connect?: (url: string, token: string) => Promise<RemoteDurable>;
   log?: (line: string) => void;
+  /** stderr: the Mac App shows its last line when the stop fails. */
+  logError?: (line: string) => void;
 }): Promise<number> {
   const state = await manager.state();
   if (!state.installed) {
@@ -124,6 +127,12 @@ export async function stopService({
     if (address !== undefined) await waitUntilIdle(address, connect, log);
   }
   await manager.stop();
+  // launchd's bootout can fail after disable went through, leaving the host running.
+  const after = await manager.state();
+  if (!after.stopped) {
+    logError(`the host is still running (${after.detail}); run \`${commandHint("service")} stop\` again`);
+    return 1;
+  }
   log(`stopped; it stays off, also after a restart, until \`${commandHint("service")} start\``);
   return 0;
 }

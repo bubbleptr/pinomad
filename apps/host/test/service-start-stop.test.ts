@@ -17,8 +17,10 @@ const RUNNING: ServiceState = { installed: true, stopped: false, running: true, 
 const STOPPED: ServiceState = { installed: true, stopped: true, running: false, detail: "stopped" };
 const MISSING: ServiceState = { installed: false, stopped: false, running: false, detail: "not installed" };
 
-function manager(state: ServiceState, dataDir = "/nowhere", hostArgs: readonly string[] = []) {
+/** `stuck`: stop goes through but the host stays loaded, as when bootout fails. */
+function manager(state: ServiceState, dataDir = "/nowhere", hostArgs: readonly string[] = [], { stuck = false } = {}) {
   const calls: string[] = [];
+  let current = state;
   const fake: ServiceManager = {
     install: async () => "/fake/pinomad.host.plist",
     uninstall: async () => {},
@@ -28,8 +30,9 @@ function manager(state: ServiceState, dataDir = "/nowhere", hostArgs: readonly s
     },
     stop: async () => {
       calls.push("stop");
+      if (!stuck) current = STOPPED;
     },
-    state: async () => state,
+    state: async () => current,
     logs: async () => {},
     read: async () => (state.installed ? seededSpec(dataDir, hostArgs) : undefined),
   };
@@ -103,6 +106,18 @@ describe("stopService", () => {
     const refused = async (): Promise<RemoteDurable> => Promise.reject(new Error("refused"));
     expect(await stopService({ force: false, argv: [], manager: down.manager, connect: refused, log: () => {} })).toBe(0);
     expect(down.calls).toEqual(["stop"]);
+  });
+
+  it("fails when the host is still loaded after the stop, instead of calling it stopped", async () => {
+    // disable went through, bootout didn't: the state still reads it running.
+    const { manager: fake, calls } = manager(RUNNING, "/nowhere", [], { stuck: true });
+    const lines: string[] = [];
+    const errors: string[] = [];
+    const code = await stopService({ force: true, argv: [], manager: fake, log: (line) => lines.push(line), logError: (line) => errors.push(line) });
+    expect(code).toBe(1);
+    expect(calls).toEqual(["stop"]);
+    expect(lines).toEqual([]);
+    expect(errors.join("\n")).toMatch(/still running/);
   });
 
   it("leaves a stopped service alone, and refuses when nothing is installed", async () => {
