@@ -4,6 +4,7 @@ import { VStack } from "@astryxdesign/core/Layout";
 import { useEffect, useState } from "react";
 import type { AccountError } from "@pinomad/client/account.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
+import type { AccountState } from "../../entities/account/account-model.ts";
 import { useHosts } from "../../entities/host/host-store.ts";
 import { accountErrorMessage } from "./account-error.ts";
 
@@ -14,13 +15,11 @@ import { accountErrorMessage } from "./account-error.ts";
  */
 export function RepairViaAccount({ hostKey }: { hostKey: string }) {
   const account = useAccountModel();
-  const { state } = account;
   const { focusHost } = useHosts();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<AccountError>();
   useEffect(() => account.hostRejected(hostKey), [account, hostKey]);
-  if (state.status !== "signed-in") return null;
-  const match = state.hosts.find((each) => each.stored?.hostKey === hostKey);
+  const match = accountHostFor(account.state, hostKey);
   if (match === undefined) return null;
   const pair = (): void => {
     setBusy(true);
@@ -32,7 +31,7 @@ export function RepairViaAccount({ hostKey }: { hostKey: string }) {
     });
   };
   return (
-    <VStack gap={2} hAlign="center">
+    <VStack gap={2} hAlign="start">
       <Button
         label="Pair again with your account"
         variant="primary"
@@ -43,4 +42,9 @@ export function RepairViaAccount({ hostKey }: { hostKey: string }) {
       {error === undefined ? null : <Banner status="error" title="Couldn't pair" description={accountErrorMessage(error)} />}
     </VStack>
   );
+}
+
+/** The signed-in account's entry for `hostKey`, when the account can re-pair it. */
+export function accountHostFor(state: AccountState, hostKey: string) {
+  return state.status === "signed-in" ? state.hosts.find((each) => each.stored?.hostKey === hostKey) : undefined;
 }

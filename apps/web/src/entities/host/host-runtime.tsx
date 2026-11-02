@@ -22,7 +22,7 @@ import { candidatePlan } from "@pinomad/protocol/remote-candidates.ts";
 import { useDurableView, useRemoteDurable } from "../../use-remote.ts";
 import { Centered } from "../../shared/ui/centered.tsx";
 import { HostsFallback } from "../../widgets/app-frame/hosts.tsx";
-import { RepairViaAccount } from "../../widgets/account/repair-via-account.tsx";
+import { DeviceRejected } from "../../widgets/app-frame/device-rejected.tsx";
 import { VersionMismatch } from "../../widgets/app-frame/version-mismatch.tsx";
 import { useRunNotifications } from "../conversation/use-run-notifications.ts";
 import { useConversationOpening, type Opening } from "../conversation/use-conversation-opening.ts";
@@ -209,7 +209,6 @@ function HostFailure({
   state: Extract<ReturnType<typeof useRemoteDurable>, { status: "failed" }>;
   retry: () => void;
 }) {
-  const { forget } = useHosts();
   if (state.mismatch !== undefined) {
     return (
       <Centered>
@@ -221,16 +220,7 @@ function HostFailure({
   if (state.unauthorized) {
     return (
       <Centered>
-        <VStack gap={4} hAlign="center">
-          <EmptyState title="This device isn't paired" description="It isn't paired with the host, or was revoked." />
-          <RepairViaAccount hostKey={host.hostKey} />
-          <Button
-            label="Forget this host"
-            variant="secondary"
-            onClick={() => void forget(host.hostKey)}
-          />
-        </VStack>
-        <HostsFallback />
+        <DeviceRejected hostKey={host.hostKey} />
       </Centered>
     );
   }
@@ -297,7 +287,7 @@ function ReadyHost({
 }) {
   const view = useDurableView(remote);
   const registry = useContext(HostRuntimesContext);
-  const { focusConversation, focusDraft, forget } = useHosts();
+  const { focusConversation, focusDraft } = useHosts();
   useEffect(() => {
     registry?.publish(host.hostKey, { phase: "ready", remote, view, retry, composer });
   }, [composer, host.hostKey, registry, remote, retry, view]);
@@ -324,13 +314,7 @@ function ReadyHost({
     focusConversation,
   );
   if (!focused) return null;
-  const rejected = (
-    <VStack gap={4} hAlign="center">
-      <EmptyState title="This device isn't paired" description="It isn't paired with the host, or was revoked." />
-      <RepairViaAccount hostKey={host.hostKey} />
-      <Button label="Forget this host" variant="secondary" onClick={() => void forget(host.hostKey)} />
-    </VStack>
-  );
+  const rejected = <DeviceRejected hostKey={host.hostKey} />;
   return renderWorkbench({
     host,
     remote,

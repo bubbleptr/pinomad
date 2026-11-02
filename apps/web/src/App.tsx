@@ -66,7 +66,8 @@ import {
 import { useComposerSlot, useComposerSlotState } from "./entities/composer/composer-context.tsx";
 import { HostsFallback } from "./widgets/app-frame/hosts.tsx";
 import { AccountProvider } from "./entities/account/account-context.tsx";
-import { RepairViaAccount } from "./widgets/account/repair-via-account.tsx";
+import { PairingLinkForm } from "./entities/host/pairing-link-form.tsx";
+import { DeviceRejected } from "./widgets/app-frame/device-rejected.tsx";
 import { NoHostLink } from "./widgets/account/no-host-link.tsx";
 import { HostLinkRoute } from "./widgets/account/host-link-route.tsx";
 import { NewHostNotices } from "./widgets/account/new-host-notice.tsx";
@@ -106,6 +107,9 @@ export function App() {
   // A pairing can finish before the initial list read; remember it and merge
   // it into the first snapshot instead of dropping its runtime.
   const pendingPairings = useRef(new Map<string, StoredHost>());
+  // Hosts a forget has taken off screen but not yet out of the store: a save
+  // already in flight (an account link adopted, say) must not put them back.
+  const forgetting = useRef(new Set<string>());
   const [loaded, setLoaded] = useState<Loaded>();
   useEffect(() => {
     let live = true;
@@ -199,17 +203,15 @@ export function App() {
     setLoaded((prev) => (prev === undefined ? prev : { ...prev, focus: { hostKey } }));
   }, []);
 
-  const removeHost = useCallback(
-    async (hostKey: string, clearAddress: boolean): Promise<void> => {
+  /** Take a host off screen; its stored record is the caller's to remove. */
+  const dropFromView = useCallback(
+    (hostKey: string, clearAddress: boolean): void => {
       lastByHost.current.delete(hostKey);
       if (clearAddress) {
         // A live #token=…/#pair=… fragment outlives the stored list; drop it so
         // the emptied list can land on the no-link screen instead of reconnecting.
         history.replaceState(null, "", window.location.pathname + window.location.search);
       }
-      await store.remove(hostKey).catch((error: unknown) => {
-        console.error("Could not remove the host", error);
-      });
       setLoaded((prev) => {
         if (prev === undefined) return prev;
         const hosts = prev.hosts.filter((each) => each.hostKey !== hostKey);
@@ -223,13 +225,24 @@ export function App() {
         };
       });
     },
-    [rememberedFocus, store],
+    [rememberedFocus],
+  );
+
+  const removeStored = useCallback(
+    (hostKey: string): Promise<void> =>
+      store.remove(hostKey).catch((error: unknown) => {
+        console.error("Could not remove the host", error);
+      }),
+    [store],
   );
 
   /** Remove a superseded identity without treating it as a user forget. */
   const dropHost = useCallback(
-    (hostKey: string): Promise<void> => removeHost(hostKey, false),
-    [removeHost],
+    async (hostKey: string): Promise<void> => {
+      await removeStored(hostKey);
+      dropFromView(hostKey, false);
+    },
+    [dropFromView, removeStored],
   );
 
   const forget = useCallback(
@@ -237,23 +250,36 @@ export function App() {
       // Account adoption can link this host in the store without touching the
       // loaded snapshot (or another tab may have done it), so read the latest
       // record before deciding whether forgetting should decline it.
-      const persisted = await store.list().catch(() => loaded?.hosts ?? []);
-      const host = persisted.find((each) => each.hostKey === hostKey)
-        ?? loaded?.hosts.find((each) => each.hostKey === hostKey);
-      if (host?.account !== undefined) {
-        // A forgotten account host is declined so the next account refresh
-        // cannot silently register it again (ADR-0035 §5).
-        browserDeclined.add(host.account);
-        cancelAccountRegistration(host.account.hostId);
+      const latest = store.list().catch(() => loaded?.hosts ?? []);
+      // Off screen before any await: a host that just unpaired this device
+      // closes it at once, and its refusal must not flash up meanwhile.
+      forgetting.current.add(hostKey);
+      dropFromView(hostKey, true);
+      try {
+        const persisted = await latest;
+        const host = persisted.find((each) => each.hostKey === hostKey)
+          ?? loaded?.hosts.find((each) => each.hostKey === hostKey);
+        if (host?.account !== undefined) {
+          // A forgotten account host is declined so the next account refresh
+          // cannot silently register it again (ADR-0035 §5).
+          browserDeclined.add(host.account);
+          cancelAccountRegistration(host.account.hostId);
+        }
+        await removeStored(hostKey);
+      } finally {
+        forgetting.current.delete(hostKey);
       }
-      await removeHost(hostKey, true);
     },
-    [loaded?.hosts, removeHost, store],
+    [dropFromView, loaded?.hosts, removeStored, store],
   );
 
   const paired = useCallback(
     async (host: StoredHost): Promise<void> => {
+      if (forgetting.current.has(host.hostKey)) return;
       await store.save(host);
+      // The save may have outlived a forget that started meanwhile; that
+      // forget removes the record, and the host stays off screen.
+      if (forgetting.current.has(host.hostKey)) return;
       setLoaded((prev) => {
         if (prev === undefined) {
           const pending = pendingPairings.current.get(host.hostKey);
@@ -487,7 +513,7 @@ export function SecureClient({
   /** A pair that reached message 2 and saved: the app can replace the one-shot flow with its runtime. */
   onPairedHost?: (host: StoredHost) => void;
 }) {
-  const { hosts, paired, endpoints, setConnection, forget } = useHosts();
+  const { hosts, paired, endpoints, setConnection } = useHosts();
   const stored = useMemo(() => hosts.find((host) => host.hostKey === address.hostKey), [hosts, address]);
   // A pairing whose save failed (e.g. locked keychain): the device key would
   // die with the process, and the spent invite can't pair again — surface it
@@ -593,8 +619,11 @@ export function SecureClient({
       <VStack gap={4} hAlign="center">
         <EmptyState
           title="This pairing code was used or has expired"
-          description="Generate a new QR on the host: run bun run pair, or open Settings → Devices → Pair a device."
+          description="Generate a new QR on the host: run pinomad pair, or open Settings → Devices → Pair a device."
         />
+        <div className="w-full max-w-md">
+          <PairingLinkForm />
+        </div>
         {hosts.length === 0 ? null : (
           <Button
             label="Use saved pairing"
@@ -607,11 +636,7 @@ export function SecureClient({
         )}
       </VStack>
     ) : (
-      <VStack gap={4} hAlign="center">
-        <EmptyState title="This device isn't paired" description="It isn't paired with the host, or was revoked." />
-        <RepairViaAccount hostKey={address.hostKey} />
-        <Button label="Forget this host" variant="secondary" onClick={() => void forget(address.hostKey)} />
-      </VStack>
+      <DeviceRejected hostKey={address.hostKey} />
     );
   const notice =
     unsaved === undefined ? undefined : (
@@ -697,7 +722,8 @@ export function RemoteWorkbench({
   if (state.status === "failed") {
     // Only a 4401 rejection means the pairing itself is bad — an unreachable
     // host keeps the key and the banner. These screens have no sidebar, so
-    // the hosts list repeats inline.
+    // the hosts list repeats inline — except under a rejection, whose screen
+    // carries its own way forward.
     return (
       <Centered>
         {notice === undefined ? null : <div className="w-full max-w-md">{notice}</div>}
@@ -729,7 +755,7 @@ export function RemoteWorkbench({
             <Button label="Retry" variant="secondary" onClick={() => setAttempt(attempt + 1)} />
           </VStack>
         )}
-        <HostsFallback />
+        {rejected !== undefined && state.unauthorized ? null : <HostsFallback />}
       </Centered>
     );
   }
@@ -999,12 +1025,7 @@ export function Workbench({
   // Only a 4401 close means the pairing itself is bad — other terminal closes
   // (4400's rejected frame, say) keep the disconnect banner and their notice.
   if (view.unauthorized === true && rejected !== undefined) {
-    return (
-      <Centered>
-        {rejected}
-        <HostsFallback />
-      </Centered>
-    );
+    return <Centered>{rejected}</Centered>;
   }
   const body = (
     <div className="flex h-full min-h-0 min-w-0 flex-col">

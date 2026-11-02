@@ -12,7 +12,7 @@ pinomad host --remote-port 7422
 pinomad pair        # 一次性的二维码和链接，5 分钟后过期
 ```
 
-手机扫二维码即完成配对（Noise IK 端到端加密 + 设备登记）；二维码是一次性的，5 分钟过期，过期后重新跑 `pinomad pair`。已登记的设备在 Web 的 Settings → Devices 里管理，在那直接点 Revoke 就能吊销。
+手机扫二维码即完成配对（Noise IK 端到端加密 + 设备登记）；二维码是一次性的，5 分钟过期，过期后重新跑 `pinomad pair`。已登记的设备在 Web 的 Settings → Devices 里管理，点 Unpair 就能解除配对（宿主随即吊销它的公钥）。
 
 配对邀请始终带 legacy `url`，并可以再带一份 `endpointSet` 候选列表（ADR-0032）：开着远程端口时，直连候选是当前探测到的局域网地址或显式 `--public-url`；加入可远程访问的中继时，中继也会作为候选。自动 LAN 地址在每次生成邀请和每次安全连接的 `hello` 时重新探测，不是启动时的缓存。回环 direct 和回环 relay 都只留在本机：邀请省略 `endpointSet`（没有可达的远程候选时），也不会把 `127.0.0.1` 发布给远程客户端；旧客户端继续只读 `url`。
 

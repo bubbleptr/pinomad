@@ -10,7 +10,12 @@ import { pairingFragment } from "../../address.ts";
  * reload re-resolves the address into the pair-confirm flow. Shared by the
  * no-link screen, Settings → Hosts, and the connection-failure screens.
  */
-export function PairingLinkForm() {
+export function PairingLinkForm({
+  connectVariant = "primary",
+}: {
+  /** Secondary where another action is the screen's primary one. */
+  connectVariant?: "primary" | "secondary";
+} = {}) {
   const [pasted, setPasted] = useState("");
   const [error, setError] = useState<string>();
   const connect = (): void => {
@@ -44,7 +49,7 @@ export function PairingLinkForm() {
             width="100%"
           />
         </div>
-        <Button label="Connect" variant="primary" isDisabled={pasted.trim() === ""} onClick={connect} />
+        <Button label="Connect" variant={connectVariant} isDisabled={pasted.trim() === ""} onClick={connect} />
       </HStack>
       {error === undefined ? null : <Banner status="error" title="Not a pairing link" description={error} />}
     </>

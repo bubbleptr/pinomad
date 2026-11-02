@@ -122,7 +122,7 @@ export function hostStatusText(info: HostRuntimeInfo | undefined): string {
     case "terminal": {
       const reason = terminalReason(info);
       return reason === "rejected"
-        ? "Rejected by the host"
+        ? "Not paired"
         : reason === "protocol_mismatch"
           ? "Protocol mismatch"
           : "Disconnected";
