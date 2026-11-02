@@ -49,8 +49,8 @@ export function AddHostSteps({ serverOrigin }: { serverOrigin: string }) {
       ) : null}
       <VStack gap={2}>
         <Text type="supporting">
-          It asks how your other devices should reach the host; press Enter to go through this server. Then it prints a
-          code. Enter it here to add the host to your account:
+          It asks how your other devices should reach the host; press Enter to go through this server. Then it opens a
+          page to confirm the host, or, on a computer without a browser, prints a code. Enter that code here:
         </Text>
         <HostLinkEntry />
       </VStack>
