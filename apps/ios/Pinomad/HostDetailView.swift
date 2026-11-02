@@ -10,7 +10,7 @@ struct HostDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var mode: HostConnectionMode = .auto
-    @State private var forgetting = false
+    @State private var unpairing = false
     /// The full addresses are hidden by default so a screenshot does not
     /// leak the network. The disclosure resets with the page.
     @State private var addressesExpanded = false
@@ -60,8 +60,8 @@ struct HostDetailView: View {
             }
 
             Section {
-                Button("Forget This Host", role: .destructive) {
-                    forgetting = true
+                Button("Unpair This Host", role: .destructive) {
+                    unpairing = true
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
             }
@@ -81,14 +81,14 @@ struct HostDetailView: View {
             guard next != model.connectionMode(for: hostKey) else { return }
             model.setConnectionMode(next, for: hostKey)
         }
-        .alert("Forget \(host.map(label) ?? "this host")?", isPresented: $forgetting) {
+        .alert("Unpair \(host.map(label) ?? "this host")?", isPresented: $unpairing) {
             Button("Cancel", role: .cancel) {}
-            Button("Forget", role: .destructive) {
-                model.forget(hostKey)
+            Button("Unpair", role: .destructive) {
+                model.unpair(hostKey)
                 dismiss()
             }
         } message: {
-            Text("This device will need a new pairing link to reconnect to it.")
+            Text(model.unpairMessage(hostKey))
         }
     }
 

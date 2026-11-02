@@ -11,7 +11,7 @@ struct SettingsView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
-    @State private var forgetting: HostRecord?
+    @State private var unpairing: HostRecord?
 
     var body: some View {
         List {
@@ -53,21 +53,21 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .alert(
-            "Forget \(forgetting.map(label) ?? "this host")?",
-            isPresented: Binding(get: { forgetting != nil }, set: { if !$0 { forgetting = nil } }),
-            presenting: forgetting
+            "Unpair \(unpairing.map(label) ?? "this host")?",
+            isPresented: Binding(get: { unpairing != nil }, set: { if !$0 { unpairing = nil } }),
+            presenting: unpairing
         ) { host in
             Button("Cancel", role: .cancel) {}
-            Button("Forget", role: .destructive) {
+            Button("Unpair", role: .destructive) {
                 let wasLast = machines.count == 1
-                model.forget(host.hostKey)
+                model.unpair(host.hostKey)
                 // Nothing left to pick — the pairing page behind has
-                // the same ways to pair. Forgetting waits for the
-                // unregister call, so decide from the list we had.
+                // the same ways to pair. Unpairing waits for the host's
+                // calls, so decide from the list we had.
                 if wasLast { dismiss() }
             }
-        } message: { _ in
-            Text("This device will need a new pairing link to reconnect to it.")
+        } message: { host in
+            Text(model.unpairMessage(host.hostKey))
         }
     }
 
@@ -94,12 +94,12 @@ struct SettingsView: View {
             }
         }
         .swipeActions {
-            Button("Forget", role: .destructive) { forgetting = host }
+            Button("Unpair", role: .destructive) { unpairing = host }
                 // The row's plain tint would turn it black.
                 .tint(.red)
         }
         .contextMenu {
-            Button("Forget", image: .trash2, role: .destructive) { forgetting = host }
+            Button("Unpair", image: .trash2, role: .destructive) { unpairing = host }
         }
     }
 
@@ -225,9 +225,10 @@ struct MachineSettingsView: View {
     let model: AppModel
     let hostKey: String
 
+    @Environment(\.dismiss) private var dismiss
     @State private var renaming = false
     @State private var nameDraft = ""
-    @State private var revoking: DeviceEntry?
+    @State private var unpairing: DeviceEntry?
 
     var body: some View {
         List {
@@ -267,19 +268,32 @@ struct MachineSettingsView: View {
             Text("Every paired device shows this host under this name.")
         }
         .alert(
-            revoking.map { "Revoke \($0.name)?" } ?? "",
-            isPresented: Binding(get: { revoking != nil }, set: { if !$0 { revoking = nil } }),
-            presenting: revoking
+            unpairing.map { isThisDevice($0) ? "Unpair this device?" : "Unpair \($0.name)?" } ?? "",
+            isPresented: Binding(get: { unpairing != nil }, set: { if !$0 { unpairing = nil } }),
+            presenting: unpairing
         ) { device in
             Button("Cancel", role: .cancel) {}
-            Button("Revoke", role: .destructive) { model.revoke(device: device.publicKey) }
+            Button("Unpair", role: .destructive) {
+                if isThisDevice(device) {
+                    // This device's own pairing ends at both ends, or the
+                    // next connection would only find the host refusing it.
+                    model.unpair(hostKey)
+                    dismiss()
+                } else {
+                    model.revoke(device: device.publicKey)
+                }
+            }
         } message: { device in
-            if device.publicKey == model.thisDevicePublicKey {
-                Text("This is this device. Revoking disconnects it right away, and it needs a new pairing link to reconnect.")
+            if isThisDevice(device) {
+                Text("This host will stop accepting this device, and this device forgets the host. Connecting again needs a new pairing link.")
             } else {
-                Text("It disconnects and needs a new pairing link to reconnect to this host.")
+                Text("This host will stop accepting it. It can pair again with a new pairing link.")
             }
         }
+    }
+
+    private func isThisDevice(_ device: DeviceEntry) -> Bool {
+        device.publicKey == model.thisDevicePublicKey
     }
 
     /// The same name the row that opened this page showed.
@@ -380,14 +394,14 @@ struct MachineSettingsView: View {
                     .foregroundStyle(.secondary)
             }
             ForEach(devices, id: \.publicKey) { device in
-                DeviceRow(device: device, isThisDevice: device.publicKey == model.thisDevicePublicKey)
+                DeviceRow(device: device, isThisDevice: isThisDevice(device))
                     .swipeActions {
-                        Button("Revoke", role: .destructive) { revoking = device }
+                        Button("Unpair", role: .destructive) { unpairing = device }
                             .tint(.red)
                             .disabled(!model.connected)
                     }
                     .contextMenu {
-                        Button("Revoke", image: .circleX, role: .destructive) { revoking = device }
+                        Button("Unpair", image: .circleX, role: .destructive) { unpairing = device }
                             .disabled(!model.connected)
                     }
             }
@@ -401,7 +415,7 @@ struct MachineSettingsView: View {
             Text("Devices")
         } footer: {
             Text(model.connected
-                 ? "The other device scans the QR code or opens the link to pair. Swipe left on a device to revoke it."
+                 ? "The other device scans the QR code or opens the link to pair. Swipe left on a device to unpair it."
                  : "Connect to the host to create a QR code.")
         }
     }
