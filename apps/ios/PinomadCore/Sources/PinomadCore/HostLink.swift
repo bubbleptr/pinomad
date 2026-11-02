@@ -38,15 +38,13 @@ public enum HostLinkCopy {
         case deny
     }
 
-    /// Install pinomad with its own Node (#499), then `pinomad up` (#498),
-    /// which asks for a code to confirm here. ~/.local/bin goes first on
-    /// PATH: a new Mac doesn't have it, and where npm already installed
-    /// pinomad the script makes no launcher there, so that one runs instead.
-    /// `--origin` always: up otherwise keeps a host on the server it already
-    /// joined.
+    /// Install pinomad with its own Node (#499), and the script then runs
+    /// `pinomad up` (#498), which asks for a code to confirm here. The script
+    /// runs it, not a second line: that terminal's PATH doesn't have
+    /// ~/.local/bin yet on a new Mac. `--origin` always: up otherwise keeps a
+    /// host on the server it already joined.
     public static func joinCommand(serverOrigin: String) -> String {
-        "curl -fsSL https://pinomad.si/install.sh | sh\n"
-            + "PATH=\"$HOME/.local/bin:$PATH\" pinomad up --origin \(normalizeServerOrigin(origin: serverOrigin))"
+        "curl -fsSL https://pinomad.si/install.sh | sh -s -- up --origin \(normalizeServerOrigin(origin: serverOrigin))"
     }
 
     /// Both ends of the host id, to compare with the one `pinomad join`
