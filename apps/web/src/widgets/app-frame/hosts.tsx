@@ -6,6 +6,7 @@ import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
+import { useToast } from "@astryxdesign/core/Toast";
 import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
@@ -26,7 +27,7 @@ import {
 } from "../../entities/host/host-runtimes.ts";
 import { useHosts } from "../../entities/host/host-store.ts";
 import { PairingLinkForm } from "../../entities/host/pairing-link-form.tsx";
-import { unpairHost } from "../../entities/host/unpair.ts";
+import { unansweredUnpair, unpairHost } from "../../entities/host/unpair.ts";
 import { Computer } from "../../shared/ui/icons.tsx";
 import { AccountDialog } from "../account/account-dialog.tsx";
 import {
@@ -218,6 +219,7 @@ export function HostsSection({
   const paired = usePairedHosts();
   const { setConnection, forget, focus } = useHosts();
   const [unpairing, setUnpairing] = useState<StoredHost>();
+  const toast = useToast();
   const [connectionFor, setConnectionFor] = useState<StoredHost>();
   const [modeError, setModeError] = useState<string>();
   const connectionInfo =
@@ -424,14 +426,17 @@ export function HostsSection({
               size="sm"
               onClick={() => {
                 const host = unpairing;
+                const label = paired.label(host);
                 const info = paired.info(host);
+                const remote = info?.phase === "ready" && connectionStatus(info) === "connected" ? info.remote : undefined;
                 setUnpairing(undefined);
                 setConnectionFor(undefined);
-                void unpairHost({
-                  host,
-                  remote: info?.phase === "ready" && connectionStatus(info) === "connected" ? info.remote : undefined,
-                  forget,
-                }).catch((error: unknown) => console.error("Could not unpair the host", error));
+                void unpairHost({ host, remote, forget }).then(
+                  ({ hostAnswered }) => {
+                    if (remote !== undefined && !hostAnswered) toast(unansweredUnpair(label));
+                  },
+                  (error: unknown) => console.error("Could not unpair the host", error),
+                );
               }}
             />
           </HStack>

@@ -167,20 +167,21 @@ export function AppFrame({
         >
           {children}
         </AppShell>
-        {narrow && (focused?.view === undefined || focused.view.unauthorized === true) ? (
+        {(narrow || !sidebarOpen) && (focused?.view === undefined || focused.view.unauthorized === true) ? (
           // The workbench header (and its navigation button) exists only when
-          // it paints the column. A phone still needs a way into the drawer
-          // while the focused host is connecting, failed, or revoked.
+          // it paints the column. A phone, or a desktop with the sidebar
+          // collapsed, still needs a way back to it while the focused host is
+          // connecting, failed, or revoked.
           <div
             className="pinomad-drag fixed inset-x-0 top-0 z-30 flex h-10 items-center gap-1 px-3"
             style={chrome.reserveMacTrafficLights ? { paddingLeft: chrome.safeLeft } : undefined}
           >
             <IconButton
               icon={<AnimatedSidebar className="size-4" />}
-              label="Open navigation"
+              label={narrow ? "Open navigation" : "Expand sidebar"}
               size="sm"
               variant="ghost"
-              onClick={openNav}
+              onClick={narrow ? openNav : toggleSidebar}
             />
             <span className="text-sm font-semibold">PiNomad</span>
           </div>

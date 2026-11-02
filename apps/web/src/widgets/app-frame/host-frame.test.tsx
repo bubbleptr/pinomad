@@ -361,6 +361,21 @@ describe("the app frame across hosts", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: "Settings" })).toBeNull());
   });
 
+  it("keeps a way back to the collapsed sidebar when the focused host refuses this device", async () => {
+    localStorage.setItem("pinomad.sidebar.open", "false");
+    const registry = createHostRuntimeRegistry();
+    const connect = vi.fn(() => Promise.reject(new UnauthorizedError()));
+    render(
+      <Harness hosts={[HOME_HOST]} initialFocus={{ hostKey: HOME_HOST.hostKey }} connect={connect} registry={registry} />,
+    );
+    await screen.findByText("no longer accepts this device", { exact: false });
+    expect(screen.queryByRole("navigation")).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
+
+    expect(await screen.findByRole("navigation")).toBeInTheDocument();
+  });
+
   it("keeps the sidebar and footer while the focused host is still connecting", async () => {
     const registry = createHostRuntimeRegistry();
     const connect = vi.fn(() => new Promise<RemoteDurable>(() => {}));

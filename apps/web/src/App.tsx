@@ -107,6 +107,9 @@ export function App() {
   // A pairing can finish before the initial list read; remember it and merge
   // it into the first snapshot instead of dropping its runtime.
   const pendingPairings = useRef(new Map<string, StoredHost>());
+  // Hosts a forget has taken off screen but not yet out of the store: a save
+  // already in flight (an account link adopted, say) must not put them back.
+  const forgetting = useRef(new Set<string>());
   const [loaded, setLoaded] = useState<Loaded>();
   useEffect(() => {
     let live = true;
@@ -250,24 +253,33 @@ export function App() {
       const latest = store.list().catch(() => loaded?.hosts ?? []);
       // Off screen before any await: a host that just unpaired this device
       // closes it at once, and its refusal must not flash up meanwhile.
+      forgetting.current.add(hostKey);
       dropFromView(hostKey, true);
-      const persisted = await latest;
-      const host = persisted.find((each) => each.hostKey === hostKey)
-        ?? loaded?.hosts.find((each) => each.hostKey === hostKey);
-      if (host?.account !== undefined) {
-        // A forgotten account host is declined so the next account refresh
-        // cannot silently register it again (ADR-0035 §5).
-        browserDeclined.add(host.account);
-        cancelAccountRegistration(host.account.hostId);
+      try {
+        const persisted = await latest;
+        const host = persisted.find((each) => each.hostKey === hostKey)
+          ?? loaded?.hosts.find((each) => each.hostKey === hostKey);
+        if (host?.account !== undefined) {
+          // A forgotten account host is declined so the next account refresh
+          // cannot silently register it again (ADR-0035 §5).
+          browserDeclined.add(host.account);
+          cancelAccountRegistration(host.account.hostId);
+        }
+        await removeStored(hostKey);
+      } finally {
+        forgetting.current.delete(hostKey);
       }
-      await removeStored(hostKey);
     },
     [dropFromView, loaded?.hosts, removeStored, store],
   );
 
   const paired = useCallback(
     async (host: StoredHost): Promise<void> => {
+      if (forgetting.current.has(host.hostKey)) return;
       await store.save(host);
+      // The save may have outlived a forget that started meanwhile; that
+      // forget removes the record, and the host stays off screen.
+      if (forgetting.current.has(host.hostKey)) return;
       setLoaded((prev) => {
         if (prev === undefined) {
           const pending = pendingPairings.current.get(host.hostKey);

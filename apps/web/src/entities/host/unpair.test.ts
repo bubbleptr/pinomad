@@ -30,6 +30,22 @@ describe("unpairHost", () => {
     expect(order).toEqual([`revoke ${ownKey}`, `forget ${DEVBOX_HOST.hostKey}`]);
   });
 
+  it("stops waiting for a host that never answers, and says so", async () => {
+    vi.useFakeTimers();
+    try {
+      const forget = vi.fn(async () => {});
+      const remote = { controller: { revokeDevice: () => new Promise<void>(() => {}) } } as unknown as RemoteDurable;
+
+      const done = unpairHost({ host: DEVBOX_HOST, remote, forget });
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      await expect(done).resolves.toEqual({ hostAnswered: false });
+      expect(forget).toHaveBeenCalledWith(DEVBOX_HOST.hostKey);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("forgets an unreachable host here only", async () => {
     const forget = vi.fn(async () => {});
 

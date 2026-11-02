@@ -4,9 +4,11 @@ import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Switch } from "@astryxdesign/core/Switch";
 import { Text } from "@astryxdesign/core/Text";
+import { useToast } from "@astryxdesign/core/Toast";
 import { Token } from "@astryxdesign/core/Token";
 import { useEffect, useMemo, useState } from "react";
 import { encode } from "uqr";
+import { hostLabels } from "@pinomad/client/stored-host.ts";
 import type { DeviceEntry } from "@pinomad/protocol/devices.ts";
 import { isLoopbackUrl } from "@pinomad/protocol/endpoints.ts";
 import { hostSupportsFeature } from "@pinomad/protocol/frames.ts";
@@ -15,7 +17,7 @@ import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { useHosts } from "../../entities/host/host-store.ts";
-import { unpairHost } from "../../entities/host/unpair.ts";
+import { unansweredUnpair, unpairHost } from "../../entities/host/unpair.ts";
 
 /** Settings → Devices: the devices paired with this host, the account switch, and a new pairing offer. */
 export function DevicesSection({
@@ -34,6 +36,7 @@ export function DevicesSection({
   const connected = view.connection === "connected";
   const selfKey = self === undefined ? undefined : toBase64Url(self.publicKey);
   const [unpairing, setUnpairing] = useState<DeviceEntry>();
+  const toast = useToast();
   const [offer, setOffer] = useState<{ url: string; expiresAt: number }>();
   const [pairError, setPairError] = useState<string>();
   const pair = (): void => {
@@ -69,8 +72,13 @@ export function DevicesSection({
             const host = unpairing.publicKey === selfKey ? hosts.find((each) => each.hostKey === hostKey) : undefined;
             // This device's own pairing ends at both ends, or the next
             // connection would only find the host refusing it.
-            if (host !== undefined) void unpairHost({ host, remote, forget });
-            else void remote.controller.revokeDevice(unpairing.publicKey);
+            if (host === undefined) {
+              void remote.controller.revokeDevice(unpairing.publicKey);
+              return;
+            }
+            void unpairHost({ host, remote, forget }).then(({ hostAnswered }) => {
+              if (!hostAnswered) toast(unansweredUnpair(hostLabels(hosts).get(host.hostKey) ?? host.url));
+            });
           }}
         />
       )}
