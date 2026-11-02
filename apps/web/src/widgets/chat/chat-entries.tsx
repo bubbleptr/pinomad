@@ -171,6 +171,9 @@ function UserEntry({
       className="chat-message__metadata"
     />
   );
+  // Local feedback must stay visible; a file-only message has no Copy action
+  // through which keyboard focus can reveal its metadata.
+  const keepMetadataVisible = local !== undefined || copy === null;
   return (
     <ChatMessage.User data-slot={local === undefined ? "chat-message-user" : "chat-message-local"}>
       <div className="flex flex-col items-end gap-1">
@@ -193,7 +196,7 @@ function UserEntry({
             </ChatMessage.Content>
           </ChatMessage.Bubble>
         )}
-        <div className={`chat-message__metadata-row${local === undefined ? "" : " chat-message__metadata-row--persistent"}`}>
+        <div className={`chat-message__metadata-row${keepMetadataVisible ? " chat-message__metadata-row--persistent" : ""}`}>
           {copy}
           {entry.status === "unknown" ? (
             <InternationalizationProvider

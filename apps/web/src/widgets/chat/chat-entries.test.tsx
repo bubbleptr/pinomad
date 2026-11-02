@@ -156,6 +156,12 @@ describe("local submission states", () => {
     expect(screen.getByRole("img", { name: "Delivered" })).toBeInTheDocument();
     expect(screen.queryByText("Delivered")).not.toBeInTheDocument();
   });
+
+  it("keeps metadata visible when a file-only message has no Copy action", () => {
+    const { container } = renderUser({ ...userEntry(Date.now()), text: "", status: "delivered" });
+    expect(container.querySelector(".chat-message__metadata-row")).toHaveClass("chat-message__metadata-row--persistent");
+    expect(screen.queryByRole("button", { name: "Copy" })).not.toBeInTheDocument();
+  });
 });
 
 describe("message times", () => {

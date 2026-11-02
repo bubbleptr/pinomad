@@ -291,7 +291,6 @@ mark.chat-skill-mention {
   .chat-message__actions,
   .chat-message__metadata-row:not(.chat-message__metadata-row--persistent) {
     opacity: 0;
-    pointer-events: none;
   }
 
   .chat-message:hover .chat-message__actions,
@@ -299,7 +298,6 @@ mark.chat-skill-mention {
   .chat-message:hover .chat-message__metadata-row:not(.chat-message__metadata-row--persistent),
   .chat-message:focus-within .chat-message__metadata-row:not(.chat-message__metadata-row--persistent) {
     opacity: 1;
-    pointer-events: auto;
   }
 }
 
