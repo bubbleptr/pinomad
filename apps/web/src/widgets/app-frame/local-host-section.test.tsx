@@ -42,6 +42,20 @@ describe("LocalHostSection", () => {
     await waitFor(async () => expect(await hostSwitch()).toBeChecked());
   });
 
+  it("stays on, and can be turned off, while a crashed host waits for launchd to restart it", async () => {
+    const { localHost, user } = renderSection({
+      state: { kind: "installed", running: false, stopped: false, stopping: false, detail: "spawn scheduled, last exit 1" },
+    });
+    expect(await hostSwitch()).toBeChecked();
+
+    await user.click(await hostSwitch());
+    await user.click(await screen.findByRole("button", { name: "Turn off" }));
+
+    expect(localHost.start).not.toHaveBeenCalled();
+    expect(localHost.stop).toHaveBeenCalledTimes(1);
+    await waitFor(async () => expect(await hostSwitch()).not.toBeChecked());
+  });
+
   it("asks before turning off, and backing out of the dialog stops nothing", async () => {
     const { localHost, user } = renderSection({ state: running });
     await user.click(await hostSwitch());
@@ -131,7 +145,9 @@ describe("LocalHostSection", () => {
     // writing its definition a moment before launchd starts it.
     const loading: LocalHostState = { kind: "installed", running: false, stopped: false, stopping: false, detail: "not loaded" };
     vi.mocked(localHost.state).mockResolvedValueOnce(loading).mockResolvedValue(running);
-    await waitFor(async () => expect(await hostSwitch()).toBeChecked());
+    expect(await hostSwitch()).toBeChecked();
+    // It keeps reading until the host is up, not just until it is installed.
+    expect(await screen.findByText("running (pid 4242)")).toBeInTheDocument();
   });
 
   it("shows no switch for a host too old to report its state", async () => {

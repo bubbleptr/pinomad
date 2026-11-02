@@ -119,7 +119,8 @@ function LocalHostControls({ bridge, pollIntervalMs }: { bridge: LocalHostBridge
             labelPosition="start"
             labelSpacing="spread"
             width="100%"
-            value={state.running}
+            // On means not turned off: a crashed host launchd will restart is still on, and Off must reach it.
+            value={!state.stopped}
             isLoading={busy !== undefined}
             isDisabled={busy !== undefined}
             // Off goes through the confirm; the switch keeps showing the real state until the CLI is done.
