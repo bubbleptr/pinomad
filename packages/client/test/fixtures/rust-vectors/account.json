@@ -200,6 +200,17 @@
       "expect": "{\"url\":\"https://relay.example.com/api/devices/1234/kick\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"password\\\":\\\"pé \\\\\\\"x\\\\\\\"\\\\n\\\"}\"}}"
     },
     {
+      "name": "remove-host",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "removeHost",
+        "hostId": "h/1+é",
+        "password": "pw \"q\""
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/hosts/h%2F1%2B%C3%A9/remove\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"password\\\":\\\"pw \\\\\\\"q\\\\\\\"\\\"}\"}}"
+    },
+    {
       "name": "host-link-lookup",
       "origin": "https://relay.example.com",
       "token": "tok",
@@ -654,6 +665,34 @@
     {
       "name": "kick-rate-limited",
       "kind": "kickDevice",
+      "status": 429,
+      "body": "{\"error\":\"rate_limited\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"rate_limited\",\"status\":429}}"
+    },
+    {
+      "name": "remove-host-204",
+      "kind": "removeHost",
+      "status": 204,
+      "body": null,
+      "expect": "{\"ok\":true}"
+    },
+    {
+      "name": "remove-host-wrong",
+      "kind": "removeHost",
+      "status": 403,
+      "body": "{\"error\":\"wrong_password\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"wrong_password\",\"status\":403}}"
+    },
+    {
+      "name": "remove-host-not-found",
+      "kind": "removeHost",
+      "status": 404,
+      "body": "{\"error\":\"not_found\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"not_found\",\"status\":404}}"
+    },
+    {
+      "name": "remove-host-rate-limited",
+      "kind": "removeHost",
       "status": 429,
       "body": "{\"error\":\"rate_limited\"}",
       "expect": "{\"ok\":false,\"error\":{\"code\":\"rate_limited\",\"status\":429}}"

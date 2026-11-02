@@ -349,6 +349,13 @@ export interface AccountClient {
   /** Turns that host away; same refusals as lookup. */
   denyHostLink(userCode: string): Promise<AccountResult<void>>;
   listHosts(): Promise<AccountResult<readonly AccountHost[]>>;
+  /**
+   * Takes a host out of the account after checking the password again
+   * (#512): it stops dialing the server and only its own terminal can join
+   * it back. 403 `wrong_password` is a refusal, not a sign-out; 404
+   * `not_found` covers servers that predate it.
+   */
+  removeHost(hostId: string, password: string): Promise<AccountResult<void>>;
   /** The account's devices (#452); 404 on servers that predate them. */
   listDevices(): Promise<AccountResult<readonly AccountDevice[]>>;
   /**
@@ -595,6 +602,10 @@ export function createAccountClient(options: {
           hosts: device.hosts.map((host) => ({ hostId: host.hostId, name: host.name, state: host.state })),
         })),
       );
+    },
+    removeHost: async (hostId, password) => {
+      const result = await request(`/api/hosts/${encodeURIComponent(hostId)}/remove`, "POST", { password });
+      return result.ok ? ok(undefined) : result;
     },
     kickDevice: async (id, password) => {
       const result = await request(`/api/devices/${id}/kick`, "POST", { password });

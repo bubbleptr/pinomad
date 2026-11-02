@@ -35,6 +35,7 @@ export type AccountOpDesc =
   | { kind: "changePassword"; currentPassword: string; newPassword: string }
   | { kind: "deleteAccount"; password: string }
   | { kind: "kickDevice"; id: number; password: string }
+  | { kind: "removeHost"; hostId: string; password: string }
   | { kind: "logout"; revoke?: boolean }
   | { kind: "lookupHostLink" | "confirmHostLink" | "denyHostLink"; userCode: string }
   | { kind: "me" | "revokeAllSessions" | "createJoinToken" | "listHosts" | "listDevices" };
@@ -107,6 +108,8 @@ export const REQUEST_CASES: RequestCase[] = [
   { name: "list-devices", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "listDevices" } },
   // The server's numeric id goes into the path as `${id}` (#452).
   { name: "kick-device", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "kickDevice", id: 1234, password: "pé \"x\"\n" } },
+  // The hostId goes through encodeURIComponent like requestPairing's (#512).
+  { name: "remove-host", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "removeHost", hostId: "h/1+é", password: "pw \"q\"" } },
   // Host links (#495): the code goes as typed — case, dashes and spaces are
   // the server's to ignore, and quotes still escape like any body string.
   { name: "host-link-lookup", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "lookupHostLink", userCode: "wdjb-MJHT" } },
@@ -251,6 +254,10 @@ export const RESPONSE_CASES: ResponseCase[] = [
   { name: "kick-current", kind: "kickDevice", status: 409, body: '{"error":"current_device"}' },
   { name: "kick-not-found", kind: "kickDevice", status: 404, body: '{"error":"not_found"}' },
   { name: "kick-rate-limited", kind: "kickDevice", status: 429, body: '{"error":"rate_limited"}' },
+  { name: "remove-host-204", kind: "removeHost", status: 204, body: null },
+  { name: "remove-host-wrong", kind: "removeHost", status: 403, body: '{"error":"wrong_password"}' },
+  { name: "remove-host-not-found", kind: "removeHost", status: 404, body: '{"error":"not_found"}' },
+  { name: "remove-host-rate-limited", kind: "removeHost", status: 429, body: '{"error":"rate_limited"}' },
   // The host waiting behind a code (#495): every field required, ipDiffers a real boolean.
   {
     name: "host-link-lookup-ok",

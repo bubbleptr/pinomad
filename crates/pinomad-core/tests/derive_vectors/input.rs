@@ -203,6 +203,10 @@ pub fn account_op(json: &Json) -> AccountOp {
             id: num(json.get("id")).unwrap_or_default(),
             password: text(json.get("password")).unwrap_or_default(),
         },
+        AccountOpKind::RemoveHost => AccountOp::RemoveHost {
+            host_id: text(json.get("hostId")).unwrap_or_default(),
+            password: text(json.get("password")).unwrap_or_default(),
+        },
         AccountOpKind::LookupHostLink => AccountOp::LookupHostLink {
             user_code: text(json.get("userCode")).unwrap_or_default(),
         },
@@ -242,6 +246,7 @@ pub fn account_op_kind(name: &str) -> AccountOpKind {
         "deleteAccount" => AccountOpKind::DeleteAccount,
         "listDevices" => AccountOpKind::ListDevices,
         "kickDevice" => AccountOpKind::KickDevice,
+        "removeHost" => AccountOpKind::RemoveHost,
         "lookupHostLink" => AccountOpKind::LookupHostLink,
         "confirmHostLink" => AccountOpKind::ConfirmHostLink,
         "denyHostLink" => AccountOpKind::DenyHostLink,

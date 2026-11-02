@@ -39,8 +39,9 @@ pub struct AccountDeviceClaim {
 /// carries this device's APNs token (ADR-0036); `ChangePassword` carries
 /// both passwords (#450); `DeleteAccount` and `KickDevice` carry the
 /// password again (#451, ADR-0037 §3), `KickDevice` also the server's id
-/// from `ListDevices`; the host-link trio carries the code typed from a
-/// host's terminal, verbatim (#495).
+/// from `ListDevices`; `RemoveHost` carries the hostId and the password
+/// again (#512); the host-link trio carries the code typed from a host's
+/// terminal, verbatim (#495).
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum AccountOp {
@@ -67,6 +68,7 @@ pub enum AccountOp {
     DeleteAccount { password: String },
     ListDevices,
     KickDevice { id: f64, password: String },
+    RemoveHost { host_id: String, password: String },
     LookupHostLink { user_code: String },
     ConfirmHostLink { user_code: String },
     DenyHostLink { user_code: String },
@@ -90,6 +92,7 @@ pub enum AccountOpKind {
     DeleteAccount,
     ListDevices,
     KickDevice,
+    RemoveHost,
     LookupHostLink,
     ConfirmHostLink,
     DenyHostLink,
@@ -131,6 +134,7 @@ impl AccountOp {
             AccountOp::DeleteAccount { .. } => AccountOpKind::DeleteAccount,
             AccountOp::ListDevices => AccountOpKind::ListDevices,
             AccountOp::KickDevice { .. } => AccountOpKind::KickDevice,
+            AccountOp::RemoveHost { .. } => AccountOpKind::RemoveHost,
             AccountOp::LookupHostLink { .. } => AccountOpKind::LookupHostLink,
             AccountOp::ConfirmHostLink { .. } => AccountOpKind::ConfirmHostLink,
             AccountOp::DenyHostLink { .. } => AccountOpKind::DenyHostLink,
@@ -164,6 +168,7 @@ impl AccountOp {
             AccountOp::ListDevices => "/api/devices".to_string(),
             // `${id}` — the number as JS prints it.
             AccountOp::KickDevice { id, .. } => format!("/api/devices/{}/kick", number_to_json(*id)),
+            AccountOp::RemoveHost { host_id, .. } => format!("/api/hosts/{}/remove", encode_uri_component(host_id)),
             AccountOp::LookupHostLink { .. } => "/api/host-link/lookup".to_string(),
             AccountOp::ConfirmHostLink { .. } => "/api/host-link/confirm".to_string(),
             AccountOp::DenyHostLink { .. } => "/api/host-link/deny".to_string(),
@@ -174,7 +179,7 @@ impl AccountOp {
     /// order: `{username, password, device?: {id, name?}}` for login, `{apns, environment}` for the
     /// push-token pair — the token stays out of the URL —
     /// `{currentPassword, newPassword}` for a password change, and
-    /// `{password}` for deleting the account or kicking a device,
+    /// `{password}` for deleting the account, kicking a device or removing a host,
     /// `{revoke: true}` for a revoking sign-out, and `{userCode}` for the
     /// host-link trio.
     fn body(&self) -> Option<String> {
@@ -205,7 +210,9 @@ impl AccountOp {
                 object.set(U16String::from_str("newPassword"), Json::from(new_password.as_str()));
                 Some(Json::Object(Arc::new(object)).to_json())
             }
-            AccountOp::DeleteAccount { password } | AccountOp::KickDevice { password, .. } => {
+            AccountOp::DeleteAccount { password }
+            | AccountOp::KickDevice { password, .. }
+            | AccountOp::RemoveHost { password, .. } => {
                 let mut object = JsonObject::new();
                 object.set(U16String::from_str("password"), Json::from(password.as_str()));
                 Some(Json::Object(Arc::new(object)).to_json())
@@ -433,7 +440,7 @@ pub enum AccountValue {
     Login(LoginSuccess),
     Me(AccountMe),
     /// `logout`, `revokeAllSessions`, the push-token pair, `changePassword`,
-    /// `deleteAccount`, `kickDevice`, `confirmHostLink` and `denyHostLink`
+    /// `deleteAccount`, `kickDevice`, `removeHost`, `confirmHostLink` and `denyHostLink`
     /// answer nothing.
     Unit,
     JoinToken(JoinToken),
@@ -573,6 +580,7 @@ fn decode_value(kind: AccountOpKind, value: Option<&Json>) -> Result<AccountValu
         | AccountOpKind::ChangePassword
         | AccountOpKind::DeleteAccount
         | AccountOpKind::KickDevice
+        | AccountOpKind::RemoveHost
         | AccountOpKind::ConfirmHostLink
         | AccountOpKind::DenyHostLink => Ok(AccountValue::Unit),
         AccountOpKind::LookupHostLink => Ok(AccountValue::HostLink(HostLinkRequest {
