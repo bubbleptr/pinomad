@@ -1,6 +1,6 @@
 // Fake host state for widget stories: one host with two projects and a chat,
 // a remote whose controller answers with plausible data, and decorators that
-// install the account, paired-host and desktop-updater contexts App provides.
+// install the account, paired-host and desktop-bridge contexts App provides.
 // Story-only: nothing in the app imports this.
 import type { Decorator } from "@storybook/react-vite";
 import { useEffect, useState, type ReactNode } from "react";
@@ -19,6 +19,7 @@ import { AccountContext } from "../entities/account/account-context.tsx";
 import type { AccountModel, AccountState } from "../entities/account/account-model.ts";
 import type { UpdateStatus } from "../entities/app-update/update-protocol.ts";
 import type { DesktopBridge } from "../entities/host/desktop-bridge.ts";
+import type { LocalHostResult, LocalHostState } from "../entities/local-host/local-host-protocol.ts";
 import { HostsContext, type HostsState } from "../entities/host/host-store.ts";
 
 const MINUTE = 60_000;
@@ -837,18 +838,10 @@ export function withAccount(state: AccountState = signedIn(), actions?: Partial<
   );
 }
 
-// --- Desktop updater -----------------------------------------------------------------
+// --- Desktop bridge ------------------------------------------------------------------
 
-function DesktopBridgeFixture({ status, children }: { status: UpdateStatus; children: ReactNode }) {
-  const [bridge] = useState(() => {
-    const updates: NonNullable<DesktopBridge["updates"]> = {
-      status: async () => status,
-      check: fn(async () => status),
-      install: fn(async () => status),
-      onStatus: () => () => {},
-    };
-    return { ...window.pinomadDesktop, updates } as DesktopBridge;
-  });
+function DesktopBridgeFixture({ parts, children }: { parts: () => Partial<DesktopBridge>; children: ReactNode }) {
+  const [bridge] = useState(() => ({ ...window.pinomadDesktop, ...parts() }) as DesktopBridge);
   // useAppUpdate and the Settings dialog read the bridge during render, so it
   // goes in before the children render; the effect puts the old one back.
   const previous = useState(() => window.pinomadDesktop)[0];
@@ -864,8 +857,82 @@ function DesktopBridgeFixture({ status, children }: { status: UpdateStatus; chil
 
 /** Stands in for the desktop preload's updater; without it the widgets render their browser variant. */
 export function withDesktopUpdates(status: UpdateStatus): Decorator {
+  const updates = (): NonNullable<DesktopBridge["updates"]> => ({
+    status: async () => status,
+    check: fn(async () => status),
+    install: fn(async () => status),
+    onStatus: () => () => {},
+  });
   return (Story) => (
-    <DesktopBridgeFixture status={status}>
+    <DesktopBridgeFixture parts={() => ({ updates: updates() })}>
+      <Story />
+    </DesktopBridgeFixture>
+  );
+}
+
+export type FakeLocalHostOptions = {
+  /** What state() reports first; start and stop move it like the real service. */
+  state: LocalHostState;
+  /** Printed by stop() while it waits, one per tick. */
+  stopLines?: readonly string[];
+  /** stop() keeps waiting until cancelStop(), like a host with running tasks. */
+  stopWaits?: boolean;
+  startResult?: LocalHostResult;
+};
+
+const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+/**
+ * A desktop main process over a host installed on this Mac. state() follows
+ * start and stop; stop() prints its lines and then finishes, or waits for
+ * cancelStop() with `stopWaits`, as `service stop` does with running tasks.
+ */
+export function fakeLocalHost(options: FakeLocalHostOptions): NonNullable<DesktopBridge["localHost"]> {
+  let state = options.state;
+  const listeners = new Set<(line: string) => void>();
+  let cancel: (() => void) | undefined;
+  const set = (running: boolean): void => {
+    if (state.kind === "installed") {
+      state = { kind: "installed", running, stopped: !running, detail: running ? "running (pid 4242)" : "stopped" };
+    }
+  };
+  return {
+    state: fn(async () => state),
+    start: fn(async () => {
+      const result = options.startResult ?? { ok: true as const };
+      if (result.ok) set(true);
+      return result;
+    }),
+    stop: fn(async () => {
+      for (const line of options.stopLines ?? []) {
+        await tick();
+        for (const listener of listeners) listener(line);
+      }
+      if (options.stopWaits) {
+        await new Promise<void>((resolve) => {
+          cancel = resolve;
+        });
+        return { outcome: "cancelled" as const };
+      }
+      set(false);
+      return { outcome: "stopped" as const };
+    }),
+    cancelStop: fn(async () => {
+      cancel?.();
+      cancel = undefined;
+    }),
+    runSetup: fn(async (): Promise<LocalHostResult> => ({ ok: true })),
+    onStopLine: (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+}
+
+/** Stands in for the desktop preload's local-host switch (macOS); without it Settings has no This Mac. */
+export function withDesktopLocalHost(options: FakeLocalHostOptions): Decorator {
+  return (Story) => (
+    <DesktopBridgeFixture parts={() => ({ localHost: fakeLocalHost(options) })}>
       <Story />
     </DesktopBridgeFixture>
   );

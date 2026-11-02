@@ -1,13 +1,17 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, safeStorage, shell, type IpcMainInvokeEvent } from "electron";
 import { autoUpdater } from "electron-updater";
+import { execFile, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { hostname } from "node:os";
+import { homedir, hostname, tmpdir } from "node:os";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { installAppMenu, reportUpdateCheck } from "./app-menu.ts";
 import { pairingFragmentFromDeepLink } from "./deep-link.ts";
 import { desktopDeviceName } from "./device-name.ts";
 import { createHostStore, type StoredAccount, type StoredHost } from "./host-store.ts";
+import { createLocalHost, type LocalHost } from "./local-host.ts";
 import { navigateAwayAction, windowOpenAction } from "./navigation-policy.ts";
 import { APP_HOST, APP_SCHEME, contentTypeFor, rendererFilePath, RENDERER_CSP } from "./renderer-files.ts";
 import { createAppUpdater, type AppUpdater, type AutoUpdaterLike } from "./updater.ts";
@@ -16,6 +20,7 @@ import { platformWindowChrome } from "./window-chrome.ts";
 import type { StoredHostConnectionChange } from "@pinomad/client/stored-host.ts";
 import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { updateEventChannel } from "../../web/src/entities/app-update/update-protocol.ts";
+import { localHostStopLineChannel } from "../../web/src/entities/local-host/local-host-protocol.ts";
 
 const APP_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
 const rendererDirectory = fileURLToPath(new URL("../renderer", import.meta.url));
@@ -160,6 +165,34 @@ function installDeviceNameIpc(): void {
   });
 }
 
+/**
+ * The "This Mac" host switch (#501), macOS only: main runs the installed
+ * host's own service CLI (local-host.ts), never a host of its own. Same caller
+ * check, no safeStorage. Nothing here runs until the renderer asks, so a
+ * launch (E2E included) never touches the real service.
+ */
+function installLocalHostIpc(localHost: LocalHost): void {
+  const handle = <A, R>(fn: (event: IpcMainInvokeEvent, arg: A) => Promise<R> | R) => {
+    return (event: IpcMainInvokeEvent, arg: A): Promise<R> => {
+      if (!isOurRendererFrame(event)) return Promise.reject(new Error("the local host is only reachable from the bundled renderer"));
+      return Promise.resolve(fn(event, arg));
+    };
+  };
+  ipcMain.handle("pinomad:localHost:state", handle(() => localHost.state()));
+  ipcMain.handle("pinomad:localHost:start", handle(() => localHost.start()));
+  // Lines go back to the window that asked: it is the one showing Cancel.
+  ipcMain.handle(
+    "pinomad:localHost:stop",
+    handle((event) =>
+      localHost.stop((line) => {
+        if (!event.sender.isDestroyed()) event.sender.send(localHostStopLineChannel, line);
+      }),
+    ),
+  );
+  ipcMain.handle("pinomad:localHost:cancelStop", handle(() => localHost.cancelStop()));
+  ipcMain.handle("pinomad:localHost:runSetup", handle((_event, serverOrigin: unknown) => localHost.runSetup(String(serverOrigin))));
+}
+
 function openPairingLink(fragment: string): void {
   if (mainWindow === null) {
     pendingFragment = fragment;
@@ -254,6 +287,20 @@ if (!app.requestSingleInstanceLock()) {
     });
     installHostStoreIpc();
     installDeviceNameIpc();
+    if (process.platform === "darwin") {
+      const localHost = createLocalHost({
+        home: homedir(),
+        env: process.env,
+        execFile: promisify(execFile),
+        spawn: (file, args, options) => spawn(file, args, { ...options, stdio: ["ignore", "pipe", "pipe"] }),
+        openPath: (path) => shell.openPath(path),
+        tmpdir: tmpdir(),
+        randomId: () => randomBytes(8).toString("hex"),
+      });
+      installLocalHostIpc(localHost);
+      // A stop still waiting when the app quits is cancelled: the service stays on.
+      app.on("will-quit", () => localHost.cancelStop());
+    }
     protocol.handle(APP_SCHEME, async (request) => {
       const file = rendererFilePath(rendererDirectory, request.url);
       if (file === undefined) return new Response("Not found", { status: 404 });

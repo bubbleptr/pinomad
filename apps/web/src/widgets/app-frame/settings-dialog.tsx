@@ -26,16 +26,18 @@ import { familyUpdatedAt, relativeTime } from "@pinomad/client/family.ts";
 import { summaryOf, thinkingLevelLabels } from "@pinomad/client/model.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useNow } from "../../shared/use-now.ts";
-import { Archive, ArchiveRestore, ArrowLeft, Bot, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, MoreHorizontal, Puzzle, RefreshCw, Sparkles } from "../../shared/ui/icons.tsx";
+import { Archive, ArchiveRestore, ArrowLeft, Bot, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, Laptop, MoreHorizontal, Puzzle, RefreshCw, Sparkles } from "../../shared/ui/icons.tsx";
 import { AgentEditorDialog } from "./agent-editor-dialog.tsx";
 import type { FrameMachine } from "./app-frame.tsx";
 import { DevicesSection } from "./devices-section.tsx";
 import { HostsSection } from "./hosts.tsx";
+import { LocalHostSection } from "./local-host-section.tsx";
 import { ProvidersSection } from "./providers-section.tsx";
 import { UpdatesSection } from "./updates-section.tsx";
 
 const SECTIONS = [
   { id: "hosts", title: "Hosts", icon: Computer, group: "device" },
+  { id: "this-mac", title: "This Mac", icon: Laptop, group: "device" },
   { id: "updates", title: "Updates", icon: RefreshCw, group: "device" },
   { id: "providers", title: "Providers", icon: KeyRound, group: "host" },
   { id: "models", title: "Models", icon: Sparkles, group: "host" },
@@ -61,7 +63,8 @@ const sectionIcon = (Icon: Section["icon"]): ReactNode => (
 
 /**
  * Settings in two groups. "This device" belongs to the client — the paired
- * hosts and, on the desktop, its updates — and works while disconnected.
+ * hosts and, on the desktop, its updates and (macOS) the switch over the host
+ * installed on this Mac — and works while disconnected.
  * The host group is the connected host's settings and providers
  * (ADR-0021, 0031): everything shown comes from the `settings` / `providers` / `mcp` /
  * devices streams, so a change another device makes appears here the moment
@@ -90,13 +93,20 @@ export function SettingsDialog({
   const hostAvailable = view !== undefined && remote !== undefined;
   const connected = view?.connection === "connected";
   const hasUpdater = window.pinomadDesktop?.updates !== undefined;
+  const hasLocalHost = window.pinomadDesktop?.localHost !== undefined;
   const choosable = machines.length > 1;
   // A host that is not ready has no settings streams to show; open on the
   // device's own sections then. An explicit pick stays put and explains itself.
   const active = section ?? (connected ? "providers" : "hosts");
   const hostName = view?.settings?.hostName ?? machine?.label ?? "This host";
   const groups = [
-    { title: "This device", sections: SECTIONS.filter((entry) => entry.group === "device" && (entry.id !== "updates" || hasUpdater)) },
+    {
+      title: "This device",
+      sections: SECTIONS.filter(
+        (entry) =>
+          entry.group === "device" && (entry.id !== "updates" || hasUpdater) && (entry.id !== "this-mac" || hasLocalHost),
+      ),
+    },
     // With a picker the machine's name is on the picker; the title just names the group.
     ...(hostAvailable || choosable
       ? [{ title: choosable ? "Host" : hostName, sections: SECTIONS.filter((entry) => entry.group === "host") }]
@@ -282,6 +292,17 @@ function sectionBody(
   }
   if (section === "updates") {
     return { title: "Updates", body: <UpdatesSection /> };
+  }
+  if (section === "this-mac") {
+    return {
+      title: "This Mac",
+      supporting: (
+        <Text as="p" type="supporting">
+          Run a PiNomad host here so your other devices can use this Mac. It runs on its own: quitting the app doesn't stop it.
+        </Text>
+      ),
+      body: <LocalHostSection />,
+    };
   }
   if (view === undefined || remote === undefined) {
     // The picked machine has no settings streams until it connects.

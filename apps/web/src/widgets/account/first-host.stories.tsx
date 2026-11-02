@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn, userEvent, within } from "storybook/test";
 import type { AccountState } from "../../entities/account/account-model.ts";
 import { Centered } from "../../shared/ui/centered.tsx";
-import { signedIn, withAccount, withHosts } from "../../test/story-fixtures.tsx";
+import { signedIn, withAccount, withDesktopLocalHost, withHosts } from "../../test/story-fixtures.tsx";
 import { FirstHost } from "./first-host.tsx";
 
 const noHosts = signedIn({ hosts: [] }) as Extract<AccountState, { status: "signed-in" }>;
@@ -36,6 +36,9 @@ type Story = StoryObj<typeof meta>;
 
 /** Signed in, no hosts at all: the command without a token and the field for the code it prints. */
 export const Default: Story = {};
+
+/** In the Mac app with no host installed here: Run in Terminal sets this Mac up. */
+export const OnThisMac: Story = { decorators: [withDesktopLocalHost({ state: { kind: "not-installed" } })] };
 
 /** For scripts: the one-time token command, minted only once Advanced opens. */
 export const TokenCommand: Story = { play: openAdvanced };
