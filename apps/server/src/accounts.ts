@@ -18,7 +18,7 @@ import { normalizeHostName } from "@pinomad/protocol/settings.ts";
 import { isDataDirInUse, lockDataDir } from "./lock.ts";
 
 const DB_FILE = "server.sqlite";
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 // Sessions die 30 days after issue and are never renewed — a stolen token has a
 // hard ceiling, and re-logging-in is the only way forward.
@@ -36,6 +36,9 @@ export const USER_CODE_ALPHABET = "BCDFGHJKLMNPQRSTVWXZ";
 const USER_CODE_LENGTH = 8;
 const HOST_LINK_TTL_MS = JOIN_TOKEN_TTL_MS;
 const HOST_LINK_INTERVAL_S = 5;
+// RFC 8252 §8.13 / RFC 6749 §4.1.2: an authorization code lives minutes, not
+// the request's ten; the host trades it the moment its listener receives it.
+const HOST_LINK_CODE_TTL_MS = 2 * 60_000;
 // RFC 8628 §3.5: a host told to slow down adds 5 s to its interval for good.
 const SLOW_DOWN_STEP_S = 5;
 // A poll sent on schedule can still arrive a little early when the previous
@@ -217,6 +220,7 @@ export interface InviteRow {
 export type StartHostLinkResult =
   | {
       readonly status: "ok";
+      readonly mode: "code";
       /** The host's secret for polling; only its SHA-256 is stored. */
       readonly deviceCode: string;
       /** What the person types, as XXXX-XXXX. */
@@ -224,6 +228,13 @@ export type StartHostLinkResult =
       readonly expiresAt: number;
       /** Seconds between polls (RFC 8628). */
       readonly interval: number;
+    }
+  | {
+      readonly status: "ok";
+      readonly mode: "loopback";
+      /** Names the request on the confirm page; only its SHA-256 is stored. */
+      readonly requestId: string;
+      readonly expiresAt: number;
     }
   | { readonly status: "limited" }
   | { readonly status: "busy" };
@@ -245,6 +256,17 @@ export interface HostLinkRequest {
   /** The host's IP isn't the confirmer's: the page warns that this may not be their machine. */
   readonly ipDiffers: boolean;
   readonly expiresAt: number;
+}
+
+/** What the browser types (#495), or the request id a loopback link put in its URL (#513). */
+export type HostLinkRef = { readonly userCode: string } | { readonly requestId: string };
+
+/** A host's loopback listener and its PKCE challenge (#513, RFC 8252). */
+export interface HostLinkLoopback {
+  readonly redirectUri: string;
+  /** base64url(SHA-256(verifier)), RFC 7636 S256. */
+  readonly codeChallenge: string;
+  readonly state: string;
 }
 
 export type HostLinkCodeResult<T = Record<never, never>> =
@@ -385,6 +407,8 @@ export interface Accounts {
     readonly name: string;
     readonly os: string;
     readonly ip: string;
+    /** A loopback link (#513): no codes to poll or type, a redirect instead. */
+    readonly loopback?: HostLinkLoopback;
   }): StartHostLinkResult;
   /**
    * The host's poll. A confirmed request mints its join token here, bound to
@@ -392,16 +416,26 @@ export interface Accounts {
    * confirmed or denied request answers once and is gone.
    */
   pollHostLink(deviceCode: string): PollHostLinkResult;
-  /** The pending request behind a typed code; wrong codes count toward the lockout. */
-  lookupHostLink(args: {
-    readonly userId: number;
-    readonly userCode: string;
-    readonly ip: string;
-  }): HostLinkCodeResult<{ readonly request: HostLinkRequest }>;
-  /** Approves a pending request for `userId`'s account and forgets the host's personal data. */
-  confirmHostLink(args: { readonly userId: number; readonly userCode: string; readonly ip: string }): HostLinkCodeResult;
-  /** Refuses a pending request and forgets the host's personal data. */
-  denyHostLink(args: { readonly userId: number; readonly userCode: string; readonly ip: string }): HostLinkCodeResult;
+  /**
+   * The pending request behind a typed code or a request id. Wrong codes
+   * count toward the lockout; a request id is unguessable, so a wrong one
+   * doesn't.
+   */
+  lookupHostLink(args: { readonly userId: number; readonly ip: string } & HostLinkRef): HostLinkCodeResult<{ readonly request: HostLinkRequest }>;
+  /**
+   * Approves a pending request for `userId`'s account and forgets the host's
+   * personal data. A loopback request answers with where to send the
+   * browser: the host's listener, with a one-time code and its state.
+   */
+  confirmHostLink(args: { readonly userId: number; readonly ip: string } & HostLinkRef): HostLinkCodeResult<{ readonly redirect?: string }>;
+  /** Refuses a pending request and forgets the host's personal data; a loopback one redirects with access_denied. */
+  denyHostLink(args: { readonly userId: number; readonly ip: string } & HostLinkRef): HostLinkCodeResult<{ readonly redirect?: string }>;
+  /**
+   * Trades a loopback link's one-time code for a join token bound to its
+   * host, when `codeVerifier` matches the challenge (#513, RFC 7636). Any
+   * attempt spends the code, so a verifier can't be guessed at.
+   */
+  exchangeHostLinkCode(code: string, codeVerifier: string): { readonly status: "ok"; readonly token: string; readonly expiresAt: number } | { readonly status: "invalid" };
   /** Deletes expired join tokens and host-link requests; the server also runs it on a timer. */
   sweepExpired(): void;
   /**
@@ -502,6 +536,12 @@ export interface Accounts {
 }
 
 const sha256Hex = (input: string): string => createHash("sha256").update(input, "utf8").digest("hex");
+
+const safeEqual = (a: string, b: string): boolean => {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+};
 
 async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(SALT_LEN);
@@ -663,6 +703,26 @@ function migrate(db: DatabaseSync): void {
       COMMIT;
     `);
   }
+  if (version < 8) {
+    // Loopback host links (#513, RFC 8252): the confirm page names the
+    // request by a random id instead of a typed code, and the browser carries
+    // a one-time code back to the host's loopback listener, which trades it
+    // with its PKCE verifier. Such a request's device and user code hashes
+    // are random values nobody holds.
+    db.exec(`
+      BEGIN;
+      ALTER TABLE host_link_requests ADD COLUMN request_id_hash TEXT;
+      ALTER TABLE host_link_requests ADD COLUMN redirect_uri TEXT;
+      ALTER TABLE host_link_requests ADD COLUMN code_challenge TEXT;
+      ALTER TABLE host_link_requests ADD COLUMN client_state TEXT;
+      ALTER TABLE host_link_requests ADD COLUMN auth_code_hash TEXT;
+      ALTER TABLE host_link_requests ADD COLUMN auth_code_expires_at INTEGER;
+      CREATE UNIQUE INDEX host_link_requests_request_id ON host_link_requests (request_id_hash);
+      CREATE UNIQUE INDEX host_link_requests_auth_code ON host_link_requests (auth_code_hash);
+      PRAGMA user_version = 8;
+      COMMIT;
+    `);
+  }
 }
 
 /**
@@ -773,7 +833,17 @@ interface PendingHostLink {
   readonly os: string | null;
   readonly sourceIp: string | null;
   readonly expiresAt: number;
+  /** Set on loopback requests (#513). */
+  readonly redirectUri: string | null;
+  readonly clientState: string | null;
 }
+
+/** The host's listener with `params` added; the stored URI has no query of its own. */
+const loopbackRedirect = (redirectUri: string, params: Record<string, string>): string => {
+  const url = new URL(redirectUri);
+  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+  return url.toString();
+};
 
 /** Fixed-window counters with a hard cap: full maps evict the oldest entries instead of growing. */
 class WindowedCounter {
@@ -908,6 +978,9 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
   const linkUserFailures = new WindowedCounter(linkLimits.counterMaxEntries, now);
   const linkIpFailures = new WindowedCounter(linkLimits.counterMaxEntries, now);
 
+  const PENDING_SELECT = `SELECT host_id AS hostId, host_name AS name, host_os AS os, source_ip AS sourceIp, expires_at AS expiresAt,
+      redirect_uri AS redirectUri, client_state AS clientState FROM host_link_requests`;
+
   /** Expired one-use credentials: join tokens, and host-link requests with the host's personal data. */
   const sweepExpired = (): void => {
     const at = now();
@@ -934,11 +1007,20 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
    * and the IP; a right one clears neither, so settling a request of one's
    * own can't buy more guesses.
    */
-  const pendingByCode = (
+  const pendingByRef = (
     userId: number,
-    userCode: string,
+    ref: HostLinkRef,
     ip: string,
-  ): "limited" | "not_found" | { readonly codeHash: string; readonly row: PendingHostLink } => {
+  ): "limited" | "not_found" | { readonly column: "user_code_hash" | "request_id_hash"; readonly hash: string; readonly row: PendingHostLink } => {
+    if ("requestId" in ref) {
+      // 32 random bytes: nothing to guess, so nothing to count.
+      const hash = sha256Hex(ref.requestId);
+      const row = db
+        .prepare(`${PENDING_SELECT} WHERE request_id_hash = ? AND state = 'pending' AND expires_at > ?`)
+        .get(hash, now()) as PendingHostLink | undefined;
+      return row === undefined ? "not_found" : { column: "request_id_hash", hash, row };
+    }
+    const { userCode } = ref;
     const userKey = String(userId);
     if (linkUserFailures.isOver(userKey, linkLimits.userMaxFailures) || linkIpFailures.isOver(ip, linkLimits.ipMaxFailures)) {
       return "limited";
@@ -949,33 +1031,57 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       codeHash === undefined
         ? undefined
         : (db
-            .prepare(
-              `SELECT host_id AS hostId, host_name AS name, host_os AS os, source_ip AS sourceIp, expires_at AS expiresAt
-               FROM host_link_requests WHERE user_code_hash = ? AND state = 'pending' AND expires_at > ?`,
-            )
+            .prepare(`${PENDING_SELECT} WHERE user_code_hash = ? AND state = 'pending' AND expires_at > ?`)
             .get(codeHash, now()) as PendingHostLink | undefined);
     if (codeHash === undefined || row === undefined) {
       linkUserFailures.bump(userKey, linkLimits.failureWindowMs);
       linkIpFailures.bump(ip, linkLimits.failureWindowMs);
       return "not_found";
     }
-    return { codeHash, row };
+    return { column: "user_code_hash", hash: codeHash, row };
   };
 
-  /** Settles a pending request, clearing the host's personal data in the same write. */
+  /**
+   * Settles a pending request, clearing the host's personal data in the same
+   * write. A loopback request (#513) never polls: a confirm mints its
+   * one-time code for the redirect, and a deny drops the row and redirects
+   * with access_denied.
+   */
   const settleHostLink = (
-    args: { readonly userId: number; readonly userCode: string; readonly ip: string },
+    args: { readonly userId: number; readonly ip: string } & HostLinkRef,
     state: "confirmed" | "denied",
-  ): HostLinkCodeResult => {
-    const found = pendingByCode(args.userId, args.userCode, args.ip);
+  ): HostLinkCodeResult<{ readonly redirect?: string }> => {
+    const found = pendingByRef(args.userId, args, args.ip);
     if (found === "limited" || found === "not_found") return { status: found };
+    const { column, hash, row } = found;
+    const at = now();
+    const loopback = row.redirectUri === null ? undefined : { redirectUri: row.redirectUri, state: row.clientState ?? "" };
+    if (loopback !== undefined && state === "denied") {
+      const dropped = db
+        .prepare(`DELETE FROM host_link_requests WHERE ${column} = ? AND state = 'pending' AND expires_at > ?`)
+        .run(hash, at);
+      if (Number(dropped.changes) !== 1) return { status: "not_found" };
+      return { status: "ok", redirect: loopbackRedirect(loopback.redirectUri, { error: "access_denied", state: loopback.state }) };
+    }
+    const code = loopback === undefined ? undefined : randomBytes(32).toString("base64url");
     const settled = db
       .prepare(
-        `UPDATE host_link_requests SET state = ?, user_id = ?, host_name = NULL, host_os = NULL, source_ip = NULL
-         WHERE user_code_hash = ? AND state = 'pending' AND expires_at > ?`,
+        `UPDATE host_link_requests SET state = ?, user_id = ?, host_name = NULL, host_os = NULL, source_ip = NULL,
+           auth_code_hash = ?, auth_code_expires_at = ?
+         WHERE ${column} = ? AND state = 'pending' AND expires_at > ?`,
       )
-      .run(state, state === "confirmed" ? args.userId : null, found.codeHash, now());
-    return Number(settled.changes) === 1 ? { status: "ok" } : { status: "not_found" };
+      .run(
+        state,
+        state === "confirmed" ? args.userId : null,
+        code === undefined ? null : sha256Hex(code),
+        code === undefined ? null : at + HOST_LINK_CODE_TTL_MS,
+        hash,
+        at,
+      );
+    if (Number(settled.changes) !== 1) return { status: "not_found" };
+    return loopback === undefined || code === undefined
+      ? { status: "ok" }
+      : { status: "ok", redirect: loopbackRedirect(loopback.redirectUri, { code, state: loopback.state }) };
   };
 
   /**
@@ -1417,7 +1523,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       return mintJoinToken(userId, null);
     },
 
-    startHostLink({ hostId, name, os, ip }) {
+    startHostLink({ hostId, name, os, ip, loopback }) {
       if (linkStarts.hit(ip, linkLimits.startMaxPerIp, linkLimits.startWindowMs)) return { status: "limited" };
       sweepExpired();
       const live = (db.prepare("SELECT COUNT(*) AS n FROM host_link_requests").get() as { n: number }).n;
@@ -1425,6 +1531,34 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       const deviceCode = randomBytes(32).toString("base64url");
       const at = now();
       const expiresAt = at + HOST_LINK_TTL_MS;
+      const hostName = normalizeHostName(name);
+      const hostOs = [...os.trim()].slice(0, HOST_OS_MAX_CODEPOINTS).join("");
+      if (loopback !== undefined) {
+        // Nobody holds a device code or user code for it: the redirect is the
+        // only way out, so a poll can't bypass the loopback binding.
+        const requestId = randomBytes(32).toString("base64url");
+        db.prepare(
+          `INSERT INTO host_link_requests
+             (device_code_hash, user_code_hash, request_id_hash, redirect_uri, code_challenge, client_state,
+              host_id, host_name, host_os, source_ip, interval_s, created_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          sha256Hex(randomBytes(32).toString("base64url")),
+          sha256Hex(randomBytes(32).toString("base64url")),
+          sha256Hex(requestId),
+          loopback.redirectUri,
+          loopback.codeChallenge,
+          loopback.state,
+          hostId,
+          hostName,
+          hostOs,
+          ip,
+          HOST_LINK_INTERVAL_S,
+          at,
+          expiresAt,
+        );
+        return { status: "ok", mode: "loopback", requestId, expiresAt };
+      }
       const insert = db.prepare(
         `INSERT INTO host_link_requests
            (device_code_hash, user_code_hash, host_id, host_name, host_os, source_ip, interval_s, created_at, expires_at)
@@ -1439,14 +1573,14 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
             sha256Hex(deviceCode),
             sha256Hex(code),
             hostId,
-            normalizeHostName(name),
-            [...os.trim()].slice(0, HOST_OS_MAX_CODEPOINTS).join(""),
+            hostName,
+            hostOs,
             ip,
             HOST_LINK_INTERVAL_S,
             at,
             expiresAt,
           );
-          return { status: "ok", deviceCode, userCode: formatUserCode(code), expiresAt, interval: HOST_LINK_INTERVAL_S };
+          return { status: "ok", mode: "code", deviceCode, userCode: formatUserCode(code), expiresAt, interval: HOST_LINK_INTERVAL_S };
         } catch (error) {
           if (attempt >= 4 || !String(error).includes("UNIQUE")) throw error;
         }
@@ -1497,8 +1631,9 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       }
     },
 
-    lookupHostLink({ userId, userCode, ip }) {
-      const found = pendingByCode(userId, userCode, ip);
+    lookupHostLink(args) {
+      const { userId, ip } = args;
+      const found = pendingByRef(userId, args, ip);
       if (found === "limited" || found === "not_found") return { status: found };
       const { row } = found;
       return {
@@ -1520,6 +1655,35 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
 
     denyHostLink(args) {
       return settleHostLink(args, "denied");
+    },
+
+    exchangeHostLinkCode(code, codeVerifier) {
+      const codeHash = sha256Hex(code);
+      const at = now();
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const row = db
+          .prepare(
+            `SELECT host_id AS hostId, user_id AS userId, code_challenge AS challenge, auth_code_expires_at AS codeExpiresAt
+             FROM host_link_requests WHERE auth_code_hash = ? AND state = 'confirmed'`,
+          )
+          .get(codeHash) as { hostId: string; userId: number | null; challenge: string | null; codeExpiresAt: number | null } | undefined;
+        // Spent by any attempt, right verifier or not.
+        if (row !== undefined) db.prepare("DELETE FROM host_link_requests WHERE auth_code_hash = ?").run(codeHash);
+        const valid =
+          row !== undefined &&
+          row.userId !== null &&
+          row.challenge !== null &&
+          row.codeExpiresAt !== null &&
+          row.codeExpiresAt > at &&
+          safeEqual(createHash("sha256").update(codeVerifier).digest("base64url"), row.challenge);
+        const result = valid ? { status: "ok" as const, ...mintJoinToken(row.userId!, row.hostId) } : { status: "invalid" as const };
+        db.exec("COMMIT");
+        return result;
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
     },
 
     sweepExpired,

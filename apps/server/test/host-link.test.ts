@@ -2,6 +2,7 @@
 // one-time join token (ADR-0022 §3). The host starts a request anonymously,
 // a signed-in user confirms the short code, and the host's poll collects a
 // join token bound to the hostId it announced.
+import { createHash, randomBytes } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
@@ -60,7 +61,7 @@ const start = (accounts: Accounts, overrides?: { hostId?: string; ip?: string; n
 
 const started = async (accounts: Accounts, overrides?: Parameters<typeof start>[1]) => {
   const result = await start(accounts, overrides);
-  if (result.status !== "ok") throw new Error(`start refused: ${result.status}`);
+  if (result.status !== "ok" || result.mode !== "code") throw new Error(`start refused: ${result.status}`);
   return result;
 };
 
@@ -543,5 +544,177 @@ describe("POST /api/host-link/*", () => {
   it("refuses GET with 405", async () => {
     const { relay } = await serve();
     expect((await api(relay, { method: "GET", path: "/api/host-link/start" })).status).toBe(405);
+  });
+});
+
+// ─── Loopback (#513) ────────────────────────────────────────────────────────
+// RFC 8252: a host that can open a browser on its own screen asks for a
+// redirect to its loopback listener instead of a short code; PKCE binds the
+// code it receives there to the verifier only it holds.
+
+const challengeFor = (verifier: string): string => createHash("sha256").update(verifier).digest("base64url");
+
+function pkce() {
+  const verifier = randomBytes(32).toString("base64url");
+  return { verifier, challenge: challengeFor(verifier) };
+}
+
+const REDIRECT = "http://127.0.0.1:54321/callback";
+
+describe("loopback host links (#513)", () => {
+  const loopbackStart = (relay: Relay, extra?: Record<string, unknown>) => {
+    const { verifier, challenge } = pkce();
+    return api(relay, {
+      path: "/api/host-link/start",
+      body: { ...startBody, redirectUri: REDIRECT, codeChallenge: challenge, state: "st4te", ...extra },
+    }).then((response) => ({ response, verifier }));
+  };
+
+  /** The browser's half: look the request up and confirm it as the signed-in user. */
+  const confirmed = async (relay: Relay) => {
+    const { response, verifier } = await loopbackStart(relay);
+    expect(response.status).toBe(200);
+    const requestId = response.json.requestId as string;
+    const token = await session(relay);
+    const answer = await api(relay, { path: "/api/host-link/confirm", headers: bearer(token), body: { requestId } });
+    expect(answer.status).toBe(200);
+    const redirect = new URL(answer.json.redirect as string);
+    return { requestId, verifier, redirect, code: redirect.searchParams.get("code")!, token };
+  };
+
+  const exchange = (relay: Relay, code: string, codeVerifier: string) =>
+    api(relay, { path: "/api/host-link/token", body: { code, codeVerifier } });
+
+  it("starts without a short code: a request id in the confirm URL, nothing to poll", async () => {
+    const time = clock();
+    const { relay } = await serve({ now: time.now });
+    const { response } = await loopbackStart(relay);
+    expect(response.status).toBe(200);
+    const { requestId, verifyUrl, expiresAt } = response.json;
+    expect(requestId).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(verifyUrl).toBe(`${ORIGIN}/host-link?request=${requestId as string}`);
+    expect(expiresAt).toBe(time.now() + 10 * MINUTE);
+    // No code to type, and no device code: a poll could only bypass the loopback.
+    expect(response.json).not.toHaveProperty("userCode");
+    expect(response.json).not.toHaveProperty("deviceCode");
+  });
+
+  it("looks the request up by its id and shows the same details as a typed code", async () => {
+    const { relay } = await serve();
+    const { response } = await loopbackStart(relay);
+    const token = await session(relay);
+    const lookup = await api(relay, {
+      path: "/api/host-link/lookup",
+      headers: bearer(token),
+      body: { requestId: response.json.requestId },
+    });
+    expect(lookup).toEqual({
+      status: 200,
+      json: {
+        hostId: HOST_ID,
+        name: "omarchy",
+        os: "Linux (x64)",
+        sourceIp: "127.0.0.1",
+        ipDiffers: false,
+        expiresAt: response.json.expiresAt,
+      },
+    });
+  });
+
+  it("confirms by redirecting to the host's loopback with a code and its state, which PKCE trades once for a join token", async () => {
+    const { relay, accounts } = await serve();
+    const { verifier, redirect, code } = await confirmed(relay);
+    expect(`${redirect.origin}${redirect.pathname}`).toBe(REDIRECT);
+    expect(redirect.searchParams.get("state")).toBe("st4te");
+    expect(code).toMatch(/^[A-Za-z0-9_-]{43}$/);
+
+    const traded = await exchange(relay, code, verifier);
+    expect(traded.status).toBe(200);
+    expect(traded.json.expiresAt).toBeTypeOf("number");
+    // The token joins only the host that asked.
+    const joinToken = traded.json.token as string;
+    expect(accounts.joinHost({ token: joinToken, hostId: OTHER_HOST_ID, noisePublicKey: "k" })).toEqual({
+      status: "refused",
+      reason: "invalid_token",
+    });
+    expect(accounts.joinHost({ token: joinToken, hostId: HOST_ID, noisePublicKey: "k" }).status).toBe("joined");
+    // One trade per code.
+    expect(await exchange(relay, code, verifier)).toEqual({ status: 400, json: { error: "invalid_grant" } });
+  });
+
+  it("burns the code on a wrong verifier, so the right one can't follow", async () => {
+    const { relay } = await serve();
+    const { verifier, code } = await confirmed(relay);
+    expect(await exchange(relay, code, pkce().verifier)).toEqual({ status: 400, json: { error: "invalid_grant" } });
+    expect(await exchange(relay, code, verifier)).toEqual({ status: 400, json: { error: "invalid_grant" } });
+  });
+
+  it("lets a code live two minutes", async () => {
+    const time = clock();
+    const { relay } = await serve({ now: time.now });
+    const { verifier, code } = await confirmed(relay);
+    time.advance(2 * MINUTE + 1);
+    expect(await exchange(relay, code, verifier)).toEqual({ status: 400, json: { error: "invalid_grant" } });
+  });
+
+  it("denies by redirecting with access_denied and the state", async () => {
+    const { relay } = await serve();
+    const { response } = await loopbackStart(relay);
+    const token = await session(relay);
+    const answer = await api(relay, {
+      path: "/api/host-link/deny",
+      headers: bearer(token),
+      body: { requestId: response.json.requestId },
+    });
+    expect(answer.status).toBe(200);
+    const redirect = new URL(answer.json.redirect as string);
+    expect(`${redirect.origin}${redirect.pathname}`).toBe(REDIRECT);
+    expect(redirect.searchParams.get("error")).toBe("access_denied");
+    expect(redirect.searchParams.get("state")).toBe("st4te");
+    expect(redirect.searchParams.has("code")).toBe(false);
+  });
+
+  it("answers an unknown request id with 404 without counting it toward the code lockout", async () => {
+    const { relay } = await serve();
+    const token = await session(relay);
+    for (let i = 0; i < 12; i++) {
+      expect(
+        await api(relay, { path: "/api/host-link/lookup", headers: bearer(token), body: { requestId: "x".repeat(43) } }),
+      ).toEqual({ status: 404, json: { error: "not_found" } });
+    }
+    const { userCode } = (await api(relay, { path: "/api/host-link/start", body: startBody })).json;
+    expect((await api(relay, { path: "/api/host-link/lookup", headers: bearer(token), body: { userCode } })).status).toBe(200);
+  });
+
+  it("accepts only an http://127.0.0.1:<port> redirect, a well-formed challenge and a state", async () => {
+    const { relay } = await serve();
+    const { challenge } = pkce();
+    const base = { ...startBody, redirectUri: REDIRECT, codeChallenge: challenge, state: "s" };
+    for (const body of [
+      { ...base, redirectUri: "https://127.0.0.1:54321/callback" },
+      { ...base, redirectUri: "http://localhost:54321/callback" },
+      { ...base, redirectUri: "http://[::1]:54321/callback" },
+      { ...base, redirectUri: "http://127.0.0.1/callback" },
+      { ...base, redirectUri: "http://user@127.0.0.1:54321/callback" },
+      { ...base, redirectUri: "http://127.0.0.1:54321/callback#x" },
+      { ...base, redirectUri: "http://127.0.0.1:54321/callback?x=1" },
+      { ...base, redirectUri: `http://127.0.0.1:54321/${"a".repeat(300)}` },
+      { ...base, codeChallenge: "short" },
+      { ...base, codeChallenge: undefined },
+      { ...base, state: undefined },
+      { ...base, state: "s".repeat(200) },
+    ]) {
+      expect(await api(relay, { path: "/api/host-link/start", body })).toEqual({ status: 400, json: { error: "invalid_request" } });
+    }
+  });
+
+  it("needs no Origin and no session to trade a code, and refuses malformed bodies", async () => {
+    const { relay } = await serve();
+    for (const body of [{}, { code: "c" }, { code: 1, codeVerifier: "v" }]) {
+      expect(await api(relay, { path: "/api/host-link/token", body })).toEqual({ status: 400, json: { error: "invalid_request" } });
+    }
+    expect(
+      await api(relay, { path: "/api/host-link/token", headers: { origin: "https://evil.example" }, body: { code: "c", codeVerifier: "v".repeat(43) } }),
+    ).toEqual({ status: 403, json: { error: "origin_mismatch" } });
   });
 });
