@@ -1047,14 +1047,29 @@ final class AppModel {
             pairingRegistry.finish(.automatic(hostId: autoHostId))
             automaticPairingRuntimes.removeValue(forKey: autoHostId)
             accountRegistrationInFlight.remove(autoHostId)
-            // A forget or explicit decline during the handshake wins over the
-            // late registration (ADR-0035 §5).
-            if let account = host.account,
-               declinedAccountHosts.contains(
-                serverOrigin: account.serverOrigin, hostId: account.hostId) {
-                accountRegistrationInFlight.remove(autoHostId)
+            // A forget or explicit decline during the handshake, or the
+            // host's removal from the account (#512), wins over the late
+            // registration (ADR-0035 §5). The core saved it before telling
+            // us, so refusing means taking that save back.
+            let declined = host.account.map {
+                declinedAccountHosts.contains(serverOrigin: $0.serverOrigin, hostId: $0.hostId)
+            } ?? false
+            if declined || runtime.refusesPairing {
                 runtime.close()
                 runtimes.removeValue(forKey: host.hostKey)
+                if saveError == nil {
+                    // The save also made it the launch host; give that back.
+                    let focusKey = runtimeTable.focus?.hostKey
+                    do {
+                        try store.update { stored in
+                            stored = stored.forgetting(host.hostKey)
+                            if let focusKey { stored = stored.activating(focusKey) }
+                        }
+                    } catch {
+                        lastError = "Couldn't forget this host: \(describe(error))"
+                    }
+                    reloadHosts()
+                }
                 return
             }
             if saveError != nil {

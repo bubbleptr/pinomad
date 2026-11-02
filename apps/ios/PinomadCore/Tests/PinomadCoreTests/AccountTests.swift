@@ -120,6 +120,20 @@ struct AccountTests {
         #expect(AccountHosts.vouchedHostKeys(serverOrigin: origin, hostId: "host1", hosts: hosts).isEmpty)
     }
 
+    /// A 404 to removing a host (#512) is "already gone" only when a list
+    /// fetched after it came back without the host. No such list (one was
+    /// already in flight, or the fetch failed) is no verdict: the form must
+    /// not close as if the host were removed.
+    @Test func removeHostNotFoundNeedsAListFetchedAfterIt() {
+        #expect(AccountHosts.removeHostNotFound(hostId: "h1", listedAfter: ["h2"]) == nil)
+        #expect(AccountHosts.removeHostNotFound(hostId: "h1", listedAfter: ["h1", "h2"])
+            == AccountFailure(code: "remove_host_unsupported", status: 404))
+        #expect(AccountHosts.removeHostNotFound(hostId: "h1", listedAfter: nil)
+            == AccountFailure(code: "remove_host_unconfirmed"))
+        #expect(AccountCopy.message(AccountFailure(code: "remove_host_unconfirmed"))
+            == "Couldn't confirm the host was removed. Try again.")
+    }
+
     /// Records written before #494 decode with no vouch, and the field
     /// stays off the wire until set.
     @Test func accountLinkVouchIsOptionalOnDisk() throws {

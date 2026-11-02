@@ -517,21 +517,24 @@ extension AppModel {
             newHostNotices.removeAll { $0.hostId == host.hostId }
             knownAccountHosts.dismiss(
                 serverOrigin: session.serverOrigin, username: session.username, hostIds: [host.hostId])
+            // A registration of a new host may still be on its way: an
+            // invite in flight goes stale, and a running handshake finishes
+            // only to be undone. Closing it instead could drop the result
+            // after the core already saved it, leaving the pairing behind.
+            accountPairingGeneration &+= 1
+            automaticPairingRuntimes[host.hostId]?.refusesPairing = true
             forgetAccountHosts(serverOrigin: session.serverOrigin, hostId: host.hostId)
             await accountRefreshHosts()
             return nil
         case .failure(let failure) where failure.code == "not_found":
             // Gone already (removed from another device), or a server that
-            // predates removal: a list asked for after the answer tells
-            // which. One already in flight may predate it, and a failed one
-            // keeps the old rows, so no verdict then.
+            // predates removal: only a list asked for after the answer tells
+            // which.
             let fresh = !accountRefreshing
             await accountRefreshHosts()
-            if fresh, accountSession == session, accountHostsError == nil,
-               accountRows.contains(where: { $0.hostId == host.hostId }) {
-                return AccountFailure(code: "remove_host_unsupported", status: 404)
-            }
-            return nil
+            let answered = fresh && accountSession == session && accountHostsError == nil
+            return AccountHosts.removeHostNotFound(
+                hostId: host.hostId, listedAfter: answered ? accountRows.map(\.hostId) : nil)
         case .failure(let failure):
             if failure.clearsSession {
                 accountSignOutWarning = endAccountSession(notice: AccountCopy.message(failure))

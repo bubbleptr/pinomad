@@ -758,6 +758,15 @@ public enum AccountHosts {
             return host.hostKey
         }
     }
+
+    /// What a 404 to removing `hostId` means (#512): gone already, or a
+    /// server that predates removal. `listedAfter` is the host list asked for
+    /// after that answer, nil when there is none: one already in flight may
+    /// predate it, and a failed one says nothing. Nil means removed.
+    public static func removeHostNotFound(hostId: String, listedAfter: [String]?) -> AccountFailure? {
+        guard let listedAfter else { return AccountFailure(code: "remove_host_unconfirmed") }
+        return listedAfter.contains(hostId) ? AccountFailure(code: "remove_host_unsupported", status: 404) : nil
+    }
 }
 
 // MARK: - Devices
@@ -867,6 +876,8 @@ public enum AccountCopy {
         case "admin_account": "The server's admin account can't be deleted."
         // Set by the app: a 404 for a host the list fetched after it still has.
         case "remove_host_unsupported": "This server can't remove hosts. Run pinomad leave on the host, or update the server."
+        // Set by the app: a 404 with no list fetched after it to tell why.
+        case "remove_host_unconfirmed": "Couldn't confirm the host was removed. Try again."
         default: "Something went wrong (" + failure.code + ")."
         }
     }
