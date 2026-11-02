@@ -397,8 +397,12 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   // One LAN probe supplies both the pairing page and its direct candidate. The
   // relay stays first in Auto order, but a loopback relay is client-local and
   // never enters the published set, exactly like a loopback direct address.
+  // A link the account removed (#512) never dials again: it stays for its
+  // state and close(), but nothing may send a device to it.
+  const reachableRelay = (): RelayLink | undefined => (relay?.state().status === "removed" ? undefined : relay);
   const currentAdvertisement = (): { readonly endpoints: HostEndpoint[]; readonly advertiseUrl?: string } => {
     const advertiseUrl = remote?.advertiseUrl;
+    const relay = reachableRelay();
     const endpoints = remoteEndpointCandidates({
       ...(relay === undefined ? {} : { relay: { origin: relay.origin, hostId: relay.hostId } }),
       ...(advertiseUrl === undefined ? {} : { direct: { advertiseUrl } }),
@@ -447,6 +451,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
         // offer or leave the caller with a link older clients cannot use.
         const advertisement = currentAdvertisement();
         const endpointSet = checkedEndpointSet(advertisement.endpoints);
+        const relay = reachableRelay();
         const relayReachable = endpointSet.endpoints.some((endpoint) => endpoint.role === "relay");
         // The offer's source is the link it rides on: a reachable URL is a
         // "qr" offer; a loopback-only one is "local" (ADR-0020 §4, ADR-0022 §6).

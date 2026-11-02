@@ -104,6 +104,7 @@ export async function forgetRemovedServer(
     if ((error as { code?: string }).code === "ENOENT") return false;
     throw error;
   }
+  let keep = false;
   try {
     const config = await readServerConfigAt(claimed).catch(() => undefined);
     if (
@@ -111,10 +112,12 @@ export async function forgetRemovedServer(
       normalizeOrigin(config.origin) !== normalizeOrigin(removed.origin) ||
       config.binding !== removed.binding
     ) {
-      // link(), unlike rename(), never replaces a file a join wrote since.
-      await link(claimed, path).catch((error: unknown) => {
-        if ((error as { code?: string }).code !== "EEXIST") throw error;
-      });
+      try {
+        await putBack(claimed, path);
+      } catch (error) {
+        keep = true;
+        throw new Error(`could not put back ${path}; it is at ${claimed}: ${error instanceof Error ? error.message : String(error)}`);
+      }
       return false;
     }
     await writeJsonFile(join(dataDir, REMOVAL_NOTICE_FILE), {
@@ -124,8 +127,26 @@ export async function forgetRemovedServer(
     });
     return true;
   } finally {
-    await rm(claimed, { force: true });
+    // Unless putting it back failed: then it is the only copy of a newer join.
+    if (!keep) await rm(claimed, { force: true });
   }
+}
+
+/**
+ * Returns a claimed server.json unless a newer one took its place. link(),
+ * unlike rename(), never replaces that newer file; where the filesystem has
+ * no hard links (exFAT), a rename after checking the name is still free is
+ * the fallback.
+ */
+async function putBack(claimed: string, path: string): Promise<void> {
+  try {
+    await link(claimed, path);
+    return;
+  } catch (error) {
+    if ((error as { code?: string }).code === "EEXIST") return;
+  }
+  if (await readFile(path).then(() => true, () => false)) return;
+  await rename(claimed, path);
 }
 
 /** The notice `forgetRemovedServer` left, or undefined when there is none. */

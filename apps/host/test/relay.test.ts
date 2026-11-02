@@ -786,13 +786,20 @@ describe("relay link", () => {
     });
     await waitForRelayState(host, "registered");
 
+    const tokenClient = await connectTo(defer, host);
+    expect((await tokenClient.controller.createPairing()).url.startsWith(`${origin}/`)).toBe(true);
+
     await removeFromAccount(origin, hostId);
     const state = await waitForRelayState(host, "removed");
     if (state.status !== "removed") throw new Error("unreachable");
     expect(state.reason).toContain(origin);
     expect(state.reason).toContain("pinomad up");
-    await eventually(async () => (await readServerConfig(dir.path)) === undefined);
+    // The notice lands after server.json moves aside: wait for the notice.
+    await eventually(async () => (await readRemovalNotice(dir.path)) !== undefined);
+    expect(await readServerConfig(dir.path)).toBeUndefined();
     expect(await readRemovalNotice(dir.path)).toMatchObject({ origin, username: "admin" });
+    // A pairing link must not send a new device to a server that dropped this host.
+    expect((await tokenClient.controller.createPairing()).url.startsWith(`${origin}/`)).toBe(false);
     // Terminal: several reconnect delays later it still hasn't dialed again.
     await new Promise((resolve) => setTimeout(resolve, QUICK_RECONNECT.max * 3));
     expect(host.relay!.state().status).toBe("removed");
