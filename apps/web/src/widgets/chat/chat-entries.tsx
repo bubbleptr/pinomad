@@ -4,6 +4,7 @@
 // thumbs), and on the newest run the todo card (ADR-0026).
 import { Button } from "@astryxdesign/core/Button";
 import { ChatMessageMetadata, ChatSystemMessage } from "@astryxdesign/core/Chat";
+import { Icon } from "@astryxdesign/core/Icon";
 import { InternationalizationProvider } from "@astryxdesign/core/i18n";
 import { Token } from "@astryxdesign/core/Token";
 import type { ConversationId } from "@earendil-works/pi-durable";
@@ -158,7 +159,15 @@ function UserEntry({
   const metadata = (
     <ChatMessageMetadata
       {...(entry.timestamp === undefined ? {} : { timestamp: <ChatMessageTime timestamp={entry.timestamp} today={today} /> })}
-      {...(status === undefined ? {} : { status })}
+      // The double check is the delivered label; don't repeat it as prose.
+      footer={
+        status === "delivered" ? (
+          <span title="Delivered">
+            <Icon icon="checkDouble" size="xsm" label="Delivered" />
+          </span>
+        ) : undefined
+      }
+      status={status === "delivered" ? undefined : status}
       className="chat-message__metadata"
     />
   );
@@ -184,7 +193,7 @@ function UserEntry({
             </ChatMessage.Content>
           </ChatMessage.Bubble>
         )}
-        <div className="chat-message__metadata-row">
+        <div className={`chat-message__metadata-row${local === undefined ? "" : " chat-message__metadata-row--persistent"}`}>
           {copy}
           {entry.status === "unknown" ? (
             <InternationalizationProvider
@@ -307,7 +316,7 @@ function RunEntry({
         )}
         {entry.failure === undefined ? null : <ChatRunFailure error={entry.failure} onRetry={onRetry} />}
         {!showActions ? null : (
-          <ChatMessageActions className="chat-message__actions--persist">
+          <ChatMessageActions>
             {endedAt === undefined ? null : (
               <ChatMessageMetadata timestamp={<ChatMessageTime timestamp={endedAt} today={today} />} />
             )}

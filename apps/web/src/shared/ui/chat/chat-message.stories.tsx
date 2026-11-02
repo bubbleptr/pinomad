@@ -34,7 +34,7 @@ export const Assistant: Story = {
             {"The tokenizer splits on `\\n` only, so a `\\r\\n` file leaves a stray `\\r` on every token.\n\nNormalize line endings in `tokenize` before splitting."}
           </ChatMarkdown>
         </ChatMessage.Content>
-        <ChatMessageActions className="chat-message__actions--persist">
+        <ChatMessageActions>
           <ChatMessageActions.Copy aria-label="Copy" tooltip="Copy" onPress={fn()} />
           <ChatMessageActions.ThumbsUp aria-label="Good response" tooltip="Good response" onPress={fn()} />
           <ChatMessageActions.ThumbsDown aria-label="Bad response" tooltip="Bad response" onPress={fn()} />

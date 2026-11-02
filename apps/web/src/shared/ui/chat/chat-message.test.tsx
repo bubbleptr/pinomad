@@ -55,21 +55,19 @@ describe("ChatMessage", () => {
     expect(screen.getByRole("button", { name: "Bad response" })).toBeInTheDocument();
   });
 
-  it("can keep assistant actions visible after the turn settles", () => {
+  it("keeps settled assistant actions in the shared reveal container", () => {
     const { container } = render(
       <ChatMessage.Assistant>
         <ChatMessage.Body>
           <ChatMessage.Content>Done</ChatMessage.Content>
-          <ChatMessageActions className="chat-message__actions--persist">
+          <ChatMessageActions>
             <ChatMessageActions.Copy aria-label="Copy" />
           </ChatMessageActions>
         </ChatMessage.Body>
       </ChatMessage.Assistant>,
     );
 
-    expect(container.querySelector('[data-slot="chat-message-actions"]')).toHaveClass(
-      "chat-message__actions--persist",
-    );
+    expect(container.querySelector('[data-slot="chat-message-actions"]')).toHaveClass("chat-message__actions");
   });
 
   it("fires onPress for custom actions", async () => {
