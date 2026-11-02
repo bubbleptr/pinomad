@@ -1277,7 +1277,10 @@ describe("removing a host from the account (#512)", () => {
       if (url.endsWith("/api/hosts")) {
         return listFails ? Promise.reject(new Error("offline")) : Promise.resolve(answer(200, accountHosts));
       }
-      if (url.endsWith("/api/hosts/h1/pairing")) return Promise.resolve(answer(200, pairingOffer));
+      if (url.endsWith("/api/hosts/h1/pairing")) {
+        const listed = accountHosts.some((row) => row.hostId === "h1");
+        return Promise.resolve(listed ? answer(200, pairingOffer) : answer(404, { error: "not_found" }));
+      }
       if (url.endsWith("/api/hosts/h1/remove")) {
         const result = remove();
         if (result.status === 204) accountHosts = accountHosts.filter((row) => row.hostId !== "h1");
@@ -1309,6 +1312,26 @@ describe("removing a host from the account (#512)", () => {
   const vouched = (hostId: string) => storedHost({ account: { serverOrigin: ORIGIN, hostId, vouched: true } });
   /** A QR pairing that later adopted the account link. */
   const adopted = (hostId: string) => storedHost({ account: { serverOrigin: ORIGIN, hostId } });
+
+  /**
+   * A store whose saves wait for the test, as desktop's async IPC can: the
+   * pairing is past its last check while the removal lands. `next` waits for
+   * the next save and lets the test fail it or let it through.
+   */
+  const holdingStore = () => {
+    const store = hosts();
+    const save = store.save;
+    const held: { succeed: () => void; fail: () => void }[] = [];
+    store.save = (host) =>
+      new Promise<void>((resolve, reject) => {
+        held.push({ succeed: () => void save(host).then(resolve, reject), fail: () => reject(new Error("store unavailable")) });
+      });
+    const next = async () => {
+      await vi.waitFor(() => expect(held.length).toBeGreaterThan(0));
+      return held.shift()!;
+    };
+    return { store, next };
+  };
 
   it("sends the password, then forgets the account's key for that host here; QR pairings and other hosts stay", async () => {
     const mine = vouched("h1");
@@ -1380,23 +1403,12 @@ describe("removing a host from the account (#512)", () => {
   it("does not queue an automatic pairing whose save fails after the removal for a retry", async () => {
     // Desktop saves over async IPC: the pairing can be past its last check
     // and waiting on the save when the removal lands.
-    const store = hosts();
-    const save = store.save;
-    let failSave!: () => void;
-    let saving!: () => void;
-    const saveStarted = new Promise<void>((resolve) => (saving = resolve));
-    let held = true;
-    store.save = (host) => {
-      if (!held) return save(host);
-      held = false;
-      saving();
-      return new Promise<void>((_, reject) => (failSave = () => reject(new Error("store unavailable"))));
-    };
+    const { store, next } = holdingStore();
     const setup = await signedInWith([], () => answer(204), ["h1"], { autoRegister: true, store });
-    await saveStarted;
+    const save = await next();
     expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
 
-    failSave();
+    save.fail();
     await new Promise((resolve) => setTimeout(resolve, 0));
     const state = setup.model.state;
     expect(state.status === "signed-in" ? state.unsavedHosts : undefined).toEqual([]);
@@ -1405,6 +1417,52 @@ describe("removing a host from the account (#512)", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(setup.paired).toHaveLength(1);
     expect(store.stored).toEqual([]);
+  });
+
+  describe("a save that succeeds after the removal is taken back; a QR pairing stays", () => {
+    it("from an automatic pairing", async () => {
+      const { store, next } = holdingStore();
+      const setup = await signedInWith([], () => answer(204), ["h1"], { autoRegister: true, store });
+      const save = await next();
+      const qr = adopted("h1");
+      store.stored.push(qr);
+      expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
+
+      save.succeed();
+      await vi.waitFor(() => expect(store.stored).toEqual([qr]));
+    });
+
+    it("from a retry of a failed save", async () => {
+      const { store, next } = holdingStore();
+      const setup = await signedInWith([], () => answer(204), ["h1"], { autoRegister: true, store });
+      (await next()).fail();
+      await vi.waitFor(() => {
+        const state = setup.model.state;
+        expect(state.status === "signed-in" ? state.unsavedHosts : []).toHaveLength(1);
+      });
+      expect((await setup.model.refreshHosts()).ok).toBe(true);
+      const retry = await next();
+      const qr = adopted("h1");
+      store.stored.push(qr);
+      expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
+
+      retry.succeed();
+      await vi.waitFor(() => expect(store.stored).toEqual([qr]));
+    });
+
+    it("from a manual pairing", async () => {
+      const { store, next } = holdingStore();
+      const setup = await signedInWith([], () => answer(204), ["h1"], { store });
+      const pairing = setup.model.pairHost("h1");
+      const save = await next();
+      const qr = adopted("h1");
+      store.stored.push(qr);
+      expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
+
+      save.succeed();
+      expect(await pairing).toEqual({ ok: false, error: { code: "host_removed" } });
+      expect(store.stored).toEqual([qr]);
+    });
   });
 
   describe("a manual pairing of the host in flight", () => {

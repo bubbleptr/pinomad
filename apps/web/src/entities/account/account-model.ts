@@ -260,7 +260,8 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   /**
    * Removals this page made, per account host slot. A pairing that started
    * before one must neither store the host it took off the account nor queue
-   * it for a retry when its save fails.
+   * it for a retry when its save fails; a save that lands after it is taken
+   * back, since the removal's forget may have run first.
    */
   const removals = new Map<string, number>();
   const removedSince = (slot: string, seen: number | undefined): boolean => removals.get(slot) !== seen;
@@ -410,9 +411,15 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       publishUnsaved();
       return false;
     }
+    const slot = storedSlot(host);
+    const seen = removals.get(slot);
     try {
       await deps.paired(host);
     } catch {
+      return false;
+    }
+    if (host.account !== undefined && removedSince(slot, seen)) {
+      await forgetAccountHosts(active.origin, host.account.hostId);
       return false;
     }
     clearRejected(host.hostKey);
@@ -513,6 +520,10 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
           await deps.paired(enriched);
         } catch {
           if (!removedSince(key, removed)) rememberUnsaved(enriched);
+          return;
+        }
+        if (removedSince(key, removed)) {
+          await forgetAccountHosts(active.origin, match.host.hostId);
           return;
         }
         if (client === active) await refresh(active, user);
@@ -663,6 +674,10 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       // not orphan the key. Keep the record for retryUnsavedHost.
       rememberUnsaved(enriched);
       return fail("pairing_not_saved");
+    }
+    if (removedSince(slot, removed)) {
+      await forgetAccountHosts(active.origin, hostId);
+      return fail("host_removed");
     }
     forgetUnsaved(enriched);
     // A re-pair after a key change stored a fresh record under the new key;
