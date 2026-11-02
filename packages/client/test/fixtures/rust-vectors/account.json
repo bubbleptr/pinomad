@@ -239,6 +239,36 @@
         "userCode": "W\"DJB\n"
       },
       "expect": "{\"url\":\"https://relay.example.com/api/host-link/deny\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"userCode\\\":\\\"W\\\\\\\"DJB\\\\n\\\"}\"}}"
+    },
+    {
+      "name": "host-link-request-lookup",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "lookupHostLinkRequest",
+        "requestId": "rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/host-link/lookup\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"requestId\\\":\\\"rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr\\\"}\"}}"
+    },
+    {
+      "name": "host-link-request-confirm",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "confirmHostLinkRequest",
+        "requestId": "r\"q"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/host-link/confirm\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"requestId\\\":\\\"r\\\\\\\"q\\\"}\"}}"
+    },
+    {
+      "name": "host-link-request-deny",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "denyHostLinkRequest",
+        "requestId": "r"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/host-link/deny\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"requestId\\\":\\\"r\\\"}\"}}"
     }
   ],
   "responses": [
@@ -773,6 +803,76 @@
       "status": 429,
       "body": "{\"error\":\"rate_limited\"}",
       "expect": "{\"ok\":false,\"error\":{\"code\":\"rate_limited\",\"status\":429}}"
+    },
+    {
+      "name": "host-link-request-lookup-ok",
+      "kind": "lookupHostLinkRequest",
+      "status": 200,
+      "body": "{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"mbp\",\"os\":\"macOS (arm64)\",\"sourceIp\":\"127.0.0.1\",\"ipDiffers\":false,\"expiresAt\":9}",
+      "expect": "{\"ok\":true,\"value\":{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"mbp\",\"os\":\"macOS (arm64)\",\"sourceIp\":\"127.0.0.1\",\"ipDiffers\":false,\"expiresAt\":9}}"
+    },
+    {
+      "name": "host-link-request-lookup-not-found",
+      "kind": "lookupHostLinkRequest",
+      "status": 404,
+      "body": "{\"error\":\"not_found\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"not_found\",\"status\":404}}"
+    },
+    {
+      "name": "host-link-request-confirm-ok",
+      "kind": "confirmHostLinkRequest",
+      "status": 200,
+      "body": "{\"redirect\":\"http://127.0.0.1:54321/callback?code=c0de&state=st\"}",
+      "expect": "{\"ok\":true,\"value\":\"http://127.0.0.1:54321/callback?code=c0de&state=st\"}"
+    },
+    {
+      "name": "host-link-request-confirm-elsewhere",
+      "kind": "confirmHostLinkRequest",
+      "status": 200,
+      "body": "{\"redirect\":\"https://evil.example/cb?code=c\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "host-link-request-confirm-localhost",
+      "kind": "confirmHostLinkRequest",
+      "status": 200,
+      "body": "{\"redirect\":\"http://localhost:54321/cb\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "host-link-request-confirm-no-port",
+      "kind": "confirmHostLinkRequest",
+      "status": 200,
+      "body": "{\"redirect\":\"http://127.0.0.1/cb\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "host-link-request-confirm-not-url",
+      "kind": "confirmHostLinkRequest",
+      "status": 200,
+      "body": "{\"redirect\":\"nope\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "host-link-request-confirm-204",
+      "kind": "confirmHostLinkRequest",
+      "status": 204,
+      "body": null,
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "host-link-request-confirm-not-found",
+      "kind": "confirmHostLinkRequest",
+      "status": 404,
+      "body": "{\"error\":\"not_found\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"not_found\",\"status\":404}}"
+    },
+    {
+      "name": "host-link-request-deny-ok",
+      "kind": "denyHostLinkRequest",
+      "status": 200,
+      "body": "{\"redirect\":\"http://127.0.0.1:54321/callback?error=access_denied&state=st\"}",
+      "expect": "{\"ok\":true,\"value\":\"http://127.0.0.1:54321/callback?error=access_denied&state=st\"}"
     }
   ],
   "probe": [

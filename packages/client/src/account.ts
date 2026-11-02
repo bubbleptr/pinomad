@@ -348,6 +348,19 @@ export interface AccountClient {
   confirmHostLink(userCode: string): Promise<AccountResult<void>>;
   /** Turns that host away; same refusals as lookup. */
   denyHostLink(userCode: string): Promise<AccountResult<void>>;
+  /**
+   * A loopback host link (#513): the request its confirm URL names by id.
+   * 404 `not_found` is an unknown, settled or expired request.
+   */
+  lookupHostLinkRequest(requestId: string): Promise<AccountResult<HostLinkRequest>>;
+  /**
+   * Lets that host join and answers where to send the browser: the host's
+   * own `http://127.0.0.1:<port>` listener, which receives a one-time code.
+   * Any other answer is `invalid_response`.
+   */
+  confirmHostLinkRequest(requestId: string): Promise<AccountResult<string>>;
+  /** Turns that host away; the redirect tells its listener so. */
+  denyHostLinkRequest(requestId: string): Promise<AccountResult<string>>;
   listHosts(): Promise<AccountResult<readonly AccountHost[]>>;
   /**
    * Takes a host out of the account after checking the password again
@@ -376,6 +389,39 @@ export interface AccountClient {
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
+
+const hostLinkRequestBody = (value: unknown): HostLinkRequest | undefined =>
+  isRecord(value) &&
+  typeof value.hostId === "string" &&
+  typeof value.name === "string" &&
+  typeof value.os === "string" &&
+  typeof value.sourceIp === "string" &&
+  typeof value.ipDiffers === "boolean" &&
+  typeof value.expiresAt === "number"
+    ? {
+        hostId: value.hostId,
+        name: value.name,
+        os: value.os,
+        sourceIp: value.sourceIp,
+        ipDiffers: value.ipDiffers,
+        expiresAt: value.expiresAt,
+      }
+    : undefined;
+
+/**
+ * A loopback host link's redirect (#513), only when it goes to this
+ * machine's 127.0.0.1 over plain http, as the server allows at start: the
+ * client never sends a browser anywhere else on the server's word.
+ */
+const loopbackRedirectBody = (value: unknown): string | undefined => {
+  if (!isRecord(value) || typeof value.redirect !== "string") return undefined;
+  try {
+    const url = new URL(value.redirect);
+    return url.protocol === "http:" && url.hostname === "127.0.0.1" && url.port !== "" ? value.redirect : undefined;
+  } catch {
+    return undefined;
+  }
+};
 
 const userBody = (value: unknown): { readonly user: AccountUser; readonly admin?: true } | undefined => {
   if (!isRecord(value) || !isRecord(value.user) || typeof value.user.username !== "string") return undefined;
@@ -528,26 +574,8 @@ export function createAccountClient(options: {
     lookupHostLink: async (userCode) => {
       const result = await request("/api/host-link/lookup", "POST", { userCode });
       if (!result.ok) return result;
-      const value = result.value;
-      if (
-        !isRecord(value) ||
-        typeof value.hostId !== "string" ||
-        typeof value.name !== "string" ||
-        typeof value.os !== "string" ||
-        typeof value.sourceIp !== "string" ||
-        typeof value.ipDiffers !== "boolean" ||
-        typeof value.expiresAt !== "number"
-      ) {
-        return fail("invalid_response");
-      }
-      return ok({
-        hostId: value.hostId,
-        name: value.name,
-        os: value.os,
-        sourceIp: value.sourceIp,
-        ipDiffers: value.ipDiffers,
-        expiresAt: value.expiresAt,
-      });
+      const parsed = hostLinkRequestBody(result.value);
+      return parsed === undefined ? fail("invalid_response") : ok(parsed);
     },
     confirmHostLink: async (userCode) => {
       const result = await request("/api/host-link/confirm", "POST", { userCode });
@@ -556,6 +584,24 @@ export function createAccountClient(options: {
     denyHostLink: async (userCode) => {
       const result = await request("/api/host-link/deny", "POST", { userCode });
       return result.ok ? ok(undefined) : result;
+    },
+    lookupHostLinkRequest: async (requestId) => {
+      const result = await request("/api/host-link/lookup", "POST", { requestId });
+      if (!result.ok) return result;
+      const parsed = hostLinkRequestBody(result.value);
+      return parsed === undefined ? fail("invalid_response") : ok(parsed);
+    },
+    confirmHostLinkRequest: async (requestId) => {
+      const result = await request("/api/host-link/confirm", "POST", { requestId });
+      if (!result.ok) return result;
+      const redirect = loopbackRedirectBody(result.value);
+      return redirect === undefined ? fail("invalid_response") : ok(redirect);
+    },
+    denyHostLinkRequest: async (requestId) => {
+      const result = await request("/api/host-link/deny", "POST", { requestId });
+      if (!result.ok) return result;
+      const redirect = loopbackRedirectBody(result.value);
+      return redirect === undefined ? fail("invalid_response") : ok(redirect);
     },
     listHosts: async () => {
       const result = await request("/api/hosts", "GET");

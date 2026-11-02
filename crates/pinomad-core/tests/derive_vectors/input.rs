@@ -216,6 +216,15 @@ pub fn account_op(json: &Json) -> AccountOp {
         AccountOpKind::DenyHostLink => AccountOp::DenyHostLink {
             user_code: text(json.get("userCode")).unwrap_or_default(),
         },
+        AccountOpKind::LookupHostLinkRequest => AccountOp::LookupHostLinkRequest {
+            request_id: text(json.get("requestId")).unwrap_or_default(),
+        },
+        AccountOpKind::ConfirmHostLinkRequest => AccountOp::ConfirmHostLinkRequest {
+            request_id: text(json.get("requestId")).unwrap_or_default(),
+        },
+        AccountOpKind::DenyHostLinkRequest => AccountOp::DenyHostLinkRequest {
+            request_id: text(json.get("requestId")).unwrap_or_default(),
+        },
     }
 }
 
@@ -250,6 +259,9 @@ pub fn account_op_kind(name: &str) -> AccountOpKind {
         "lookupHostLink" => AccountOpKind::LookupHostLink,
         "confirmHostLink" => AccountOpKind::ConfirmHostLink,
         "denyHostLink" => AccountOpKind::DenyHostLink,
+        "lookupHostLinkRequest" => AccountOpKind::LookupHostLinkRequest,
+        "confirmHostLinkRequest" => AccountOpKind::ConfirmHostLinkRequest,
+        "denyHostLinkRequest" => AccountOpKind::DenyHostLinkRequest,
         other => panic!("unknown account op kind {other}"),
     }
 }
