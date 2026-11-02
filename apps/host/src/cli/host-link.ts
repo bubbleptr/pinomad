@@ -58,24 +58,36 @@ export function browserCommand(os: NodeJS.Platform, env: NodeJS.ProcessEnv): "op
   return undefined;
 }
 
+// How long a started opener may run before it counts as having opened the page.
+const OPENER_SETTLE_MS = 2000;
+
 /** Best effort: a browser that won't open is not an error, the printed URL still works. */
 export function openInBrowser(
   url: string,
   command: string | undefined = browserCommand(process.platform, process.env),
+  settleMs = OPENER_SETTLE_MS,
 ): Promise<boolean> {
   if (command === undefined) return Promise.resolve(false);
-  // Only a started opener counts: a missing xdg-open fails after spawn
-  // returns, and the join must then fall back to a code, not wait for a page.
+  // A missing opener fails after spawn returns, and one that started can
+  // still give up (xdg-open with no browser to hand to): either way the join
+  // must fall back to a code, not wait for a page. One still running after a
+  // moment counts as opened — some xdg-open setups stay until the browser quits.
   return new Promise((resolve) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const settle = (opened: boolean): void => {
+      clearTimeout(timer);
+      resolve(opened);
+    };
     try {
       const child = spawn(command, [url], { detached: true, stdio: "ignore" });
       child.once("spawn", () => {
         child.unref();
-        resolve(true);
+        timer = setTimeout(() => settle(true), settleMs);
       });
-      child.once("error", () => resolve(false));
+      child.once("error", () => settle(false));
+      child.once("exit", (code) => settle(code === 0));
     } catch {
-      resolve(false);
+      settle(false);
     }
   });
 }

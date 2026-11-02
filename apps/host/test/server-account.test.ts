@@ -605,6 +605,17 @@ describe("openInBrowser", () => {
     expect(await openInBrowser("https://example.com/host-link", "pinomad-no-such-opener")).toBe(false);
     expect(await openInBrowser("https://example.com/host-link", "true")).toBe(true);
   });
+
+  it("calls an opener that gives up (xdg-open without a browser) not opened", async () => {
+    expect(await openInBrowser("https://example.com/host-link", "false")).toBe(false);
+  });
+
+  it("counts an opener still running after a moment as opened, without waiting for it to finish", async () => {
+    // Some xdg-open setups run the browser itself and stay until it quits.
+    const started = Date.now();
+    expect(await openInBrowser("60", "sleep", 50)).toBe(true);
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
 });
 
 describe("browserCommand", () => {
