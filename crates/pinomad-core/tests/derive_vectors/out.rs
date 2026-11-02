@@ -581,6 +581,7 @@ fn account_value_json(value: &AccountValue) -> Json {
             ("ipDiffers", Some(Json::Bool(*ip_differs))),
             ("expiresAt", Some(num(*expires_at))),
         ]),
+        AccountValue::Redirect(redirect) => s(redirect),
         AccountValue::Hosts(hosts) => Json::array(hosts.iter().map(account_host_json).collect()),
         AccountValue::Devices(devices) => Json::array(devices.iter().map(account_device_json).collect()),
         AccountValue::PairingOffer(PairingOffer { url, host_key, secret, expires_at, endpoint_set }) => {

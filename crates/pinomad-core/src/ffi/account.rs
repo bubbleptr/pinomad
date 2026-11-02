@@ -57,6 +57,7 @@ pub enum AccountValue {
     Unit,
     JoinToken(JoinToken),
     HostLink(HostLinkRequest),
+    Redirect(String),
     Hosts(Vec<AccountHost>),
     Devices(Vec<AccountDevice>),
     PairingOffer(PairingOffer),
@@ -69,6 +70,7 @@ fn value_from_core(value: core::AccountValue) -> AccountValue {
         core::AccountValue::Unit => AccountValue::Unit,
         core::AccountValue::JoinToken(value) => AccountValue::JoinToken(value),
         core::AccountValue::HostLink(value) => AccountValue::HostLink(value),
+        core::AccountValue::Redirect(value) => AccountValue::Redirect(value),
         core::AccountValue::Hosts(value) => AccountValue::Hosts(value),
         core::AccountValue::Devices(value) => AccountValue::Devices(value),
         core::AccountValue::PairingOffer(value) => {

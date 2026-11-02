@@ -38,6 +38,7 @@ export type AccountOpDesc =
   | { kind: "removeHost"; hostId: string; password: string }
   | { kind: "logout"; revoke?: boolean }
   | { kind: "lookupHostLink" | "confirmHostLink" | "denyHostLink"; userCode: string }
+  | { kind: "lookupHostLinkRequest" | "confirmHostLinkRequest" | "denyHostLinkRequest"; requestId: string }
   | { kind: "me" | "revokeAllSessions" | "createJoinToken" | "listHosts" | "listDevices" };
 
 export interface RequestCase {
@@ -115,6 +116,10 @@ export const REQUEST_CASES: RequestCase[] = [
   { name: "host-link-lookup", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "lookupHostLink", userCode: "wdjb-MJHT" } },
   { name: "host-link-confirm", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "confirmHostLink", userCode: "WDJB MJHT" } },
   { name: "host-link-deny", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "denyHostLink", userCode: "W\"DJB\n" } },
+  // Loopback host links (#513): the request id from the confirm URL, as given.
+  { name: "host-link-request-lookup", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "lookupHostLinkRequest", requestId: "r".repeat(43) } },
+  { name: "host-link-request-confirm", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "confirmHostLinkRequest", requestId: "r\"q" } },
+  { name: "host-link-request-deny", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "denyHostLinkRequest", requestId: "r" } },
 ];
 
 export interface ResponseCase {
@@ -285,6 +290,32 @@ export const RESPONSE_CASES: ResponseCase[] = [
   { name: "host-link-confirm-401", kind: "confirmHostLink", status: 401, body: null },
   { name: "host-link-deny-204", kind: "denyHostLink", status: 204, body: null },
   { name: "host-link-deny-limited", kind: "denyHostLink", status: 429, body: '{"error":"rate_limited"}' },
+  {
+    name: "host-link-request-lookup-ok",
+    kind: "lookupHostLinkRequest",
+    status: 200,
+    body: `{"hostId":"${HOST_ID_A}","name":"mbp","os":"macOS (arm64)","sourceIp":"127.0.0.1","ipDiffers":false,"expiresAt":9}`,
+  },
+  { name: "host-link-request-lookup-not-found", kind: "lookupHostLinkRequest", status: 404, body: '{"error":"not_found"}' },
+  // Only a redirect to this machine's 127.0.0.1 over http is taken (#513).
+  {
+    name: "host-link-request-confirm-ok",
+    kind: "confirmHostLinkRequest",
+    status: 200,
+    body: '{"redirect":"http://127.0.0.1:54321/callback?code=c0de&state=st"}',
+  },
+  { name: "host-link-request-confirm-elsewhere", kind: "confirmHostLinkRequest", status: 200, body: '{"redirect":"https://evil.example/cb?code=c"}' },
+  { name: "host-link-request-confirm-localhost", kind: "confirmHostLinkRequest", status: 200, body: '{"redirect":"http://localhost:54321/cb"}' },
+  { name: "host-link-request-confirm-no-port", kind: "confirmHostLinkRequest", status: 200, body: '{"redirect":"http://127.0.0.1/cb"}' },
+  { name: "host-link-request-confirm-not-url", kind: "confirmHostLinkRequest", status: 200, body: '{"redirect":"nope"}' },
+  { name: "host-link-request-confirm-204", kind: "confirmHostLinkRequest", status: 204, body: null },
+  { name: "host-link-request-confirm-not-found", kind: "confirmHostLinkRequest", status: 404, body: '{"error":"not_found"}' },
+  {
+    name: "host-link-request-deny-ok",
+    kind: "denyHostLinkRequest",
+    status: 200,
+    body: '{"redirect":"http://127.0.0.1:54321/callback?error=access_denied&state=st"}',
+  },
 ];
 
 export interface ProbeCase {

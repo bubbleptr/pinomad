@@ -624,6 +624,12 @@ const invokeOp = (client: AccountClient, op: AccountOpDesc): Promise<unknown> =>
       return client.confirmHostLink(op.userCode);
     case "denyHostLink":
       return client.denyHostLink(op.userCode);
+    case "lookupHostLinkRequest":
+      return client.lookupHostLinkRequest(op.requestId);
+    case "confirmHostLinkRequest":
+      return client.confirmHostLinkRequest(op.requestId);
+    case "denyHostLinkRequest":
+      return client.denyHostLinkRequest(op.requestId);
   }
 };
 
@@ -665,7 +671,9 @@ async function accountVector(): Promise<VectorFile> {
                       ? { kind: "removeHost", hostId: "h", password: "p" }
                       : c.kind === "lookupHostLink" || c.kind === "confirmHostLink" || c.kind === "denyHostLink"
                         ? { kind: c.kind, userCode: "WDJB-MJHT" }
-                        : { kind: c.kind };
+                        : c.kind === "lookupHostLinkRequest" || c.kind === "confirmHostLinkRequest" || c.kind === "denyHostLinkRequest"
+                          ? { kind: c.kind, requestId: "r" }
+                          : { kind: c.kind };
       const result = await invokeOp(bearerClient("https://relay.example.com", "tok", respondFetch(c.status, c.body)), op);
       return { name: c.name, kind: c.kind, status: c.status, body: c.body, expect: wire(result) };
     }),

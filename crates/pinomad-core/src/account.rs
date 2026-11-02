@@ -41,7 +41,8 @@ pub struct AccountDeviceClaim {
 /// password again (#451, ADR-0037 §3), `KickDevice` also the server's id
 /// from `ListDevices`; `RemoveHost` carries the hostId and the password
 /// again (#512); the host-link trio carries the code typed from a host's
-/// terminal, verbatim (#495).
+/// terminal, verbatim (#495), and the loopback trio the request id from a
+/// confirm URL (#513).
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum AccountOp {
@@ -72,6 +73,9 @@ pub enum AccountOp {
     LookupHostLink { user_code: String },
     ConfirmHostLink { user_code: String },
     DenyHostLink { user_code: String },
+    LookupHostLinkRequest { request_id: String },
+    ConfirmHostLinkRequest { request_id: String },
+    DenyHostLinkRequest { request_id: String },
 }
 
 /// Which endpoint an answer belongs to — `account_response` picks its shape
@@ -96,6 +100,9 @@ pub enum AccountOpKind {
     LookupHostLink,
     ConfirmHostLink,
     DenyHostLink,
+    LookupHostLinkRequest,
+    ConfirmHostLinkRequest,
+    DenyHostLinkRequest,
 }
 
 /// One header on the request the platform sends, in the reference's order.
@@ -138,6 +145,9 @@ impl AccountOp {
             AccountOp::LookupHostLink { .. } => AccountOpKind::LookupHostLink,
             AccountOp::ConfirmHostLink { .. } => AccountOpKind::ConfirmHostLink,
             AccountOp::DenyHostLink { .. } => AccountOpKind::DenyHostLink,
+            AccountOp::LookupHostLinkRequest { .. } => AccountOpKind::LookupHostLinkRequest,
+            AccountOp::ConfirmHostLinkRequest { .. } => AccountOpKind::ConfirmHostLinkRequest,
+            AccountOp::DenyHostLinkRequest { .. } => AccountOpKind::DenyHostLinkRequest,
         }
     }
 
@@ -169,9 +179,15 @@ impl AccountOp {
             // `${id}` — the number as JS prints it.
             AccountOp::KickDevice { id, .. } => format!("/api/devices/{}/kick", number_to_json(*id)),
             AccountOp::RemoveHost { host_id, .. } => format!("/api/hosts/{}/remove", encode_uri_component(host_id)),
-            AccountOp::LookupHostLink { .. } => "/api/host-link/lookup".to_string(),
-            AccountOp::ConfirmHostLink { .. } => "/api/host-link/confirm".to_string(),
-            AccountOp::DenyHostLink { .. } => "/api/host-link/deny".to_string(),
+            AccountOp::LookupHostLink { .. } | AccountOp::LookupHostLinkRequest { .. } => {
+                "/api/host-link/lookup".to_string()
+            }
+            AccountOp::ConfirmHostLink { .. } | AccountOp::ConfirmHostLinkRequest { .. } => {
+                "/api/host-link/confirm".to_string()
+            }
+            AccountOp::DenyHostLink { .. } | AccountOp::DenyHostLinkRequest { .. } => {
+                "/api/host-link/deny".to_string()
+            }
         }
     }
 
@@ -180,8 +196,8 @@ impl AccountOp {
     /// push-token pair — the token stays out of the URL —
     /// `{currentPassword, newPassword}` for a password change, and
     /// `{password}` for deleting the account, kicking a device or removing a host,
-    /// `{revoke: true}` for a revoking sign-out, and `{userCode}` for the
-    /// host-link trio.
+    /// `{revoke: true}` for a revoking sign-out, `{userCode}` for the
+    /// host-link trio and `{requestId}` for the loopback trio.
     fn body(&self) -> Option<String> {
         match self {
             AccountOp::Login { username, password, device } => {
@@ -222,6 +238,13 @@ impl AccountOp {
             | AccountOp::DenyHostLink { user_code } => {
                 let mut object = JsonObject::new();
                 object.set(U16String::from_str("userCode"), Json::from(user_code.as_str()));
+                Some(Json::Object(Arc::new(object)).to_json())
+            }
+            AccountOp::LookupHostLinkRequest { request_id }
+            | AccountOp::ConfirmHostLinkRequest { request_id }
+            | AccountOp::DenyHostLinkRequest { request_id } => {
+                let mut object = JsonObject::new();
+                object.set(U16String::from_str("requestId"), Json::from(request_id.as_str()));
                 Some(Json::Object(Arc::new(object)).to_json())
             }
             AccountOp::Logout { revoke: true } => {
@@ -445,6 +468,9 @@ pub enum AccountValue {
     Unit,
     JoinToken(JoinToken),
     HostLink(HostLinkRequest),
+    /// Where a settled loopback host link sends the browser (#513): the
+    /// host's own `http://127.0.0.1:<port>` listener.
+    Redirect(String),
     Hosts(Vec<AccountHost>),
     Devices(Vec<AccountDevice>),
     PairingOffer(PairingOffer),
@@ -557,6 +583,15 @@ fn decode_device(entry: &Json) -> Result<AccountDevice, AccountError> {
     })
 }
 
+/// A loopback host link's redirect (#513), only when it goes to this
+/// machine's 127.0.0.1 over plain http, as the server allows at start: the
+/// client never sends a browser anywhere else on the server's word.
+fn loopback_redirect(value: &Json) -> Option<String> {
+    let redirect = str_field(value, "redirect")?;
+    let url = Url::parse(&redirect).ok()?;
+    (url.scheme() == "http" && url.host_str() == Some("127.0.0.1") && url.port().is_some()).then_some(redirect)
+}
+
 /// The endpoint's own shape check on a parsed 2xx body (`None` = a body that
 /// didn't parse or never arrived).
 fn decode_value(kind: AccountOpKind, value: Option<&Json>) -> Result<AccountValue, AccountError> {
@@ -583,7 +618,10 @@ fn decode_value(kind: AccountOpKind, value: Option<&Json>) -> Result<AccountValu
         | AccountOpKind::RemoveHost
         | AccountOpKind::ConfirmHostLink
         | AccountOpKind::DenyHostLink => Ok(AccountValue::Unit),
-        AccountOpKind::LookupHostLink => Ok(AccountValue::HostLink(HostLinkRequest {
+        AccountOpKind::ConfirmHostLinkRequest | AccountOpKind::DenyHostLinkRequest => {
+            loopback_redirect(value).map(AccountValue::Redirect).ok_or_else(AccountError::invalid)
+        }
+        AccountOpKind::LookupHostLink | AccountOpKind::LookupHostLinkRequest => Ok(AccountValue::HostLink(HostLinkRequest {
             host_id: str_field(value, "hostId").ok_or_else(AccountError::invalid)?,
             name: str_field(value, "name").ok_or_else(AccountError::invalid)?,
             os: str_field(value, "os").ok_or_else(AccountError::invalid)?,
