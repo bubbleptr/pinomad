@@ -845,8 +845,11 @@ final class AppModel {
             }
             // After the push clear: the host closes a device that unpaired
             // itself, so nothing can follow the revoke on this connection.
+            let revoke = revokeOnHost ? self.ownKeyRevoke(on: hostKey) : nil
+            // The host drops a revoked device's push registration with it.
+            if revoke != nil { warning = nil }
             await unpairHost(
-                revoke: revokeOnHost ? self.ownKeyRevoke(on: hostKey) : nil,
+                revoke: revoke,
                 forget: { @MainActor [warning] in
                     self.forgetNow(hostKey, record: record, warning: warning, decline: decline)
                 })
