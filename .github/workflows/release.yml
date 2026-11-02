@@ -164,7 +164,7 @@ jobs:
   install-script:
     # apps/site/public/install.sh on every platform it covers, with the package
     # verify just packed: official Node download, npm install, the launcher,
-    # and a host that starts on that Node.
+    # the command after `sh -s --`, and a host that starts on that Node.
     needs: verify
     strategy:
       matrix:
@@ -185,7 +185,10 @@ jobs:
           tgz=$(ls "$GITHUB_WORKSPACE"/npm-artifact/pinomad-*.tgz)
           version=$(basename "$tgz" .tgz)
           version=${version#pinomad-}
-          PINOMAD_VERSION="$tgz" sh apps/site/public/install.sh
+          # Piped like `curl … | sh -s -- <command>`: the script runs the command once installed.
+          out=$(PINOMAD_VERSION="$tgz" sh -s -- --version <apps/site/public/install.sh)
+          printf '%s\n' "$out"
+          test "$(printf '%s\n' "$out" | tail -n 1)" = "$version"
           bin="$HOME/.local/bin/pinomad"
           test "$("$bin" --version)" = "$version"
           log="$RUNNER_TEMP/host.log"

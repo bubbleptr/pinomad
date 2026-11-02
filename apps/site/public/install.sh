@@ -2,11 +2,14 @@
 # PiNomad installer (https://pinomad.si/install.sh):
 #
 #   curl -fsSL https://pinomad.si/install.sh | sh
+#   curl -fsSL https://pinomad.si/install.sh | sh -s -- up --origin <server>
 #
 # Puts an official Node build and the pinomad npm package in ~/.pinomad/runtime
 # and a `pinomad` launcher in ~/.local/bin, so the machine needs no Node of its
-# own. Running it again updates both. A pinomad installed another way (npm, a
-# source checkout) is left alone. Settings, all optional:
+# own, and adds ~/.local/bin to the shell profile when it isn't on PATH yet.
+# Running it again updates both. A pinomad installed another way (npm, a
+# source checkout) is left alone. Arguments after `sh -s --` are a pinomad
+# command to run once it is installed. Settings, all optional:
 #
 #   PINOMAD_VERSION      pinomad version to install (default: latest), or the
 #                        path to a pinomad-*.tgz (the release workflow's check)
@@ -14,8 +17,9 @@
 #   PINOMAD_BIN_DIR      where the launcher goes (default ~/.local/bin)
 #   PINOMAD_NODE_MIRROR  base URL of the Node downloads (default https://nodejs.org/dist)
 #
-# To uninstall: `pinomad service uninstall`, then delete the runtime dir and
-# the launcher. The data dir (~/.pinomad, minus runtime/) is yours to keep.
+# To uninstall: `pinomad service uninstall`, then delete the runtime dir, the
+# launcher and the profile line that ends in the PATH_MARKER comment. The data
+# dir (~/.pinomad, minus runtime/) is yours to keep.
 
 set -eu
 
@@ -29,6 +33,8 @@ SUM_LINUX_ARM64=a6c01af459dd8972ab3fb08ee5da81244d26ba8c4944a62d5bbba8c597ae154f
 # The launcher's second line; a re-run looks for it to tell its own launcher
 # from a pinomad installed some other way.
 MARKER="pinomad launcher installed by https://pinomad.si/install.sh"
+# Ends the PATH line in the shell profile, so a re-run adds no second one.
+PATH_MARKER="added by https://pinomad.si/install.sh"
 
 say() { printf '%s\n' "$*"; }
 fail() {
@@ -58,6 +64,55 @@ sha256() {
 
 ours() { grep -qF "$MARKER" "$1" 2>/dev/null; }
 
+# The file a new terminal reads for the user's login shell. Terminal on macOS
+# opens login shells, which read .bash_profile (or what stands in for it)
+# instead of .bashrc.
+profile() {
+  case ${SHELL##*/} in
+    zsh) say "${ZDOTDIR:-$HOME}/.zshrc" ;;
+    fish) say "${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/pinomad.fish" ;;
+    bash)
+      if [ "$os" = Darwin ]; then
+        for file in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
+          if [ -e "$file" ]; then
+            say "$file"
+            return
+          fi
+        done
+        say "$HOME/.bash_profile"
+      else
+        say "$HOME/.bashrc"
+      fi
+      ;;
+    *) say "$HOME/.profile" ;;
+  esac
+}
+
+# Puts $bin_dir on PATH for new terminals; this one can't be changed from here.
+add_to_path() {
+  rc=$(profile)
+  case $bin_dir in
+    "$HOME"/*) entry="\$HOME${bin_dir#"$HOME"}" ;;
+    *) entry=$bin_dir ;;
+  esac
+  case $rc in
+    *.fish) line="fish_add_path -g \"$entry\" # $PATH_MARKER" ;;
+    *) line="export PATH=\"$entry:\$PATH\" # $PATH_MARKER" ;;
+  esac
+  if grep -qF "$PATH_MARKER" "$rc" 2>/dev/null; then return 0; fi
+  if {
+    mkdir -p "$(dirname "$rc")" &&
+      # A file that doesn't end in a newline would run into the new line.
+      if [ -s "$rc" ] && [ -n "$(tail -c 1 "$rc")" ]; then printf '\n' >>"$rc"; fi &&
+      say "$line" >>"$rc"
+  } 2>/dev/null; then
+    say "Added $bin_dir to PATH in $rc"
+  else
+    say "Could not write $rc; add this line to your shell profile yourself:"
+    say "  $line"
+  fi
+}
+
 # Everything runs from here, so a download cut short runs nothing.
 main() {
   runtime=${PINOMAD_RUNTIME_DIR:-$HOME/.pinomad/runtime}
@@ -74,6 +129,7 @@ main() {
     if [ -e "$found" ] && ! ours "$found"; then
       say "pinomad is already installed at $found; leaving it alone."
       say "Update it with \`pinomad upgrade\`, or remove it (\`npm uninstall -g pinomad\`) and run this again."
+      if [ $# -gt 0 ]; then run "$found" "$@"; fi
       return 0
     fi
   done
@@ -150,16 +206,21 @@ EOF
     say "If the host runs as a service, \`pinomad service restart\` moves it to this version."
   fi
   case ":$PATH:" in
-    *":$bin_dir:"*)
-      say "Next: pinomad up"
-      ;;
+    *":$bin_dir:"*) next="Next: pinomad up" ;;
     *)
-      say ""
-      say "$bin_dir is not on your PATH. Add this line to your shell profile (~/.zshrc, ~/.bashrc):"
-      say "  export PATH=\"$bin_dir:\$PATH\""
-      say "Next, in a new terminal: pinomad up (or now: $launcher up)"
+      add_to_path
+      next="Next, in a new terminal: pinomad up"
       ;;
   esac
+  if [ $# -gt 0 ]; then run "$launcher" "$@"; fi
+  say "$next"
+}
+
+# Under `curl … | sh` stdin is the script itself; a command that asks
+# questions (`pinomad up`) reads the terminal instead, when there is one.
+run() {
+  if (: </dev/tty) 2>/dev/null; then exec "$@" </dev/tty; fi
+  exec "$@" </dev/null
 }
 
 main "$@"
