@@ -430,6 +430,9 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   const retryPending = async (active: AccountClient): Promise<number> => {
     let saved = 0;
     for (const host of [...unsaved.values()]) {
+      // Left the queue while an earlier save ran (its host removed, saved by
+      // another round, the session ended): saving it now would bring it back.
+      if (unsaved.get(storedSlot(host)) !== host) continue;
       if (!(await savePending(active, host))) return saved;
       saved += 1;
     }

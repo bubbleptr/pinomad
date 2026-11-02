@@ -1242,16 +1242,23 @@ describe("removing a host from the account (#512)", () => {
     text: () => Promise.resolve(body === undefined ? "" : JSON.stringify(body)),
   });
 
-  const pairingOffer = {
-    url: "wss://relay.example.com/c/h1",
-    hostKey: toBase64Url(generateKeyPair().publicKey),
-    secret: toBase64Url(generateKeyPair().privateKey),
-    expiresAt: Date.now() + 60_000,
+  /** Each host's pairing offer, with a key of its own. */
+  const offers = new Map<string, unknown>();
+  const pairingOffer = (hostId: string) => {
+    if (!offers.has(hostId)) {
+      offers.set(hostId, {
+        url: `wss://relay.example.com/c/${hostId}`,
+        hostKey: toBase64Url(generateKeyPair().publicKey),
+        secret: toBase64Url(generateKeyPair().privateKey),
+        expiresAt: Date.now() + 60_000,
+      });
+    }
+    return offers.get(hostId);
   };
 
   /**
    * Signed in (cookie mode) with `stored` paired and the account listing
-   * `listed`; a 204 from `remove` takes h1 off the list. `removed` records
+   * `listed`; a 204 from `remove` takes that host off the list. `removed` records
    * every host the model drops; `relist` puts h1 back on the account, as
    * `pinomad up` on it would.
    */
@@ -1277,13 +1284,14 @@ describe("removing a host from the account (#512)", () => {
       if (url.endsWith("/api/hosts")) {
         return listFails ? Promise.reject(new Error("offline")) : Promise.resolve(answer(200, accountHosts));
       }
-      if (url.endsWith("/api/hosts/h1/pairing")) {
-        const listed = accountHosts.some((row) => row.hostId === "h1");
-        return Promise.resolve(listed ? answer(200, pairingOffer) : answer(404, { error: "not_found" }));
+      const [, hostId, action] = /\/api\/hosts\/([^/]+)\/(pairing|remove)$/.exec(url) ?? [];
+      if (action === "pairing") {
+        const listed = accountHosts.some((row) => row.hostId === hostId);
+        return Promise.resolve(listed ? answer(200, pairingOffer(hostId!)) : answer(404, { error: "not_found" }));
       }
-      if (url.endsWith("/api/hosts/h1/remove")) {
+      if (action === "remove") {
         const result = remove();
-        if (result.status === 204) accountHosts = accountHosts.filter((row) => row.hostId !== "h1");
+        if (result.status === 204) accountHosts = accountHosts.filter((row) => row.hostId !== hostId);
         listFails = options?.failListAfterRemove === true;
         return Promise.resolve(result);
       }
@@ -1321,16 +1329,24 @@ describe("removing a host from the account (#512)", () => {
   const holdingStore = () => {
     const store = hosts();
     const save = store.save;
-    const held: { succeed: () => void; fail: () => void }[] = [];
+    const held: { host: StoredHost; succeed: () => void; fail: () => void }[] = [];
     store.save = (host) =>
       new Promise<void>((resolve, reject) => {
-        held.push({ succeed: () => void save(host).then(resolve, reject), fail: () => reject(new Error("store unavailable")) });
+        held.push({
+          host,
+          succeed: () => void save(host).then(resolve, reject),
+          fail: () => reject(new Error("store unavailable")),
+        });
       });
     const next = async () => {
       await vi.waitFor(() => expect(held.length).toBeGreaterThan(0));
       return held.shift()!;
     };
-    return { store, next };
+    /** Lets every save still waiting through. */
+    const release = () => {
+      for (const save of held.splice(0)) save.succeed();
+    };
+    return { store, next, release };
   };
 
   it("sends the password, then forgets the account's key for that host here; QR pairings and other hosts stay", async () => {
@@ -1417,6 +1433,30 @@ describe("removing a host from the account (#512)", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(setup.paired).toHaveLength(1);
     expect(store.stored).toEqual([]);
+  });
+
+  it("a retry of queued saves skips a host removed while an earlier one was saving", async () => {
+    const { store, next, release } = holdingStore();
+    const setup = await signedInWith([], () => answer(204), ["h1", "h2"], { autoRegister: true, store });
+    (await next()).fail();
+    (await next()).fail();
+    await vi.waitFor(() => {
+      const state = setup.model.state;
+      expect(state.status === "signed-in" ? state.unsavedHosts : []).toHaveLength(2);
+    });
+    expect((await setup.model.refreshHosts()).ok).toBe(true);
+    const first = await next();
+    const other = first.host.account!.hostId === "h1" ? "h2" : "h1";
+    expect(await setup.model.removeHost({ hostId: other, password: "pw" })).toEqual({ ok: true, value: undefined });
+
+    first.succeed();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const savesOf = (hostId: string) => setup.paired.filter((host) => host.account?.hostId === hostId);
+    // Only the automatic pairing's save, which failed.
+    expect(savesOf(other)).toHaveLength(1);
+    expect(store.stored.filter((host) => host.account?.hostId === other)).toEqual([]);
   });
 
   describe("a save that succeeds after the removal is taken back; a QR pairing stays", () => {
