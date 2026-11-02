@@ -18,8 +18,26 @@ export async function tempDir(dirs: string[], prefix = "pinomad-server-"): Promi
   return dir;
 }
 
+/** Rewrites a current database back to schema 7: host links without the loopback columns (#513). */
+export function downgradeToSchema7(dataDir: string): void {
+  const db = new DatabaseSync(join(dataDir, "server.sqlite"));
+  db.exec(`
+    DROP INDEX host_link_requests_request_id;
+    DROP INDEX host_link_requests_auth_code;
+    ALTER TABLE host_link_requests DROP COLUMN request_id_hash;
+    ALTER TABLE host_link_requests DROP COLUMN redirect_uri;
+    ALTER TABLE host_link_requests DROP COLUMN code_challenge;
+    ALTER TABLE host_link_requests DROP COLUMN client_state;
+    ALTER TABLE host_link_requests DROP COLUMN auth_code_hash;
+    ALTER TABLE host_link_requests DROP COLUMN auth_code_expires_at;
+    PRAGMA user_version = 7;
+  `);
+  db.close();
+}
+
 /** Rewrites a current database back to schema 6: no record of removed hosts (#512). */
 export function downgradeToSchema6(dataDir: string): void {
+  downgradeToSchema7(dataDir);
   const db = new DatabaseSync(join(dataDir, "server.sqlite"));
   db.exec("DROP TABLE removed_hosts; PRAGMA user_version = 6;");
   db.close();

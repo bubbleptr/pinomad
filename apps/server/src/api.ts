@@ -9,7 +9,11 @@
 // POST /api/invites/revoke (#449). Host links (#495, RFC 8628) put a device
 // code in front of the join token: the host CLI calls POST /api/host-link/start
 // and /poll with no credential, a signed-in user POST /api/host-link/lookup,
-// /confirm and /deny.
+// /confirm and /deny. A host that can open a browser on its own screen asks
+// for a loopback redirect instead (#513, RFC 8252): the confirm page names
+// the request by id, sends the browser back to the host's 127.0.0.1 listener
+// with a one-time code, and the host trades it at POST /api/host-link/token
+// with its PKCE verifier.
 //
 // Two credential styles share the routes, decided by the request's Origin:
 // the same-origin web client gets a Secure+HttpOnly+SameSite=Strict host-only
@@ -28,6 +32,8 @@ import {
   normalizeApnsToken,
   parseDeviceClaim,
   type Accounts,
+  type HostLinkLoopback,
+  type HostLinkRef,
 } from "./accounts.ts";
 
 /** Whether a bound host can serve a pairing ask right now (ADR-0022 §4). */
@@ -87,6 +93,40 @@ export interface ApiContext {
 const SESSION_COOKIE = "__Host-pinomad-session";
 // A hostId is base64url of 32 bytes, as in the /api/hosts/:hostId routes.
 const HOST_ID_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+// RFC 7636: S256 challenges are 43 base64url characters; verifiers 43–128 unreserved ones.
+const PKCE_CHALLENGE = /^[A-Za-z0-9_-]{43}$/;
+const PKCE_VERIFIER = /^[A-Za-z0-9._~-]{43,128}$/;
+const LOOPBACK_STATE = /^[A-Za-z0-9_-]{1,128}$/;
+const MAX_REDIRECT_URI = 256;
+
+/**
+ * A loopback host link's fields (#513), or null when any is off. The redirect
+ * is the whole security argument, so it is exactly `http://127.0.0.1:<port>`
+ * plus a path: not `localhost` (DNS can point it elsewhere), no userinfo,
+ * query or fragment, and only in the form the URL parser writes back.
+ */
+function parseLoopback(value: { redirectUri?: unknown; codeChallenge?: unknown; state?: unknown }): HostLinkLoopback | null {
+  const { redirectUri, codeChallenge, state } = value;
+  if (typeof redirectUri !== "string" || redirectUri.length > MAX_REDIRECT_URI) return null;
+  if (typeof codeChallenge !== "string" || !PKCE_CHALLENGE.test(codeChallenge)) return null;
+  if (typeof state !== "string" || !LOOPBACK_STATE.test(state)) return null;
+  let url: URL;
+  try {
+    url = new URL(redirectUri);
+  } catch {
+    return null;
+  }
+  const loopbackOnly =
+    url.protocol === "http:" &&
+    url.hostname === "127.0.0.1" &&
+    url.port !== "" &&
+    url.username === "" &&
+    url.password === "" &&
+    url.search === "" &&
+    url.hash === "" &&
+    url.href === redirectUri;
+  return loopbackOnly ? { redirectUri, codeChallenge, state } : null;
+}
 const MAX_BODY = 8 * 1024;
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 // The desktop renderer's origin — apps/desktop/electron/renderer-files.ts
@@ -217,7 +257,9 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     (pathname === "/api/login" || pathname === "/api/register") && (origin === undefined || origin === DESKTOP_ORIGIN);
   // The host CLI starts and polls a host link with no credential at all, so
   // there is nothing to forge; it sends no Origin, and only that is let past.
-  const hostLinkHostMode = (pathname === "/api/host-link/start" || pathname === "/api/host-link/poll") && origin === undefined;
+  const hostLinkHostMode =
+    (pathname === "/api/host-link/start" || pathname === "/api/host-link/poll" || pathname === "/api/host-link/token") &&
+    origin === undefined;
   if (MUTATING.has(method) && !bearer && !loginTokenMode && !hostLinkHostMode && origin !== ctx.publicOrigin) {
     deny(403, "origin_mismatch");
     return;
@@ -338,7 +380,7 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     return;
   }
 
-  if (pathname === "/api/host-link/start" || pathname === "/api/host-link/poll") {
+  if (pathname === "/api/host-link/start" || pathname === "/api/host-link/poll" || pathname === "/api/host-link/token") {
     if (method !== "POST") {
       deny(405, "method_not_allowed", { allow: "POST" });
       return;
@@ -349,12 +391,21 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       return;
     }
     if (pathname === "/api/host-link/start") {
-      const value = body.value as { hostId?: unknown; name?: unknown; os?: unknown } | null;
+      const value = body.value as {
+        hostId?: unknown;
+        name?: unknown;
+        os?: unknown;
+        redirectUri?: unknown;
+        codeChallenge?: unknown;
+        state?: unknown;
+      } | null;
+      const loopback = value?.redirectUri === undefined ? undefined : parseLoopback(value);
       if (
         typeof value?.hostId !== "string" ||
         !HOST_ID_PATTERN.test(value.hostId) ||
         typeof value.name !== "string" ||
-        typeof value.os !== "string"
+        typeof value.os !== "string" ||
+        loopback === null
       ) {
         deny(400, "invalid_request");
         return;
@@ -364,6 +415,7 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
         name: value.name,
         os: value.os,
         ip: clientIp(request, ctx.trustProxy),
+        ...(loopback === undefined ? {} : { loopback }),
       });
       if (result.status === "limited") {
         deny(429, "rate_limited");
@@ -371,6 +423,17 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       }
       if (result.status === "busy") {
         deny(503, "busy");
+        return;
+      }
+      // A loopback request's id may ride in the URL: confirming it from the
+      // wrong machine sends the code to that machine's own 127.0.0.1, where
+      // nobody holds the verifier.
+      if (result.mode === "loopback") {
+        send(200, {
+          requestId: result.requestId,
+          verifyUrl: `${ctx.publicOrigin}/host-link?request=${result.requestId}`,
+          expiresAt: result.expiresAt,
+        });
         return;
       }
       // The confirm page takes the code typed in, never from the URL: a link
@@ -382,6 +445,18 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
         interval: result.interval,
         expiresAt: result.expiresAt,
       });
+      return;
+    }
+    if (pathname === "/api/host-link/token") {
+      const value = body.value as { code?: unknown; codeVerifier?: unknown } | null;
+      if (typeof value?.code !== "string" || value.code.length > 256 || typeof value.codeVerifier !== "string" || !PKCE_VERIFIER.test(value.codeVerifier)) {
+        deny(400, "invalid_request");
+        return;
+      }
+      const result = accounts.exchangeHostLinkCode(value.code, value.codeVerifier);
+      // RFC 6749 §5.2: a spent, expired or mismatched code is invalid_grant.
+      if (result.status === "invalid") deny(400, "invalid_grant");
+      else send(200, { token: result.token, expiresAt: result.expiresAt });
       return;
     }
     const deviceCode = (body.value as { deviceCode?: unknown } | null)?.deviceCode;
@@ -425,8 +500,14 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
       return;
     }
-    const userCode = (body.value as { userCode?: unknown } | null)?.userCode;
-    if (typeof userCode !== "string" || userCode.length > 64) {
+    const named = body.value as { userCode?: unknown; requestId?: unknown } | null;
+    const ref: HostLinkRef | undefined =
+      typeof named?.userCode === "string" && named.userCode.length <= 64 && named.requestId === undefined
+        ? { userCode: named.userCode }
+        : typeof named?.requestId === "string" && named.requestId.length <= 64 && named.userCode === undefined
+          ? { requestId: named.requestId }
+          : undefined;
+    if (ref === undefined) {
       deny(400, "invalid_request");
       return;
     }
@@ -437,7 +518,7 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       deny(401, "unauthenticated");
       return;
     }
-    const args = { userId: session.userId, userCode, ip: clientIp(request, ctx.trustProxy) };
+    const args = { userId: session.userId, ip: clientIp(request, ctx.trustProxy), ...ref };
     const result =
       pathname === "/api/host-link/lookup"
         ? accounts.lookupHostLink(args)
@@ -453,6 +534,7 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       return;
     }
     if ("request" in result) send(200, result.request);
+    else if (result.redirect !== undefined) send(200, { redirect: result.redirect });
     else send(204);
     return;
   }
