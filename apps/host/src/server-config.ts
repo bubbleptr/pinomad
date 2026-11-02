@@ -97,16 +97,24 @@ export async function forgetRemovedServer(dataDir: string, origin: string, remov
   return true;
 }
 
-/** The notice `forgetRemovedServer` left; undefined when there is none or it doesn't parse. */
+/** The notice `forgetRemovedServer` left, or undefined when there is none. */
 export async function readRemovalNotice(dataDir: string): Promise<RemovalNotice | undefined> {
+  const path = join(dataDir, REMOVAL_NOTICE_FILE);
+  let text: string;
+  try {
+    text = await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return undefined;
+    throw error;
+  }
   let value: unknown;
   try {
-    value = JSON.parse(await readFile(join(dataDir, REMOVAL_NOTICE_FILE), "utf8"));
+    value = JSON.parse(text);
   } catch {
-    return undefined;
+    throw new Error(`${path} is not valid JSON — delete it`);
   }
   const { origin, username, removedAt } = (value ?? {}) as { origin?: unknown; username?: unknown; removedAt?: unknown };
-  if (typeof origin !== "string" || typeof removedAt !== "number") return undefined;
+  if (typeof origin !== "string" || typeof removedAt !== "number") throw new Error(`${path} is missing "origin" or "removedAt" — delete it`);
   return { origin, ...(typeof username === "string" && username !== "" ? { username } : {}), removedAt };
 }
 
