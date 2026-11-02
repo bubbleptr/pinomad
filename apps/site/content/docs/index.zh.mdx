@@ -1,70 +1,67 @@
 ---
 title: 快速上手
-description: 装好宿主，打开客户端，连上其他设备，让宿主常驻运行。
+description: 注册账号，一条命令把宿主加进来，在其他设备上登录，打开推送。
 ---
 
-## 快速上手
+用 PiNomad 只要明白两件事：**宿主**（跑 agent 的那台机器）加入你的账号，**设备**登录这个账号。剩下的交给官方服务端 `https://app.pinomad.si`：设备在任何地方都能找到并连上宿主，对话在设备和宿主之间端到端加密；设备直连不上宿主时，服务端只转发密文。
 
-宿主支持 macOS 和 Linux，安装脚本自带 Node：
+不想用账号（只在一台机器上用、只走局域网或 tailnet、或者用自己架的服务端），见[不用账号](/zh/docs/without-account/)。
+
+## 1. 注册账号
+
+注册要邀请码。打开 [app.pinomad.si](https://app.pinomad.si/)（或 Mac App 的登录表单），点 **Create an account**，填邀请码、用户名和密码。账号建好就直接登录了。用户名规则等细节见[账号](/zh/docs/official-server/)。
+
+## 2. 加入宿主
+
+在要跑 agent 的机器（macOS 或 Linux）上运行：
 
 ```sh
 curl -fsSL https://pinomad.si/install.sh | sh
-pinomad host        # 数据和凭据都在 ~/.pinomad
-pinomad link        # 另开一个终端：打印 Web 客户端的浏览器链接
+pinomad up
 ```
 
-脚本把 Node 和 pinomad 装进 `~/.pinomad/runtime`，`pinomad` 命令放在 `~/.local/bin`；这个目录不在 PATH 里时，它会打印要加进 shell 配置文件的那一行。支持 Apple 芯片的 Mac 和 x64、arm64 的 Linux（glibc）。其他平台，或者想用自己装的 Node 25+，改用 `npm i -g pinomad`。
+第一行装好 pinomad，它自带 Node。脚本提示时（新 Mac 上会提示），在新的终端窗口里跑 `pinomad up`：脚本把 pinomad 加进了 PATH，只有新开的窗口才读得到。`pinomad up` 接着问其他设备怎么连这台宿主，直接回车就是经官方服务端。它会打印一个要打开的网页和一个短码（形如 `WDJB-MJHT`），能开浏览器时会自动打开这个网页：
 
-模型在 Settings → Providers 里接入：用已经在付费的订阅登录（Claude、ChatGPT、Copilot 等）、填 API key，或者填你自己的 OpenAI / Anthropic 兼容 endpoint。还没有的话，`pinomad host --faux "hi"` 会用一个脚本化的假模型跑起来，可以先点点看。
+1. 在网页上登录账号，输入短码。Web 和 Mac App 里的 **Add a host** 也有同样的输入框。
+2. 核对页面上显示的名字和系统，只在确实是你自己在那台机器上发起的时候确认。
+3. 回到终端，`pinomad up` 把宿主加入账号，并装成开机自启的服务。
 
-## 连上其他设备
+以后再加一台宿主，在那台机器上跑同样两行。
 
-给配对设备开一个端口，然后每台设备各扫一个二维码：
+脚本把 Node 和 pinomad 装进 `~/.pinomad/runtime`，`pinomad` 命令放在 `~/.local/bin`；这个目录还不在 PATH 里时，脚本把它加进 shell 配置文件（`~/.zshrc`、`~/.bashrc` 等）。支持 Apple 芯片的 Mac 和 x64、arm64 的 Linux（glibc）。其他平台，或者想用自己装的 Node 25+，先 `npm i -g pinomad`，再 `pinomad up`。已经用 npm 装过 pinomad 的，脚本不会动它；先 `pinomad upgrade`，再 `pinomad up`。
+
+## 3. 在其他设备上登录
+
+用同一个用户名和密码登录，设备就会自动配对账号下所有在线的宿主，不需要扫码。
+
+- **Web**：任何现代浏览器打开 [app.pinomad.si](https://app.pinomad.si/)。
+- **Mac App**（Apple 芯片）：[GitHub Releases](https://github.com/bubbleptr/pinomad/releases) 上签名过的 DMG，会自动更新。
+- **iPhone**：在 Settings 里点 **Sign in**。App 里还不能注册，先在 Web 或 Mac App 上注册。iPhone App 目前只在内部 TestFlight 上。
+
+配对过的宿主显示 **Connect**。没有自动配上的宿主显示 **Pair**（比如以前在这台设备上删掉过的），点它配对。
+
+然后在 Settings → Providers 里接入模型：用已经在付费的订阅登录（Claude、ChatGPT、Copilot 等）、填 API key，或者填你自己的 OpenAI / Anthropic 兼容 endpoint。
+
+## 4. 推送通知
+
+对话等你回答、完成或失败时，iPhone App 可以推送通知。在 App 的 Settings → Notifications 里打开（默认关闭，对所有宿主生效）；iPhone 登录的要是宿主加入的同一个账号。推送只带对话标题和事件，不带问题或回复；标题会经过服务端和 Apple。细节见[使用说明](/zh/docs/usage/)。
+
+## 照看宿主
 
 ```sh
-pinomad host --remote-port 7422
-pinomad pair        # 一次性的二维码和链接，5 分钟后过期
-```
-
-iPhone App 扫码，Mac App 粘贴链接。远程端口只接受配对过的设备，不需要的设备可以在 Settings → Devices 里吊销。
-
-配对链接始终保留 legacy socket 地址，也可以带上可远程访问的中继和直连候选。没有 `--public-url` 时，直连地址用宿主探测到的局域网地址；在 tailnet 里或走隧道时，加上 `--public-url http://<tailnet-ip>:7422`，让它指向那个地址。宿主加入了中继时，旧客户端继续使用链接里的中继地址。宿主在家、人在外面也想连，可以[用官方服务端](/zh/docs/official-server/)，或者在 VPS 上自己跑中继，见[远程访问](/zh/docs/remote-access/)。
-
-## WebRTC 直连
-
-有中继时，客户端先经中继连上。链路就绪后，Auto 会在后台尝试 WebRTC DataChannel 直连；打洞成功，对话数据就不再经过服务端；打洞失败则继续走中继。没有 TURN。
-
-连接方式是每台宿主单独设置的，在 Settings → Hosts → Connection… 里选：Auto（默认）、Direct only（对话数据不经过 PiNomad 服务端，中继只用来建立链路）或 Relay only（只走中继，不尝试 P2P）。同一个面板显示当前路径：P2P（以及两端是局域网、tailnet 还是公网地址，完整地址点 Show addresses 展开）还是中继，以及最近一次失败的原因。
-
-宿主从 `<数据目录>/settings.json` 的 `rtcStun` 读 STUN 服务器，并在 `hello.rtc` 里下发同一份列表：
-
-```json
-{
-  "rtcStun": ["stun:stun.cloudflare.com:3478"]
-}
-```
-
-默认是 Cloudflare 的公共 STUN 服务器；设为 `[]` 表示只用 host 候选（不走 STUN），也可以换成自己的 `stun:` 地址。没有 TURN，所以有些网络建不起 P2P，Auto 会继续走中继。宿主没有装上 `node-datachannel` 原生模块时（例如 npm 安装用了 `--omit=optional`），宿主照常运行，只是不再声明 `hello.rtc`。
-
-## 常驻运行
-
-把宿主装成当前用户的服务（macOS 是 LaunchAgent，Linux 是 systemd 用户单元），开机自启、崩溃自动拉起：
-
-```sh
-pinomad service install --remote-port 7422
-pinomad service status
+pinomad status      # 加入的账号、局域网端口、服务状态、宿主是否在线
 pinomad upgrade     # 装上 pinomad@latest，等正在跑的任务结束后重启
 ```
 
-服务参数、日志和各平台的注意事项见[常驻运行](/zh/docs/service/)。`pinomad upgrade` 只升级 pinomad；再跑一次安装脚本会连它自带的 Node 一起更新。
+`pinomad upgrade` 只升级 pinomad；再跑一次安装脚本会连它自带的 Node 一起更新。服务参数、日志和各平台的注意事项见[常驻运行](/zh/docs/service/)。
 
-卸载脚本装的 pinomad：先 `pinomad service uninstall`，再删掉 `~/.pinomad/runtime` 和 `~/.local/bin/pinomad`。`~/.pinomad` 里其余的数据会留着，要删自己删。
+卸载：先 `pinomad service uninstall`，再删掉 `~/.pinomad/runtime`、`~/.local/bin/pinomad`，以及 shell 配置文件里以 `# added by https://pinomad.si/install.sh` 结尾的那一行。`~/.pinomad` 里其余的数据会留着，要删自己删。
 
 ## 客户端
 
 | 客户端 | 获取方式 |
 |---|---|
-| Web | 宿主自己提供（`pinomad link`），中继也提供；现代浏览器都能用 |
+| Web | [app.pinomad.si](https://app.pinomad.si/)；宿主自己也提供（`pinomad link`） |
 | macOS（Apple 芯片） | [GitHub Releases](https://github.com/bubbleptr/pinomad/releases) 上签名过的 DMG，会自动更新 |
 | iOS | 目前只在 TestFlight 内部测试 |
 | Linux、Windows | 用 Web 客户端 |

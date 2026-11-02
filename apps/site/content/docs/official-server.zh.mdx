@@ -1,58 +1,43 @@
 ---
-title: 用官方服务端
-description: 登录 app.pinomad.si，把宿主加入账号，连上 Mac App 和 iPhone，打开推送通知。
+title: 账号
+description: 注册登录的细节、账号下的宿主、P2P 直连、密码、设备和删除账号。
 ---
 
-官方服务端 `https://app.pinomad.si` 让你的设备在任何地方都能找到并连上宿主，不用自己架服务端。它替你的设备担保，设备直连不上宿主时转发密文；对话在设备和宿主之间端到端加密。
+账号在官方服务端 `https://app.pinomad.si` 上。它替你的设备担保，设备直连不上宿主时转发密文；对话在设备和宿主之间端到端加密。怎么开始用见[快速上手](/zh/docs/)。
 
-你需要一个服务端上的账号。注册要邀请码：先拿到一个邀请码，再用它建账号。
+## 注册和登录
 
-## 1. 注册或登录
-
-注册：打开 [app.pinomad.si](https://app.pinomad.si/)（或 Mac App 的登录表单），点 **Create an account**，填邀请码、用户名和密码：
+注册要邀请码：先拿到一个邀请码，再在 [app.pinomad.si](https://app.pinomad.si/) 或 Mac App 的登录表单里点 **Create an account**。
 
 - 用户名只能用小写字母、数字和 `. _ -`，2–32 位。
 - 密码至少 12 位。
 - 邀请码只能用一次，7 天后过期；用过或过期了，找人再要一个。
 
-账号建好就直接登录了。以后登录：
+Mac App 在还没连上宿主时，首页就是登录表单；之后点侧栏底部的 **Sign in**。**Server** 一栏已经填好 `https://app.pinomad.si`；自己架了服务端的话，填它的地址（见[不用账号](/zh/docs/without-account/)）。
 
-- **Web**：打开 [app.pinomad.si](https://app.pinomad.si/)，填用户名和密码登录。
-- **Mac App**：还没连过宿主时，首页就是登录表单；否则点侧栏底部的 **Sign in**。**Server** 一栏已经填好 `https://app.pinomad.si`，只要填用户名和密码。
+## 账号下的宿主
 
-Server 一栏可以改。自己架了服务端的话，填它的地址（见[远程访问](/zh/docs/remote-access/)）。
+`pinomad up` 在你确认短码之后把宿主加进账号，见[快速上手](/zh/docs/)。在已经加入的宿主上再跑一次，不用重新输短码，也会留在原来的服务端上；`pinomad status` 能看到加入的是哪个账号。
 
-## 2. 宿主加入账号
+给脚本用、或者没人能确认短码的机器：**Add a host** 里有 **Advanced: join with a one-time token**，给出一条 `pinomad join https://app.pinomad.si <token>` 命令，不用短码就能加入。拿到它的人都能加宿主，所以只能用一次，10 分钟后过期；过期了点 **New command** 重新生成。加上 `--name "Mac mini"` 可以设定设备上显示的名字。
 
-宿主需要 Node 25+，支持 macOS 和 Linux。登录后点 **Add a host**，会给出一条一次性命令，在要跑 agent 的机器上运行：
+`pinomad leave` 把宿主从账号里移出。
 
-```sh
-npm i -g pinomad && pinomad join https://app.pinomad.si <token>
+## P2P 直连
+
+设备先经服务端连上宿主。链路就绪后，Auto 会在后台尝试 WebRTC DataChannel 直连；打洞成功，对话数据就不再经过服务端；打洞失败则继续走中继。没有 TURN。
+
+连接方式是每台宿主单独设置的，在 Settings → Hosts → Connection… 里选：Auto（默认）、Direct only（对话数据不经过 PiNomad 服务端，中继只用来建立链路）或 Relay only（只走中继，不尝试 P2P）。同一个面板显示当前路径：P2P（以及两端是局域网、tailnet 还是公网地址，完整地址点 Show addresses 展开）还是中继，以及最近一次失败的原因。
+
+宿主从 `<数据目录>/settings.json` 的 `rtcStun` 读 STUN 服务器，并在 `hello.rtc` 里下发同一份列表：
+
+```json
+{
+  "rtcStun": ["stun:stun.cloudflare.com:3478"]
+}
 ```
 
-命令只能用一次，10 分钟后过期；过期了点 **New command** 重新生成。`pinomad join` 把宿主登记到你的账号、记下服务端地址，并把宿主装成当前用户的服务，开机自启。加上 `--name "Mac mini"` 可以设定设备上显示的名字。同一台机器重复运行没有问题。
-
-点 **Done**，宿主就出现在列表里。
-
-## 3. 连上宿主
-
-登录后，这个浏览器或 App 会自动配对账号下所有在线的宿主，不需要扫码：服务端向宿主要一份一次性邀请，客户端用它完成配对。配对过的宿主显示 **Connect**。没有自动配上的宿主显示 **Pair**，比如以前在这台设备上删掉过的、或者拒绝过这台设备的，点它配对。
-
-然后在 Settings → Providers 里接入模型，和[快速上手](/zh/docs/)一样。
-
-## 4. iPhone
-
-在 iPhone App 的 Settings 里点 **Sign in**，服务端已经填好 `https://app.pinomad.si`，填同一个用户名和密码登录。App 里还不能注册，先在 Web 或 Mac App 上注册。登录后手机同样会自动配对账号下在线的宿主；没有自动配上的显示 **Pair**。iPhone App 目前只在内部 TestFlight 上。
-
-## 推送通知
-
-对话等你回答、完成或失败时，iPhone App 可以推送通知。推送需要：
-
-- 宿主已经用 `pinomad join` 加入账号；
-- iPhone 登录的是和宿主**同一个账号**；
-- App 里给这台宿主打开了推送（默认关闭，每台宿主单独设置）。
-
-推送只带对话标题和事件，不带问题或回复；标题会经过服务端和 Apple。细节见[使用说明](/zh/docs/usage/)。
+默认是 Cloudflare 的公共 STUN 服务器；设为 `[]` 表示只用 host 候选（不走 STUN），也可以换成自己的 `stun:` 地址。没有 TURN，所以有些网络建不起 P2P，Auto 会继续走中继。宿主没有装上 `node-datachannel` 原生模块时（例如 npm 安装用了 `--omit=optional`），宿主照常运行，只是不再声明 `hello.rtc`。
 
 ## 密码
 

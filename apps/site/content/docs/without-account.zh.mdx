@@ -1,0 +1,41 @@
+---
+title: 不用账号
+description: 只在一台机器上用，在局域网或 tailnet 里扫码配对，或者经自己架的服务端。
+---
+
+PiNomad 的功能都不依赖官方服务端。不用账号，代价是在外面连不上家里的宿主、没有推送（自己架服务端则都有），每台设备也要自己和每台宿主配对。宿主的安装和[快速上手](/zh/docs/)一样，用同一个脚本：
+
+```sh
+curl -fsSL https://pinomad.si/install.sh | sh
+```
+
+## 只在一台机器上
+
+```sh
+pinomad host        # 数据和凭据都在 ~/.pinomad
+pinomad link        # 另开一个终端：打印 Web 客户端的浏览器链接
+```
+
+链接打开的是宿主自己提供的 Web 客户端，只有这台机器能访问。模型在 Settings → Providers 里接入；还没有的话，`pinomad host --faux "hi"` 会用一个脚本化的假模型跑起来，可以先点点看。要在后台常驻，`pinomad service install` 把它装成只有本机能访问的服务。
+
+## 在局域网或 tailnet 里
+
+```sh
+pinomad up --lan    # 给配对设备开 7422 端口，并装好服务
+pinomad pair        # 一次性的二维码和链接，5 分钟后过期
+```
+
+iPhone App 扫码，Mac App 粘贴链接，每台设备各跑一次 `pinomad pair`。远程端口只接受配对过的设备，不需要的设备可以在 Settings → Devices 里吊销。`--remote-port N` 换端口。
+
+配对链接里带着宿主的地址。没有 `--public-url` 时，用的是宿主探测到的局域网地址；在 tailnet 里或走隧道时，给宿主加上 `--public-url http://<tailnet-ip>:7422`，让它指向那个地址。服务的写法是 `pinomad service install --remote-port 7422 --public-url …`，细节见[远程访问](/zh/docs/remote-access/)。
+
+一台宿主可以同时在局域网和账号上：`pinomad up --server --lan`。
+
+## 经自己架的服务端
+
+app.pinomad.si 跑的服务端就在同一个包里（`pinomad server`），可以放在 VPS 上，给自己的账号和中继用；推送要自己配 APNs 密钥。怎么架见[远程访问](/zh/docs/remote-access/)。之后：
+
+- 宿主上：`pinomad up --origin https://your-server.example`。
+- 设备上：登录时把 **Server** 一栏改成你的服务端地址，不用 `https://app.pinomad.si`。
+
+其余和[快速上手](/zh/docs/)、[账号](/zh/docs/official-server/)写的一样。

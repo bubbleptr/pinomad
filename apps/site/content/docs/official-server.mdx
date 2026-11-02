@@ -1,58 +1,43 @@
 ---
-title: Use the official server
-description: Sign in to app.pinomad.si, join your host to your account, connect the Mac app and iPhone, and turn on push notifications.
+title: Your account
+description: Sign-in details, hosts on your account, direct connections, password, devices, and deleting the account.
 ---
 
-The official server at `https://app.pinomad.si` lets your devices find and reach your host from anywhere, without running a server of your own. It vouches for your devices and forwards ciphertext when they can't reach the host directly; conversations stay end-to-end encrypted between your devices and your host.
+Your account lives on the official server at `https://app.pinomad.si`. It vouches for your devices and forwards ciphertext when they can't reach a host directly; conversations stay end-to-end encrypted between your devices and your hosts. Setting it up is in [Getting started](/docs/).
 
-You need an account on the server. Sign-up is by invite: ask for an invite code, then create your account with it.
+## Sign up and sign in
 
-## 1. Create an account or sign in
-
-To create an account, open [app.pinomad.si](https://app.pinomad.si/) (or the sign-in form in the Mac app) and click **Create an account**. Enter the invite code, a username and a password:
+Sign-up is by invite: ask for an invite code, then click **Create an account** on [app.pinomad.si](https://app.pinomad.si/) or in the Mac app's sign-in form.
 
 - The username uses lowercase letters, digits, dots, dashes or underscores, 2–32 characters.
 - The password needs at least 12 characters.
 - An invite code works once and expires after 7 days. If it's used or expired, ask for a new one.
 
-You're signed in as soon as the account exists. Next time, sign in:
+In the Mac app, the home screen shows the sign-in form until a host is connected; after that, click **Sign in** at the bottom of the sidebar. The **Server** field already says `https://app.pinomad.si`. If you run your own server, put its address there instead (see [Without an account](/docs/without-account/)).
 
-- **Web:** open [app.pinomad.si](https://app.pinomad.si/) and sign in with your username and password.
-- **Mac app:** before any host is connected, the home screen shows the sign-in form; otherwise click **Sign in** at the bottom of the sidebar. The **Server** field already says `https://app.pinomad.si`; type only your username and password.
+## Hosts on your account
 
-The Server field is editable. If you run your own server, put its address there instead (see [Remote access](/zh/docs/remote-access/), Chinese).
+`pinomad up` adds a host after you confirm its code, as in [Getting started](/docs/). Running it again on a joined host needs no new code and keeps the server the host is on, and `pinomad status` shows which account that is.
 
-## 2. Join your host
+For scripts and machines without anyone to confirm a code, **Add a host** has **Advanced: join with a one-time token**: a `pinomad join https://app.pinomad.si <token>` command that adds the host without a code. Anyone who has it can add a host, so it works once and expires after 10 minutes; click **New command** when it runs out. Add `--name "Mac mini"` to set the name your devices show.
 
-The host needs Node 25+ on macOS or Linux. After signing in, click **Add a host**. You get a one-time command; run it on the machine that should run the agent:
+`pinomad leave` takes a host off the account.
 
-```sh
-npm i -g pinomad && pinomad join https://app.pinomad.si <token>
+## Direct connections
+
+Devices reach a host through the server first. Once the connection is up, Auto tries a direct WebRTC DataChannel in the background; when it succeeds, conversation data no longer passes through the server. If hole punching fails, the connection stays on the relay. There is no TURN.
+
+The connection mode is per host, under Settings → Hosts → Connection…: Auto (the default), Direct only (never send conversation data through the PiNomad server; the relay is used only to set up the link), or Relay only (never try peer-to-peer). The same panel shows the current path: P2P (with whether each end is on a LAN, tailnet, or public address; full addresses behind Show addresses) or the relay, plus the last failure.
+
+The host reads STUN servers from the `rtcStun` key in `<data dir>/settings.json` and advertises the same list in `hello.rtc`:
+
+```json
+{
+  "rtcStun": ["stun:stun.cloudflare.com:3478"]
+}
 ```
 
-The command works once and expires after 10 minutes; click **New command** if it runs out. `pinomad join` registers the host with your account, remembers the server, and installs the host as a user service so it starts at boot. Add `--name "Mac mini"` to set the name your devices show. Running it again on the same machine is safe.
-
-Click **Done** and the host appears in your list.
-
-## 3. Connect
-
-Once you're signed in, this browser or app pairs with every host on your account that's online, with no QR code: the server asks the host for a one-time invite and the client pairs with it. Paired hosts show **Connect**. A host that wasn't paired on its own shows **Pair**, for example one you removed from this device before or one that turned this device away; click it to pair.
-
-Then sign in to a model provider under Settings → Providers, as in [Getting started](/docs/).
-
-## 4. iPhone
-
-In the iPhone app, tap **Sign in** in Settings. The server is already `https://app.pinomad.si`; type the same username and password. The app can't create accounts yet, so sign up on the web or in the Mac app first. Once signed in, the phone pairs with the hosts on your account that are online, the same way; a host that wasn't paired on its own shows **Pair**. The iPhone app is in internal TestFlight for now.
-
-## Push notifications
-
-The iPhone app can notify you when a conversation is waiting for your answer, finishes, or fails. Push needs:
-
-- the host joined to your account with `pinomad join`;
-- the iPhone signed in to the **same account** as the host;
-- push turned on for that host in the app (it's off by default and set per host).
-
-A notification carries only the conversation title and the event, never the question or the reply. The title passes through the server and Apple. More details: [Usage](/zh/docs/usage/) (Chinese).
+The default is Cloudflare's public STUN server. Set it to `[]` to use only host candidates (no STUN), or list your own `stun:` URLs. There is no TURN, so some networks cannot establish P2P; Auto keeps using the relay. If the host's `node-datachannel` native module is missing — for example after an npm install with `--omit=optional` — the host keeps running and simply does not advertise `hello.rtc`.
 
 ## Password
 

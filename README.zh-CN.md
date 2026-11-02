@@ -16,21 +16,23 @@
 
 ## 快速上手
 
-宿主支持 macOS 和 Linux，安装脚本自带 Node（也可以在 Node 25+ 上 `npm i -g pinomad`）：
+1. **注册账号**：在 [app.pinomad.si](https://app.pinomad.si/) 注册（要邀请码）。
+2. **加入宿主**：在要跑 agent 的机器（macOS 或 Linux）上运行下面两行。`pinomad up` 会打印一个短码，在它打开的网页上登录并输入短码，宿主就加入了账号，之后作为服务常驻运行。
 
-```sh
-curl -fsSL https://pinomad.si/install.sh | sh
-pinomad host        # 数据和凭据都在 ~/.pinomad
-pinomad link        # 另开一个终端：打印 Web 客户端的浏览器链接
-```
+   ```sh
+   curl -fsSL https://pinomad.si/install.sh | sh
+   pinomad up
+   ```
 
-模型在 Settings → Providers 里接入：用已经在付费的订阅登录（Claude、ChatGPT、Copilot 等）、填 API key，或者填你自己的 OpenAI / Anthropic 兼容 endpoint。还没有的话，`pinomad host --faux "hi"` 会用一个脚本化的假模型跑起来，可以先点点看。
+   已经用 npm 装过？脚本不会动它；先 `pinomad upgrade`，再 `pinomad up`。
 
-想在任何地方用 Mac 和 iPhone 连上宿主、又不想自己架服务端，可以[用官方服务端](https://pinomad.si/zh/docs/official-server/) app.pinomad.si。
+3. **在其他设备上登录**（Web、Mac App、iPhone）：它们会自动配对账号下的宿主；然后在 Settings → Providers 里接入模型。
+
+不想用账号（只在一台机器上、局域网或 tailnet、自己架的服务端），见[不用账号](https://pinomad.si/zh/docs/without-account/)。
 
 ## 文档
 
-用户文档在 **[pinomad.si/zh/docs](https://pinomad.si/zh/docs/)**：[快速上手](https://pinomad.si/zh/docs/)（连上其他设备、常驻运行、客户端）、[agent 能做什么](https://pinomad.si/zh/docs/features/)、[使用说明](https://pinomad.si/zh/docs/usage/)、[远程访问](https://pinomad.si/zh/docs/remote-access/)、[常驻运行](https://pinomad.si/zh/docs/service/)。
+用户文档在 **[pinomad.si/zh/docs](https://pinomad.si/zh/docs/)**：[快速上手](https://pinomad.si/zh/docs/)（账号、加入宿主、设备、推送）、[账号](https://pinomad.si/zh/docs/official-server/)、[不用账号](https://pinomad.si/zh/docs/without-account/)、[agent 能做什么](https://pinomad.si/zh/docs/features/)、[使用说明](https://pinomad.si/zh/docs/usage/)、[远程访问](https://pinomad.si/zh/docs/remote-access/)、[常驻运行](https://pinomad.si/zh/docs/service/)。
 
 开发相关：
 
