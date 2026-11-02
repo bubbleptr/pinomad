@@ -21,7 +21,7 @@ Mac App 在还没连上宿主时，首页就是登录表单；之后点侧栏底
 
 给脚本用、或者没人能确认短码的机器：**Add a host** 里有 **Advanced: join with a one-time token**，给出一条 `pinomad join https://app.pinomad.si <token>` 命令，不用短码就能加入。拿到它的人都能加宿主，所以只能用一次，10 分钟后过期；过期了点 **New command** 重新生成。加上 `--name "Mac mini"` 可以设定设备上显示的名字。
 
-`pinomad leave` 把宿主从账号里移出。
+`pinomad leave` 把宿主从账号里移出。也可以在 Web 或 Mac App 的账号面板里移出，比如一台不是你加的机器：点宿主旁边的 **Remove**，再填一次密码。之后它不再经服务端连接，要回来只能在它上面重新跑 `pinomad up`。
 
 ## P2P 直连
 

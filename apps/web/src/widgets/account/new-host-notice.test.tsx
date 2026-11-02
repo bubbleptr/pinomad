@@ -3,7 +3,8 @@
 // a machine they didn't add got in.
 import { ToastViewport } from "@astryxdesign/core/Toast";
 import { act, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountHostMatch } from "@pinomad/client/account.ts";
 import { AccountContext } from "../../entities/account/account-context.tsx";
 import type { AccountModel, AccountState } from "../../entities/account/account-model.ts";
@@ -109,5 +110,21 @@ describe("NewHostNotices", () => {
     renderNotices(liveAccount(signedIn({ hosts: [studio, omarchy] })), knownHosts);
     await nextFrames();
     expect(toasts(/New host omarchy joined your account/)).toHaveLength(1);
+  });
+
+  it("goes straight to removing the new host, with the password again (#512)", async () => {
+    const knownHosts = createKnownHostsStore(localStorage);
+    knownHosts.arrivals({ serverOrigin: "https://pinomad.si", user: "kieran" }, [studio.host.hostId]);
+    const account = liveAccount(signedIn({ hosts: [studio, omarchy] }));
+    const removeHost = vi.fn(async () => ({ ok: true as const, value: undefined }));
+    renderNotices({ ...account, removeHost }, knownHosts);
+    await nextFrames();
+    expect(toasts(/New host omarchy joined your account/)).toHaveLength(1);
+    // The viewport is a manual popover jsdom never shows, so its contents
+    // count as hidden to role queries.
+    await userEvent.click(screen.getByRole("button", { name: "Remove", hidden: true }));
+    await userEvent.type(await screen.findByLabelText("Password"), "my password{Enter}");
+    expect(removeHost).toHaveBeenCalledWith({ hostId: omarchy.host.hostId, password: "my password" });
+    await vi.waitFor(() => expect(screen.queryByLabelText("Password")).toBeNull());
   });
 });

@@ -125,6 +125,30 @@ export const RemoveDeviceWrongPassword: Story = {
   },
 };
 
+/** Removing a host from the account (#512): the password again, and what that does to the host. */
+export const RemovingHost: Story = {
+  decorators: [withAccount(signedIn())],
+  play: async ({ canvasElement }) => {
+    const row = within(canvasElement).getByText("omarchy").closest("li")!;
+    await userEvent.click(within(row).getByRole("button", { name: "Remove" }));
+  },
+};
+
+/** A wrong password keeps the form; the host stays. */
+export const RemoveHostWrongPassword: Story = {
+  decorators: [
+    withAccount(signedIn(), {
+      removeHost: fn(async () => ({ ok: false as const, error: { code: "wrong_password", status: 403 } })),
+    }),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const row = canvas.getByText("omarchy").closest("li")!;
+    await userEvent.click(within(row).getByRole("button", { name: "Remove" }));
+    await userEvent.type(canvas.getByLabelText("Password"), "not my password{Enter}");
+  },
+};
+
 /** The server's admin also manages sign-up invites: one unused, one used, one expired. */
 export const SignedInAdmin: Story = { decorators: [withAccount(signedIn({ admin: true }))] };
 

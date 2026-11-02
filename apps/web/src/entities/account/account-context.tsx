@@ -20,6 +20,7 @@ const noAccount: AccountModel = {
   refreshHosts: unavailable,
   listDevices: unavailable,
   kickDevice: unavailable,
+  removeHost: unavailable,
   createJoinToken: unavailable,
   lookupHostLink: unavailable,
   confirmHostLink: unavailable,

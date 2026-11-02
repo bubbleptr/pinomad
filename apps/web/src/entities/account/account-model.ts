@@ -132,6 +132,15 @@ export interface AccountModel {
    * (ADR-0037 §3). A refusal keeps this session; the caller reloads the list.
    */
   kickDevice(input: { id: number; password: string }): Promise<AccountResult<void>>;
+  /**
+   * Takes a host off the account (#512), with the password as for a kick: it
+   * stops connecting through the server until `pinomad up` runs on it again.
+   * This device then forgets the key the account gave it for that host; a QR
+   * pairing stays. A 404 refreshes the list: a host still on it means a
+   * server that can't remove hosts (`remove_unsupported`), otherwise it was
+   * already gone and this device forgets it just the same.
+   */
+  removeHost(input: { hostId: string; password: string }): Promise<AccountResult<void>>;
   createJoinToken(): Promise<AccountResult<JoinToken>>;
   /**
    * The host waiting behind a code typed from its terminal (#496); the code
@@ -248,6 +257,14 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   }
   const flights = new Map<string, Flight>();
   let stopVisibility: (() => void) | undefined;
+  /**
+   * Removals this page made, per account host slot. A pairing that started
+   * before one must neither store the host it took off the account nor queue
+   * it for a retry when its save fails; a save that lands after it is taken
+   * back, since the removal's forget may have run first.
+   */
+  const removals = new Map<string, number>();
+  const removedSince = (slot: string, seen: number | undefined): boolean => removals.get(slot) !== seen;
   /** watchForHost's live watch per hostId, with its pending refresh between ticks. */
   const hostWatches = new Map<string, { readonly watch: object; readonly timer?: ReturnType<typeof setTimeout> }>();
 
@@ -327,12 +344,12 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   const live = (active: AccountClient, started: number): boolean => client === active && started === epoch;
 
   /**
-   * Drops every stored host linked to `origin`'s account, closing its
-   * runtime, without declining it: the owner signing in here again later
-   * should get those hosts back on their own (#494). False when any of them
-   * may still be stored.
+   * Drops every stored host linked to `origin`'s account (or only `hostId`),
+   * closing its runtime, without declining it: the owner signing in here
+   * again later should get those hosts back on their own (#494). False when
+   * any of them may still be stored.
    */
-  const forgetAccountHosts = async (origin: string): Promise<boolean> => {
+  const forgetAccountHosts = async (origin: string, hostId?: string): Promise<boolean> => {
     let stored: StoredHost[];
     try {
       stored = await deps.hosts.list();
@@ -343,7 +360,9 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     // Only keys the account issued: a QR pairing that later adopted the link
     // is the host's own, and stays.
     const vouched = (host: StoredHost): boolean =>
-      host.account?.vouched === true && normalizeServerOrigin(host.account.serverOrigin) === origin;
+      host.account?.vouched === true
+      && normalizeServerOrigin(host.account.serverOrigin) === origin
+      && (hostId === undefined || host.account.hostId === hostId);
     for (const host of stored.filter(vouched)) {
       await (deps.removeHost?.(host.hostKey) ?? deps.hosts.remove(host.hostKey)).catch((error: unknown) =>
         console.error("Could not forget a host", error),
@@ -392,9 +411,15 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       publishUnsaved();
       return false;
     }
+    const slot = storedSlot(host);
+    const seen = removals.get(slot);
     try {
       await deps.paired(host);
     } catch {
+      return false;
+    }
+    if (host.account !== undefined && removedSince(slot, seen)) {
+      await forgetAccountHosts(active.origin, host.account.hostId);
       return false;
     }
     clearRejected(host.hostKey);
@@ -405,6 +430,9 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   const retryPending = async (active: AccountClient): Promise<number> => {
     let saved = 0;
     for (const host of [...unsaved.values()]) {
+      // Left the queue while an earlier save ran (its host removed, saved by
+      // another round, the session ended): saving it now would bring it back.
+      if (unsaved.get(storedSlot(host)) !== host) continue;
       if (!(await savePending(active, host))) return saved;
       saved += 1;
     }
@@ -452,6 +480,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       const key = slotKey(active.origin, match.host.hostId);
       if (flights.has(key)) continue;
       const started = epoch;
+      const removed = removals.get(key);
       const flight: Flight = { cancelled: false, promise: Promise.resolve() };
       const run = async (): Promise<void> => {
         if (flight.cancelled || !live(active, started)) return;
@@ -493,7 +522,11 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
         try {
           await deps.paired(enriched);
         } catch {
-          rememberUnsaved(enriched);
+          if (!removedSince(key, removed)) rememberUnsaved(enriched);
+          return;
+        }
+        if (removedSince(key, removed)) {
+          await forgetAccountHosts(active.origin, match.host.hostId);
           return;
         }
         if (client === active) await refresh(active, user);
@@ -612,10 +645,12 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     if (client === undefined) return fail("unauthenticated");
     const active = client;
     const started = epoch;
+    const slot = slotKey(active.origin, hostId);
+    const removed = removals.get(slot);
     declined.remove({ serverOrigin: active.origin, hostId });
     // An explicit join wins over an automatic round already in flight.
     cancelAccountRegistration(hostId);
-    const pending = unsaved.get(slotKey(active.origin, hostId));
+    const pending = unsaved.get(slot);
     if (pending !== undefined) {
       return (await savePending(active, pending)) ? { ok: true, value: pending } : fail("pairing_not_saved");
     }
@@ -629,15 +664,23 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     // Signed out while the handshake ran (a shared-computer sign-out may
     // already have forgotten this server's hosts): the key must not land.
     if (!live(active, started)) return fail("stale");
+    // Removed from the account while the handshake ran: storing the key
+    // would bring the host back on this device.
+    if (removedSince(slot, removed)) return fail("host_removed");
     const enriched = enrich(hostId, result.value);
     clearRejected(enriched.hostKey);
     try {
       await deps.paired(enriched);
     } catch {
+      if (removedSince(slot, removed)) return fail("host_removed");
       // The invite is spent and the device registered — a failed save must
       // not orphan the key. Keep the record for retryUnsavedHost.
       rememberUnsaved(enriched);
       return fail("pairing_not_saved");
+    }
+    if (removedSince(slot, removed)) {
+      await forgetAccountHosts(active.origin, hostId);
+      return fail("host_removed");
     }
     forgetUnsaved(enriched);
     // A re-pair after a key change stored a fresh record under the new key;
@@ -687,6 +730,51 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       hostWatches.set(hostId, { watch, timer: setTimeout(() => void tick(refreshesLeft - 1), HOST_WATCH_INTERVAL_MS) });
     };
     void tick(HOST_WATCH_REFRESHES);
+  };
+
+  /**
+   * The account no longer has `hostId`, so this device lets go of it: nothing
+   * may pair it again (an automatic flight or a manual pairing in progress, a
+   * failed save waiting for its retry, a watch after a confirm), and the key
+   * the account gave this device goes. A failure to forget is logged there;
+   * the server side is done, and the host stops answering through it either way.
+   */
+  const forgetRemovedHost = async (origin: string, hostId: string): Promise<void> => {
+    const slot = slotKey(origin, hostId);
+    removals.set(slot, (removals.get(slot) ?? 0) + 1);
+    cancelAccountRegistration(hostId);
+    if (unsaved.delete(slot)) publishUnsaved();
+    clearTimeout(hostWatches.get(hostId)?.timer);
+    hostWatches.delete(hostId);
+    await forgetAccountHosts(origin, hostId);
+  };
+
+  const removeHost = async ({ hostId, password }: { hostId: string; password: string }): Promise<AccountResult<void>> => {
+    if (client === undefined || state.status !== "signed-in") return fail("unauthenticated");
+    const active = client;
+    const started = epoch;
+    const user = state.user;
+    const result = await active.removeHost(hostId, password);
+    if (!live(active, started)) return result;
+    if (!result.ok) {
+      if (isUnauthenticated(result.error)) signedOut();
+      else if (result.error.code === "not_found") {
+        // Removed earlier (from another device, or a retry after a lost 204),
+        // or a server that predates removal (also 404): the list says which.
+        // A failed refresh proves neither, so its error keeps the form open.
+        const listed = await refresh(active, user);
+        if (!listed.ok) return listed;
+        if (listed.value.some((match) => match.host.hostId === hostId)) return fail("remove_unsupported");
+        // Gone from the account: this device forgets it as after a 204. The
+        // list just read already leaves it out, so no second refresh.
+        await forgetRemovedHost(active.origin, hostId);
+        return { ok: true, value: undefined };
+      }
+      return result;
+    }
+    await forgetRemovedHost(active.origin, hostId);
+    if (live(active, started)) await refresh(active, user);
+    return { ok: true, value: undefined };
   };
 
   /** Login and sign-up share everything but the call that mints the session. */
@@ -824,6 +912,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       ),
     listDevices: () => authed((active) => active.listDevices()),
     kickDevice: ({ id, password }) => authed((active) => active.kickDevice(id, password)),
+    removeHost,
     createJoinToken: () => authed((active) => active.createJoinToken()),
     lookupHostLink: (userCode) => authed((active) => active.lookupHostLink(userCode)),
     confirmHostLink: (userCode) => authed((active) => active.confirmHostLink(userCode)),

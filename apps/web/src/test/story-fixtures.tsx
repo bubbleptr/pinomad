@@ -756,6 +756,7 @@ export function fakeAccount(state: AccountState): AccountModel {
     refreshHosts: fn(async () => ({ ok: true as const, value: [] })),
     listDevices: fn(async () => ({ ok: true as const, value: ACCOUNT_DEVICES })),
     kickDevice: fn(async () => ({ ok: true as const, value: undefined })),
+    removeHost: fn(async () => ({ ok: true as const, value: undefined })),
     createJoinToken: fn(async () => ({
       ok: true as const,
       value: { token: "join-7f3a9c", expiresAt: Date.now() + 10 * MINUTE, command: "pinomad join https://pinomad.si join-7f3a9c" },

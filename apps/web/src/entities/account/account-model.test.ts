@@ -1233,3 +1233,322 @@ describe("signing out of a shared computer (#494)", () => {
     expect(setup.paired).toEqual([]);
   });
 });
+
+describe("removing a host from the account (#512)", () => {
+  type Answer = Awaited<ReturnType<AccountFetch>>;
+  const answer = (status: number, body?: unknown): Answer => ({
+    status,
+    json: () => (body === undefined ? Promise.reject(new Error("empty")) : Promise.resolve(body)),
+    text: () => Promise.resolve(body === undefined ? "" : JSON.stringify(body)),
+  });
+
+  /** Each host's pairing offer, with a key of its own. */
+  const offers = new Map<string, unknown>();
+  const pairingOffer = (hostId: string) => {
+    if (!offers.has(hostId)) {
+      offers.set(hostId, {
+        url: `wss://relay.example.com/c/${hostId}`,
+        hostKey: toBase64Url(generateKeyPair().publicKey),
+        secret: toBase64Url(generateKeyPair().privateKey),
+        expiresAt: Date.now() + 60_000,
+      });
+    }
+    return offers.get(hostId);
+  };
+
+  /**
+   * Signed in (cookie mode) with `stored` paired and the account listing
+   * `listed`; a 204 from `remove` takes that host off the list. `removed` records
+   * every host the model drops; `relist` puts h1 back on the account, as
+   * `pinomad up` on it would.
+   */
+  const signedInWith = async (
+    stored: StoredHost[],
+    remove: () => Answer,
+    listed: string[] = ["h1"],
+    options?: {
+      failListAfterRemove?: boolean;
+      connect?: () => Promise<void>;
+      autoRegister?: boolean;
+      store?: ReturnType<typeof hosts>;
+    },
+  ) => {
+    const store = options?.store ?? hosts(stored);
+    const removed: string[] = [];
+    const calls: { url: string; init: AccountFetchInit | undefined }[] = [];
+    let accountHosts = listed.map((hostId) => accountHost("A".repeat(43), hostId));
+    let listFails = false;
+    const impl: AccountFetch = (url, init) => {
+      calls.push({ url, init });
+      if (url.endsWith("/api/me")) return Promise.resolve(answer(200, USER));
+      if (url.endsWith("/api/hosts")) {
+        return listFails ? Promise.reject(new Error("offline")) : Promise.resolve(answer(200, accountHosts));
+      }
+      const [, hostId, action] = /\/api\/hosts\/([^/]+)\/(pairing|remove)$/.exec(url) ?? [];
+      if (action === "pairing") {
+        const listed = accountHosts.some((row) => row.hostId === hostId);
+        return Promise.resolve(listed ? answer(200, pairingOffer(hostId!)) : answer(404, { error: "not_found" }));
+      }
+      if (action === "remove") {
+        const result = remove();
+        if (result.status === 204) accountHosts = accountHosts.filter((row) => row.hostId !== hostId);
+        listFails = options?.failListAfterRemove === true;
+        return Promise.resolve(result);
+      }
+      return Promise.resolve(answer(404, { error: "not_found" }));
+    };
+    const setup = makeModel({
+      fake: { impl, calls },
+      store,
+      ...(options?.connect === undefined ? {} : { connect: options.connect }),
+      autoRegister: options?.autoRegister === true,
+      removeHost: (hostKey) => {
+        removed.push(hostKey);
+        return store.remove(hostKey);
+      },
+    });
+    await vi.waitFor(() => expect(setup.model.state.status).toBe("signed-in"));
+    const hostLists = () => calls.filter((call) => call.url.endsWith("/api/hosts")).length;
+    const listedIds = () =>
+      setup.model.state.status === "signed-in" ? setup.model.state.hosts.map((match) => match.host.hostId) : [];
+    const relist = () => {
+      accountHosts = [accountHost("A".repeat(43), "h1")];
+    };
+    return { ...setup, removed, hostLists, listedIds, relist };
+  };
+
+  const vouched = (hostId: string) => storedHost({ account: { serverOrigin: ORIGIN, hostId, vouched: true } });
+  /** A QR pairing that later adopted the account link. */
+  const adopted = (hostId: string) => storedHost({ account: { serverOrigin: ORIGIN, hostId } });
+
+  /**
+   * A store whose saves wait for the test, as desktop's async IPC can: the
+   * pairing is past its last check while the removal lands. `next` waits for
+   * the next save and lets the test fail it or let it through.
+   */
+  const holdingStore = () => {
+    const store = hosts();
+    const save = store.save;
+    const held: { host: StoredHost; succeed: () => void; fail: () => void }[] = [];
+    store.save = (host) =>
+      new Promise<void>((resolve, reject) => {
+        held.push({
+          host,
+          succeed: () => void save(host).then(resolve, reject),
+          fail: () => reject(new Error("store unavailable")),
+        });
+      });
+    const next = async () => {
+      await vi.waitFor(() => expect(held.length).toBeGreaterThan(0));
+      return held.shift()!;
+    };
+    /** Lets every save still waiting through. */
+    const release = () => {
+      for (const save of held.splice(0)) save.succeed();
+    };
+    return { store, next, release };
+  };
+
+  it("sends the password, then forgets the account's key for that host here; QR pairings and other hosts stay", async () => {
+    const mine = vouched("h1");
+    const qr = adopted("h1");
+    const other = vouched("h2");
+    const setup = await signedInWith([mine, qr, other], () => answer(204), ["h1", "h2"]);
+
+    expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
+    const call = setup.calls.find((each) => each.url.endsWith("/api/hosts/h1/remove"))!;
+    expect(JSON.parse(call.init!.body!)).toEqual({ password: "pw" });
+    expect(setup.removed).toEqual([mine.hostKey]);
+    expect(setup.store.stored).toEqual([qr, other]);
+    expect(setup.listedIds()).toEqual(["h2"]);
+  });
+
+  it("keeps the session and every stored host when the password is wrong", async () => {
+    const mine = vouched("h1");
+    const setup = await signedInWith([mine], () => answer(403, { error: "wrong_password" }));
+    expect(await setup.model.removeHost({ hostId: "h1", password: "nope" })).toEqual({
+      ok: false,
+      error: { code: "wrong_password", status: 403 },
+    });
+    expect(setup.removed).toEqual([]);
+    expect(setup.store.stored).toEqual([mine]);
+    expect(setup.model.state.status).toBe("signed-in");
+  });
+
+  it("on a 404 refreshes the list; a host still listed means the server can't remove hosts", async () => {
+    const mine = vouched("h1");
+    const setup = await signedInWith([mine], () => answer(404, { error: "not_found" }));
+    const before = setup.hostLists();
+    expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({
+      ok: false,
+      error: { code: "remove_unsupported" },
+    });
+    expect(setup.hostLists()).toBe(before + 1);
+    expect(setup.store.stored).toEqual([mine]);
+  });
+
+  it("on a 404 for a host already off the list, forgets the account's key here as a removal does", async () => {
+    // Removed from another device, or a retry after a lost 204: the account
+    // no longer has the host, so this device lets go of it too.
+    const mine = vouched("h1");
+    const qr = adopted("h1");
+    const setup = await signedInWith([mine, qr], () => answer(404, { error: "not_found" }), []);
+    expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
+    expect(setup.removed).toEqual([mine.hostKey]);
+    expect(setup.store.stored).toEqual([qr]);
+  });
+
+  it("on a 404 whose confirming refresh fails, returns that failure and keeps this device's pairing", async () => {
+    // A server too old to remove hosts also answers 404; without a list that
+    // says h1 is gone, the form must stay open.
+    const mine = vouched("h1");
+    const setup = await signedInWith([mine], () => answer(404, { error: "not_found" }), ["h1"], {
+      failListAfterRemove: true,
+    });
+    const before = setup.hostLists();
+    expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({
+      ok: false,
+      error: { code: "network" },
+    });
+    expect(setup.hostLists()).toBe(before + 1);
+    expect(setup.removed).toEqual([]);
+    expect(setup.store.stored).toEqual([mine]);
+    expect(setup.model.state.status).toBe("signed-in");
+  });
+
+  it("does not queue an automatic pairing whose save fails after the removal for a retry", async () => {
+    // Desktop saves over async IPC: the pairing can be past its last check
+    // and waiting on the save when the removal lands.
+    const { store, next } = holdingStore();
+    const setup = await signedInWith([], () => answer(204), ["h1"], { autoRegister: true, store });
+    const save = await next();
+    expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
+
+    save.fail();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const state = setup.model.state;
+    expect(state.status === "signed-in" ? state.unsavedHosts : undefined).toEqual([]);
+    // A later round retries whatever is queued.
+    expect((await setup.model.refreshHosts()).ok).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(setup.paired).toHaveLength(1);
+    expect(store.stored).toEqual([]);
+  });
+
+  it("a retry of queued saves skips a host removed while an earlier one was saving", async () => {
+    const { store, next, release } = holdingStore();
+    const setup = await signedInWith([], () => answer(204), ["h1", "h2"], { autoRegister: true, store });
+    (await next()).fail();
+    (await next()).fail();
+    await vi.waitFor(() => {
+      const state = setup.model.state;
+      expect(state.status === "signed-in" ? state.unsavedHosts : []).toHaveLength(2);
+    });
+    expect((await setup.model.refreshHosts()).ok).toBe(true);
+    const first = await next();
+    const other = first.host.account!.hostId === "h1" ? "h2" : "h1";
+    expect(await setup.model.removeHost({ hostId: other, password: "pw" })).toEqual({ ok: true, value: undefined });
+
+    first.succeed();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const savesOf = (hostId: string) => setup.paired.filter((host) => host.account?.hostId === hostId);
+    // Only the automatic pairing's save, which failed.
+    expect(savesOf(other)).toHaveLength(1);
+    expect(store.stored.filter((host) => host.account?.hostId === other)).toEqual([]);
+  });
+
+  describe("a save that succeeds after the removal is taken back; a QR pairing stays", () => {
+    it("from an automatic pairing", async () => {
+      const { store, next } = holdingStore();
+      const setup = await signedInWith([], () => answer(204), ["h1"], { autoRegister: true, store });
+      const save = await next();
+      const qr = adopted("h1");
+      store.stored.push(qr);
+      expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
+
+      save.succeed();
+      await vi.waitFor(() => expect(store.stored).toEqual([qr]));
+    });
+
+    it("from a retry of a failed save", async () => {
+      const { store, next } = holdingStore();
+      const setup = await signedInWith([], () => answer(204), ["h1"], { autoRegister: true, store });
+      (await next()).fail();
+      await vi.waitFor(() => {
+        const state = setup.model.state;
+        expect(state.status === "signed-in" ? state.unsavedHosts : []).toHaveLength(1);
+      });
+      expect((await setup.model.refreshHosts()).ok).toBe(true);
+      const retry = await next();
+      const qr = adopted("h1");
+      store.stored.push(qr);
+      expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
+
+      retry.succeed();
+      await vi.waitFor(() => expect(store.stored).toEqual([qr]));
+    });
+
+    it("from a manual pairing", async () => {
+      const { store, next } = holdingStore();
+      const setup = await signedInWith([], () => answer(204), ["h1"], { store });
+      const pairing = setup.model.pairHost("h1");
+      const save = await next();
+      const qr = adopted("h1");
+      store.stored.push(qr);
+      expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
+
+      save.succeed();
+      expect(await pairing).toEqual({ ok: false, error: { code: "host_removed" } });
+      expect(store.stored).toEqual([qr]);
+    });
+  });
+
+  describe("a manual pairing of the host in flight", () => {
+    const delayedHandshake = () => {
+      let finish!: () => void;
+      const handshake = new Promise<void>((resolve) => (finish = resolve));
+      let markStarted!: () => void;
+      const started = new Promise<void>((resolve) => (markStarted = resolve));
+      return {
+        finish,
+        started,
+        connect: () => {
+          markStarted();
+          return handshake;
+        },
+      };
+    };
+
+    it("is discarded when it finishes after the host was removed", async () => {
+      const handshake = delayedHandshake();
+      const setup = await signedInWith([], () => answer(204), ["h1"], { connect: handshake.connect });
+      const pairing = setup.model.pairHost("h1");
+      await handshake.started;
+      expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
+
+      handshake.finish();
+      expect(await pairing).toEqual({ ok: false, error: { code: "host_removed" } });
+      expect(setup.paired).toEqual([]);
+      expect(setup.store.stored).toEqual([]);
+    });
+
+    it("started after the host rejoined the account lands as usual", async () => {
+      const setup = await signedInWith([], () => answer(204));
+      expect((await setup.model.removeHost({ hostId: "h1", password: "pw" })).ok).toBe(true);
+      setup.relist();
+      expect((await setup.model.refreshHosts()).ok).toBe(true);
+
+      expect((await setup.model.pairHost("h1")).ok).toBe(true);
+      expect(setup.paired).toHaveLength(1);
+    });
+  });
+
+  it("signs out when the session is gone", async () => {
+    const setup = await signedInWith([vouched("h1")], () => answer(401, { error: "unauthenticated" }));
+    expect((await setup.model.removeHost({ hostId: "h1", password: "pw" })).ok).toBe(false);
+    expect(setup.model.state.status).toBe("signed-out");
+    expect(setup.store.stored).toHaveLength(1);
+  });
+});
