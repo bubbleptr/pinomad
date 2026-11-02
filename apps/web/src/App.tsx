@@ -200,17 +200,15 @@ export function App() {
     setLoaded((prev) => (prev === undefined ? prev : { ...prev, focus: { hostKey } }));
   }, []);
 
-  const removeHost = useCallback(
-    async (hostKey: string, clearAddress: boolean): Promise<void> => {
+  /** Take a host off screen; its stored record is the caller's to remove. */
+  const dropFromView = useCallback(
+    (hostKey: string, clearAddress: boolean): void => {
       lastByHost.current.delete(hostKey);
       if (clearAddress) {
         // A live #token=…/#pair=… fragment outlives the stored list; drop it so
         // the emptied list can land on the no-link screen instead of reconnecting.
         history.replaceState(null, "", window.location.pathname + window.location.search);
       }
-      await store.remove(hostKey).catch((error: unknown) => {
-        console.error("Could not remove the host", error);
-      });
       setLoaded((prev) => {
         if (prev === undefined) return prev;
         const hosts = prev.hosts.filter((each) => each.hostKey !== hostKey);
@@ -224,13 +222,24 @@ export function App() {
         };
       });
     },
-    [rememberedFocus, store],
+    [rememberedFocus],
+  );
+
+  const removeStored = useCallback(
+    (hostKey: string): Promise<void> =>
+      store.remove(hostKey).catch((error: unknown) => {
+        console.error("Could not remove the host", error);
+      }),
+    [store],
   );
 
   /** Remove a superseded identity without treating it as a user forget. */
   const dropHost = useCallback(
-    (hostKey: string): Promise<void> => removeHost(hostKey, false),
-    [removeHost],
+    async (hostKey: string): Promise<void> => {
+      await removeStored(hostKey);
+      dropFromView(hostKey, false);
+    },
+    [dropFromView, removeStored],
   );
 
   const forget = useCallback(
@@ -238,7 +247,11 @@ export function App() {
       // Account adoption can link this host in the store without touching the
       // loaded snapshot (or another tab may have done it), so read the latest
       // record before deciding whether forgetting should decline it.
-      const persisted = await store.list().catch(() => loaded?.hosts ?? []);
+      const latest = store.list().catch(() => loaded?.hosts ?? []);
+      // Off screen before any await: a host that just unpaired this device
+      // closes it at once, and its refusal must not flash up meanwhile.
+      dropFromView(hostKey, true);
+      const persisted = await latest;
       const host = persisted.find((each) => each.hostKey === hostKey)
         ?? loaded?.hosts.find((each) => each.hostKey === hostKey);
       if (host?.account !== undefined) {
@@ -247,9 +260,9 @@ export function App() {
         browserDeclined.add(host.account);
         cancelAccountRegistration(host.account.hostId);
       }
-      await removeHost(hostKey, true);
+      await removeStored(hostKey);
     },
-    [loaded?.hosts, removeHost, store],
+    [dropFromView, loaded?.hosts, removeStored, store],
   );
 
   const paired = useCallback(

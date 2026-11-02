@@ -456,10 +456,10 @@ function unpairText(label: string, info: HostRuntimeInfo | undefined): string {
 }
 
 /**
- * The connection-failure screens repeat the device's hosts inline. The frame's
- * sidebar now stays up too, but a dead focused host still needs its own way
- * off — the Hosts section plus Account where this client can reach one
- * (ADR-0022). PR-B decides whether this inline copy stays.
+ * The connection-failure screens repeat the device's hosts inline: a host
+ * that can't be reached may need its connection mode changed, and the
+ * frame-less screens have no sidebar to switch hosts. A host that refused
+ * this device gets DeviceRejected instead, which carries its own way forward.
  */
 export function HostsFallback() {
   const account = useAccountModel();

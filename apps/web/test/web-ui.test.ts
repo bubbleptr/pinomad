@@ -122,7 +122,9 @@ async function stubDesktopBridge(context: BrowserContext): Promise<void> {
     };
     (window as unknown as { pinomadDesktop: unknown }).pinomadDesktop = {
       hosts: {
-        list: () => Promise.resolve(read()),
+        // A test can slow reads down to the keychain's pace.
+        list: () =>
+          new Promise((resolve) => setTimeout(() => resolve(read()), Number(localStorage.getItem("test.desktopListDelayMs") ?? 0))),
         save: (host: { hostKey: string }) => {
           write([...read().filter((each) => each.hostKey !== host.hostKey), host]);
           return Promise.resolve();
@@ -2441,10 +2443,10 @@ it("pairs a phone client through the QR link and survives revoke", async () => {
   await page.goto(`${webOrigin}/`);
   await prompt(page).waitFor();
 
-  // Revocation drops the client into the rejected state; forgetting shows the entry screen.
+  // Revocation drops the client into the rejected state; unpairing shows the entry screen.
   await tokenClient.controller.revokeDevice(tokenClient.view.current().devices[0]!.publicKey);
-  await page.getByText("paired with the host, or was revoked", { exact: false }).waitFor();
-  await page.getByRole("button", { name: "Forget this host", exact: true }).click();
+  await page.getByText("no longer accepts this device", { exact: false }).waitFor();
+  await page.getByRole("button", { name: /^Unpair / }).click();
   await page.getByText("No host link", { exact: true }).waitFor();
 });
 
@@ -2541,7 +2543,11 @@ it("manages paired devices from Settings → Devices", async () => {
   defer(() => phone.close());
   await dialog.getByText("QA phone", { exact: true }).waitFor();
 
-  await dialog.getByRole("button", { name: "Revoke", exact: true }).click();
+  await dialog.getByRole("button", { name: "Unpair QA phone…", exact: true }).click();
+  await dialog
+    .getByRole("group", { name: "Unpair QA phone?", exact: true })
+    .getByRole("button", { name: "Unpair", exact: true })
+    .click();
   await dialog.getByText("No paired devices", { exact: false }).waitFor();
 });
 
@@ -2711,7 +2717,7 @@ it("shows a plain connection error — not a forget-pairing prompt — when the 
   await host.close();
   await page.goto(`${webOrigin}/`);
   await page.getByText("Could not connect to the host", { exact: true }).waitFor();
-  await expect.poll(() => page.getByRole("button", { name: "Forget this host" }).count()).toBe(0);
+  await expect.poll(() => page.getByText("no longer accepts this device", { exact: false }).count()).toBe(0);
 });
 
 it("reuses the stored device key when a spent pairing link is opened again", async () => {
@@ -2783,7 +2789,7 @@ it("tells a fresh browser that a spent pairing code was used or expired", async 
   await fresh.goto(`${webOrigin}/#pair=${pair}&url=${encodeURIComponent(host.remote!.url)}`);
   await fresh.getByRole("button", { name: "Pair", exact: true }).click();
   await fresh.getByText("used or has expired", { exact: false }).waitFor();
-  expect(await fresh.getByRole("button", { name: "Forget this host" }).count()).toBe(0);
+  expect(await fresh.getByRole("button", { name: /^Unpair/ }).count()).toBe(0);
   expect(await fresh.getByRole("button", { name: "Use saved pairing" }).count()).toBe(0);
 });
 
@@ -3015,7 +3021,7 @@ it("switches between paired hosts on the desktop bridge", async () => {
   expect(sockets.a).toBe(socketsABeforeSwitch);
 });
 
-it("forgets a host from Settings → Hosts only after confirmation", async () => {
+it("unpairs a host from Settings → Hosts only after confirmation, at both ends", async () => {
   const webOrigin = await startWeb(defer);
   // Named like the switch test above: labels are the announced machine names.
   const dirA = await tempDir();
@@ -3056,37 +3062,58 @@ it("forgets a host from Settings → Hosts only after confirmation", async () =>
 
   // Cancelling the confirmation touches nothing: still on B, both stored.
   const settings = await openSettings(page, "Hosts");
-  await settings.getByRole("button", { name: `Forget ${labelB}…`, exact: true }).click();
-  const confirm = settings.getByRole("group", { name: `Forget ${labelB}?`, exact: true });
+  await settings.getByRole("button", { name: `Unpair ${labelB}…`, exact: true }).click();
+  const confirm = settings.getByRole("group", { name: `Unpair ${labelB}?`, exact: true });
   await confirm.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect.poll(() => confirm.count()).toBe(0);
   expect(await storedHostCount(page)).toBe(2);
   await settings.getByRole("button", { name: `Switch to ${labelA}`, exact: true }).waitFor();
 
-  // Confirming forgets B: focus falls back to A, the only host left.
-  await settings.getByRole("button", { name: `Forget ${labelB}…`, exact: true }).click();
-  await settings.getByRole("button", { name: "Forget this host", exact: true }).click();
+  // Confirming unpairs B: B drops this device, and focus falls back to A, the
+  // only host left — without B's refusal of this device flashing up first.
+  expect(tokenB.view.current().devices).toHaveLength(1);
+  await page.evaluate(() => {
+    localStorage.setItem("test.desktopListDelayMs", "1000");
+    (window as unknown as { refusalSeen?: boolean }).refusalSeen = false;
+    new MutationObserver(() => {
+      const text = document.body.innerText;
+      if (text.includes("no longer accepts this device") || text.includes("Unauthorized")) {
+        (window as unknown as { refusalSeen?: boolean }).refusalSeen = true;
+      }
+    }).observe(document.body, { subtree: true, childList: true, characterData: true });
+  });
+  await settings.getByRole("button", { name: `Unpair ${labelB}…`, exact: true }).click();
+  await settings
+    .getByRole("group", { name: `Unpair ${labelB}?`, exact: true })
+    .getByRole("button", { name: "Unpair", exact: true })
+    .click();
+  await waitForView(tokenB.view, (view) => view.devices.length === 0);
   // The frame stays mounted across the focus switch, so close Settings
   // explicitly before reaching for the footer's hosts menu.
   await page.keyboard.press("Escape");
   await openHostsMenu(page);
   await page.getByRole("menuitem", { name: `${labelA} (connected)`, exact: true }).waitFor();
   await page.keyboard.press("Escape");
-  expect(await storedHostCount(page)).toBe(1);
+  await expect.poll(() => storedHostCount(page)).toBe(1);
+  expect(await page.evaluate(() => (window as unknown as { refusalSeen?: boolean }).refusalSeen)).toBe(false);
+  await page.evaluate(() => localStorage.removeItem("test.desktopListDelayMs"));
   await prompt(page).fill("hello again");
   await prompt(page).press("Enter");
   await page.getByText("host A answer", { exact: true }).waitFor();
 
-  // Forgetting under a live #token fragment must not resurrect the fragment's
+  // Unpairing under a live #token fragment must not resurrect the fragment's
   // address: clearing it is what lets the emptied list land on the no-link
   // screen (the pairing-link form only exists there).
   await page.goto(`${webOrigin}/#token=${encodeURIComponent(hostB.token)}&url=${encodeURIComponent(hostB.url)}`);
   await prompt(page).waitFor();
   const lastSettings = await openSettings(page, "Hosts");
-  await lastSettings.getByRole("button", { name: `Forget ${labelA}…`, exact: true }).click();
-  await lastSettings.getByRole("button", { name: "Forget this host", exact: true }).click();
+  await lastSettings.getByRole("button", { name: `Unpair ${labelA}…`, exact: true }).click();
+  await lastSettings
+    .getByRole("group", { name: `Unpair ${labelA}?`, exact: true })
+    .getByRole("button", { name: "Unpair", exact: true })
+    .click();
   await page.getByLabel("Pairing link").waitFor();
-  expect(await storedHostCount(page)).toBe(0);
+  await expect.poll(() => storedHostCount(page)).toBe(0);
 });
 
 it("warns and retries when saving a pairing fails on the desktop bridge", async () => {
