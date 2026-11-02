@@ -189,6 +189,8 @@ jobs:
           out=$(PINOMAD_VERSION="$tgz" sh -s -- --version <apps/site/public/install.sh)
           printf '%s\n' "$out"
           test "$(printf '%s\n' "$out" | tail -n 1)" = "$version"
+          # The exec into pinomad skips the script's EXIT trap; the download dir must be gone anyway.
+          if ls -d "$HOME"/.pinomad/runtime/.download.* 2>/dev/null; then exit 1; fi
           bin="$HOME/.local/bin/pinomad"
           test "$("$bin" --version)" = "$version"
           log="$RUNNER_TEMP/host.log"

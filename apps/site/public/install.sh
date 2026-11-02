@@ -170,6 +170,10 @@ main() {
     if [ -d "$runtime/node" ]; then mv "$runtime/node" "$runtime/node.old"; fi
     mv "$tmp/$name" "$runtime/node"
     rm -rf "$runtime/node.old"
+    # Not left to the trap: running a command after install execs, and exec
+    # skips EXIT traps.
+    rm -rf "$tmp"
+    trap - EXIT
   fi
 
   case $version in

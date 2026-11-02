@@ -58,7 +58,7 @@ async function nodeVersion(): Promise<string> {
 
 /**
  * A runtime whose Node already has the pinned version, so the script skips the
- * download. The fake node plays npm (it lays down pinomad.js) and pinomad (it
+ * download (the platform check still runs first, hence skipIf(!hasBuild)). The fake node plays npm (it lays down pinomad.js) and pinomad (it
  * prints its arguments).
  */
 async function fakeRuntime(home: string): Promise<void> {
@@ -152,7 +152,7 @@ describe("install.sh", () => {
   });
 
   describe("PATH", () => {
-    it("adds ~/.local/bin to the shell profile once, however often it runs", async () => {
+    it.skipIf(!hasBuild)("adds ~/.local/bin to the shell profile once, however often it runs", async () => {
       const home = await tempDir();
       await fakeRuntime(home);
       const env = { HOME: home, PATH: SYSTEM_PATH, SHELL: "/bin/zsh" };
@@ -168,7 +168,7 @@ describe("install.sh", () => {
       expect(second.stdout).toMatch(/new terminal.*pinomad up/);
     });
 
-    it("leaves the profile alone when ~/.local/bin is already on PATH", async () => {
+    it.skipIf(!hasBuild)("leaves the profile alone when ~/.local/bin is already on PATH", async () => {
       const home = await tempDir();
       await fakeRuntime(home);
 
@@ -184,7 +184,7 @@ describe("install.sh", () => {
     });
   });
 
-  it("runs pinomad with the arguments after `sh -s --` once it is installed", async () => {
+  it.skipIf(!hasBuild)("runs pinomad with the arguments after `sh -s --` once it is installed", async () => {
     const home = await tempDir();
     await fakeRuntime(home);
 
