@@ -27,10 +27,20 @@ async function tempDir(): Promise<string> {
   return dir;
 }
 
-async function runInstaller(env: Record<string, string>): Promise<{ code: number; stdout: string; stderr: string }> {
+async function runInstaller(
+  env: Record<string, string>,
+  args: readonly string[] = [],
+  shell = "/bin/sh",
+): Promise<{ code: number; stdout: string; stderr: string }> {
   const text = await readFile(script, "utf8");
   return new Promise((resolve, reject) => {
-    const child = spawn("/bin/sh", [], { env, stdio: ["pipe", "pipe", "pipe"] });
+    // `sh -s -- …` is how the apps pass a command through. Detached, so the
+    // script finds no /dev/tty even when the tests run in a terminal.
+    const child = spawn(shell, args.length === 0 ? [] : ["-s", "--", ...args], {
+      env,
+      detached: true,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk: Buffer) => (stdout += chunk));
@@ -45,6 +55,29 @@ async function nodeVersion(): Promise<string> {
   const match = /^NODE_VERSION=(\S+)$/m.exec(await readFile(script, "utf8"));
   if (match === null) throw new Error("install.sh pins no NODE_VERSION");
   return match[1]!;
+}
+
+/**
+ * A runtime whose Node already has the pinned version, so the script skips the
+ * download (the platform check still runs first, hence skipIf(!hasBuild)). The fake node plays npm (it lays down pinomad.js) and pinomad (it
+ * prints its arguments).
+ */
+async function fakeRuntime(home: string): Promise<void> {
+  const runtime = join(home, ".pinomad", "runtime");
+  const entry = join(runtime, "lib", "node_modules", "pinomad", "dist", "pinomad.js");
+  await mkdir(join(runtime, "node", "bin"), { recursive: true });
+  const node = join(runtime, "node", "bin", "node");
+  await writeFile(
+    node,
+    `#!/bin/sh
+case "$1" in
+  --version) echo v${await nodeVersion()} ;;
+  */npm-cli.js) mkdir -p "${join(entry, "..")}" && : >"${entry}" ;;
+  */pinomad.js) shift; if [ "$1" = --version ]; then echo 0.0.0-test; else echo "pinomad ran with: $*"; fi ;;
+esac
+`,
+  );
+  await chmod(node, 0o755);
 }
 
 describe("install.sh", () => {
@@ -85,6 +118,20 @@ describe("install.sh", () => {
     expect(existsSync(join(home, ".local", "bin", "pinomad"))).toBe(false);
   });
 
+  it("runs the arguments with a pinomad installed another way, which it leaves alone", async () => {
+    const home = await tempDir();
+    const npmBin = await tempDir();
+    await writeFile(join(npmBin, "pinomad"), '#!/bin/sh\necho "npm pinomad ran with: $*"\n');
+    await chmod(join(npmBin, "pinomad"), 0o755);
+
+    const run = await runInstaller({ HOME: home, PATH: `${npmBin}:${SYSTEM_PATH}` }, ["up", "--origin", "https://accounts.example.com"]);
+
+    expect(run.code).toBe(0);
+    expect(run.stdout).toContain("pinomad upgrade");
+    expect(run.stdout).toContain("npm pinomad ran with: up --origin https://accounts.example.com");
+    expect(existsSync(join(home, ".pinomad", "runtime"))).toBe(false);
+  });
+
   it.skipIf(!hasBuild)("treats its own launcher on PATH as a re-install", async () => {
     const home = await tempDir();
     const bin = join(home, ".local", "bin");
@@ -103,5 +150,66 @@ describe("install.sh", () => {
     expect(run.stdout).not.toContain("leaving it alone");
     expect(run.stdout).toContain("Downloading Node");
     expect(run.code).not.toBe(0);
+  });
+
+  describe("PATH", () => {
+    it.skipIf(!hasBuild)("adds ~/.local/bin to the shell profile once, however often it runs", async () => {
+      const home = await tempDir();
+      await fakeRuntime(home);
+      const env = { HOME: home, PATH: SYSTEM_PATH, SHELL: "/bin/zsh" };
+
+      const first = await runInstaller(env);
+      const second = await runInstaller(env);
+
+      expect(first.code).toBe(0);
+      expect(second.code).toBe(0);
+      const zshrc = await readFile(join(home, ".zshrc"), "utf8");
+      expect(zshrc.match(/\.local\/bin/g)).toHaveLength(1);
+      expect(zshrc).toContain('export PATH="$HOME/.local/bin:$PATH"');
+      expect(second.stdout).toMatch(/new terminal.*pinomad up/);
+    });
+
+    // dash, /bin/sh on Debian and Ubuntu, doesn't fill in SHELL the way bash does.
+    it.skipIf(!hasBuild || !existsSync("/bin/dash"))("falls back to ~/.profile when SHELL isn't set", async () => {
+      const home = await tempDir();
+      await fakeRuntime(home);
+
+      const run = await runInstaller({ HOME: home, PATH: SYSTEM_PATH }, ["--version"], "/bin/dash");
+
+      expect(run.stderr).toBe("");
+      expect(run.code).toBe(0);
+      expect(await readFile(join(home, ".profile"), "utf8")).toContain('export PATH="$HOME/.local/bin:$PATH"');
+      expect(run.stdout).toContain("0.0.0-test");
+    });
+
+    it.skipIf(!hasBuild)("leaves the profile alone when ~/.local/bin is already on PATH", async () => {
+      const home = await tempDir();
+      await fakeRuntime(home);
+
+      const run = await runInstaller({
+        HOME: home,
+        PATH: `${join(home, ".local", "bin")}:${SYSTEM_PATH}`,
+        SHELL: "/bin/zsh",
+      });
+
+      expect(run.code).toBe(0);
+      expect(existsSync(join(home, ".zshrc"))).toBe(false);
+      expect(run.stdout).toContain("Next: pinomad up");
+    });
+  });
+
+  it.skipIf(!hasBuild)("runs pinomad with the arguments after `sh -s --` once it is installed", async () => {
+    const home = await tempDir();
+    await fakeRuntime(home);
+
+    const run = await runInstaller({ HOME: home, PATH: SYSTEM_PATH, SHELL: "/bin/zsh" }, [
+      "up",
+      "--origin",
+      "https://accounts.example.com",
+    ]);
+
+    expect(run.code).toBe(0);
+    expect(run.stdout).toContain("pinomad ran with: up --origin https://accounts.example.com");
+    expect(run.stdout).not.toContain("Next:");
   });
 });

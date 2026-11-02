@@ -6,7 +6,7 @@ import { signedIn, withAccount, withHosts } from "../../test/story-fixtures.tsx"
 import { FirstHost } from "./first-host.tsx";
 
 const noHosts = signedIn({ hosts: [] }) as Extract<AccountState, { status: "signed-in" }>;
-const command = "curl -fsSL https://pinomad.si/install.sh | sh && PATH=\"$HOME/.local/bin:$PATH\" pinomad join https://pinomad.si join-7f3a9c";
+const command = "curl -fsSL https://pinomad.si/install.sh | sh -s -- join https://pinomad.si join-7f3a9c";
 const joinToken = (expiresAt: number) =>
   fn(async () => ({ ok: true as const, value: { token: "join-7f3a9c", expiresAt, command } }));
 
