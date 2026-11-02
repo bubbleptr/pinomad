@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { serviceStatusJson, startService, stopService } from "../src/cli/service.ts";
-import { launchdDisabled } from "../src/service/manager.ts";
+import { launchdDisabled, launchdState } from "../src/service/manager.ts";
 import type { ServiceManager, ServiceState } from "../src/service/manager.ts";
 import { seededSpec } from "./server-support.ts";
 import { tempDir, useCleanups } from "./support.ts";
@@ -148,5 +148,23 @@ describe("launchdDisabled", () => {
     // Another label that ends the same way is not ours.
     expect(launchdDisabled('\t\t"x.pinomad.host" => disabled')).toBe(false);
     expect(launchdDisabled("disabled services = {\n\t}")).toBe(false);
+  });
+});
+
+describe("launchdState", () => {
+  const loaded = "pinomad.host = {\n\tstate = running\n\tpid = 42\n}";
+
+  it("is stopped only once disabled and no longer loaded", () => {
+    expect(launchdState(true, undefined)).toMatchObject({ installed: true, stopped: true, running: false });
+  });
+
+  it("a disabled host launchd still runs is not stopped, so stop can finish the job", () => {
+    // disable went through, bootout failed or never ran.
+    expect(launchdState(true, loaded)).toMatchObject({ installed: true, stopped: false, running: true, pid: 42 });
+  });
+
+  it("an enabled host reads from launchctl print", () => {
+    expect(launchdState(false, loaded)).toMatchObject({ stopped: false, running: true, pid: 42 });
+    expect(launchdState(false, undefined)).toMatchObject({ stopped: false, running: false, detail: "not loaded" });
   });
 });

@@ -90,7 +90,8 @@ export async function leaveServer(
 
   const manager = deps?.manager ?? serviceManager();
   try {
-    const installed = await manager.state().then((state) => state.installed, () => false);
+    const state = await manager.state().catch(() => undefined);
+    const installed = state?.installed === true;
     const previous = installed ? await manager.read() : undefined;
     if (!installed) {
       notes.push("no service installed — restart any running host so it stops dialing the server");
@@ -101,21 +102,31 @@ export async function leaveServer(
     } else {
       const stripped = previous === undefined ? undefined : { ...previous, hostArgs: withoutRelayArgs(previous.hostArgs) };
       const rewriting = stripped !== undefined && stripped.hostArgs.length !== previous!.hostArgs.length;
-      // Idle-wait knocks on the service's own port, not the default 7420.
-      const port = argValue(previous?.hostArgs ?? [], "--port");
-      const code = await restartService({
-        force: false,
-        argv: ["--data-dir", dataDir, ...(port === undefined ? [] : ["--url", `ws://127.0.0.1:${port}`])],
-        manager,
-        ...(rewriting
-          ? {
-              restart: async () => {
-                await manager.install(stripped!);
-              },
-            }
-          : {}),
-      });
-      if (code !== 0) warnings.push("the service restart did not finish — check `service status`");
+      if (state!.stopped) {
+        // `service stop` (#501) keeps it off: nothing runs to restart, and a
+        // rewrite turns it back on, so it goes off again right after.
+        if (rewriting) {
+          await manager.install(stripped!);
+          await manager.stop();
+        }
+        notes.push(`the service is stopped and stays off until \`${commandHint("service")} start\``);
+      } else {
+        // Idle-wait knocks on the service's own port, not the default 7420.
+        const port = argValue(previous?.hostArgs ?? [], "--port");
+        const code = await restartService({
+          force: false,
+          argv: ["--data-dir", dataDir, ...(port === undefined ? [] : ["--url", `ws://127.0.0.1:${port}`])],
+          manager,
+          ...(rewriting
+            ? {
+                restart: async () => {
+                  await manager.install(stripped!);
+                },
+              }
+            : {}),
+        });
+        if (code !== 0) warnings.push("the service restart did not finish — check `service status`");
+      }
     }
   } catch (error) {
     warnings.push(`could not update the service definition: ${message(error)} — remove --relay from it and restart manually`);

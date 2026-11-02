@@ -63,6 +63,36 @@ export function launchdDisabled(printed: string): boolean {
   return value === "disabled" || value === "true";
 }
 
+/**
+ * The service state from `print-disabled` and `launchctl print` (undefined
+ * when the label isn't loaded). Stopped means disabled and unloaded: disable
+ * alone leaves a running host running, as when `service stop`'s bootout
+ * failed, and a second stop must still be able to finish it.
+ */
+export function launchdState(disabled: boolean, printed: string | undefined): ServiceState {
+  if (printed === undefined) {
+    return disabled
+      ? { installed: true, stopped: true, running: false, detail: "stopped" }
+      : { installed: true, stopped: false, running: false, detail: "not loaded" };
+  }
+  const field = (name: string): string | undefined => printed.match(new RegExp(`^\\s*${name} = (.+)$`, "m"))?.[1];
+  const state = field("state") ?? "unknown";
+  const pid = field("pid");
+  const exit = field("last exit code");
+  return {
+    installed: true,
+    stopped: false,
+    running: state === "running" && pid !== undefined,
+    ...(pid === undefined ? {} : { pid: Number(pid) }),
+    detail: [
+      state,
+      ...(pid === undefined ? [] : [`pid ${pid}`]),
+      ...(exit === undefined || exit === "0" || exit === "(never exited)" ? [] : [`last exit ${exit}`]),
+      ...(disabled ? ["turned off but still loaded"] : []),
+    ].join(", "),
+  };
+}
+
 /** macOS: ~/Library/LaunchAgents/pinomad.host.plist, gui/<uid>/pinomad.host. */
 const launchd: ServiceManager = {
   async install(spec) {
@@ -115,28 +145,11 @@ const launchd: ServiceManager = {
       ({ stdout }) => launchdDisabled(stdout),
       () => false,
     );
-    if (disabled) return { installed: true, stopped: true, running: false, detail: "stopped" };
     const printed = await run("launchctl", ["print", `gui/${process.getuid!()}/pinomad.host`]).then(
       ({ stdout }) => stdout,
       () => undefined,
     );
-    if (printed === undefined) return { installed: true, stopped: false, running: false, detail: "not loaded" };
-    const field = (name: string): string | undefined =>
-      printed.match(new RegExp(`^\\s*${name} = (.+)$`, "m"))?.[1];
-    const state = field("state") ?? "unknown";
-    const pid = field("pid");
-    const exit = field("last exit code");
-    return {
-      installed: true,
-      stopped: false,
-      running: state === "running" && pid !== undefined,
-      ...(pid === undefined ? {} : { pid: Number(pid) }),
-      detail: [
-        state,
-        ...(pid === undefined ? [] : [`pid ${pid}`]),
-        ...(exit === undefined || exit === "0" || exit === "(never exited)" ? [] : [`last exit ${exit}`]),
-      ].join(", "),
-    };
+    return launchdState(disabled, printed);
   },
 
   async logs(dataDir, lines, follow) {

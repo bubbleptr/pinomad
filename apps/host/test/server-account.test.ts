@@ -703,6 +703,26 @@ describe("leaveServer", () => {
     expect(fake.restarts()).toBe(1);
   });
 
+  it("leaves a service `service stop` turned off stopped, rewriting it if it has to (#501)", async () => {
+    for (const hostArgs of [[], ["--relay", "https://old.example.com"]]) {
+      const started = await startServer();
+      const data = await tempDir();
+      defer(data.remove);
+      const fake = fakeManager(seededSpec(data.path, hostArgs));
+      await joinServer({ origin: started.origin, token: await joinToken(started), dataDir: data.path }, { manager: fake.manager });
+      // join rewrote it without --relay; put the legacy args back, then turn it off.
+      await fake.manager.install(seededSpec(data.path, hostArgs));
+      await fake.manager.stop();
+
+      const outcome = await leaveServer({ dataDir: data.path }, { manager: fake.manager });
+      expect(outcome.warnings).toEqual([]);
+      expect(outcome.notes.join(" ")).toMatch(/stopped/);
+      expect(fake.restarts()).toBe(0);
+      expect((await fake.manager.state()).stopped).toBe(true);
+      expect((await fake.manager.read())!.hostArgs).toEqual([]);
+    }
+  });
+
   it("refuses to leave when there is nothing to leave", async () => {
     const data = await tempDir();
     defer(data.remove);
