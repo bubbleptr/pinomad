@@ -1,6 +1,5 @@
-// A conversation family's rolled-up presentation: root rows in the sidebar
-// speak for the whole family (forks and subagents never get rows of their
-// own), so status and recency aggregate across the root and every descendant.
+// A conversation family's rolled-up presentation: status and recency always
+// aggregate the complete tree; sidebar/right-panel projections filter by lifecycle.
 import { findConversation, type ConversationNode, type Organized } from "@pinomad/protocol/organization.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 
@@ -87,13 +86,31 @@ export function threadsOf(root: ConversationNode): readonly ConversationNode[] {
   return threads;
 }
 
-/** The family's subagents grouped by owner: the root first, then each fork that has any. */
+/** A subagent's stable lifecycle class; absent/unknown values stay foreground. */
+export function subagentLifecycleOf(summary: ConversationSummary): "foreground" | "background" {
+  return summary.lifecycle === "background" ? "background" : "foreground";
+}
+
+/** Background subagents in the whole family, flattened under its root in creation order. */
+export function backgroundSubagentsOf(root: ConversationNode): readonly ConversationNode[] {
+  const tasks: ConversationNode[] = [];
+  const visit = (node: ConversationNode): void => {
+    for (const child of node.children) {
+      if (child.summary.kind === "subagent" && subagentLifecycleOf(child.summary) === "background") tasks.push(child);
+      visit(child);
+    }
+  };
+  visit(root);
+  return tasks.sort((a, b) => a.summary.id - b.summary.id);
+}
+
+/** The family's foreground subagents grouped by owner: the root first, then each fork that has any. */
 export function taskGroupsOf(root: ConversationNode): { owner: ConversationSummary; label: string; tasks: ConversationNode[] }[] {
   const groups: { owner: ConversationSummary; label: string; tasks: ConversationNode[] }[] = [];
-  const own = root.children.filter((child) => child.summary.kind === "subagent");
+  const own = root.children.filter((child) => child.summary.kind === "subagent" && subagentLifecycleOf(child.summary) === "foreground");
   if (own.length > 0) groups.push({ owner: root.summary, label: "This conversation", tasks: [...own] });
   for (const fork of threadsOf(root)) {
-    const tasks = fork.children.filter((child) => child.summary.kind === "subagent");
+    const tasks = fork.children.filter((child) => child.summary.kind === "subagent" && subagentLifecycleOf(child.summary) === "foreground");
     if (tasks.length > 0) groups.push({ owner: fork.summary, label: displayName(fork.summary), tasks: [...tasks] });
   }
   return groups;

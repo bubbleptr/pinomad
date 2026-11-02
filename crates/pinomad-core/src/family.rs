@@ -1,10 +1,10 @@
 // The conversation family's rolled-up presentation from
-// packages/client/src/family.ts: root rows speak for the whole family (forks
-// and subagents never get rows of their own), so status and recency aggregate
-// across the root and every descendant.
+// packages/client/src/family.ts: status and recency aggregate the complete
+// tree; sidebar/right-panel projections filter subagents by lifecycle.
 use crate::json::Json;
 use crate::organization::{
-    find_conversation, ConversationNode, ConversationStatus, ConversationSummary, Organized, SummaryKind,
+    find_conversation, ConversationNode, ConversationStatus, ConversationSummary, Organized, SubagentLifecycle,
+    SummaryKind,
 };
 use crate::text;
 use crate::u16str::U16String;
@@ -212,6 +212,25 @@ pub fn threads_of(root: &ConversationNode) -> Vec<ConversationNode> {
     threads
 }
 
+/// `backgroundSubagentsOf`: all background descendants, flattened under the
+/// root in creation order. Missing/unknown lifecycle values stay foreground.
+pub fn background_subagents_of(root: &ConversationNode) -> Vec<ConversationNode> {
+    fn walk(node: &ConversationNode, out: &mut Vec<ConversationNode>) {
+        for child in &node.children {
+            if child.summary.kind == Some(SummaryKind::Subagent)
+                && child.summary.lifecycle == Some(SubagentLifecycle::Background)
+            {
+                out.push(child.clone());
+            }
+            walk(child, out);
+        }
+    }
+    let mut tasks = Vec::new();
+    walk(root, &mut tasks);
+    tasks.sort_by_key(|node| node.summary.id);
+    tasks
+}
+
 /// One row of `taskGroupsOf`: the owner summary, its label, its subagents.
 #[derive(Clone, Debug)]
 pub struct TaskGroup {
@@ -227,7 +246,10 @@ pub fn task_groups_of(root: &ConversationNode) -> Vec<TaskGroup> {
     let own: Vec<ConversationNode> = root
         .children
         .iter()
-        .filter(|child| child.summary.kind == Some(SummaryKind::Subagent))
+        .filter(|child| {
+            child.summary.kind == Some(SummaryKind::Subagent)
+                && child.summary.lifecycle != Some(SubagentLifecycle::Background)
+        })
         .cloned()
         .collect();
     if !own.is_empty() {
@@ -241,7 +263,10 @@ pub fn task_groups_of(root: &ConversationNode) -> Vec<TaskGroup> {
         let tasks: Vec<ConversationNode> = fork
             .children
             .iter()
-            .filter(|child| child.summary.kind == Some(SummaryKind::Subagent))
+            .filter(|child| {
+                child.summary.kind == Some(SummaryKind::Subagent)
+                    && child.summary.lifecycle != Some(SubagentLifecycle::Background)
+            })
             .cloned()
             .collect();
         if !tasks.is_empty() {

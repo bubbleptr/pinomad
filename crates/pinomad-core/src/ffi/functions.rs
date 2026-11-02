@@ -274,7 +274,16 @@ pub fn threads_of(root: ConversationNode) -> Vec<ConversationNode> {
         .collect()
 }
 
-/// The family's subagents grouped by owner — the root first, then each
+/// The family's background subagents, flattened under the root in creation order.
+#[uniffi::export]
+pub fn background_subagents_of(root: ConversationNode) -> Vec<ConversationNode> {
+    crate::family::background_subagents_of(&root.to_core())
+        .into_iter()
+        .map(ConversationNode::from_core)
+        .collect()
+}
+
+/// The family's foreground subagents grouped by owner — the root first, then each
 /// fork that has any.
 #[uniffi::export]
 pub fn task_groups_of(root: ConversationNode) -> Vec<TaskGroup> {

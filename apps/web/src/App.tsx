@@ -890,21 +890,7 @@ export function Workbench({
     : submissionEditDisabled
       ? "Finish the current edit first"
       : undefined;
-  const openInPanel = useCallback(
-    (id: ConversationId, tab: "threads" | "tasks") => {
-      setPanelTab(tab);
-      setPanelOpen(true);
-      void remote.controller.showSide(id);
-    },
-    [remote],
-  );
-  const openTasks = (id?: ConversationId): void => {
-    if (id !== undefined) return openInPanel(id, "tasks");
-    void remote.controller.showSide(undefined);
-    setPanelTab("tasks");
-    setPanelOpen(true);
-  };
-  // "Open in main" promotes a thread to the main column and closes the side —
+  // "Open in main" promotes a conversation to the main column and closes the side —
   // the family root stays the same, so the close rule below must not fire for it.
   const openInMain = useCallback(
     (id: ConversationId) => {
@@ -916,6 +902,27 @@ export function Workbench({
     },
     [remote, narrow, openConversation],
   );
+  const openInPanel = useCallback(
+    (id: ConversationId, tab: "threads" | "tasks") => {
+      const summary = findConversation(view.organized, id)?.summary;
+      // Every subagent entry follows its lifecycle: background belongs in the
+      // read-only main view, foreground stays in the right-hand Tasks detail.
+      if (tab === "tasks" && summary?.kind === "subagent" && summary.lifecycle === "background") {
+        openInMain(id);
+        return;
+      }
+      setPanelTab(tab);
+      setPanelOpen(true);
+      void remote.controller.showSide(id);
+    },
+    [remote, view.organized, openInMain],
+  );
+  const openTasks = (id?: ConversationId): void => {
+    if (id !== undefined) return openInPanel(id, "tasks");
+    void remote.controller.showSide(undefined);
+    setPanelTab("tasks");
+    setPanelOpen(true);
+  };
   // Keyed on the shown id, not the loaded view: a different family's side
   // closes at the click, and loading inside one family keeps it.
   const familyRootId = shownId === undefined ? undefined : rootOf(view.organized, shownId)?.summary.id;
@@ -1071,7 +1078,9 @@ export function Workbench({
               // Same 44rem centered column as the message list, so the
               // composer lines up with the conversation at every width.
               <div className="mx-auto w-full max-w-[44rem]">
-                {conversation === undefined ? (
+                {shownSummary?.kind === "subagent" ? (
+                  <div className="border-t border-border py-2 text-center text-xs text-muted">Read-only · subagent</div>
+                ) : conversation === undefined ? (
                   failed ? null : <ComposerSkeleton />
                 ) : (
                   <VStack gap={1}>
@@ -1140,24 +1149,32 @@ export function Workbench({
                         });
                       }
                 }
-                onRetrySubmission={(requestId) => {
-                  void remote.controller.retrySubmission(requestId).catch(() => {});
-                }}
-                onEditSubmission={(requestId) => {
-                  const origin = shownConversationId;
-                  if (submissionEditDisabled || origin === undefined) return;
-                  setTakingBack(origin);
-                  void remote.controller
-                    .takeBackSubmission(requestId)
-                    .then((draft) => {
-                      if (draft !== undefined) setTakeBack({ conversationId: origin, draft });
-                      else setTakingBack(undefined);
-                    })
-                    .catch((error: unknown) => {
-                      setTakingBack(undefined);
-                      toast({ body: error instanceof Error ? error.message : String(error), type: "error" });
-                    });
-                }}
+                onRetrySubmission={
+                  shownSummary?.kind === "subagent"
+                    ? undefined
+                    : (requestId) => {
+                        void remote.controller.retrySubmission(requestId).catch(() => {});
+                      }
+                }
+                onEditSubmission={
+                  shownSummary?.kind === "subagent"
+                    ? undefined
+                    : (requestId) => {
+                        const origin = shownConversationId;
+                        if (submissionEditDisabled || origin === undefined) return;
+                        setTakingBack(origin);
+                        void remote.controller
+                          .takeBackSubmission(requestId)
+                          .then((draft) => {
+                            if (draft !== undefined) setTakeBack({ conversationId: origin, draft });
+                            else setTakingBack(undefined);
+                          })
+                          .catch((error: unknown) => {
+                            setTakingBack(undefined);
+                            toast({ body: error instanceof Error ? error.message : String(error), type: "error" });
+                          });
+                      }
+                }
               />
             )}
           </ChatLayout>

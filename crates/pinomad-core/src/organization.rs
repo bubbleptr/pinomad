@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use crate::json::{Json, JsonObject};
+use crate::model::ModelRef;
 use crate::u16str::U16String;
 
 fn set(obj: &mut JsonObject, key: &str, value: Json) {
@@ -64,6 +65,34 @@ impl SummaryKind {
     }
 }
 
+/// `ConversationSummary.lifecycle` — a subagent's stable lifecycle class.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
+pub enum SubagentLifecycle {
+    Foreground,
+    Background,
+    /// An unknown class, kept verbatim — a newer host may add one.
+    Other(String),
+}
+
+impl SubagentLifecycle {
+    pub fn as_str(&self) -> &str {
+        match self {
+            SubagentLifecycle::Foreground => "foreground",
+            SubagentLifecycle::Background => "background",
+            SubagentLifecycle::Other(value) => value.as_str(),
+        }
+    }
+
+    fn from_json(value: Option<&Json>) -> Option<Self> {
+        value.and_then(Json::as_str).map(|s| match s.units() {
+            u if *u == lit("foreground") => SubagentLifecycle::Foreground,
+            u if *u == lit("background") => SubagentLifecycle::Background,
+            other => SubagentLifecycle::Other(U16String(other.to_vec()).to_string_lossy()),
+        })
+    }
+}
+
 /// `ConversationSummary.status` — the family rollup compares these.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
@@ -117,6 +146,10 @@ pub struct ConversationSummary {
     /// not a non-negative integer (such a summary never matches lookups).
     pub id: Option<u64>,
     pub kind: Option<SummaryKind>,
+    /// Subagents only: stable lifecycle class; absent on pre-5.26 hosts.
+    pub lifecycle: Option<SubagentLifecycle>,
+    /// Subagents only: the model they actually started with.
+    pub model: Option<ModelRef>,
     /// Fork source conversation, or the conversation owning the subagent's
     /// task — absent when missing or not a non-negative integer.
     pub parent: Option<u64>,
@@ -146,6 +179,8 @@ impl ConversationSummary {
         Self {
             id: num_key(raw.get("id")),
             kind: SummaryKind::from_json(raw.get("kind")),
+            lifecycle: SubagentLifecycle::from_json(raw.get("lifecycle")),
+            model: raw.get("model").and_then(ModelRef::from_json),
             parent: num_key(raw.get("parent")),
             forked_at: text(raw.get("forkedAt")),
             title: text(raw.get("title")),
