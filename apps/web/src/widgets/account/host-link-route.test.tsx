@@ -1,6 +1,8 @@
 // The page `pinomad join <origin>` opens: <origin>/host-link, with no code in
 // it. App shows the code entry over whatever screen is underneath, after a
 // sign-in when there is no session, and puts the address back to / after.
+// With ?request=<id> (#513) it confirms that host instead and sends the
+// browser back to it.
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +12,9 @@ import type { AccountModel, AccountState } from "../../entities/account/account-
 import { HostsContext } from "../../entities/host/host-store.ts";
 import { fakeAccount, fakeHosts, signedIn } from "../../test/story-fixtures.tsx";
 import { HostLinkRoute } from "./host-link-route.tsx";
+
+const REDIRECT = "http://127.0.0.1:54321/callback";
+const REQUEST_ID = "r".repeat(43);
 
 const ok = <T,>(value: T): Promise<AccountResult<T>> => Promise.resolve({ ok: true, value });
 
@@ -34,15 +39,20 @@ function liveAccount(initial: AccountState): AccountModel & { setState(next: Acc
     ),
     denyHostLink: vi.fn(() => ok(undefined)),
     confirmHostLink: vi.fn(() => ok(undefined)),
+    lookupHostLinkRequest: vi.fn(() =>
+      ok({ hostId: "h".repeat(43), name: "e2e-mbp", os: "macOS", sourceIp: "203.0.113.7", ipDiffers: false, expiresAt: Date.now() + 60_000 }),
+    ),
+    confirmHostLinkRequest: vi.fn(() => ok(`${REDIRECT}?code=c&state=s`)),
+    denyHostLinkRequest: vi.fn(() => ok(`${REDIRECT}?error=access_denied&state=s`)),
     watchForHost: vi.fn(),
   };
 }
 
-const renderRoute = (account: AccountModel) =>
+const renderRoute = (account: AccountModel, navigate: (url: string) => void = vi.fn()) =>
   render(
     <HostsContext.Provider value={fakeHosts([], null)}>
       <AccountContext.Provider value={account}>
-        <HostLinkRoute />
+        <HostLinkRoute navigate={navigate} />
       </AccountContext.Provider>
     </HostsContext.Provider>,
   );
@@ -112,5 +122,59 @@ describe("HostLinkRoute", () => {
     // The model owns the 5 s / 2 min refresh (account-model.test.ts); nothing here can cancel it.
     expect(account.watchForHost).toHaveBeenCalledTimes(1);
     expect(account.watchForHost).toHaveBeenCalledWith("h".repeat(43));
+  });
+
+  describe("with ?request= from a host on this computer (#513)", () => {
+    it("signs in first, looks the host up by itself, and sends the confirmation back through the browser", async () => {
+      window.history.replaceState(null, "", `/host-link?request=${REQUEST_ID}`);
+      const account = liveAccount({ status: "signed-out", mode: "cookie" });
+      const navigate = vi.fn();
+      renderRoute(account, navigate);
+      expect(screen.getByText(/to confirm it/)).toBeInTheDocument();
+      // A sign-in that rewrote the address would lose nothing: the id was read at the start.
+      window.history.replaceState(null, "", "/host-link");
+      act(() => account.setState(signedIn()));
+
+      await userEvent.setup().click(await screen.findByRole("button", { name: "Confirm" }));
+      expect(account.lookupHostLinkRequest).toHaveBeenCalledWith(REQUEST_ID);
+      expect(account.confirmHostLinkRequest).toHaveBeenCalledWith(REQUEST_ID);
+      expect(navigate).toHaveBeenCalledWith(`${REDIRECT}?code=c&state=s`);
+      expect(account.watchForHost).toHaveBeenCalledWith("h".repeat(43));
+      expect(window.location.pathname).toBe("/");
+      // Nothing to type, and no way back to a code field.
+      expect(codeInput()).toBeNull();
+      expect(screen.queryByRole("button", { name: "Enter another code" })).toBeNull();
+    });
+
+    it("sends a denial back to the host too, so its terminal stops waiting", async () => {
+      window.history.replaceState(null, "", `/host-link?request=${REQUEST_ID}`);
+      const account = liveAccount(signedIn());
+      const navigate = vi.fn();
+      renderRoute(account, navigate);
+      await userEvent.setup().click(await screen.findByRole("button", { name: "Deny" }));
+      expect(navigate).toHaveBeenCalledWith(`${REDIRECT}?error=access_denied&state=s`);
+      expect(account.watchForHost).not.toHaveBeenCalled();
+    });
+
+    it("says the host is gone when the request is, and goes nowhere", async () => {
+      window.history.replaceState(null, "", `/host-link?request=${REQUEST_ID}`);
+      const account = liveAccount(signedIn());
+      vi.mocked(account.lookupHostLinkRequest).mockReturnValue(
+        Promise.resolve({ ok: false, error: { code: "not_found", status: 404 } }),
+      );
+      const navigate = vi.fn();
+      renderRoute(account, navigate);
+      expect(await screen.findByText("Couldn't find this host")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it("treats an id that can't be one as no id: the code entry", () => {
+      window.history.replaceState(null, "", "/host-link?request=..%2Fx");
+      const account = liveAccount(signedIn());
+      renderRoute(account);
+      expect(codeInput()).toBeInTheDocument();
+      expect(account.lookupHostLinkRequest).not.toHaveBeenCalled();
+    });
   });
 });

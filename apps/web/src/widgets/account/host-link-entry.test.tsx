@@ -153,7 +153,7 @@ describe("HostLinkEntry", () => {
   it("won't confirm a request whose code has expired", async () => {
     renderEntry(model({ lookupHostLink: vi.fn(() => ok(request({ expiresAt: Date.now() - 1 }))) }));
     await lookUp();
-    expect(await screen.findByText(/This code has expired/)).toBeInTheDocument();
+    expect(await screen.findByText(/This request has expired/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Confirm" })).toBeDisabled();
   });
 

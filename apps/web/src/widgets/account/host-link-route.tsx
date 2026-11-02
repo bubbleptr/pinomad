@@ -6,10 +6,20 @@ import { Text } from "@astryxdesign/core/Text";
 import { useState } from "react";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { AccountPanel } from "./account-panel.tsx";
-import { HostLinkEntry } from "./host-link-entry.tsx";
+import { HostLinkEntry, HostLinkRequestEntry } from "./host-link-entry.tsx";
 
-/** The page `pinomad join <origin>` opens (the server's `verifyUrl`). Exact: nothing after it is ever read. */
+/**
+ * The page `pinomad join <origin>` opens (the server's `verifyUrl`). Exact,
+ * and of what follows only `?request=<id>` is read: the loopback request a
+ * host on this computer opened it with (#513). A code is never read from
+ * the address, only typed.
+ */
 export const HOST_LINK_PATH = "/host-link";
+
+const requestIdIn = (search: string): string | undefined => {
+  const id = new URLSearchParams(search).get("request");
+  return id !== null && /^[A-Za-z0-9_-]{1,64}$/.test(id) ? id : undefined;
+};
 
 /** Out of the address once the request is answered or dropped, so a reload doesn't reopen it. */
 const leavePath = (): void => {
@@ -20,8 +30,10 @@ const leavePath = (): void => {
  * The code entry over whatever screen App shows, when the page was opened at
  * /host-link. A signed-out visitor signs in here first and lands on the entry.
  */
-export function HostLinkRoute() {
+export function HostLinkRoute({ navigate = (url) => window.location.assign(url) }: { navigate?: (url: string) => void }) {
   const [open, setOpen] = useState(() => window.location.pathname === HOST_LINK_PATH);
+  // Read once: the id must outlive the sign-in in between, and the address after it.
+  const [requestId] = useState(() => (open ? requestIdIn(window.location.search) : undefined));
   if (!open) return null;
   const close = (): void => {
     leavePath();
@@ -34,7 +46,7 @@ export function HostLinkRoute() {
         content={
           <LayoutContent>
             <div style={{ padding: "var(--spacing-2)" }}>
-              <HostLinkSteps onSettled={leavePath} onClose={close} />
+              <HostLinkSteps requestId={requestId} navigate={navigate} onSettled={leavePath} onClose={close} />
             </div>
           </LayoutContent>
         }
@@ -43,7 +55,17 @@ export function HostLinkRoute() {
   );
 }
 
-function HostLinkSteps({ onSettled, onClose }: { onSettled: () => void; onClose: () => void }) {
+function HostLinkSteps({
+  requestId,
+  navigate,
+  onSettled,
+  onClose,
+}: {
+  requestId: string | undefined;
+  navigate: (url: string) => void;
+  onSettled: () => void;
+  onClose: () => void;
+}) {
   const { state } = useAccountModel();
   switch (state.status) {
     case "checking":
@@ -65,11 +87,18 @@ function HostLinkSteps({ onSettled, onClose }: { onSettled: () => void; onClose:
     case "signed-out":
       return (
         <VStack gap={3}>
-          <Text type="supporting">Sign in to the account the host is joining, then enter the code from its terminal.</Text>
+          <Text type="supporting">
+            {requestId === undefined
+              ? "Sign in to the account the host is joining, then enter the code from its terminal."
+              : "Sign in to the account the host is joining to confirm it."}
+          </Text>
           <AccountPanel />
         </VStack>
       );
     case "signed-in":
+      if (requestId !== undefined) {
+        return <HostLinkRequestEntry requestId={requestId} navigate={navigate} onSettled={onSettled} onClose={onClose} />;
+      }
       return (
         <VStack gap={3}>
           <Text type="supporting">Enter the code the host's terminal shows to add it to {state.user}'s account.</Text>

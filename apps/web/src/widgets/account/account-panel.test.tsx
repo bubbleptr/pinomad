@@ -50,6 +50,9 @@ function fakeModel(initial: AccountState): AccountModel & { setState(next: Accou
     lookupHostLink: vi.fn(() => Promise.reject(new Error("unused"))),
     confirmHostLink: vi.fn(() => Promise.reject(new Error("unused"))),
     denyHostLink: vi.fn(() => Promise.reject(new Error("unused"))),
+    lookupHostLinkRequest: vi.fn(() => Promise.reject(new Error("unused"))),
+    confirmHostLinkRequest: vi.fn(() => Promise.reject(new Error("unused"))),
+    denyHostLinkRequest: vi.fn(() => Promise.reject(new Error("unused"))),
     watchForHost: vi.fn(),
     listInvites: vi.fn(() =>
       Promise.resolve({
