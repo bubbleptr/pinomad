@@ -59,17 +59,25 @@ export function browserCommand(os: NodeJS.Platform, env: NodeJS.ProcessEnv): "op
 }
 
 /** Best effort: a browser that won't open is not an error, the printed URL still works. */
-export function openInBrowser(url: string): boolean {
-  const command = browserCommand(process.platform, process.env);
-  if (command === undefined) return false;
-  try {
-    const child = spawn(command, [url], { detached: true, stdio: "ignore" });
-    child.on("error", () => {});
-    child.unref();
-    return true;
-  } catch {
-    return false;
-  }
+export function openInBrowser(
+  url: string,
+  command: string | undefined = browserCommand(process.platform, process.env),
+): Promise<boolean> {
+  if (command === undefined) return Promise.resolve(false);
+  // Only a started opener counts: a missing xdg-open fails after spawn
+  // returns, and the join must then fall back to a code, not wait for a page.
+  return new Promise((resolve) => {
+    try {
+      const child = spawn(command, [url], { detached: true, stdio: "ignore" });
+      child.once("spawn", () => {
+        child.unref();
+        resolve(true);
+      });
+      child.once("error", () => resolve(false));
+    } catch {
+      resolve(false);
+    }
+  });
 }
 
 /** What the confirm page shows as this machine's system. */
@@ -87,12 +95,8 @@ const errorCode = (body: unknown): string | undefined =>
 const escapeHtml = (text: string): string =>
   text.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 
-/**
- * The page the browser lands on after the redirect: plain, no outside
- * resources. Settles once the page is out, so the listener's teardown
- * can't cut it short.
- */
-function answerPage(response: ServerResponse, status: number, text: string): Promise<void> {
+/** The page the browser lands on after the redirect: plain, no outside resources. */
+function answerPage(response: ServerResponse, status: number, text: string): void {
   response.writeHead(status, {
     "content-type": "text/html; charset=utf-8",
     "cache-control": "no-store",
@@ -100,9 +104,7 @@ function answerPage(response: ServerResponse, status: number, text: string): Pro
     "content-security-policy": "default-src 'none'",
     connection: "close",
   });
-  const sent = new Promise<void>((resolve) => response.once("close", () => resolve()));
   response.end(`<!doctype html><meta charset="utf-8"><title>PiNomad</title><p>${escapeHtml(text)}</p>\n`);
-  return sent;
 }
 
 /** RFC 7636 S256: a 43-character verifier and its SHA-256, both base64url. */
@@ -229,25 +231,40 @@ export async function requestJoinToken(
   const viaLoopback = async (): Promise<{ readonly token: string } | { readonly fallback: CodeStart | undefined }> => {
     const { verifier, challenge } = pkcePair();
     const state = randomBytes(16).toString("base64url");
-    let settle: ((params: URLSearchParams, response: ServerResponse) => void) | undefined;
-    const callback = new Promise<{ params: URLSearchParams; response: ServerResponse }>((resolve) => {
-      settle = (params, response) => resolve({ params, response });
+    interface Callback {
+      readonly params: URLSearchParams;
+      /** Answers the tab, then settles once the page is out or the tab is gone. */
+      readonly reply: (status: number, text: string) => Promise<void>;
+    }
+    let settle: ((callback: Callback) => void) | undefined;
+    const callback = new Promise<Callback>((resolve) => {
+      settle = resolve;
     });
     const listener = createServer((request, response) => {
       const url = new URL(request.url ?? "/", "http://127.0.0.1");
       // Only the answer to this request counts: anything else on this port,
       // a stray tab or another local program, is turned away and the wait goes on.
       if (request.method !== "GET" || url.pathname !== "/callback" || url.searchParams.get("state") !== state) {
-        void answerPage(response, 404, "Not found.");
+        answerPage(response, 404, "Not found.");
         return;
       }
       if (settle === undefined) {
-        void answerPage(response, 409, "This join was already answered. You can close this page.");
+        answerPage(response, 409, "This join was already answered. You can close this page.");
         return;
       }
       const deliver = settle;
       settle = undefined;
-      deliver(url.searchParams, response);
+      // Watched from the start: the tab may close during the code exchange,
+      // and a close that already happened would never fire again. Teardown
+      // waits for this so it can't cut the page short.
+      const closed = new Promise<void>((resolve) => response.once("close", () => resolve()));
+      deliver({
+        params: url.searchParams,
+        reply: async (status, text) => {
+          answerPage(response, status, text);
+          await closed;
+        },
+      });
     });
     await new Promise<void>((resolve, reject) => {
       listener.once("error", reject);
@@ -291,9 +308,9 @@ export async function requestJoinToken(
         wait(Math.max(0, expiresAt + EXPIRY_GRACE_MS - now())).then(() => undefined),
       ]);
       if (answer === undefined) throw new Error("the request expired before anyone confirmed it — run the command again");
-      const { params, response } = answer;
+      const { params, reply } = answer;
       if (params.get("error") === "access_denied") {
-        await answerPage(response, 200, `Denied: ${args.name} was not added. You can close this page.`);
+        await reply(200, `Denied: ${args.name} was not added. You can close this page.`);
         throw new Error(`the join was denied on ${origin}`);
       }
       const code = params.get("code");
@@ -301,12 +318,12 @@ export async function requestJoinToken(
         code === null ? undefined : await post("/api/host-link/token", { code, codeVerifier: verifier });
       const token = exchanged?.status === 200 && isRecord(exchanged.body) ? exchanged.body.token : undefined;
       if (typeof token !== "string") {
-        await answerPage(response, 502, "The join did not finish. Go back to the terminal and run the command again.");
+        await reply(502, "The join did not finish. Go back to the terminal and run the command again.");
         throw new Error(
           `${origin} did not hand over the join token: ${errorCode(exchanged?.body) ?? (exchanged === undefined ? "no answer" : `HTTP ${exchanged.status}`)} — run the command again`,
         );
       }
-      await answerPage(response, 200, `Confirmed: ${args.name} is joining your account. You can close this page.`);
+      await reply(200, `Confirmed: ${args.name} is joining your account. You can close this page.`);
       log("Confirmed.");
       return { token };
     } finally {

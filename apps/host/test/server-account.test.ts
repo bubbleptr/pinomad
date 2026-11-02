@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { startRelay } from "@pinomad/server/src/relay.ts";
 import { loadHostKey, loadRelayKey } from "../src/devices.ts";
-import { browserCommand } from "../src/cli/host-link.ts";
+import { browserCommand, openInBrowser } from "../src/cli/host-link.ts";
 import { joinServer } from "../src/cli/join.ts";
 import { leaveServer } from "../src/cli/leave.ts";
 import { probeServerAccounts } from "../src/cli/server-ops.ts";
@@ -556,6 +556,36 @@ describe("joinServer through the browser redirect (#513)", () => {
     expect(flow.lines.join("\n")).toMatch(/Enter this code/);
   });
 
+  it("finishes the join when the callback tab closes while the code is being exchanged", async () => {
+    let tokenAsked!: () => void;
+    const asked = new Promise<void>((resolve) => (tokenAsked = resolve));
+    let releaseToken!: () => void;
+    const released = new Promise<void>((resolve) => (releaseToken = resolve));
+    const flow = await loopbackFlow({
+      fetch: async (input, init) => {
+        if (new URL(String(input)).pathname === "/api/host-link/token") {
+          tokenAsked();
+          await released;
+        }
+        return fetch(input, init);
+      },
+      browser: async (verifyUrl, started) => {
+        const settled = await asUser(started, "/api/host-link/confirm", { requestId: requestIdOf(verifyUrl) });
+        const tab = new AbortController();
+        const page = fetch(String(settled.json.redirect), { signal: tab.signal }).catch(() => undefined);
+        await asked;
+        tab.abort();
+        await page;
+        // Long enough for the listener to see the socket go before the exchange answers.
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        releaseToken();
+      },
+    });
+    const outcome = await joinServer({ origin: flow.started.origin, dataDir: flow.data.path }, flow.deps);
+    await flow.browsed();
+    expect(outcome.username).toBe("admin");
+  }, 10_000);
+
   it("asks for a code with --code, and leaves the browser closed", async () => {
     const flow = await loopbackFlow({
       sleep: async () => {
@@ -567,6 +597,13 @@ describe("joinServer through the browser redirect (#513)", () => {
     expect(outcome.username).toBe("admin");
     expect(flow.startBodies.map((body) => "redirectUri" in body)).toEqual([false]);
     expect(flow.opened).toEqual([]);
+  });
+});
+
+describe("openInBrowser", () => {
+  it("says it opened only once the opener has started, so a missing one falls back to a code", async () => {
+    expect(await openInBrowser("https://example.com/host-link", "pinomad-no-such-opener")).toBe(false);
+    expect(await openInBrowser("https://example.com/host-link", "true")).toBe(true);
   });
 });
 
