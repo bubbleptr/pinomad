@@ -396,6 +396,17 @@ public struct StoredHosts: Codable, Sendable, Equatable {
         return next
     }
 
+    /// Without `pairing`'s own save (#512): a pairing refused after the
+    /// core stored it. nil when the record under its host key is not that
+    /// save (a newer pairing of the same host, with its own device key) or
+    /// is gone already — nothing of its own to take back.
+    public func withdrawing(_ pairing: HostRecord) -> StoredHosts? {
+        guard hosts.contains(where: {
+            $0.hostKey == pairing.hostKey && $0.privateKey == pairing.privateKey
+        }) else { return nil }
+        return forgetting(pairing.hostKey)
+    }
+
     /// With `hostKey` active — unchanged if no such host is stored.
     public func activating(_ hostKey: String) -> StoredHosts {
         guard hosts.contains(where: { $0.hostKey == hostKey }) else { return self }

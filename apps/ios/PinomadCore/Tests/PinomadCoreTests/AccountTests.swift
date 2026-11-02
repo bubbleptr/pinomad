@@ -106,6 +106,34 @@ struct AccountTests {
         #expect(AccountHosts.vouchedHostKeys(serverOrigin: origin + "/", hosts: adopted.hosts) == ["issued"])
     }
 
+    /// Removing one host from the account (#512) forgets only that host's
+    /// account-issued key: the account's other hosts stay, and so does a QR
+    /// pairing with the removed host itself.
+    @Test func removingAHostForgetsOnlyItsIssuedKey() {
+        let origin = "https://relay.example.com"
+        let hosts = [
+            record("qr", account: AccountLink(serverOrigin: origin, hostId: "host1")),
+            record("issued", account: AccountLink(serverOrigin: origin, hostId: "host2", vouched: true)),
+            record("other", account: AccountLink(serverOrigin: origin, hostId: "host3", vouched: true)),
+        ]
+        #expect(AccountHosts.vouchedHostKeys(serverOrigin: origin + "/", hostId: "host2", hosts: hosts) == ["issued"])
+        #expect(AccountHosts.vouchedHostKeys(serverOrigin: origin, hostId: "host1", hosts: hosts).isEmpty)
+    }
+
+    /// A 404 to removing a host (#512) is "already gone" only when a list
+    /// fetched after it came back without the host. No such list (one was
+    /// already in flight, or the fetch failed) is no verdict: the form must
+    /// not close as if the host were removed.
+    @Test func removeHostNotFoundNeedsAListFetchedAfterIt() {
+        #expect(AccountHosts.removeHostNotFound(hostId: "h1", listedAfter: ["h2"]) == nil)
+        #expect(AccountHosts.removeHostNotFound(hostId: "h1", listedAfter: ["h1", "h2"])
+            == AccountFailure(code: "remove_host_unsupported", status: 404))
+        #expect(AccountHosts.removeHostNotFound(hostId: "h1", listedAfter: nil)
+            == AccountFailure(code: "remove_host_unconfirmed"))
+        #expect(AccountCopy.message(AccountFailure(code: "remove_host_unconfirmed"))
+            == "Couldn't confirm the host was removed. Try again.")
+    }
+
     /// Records written before #494 decode with no vouch, and the field
     /// stays off the wire until set.
     @Test func accountLinkVouchIsOptionalOnDisk() throws {
@@ -479,6 +507,30 @@ struct AccountTests {
         }
         #expect(!failure.clearsSession)
         #expect(AccountCopy.message(failure) == "That's the device you're using. Sign out instead.")
+    }
+
+    /// Removing a host (#512) takes the password again; a wrong one is a
+    /// refusal that keeps the session.
+    @Test func removingAHostTargetsItsIdWithThePassword() async {
+        let transport = StubAccountTransport()
+        transport.outcome = .response(AccountHTTPResponse(status: 204, body: Data()))
+        let api = AccountAPI(origin: "https://relay.example.com", token: "tok", transport: transport)
+        let hostId = "Kx3f9Q2aZ8mN1pLr5tVw7yB0cD4eF6gH8iJ0kL2mN4o"
+        guard case .success = await api.removeHost(hostId: hostId, password: "pw") else {
+            Issue.record("expected success")
+            return
+        }
+        #expect(transport.requests[0].method == "POST")
+        #expect(transport.requests[0].url == "https://relay.example.com/api/hosts/\(hostId)/remove")
+        #expect(transport.requests[0].body == #"{"password":"pw"}"#)
+
+        transport.outcome = .response(AccountHTTPResponse(status: 403, body: Data(#"{"error":"wrong_password"}"#.utf8)))
+        guard case .failure(let failure) = await api.removeHost(hostId: hostId, password: "nope") else {
+            Issue.record("expected wrong_password")
+            return
+        }
+        #expect(failure == AccountFailure(code: "wrong_password", status: 403))
+        #expect(!failure.clearsSession)
     }
 
     @Test func signInClaimsThisDevice() async {

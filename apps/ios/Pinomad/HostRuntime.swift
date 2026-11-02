@@ -26,6 +26,12 @@ final class HostRuntime {
     /// Set for an account registration so its late handshake can be dropped
     /// after sign-out or a forget.
     var autoRegisterHostId: String?
+    /// The account host an account pairing, explicit or automatic, targets,
+    /// so the host's removal or forget can refuse it (#512).
+    var accountHostId: String?
+    /// The account pairing's host was removed from the account or forgotten
+    /// while this handshake ran (#512): its result is undone, not kept.
+    var refusesPairing = false
 
     private(set) var session: PinomadSession?
     private(set) var snapshot: ClientSnapshot?

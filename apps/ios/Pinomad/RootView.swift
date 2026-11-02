@@ -65,15 +65,26 @@ struct RootView: View {
         // A host joined the account from somewhere else (#497). It pairs with
         // this iPhone on its own, so a join the reader didn't make has to be
         // seen; it waits for any sheet to close (the account sheet shows it
-        // itself) and stays until dismissed.
+        // itself) and stays until dismissed. Remove goes to the account
+        // sheet's removal form for that host (#512); with several, to the
+        // account's host list, where each can be removed.
         .alert("New Host Joined", isPresented: Binding(
             get: { model.newHostNotice != nil && model.modal == nil },
             set: { if !$0 { model.dismissNewHostNotice() } }
         )) {
-            Button("OK") { model.dismissNewHostNotice() }
-            Button("Settings") {
-                model.dismissNewHostNotice()
-                model.present(.settings)
+            // The cancel role, or the destructive button gets a Cancel of its own.
+            Button("OK", role: .cancel) { model.dismissNewHostNotice() }
+            if model.newHostNotices.count == 1, let host = model.newHostNotices.first {
+                Button("Remove from Account", role: .destructive) {
+                    model.dismissNewHostNotice()
+                    model.pendingHostRemoval = host
+                    model.present(.account)
+                }
+            } else {
+                Button("Review in Account") {
+                    model.dismissNewHostNotice()
+                    model.present(.account)
+                }
             }
         } message: {
             Text((model.newHostNotice ?? "") + "\n\n" + HostLinkCopy.newHostsHint)
