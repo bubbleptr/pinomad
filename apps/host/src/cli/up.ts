@@ -80,7 +80,14 @@ export interface UpOutcome {
 }
 
 export async function upHost(
-  args: { readonly dataDir: string; readonly reach: Reach; readonly origin?: string; readonly remotePort?: string },
+  args: {
+    readonly dataDir: string;
+    readonly reach: Reach;
+    readonly origin?: string;
+    readonly remotePort?: string;
+    /** Join by a printed code instead of the browser redirect (#513). */
+    readonly code?: boolean;
+  },
   deps?: JoinDeps,
 ): Promise<UpOutcome> {
   const dataDir = resolve(args.dataDir);
@@ -110,7 +117,7 @@ export async function upHost(
   const notes: string[] = [];
 
   if (reach.server && config === undefined) {
-    const joined = await joinServer({ origin, dataDir, editHostArgs: lan }, { ...deps, manager });
+    const joined = await joinServer({ origin, dataDir, code: args.code, editHostArgs: lan }, { ...deps, manager });
     return {
       joined: { origin: joined.origin, username: joined.username, fresh: true },
       ...(lanPort === undefined ? {} : { lanPort }),
@@ -191,6 +198,7 @@ export async function main(argv: readonly string[], deps?: UpDeps): Promise<void
       lan: { type: "boolean" },
       yes: { type: "boolean", short: "y" },
       origin: { type: "string" },
+      code: { type: "boolean" },
       "remote-port": { type: "string" },
       "data-dir": { type: "string" },
     },
@@ -232,6 +240,7 @@ export async function main(argv: readonly string[], deps?: UpDeps): Promise<void
         origin,
         reach,
         ...(values["remote-port"] === undefined ? {} : { remotePort: values["remote-port"] }),
+        ...(values.code === true ? { code: true } : {}),
       },
       deps,
     );

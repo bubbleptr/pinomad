@@ -17,7 +17,7 @@ In the Mac app, the home screen shows the sign-in form until a host is connected
 
 ## Hosts on your account
 
-`pinomad up` adds a host after you confirm its code, as in [Getting started](/docs/). Running it again on a joined host needs no new code and keeps the server the host is on, and `pinomad status` shows which account that is.
+`pinomad up` adds a host after you confirm it in the browser, as in [Getting started](/docs/). On the same computer that's a click with nothing to type; a code appears only when there's no browser there or you ask for one with `--code`. If a page asks for a code you didn't just see in your own terminal, don't enter it. Running `pinomad up` again on a joined host needs no new confirmation and keeps the server the host is on, and `pinomad status` shows which account that is.
 
 For scripts and machines without anyone to confirm a code, **Add a host** has **Advanced: join with a one-time token**: a `pinomad join https://app.pinomad.si <token>` command that adds the host without a code. Anyone who has it can add a host, so it works once and expires after 10 minutes; click **New command** when it runs out. Add `--name "Mac mini"` to set the name your devices show.
 

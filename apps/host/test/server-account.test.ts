@@ -2,13 +2,14 @@
 // in-process server, with an injected service manager — tests never install a
 // real service.
 import { readFile, stat, writeFile } from "node:fs/promises";
+import { connect } from "node:net";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { startRelay } from "@pinomad/server/src/relay.ts";
 import { loadHostKey, loadRelayKey } from "../src/devices.ts";
-import { browserCommand } from "../src/cli/host-link.ts";
+import { browserCommand, openInBrowser } from "../src/cli/host-link.ts";
 import { joinServer } from "../src/cli/join.ts";
 import { leaveServer } from "../src/cli/leave.ts";
 import { probeServerAccounts } from "../src/cli/server-ops.ts";
@@ -226,6 +227,7 @@ describe("joinServer without a token (#495)", () => {
         opened.push(url);
         return true;
       },
+      loopback: false,
       sleep: async (ms: number) => {
         const call = sleeps.push(ms) - 1;
         at += options?.advance?.(call, ms) ?? ms;
@@ -391,6 +393,254 @@ describe("joinServer without a token (#495)", () => {
     );
     expect(outcome.username).toBe("admin");
     expect(polls).toBe(2);
+  });
+});
+
+describe("joinServer through the browser redirect (#513)", () => {
+  /**
+   * The browser is the test: `openBrowser` gets the confirm URL, and
+   * `browser` plays the signed-in user on it — confirm or deny by request
+   * id, then follow the redirect to the host's listener. The host's own
+   * clock never runs out unless `sleep` says so.
+   */
+  async function loopbackFlow(options?: {
+    readonly browser?: (verifyUrl: URL, started: Started) => Promise<void>;
+    readonly opens?: boolean;
+    readonly sleep?: (ms: number) => Promise<void>;
+    readonly fetch?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+  }) {
+    const started = await startServer();
+    const data = await tempDir();
+    defer(data.remove);
+    const fake = fakeManager();
+    const lines: string[] = [];
+    const opened: string[] = [];
+    const requests: string[] = [];
+    const startBodies: Record<string, unknown>[] = [];
+    let browsing: Promise<void> = Promise.resolve();
+    const deps = {
+      manager: fake.manager,
+      hostname: "omarchy",
+      loopback: true,
+      fetch: ((input: string | URL | Request, init?: RequestInit) => {
+        const path = new URL(String(input)).pathname;
+        requests.push(path);
+        if (path === "/api/host-link/start") startBodies.push(JSON.parse(String(init?.body)));
+        return (options?.fetch ?? fetch)(input, init);
+      }) as typeof fetch,
+      log: (line: string) => lines.push(line),
+      openBrowser: (url: string) => {
+        opened.push(url);
+        if (options?.opens === false) return false;
+        // The page loads after the host is listening for it, not inside the open call.
+        if (options?.browser !== undefined) browsing = options.browser(new URL(url), started);
+        return true;
+      },
+      sleep: options?.sleep ?? (() => new Promise<void>(() => {})),
+    };
+    return { started, data, fake, lines, opened, requests, startBodies, deps, browsed: () => browsing };
+  }
+
+  const requestIdOf = (verifyUrl: URL): string => {
+    const id = verifyUrl.searchParams.get("request");
+    expect(id).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    return id ?? "";
+  };
+
+  /** Confirms or denies on the server, then loads the redirect like the browser would. */
+  const answer = (verdict: "confirm" | "deny", seen?: (page: Response, body: string) => void) =>
+    async (verifyUrl: URL, started: Started) => {
+      const requestId = requestIdOf(verifyUrl);
+      const lookup = await asUser(started, "/api/host-link/lookup", { requestId });
+      expect(lookup.json).toMatchObject({ name: "omarchy", ipDiffers: false });
+      const settled = await asUser(started, `/api/host-link/${verdict}`, { requestId });
+      expect(settled.status).toBe(200);
+      const redirect = new URL(String(settled.json.redirect));
+      expect(redirect.origin).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+      const page = await fetch(redirect);
+      seen?.(page, await page.text());
+    };
+
+  it("joins without a code: the browser confirms, the redirect brings the code home", async () => {
+    let page: { status: number; body: string } | undefined;
+    const flow = await loopbackFlow({ browser: answer("confirm", (response, body) => (page = { status: response.status, body })) });
+
+    const outcome = await joinServer({ origin: flow.started.origin, dataDir: flow.data.path }, flow.deps);
+    await flow.browsed();
+
+    expect(outcome.username).toBe("admin");
+    expect(hostsRow(flow.started.accounts, outcome.hostId)?.name).toBe("omarchy");
+    expect((await readServerConfig(flow.data.path))?.origin).toBe(flow.started.origin);
+    expect(page).toMatchObject({ status: 200, body: expect.stringContaining("omarchy is joining") });
+    // One start with a loopback redirect and an S256 challenge, one exchange, no polling.
+    expect(flow.startBodies).toHaveLength(1);
+    expect(flow.startBodies[0]?.redirectUri).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/callback$/);
+    expect(flow.startBodies[0]?.codeChallenge).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(flow.requests.filter((path) => path === "/api/host-link/token")).toHaveLength(1);
+    expect(flow.requests).not.toContain("/api/host-link/poll");
+    // Nothing to type: the terminal names the page, the host and the way to a code.
+    const printed = flow.lines.join("\n");
+    expect(printed).toContain(flow.opened[0]);
+    expect(printed).toContain(outcome.hostId);
+    expect(printed).toContain("--code");
+    expect(printed).not.toMatch(/Enter this code/);
+  });
+
+  it("turns away a callback without its state and keeps waiting for the real one", async () => {
+    const strays: number[] = [];
+    const flow = await loopbackFlow({
+      browser: async (verifyUrl, started) => {
+        const callback = new URL(String(flow.startBodies[0]?.redirectUri));
+        for (const query of ["", "?code=x", "?code=x&state=wrong", "?error=access_denied&state=wrong"]) {
+          strays.push((await fetch(`${callback}${query}`)).status);
+        }
+        strays.push((await fetch(new URL("/elsewhere", callback))).status);
+        await answer("confirm")(verifyUrl, started);
+      },
+    });
+    const outcome = await joinServer({ origin: flow.started.origin, dataDir: flow.data.path }, flow.deps);
+    await flow.browsed();
+    expect(outcome.username).toBe("admin");
+    expect(strays).toEqual([404, 404, 404, 404, 404]);
+  });
+
+  it("answers a request target that isn't a URL with 400, and keeps waiting", async () => {
+    let status = "";
+    const flow = await loopbackFlow({
+      browser: async (verifyUrl, started) => {
+        // `//%` passes Node's HTTP parser but not new URL(); fetch can't send it.
+        const { port } = new URL(String(flow.startBodies[0]?.redirectUri));
+        const raw = await new Promise<string>((resolve, reject) => {
+          const socket = connect(Number(port), "127.0.0.1", () =>
+            socket.write("GET //% HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"),
+          );
+          let text = "";
+          socket.on("data", (chunk) => (text += chunk.toString()));
+          socket.on("end", () => resolve(text));
+          socket.on("error", reject);
+        });
+        status = raw.split("\r\n")[0] ?? "";
+        await answer("confirm")(verifyUrl, started);
+      },
+    });
+    const outcome = await joinServer({ origin: flow.started.origin, dataDir: flow.data.path }, flow.deps);
+    await flow.browsed();
+    expect(status).toMatch(/^HTTP\/1\.1 400/);
+    expect(outcome.username).toBe("admin");
+  });
+
+  it("stops with a clear error when the browser denies it, and tells the page", async () => {
+    let page = "";
+    const flow = await loopbackFlow({ browser: answer("deny", (_, body) => (page = body)) });
+    await expect(joinServer({ origin: flow.started.origin, dataDir: flow.data.path }, flow.deps)).rejects.toThrow(/denied/i);
+    await flow.browsed();
+    expect(page).toContain("Denied");
+    expect(await readServerConfig(flow.data.path)).toBeUndefined();
+    expect(flow.fake.installs).toHaveLength(0);
+    expect(flow.requests).not.toContain("/api/host-link/token");
+  });
+
+  it("stops when nobody confirms before the request expires, and closes its listener", async () => {
+    const flow = await loopbackFlow({ sleep: async () => {} });
+    await expect(joinServer({ origin: flow.started.origin, dataDir: flow.data.path }, flow.deps)).rejects.toThrow(/expired/i);
+    await expect(fetch(String(flow.startBodies[0]?.redirectUri))).rejects.toThrow();
+    expect(flow.fake.installs).toHaveLength(0);
+  });
+
+  it("falls back to a code when no browser opens", async () => {
+    const flow = await loopbackFlow({
+      opens: false,
+      sleep: async () => {
+        if (flow.requests.includes("/api/host-link/poll")) return;
+        expect((await asUser(flow.started, "/api/host-link/confirm", codeIn(flow.lines))).status).toBe(204);
+      },
+    });
+    const outcome = await joinServer({ origin: flow.started.origin, dataDir: flow.data.path }, flow.deps);
+    expect(outcome.username).toBe("admin");
+    // The loopback start, then a plain one for the code; the browser was tried once.
+    expect(flow.startBodies.map((body) => "redirectUri" in body)).toEqual([true, false]);
+    expect(flow.opened).toHaveLength(1);
+    expect(flow.lines.join("\n")).toMatch(/Enter this code/);
+  });
+
+  it("goes on with the code a server from before #513 answers the loopback start with", async () => {
+    const flow = await loopbackFlow({
+      // That server never heard of redirectUri: it hands out a device code.
+      fetch: (input, init) => {
+        if (new URL(String(input)).pathname !== "/api/host-link/start") return fetch(input, init);
+        const { redirectUri: _, codeChallenge: __, state: ___, ...old } = JSON.parse(String(init?.body));
+        return fetch(input, { ...init, body: JSON.stringify(old) });
+      },
+      sleep: async () => {
+        if (flow.requests.includes("/api/host-link/poll")) return;
+        expect((await asUser(flow.started, "/api/host-link/confirm", codeIn(flow.lines))).status).toBe(204);
+      },
+    });
+    const outcome = await joinServer({ origin: flow.started.origin, dataDir: flow.data.path }, flow.deps);
+    expect(outcome.username).toBe("admin");
+    expect(flow.startBodies).toHaveLength(1);
+    expect(flow.lines.join("\n")).toMatch(/Enter this code/);
+  });
+
+  it("finishes the join when the callback tab closes while the code is being exchanged", async () => {
+    let tokenAsked!: () => void;
+    const asked = new Promise<void>((resolve) => (tokenAsked = resolve));
+    let releaseToken!: () => void;
+    const released = new Promise<void>((resolve) => (releaseToken = resolve));
+    const flow = await loopbackFlow({
+      fetch: async (input, init) => {
+        if (new URL(String(input)).pathname === "/api/host-link/token") {
+          tokenAsked();
+          await released;
+        }
+        return fetch(input, init);
+      },
+      browser: async (verifyUrl, started) => {
+        const settled = await asUser(started, "/api/host-link/confirm", { requestId: requestIdOf(verifyUrl) });
+        const tab = new AbortController();
+        const page = fetch(String(settled.json.redirect), { signal: tab.signal }).catch(() => undefined);
+        await asked;
+        tab.abort();
+        await page;
+        // Long enough for the listener to see the socket go before the exchange answers.
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        releaseToken();
+      },
+    });
+    const outcome = await joinServer({ origin: flow.started.origin, dataDir: flow.data.path }, flow.deps);
+    await flow.browsed();
+    expect(outcome.username).toBe("admin");
+  }, 10_000);
+
+  it("asks for a code with --code, and leaves the browser closed", async () => {
+    const flow = await loopbackFlow({
+      sleep: async () => {
+        if (flow.requests.includes("/api/host-link/poll")) return;
+        expect((await asUser(flow.started, "/api/host-link/confirm", codeIn(flow.lines))).status).toBe(204);
+      },
+    });
+    const outcome = await joinServer({ origin: flow.started.origin, dataDir: flow.data.path, code: true }, flow.deps);
+    expect(outcome.username).toBe("admin");
+    expect(flow.startBodies.map((body) => "redirectUri" in body)).toEqual([false]);
+    expect(flow.opened).toEqual([]);
+  });
+});
+
+describe("openInBrowser", () => {
+  it("says it opened only once the opener has started, so a missing one falls back to a code", async () => {
+    expect(await openInBrowser("https://example.com/host-link", "pinomad-no-such-opener")).toBe(false);
+    expect(await openInBrowser("https://example.com/host-link", "true")).toBe(true);
+  });
+
+  it("calls an opener that gives up (xdg-open without a browser) not opened", async () => {
+    expect(await openInBrowser("https://example.com/host-link", "false")).toBe(false);
+  });
+
+  it("counts an opener still running after a moment as opened, without waiting for it to finish", async () => {
+    // Some xdg-open setups run the browser itself and stay until it quits.
+    const started = Date.now();
+    expect(await openInBrowser("60", "sleep", 50)).toBe(true);
+    expect(Date.now() - started).toBeLessThan(5000);
   });
 });
 
