@@ -1259,9 +1259,14 @@ describe("removing a host from the account (#512)", () => {
     stored: StoredHost[],
     remove: () => Answer,
     listed: string[] = ["h1"],
-    options?: { failListAfterRemove?: boolean; connect?: () => Promise<void> },
+    options?: {
+      failListAfterRemove?: boolean;
+      connect?: () => Promise<void>;
+      autoRegister?: boolean;
+      store?: ReturnType<typeof hosts>;
+    },
   ) => {
-    const store = hosts(stored);
+    const store = options?.store ?? hosts(stored);
     const removed: string[] = [];
     const calls: { url: string; init: AccountFetchInit | undefined }[] = [];
     let accountHosts = listed.map((hostId) => accountHost("A".repeat(43), hostId));
@@ -1285,6 +1290,7 @@ describe("removing a host from the account (#512)", () => {
       fake: { impl, calls },
       store,
       ...(options?.connect === undefined ? {} : { connect: options.connect }),
+      autoRegister: options?.autoRegister === true,
       removeHost: (hostKey) => {
         removed.push(hostKey);
         return store.remove(hostKey);
@@ -1342,14 +1348,15 @@ describe("removing a host from the account (#512)", () => {
     expect(setup.store.stored).toEqual([mine]);
   });
 
-  it("on a 404 for a host already off the list, says so without touching this device's pairing", async () => {
+  it("on a 404 for a host already off the list, forgets the account's key here as a removal does", async () => {
+    // Removed from another device, or a retry after a lost 204: the account
+    // no longer has the host, so this device lets go of it too.
     const mine = vouched("h1");
-    const setup = await signedInWith([mine], () => answer(404, { error: "not_found" }), []);
-    expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({
-      ok: false,
-      error: { code: "not_found", status: 404 },
-    });
-    expect(setup.store.stored).toEqual([mine]);
+    const qr = adopted("h1");
+    const setup = await signedInWith([mine, qr], () => answer(404, { error: "not_found" }), []);
+    expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
+    expect(setup.removed).toEqual([mine.hostKey]);
+    expect(setup.store.stored).toEqual([qr]);
   });
 
   it("on a 404 whose confirming refresh fails, returns that failure and keeps this device's pairing", async () => {
@@ -1368,6 +1375,36 @@ describe("removing a host from the account (#512)", () => {
     expect(setup.removed).toEqual([]);
     expect(setup.store.stored).toEqual([mine]);
     expect(setup.model.state.status).toBe("signed-in");
+  });
+
+  it("does not queue an automatic pairing whose save fails after the removal for a retry", async () => {
+    // Desktop saves over async IPC: the pairing can be past its last check
+    // and waiting on the save when the removal lands.
+    const store = hosts();
+    const save = store.save;
+    let failSave!: () => void;
+    let saving!: () => void;
+    const saveStarted = new Promise<void>((resolve) => (saving = resolve));
+    let held = true;
+    store.save = (host) => {
+      if (!held) return save(host);
+      held = false;
+      saving();
+      return new Promise<void>((_, reject) => (failSave = () => reject(new Error("store unavailable"))));
+    };
+    const setup = await signedInWith([], () => answer(204), ["h1"], { autoRegister: true, store });
+    await saveStarted;
+    expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
+
+    failSave();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const state = setup.model.state;
+    expect(state.status === "signed-in" ? state.unsavedHosts : undefined).toEqual([]);
+    // A later round retries whatever is queued.
+    expect((await setup.model.refreshHosts()).ok).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(setup.paired).toHaveLength(1);
+    expect(store.stored).toEqual([]);
   });
 
   describe("a manual pairing of the host in flight", () => {

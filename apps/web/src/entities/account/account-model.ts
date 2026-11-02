@@ -138,7 +138,7 @@ export interface AccountModel {
    * This device then forgets the key the account gave it for that host; a QR
    * pairing stays. A 404 refreshes the list: a host still on it means a
    * server that can't remove hosts (`remove_unsupported`), otherwise it was
-   * already gone (`not_found`).
+   * already gone and this device forgets it just the same.
    */
   removeHost(input: { hostId: string; password: string }): Promise<AccountResult<void>>;
   createJoinToken(): Promise<AccountResult<JoinToken>>;
@@ -258,10 +258,12 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   const flights = new Map<string, Flight>();
   let stopVisibility: (() => void) | undefined;
   /**
-   * Removals this page made, per account host slot. A manual pairing that
-   * started before one must not store the host it took off the account.
+   * Removals this page made, per account host slot. A pairing that started
+   * before one must neither store the host it took off the account nor queue
+   * it for a retry when its save fails.
    */
   const removals = new Map<string, number>();
+  const removedSince = (slot: string, seen: number | undefined): boolean => removals.get(slot) !== seen;
   /** watchForHost's live watch per hostId, with its pending refresh between ticks. */
   const hostWatches = new Map<string, { readonly watch: object; readonly timer?: ReturnType<typeof setTimeout> }>();
 
@@ -468,6 +470,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       const key = slotKey(active.origin, match.host.hostId);
       if (flights.has(key)) continue;
       const started = epoch;
+      const removed = removals.get(key);
       const flight: Flight = { cancelled: false, promise: Promise.resolve() };
       const run = async (): Promise<void> => {
         if (flight.cancelled || !live(active, started)) return;
@@ -509,7 +512,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
         try {
           await deps.paired(enriched);
         } catch {
-          rememberUnsaved(enriched);
+          if (!removedSince(key, removed)) rememberUnsaved(enriched);
           return;
         }
         if (client === active) await refresh(active, user);
@@ -649,12 +652,13 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     if (!live(active, started)) return fail("stale");
     // Removed from the account while the handshake ran: storing the key
     // would bring the host back on this device.
-    if (removals.get(slot) !== removed) return fail("host_removed");
+    if (removedSince(slot, removed)) return fail("host_removed");
     const enriched = enrich(hostId, result.value);
     clearRejected(enriched.hostKey);
     try {
       await deps.paired(enriched);
     } catch {
+      if (removedSince(slot, removed)) return fail("host_removed");
       // The invite is spent and the device registered — a failed save must
       // not orphan the key. Keep the record for retryUnsavedHost.
       rememberUnsaved(enriched);
@@ -710,6 +714,23 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     void tick(HOST_WATCH_REFRESHES);
   };
 
+  /**
+   * The account no longer has `hostId`, so this device lets go of it: nothing
+   * may pair it again (an automatic flight or a manual pairing in progress, a
+   * failed save waiting for its retry, a watch after a confirm), and the key
+   * the account gave this device goes. A failure to forget is logged there;
+   * the server side is done, and the host stops answering through it either way.
+   */
+  const forgetRemovedHost = async (origin: string, hostId: string): Promise<void> => {
+    const slot = slotKey(origin, hostId);
+    removals.set(slot, (removals.get(slot) ?? 0) + 1);
+    cancelAccountRegistration(hostId);
+    if (unsaved.delete(slot)) publishUnsaved();
+    clearTimeout(hostWatches.get(hostId)?.timer);
+    hostWatches.delete(hostId);
+    await forgetAccountHosts(origin, hostId);
+  };
+
   const removeHost = async ({ hostId, password }: { hostId: string; password: string }): Promise<AccountResult<void>> => {
     if (client === undefined || state.status !== "signed-in") return fail("unauthenticated");
     const active = client;
@@ -720,28 +741,20 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     if (!result.ok) {
       if (isUnauthenticated(result.error)) signedOut();
       else if (result.error.code === "not_found") {
-        // Removed from another device, or a server that predates removal
-        // (also 404): the list says which. Either way this device's pairing
-        // stays — nothing here confirmed the host left.
+        // Removed earlier (from another device, or a retry after a lost 204),
+        // or a server that predates removal (also 404): the list says which.
         // A failed refresh proves neither, so its error keeps the form open.
         const listed = await refresh(active, user);
         if (!listed.ok) return listed;
         if (listed.value.some((match) => match.host.hostId === hostId)) return fail("remove_unsupported");
+        // Gone from the account: this device forgets it as after a 204. The
+        // list just read already leaves it out, so no second refresh.
+        await forgetRemovedHost(active.origin, hostId);
+        return { ok: true, value: undefined };
       }
       return result;
     }
-    // Nothing may pair the gone host again: an automatic flight or a manual
-    // pairing in progress, a failed save waiting for its retry, a watch after
-    // a confirm.
-    const slot = slotKey(active.origin, hostId);
-    removals.set(slot, (removals.get(slot) ?? 0) + 1);
-    cancelAccountRegistration(hostId);
-    if (unsaved.delete(slot)) publishUnsaved();
-    clearTimeout(hostWatches.get(hostId)?.timer);
-    hostWatches.delete(hostId);
-    // A failure to forget is logged there; the server side is done, and the
-    // host stops answering through it either way.
-    await forgetAccountHosts(active.origin, hostId);
+    await forgetRemovedHost(active.origin, hostId);
     if (live(active, started)) await refresh(active, user);
     return { ok: true, value: undefined };
   };

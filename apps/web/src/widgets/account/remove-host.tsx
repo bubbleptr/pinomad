@@ -33,8 +33,8 @@ export function RemoveHost({ account, hostId, name, serverOrigin, onClose }: Rem
     setError(undefined);
     void account.removeHost({ hostId, password }).then((result) => {
       setBusy(false);
-      // Already gone (removed from another device): the refreshed list shows it.
-      if (result.ok || result.error.code === "not_found") onClose(true);
+      // Also ok when it was already gone (removed from another device).
+      if (result.ok) onClose(true);
       else setError(result.error);
     });
   };
