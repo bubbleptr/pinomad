@@ -23,7 +23,7 @@ import type { CallMethods } from "@pinomad/protocol/frames.ts";
 import { outgoingImage, type ImageVariant } from "@pinomad/protocol/images.ts";
 import { findConversation, type ConversationNode, type Home } from "@pinomad/protocol/organization.ts";
 import { currentAgentOf } from "./entities/conversation/current-agent.ts";
-import { displayName, forksAt, rootOf } from "@pinomad/client/family.ts";
+import { displayName, forksAt, rootOf, taskGroupsOf } from "@pinomad/client/family.ts";
 import { hostLabels, mergeStoredHost, updateStoredHostConnection, updateStoredHostEndpoints } from "@pinomad/client/stored-host.ts";
 import { candidatePlan, preferredLegacyUrl } from "@pinomad/protocol/remote-candidates.ts";
 import { requestNotificationPermission } from "./entities/conversation/notification-permission.ts";
@@ -37,7 +37,7 @@ import { ConversationComposer } from "./widgets/composer/conversation-composer.t
 import { takeBackForConversation, type PendingTakeBack } from "./widgets/composer/take-back.ts";
 import { ConversationTranscript } from "./widgets/chat/conversation-transcript.tsx";
 import { ComposerSkeleton, ConversationSkeleton, ConversationUnavailable } from "./widgets/chat/conversation-skeleton.tsx";
-import { SidePanel, type PanelTab } from "./widgets/side-panel/side-panel.tsx";
+import { SidePanel } from "./widgets/side-panel/side-panel.tsx";
 import { OverviewCard } from "./widgets/overview/overview-card.tsx";
 import { DiffView } from "./presentation/diff.tsx";
 import { PendingQuestions } from "./presentation/question.tsx";
@@ -410,6 +410,8 @@ export function App() {
                   opening,
                   cancelOpening,
                   openConversation,
+                  beginFork,
+                  endFork,
                 }) => (
                   <Workbench
                     remote={remote}
@@ -423,6 +425,8 @@ export function App() {
                     hostOpening={opening}
                     hostOpen={openConversation}
                     hostCancelOpening={cancelOpening}
+                    onForkStart={beginFork}
+                    onForkEnd={endFork}
                   />
                 )}
               />
@@ -759,6 +763,8 @@ export function Workbench({
   hostOpening,
   hostOpen,
   hostCancelOpening,
+  onForkStart,
+  onForkEnd,
 }: {
   remote: RemoteDurable;
   wsUrl: string;
@@ -775,6 +781,9 @@ export function Workbench({
   hostOpening?: Opening;
   hostOpen?: (id: ConversationId) => void;
   hostCancelOpening?: () => void;
+  /** Hold focus enforcement while a fork created from this workbench lands. */
+  onForkStart?: () => void;
+  onForkEnd?: () => void;
 }) {
   const view = useDurableView(remote);
   const { hosts, focus, focusConversation, focusDraft, rememberConversation } = useHosts();
@@ -782,6 +791,26 @@ export function Workbench({
   // so a same-host selection made while it was in flight wins.
   const focusRef = useRef(focus);
   focusRef.current = focus;
+  // The parent a fork is being created from, while the host's own main switch
+  // is outside app focus. The focus hook adopts the new fork instead of
+  // pulling back to this parent; a reader who moves away cancels the hold.
+  const forkInFlight = useRef(false);
+  const forkParent = useRef<ConversationId | undefined>(undefined);
+  const finishFork = useCallback(() => {
+    if (!forkInFlight.current) return;
+    forkInFlight.current = false;
+    forkParent.current = undefined;
+    onForkEnd?.();
+  }, [onForkEnd]);
+  useEffect(() => {
+    if (!forkInFlight.current || hostKey === undefined) return;
+    const stillOnParent =
+      focus?.hostKey === hostKey && focus.conversationId === forkParent.current;
+    if (!stillOnParent) finishFork();
+  }, [finishFork, focus, hostKey]);
+  // Leaving the workbench (another host, a forget) must not leave the next
+  // visit's focus enforcement held.
+  useEffect(() => finishFork, [finishFork]);
   // A draft create resolves after an arbitrary delay; if focus moved to
   // another host meanwhile, this workbench is gone and must not pull it back.
   const live = useRef(true);
@@ -871,9 +900,9 @@ export function Workbench({
     window.localStorage.setItem(OVERVIEW_OPEN_KEY, String(open));
     setOverviewOpen(open);
   };
-  // The side panel: open state and tab live here so chat entries can open it.
+  // The side panel holds Tasks only; its open state lives here so chat
+  // entries and the overview can open it.
   const [panelOpen, setPanelOpen] = useState(false);
-  const [panelTab, setPanelTab] = useState<PanelTab>("threads");
   // A failed/unconfirmed send edited from the transcript flows back into the
   // composer that owns skill picks and attachment chips. Bind the draft to the
   // conversation it came from: switching away must not fill another composer.
@@ -881,6 +910,37 @@ export function Workbench({
   const [takingBack, setTakingBack] = useState<ConversationId>();
   const [editorState, setEditorState] = useState({ occupied: false, locked: false });
   const toast = useToast();
+  // Create the fork on the host's main slot. The focus effect adopts it while
+  // the hold is set; once the reader moves away, the hold is dropped and their
+  // choice stands (ADR-0039 §2).
+  const createFork = useCallback(
+    async (entryId: string, text: string): Promise<void> => {
+      const parentId = remote.view.current().conversation?.conversation.id;
+      if (parentId === undefined) return;
+      forkInFlight.current = true;
+      forkParent.current = parentId;
+      onForkStart?.();
+      try {
+        await remote.controller.fork(entryId, text);
+        const next = remote.view.current();
+        const shown = next.conversation?.conversation.id;
+        if (shown === undefined || shown === parentId) return;
+        // A token client has no app focus to move: the host already switched
+        // its one main slot.
+        if (hostKey === undefined) return;
+        const stillOnParent =
+          focusRef.current?.hostKey === hostKey && focusRef.current.conversationId === parentId;
+        if (!stillOnParent) return;
+        const node = findConversation(next.organized, shown);
+        if (node?.summary.kind === "fork" && node.summary.parent === parentId) openConversation(shown);
+      } catch (error) {
+        toast({ body: error instanceof Error ? error.message : String(error), type: "error" });
+      } finally {
+        finishFork();
+      }
+    },
+    [finishFork, hostKey, onForkStart, openConversation, remote, toast],
+  );
   const shownConversationId = conversation?.conversation.id;
   const takeBackForShown = takeBackForConversation(takeBack, shownConversationId);
   const takingBackHere = takingBack !== undefined && takingBack === shownConversationId;
@@ -892,6 +952,7 @@ export function Workbench({
       : undefined;
   // "Open in main" promotes a conversation to the main column and closes the side —
   // the family root stays the same, so the close rule below must not fire for it.
+  // Fork chips and background subagents from Tasks use it too.
   const openInMain = useCallback(
     (id: ConversationId) => {
       openConversation(id);
@@ -903,24 +964,22 @@ export function Workbench({
     [remote, narrow, openConversation],
   );
   const openInPanel = useCallback(
-    (id: ConversationId, tab: "threads" | "tasks") => {
+    (id: ConversationId) => {
       const summary = findConversation(view.organized, id)?.summary;
       // Every subagent entry follows its lifecycle: background belongs in the
       // read-only main view, foreground stays in the right-hand Tasks detail.
-      if (tab === "tasks" && summary?.kind === "subagent" && summary.lifecycle === "background") {
+      if (summary?.kind === "subagent" && summary.lifecycle === "background") {
         openInMain(id);
         return;
       }
-      setPanelTab(tab);
       setPanelOpen(true);
       void remote.controller.showSide(id);
     },
     [remote, view.organized, openInMain],
   );
   const openTasks = (id?: ConversationId): void => {
-    if (id !== undefined) return openInPanel(id, "tasks");
+    if (id !== undefined) return openInPanel(id);
     void remote.controller.showSide(undefined);
-    setPanelTab("tasks");
     setPanelOpen(true);
   };
   // Keyed on the shown id, not the loaded view: a different family's side
@@ -954,10 +1013,11 @@ export function Workbench({
       : shownSummary.kind === "subagent"
         ? shownSummary.role
         : currentAgentOf(shownSummary);
-  // A fork or subagent of the shown family still at work: the closed panel's
-  // button carries a dot so the activity is not out of sight entirely.
+  // The closed panel's button only mirrors Foreground work that Tasks can
+  // show; a fork running where the panel has no row must not light it.
   const liveRoot = shownId === undefined ? undefined : rootOf(view.organized, shownId);
-  const liveActivity = liveRoot !== undefined && anyAtWork(liveRoot.children);
+  const liveTasks = liveRoot === undefined ? [] : taskGroupsOf(liveRoot).flatMap((group) => group.tasks);
+  const liveActivity = anyAtWork(liveTasks);
   const parentId = shownSummary?.parent;
   const parentSummary =
     parentId === undefined ? undefined : findConversation(view.organized, parentId)?.summary;
@@ -1127,6 +1187,7 @@ export function Workbench({
                 connected={view.connection === "connected"}
                 canFork={canFork}
                 openInPanel={openInPanel}
+                onOpenFork={openInMain}
                 onFork={setForkTarget}
                 forksAt={forksAtForShown}
                 summaryOf={summaryOf}
@@ -1200,8 +1261,6 @@ export function Workbench({
             narrow={false}
             open={panelOpen}
             onOpenChange={setPanelOpen}
-            tab={panelTab}
-            onTabChange={setPanelTab}
             openInPanel={openInPanel}
             onOpenInMain={openInMain}
           />
@@ -1219,8 +1278,6 @@ export function Workbench({
           narrow
           open={panelOpen}
           onOpenChange={setPanelOpen}
-          tab={panelTab}
-          onTabChange={setPanelTab}
           openInPanel={openInPanel}
           onOpenInMain={openInMain}
         />
@@ -1228,13 +1285,9 @@ export function Workbench({
       {forkTarget === undefined ? null : (
         <ForkDialog
           entryId={forkTarget}
-          remote={remote}
           connected={view.connection === "connected"}
           onClose={() => setForkTarget(undefined)}
-          onForked={() => {
-            setPanelTab("threads");
-            setPanelOpen(true);
-          }}
+          onCreate={createFork}
         />
       )}
       {changesOpen && conversation !== undefined && (
@@ -1285,23 +1338,20 @@ export function Workbench({
 
 function ForkDialog({
   entryId,
-  remote,
   connected,
   onClose,
-  onForked,
+  onCreate,
 }: {
   entryId: string;
-  remote: RemoteDurable;
   connected: boolean;
   onClose: () => void;
-  /** The fork opens beside the main conversation — the caller opens the panel. */
-  onForked: () => void;
+  /** Creates on the main slot; the workbench adopts and focuses it. */
+  onCreate: (entryId: string, prompt: string) => Promise<void>;
 }) {
   const [prompt, setPrompt] = useState("Continue from here.");
   const fork = (): void => {
     requestNotificationPermission();
-    void remote.controller.fork(entryId, prompt.trim(), undefined, { show: "side" });
-    onForked();
+    void onCreate(entryId, prompt.trim());
     onClose();
   };
   return (

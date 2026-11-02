@@ -1,42 +1,24 @@
-// The right-side panel (ADR-0019's thread/task model): Threads lists the
-// shown conversation's family forks and Tasks its foreground subagents — both
-// open inside the panel via `view.side`; background subagents open in main.
-// Forks are talkable (composer, targeted submit/abort/answer); subagents are
-// read-only. The conversation's at-a-glance state lives in the Overview card.
-import { Button } from "@astryxdesign/core/Button";
+// The right-side panel is the family's Foreground Tasks: its subagents grouped
+// by owner, opening read-only detail via `view.side`. Forks are independent
+// conversations in the sidebar now, not a panel tab (ADR-0039). Background
+// subagents open in main and never repeat here.
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { HStack, Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
-import { Tab, TabList } from "@astryxdesign/core/TabList";
 import { Text } from "@astryxdesign/core/Text";
-import { useToast } from "@astryxdesign/core/Toast";
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { ConversationId, ConversationView } from "@earendil-works/pi-durable";
-import type { UserAttachment } from "@pinomad/protocol/attachments.ts";
-import { outgoingImage, type ViewImage } from "@pinomad/protocol/images.ts";
-import { hostSupportsCall } from "@pinomad/protocol/frames.ts";
+import { useEffect, type ReactNode } from "react";
+import type { ConversationId } from "@earendil-works/pi-durable";
 import { findConversation } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
-import { isBusy } from "@pinomad/protocol/transcript.ts";
-import type { ConversationSummary, DurableView, SideConversationView, SubmissionDraft } from "@pinomad/protocol/view.ts";
-import { displayName, forksAt, relativeTime, rootOf, taskGroupsOf, threadsOf } from "@pinomad/client/family.ts";
-import { currentAgentOf } from "../../entities/conversation/current-agent.ts";
-import { requestNotificationPermission } from "../../entities/conversation/notification-permission.ts";
-import { PendingQuestions } from "../../presentation/question.tsx";
+import type { ConversationSummary, DurableView, SideConversationView } from "@pinomad/protocol/view.ts";
+import { displayName, forksAt, relativeTime, rootOf, taskGroupsOf } from "@pinomad/client/family.ts";
 import { useNow } from "../../shared/use-now.ts";
 import { ArrowLeft } from "../../shared/ui/icons.tsx";
-import { useAtMentions } from "../../entities/agent/agent-mentions.tsx";
-import { useSkillDraft, useSkillHighlight, useSkillMentions } from "../../entities/agent/skill-mentions.tsx";
-import { draftMessage } from "../../entities/agent/skill-bindings.ts";
-import { ChatPromptInput, type ChatPromptInputHandle } from "../../shared/ui/chat/chat-prompt-input.tsx";
-import { canTakeBackInSidePanel } from "../composer/take-back.ts";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
-
-export type PanelTab = "threads" | "tasks";
 
 const STATUS_VARIANT = { "needs-answer": "warning", failed: "error", running: "success" } as const;
 const STATUS_LABEL = { "needs-answer": "Waiting for your answer", failed: "Failed", running: "Running" } as const;
@@ -52,16 +34,14 @@ function StatusGlyph({ status }: { status: ConversationSummary["status"] }) {
 }
 
 /**
- * The panel's body: tabs, then a list or the open conversation's detail. The
- * detail lives inside the tab it belongs to (a fork under Threads, a subagent
- * under Tasks); the other tabs keep showing their lists.
+ * The panel's body: the shown family's Foreground Tasks, grouped by owner, or
+ * the open subagent's read-only detail. Background subagents are promoted to
+ * main rather than rendered as a second Tasks entry point.
  */
 function PanelContent({
   view,
   remote,
   shownId,
-  tab,
-  onTabChange,
   openInPanel,
   onOpenInMain,
 }: {
@@ -69,9 +49,7 @@ function PanelContent({
   remote: RemoteDurable;
   /** The main column's conversation, loaded or not — while drafting, the family is empty. */
   shownId: ConversationId | undefined;
-  tab: PanelTab;
-  onTabChange: (tab: PanelTab) => void;
-  openInPanel: (id: ConversationId, tab: "threads" | "tasks") => void;
+  openInPanel: (id: ConversationId) => void;
   onOpenInMain: (id: ConversationId) => void;
 }) {
   const now = useNow(60_000);
@@ -84,9 +62,7 @@ function PanelContent({
       ? view.side
       : undefined;
   const sideSummary = side === undefined ? undefined : findConversation(view.organized, side.id)?.summary;
-  const threads = root === undefined ? [] : threadsOf(root);
   const groups = root === undefined ? [] : taskGroupsOf(root);
-  const taskCount = groups.reduce((total, group) => total + group.tasks.length, 0);
   const closeSide = (): void => void remote.controller.showSide(undefined);
   const backgroundSideId = sideSummary?.kind === "subagent" && sideSummary.lifecycle === "background" ? sideSummary.id : undefined;
   // Older links may still name a background detail explicitly. Promote rather
@@ -97,107 +73,48 @@ function PanelContent({
 
   return (
     <VStack className="h-full min-h-0" gap={0}>
-      <TabList value={tab} onChange={(value) => onTabChange(value as PanelTab)} layout="fill" hasDivider>
-        <Tab
-          value="threads"
-          label="Threads"
-          endContent={
-            threads.length === 0 ? undefined : (
-              <span aria-hidden="true" className="text-xs text-muted">
-                {threads.length}
-              </span>
-            )
-          }
+      {side !== undefined && sideSummary?.kind === "subagent" && sideSummary.lifecycle !== "background" ? (
+        <TaskDetail
+          view={view}
+          remote={remote}
+          side={side}
+          summary={sideSummary}
+          onBack={closeSide}
+          openInPanel={openInPanel}
+          onOpenInMain={onOpenInMain}
         />
-        <Tab
-          value="tasks"
-          label="Tasks"
-          endContent={
-            taskCount === 0 ? undefined : (
-              <span aria-hidden="true" className="text-xs text-muted">
-                {taskCount}
-              </span>
-            )
-          }
-        />
-      </TabList>
-      {tab === "threads" ? (
-        side !== undefined && sideSummary?.kind === "fork" ? (
-          <ThreadDetail
-            // The draft lives inside the detail; a different fork means a
-            // different draft — remounting keeps a stale one from being sent.
-            key={side.id}
-            view={view}
-            remote={remote}
-            side={side}
-            summary={sideSummary}
-            onBack={closeSide}
-            onOpenInMain={onOpenInMain}
-            openInPanel={openInPanel}
-          />
-        ) : (
-          <Scrollable>
-            {threads.length === 0 ? (
-              <Text type="supporting" className="p-3 text-muted">
-                No threads yet
-              </Text>
-            ) : (
-              <List density="compact">
-                {threads.map((node) => (
+      ) : (
+        <Scrollable>
+          {groups.length === 0 ? (
+            <Text type="supporting" className="p-3 text-muted">
+              No tasks yet
+            </Text>
+          ) : (
+            groups.map((group) => (
+              <List
+                key={group.owner.id}
+                density="compact"
+                header={
+                  // List renders headers bare — pad to sit on the rows' text edge.
+                  <div className="px-3 pt-2">
+                    <Text type="label" weight="semibold">
+                      {group.label}
+                    </Text>
+                  </div>
+                }
+              >
+                {group.tasks.map((node) => (
                   <SideRow
                     key={node.summary.id}
                     summary={node.summary}
                     now={now}
-                    onOpen={() => openInPanel(node.summary.id, "threads")}
+                    onOpen={() => openInPanel(node.summary.id)}
                   />
                 ))}
               </List>
-            )}
-          </Scrollable>
-        )
-      ) : (
-        side !== undefined && sideSummary?.kind === "subagent" && sideSummary.lifecycle !== "background" ? (
-          <TaskDetail
-            view={view}
-            remote={remote}
-            side={side}
-            summary={sideSummary}
-            onBack={closeSide}
-            openInPanel={openInPanel}
-          />
-        ) : (
-          <Scrollable>
-            {groups.length === 0 ? (
-              <Text type="supporting" className="p-3 text-muted">
-                No tasks yet
-              </Text>
-            ) : (
-              groups.map((group) => (
-                <List
-                  key={group.owner.id}
-                  density="compact"
-                  header={
-                    // List renders headers bare — pad to sit on the rows' text edge.
-                    <div className="px-3 pt-2">
-                      <Text type="label" weight="semibold">
-                        {group.label}
-                      </Text>
-                    </div>
-                  }
-                >
-                  {group.tasks.map((node) => (
-                    <SideRow
-                      key={node.summary.id}
-                      summary={node.summary}
-                      now={now}
-                      onOpen={() => openInPanel(node.summary.id, "tasks")}
-                    />
-                  ))}
-                </List>
-              ))
-            )}
-          </Scrollable>
-        )
+            ))
+          )}
+        </Scrollable>
       )}
     </VStack>
   );
@@ -207,7 +124,7 @@ function Scrollable({ children }: { children: ReactNode }) {
   return <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>;
 }
 
-/** A thread/task row: status dot, display name, relative time. */
+/** A task row: status dot, display name, relative time. */
 function SideRow({
   summary,
   now,
@@ -217,21 +134,9 @@ function SideRow({
   now: number;
   onOpen: () => void;
 }) {
-  const agent = currentAgentOf(summary);
   return (
     <ListItem
-      label={
-        // A fork carries the agent it currently runs as; subagent rows keep
-        // their existing look.
-        summary.kind !== "fork" || agent === undefined ? (
-          displayName(summary)
-        ) : (
-          <span className="inline-flex min-w-0 items-baseline gap-1.5">
-            <span className="truncate">{displayName(summary)}</span>
-            <span className="shrink-0 text-xs text-muted">@{agent}</span>
-          </span>
-        )
-      }
+      label={displayName(summary)}
       description={
         summary.status === "running" && summary.activity !== undefined
           ? `→ ${toolDisplayName(summary.activity.tool) ?? summary.activity.tool}${summary.activity.target === undefined ? "" : ` ${summary.activity.target}`}`
@@ -250,246 +155,24 @@ function SideRow({
   );
 }
 
-/** The detail's top bar: back to the list, status dot, display name, extra action. */
+/** The detail's top bar: back to the list, status dot, display name. */
 function DetailHeader({
   back,
   title,
   status,
   onBack,
-  extra,
 }: {
   back: string;
   title: string;
   status: ConversationSummary["status"];
   onBack: () => void;
-  extra?: ReactNode;
 }) {
   return (
     <HStack className="shrink-0 gap-1 border-b border-border px-2 py-1" vAlign="center">
       <IconButton icon={<ArrowLeft className="size-4" aria-hidden="true" />} label={back} size="sm" variant="ghost" onClick={onBack} />
       <StatusGlyph status={status} />
       <span className="min-w-0 flex-1 truncate text-sm">{title}</span>
-      {extra}
     </HStack>
-  );
-}
-
-function SideTranscript({
-  view,
-  remote,
-  side,
-  openInPanel,
-  ownOnly,
-  forkSource,
-  onRetry,
-  onRetrySubmission,
-  onEditSubmission,
-  submissionEditDisabled,
-  submissionEditTooltip,
-  localEditAttachmentsUnsupported,
-}: {
-  view: DurableView;
-  remote: RemoteDurable;
-  side: SideConversationView;
-  openInPanel: (id: ConversationId, tab: "threads" | "tasks") => void;
-  /** Forks show only their own entries; the parent's prefix is in the main column. */
-  ownOnly?: boolean;
-  forkSource?: string;
-  /** Forks are talkable and pass one through; read-only details do not. */
-  onRetry?: (retry: {
-    text: string;
-    images: readonly ViewImage[];
-    skills: readonly string[];
-    attachments: readonly UserAttachment[];
-    requestId: string;
-  }) => Promise<void>;
-  onRetrySubmission?: (requestId: string) => void;
-  onEditSubmission?: (requestId: string) => void;
-  submissionEditDisabled?: boolean;
-  submissionEditTooltip?: string;
-  localEditAttachmentsUnsupported?: boolean;
-}) {
-  if (side.conversation === undefined) return null;
-  return (
-    <ConversationTranscript
-      conversation={side.conversation}
-      docs={side.docs}
-      submissions={view.submissions}
-      mergeQueuedSubmissions
-      toolPresentations={view.toolPresentations}
-      connected={view.connection === "connected"}
-      // Fork depth is one: a fork's transcript never offers Fork.
-      canFork={false}
-      openInPanel={openInPanel}
-      onFork={() => {}}
-      ownOnly={ownOnly}
-      forkSource={forkSource}
-      summaryOf={(id) => findConversation(view.organized, id)?.summary}
-      // Legacy trees nest forks inside forks: the side's own children may
-      // still anchor a chip back to another thread.
-      forksAt={(entryId) => forksAt(view.organized, side.id, entryId)}
-      onRetry={onRetry}
-      onRetrySubmission={onRetrySubmission}
-      onEditSubmission={onEditSubmission}
-      submissionEditDisabled={submissionEditDisabled}
-      submissionEditTooltip={submissionEditTooltip}
-      localEditAttachmentsUnsupported={localEditAttachmentsUnsupported}
-    />
-  );
-}
-
-/** A fork in the panel: transcript, its pending questions, and a composer. */
-function ThreadDetail({
-  view,
-  remote,
-  side,
-  summary,
-  onBack,
-  onOpenInMain,
-  openInPanel,
-}: {
-  view: DurableView;
-  remote: RemoteDurable;
-  side: SideConversationView;
-  summary: ConversationSummary;
-  onBack: () => void;
-  onOpenInMain: (id: ConversationId) => void;
-  openInPanel: (id: ConversationId, tab: "threads" | "tasks") => void;
-}) {
-  const conversation: ConversationView | undefined = side.conversation;
-  const busy = conversation !== undefined && isBusy(conversation);
-  // A plain string plus the `$` picks bound in it (ADR-0028).
-  const skillDraft = useSkillDraft();
-  const { value: draft, setValue: setDraft } = skillDraft;
-  const inputRef = useRef<ChatPromptInputHandle | null>(null);
-  const toast = useToast();
-  const [takeBack, setTakeBack] = useState<SubmissionDraft>();
-  const [takeBackPending, setTakeBackPending] = useState(false);
-  // The text is the whole side composer; edits wait for it to be empty.
-  const composerOccupied = draft.trim() !== "";
-  const editDisabled = composerOccupied || takeBackPending;
-  const editTooltip = composerOccupied ? "Clear the composer to edit" : "Finish the current edit first";
-  // The side composer has no attachment tray; restoring text and skill picks
-  // is the whole of an edit here.
-  useEffect(() => {
-    if (takeBack === undefined) return;
-    skillDraft.restore(takeBack.text, takeBack.skills);
-    setTakeBack(undefined);
-    setTakeBackPending(false);
-  }, [takeBack]);
-  const atMentions = useAtMentions(
-    view.agents,
-    inputRef,
-    // A fork shares its family's home: a Chat family has no project files.
-    view.home?.kind !== "chat" && hostSupportsCall(view.host?.protocol.minor ?? 0, "listFiles")
-      ? {
-          // The fork lists its own checkout — forks and subagents keep
-          // separate cwds, never the parent's.
-          key: `conversation:${side.id}`,
-          list: (query) =>
-            remote.controller.listFiles({ kind: "conversation", conversationId: side.id }, query),
-        }
-      : undefined,
-  );
-  // `$` mentions (issue #143): the fork's own conversation scope — it shares
-  // its family's cwd, so project and user skills both apply.
-  const skills = useSkillMentions(
-    remote,
-    { kind: "conversation", conversationId: side.id },
-    inputRef,
-    view.connection === "connected" && hostSupportsCall(view.host?.protocol.minor ?? 0, "listSkills"),
-    skillDraft.pick,
-  );
-  useSkillHighlight(inputRef, skillDraft.draft);
-  const triggers = [...(atMentions ?? []), ...(skills.trigger === undefined ? [] : [skills.trigger])];
-  const submit = (): void => {
-    if (takeBackPending) return;
-    // Only the picked skills go out as `skills` (ADR-0028).
-    const message = draftMessage(skillDraft.draft);
-    const text = message.text.trim();
-    if (text === "") return;
-    requestNotificationPermission();
-    void remote.controller.submit(text, "followUp", { target: side.id, skills: message.skills });
-    setDraft("");
-  };
-  const parentSummary =
-    summary.parent === undefined ? undefined : findConversation(view.organized, summary.parent)?.summary;
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <DetailHeader
-        back="Back to threads"
-        title={displayName(summary)}
-        status={summary.status}
-        onBack={onBack}
-        extra={<Button label="Open in main" variant="secondary" size="sm" onClick={() => onOpenInMain(side.id)} />}
-      />
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <SideTranscript
-          view={view}
-          remote={remote}
-          side={side}
-          openInPanel={openInPanel}
-          ownOnly
-          forkSource={displayName(parentSummary)}
-          onRetry={async ({ text, images, skills, attachments, requestId }) => {
-            requestNotificationPermission();
-            // Refs go back as refs, never downloaded first.
-            await remote.controller.submit(text, "followUp", {
-              target: side.id,
-              requestId,
-              images: images.map(outgoingImage),
-              ...(images.some((image) => !("data" in image)) ? { imageViews: images } : {}),
-              skills,
-              ...(attachments.length === 0 ? {} : { attachments: attachments.map((file) => file.id) }),
-              ...(attachments.length === 0 ? {} : { attachmentDetails: attachments }),
-            });
-          }}
-          onRetrySubmission={(requestId) => {
-            void remote.controller.retrySubmission(requestId).catch(() => {});
-          }}
-          onEditSubmission={(requestId) => {
-            const submission = view.submissions?.find((candidate) => candidate.requestId === requestId);
-            // The side composer has no image/file tray, so taking one back
-            // would silently drop it. Keep the local row and edit in main.
-            if (!canTakeBackInSidePanel(submission, editDisabled)) return;
-            setTakeBackPending(true);
-            void remote.controller
-              .takeBackSubmission(requestId)
-              .then((draft) => {
-                if (draft !== undefined) setTakeBack(draft);
-                else setTakeBackPending(false);
-              })
-              .catch((error: unknown) => {
-                setTakeBackPending(false);
-                toast({ body: error instanceof Error ? error.message : String(error), type: "error" });
-              });
-          }}
-          submissionEditDisabled={editDisabled}
-          submissionEditTooltip={editDisabled ? editTooltip : undefined}
-          localEditAttachmentsUnsupported
-        />
-        <PendingQuestions
-          docs={side.docs}
-          remote={remote}
-          connected={view.connection === "connected"}
-          target={side.id}
-        />
-      </div>
-      <div className="shrink-0 border-t border-border p-2">
-        <ChatPromptInput
-          value={draft}
-          inputRef={inputRef}
-          placeholder="Reply in this thread…"
-          status={busy ? "streaming" : "ready"}
-          isDisabled={view.connection !== "connected" || takeBackPending}
-          onSubmit={submit}
-          onStop={() => void remote.controller.abort(side.id)}
-          onValueChange={setDraft}
-          onFocus={skills.request}
-          triggers={triggers.length === 0 ? undefined : triggers}
-        />
-      </div>
-    </div>
   );
 }
 
@@ -501,19 +184,35 @@ function TaskDetail({
   summary,
   onBack,
   openInPanel,
+  onOpenInMain,
 }: {
   view: DurableView;
   remote: RemoteDurable;
   side: SideConversationView;
   summary: ConversationSummary;
   onBack: () => void;
-  openInPanel: (id: ConversationId, tab: "threads" | "tasks") => void;
+  openInPanel: (id: ConversationId) => void;
+  onOpenInMain: (id: ConversationId) => void;
 }) {
+  if (side.conversation === undefined) return null;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <DetailHeader back="Back to tasks" title={displayName(summary)} status={summary.status} onBack={onBack} />
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <SideTranscript view={view} remote={remote} side={side} openInPanel={openInPanel} />
+        <ConversationTranscript
+          conversation={side.conversation}
+          docs={side.docs}
+          submissions={view.submissions}
+          mergeQueuedSubmissions
+          toolPresentations={view.toolPresentations}
+          connected={view.connection === "connected"}
+          canFork={false}
+          openInPanel={openInPanel}
+          onOpenFork={onOpenInMain}
+          onFork={() => {}}
+          summaryOf={(id) => findConversation(view.organized, id)?.summary}
+          forksAt={(entryId) => forksAt(view.organized, side.id, entryId)}
+        />
       </div>
       <div className="shrink-0 border-t border-border p-2 text-center text-xs text-muted">Read-only · subagent</div>
     </div>
@@ -522,7 +221,7 @@ function TaskDetail({
 
 /**
  * Desktop: a resizable panel docked right of the main column. Narrow: a
- * fullscreen dialog — the same tabs and details.
+ * fullscreen dialog — the same Tasks list and read-only detail.
  */
 export function SidePanel({
   view,
@@ -531,8 +230,6 @@ export function SidePanel({
   narrow,
   open,
   onOpenChange,
-  tab,
-  onTabChange,
   openInPanel,
   onOpenInMain,
 }: {
@@ -543,9 +240,7 @@ export function SidePanel({
   narrow: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  tab: PanelTab;
-  onTabChange: (tab: PanelTab) => void;
-  openInPanel: (id: ConversationId, tab: "threads" | "tasks") => void;
+  openInPanel: (id: ConversationId) => void;
   onOpenInMain: (id: ConversationId) => void;
 }) {
   const resizable = useResizable({
@@ -565,8 +260,6 @@ export function SidePanel({
                 view={view}
                 remote={remote}
                 shownId={shownId}
-                tab={tab}
-                onTabChange={onTabChange}
                 openInPanel={openInPanel}
                 onOpenInMain={onOpenInMain}
               />
@@ -585,8 +278,6 @@ export function SidePanel({
           view={view}
           remote={remote}
           shownId={shownId}
-          tab={tab}
-          onTabChange={onTabChange}
           openInPanel={openInPanel}
           onOpenInMain={onOpenInMain}
         />

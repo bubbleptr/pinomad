@@ -4,7 +4,7 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import type { SubmissionDraft } from "@pinomad/protocol/view.ts";
 import { fakeRemote, fakeView } from "../../test/story-fixtures.tsx";
 import { ConversationComposer } from "./conversation-composer.tsx";
-import { canTakeBackInSidePanel, takeBackForConversation, type PendingTakeBack } from "./take-back.ts";
+import { takeBackForConversation, type PendingTakeBack } from "./take-back.ts";
 
 const draft: SubmissionDraft = {
   text: "restored draft",
@@ -22,13 +22,6 @@ describe("takeBackForConversation", () => {
     expect(takeBackForConversation(pending, other)).toBeUndefined();
     expect(takeBackForConversation(pending, undefined)).toBeUndefined();
     expect(takeBackForConversation(pending, origin)).toBe(draft);
-  });
-
-  it("only lets the side composer take back a submission with no attachments", () => {
-    expect(canTakeBackInSidePanel({ images: [], attachments: [] }, false)).toBe(true);
-    expect(canTakeBackInSidePanel({ images: [], attachments: ["A"] }, false)).toBe(false);
-    expect(canTakeBackInSidePanel({ images: [{ ref: "r1" }], attachments: [] }, false)).toBe(false);
-    expect(canTakeBackInSidePanel({ images: [], attachments: [] }, true)).toBe(false);
   });
 
   it("leaves a new chat empty and restores the draft on the origin conversation", async () => {

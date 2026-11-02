@@ -36,6 +36,7 @@ export function ChatEntryView({
   entry,
   connected,
   openInPanel,
+  onOpenFork,
   onFork,
   canFork = true,
   forksAt,
@@ -45,14 +46,15 @@ export function ChatEntryView({
   onEditSubmission,
   submissionEditDisabled,
   submissionEditTooltip,
-  localEditAttachmentsUnsupported,
   todo,
   today,
 }: {
   entry: ChatEntry;
   connected: boolean;
-  /** Threads and tasks reached from a transcript open in the side panel. */
-  openInPanel: (id: ConversationId, tab: "threads" | "tasks") => void;
+  /** Foreground tasks reached from a transcript open in the side panel. */
+  openInPanel: (id: ConversationId) => void;
+  /** A forked message's chip opens that fork as a conversation in main. */
+  onOpenFork: (id: ConversationId) => void;
   onFork: (entryId: string) => void;
   /** False inside a fork or subagent conversation: depth is one (ADR-0019 §2). */
   canFork?: boolean;
@@ -70,8 +72,6 @@ export function ChatEntryView({
   submissionEditDisabled?: boolean;
   /** Why Edit is disabled, shown on hover. */
   submissionEditTooltip?: string;
-  /** This composer has no image/file tray (the side panel). */
-  localEditAttachmentsUnsupported?: boolean;
   /** The conversation's todo list — handed to the newest run only, so one card shows. */
   todo?: RunTodo;
   /** Local start of today, shared by the transcript's midnight clock. */
@@ -86,7 +86,6 @@ export function ChatEntryView({
           onEditSubmission={onEditSubmission}
           submissionEditDisabled={submissionEditDisabled}
           submissionEditTooltip={submissionEditTooltip}
-          localEditAttachmentsUnsupported={localEditAttachmentsUnsupported}
           today={today}
         />
       );
@@ -96,6 +95,7 @@ export function ChatEntryView({
           entry={entry}
           connected={connected}
           openInPanel={openInPanel}
+          onOpenFork={onOpenFork}
           onFork={onFork}
           canFork={canFork}
           forksAt={forksAt}
@@ -118,7 +118,6 @@ function UserEntry({
   onEditSubmission,
   submissionEditDisabled = false,
   submissionEditTooltip,
-  localEditAttachmentsUnsupported = false,
   today,
 }: {
   entry: Extract<ChatEntry, { kind: "user" }>;
@@ -126,18 +125,12 @@ function UserEntry({
   onEditSubmission?: (requestId: string) => void;
   submissionEditDisabled?: boolean;
   submissionEditTooltip?: string;
-  localEditAttachmentsUnsupported?: boolean;
   today?: number;
 }) {
   const local = entry.local;
   const canRetry = local !== undefined && (entry.status === "unknown" || entry.status === "failed");
   const canEdit = local !== undefined && entry.status === "failed";
-  const attachmentsBlockEdit =
-    localEditAttachmentsUnsupported && local !== undefined && (entry.images.length > 0 || entry.attachments.length > 0);
-  const editDisabled = submissionEditDisabled || attachmentsBlockEdit;
-  const editTooltip = attachmentsBlockEdit
-    ? "Open in main to edit a message with attachments"
-    : submissionEditTooltip;
+  const editDisabled = submissionEditDisabled;
   const status =
     entry.status === "failed"
       ? ("error" as const)
@@ -220,7 +213,7 @@ function UserEntry({
               size="sm"
               className="chat-message__local-action"
               isDisabled={editDisabled}
-              {...(editDisabled && editTooltip !== undefined ? { tooltip: editTooltip } : {})}
+              {...(editDisabled && submissionEditTooltip !== undefined ? { tooltip: submissionEditTooltip } : {})}
               onClick={() => onEditSubmission(local.requestId)}
             />
           )}
@@ -248,6 +241,7 @@ function RunEntry({
   entry,
   connected,
   openInPanel,
+  onOpenFork,
   onFork,
   canFork = true,
   forksAt,
@@ -258,7 +252,8 @@ function RunEntry({
 }: {
   entry: Extract<ChatEntry, { kind: "run" }>;
   connected: boolean;
-  openInPanel: (id: ConversationId, tab: "threads" | "tasks") => void;
+  openInPanel: (id: ConversationId) => void;
+  onOpenFork: (id: ConversationId) => void;
   onFork: (entryId: string) => void;
   canFork?: boolean;
   forksAt?: (entryId: string) => ConversationId[];
@@ -271,7 +266,7 @@ function RunEntry({
   const { view: cotWithoutSubagents, subagents } = useMemo(() => splitSubagentCalls(entry.cot), [entry.cot]);
   const cot = useMemo(() => fillToolDetails(cotWithoutSubagents), [cotWithoutSubagents]);
   const answer = cot.answer;
-  // A forked message's chip opens the thread in the panel rather than the dialog.
+  // A forked message's chip opens that fork in main rather than the dialog.
   const forks = entry.forkEntryId === undefined ? [] : (forksAt?.(entry.forkEntryId) ?? []);
   // A settled run's metadata rides in its actions row: the end time first,
   // then Copy/Fork. A textless tail (thinking-only or tool-only last message)
@@ -323,9 +318,9 @@ function RunEntry({
                 type="button"
                 className="pigui-fork-chip"
                 aria-label={`${forks.length} ${forks.length === 1 ? "fork" : "forks"}`}
-                title="Open in Threads"
+                title="Open fork"
                 disabled={!connected}
-                onClick={() => openInPanel(forks[0]!, "threads")}
+                onClick={() => onOpenFork(forks[0]!)}
               >
                 <GitFork aria-hidden="true" />
                 {forks.length} {forks.length === 1 ? "fork" : "forks"}

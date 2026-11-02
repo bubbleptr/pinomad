@@ -23,18 +23,19 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0014](0014-web-client-adopts-pace-design-system.md) | Web 客户端整套采用 Pace 的视觉基础（Tailwind v4、token 桥、Hugeicons；字体后来换成系统字体），搬界面不搬数据模型（思维链组件由 0026 修订） |
 | [0026](0026-run-process-folds-out-of-transcript.md) | 运行过程在对话里收成一行：Web / 桌面按插话分段成灰色摘要行、原地展开，iOS 每次运行一颗胶囊加 sheet；todo 跟在最新一次运行后面；不加提示词凑插话和 todo |
 | [0034](0034-submission-delivery-and-recovery.md) | 提交的送达状态与断线恢复：只读 `submission` 查询、宿主在预处理前按 `requestId` 去重、`submit` 结果带 `entry`；重连后先查询再决定是否重发，是“断线不重放”的窄例外，“未确认”不等于失败 |
+| [0039](0039-fork-sidebar-conversations.md) | Web/桌面端把 Fork 作为左侧独立对话列在根对话之后，所有入口在主区打开；右侧只保留 Tasks。创建后的 focus 不被父对话抢回（修订 0007 §1/§2、0019 的 thread 呈现、0038 §2） |
 
 ## 宿主能力与工作组织
 
 | ADR | 一句话 |
 | --- | --- |
 | [0006](0006-host-tools-and-context-sources.md) | 宿主默认提供编码工具、默认不审批，上下文只从项目和 `~/.agents` 读取 |
-| [0007](0007-projects-and-conversations.md) | 工作组织是"项目 → 对话"，不用 channel；归档代替删除（多宿主分组由 0035 补充） |
+| [0007](0007-projects-and-conversations.md) | 工作组织是"项目 → 对话"，不用 channel；归档代替删除（多宿主分组由 0035 补充，Fork 展示由 0039 修订） |
 | [0010](0010-worktree-execution-checkout.md) | Git 项目的对话默认在数据目录下的独立 worktree 里工作（fork 部分由 0019 修订） |
 | [0011](0011-ask-user-question-replaces-approval.md) | 不做审批闸门；agent 用阻塞式的结构化提问和用户对齐，取代 `pinomad.approval` |
 | [0012](0012-mcp-host-level-connections.md) | MCP 只读 `~/.agents/mcp.json`，宿主级连接所有对话共用，工具直接声明，状态经 `mcp` 流推给客户端 |
 | [0013](0013-codemode-and-tool-exposure.md) | codemode 是默认开启的通用工具；工具按 `direct` / `model-only` / `codemode` 暴露，和来源正交，MCP 默认 `codemode` |
-| [0019](0019-fork-shares-parent-checkout.md) | fork 共用父对话的检出，要隔离由 agent 自己用 git 开 worktree；只有一层，每条消息最多一个 |
+| [0019](0019-fork-shares-parent-checkout.md) | fork 共用父对话的检出，要隔离由 agent 自己用 git 开 worktree；只有一层，每条消息最多一个（界面呈现由 0039 修订） |
 | [0021](0021-host-settings-in-data-dir.md) | 宿主设置存在数据目录的 `settings.json`，不写 pi 的设置、不进 Durable（§2 回落、§5 凭据共用由 0031 取代） |
 | [0023](0023-agent-roles.md) | 具名 Agent 是数据目录 `agents/` 下的 Markdown 文件，只有宿主级、客户端可编辑；子代理、`@` 提及、顶层对话都能用；子代理上锁定模型，顶层对话只定初始值；用时抄一份，出错不回落 |
 | [0028](0028-host-expands-explicit-skill-mentions.md) | 只有从 `$` 菜单选中的 skill 算调用（`submit` / `createConversation` 的 `skills`，5.16；旧客户端按文本匹配），宿主按 pi 的 `/skill:` 格式把全文拼在 `pi.user` 消息前面，客户端显示时剥掉并给出展开了哪些；`disable-model-invocation` 只从提示词列表里去掉 |
@@ -55,7 +56,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0025](0025-push-via-server-apns.md) | 推送直连 APNs，按环境分开的密钥只放在服务端；宿主经控制连接请服务端发，服务端只转发不保存；开放注册前要先让服务端核对 token 归属（§5 由 0036 修订） |
 | [0036](0036-server-checks-push-token-ownership.md) | 设备登录后向服务端登记推送 token，服务端记下它属于哪个账号，推送时核对和发起宿主同一账号；不引入句柄，协议不变；没登录账号的设备没有推送 |
 | [0037](0037-account-devices-and-remote-revocation.md) | 账号设备：客户端登录时带本机生成的设备 ID，服务端记下它经账号进了哪些宿主（宿主报告公钥），账号页可以一键请所有宿主吊销，退出登录时也可以这样撤销本机（§3 修订，#494）；宿主仍是最终裁决的一方，老宿主上只能在宿主上吊销 |
-| [0038](0038-background-subagent-sidebar.md) | Background Subagent 按 root 家族压平进入左侧，Foreground 留在右侧 Tasks；真实 parent 和完整家族聚合不变，主区子代理只读（修订 0007 的展示位置） |
+| [0038](0038-background-subagent-sidebar.md) | Background Subagent 按 root 家族压平进入左侧，Foreground 留在右侧 Tasks；真实 parent 和完整家族聚合不变，主区子代理只读（修订 0007 的展示位置；§2 的 Fork 部分由 0039 修订） |
 | [0027](0027-image-refs-on-the-wire.md) | 图片在线上按内容引用传：订阅时声明 `images: "ref"`，快照和 ops 里只带绑定类型和字节的 sha256 引用，字节用 `image` 调用按当前视图取，发送时可回传引用；存储仍内联在 SQLite |
 | [0022](0022-server-accounts-and-vouching.md) | 宿主、客户端、服务端三个部分：账号在服务端（凭管理员发的邀请码注册，#449），宿主用 `pinomad join` 加入账号，服务端为新设备向宿主要邀请担保；信任服务端，Noise 防被动泄露，吊销仍在宿主上（§6 广播由 0035 修订，§8 由 0035 补充；§3 由 #495 补充：不带令牌时经浏览器确认短码） |
 | [0032](0032-multi-endpoint-pairing-and-failover.md) | 远程访问携带多候选：配对邀请和 hello 发布 remote endpoint 集合，loopback 保持 client-local，Auto relay 优先、direct 兜底，候选级失败、整轮汇总，paired 与 ready 分离；不做服务端地址目录 |
@@ -102,5 +103,8 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | 0022 §8、后果：多宿主由客户端汇总，客户端同时连多台宿主 | 由 0035 决定：同时连接所有已配对宿主、单一聚焦释放非聚焦对话订阅、每台宿主独立运行时、带 `declined` 的自动登记 |
 | 0022 §6、后果：吊销只在宿主上；账号层面一键踢设备留到以后 | 由 0037 补充：服务端记下账号设备和它在各宿主上的公钥，可以请宿主吊销，宿主仍是最终裁决的一方 |
 | 0025 §5：服务端只转发、不存 token；后果：开放注册前要核对 token 归属 | 由 0036 决定：设备登录后向服务端登记 token，服务端存 token 和所属账号，推送时核对；不用句柄 |
+| 0007 §1、§2：fork 以 thread 呈现、不进入顶层列表 | 由 0039 修订：Web/桌面端把 Fork 作为左侧独立行列在根对话后，在主区打开；真实 parent 和生命周期不变 |
+| 0019 背景、考虑过的方案：Fork 的界面是父对话旁的 thread | 由 0039 修订：Fork 不再作为 thread 或右侧入口；检出共用、一层、每消息最多一个不变 |
+| 0038 §2：Fork 不进入左侧 | 由 0039 修订：Fork 作为左侧独立行；Background 仍只在根对话的投影里出现一次，Foreground 仍不进入左侧 |
 | 0025 考虑过的方案：扫码配对的设备不一定登录过账号，所以不让设备向服务端登记 | 由 0036 修订：推送要求设备登录宿主所在的账号 |
 | 其余"以后再做" | 统一收在 GitHub Issues，带 `later` 标签 |

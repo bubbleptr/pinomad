@@ -4,7 +4,6 @@ import {
   busyConversation,
   fakeView,
   forkConversation,
-  PARSER_ID,
   settledConversation,
   subagentConversation,
   summaryOf,
@@ -27,6 +26,7 @@ const meta = {
     connected: true,
     canFork: true,
     openInPanel: fn(),
+    onOpenFork: fn(),
     onFork: fn(),
     summaryOf,
     docs: fakeView().docs,
@@ -41,9 +41,9 @@ export const Settled: Story = {};
 
 export const Running: Story = { args: { conversation: busyConversation() } };
 
-/** A fork beside its parent shows only its own entries, under a divider naming the parent. */
-export const ForkOwnEntries: Story = {
-  args: { conversation: forkConversation(), ownOnly: true, forkSource: summaryOf(PARSER_ID)?.title, docs: [] },
+/** A fork in main is an ordinary conversation: no Fork action at depth one. */
+export const Fork: Story = {
+  args: { conversation: forkConversation(), canFork: false, docs: [] },
 };
 
 /** A subagent's transcript is read-only: no forking, no retry. */

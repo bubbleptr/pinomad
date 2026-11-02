@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ConversationId } from "@earendil-works/pi-durable";
 import type { ChatEntry, CotStep, CotView } from "@pinomad/client/cot-view.ts";
 import type { ToolItem } from "@pinomad/client/tool-item.ts";
 import type { TodoState } from "@pinomad/protocol/presentation.ts";
@@ -18,7 +19,7 @@ function run(cot: Partial<CotView> & { steps: CotStep[] }, overrides: Partial<Ru
 
 function renderRun(entry: RunEntry, todo?: { state: TodoState; updatedAtMs?: number }) {
   return render(
-    <ChatEntryView entry={entry} connected openInPanel={() => {}} onFork={() => {}} canFork={false} todo={todo} />,
+    <ChatEntryView entry={entry} connected openInPanel={() => {}} onOpenFork={() => {}} onFork={() => {}} canFork={false} todo={todo} />,
   );
 }
 
@@ -35,7 +36,7 @@ function userEntry(timestamp?: number): Extract<ChatEntry, { kind: "user" }> {
 }
 
 function renderUser(entry: Extract<ChatEntry, { kind: "user" }>) {
-  return render(<ChatEntryView entry={entry} connected openInPanel={() => {}} onFork={() => {}} canFork={false} />);
+  return render(<ChatEntryView entry={entry} connected openInPanel={() => {}} onOpenFork={() => {}} onFork={() => {}} canFork={false} />);
 }
 
 const narrated: CotStep[] = [
@@ -67,6 +68,7 @@ describe("local submission states", () => {
         entry={local("unknown")}
         connected
         openInPanel={() => {}}
+        onOpenFork={() => {}}
         onFork={() => {}}
         onRetrySubmission={onRetry}
         onEditSubmission={() => {}}
@@ -85,6 +87,7 @@ describe("local submission states", () => {
         entry={local("failed", "The host refused this message")}
         connected
         openInPanel={() => {}}
+        onOpenFork={() => {}}
         onFork={() => {}}
         onRetrySubmission={onRetry}
         onEditSubmission={onEdit}
@@ -96,31 +99,6 @@ describe("local submission states", () => {
     expect(onEdit).toHaveBeenCalledWith("r1");
   });
 
-  it("disables only Edit for a side-panel send with attachments", async () => {
-    const onRetry = vi.fn();
-    const onEdit = vi.fn();
-    render(
-      <ChatEntryView
-        entry={{
-          ...local("failed", "refused"),
-          images: [{ data: "aGk=", mimeType: "image/png" }],
-        }}
-        connected
-        openInPanel={() => {}}
-        onFork={() => {}}
-        onRetrySubmission={onRetry}
-        onEditSubmission={onEdit}
-        localEditAttachmentsUnsupported
-      />,
-    );
-    const edit = screen.getByRole("button", { name: "Edit" });
-    expect(edit).toHaveAttribute("aria-disabled", "true");
-    await userEvent.click(edit);
-    expect(onEdit).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(onRetry).toHaveBeenCalledWith("r1");
-  });
-
   it("disables Edit while the composer is occupied", async () => {
     const onEdit = vi.fn();
     render(
@@ -128,6 +106,7 @@ describe("local submission states", () => {
         entry={local("failed", "refused")}
         connected
         openInPanel={() => {}}
+        onOpenFork={() => {}}
         onFork={() => {}}
         onRetrySubmission={() => {}}
         onEditSubmission={onEdit}
@@ -149,6 +128,7 @@ describe("local submission states", () => {
         entry={local("failed", "refused")}
         connected
         openInPanel={() => {}}
+        onOpenFork={() => {}}
         onFork={() => {}}
         onRetrySubmission={onRetry}
         onEditSubmission={onEdit}
@@ -237,6 +217,45 @@ describe("message times", () => {
   });
 });
 
+describe("a forked message", () => {
+  it("opens the fork in main instead of a panel, and renames the tooltip", async () => {
+    const onOpenFork = vi.fn();
+    render(
+      <ChatEntryView
+        entry={run({ steps: [], answer: { text: "Done.", streaming: false } }, { forkEntryId: "entry-9" })}
+        connected
+        openInPanel={() => {}}
+        onOpenFork={onOpenFork}
+        onFork={() => {}}
+        forksAt={() => [42 as ConversationId]}
+        canFork
+      />,
+    );
+    const chip = screen.getByRole("button", { name: "1 fork" });
+    expect(chip).toHaveAttribute("title", "Open fork");
+    await userEvent.click(chip);
+    expect(onOpenFork).toHaveBeenCalledWith(42);
+  });
+
+  it("stays a Fork action when no fork exists", async () => {
+    const onFork = vi.fn();
+    const onOpenFork = vi.fn();
+    render(
+      <ChatEntryView
+        entry={run({ steps: [], answer: { text: "Done.", streaming: false } }, { forkEntryId: "entry-9" })}
+        connected
+        openInPanel={() => {}}
+        onOpenFork={onOpenFork}
+        onFork={onFork}
+        canFork
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Fork" }));
+    expect(onFork).toHaveBeenCalledWith("entry-9");
+    expect(onOpenFork).not.toHaveBeenCalled();
+  });
+});
+
 describe("a run in the transcript", () => {
   it("folds a run the model never narrated into a single line with its duration", () => {
     const { container } = renderRun(
@@ -289,7 +308,7 @@ describe("a run in the transcript", () => {
     await user.click(rows[1]!);
     await user.click(rows[1]!);
     const settled = run({ elapsedMs: 9_000, steps: [narrated[1]!, live[1]!, { ...narrated[3]!, id: "c-tools-1" }] });
-    rerender(<ChatEntryView entry={settled} connected openInPanel={() => {}} onFork={() => {}} canFork={false} />);
+    rerender(<ChatEntryView entry={settled} connected openInPanel={() => {}} onOpenFork={() => {}} onFork={() => {}} canFork={false} />);
     expect(screen.getByRole("button", { name: "Ran bun test · 9s" })).toHaveAttribute("aria-expanded", "false");
   });
 

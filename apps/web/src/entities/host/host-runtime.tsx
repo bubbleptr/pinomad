@@ -11,6 +11,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
@@ -46,6 +47,9 @@ export type HostWorkbenchRenderer = (input: {
   opening: Opening | undefined;
   cancelOpening: () => void;
   openConversation: (id: ConversationId) => void;
+  /** Hold focus enforcement while this host creates a fork from the shown conversation. */
+  beginFork: () => void;
+  endFork: () => void;
 }) => ReactNode;
 
 /** Every paired host runs at once; only the focused one paints the workbench. */
@@ -310,10 +314,25 @@ function ReadyHost({
   useHostNameSync(host.hostKey, view.settings);
   const { opening, open, cancel } = useConversationOpening(remote);
   const focusDraftHere = useCallback(() => focusDraft(host.hostKey), [focusDraft, host.hostKey]);
+  // A fork is created with the host's main switch, outside app focus: hold the
+  // parent target until the new fork is adopted (or the reader moves away).
+  const forkPending = useRef(false);
+  const beginFork = useCallback(() => {
+    forkPending.current = true;
+  }, []);
+  const endFork = useCallback(() => {
+    forkPending.current = false;
+  }, []);
+  const followFork = useCallback(
+    (id: ConversationId) => focusConversation({ hostKey: host.hostKey, conversationId: id }),
+    [focusConversation, host.hostKey],
+  );
   useConversationFocus(remote, view, focusTarget, {
     open,
     cancel,
     onUnavailable: focusDraftHere,
+    forkPending,
+    onForkFollow: followFork,
   });
   useRunNotifications(
     view,
@@ -340,5 +359,7 @@ function ReadyHost({
     opening,
     cancelOpening: cancel,
     openConversation: open,
+    beginFork,
+    endFork,
   });
 }

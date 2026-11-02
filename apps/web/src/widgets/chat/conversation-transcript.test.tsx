@@ -26,6 +26,7 @@ function renderTranscript(timestamp: number) {
       connected
       canFork
       openInPanel={() => {}}
+      onOpenFork={() => {}}
       onFork={() => {}}
     />,
   );

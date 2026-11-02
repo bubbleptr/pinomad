@@ -3,7 +3,7 @@
 // starts. It summarizes the shown conversation — where it works, what it
 // changed, how full its context is and what it spent, which subagents are
 // busy, which tool sources are up — and links out for the detail: the
-// Changes dialog, the side panel's Tasks tab. It replaces the side panel's
+// Changes dialog, the side panel's Tasks list. It replaces the side panel's
 // Live tab.
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
@@ -435,7 +435,7 @@ export function OverviewCard({
   narrow: boolean;
   busy: boolean;
   onOpenChanges: () => void;
-  /** Opens the side panel's Tasks tab, on a subagent's detail when one is given. */
+  /** Opens the side panel's Tasks list, on a subagent's detail when one is given. */
   onOpenTasks: (id?: ConversationId) => void;
   onClose: () => void;
 }) {

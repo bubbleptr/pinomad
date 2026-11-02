@@ -73,6 +73,7 @@ function MainColumn({
         connected={view.connection === "connected"}
         canFork
         openInPanel={fn()}
+        onOpenFork={fn()}
         onFork={fn()}
         summaryOf={summaryOf}
       />
