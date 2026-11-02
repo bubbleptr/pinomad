@@ -2,6 +2,7 @@
 // in-process server, with an injected service manager — tests never install a
 // real service.
 import { readFile, stat, writeFile } from "node:fs/promises";
+import { connect } from "node:net";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
@@ -501,6 +502,31 @@ describe("joinServer through the browser redirect (#513)", () => {
     await flow.browsed();
     expect(outcome.username).toBe("admin");
     expect(strays).toEqual([404, 404, 404, 404, 404]);
+  });
+
+  it("answers a request target that isn't a URL with 400, and keeps waiting", async () => {
+    let status = "";
+    const flow = await loopbackFlow({
+      browser: async (verifyUrl, started) => {
+        // `//%` passes Node's HTTP parser but not new URL(); fetch can't send it.
+        const { port } = new URL(String(flow.startBodies[0]?.redirectUri));
+        const raw = await new Promise<string>((resolve, reject) => {
+          const socket = connect(Number(port), "127.0.0.1", () =>
+            socket.write("GET //% HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"),
+          );
+          let text = "";
+          socket.on("data", (chunk) => (text += chunk.toString()));
+          socket.on("end", () => resolve(text));
+          socket.on("error", reject);
+        });
+        status = raw.split("\r\n")[0] ?? "";
+        await answer("confirm")(verifyUrl, started);
+      },
+    });
+    const outcome = await joinServer({ origin: flow.started.origin, dataDir: flow.data.path }, flow.deps);
+    await flow.browsed();
+    expect(status).toMatch(/^HTTP\/1\.1 400/);
+    expect(outcome.username).toBe("admin");
   });
 
   it("stops with a clear error when the browser denies it, and tells the page", async () => {

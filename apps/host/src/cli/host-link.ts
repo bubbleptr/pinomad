@@ -253,7 +253,13 @@ export async function requestJoinToken(
       settle = resolve;
     });
     const listener = createServer((request, response) => {
-      const url = new URL(request.url ?? "/", "http://127.0.0.1");
+      // A target Node's parser takes but URL won't (`//%`) would throw out of
+      // this callback and take the whole join down with it.
+      const url = URL.parse(request.url ?? "/", "http://127.0.0.1");
+      if (url === null) {
+        answerPage(response, 400, "Bad request.");
+        return;
+      }
       // Only the answer to this request counts: anything else on this port,
       // a stray tab or another local program, is turned away and the wait goes on.
       if (request.method !== "GET" || url.pathname !== "/callback" || url.searchParams.get("state") !== state) {
