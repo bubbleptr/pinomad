@@ -97,11 +97,18 @@ type Loaded = {
   readonly address: ResolvedAddress | undefined;
 };
 
-/** One fork creation per Workbench; its focus hold outlives the fork call. */
+/** One fork creation per Workbench; its invisible side is the handoff to main. */
 type ForkOperation = {
   readonly parentId: ConversationId;
-  /** Still waiting for the new fork's summary (or a reader cancel). */
-  hold: boolean;
+  readonly entryId: string;
+  /** The side already open before the fork call; anything else is a candidate. */
+  readonly sideBeforeId: ConversationId | undefined;
+  /** The staged side once its snapshot or summary identifies our fork. */
+  stagedId: ConversationId | undefined;
+  /** The summary matched; main was opened and the staged side is retired. */
+  confirmed: boolean;
+  /** The side was replaced or disappeared, or it is not our fork. */
+  cancelled: boolean;
   /** The fork controller call, including its first submit, has settled. */
   commandSettled: boolean;
 };
@@ -419,8 +426,6 @@ export function App() {
                   opening,
                   cancelOpening,
                   openConversation,
-                  beginFork,
-                  endFork,
                 }) => (
                   <Workbench
                     remote={remote}
@@ -434,8 +439,6 @@ export function App() {
                     hostOpening={opening}
                     hostOpen={openConversation}
                     hostCancelOpening={cancelOpening}
-                    onForkStart={beginFork}
-                    onForkEnd={endFork}
                   />
                 )}
               />
@@ -772,8 +775,6 @@ export function Workbench({
   hostOpening,
   hostOpen,
   hostCancelOpening,
-  onForkStart,
-  onForkEnd,
 }: {
   remote: RemoteDurable;
   wsUrl: string;
@@ -790,9 +791,6 @@ export function Workbench({
   hostOpening?: Opening;
   hostOpen?: (id: ConversationId) => void;
   hostCancelOpening?: () => void;
-  /** Hold focus enforcement on the parent while a fork created here lands. */
-  onForkStart?: (parentId: ConversationId) => void;
-  onForkEnd?: () => void;
 }) {
   const view = useDurableView(remote);
   const { hosts, focus, focusConversation, focusDraft, rememberConversation } = useHosts();
@@ -813,43 +811,31 @@ export function Workbench({
     };
   }, []);
 
-  // One fork at a time per workbench. The focus hold lasts until the new
-  // fork's summary is adopted or the reader cancels — the fork call settling
-  // (including its first submit) is not the summary.
+  // One fork at a time per workbench. The invisible side stages the new fork
+  // until its summary proves parent and forkedAt; main stays on the parent
+  // throughout, so focus keeps its ordinary single responsibility.
   const forkOp = useRef<ForkOperation | null>(null);
   const [forkBusy, setForkBusy] = useState(false);
-  const syncForkBusy = useCallback(() => {
-    const op = forkOp.current;
-    if (op !== null && op.commandSettled && !op.hold) forkOp.current = null;
-    if (live.current) setForkBusy(forkOp.current !== null);
+  const finishFork = useCallback((op: ForkOperation) => {
+    if (forkOp.current !== op) return;
+    forkOp.current = null;
+    if (live.current) setForkBusy(false);
   }, []);
-  const releaseForkHold = useCallback(
+  const settleForkIfDone = useCallback(
     (op: ForkOperation) => {
-      if (forkOp.current !== op || !op.hold) return;
-      op.hold = false;
-      onForkEnd?.();
-      syncForkBusy();
+      if (forkOp.current !== op || !op.commandSettled) return;
+      if (op.confirmed || op.cancelled) {
+        finishFork(op);
+        return;
+      }
+      const side = remote.view.current().side;
+      // A different side may be the staged fork whose snapshot/summary has not
+      // arrived yet; let the handoff effect identify it. No side, or the old
+      // user side still shown, means this command staged nothing.
+      if (side !== undefined && side.id !== op.sideBeforeId) return;
+      finishFork(op);
     },
-    [onForkEnd, syncForkBusy],
-  );
-  // Adoption moves focus to the fork; moving anywhere else (another
-  // conversation, a draft, another host) cancels the automatic follow.
-  useEffect(() => {
-    const op = forkOp.current;
-    if (op === null || hostKey === undefined) return;
-    const stillOnParent = focus?.hostKey === hostKey && focus.conversationId === op.parentId;
-    if (!stillOnParent) releaseForkHold(op);
-  }, [focus, hostKey, releaseForkHold]);
-  // Leaving the workbench cancels the follow too; its late promise must not
-  // touch focus or another workbench's operation.
-  useEffect(
-    () => () => {
-      const op = forkOp.current;
-      if (op === null) return;
-      op.hold = false;
-      onForkEnd?.();
-    },
-    [onForkEnd],
+    [finishFork, remote],
   );
   // The 5.12 name the connected host announced rides back into the stored
   // entry — bound to this connection's hostKey, not whichever host is focused.
@@ -882,13 +868,81 @@ export function Workbench({
   const openConversation = useCallback(
     (id: ConversationId): void => {
       if (framed) setLocalDrafting(false);
-      // For a stored host the focus effect performs the one switch; a token
-      // client has no focus entry and opens directly.
-      if (hostKey !== undefined) focusConversation({ hostKey, conversationId: id });
-      else openTarget(id);
+      // Only the multi-host ReadyHost route owns app focus. A one-shot
+      // connection may carry a hostKey without that composition and opens its
+      // own main slot directly.
+      if (hostOpen !== undefined && hostKey !== undefined) {
+        focusConversation({ hostKey, conversationId: id });
+      } else {
+        openTarget(id);
+      }
     },
-    [focusConversation, framed, hostKey, openTarget],
+    [focusConversation, framed, hostKey, hostOpen, openTarget],
   );
+  // The fork call stages the new fork on the invisible side. Main stays on the
+  // parent; only the summary proves parent and forkedAt and lets us follow.
+  useEffect(() => {
+    const op = forkOp.current;
+    if (op === null || op.confirmed || op.cancelled) return;
+    const cancel = (): void => {
+      op.cancelled = true;
+      if (op.stagedId !== undefined && remote.view.current().side?.id === op.stagedId) {
+        void remote.controller.showSide(undefined);
+      }
+      settleForkIfDone(op);
+    };
+    // Any ordinary main switch or focus move means the reader left the parent:
+    // do not follow the staged fork.
+    const mainId = view.conversation?.conversation.id;
+    if (mainId !== undefined && mainId !== op.parentId) {
+      cancel();
+      return;
+    }
+    if (
+      hostOpen !== undefined
+      && hostKey !== undefined
+      && (focus?.hostKey !== hostKey || focus.conversationId !== op.parentId)
+    ) {
+      cancel();
+      return;
+    }
+    const side = view.side;
+    // The command may not have reached showSide yet; the old side is expected.
+    if (!op.commandSettled && (side === undefined || side.id === op.sideBeforeId)) return;
+    if (side === undefined || side.id === op.sideBeforeId) {
+      cancel();
+      return;
+    }
+    if (op.stagedId !== undefined && side.id !== op.stagedId) {
+      // A Task detail or another side replaced the stage; never close it.
+      cancel();
+      return;
+    }
+    const summary = findConversation(view.organized, side.id)?.summary;
+    const summaryMatches =
+      summary?.kind === "fork" && summary.parent === op.parentId && summary.forkedAt === op.entryId;
+    const parent = side.conversation?.conversation.parent;
+    const sideMatches = parent?.conversationId === op.parentId && String(parent.at) === op.entryId;
+    if (!summaryMatches && !sideMatches) {
+      // No snapshot or summary yet: wait for evidence rather than deciding.
+      if (summary === undefined && side.conversation === undefined) return;
+      cancel();
+      return;
+    }
+    op.stagedId = side.id;
+    if (!summaryMatches) {
+      // The side names our parent/entry, but only its summary proves the fork
+      // identity required to follow it into main.
+      if (summary !== undefined) cancel();
+      return;
+    }
+    op.confirmed = true;
+    openConversation(side.id);
+    // Retire only the side that is still this staged fork; a Task detail the
+    // reader opened instead must not be closed.
+    if (remote.view.current().side?.id === side.id) void remote.controller.showSide(undefined);
+    settleForkIfDone(op);
+  }, [focus, hostKey, hostOpen, openConversation, remote, settleForkIfDone, view.conversation, view.organized, view.side]);
   useRunNotifications(
     view,
     hostKey,
@@ -939,38 +993,44 @@ export function Workbench({
   const [takingBack, setTakingBack] = useState<ConversationId>();
   const [editorState, setEditorState] = useState({ occupied: false, locked: false });
   const toast = useToast();
-  // Create the fork on the host's main slot. useConversationFocus adopts it
-  // when its summary arrives, while the hold is set. Never focus it from here:
-  // the fork call can settle long after the reader moved, and the list may
-  // still be missing the new fork.
+  // Create the fork on the invisible side first, then hand it to main once the
+  // summary proves its parent and forkedAt. Main stays on the parent until
+  // then; no focus hold is involved.
   const createFork = useCallback(
     async (entryId: string, text: string): Promise<void> => {
       if (forkOp.current !== null) return;
-      const parentId = remote.view.current().conversation?.conversation.id;
+      const current = remote.view.current();
+      const parentId = current.conversation?.conversation.id;
       if (parentId === undefined) return;
-      const op: ForkOperation = { parentId, hold: true, commandSettled: false };
+      const op: ForkOperation = {
+        parentId,
+        entryId,
+        sideBeforeId: current.side?.id,
+        stagedId: undefined,
+        confirmed: false,
+        cancelled: false,
+        commandSettled: false,
+      };
       forkOp.current = op;
       setForkBusy(true);
-      onForkStart?.(parentId);
       try {
-        await remote.controller.fork(entryId, text);
-        // A token client has no app focus to move: the host already switched
-        // its one main slot.
-        if (hostKey === undefined) releaseForkHold(op);
+        await remote.controller.fork(entryId, text, undefined, { show: "side" });
       } catch (error) {
         if (forkOp.current !== op) return;
+        // A transport failure can reject instead of becoming a notice; do not
+        // keep waiting for a stage that this command could not hand off.
+        op.cancelled = true;
         if (live.current) {
           toast({ body: error instanceof Error ? error.message : String(error), type: "error" });
         }
-        releaseForkHold(op);
       } finally {
         if (forkOp.current === op) {
           op.commandSettled = true;
-          syncForkBusy();
+          settleForkIfDone(op);
         }
       }
     },
-    [hostKey, onForkStart, releaseForkHold, remote, syncForkBusy, toast],
+    [remote, settleForkIfDone, toast],
   );
   const shownConversationId = conversation?.conversation.id;
   const takeBackForShown = takeBackForConversation(takeBack, shownConversationId);

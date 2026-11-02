@@ -14,7 +14,7 @@ Fork 本身仍然是一个有独立消息、运行状态和继续对话能力的
 
 1. **Web/桌面端把 Fork 作为左侧独立对话行。** 在原来的"机器 → 项目 / Chat"分组里，每个根对话之后按家族现有稳定顺序列出它的 Fork；根对话之间的排序不变，也不改成全局 recency 排序。真实 `parent` 树、检出共用和一层 Fork 的规则都不变。
 
-2. **Fork 在主区打开。** 左侧行、创建后的跳转和消息上的 "N forks" chip 都通过现有的 `{ hostKey, conversationId }` 打开主区，不再打开右侧面板。主区继续显示继承的父前缀、完整 composer 和回到父对话的 breadcrumb；Fork 可以正常提交、中止和继续运行。
+2. **Fork 在主区打开。** 左侧行、创建后的交接和消息上的 "N forks" chip 都打开主区，不再打开右侧面板。多宿主用 `{ hostKey, conversationId }` 导航；单连接即使带 `hostKey`、但没有 ReadyHost 的 `hostOpen`，也走自己的直接主区打开路径。主区继续显示继承的父前缀、完整 composer 和回到父对话的 breadcrumb；Fork 可以正常提交、中止和继续运行。
 
 3. **根行与 Fork 行选中互斥。** 主区显示 Fork 时只有 Fork 行处于选中状态，不能同时高亮根对话；回到根对话后选中状态还给根行。
 
@@ -22,7 +22,7 @@ Fork 本身仍然是一个有独立消息、运行状态和继续对话能力的
 
 5. **Fork 的生命周期不变。** Fork 行保留 Rename，但不提供 Archive：宿主只归档顶层 IndexEntry。归档根对话仍带走整个家族；不增加 Fork 独立归档、独立 checkout 或嵌套 Fork。
 
-6. **创建后的 focus 不能被父对话抢回。** Fork 创建走宿主的主区切换，而客户端全局 focus 仍指向父对话；客户端必须在创建期间把显示的新 Fork 接纳为 focus。如果等待期间用户已经切到别的对话或宿主，则以用户的选择为准，不再把 focus 抢回 Fork。
+6. **创建后的交接走不可见的 side 暂存。** 宿主的 fork 调用不等待 conversation-list，所以客户端用现有的 `show: "side"` 把新 Fork 暂存在内部 side；pending 操作记录 `parentId` 和 `entryId`。只有暂存 side 的摘要满足 `kind === "fork"`、`parent === parentId`、`forkedAt === entryId`，才通过正常主区导航打开这个明确的 Fork id，并且只在当前 side 仍属于本次暂存时清理它。暂存期间主区一直停在父对话；用户切走、卸载或迟到的命令都不自动跟随。命令结束若没有属于本次操作的暂存 side，就释放 busy、允许重试；用户已打开其他 Task side 时不得误清。
 
 ## 考虑过的方案
 
