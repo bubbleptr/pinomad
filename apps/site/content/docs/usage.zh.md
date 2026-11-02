@@ -11,7 +11,7 @@ description: 项目、worktree、工具、具名 Agent、MCP、iOS 账号和推�
 
 iOS 原生版同样同时连着所有宿主（#429）：首页四个状态方块和搜索汇总所有机器，下面每台机器一组，列出 Chats、项目和 Add project，机器名旁的绿点表示已连接；还在连接的机器显示占位，连不上的只显示一行原因，点进去可以重试，被吊销时可以经账号重新配对或忘记它。混合多台机器的列表里，每条对话下面写着「机器 · 项目」。底栏的 New 用最近打开的那台机器，草稿页的机器选择器（配对两台以上才出现）可以换到另一台自己的草稿，已经输入的内容留在原来那台。Settings → Hosts 里点一台宿主，进的是它自己的设置：Connection（连接方式和状态）、Provider、设备和已归档的对话。
 
-Git 项目的对话默认在独立 worktree 里工作（ADR-0010）：宿主在 `<数据目录>/worktrees/<对话 id>` 检出项目仓库，分支是 `pinomad/<对话 id>-<随机>`，起点是创建时的 HEAD；项目的原目录不会被改动，改动留在分支上，由你自己 merge 或发 PR 合回。新建对话时勾选 "Work directly in project directory" 可以直接在项目目录里工作；非 Git 目录和还没有 commit 的仓库也直接使用项目目录。fork 会得到自己的 worktree，内容复制自父对话在 fork 那一刻的文件状态（已提交、未提交、未跟踪的都在，被 gitignore 的文件不复制）；子代理和所属对话共用一个 worktree。归档对话时干净的 worktree 目录会被删除（分支保留），有未提交改动的保留并提示。注意 worktree 是全新检出，`node_modules`、`.env` 这类被忽略文件不在里面，agent 需要时按 AGENTS.md 自行安装。如果移动或删除了数据目录，在仓库里跑一次 `git worktree prune` 清掉失效的登记。
+Git 项目的对话默认在独立 worktree 里工作（ADR-0010）：宿主在 `<数据目录>/worktrees/<对话 id>` 检出项目仓库，分支是 `pinomad/<对话 id>-<随机>`，起点是创建时的 HEAD；项目的原目录不会被改动，改动留在分支上，由你自己 merge 或发 PR 合回。新建对话时勾选 "Work directly in project directory" 可以直接在项目目录里工作；非 Git 目录和还没有 commit 的仓库也直接使用项目目录。fork 和子代理一样共用父对话的执行检出，不另建 worktree；需要隔离时由 agent 自己用 git 开 worktree。归档对话时干净的 worktree 目录会被删除（分支保留），有未提交改动的保留并提示。注意 worktree 是全新检出，`node_modules`、`.env` 这类被忽略文件不在里面，agent 需要时按 AGENTS.md 自行安装。如果移动或删除了数据目录，在仓库里跑一次 `git worktree prune` 清掉失效的登记。
 
 Chat 对话在 `<数据目录>/chats/<对话 id>` 里工作。Web / 桌面端里，Fork 作为独立对话列在所属根对话后面，点开就在主区继续，和根对话一样有完整输入框和父对话 breadcrumb；Foreground 子代理在右侧 Tasks，Background 子代理在左侧根对话下（按家族只出现一次）。归档只是隐藏，移除项目也不会删除目录和对话。已归档的对话在 Settings → Archived 里列出（连同所属项目或 Chat），点 Restore 放回侧栏，fork 和子代理一起回来；归档时删掉的 worktree 会在下次运行时从保留的分支重新检出。已移除项目里的归档对话不列出，重新添加项目后才出现。
 

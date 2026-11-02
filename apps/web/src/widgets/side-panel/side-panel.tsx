@@ -19,6 +19,7 @@ import { useNow } from "../../shared/use-now.ts";
 import { ArrowLeft } from "../../shared/ui/icons.tsx";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
+import { ConversationSkeleton } from "../chat/conversation-skeleton.tsx";
 
 const STATUS_VARIANT = { "needs-answer": "warning", failed: "error", running: "success" } as const;
 const STATUS_LABEL = { "needs-answer": "Waiting for your answer", failed: "Failed", running: "Running" } as const;
@@ -194,25 +195,28 @@ function TaskDetail({
   openInPanel: (id: ConversationId) => void;
   onOpenInMain: (id: ConversationId) => void;
 }) {
-  if (side.conversation === undefined) return null;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <DetailHeader back="Back to tasks" title={displayName(summary)} status={summary.status} onBack={onBack} />
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <ConversationTranscript
-          conversation={side.conversation}
-          docs={side.docs}
-          submissions={view.submissions}
-          mergeQueuedSubmissions
-          toolPresentations={view.toolPresentations}
-          connected={view.connection === "connected"}
-          canFork={false}
-          openInPanel={openInPanel}
-          onOpenFork={onOpenInMain}
-          onFork={() => {}}
-          summaryOf={(id) => findConversation(view.organized, id)?.summary}
-          forksAt={(entryId) => forksAt(view.organized, side.id, entryId)}
-        />
+        {side.conversation === undefined ? (
+          <ConversationSkeleton />
+        ) : (
+          <ConversationTranscript
+            conversation={side.conversation}
+            docs={side.docs}
+            submissions={view.submissions}
+            mergeQueuedSubmissions
+            toolPresentations={view.toolPresentations}
+            connected={view.connection === "connected"}
+            canFork={false}
+            openInPanel={openInPanel}
+            onOpenFork={onOpenInMain}
+            onFork={() => {}}
+            summaryOf={(id) => findConversation(view.organized, id)?.summary}
+            forksAt={(entryId) => forksAt(view.organized, side.id, entryId)}
+          />
+        )}
       </div>
       <div className="shrink-0 border-t border-border p-2 text-center text-xs text-muted">Read-only · subagent</div>
     </div>

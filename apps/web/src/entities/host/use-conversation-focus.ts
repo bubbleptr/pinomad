@@ -12,11 +12,12 @@ export interface ConversationFocusOptions {
   /** A conversation this host had shown disappeared (archived or ended). */
   onUnavailable?: () => void;
   /**
-   * Set while this host creates a fork from the focused conversation. The
-   * fork command switches main without going through app focus, so a target
-   * still pointing at the parent must not switch it back.
+   * The parent a fork is being created from, while this host's main switch is
+   * outside app focus. It must keep pointing at that parent until the fork's
+   * summary arrives — the fork call itself settles before the conversation
+   * list necessarily names the new fork.
    */
-  forkPending?: RefObject<boolean>;
+  forkPending?: RefObject<ConversationId | undefined>;
   /** Adopt the fork the host switched to while the creation is pending. */
   onForkFollow?: (id: ConversationId) => void;
 }
@@ -47,20 +48,23 @@ export function useConversationFocus(
       if (shown !== undefined || side !== undefined) void remote.controller.clearConversation();
       return;
     }
-    // A fork command switches the host's main conversation on its own. While
-    // that is in flight, adopt the new fork instead of pulling focus back to
-    // the parent — but only when it is still the same parent (a reader who
-    // moved away meanwhile wins).
-    if (forkPending?.current === true && shown !== undefined) {
-      const node = view.organized === undefined ? undefined : findConversation(view.organized, shown);
-      if (node?.summary.kind === "fork" && node.summary.parent === target) {
-        seen.current = shown;
-        onForkFollow?.(shown);
-        return;
-      }
-    }
     if (shown === target) {
       seen.current = target;
+      return;
+    }
+    // A fork command switches the host's main conversation on its own, before
+    // the conversation list necessarily names the new fork. Until that summary
+    // arrives, keep the parent target instead of pulling main back; the
+    // workbench clears the hold if the reader moves away.
+    if (forkPending?.current === target) {
+      if (shown !== undefined) {
+        const node = view.organized === undefined ? undefined : findConversation(view.organized, shown);
+        if (node?.summary.kind === "fork" && node.summary.parent === target) {
+          seen.current = shown;
+          onForkFollow?.(shown);
+          return;
+        }
+      }
       return;
     }
     if (seen.current === target && shown === undefined) {

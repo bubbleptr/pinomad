@@ -7,11 +7,11 @@ import { SidePanel } from "./side-panel.tsx";
 
 const view = fakeView({ side: { id: SUBAGENT_ID, conversation: subagentConversation(), docs: [] } });
 
-function renderPanel(shownId: typeof PARSER_ID) {
+function renderPanel(shownId: typeof PARSER_ID, panelView = view) {
   render(
     <SidePanel
-      view={view}
-      remote={fakeRemote(view)}
+      view={panelView}
+      remote={fakeRemote(panelView)}
       shownId={shownId}
       narrow={false}
       open
@@ -28,6 +28,14 @@ describe("SidePanel family", () => {
     expect(screen.getByRole("button", { name: "Back to tasks" })).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: /Threads/ })).toBeNull();
     expect(screen.queryByRole("tab")).toBeNull();
+  });
+
+  it("keeps the header and back button while the task snapshot loads", () => {
+    const loading = fakeView({ side: { id: SUBAGENT_ID, docs: [] } });
+    renderPanel(PARSER_ID, loading);
+    expect(screen.getByRole("button", { name: "Back to tasks" })).toBeInTheDocument();
+    expect(screen.getByText("Loading conversation…")).toBeInTheDocument();
+    expect(screen.getByText("Read-only · subagent")).toBeInTheDocument();
   });
 
   it("hides a task of another family the moment that family is shown", () => {

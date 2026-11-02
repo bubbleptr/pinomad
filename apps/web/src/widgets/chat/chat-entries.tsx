@@ -39,6 +39,7 @@ export function ChatEntryView({
   onOpenFork,
   onFork,
   canFork = true,
+  forkDisabled = false,
   forksAt,
   summaryOf,
   onRetry,
@@ -58,6 +59,8 @@ export function ChatEntryView({
   onFork: (entryId: string) => void;
   /** False inside a fork or subagent conversation: depth is one (ADR-0019 §2). */
   canFork?: boolean;
+  /** Another fork create is already pending on this workbench. */
+  forkDisabled?: boolean;
   /** Forks anchored at an entry — legacy data can hold more than one (ADR-0019 §3). */
   forksAt?: (entryId: string) => ConversationId[];
   /** Resolves a conversation's summary — powers the subagent cards' live status. */
@@ -98,6 +101,7 @@ export function ChatEntryView({
           onOpenFork={onOpenFork}
           onFork={onFork}
           canFork={canFork}
+          forkDisabled={forkDisabled}
           forksAt={forksAt}
           summaryOf={summaryOf}
           onRetry={onRetry}
@@ -244,6 +248,7 @@ function RunEntry({
   onOpenFork,
   onFork,
   canFork = true,
+  forkDisabled = false,
   forksAt,
   summaryOf,
   onRetry,
@@ -256,6 +261,8 @@ function RunEntry({
   onOpenFork: (id: ConversationId) => void;
   onFork: (entryId: string) => void;
   canFork?: boolean;
+  /** Another fork create is already pending on this workbench. */
+  forkDisabled?: boolean;
   forksAt?: (entryId: string) => ConversationId[];
   summaryOf?: (id: ConversationId) => ConversationSummary | undefined;
   onRetry?: () => Promise<void>;
@@ -328,8 +335,8 @@ function RunEntry({
             ) : canFork ? (
               <ChatMessage.Action
                 aria-label="Fork"
-                tooltip="Continue from here in a new conversation"
-                disabled={!connected}
+                tooltip={forkDisabled ? "Creating fork…" : "Continue from here in a new conversation"}
+                disabled={!connected || forkDisabled}
                 onPress={() => onFork(entry.forkEntryId!)}
               >
                 <GitFork aria-hidden="true" className="size-4" />

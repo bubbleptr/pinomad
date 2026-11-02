@@ -19,6 +19,13 @@ const family: Organized = {
   archived: [],
 };
 
+/** The moment after a fork switch, before the conversation list names it. */
+const parentOnly: Organized = {
+  chats: [{ summary: { id: id(1), kind: "conversation" }, children: [] }],
+  projects: [],
+  archived: [],
+};
+
 const view = (patch: {
   connection?: DurableView["connection"];
   conversation?: number;
@@ -108,7 +115,7 @@ describe("useConversationFocus", () => {
 
   it("adopts a fork the host switched to while the fork is pending", () => {
     const fake = fakeRemote();
-    const pending = { current: true };
+    const pending = { current: id(1) };
     const follow = vi.fn();
     const { rerender } = renderHook(
       ({ target, current }) =>
@@ -119,6 +126,28 @@ describe("useConversationFocus", () => {
 
     // The fork command switched main; focus still says parent. Adopt the fork
     // instead of switching back.
+    rerender({ target: id(1), current: view({ conversation: 2 }) });
+    expect(follow).toHaveBeenCalledWith(id(2));
+    expect(fake.switchConversation).not.toHaveBeenCalled();
+  });
+
+  it("holds the parent until the fork's summary arrives", () => {
+    const fake = fakeRemote();
+    const pending = { current: id(1) };
+    const follow = vi.fn();
+    const { rerender } = renderHook(
+      ({ target, current }) =>
+        useConversationFocus(fake.remote, current, target, { forkPending: pending, onForkFollow: follow }),
+      { initialProps: { target: id(1) as ConversationId | undefined, current: view({ conversation: 1 }) } },
+    );
+
+    // The host switched main to the new fork, but the conversation list has
+    // not named it yet: do not pull the parent back.
+    rerender({ target: id(1), current: view({ conversation: 2, organized: parentOnly }) });
+    expect(follow).not.toHaveBeenCalled();
+    expect(fake.switchConversation).not.toHaveBeenCalled();
+
+    // The list catches up; now adopt the fork.
     rerender({ target: id(1), current: view({ conversation: 2 }) });
     expect(follow).toHaveBeenCalledWith(id(2));
     expect(fake.switchConversation).not.toHaveBeenCalled();
@@ -138,7 +167,7 @@ describe("useConversationFocus", () => {
 
   it("does not adopt a pending fork after the reader moved to another conversation", () => {
     const fake = fakeRemote();
-    const pending = { current: true };
+    const pending = { current: id(1) };
     const follow = vi.fn();
     const { rerender } = renderHook(
       ({ target, current }) =>
@@ -155,7 +184,7 @@ describe("useConversationFocus", () => {
 
   it("releases the host when focus moves to another host while a fork is pending", () => {
     const fake = fakeRemote();
-    const pending = { current: true };
+    const pending = { current: id(1) };
     const follow = vi.fn();
     const { rerender } = renderHook(
       ({ target, current }) =>

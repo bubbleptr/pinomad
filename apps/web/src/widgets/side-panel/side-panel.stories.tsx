@@ -38,6 +38,10 @@ export const Tasks: Story = {};
 const withSubagent = fakeView({ side: { id: SUBAGENT_ID, conversation: subagentConversation(), docs: [] } });
 export const TaskDetail: Story = { args: { view: withSubagent, remote: fakeRemote(withSubagent) } };
 
+/** The detail keeps its header and back button while the snapshot loads. */
+const loadingSubagent = fakeView({ side: { id: SUBAGENT_ID, docs: [] } });
+export const TaskDetailLoading: Story = { args: { view: loadingSubagent, remote: fakeRemote(loadingSubagent) } };
+
 /** While drafting there is no family to list. */
 export const Drafting: Story = { args: { shownId: undefined } };
 

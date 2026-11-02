@@ -97,6 +97,15 @@ type Loaded = {
   readonly address: ResolvedAddress | undefined;
 };
 
+/** One fork creation per Workbench; its focus hold outlives the fork call. */
+type ForkOperation = {
+  readonly parentId: ConversationId;
+  /** Still waiting for the new fork's summary (or a reader cancel). */
+  hold: boolean;
+  /** The fork controller call, including its first submit, has settled. */
+  commandSettled: boolean;
+};
+
 export function App() {
   const [store] = useState(hostStore);
   const registry = useMemo(createHostRuntimeRegistry, []);
@@ -781,8 +790,8 @@ export function Workbench({
   hostOpening?: Opening;
   hostOpen?: (id: ConversationId) => void;
   hostCancelOpening?: () => void;
-  /** Hold focus enforcement while a fork created from this workbench lands. */
-  onForkStart?: () => void;
+  /** Hold focus enforcement on the parent while a fork created here lands. */
+  onForkStart?: (parentId: ConversationId) => void;
   onForkEnd?: () => void;
 }) {
   const view = useDurableView(remote);
@@ -791,28 +800,9 @@ export function Workbench({
   // so a same-host selection made while it was in flight wins.
   const focusRef = useRef(focus);
   focusRef.current = focus;
-  // The parent a fork is being created from, while the host's own main switch
-  // is outside app focus. The focus hook adopts the new fork instead of
-  // pulling back to this parent; a reader who moves away cancels the hold.
-  const forkInFlight = useRef(false);
-  const forkParent = useRef<ConversationId | undefined>(undefined);
-  const finishFork = useCallback(() => {
-    if (!forkInFlight.current) return;
-    forkInFlight.current = false;
-    forkParent.current = undefined;
-    onForkEnd?.();
-  }, [onForkEnd]);
-  useEffect(() => {
-    if (!forkInFlight.current || hostKey === undefined) return;
-    const stillOnParent =
-      focus?.hostKey === hostKey && focus.conversationId === forkParent.current;
-    if (!stillOnParent) finishFork();
-  }, [finishFork, focus, hostKey]);
-  // Leaving the workbench (another host, a forget) must not leave the next
-  // visit's focus enforcement held.
-  useEffect(() => finishFork, [finishFork]);
-  // A draft create resolves after an arbitrary delay; if focus moved to
-  // another host meanwhile, this workbench is gone and must not pull it back.
+  // A draft create or a fork's first submit resolves after an arbitrary delay;
+  // if focus moved to another host meanwhile, this workbench is gone and must
+  // not pull it back.
   const live = useRef(true);
   useEffect(() => {
     // StrictMode runs the cleanup/setup pair once on mount; restore the flag
@@ -822,6 +812,45 @@ export function Workbench({
       live.current = false;
     };
   }, []);
+
+  // One fork at a time per workbench. The focus hold lasts until the new
+  // fork's summary is adopted or the reader cancels — the fork call settling
+  // (including its first submit) is not the summary.
+  const forkOp = useRef<ForkOperation | null>(null);
+  const [forkBusy, setForkBusy] = useState(false);
+  const syncForkBusy = useCallback(() => {
+    const op = forkOp.current;
+    if (op !== null && op.commandSettled && !op.hold) forkOp.current = null;
+    if (live.current) setForkBusy(forkOp.current !== null);
+  }, []);
+  const releaseForkHold = useCallback(
+    (op: ForkOperation) => {
+      if (forkOp.current !== op || !op.hold) return;
+      op.hold = false;
+      onForkEnd?.();
+      syncForkBusy();
+    },
+    [onForkEnd, syncForkBusy],
+  );
+  // Adoption moves focus to the fork; moving anywhere else (another
+  // conversation, a draft, another host) cancels the automatic follow.
+  useEffect(() => {
+    const op = forkOp.current;
+    if (op === null || hostKey === undefined) return;
+    const stillOnParent = focus?.hostKey === hostKey && focus.conversationId === op.parentId;
+    if (!stillOnParent) releaseForkHold(op);
+  }, [focus, hostKey, releaseForkHold]);
+  // Leaving the workbench cancels the follow too; its late promise must not
+  // touch focus or another workbench's operation.
+  useEffect(
+    () => () => {
+      const op = forkOp.current;
+      if (op === null) return;
+      op.hold = false;
+      onForkEnd?.();
+    },
+    [onForkEnd],
+  );
   // The 5.12 name the connected host announced rides back into the stored
   // entry — bound to this connection's hostKey, not whichever host is focused.
   useHostNameSync(hostKey, view.settings);
@@ -910,36 +939,38 @@ export function Workbench({
   const [takingBack, setTakingBack] = useState<ConversationId>();
   const [editorState, setEditorState] = useState({ occupied: false, locked: false });
   const toast = useToast();
-  // Create the fork on the host's main slot. The focus effect adopts it while
-  // the hold is set; once the reader moves away, the hold is dropped and their
-  // choice stands (ADR-0039 §2).
+  // Create the fork on the host's main slot. useConversationFocus adopts it
+  // when its summary arrives, while the hold is set. Never focus it from here:
+  // the fork call can settle long after the reader moved, and the list may
+  // still be missing the new fork.
   const createFork = useCallback(
     async (entryId: string, text: string): Promise<void> => {
+      if (forkOp.current !== null) return;
       const parentId = remote.view.current().conversation?.conversation.id;
       if (parentId === undefined) return;
-      forkInFlight.current = true;
-      forkParent.current = parentId;
-      onForkStart?.();
+      const op: ForkOperation = { parentId, hold: true, commandSettled: false };
+      forkOp.current = op;
+      setForkBusy(true);
+      onForkStart?.(parentId);
       try {
         await remote.controller.fork(entryId, text);
-        const next = remote.view.current();
-        const shown = next.conversation?.conversation.id;
-        if (shown === undefined || shown === parentId) return;
         // A token client has no app focus to move: the host already switched
         // its one main slot.
-        if (hostKey === undefined) return;
-        const stillOnParent =
-          focusRef.current?.hostKey === hostKey && focusRef.current.conversationId === parentId;
-        if (!stillOnParent) return;
-        const node = findConversation(next.organized, shown);
-        if (node?.summary.kind === "fork" && node.summary.parent === parentId) openConversation(shown);
+        if (hostKey === undefined) releaseForkHold(op);
       } catch (error) {
-        toast({ body: error instanceof Error ? error.message : String(error), type: "error" });
+        if (forkOp.current !== op) return;
+        if (live.current) {
+          toast({ body: error instanceof Error ? error.message : String(error), type: "error" });
+        }
+        releaseForkHold(op);
       } finally {
-        finishFork();
+        if (forkOp.current === op) {
+          op.commandSettled = true;
+          syncForkBusy();
+        }
       }
     },
-    [finishFork, hostKey, onForkStart, openConversation, remote, toast],
+    [hostKey, onForkStart, releaseForkHold, remote, syncForkBusy, toast],
   );
   const shownConversationId = conversation?.conversation.id;
   const takeBackForShown = takeBackForConversation(takeBack, shownConversationId);
@@ -1186,6 +1217,7 @@ export function Workbench({
                 toolPresentations={view.toolPresentations}
                 connected={view.connection === "connected"}
                 canFork={canFork}
+                forkDisabled={forkBusy}
                 openInPanel={openInPanel}
                 onOpenFork={openInMain}
                 onFork={setForkTarget}
@@ -1286,6 +1318,7 @@ export function Workbench({
         <ForkDialog
           entryId={forkTarget}
           connected={view.connection === "connected"}
+          busy={forkBusy}
           onClose={() => setForkTarget(undefined)}
           onCreate={createFork}
         />
@@ -1339,11 +1372,13 @@ export function Workbench({
 function ForkDialog({
   entryId,
   connected,
+  busy,
   onClose,
   onCreate,
 }: {
   entryId: string;
   connected: boolean;
+  busy: boolean;
   onClose: () => void;
   /** Creates on the main slot; the workbench adopts and focuses it. */
   onCreate: (entryId: string, prompt: string) => Promise<void>;
@@ -1373,7 +1408,12 @@ function ForkDialog({
           <LayoutFooter>
             <HStack gap={2} hAlign="end">
               <Button label="Cancel" variant="secondary" onClick={onClose} />
-              <Button label="Fork" variant="primary" isDisabled={!connected || prompt.trim() === ""} onClick={fork} />
+              <Button
+                label={busy ? "Forking…" : "Fork"}
+                variant="primary"
+                isDisabled={!connected || busy || prompt.trim() === ""}
+                onClick={fork}
+              />
             </HStack>
           </LayoutFooter>
         }

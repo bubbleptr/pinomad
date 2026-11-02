@@ -22,6 +22,7 @@ export function ConversationTranscript({
   openInPanel,
   onOpenFork,
   onFork,
+  forkDisabled,
   forksAt,
   summaryOf,
   onRetry,
@@ -42,6 +43,8 @@ export function ConversationTranscript({
   /** A forked message's chip opens that fork in the main area. */
   onOpenFork: (id: ConversationId) => void;
   onFork: (entryId: string) => void;
+  /** Another fork create is already pending on this workbench. */
+  forkDisabled?: boolean;
   forksAt?: (entryId: string) => ConversationId[];
   /** Live summaries for subagent cards inside the transcript. */
   summaryOf?: (id: ConversationId) => ConversationSummary | undefined;
@@ -106,6 +109,7 @@ export function ConversationTranscript({
             onOpenFork={onOpenFork}
             onFork={onFork}
             canFork={canFork}
+            forkDisabled={forkDisabled}
             forksAt={forksAt}
             summaryOf={summaryOf}
             onRetrySubmission={onRetrySubmission}

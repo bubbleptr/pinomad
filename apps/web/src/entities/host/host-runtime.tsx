@@ -47,8 +47,8 @@ export type HostWorkbenchRenderer = (input: {
   opening: Opening | undefined;
   cancelOpening: () => void;
   openConversation: (id: ConversationId) => void;
-  /** Hold focus enforcement while this host creates a fork from the shown conversation. */
-  beginFork: () => void;
+  /** Hold focus enforcement on `parentId` while this host creates a fork from it. */
+  beginFork: (parentId: ConversationId) => void;
   endFork: () => void;
 }) => ReactNode;
 
@@ -315,13 +315,14 @@ function ReadyHost({
   const { opening, open, cancel } = useConversationOpening(remote);
   const focusDraftHere = useCallback(() => focusDraft(host.hostKey), [focusDraft, host.hostKey]);
   // A fork is created with the host's main switch, outside app focus: hold the
-  // parent target until the new fork is adopted (or the reader moves away).
-  const forkPending = useRef(false);
-  const beginFork = useCallback(() => {
-    forkPending.current = true;
+  // parent target until the new fork's summary is adopted (or the reader moves
+  // away). The fork call settling is not enough — the list arrives later.
+  const forkPending = useRef<ConversationId | undefined>(undefined);
+  const beginFork = useCallback((parentId: ConversationId) => {
+    forkPending.current = parentId;
   }, []);
   const endFork = useCallback(() => {
-    forkPending.current = false;
+    forkPending.current = undefined;
   }, []);
   const followFork = useCallback(
     (id: ConversationId) => focusConversation({ hostKey: host.hostKey, conversationId: id }),
