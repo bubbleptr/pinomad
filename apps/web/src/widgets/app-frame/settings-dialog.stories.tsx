@@ -63,7 +63,7 @@ export const Updates: Story = {
 export const ThisMac: Story = {
   ...open("This Mac"),
   decorators: [
-    withDesktopLocalHost({ state: { kind: "installed", running: true, stopped: false, detail: "running (pid 4242)" } }),
+    withDesktopLocalHost({ state: { kind: "installed", running: true, stopped: false, stopping: false, detail: "running (pid 4242)" } }),
   ],
 };
 

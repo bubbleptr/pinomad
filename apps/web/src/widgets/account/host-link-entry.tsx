@@ -43,7 +43,7 @@ type Step =
  * Confirm or Deny. The code is only ever typed, never taken from the address
  * or a link: a code handed over by someone else is the phishing path.
  *
- * `onSettled` fires once the server took the answer; `onClose`, where given,
+ * `onSettled` fires with the answer once the server took it; `onClose`, where given,
  * puts a Cancel on the entry and makes Done close instead of starting over.
  */
 export function HostLinkEntry({
@@ -52,7 +52,7 @@ export function HostLinkEntry({
   onClose,
 }: {
   knownHosts?: KnownHostsStore;
-  onSettled?: () => void;
+  onSettled?: (outcome: "confirmed" | "denied") => void;
   onClose?: () => void;
 }) {
   const account = useAccountModel();
@@ -90,7 +90,7 @@ export function HostLinkEntry({
         account.watchForHost(request.hostId);
       }
       setStep({ kind: confirm ? "confirmed" : "denied", name: request.name });
-      onSettled?.();
+      onSettled?.(confirm ? "confirmed" : "denied");
     });
   };
 

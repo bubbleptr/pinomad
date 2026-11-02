@@ -33,7 +33,7 @@ export const joinCommand = (serverOrigin: string): string =>
  */
 export function AddHostSteps({ serverOrigin }: { serverOrigin: string }) {
   const localHost = localHostBridge();
-  const { state: localState } = useLocalHostState(localHost);
+  const { state: localState, pollUntilInstalled } = useLocalHostState(localHost);
   return (
     <VStack gap={4} style={{ width: "100%" }}>
       <VStack gap={2}>
@@ -52,7 +52,8 @@ export function AddHostSteps({ serverOrigin }: { serverOrigin: string }) {
           It asks how your other devices should reach the host; press Enter to go through this server. Then it opens a
           page to confirm the host, or, on a computer without a browser, prints a code. Enter that code here:
         </Text>
-        <HostLinkEntry />
+        {/* A host confirmed from Run in Terminal installs after this; Run in Terminal goes once it has. */}
+        <HostLinkEntry onSettled={(outcome) => outcome === "confirmed" && pollUntilInstalled()} />
       </VStack>
       <TokenCommand />
     </VStack>

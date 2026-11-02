@@ -12,8 +12,8 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-const running = { kind: "installed", running: true, stopped: false, detail: "running (pid 4242)" } as const;
-const off = { kind: "installed", running: false, stopped: true, detail: "stopped" } as const;
+const running = { kind: "installed", running: true, stopped: false, stopping: false, detail: "running (pid 4242)" } as const;
+const off = { kind: "installed", running: false, stopped: true, stopping: false, detail: "stopped" } as const;
 
 const clickSwitch = async ({ canvasElement }: { canvasElement: HTMLElement }) => {
   await userEvent.click(await within(canvasElement).findByRole("switch"));
@@ -49,6 +49,18 @@ export const Stopping: Story = {
     // The dialog portals out of the canvas.
     await userEvent.click(await within(document.body).findByRole("button", { name: "Turn off" }));
   },
+};
+
+/** Back in This Mac while a stop still waits: the lines so far and Cancel, without turning it off again. */
+export const StopStillRunning: Story = {
+  decorators: [
+    withDesktopLocalHost({
+      state: running,
+      stopLines: ["waiting for running tasks to finish", "  refactor-auth (pinomad): running for 4m"],
+      stopWaits: true,
+      stopInFlight: true,
+    }),
+  ],
 };
 
 /** Starting failed; the CLI's message goes in the banner. */

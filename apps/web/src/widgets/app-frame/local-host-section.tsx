@@ -5,9 +5,10 @@ import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { Switch } from "@astryxdesign/core/Switch";
 import { Text } from "@astryxdesign/core/Text";
-import { useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { RunInTerminalButton } from "../../entities/local-host/run-in-terminal.tsx";
+import type { LocalHostStopResult } from "../../entities/local-host/local-host-protocol.ts";
 import { localHostBridge, useLocalHostState, type LocalHostBridge } from "../../entities/local-host/use-local-host.ts";
 import { HostLinkEntry } from "../account/host-link-entry.tsx";
 
@@ -17,19 +18,22 @@ import { HostLinkEntry } from "../account/host-link-entry.tsx";
  * install's `pinomad service` (ADR-0003 §2, ADR-0017) and shows its real
  * state; with nothing installed it offers Run in Terminal instead.
  */
-export function LocalHostSection() {
+export function LocalHostSection({ pollIntervalMs }: { pollIntervalMs?: number }) {
   const bridge = localHostBridge();
   if (bridge === undefined) return null;
-  return <LocalHostControls bridge={bridge} />;
+  return <LocalHostControls bridge={bridge} pollIntervalMs={pollIntervalMs} />;
 }
 
 type Busy = { readonly kind: "starting" } | { readonly kind: "stopping"; readonly lines: readonly string[] };
 
-function LocalHostControls({ bridge }: { bridge: LocalHostBridge }) {
-  const { state, refresh } = useLocalHostState(bridge);
+function LocalHostControls({ bridge, pollIntervalMs }: { bridge: LocalHostBridge; pollIntervalMs: number | undefined }) {
+  const { state, refresh, pollUntilInstalled } = useLocalHostState(bridge, pollIntervalMs);
   const [busy, setBusy] = useState<Busy>();
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string>();
+  // The stop outlives this view (main runs it); only the line subscription goes with it.
+  const unsubscribe = useRef<() => void>(undefined);
+  useEffect(() => () => unsubscribe.current?.(), []);
 
   const start = (): void => {
     setBusy({ kind: "starting" });
@@ -44,23 +48,35 @@ function LocalHostControls({ bridge }: { bridge: LocalHostBridge }) {
       });
   };
 
-  const stop = (): void => {
-    setConfirming(false);
+  const watchStop = (run: () => Promise<LocalHostStopResult | undefined>): void => {
     setBusy({ kind: "stopping", lines: [] });
     setError(undefined);
-    const off = bridge.onStopLine((line) =>
-      setBusy((current) => (current?.kind === "stopping" ? { ...current, lines: [...current.lines, line] } : current)),
+    unsubscribe.current?.();
+    unsubscribe.current = bridge.onStopLines((lines) =>
+      setBusy((current) => (current?.kind === "stopping" ? { ...current, lines } : current)),
     );
-    void bridge
-      .stop()
+    void run()
       .catch((reason: unknown) => ({ outcome: "failed" as const, message: messageOf(reason) }))
       .then(async (result) => {
-        off();
-        if (result.outcome === "failed") setError(result.message);
+        unsubscribe.current?.();
+        unsubscribe.current = undefined;
+        if (result?.outcome === "failed") setError(result.message);
         await refresh();
         setBusy(undefined);
       });
   };
+
+  const stop = (): void => {
+    setConfirming(false);
+    watchStop(() => bridge.stop());
+  };
+
+  // Back in This Mac while a stop this app started still waits for tasks:
+  // follow it, so Cancel is there again. Following never starts one.
+  const resumable = state?.kind === "installed" && state.stopping && busy === undefined;
+  useEffect(() => {
+    if (resumable) watchStop(() => bridge.followStop());
+  }, [resumable]);
 
   if (state === undefined) {
     return (
@@ -93,7 +109,7 @@ function LocalHostControls({ bridge }: { bridge: LocalHostBridge }) {
         </Text>
       );
     case "not-installed":
-      return <NotInstalled bridge={bridge} />;
+      return <NotInstalled bridge={bridge} onConfirmed={pollUntilInstalled} />;
     case "installed":
       return (
         <VStack gap={3}>
@@ -143,7 +159,7 @@ function LocalHostControls({ bridge }: { bridge: LocalHostBridge }) {
 }
 
 /** Nothing installed: Run in Terminal, then the field for the code `pinomad up --code` prints. */
-function NotInstalled({ bridge }: { bridge: LocalHostBridge }) {
+function NotInstalled({ bridge, onConfirmed }: { bridge: LocalHostBridge; onConfirmed: () => void }) {
   const account = useAccountModel();
   const [opened, setOpened] = useState(false);
   if (account.state.status !== "signed-in") {
@@ -166,7 +182,7 @@ function NotInstalled({ bridge }: { bridge: LocalHostBridge }) {
           <Text as="p" type="supporting">
             When Terminal shows a code, enter it here:
           </Text>
-          <HostLinkEntry />
+          <HostLinkEntry onSettled={(outcome) => outcome === "confirmed" && onConfirmed()} />
         </VStack>
       ) : null}
     </VStack>
@@ -180,4 +196,4 @@ const STOP_LOG: CSSProperties = {
   whiteSpace: "pre-wrap",
 };
 
-const messageOf =(reason: unknown): string => (reason instanceof Error ? reason.message : String(reason));
+const messageOf = (reason: unknown): string => (reason instanceof Error ? reason.message : String(reason));

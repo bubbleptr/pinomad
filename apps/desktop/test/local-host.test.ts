@@ -119,7 +119,7 @@ describe("state", () => {
     });
     const { host } = localHost(home, { execFile });
 
-    expect(await host.state()).toEqual({ kind: "installed", running: true, stopped: false, detail: "running (pid 4242)" });
+    expect(await host.state()).toEqual({ kind: "installed", running: true, stopped: false, stopping: false, detail: "running (pid 4242)" });
     const [file, args, options] = execFile.mock.calls[0]!;
     expect(file).toBe("/Users/me/.local/share/pinomad/node/bin/node");
     expect(args).toEqual(["/Users/me/.local/share/pinomad/lib/dist/pinomad.js", "service", "status", "--json"]);
@@ -132,7 +132,7 @@ describe("state", () => {
     });
     const { host } = localHost(await homeWith("checkout"), { execFile });
 
-    expect(await host.state()).toEqual({ kind: "installed", running: false, stopped: true, detail: "stopped" });
+    expect(await host.state()).toEqual({ kind: "installed", running: false, stopped: true, stopping: false, detail: "stopped" });
     expect(execFile.mock.calls[0]![1]).toEqual(["/Users/me/code/pinomad/apps/host/src/cli/service.ts", "status", "--json"]);
   });
 
@@ -182,9 +182,9 @@ describe("stop", () => {
     const child = fakeChild();
     const spawn = vi.fn<SpawnLike>(() => child);
     const { host } = localHost(await homeWith("packaged"), { spawn });
-    const lines: string[] = [];
+    let lines: readonly string[] = [];
 
-    const done = host.stop((line) => lines.push(line));
+    const done = host.stop((snapshot) => (lines = snapshot));
     await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
     child.stdout.write("waiting for running tasks to finish (Ctrl-C to cancel)\n");
     child.stdout.write("  refactor-auth: running\n");
@@ -219,16 +219,50 @@ describe("stop", () => {
     expect(spawn).not.toHaveBeenCalled();
   });
 
-  it("refuses a second stop while one is waiting", async () => {
+  it("a second stop joins the one already waiting instead of starting another CLI", async () => {
     const child = fakeChild();
     const spawn = vi.fn<SpawnLike>(() => child);
     const { host } = localHost(await homeWith("packaged"), { spawn });
 
     const first = host.stop(() => {});
-    expect(await host.stop(() => {})).toMatchObject({ outcome: "failed" });
+    const second = host.stop(() => {});
     await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
     child.exit(0);
     expect(await first).toEqual({ outcome: "stopped" });
+    expect(await second).toEqual({ outcome: "stopped" });
+  });
+
+  it("a view that comes back mid-stop sees it in the state and follows it, lines so far included", async () => {
+    const child = fakeChild();
+    const spawn = vi.fn<SpawnLike>(() => child);
+    const execFile = fakeExecFile({ stdout: statusLine({ installed: true, stopped: false, running: true, detail: "running" }) });
+    const { host } = localHost(await homeWith("packaged"), { spawn, execFile });
+
+    const first = host.stop(() => {});
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    child.stdout.write("waiting for running tasks to finish (Ctrl-C to cancel)\n");
+    // No CLI round trip: Cancel must show at once, not after a 15s status read.
+    await vi.waitFor(async () => expect(await host.state()).toMatchObject({ kind: "installed", stopping: true }));
+    expect(execFile).not.toHaveBeenCalled();
+
+    const seen: (readonly string[])[] = [];
+    const followed = host.followStop((lines) => seen.push(lines));
+    expect(seen).toEqual([["waiting for running tasks to finish"]]);
+    child.stdout.write("  refactor-auth: running\n");
+    await vi.waitFor(() => expect(seen.at(-1)).toEqual(["waiting for running tasks to finish", "  refactor-auth: running"]));
+    host.cancelStop();
+
+    expect(await followed).toEqual({ outcome: "cancelled" });
+    expect(await first).toEqual({ outcome: "cancelled" });
+    expect(await host.state()).toMatchObject({ kind: "installed", stopping: false });
+  });
+
+  it("following when no stop is running starts none", async () => {
+    const spawn = vi.fn<SpawnLike>(() => fakeChild());
+    const { host } = localHost(await homeWith("packaged"), { spawn });
+
+    expect(await host.followStop(() => {})).toBeUndefined();
+    expect(spawn).not.toHaveBeenCalled();
   });
 
   it("reports the CLI's stderr when stop fails", async () => {

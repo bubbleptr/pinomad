@@ -19,7 +19,7 @@ import { AccountContext } from "../entities/account/account-context.tsx";
 import type { AccountModel, AccountState } from "../entities/account/account-model.ts";
 import type { UpdateStatus } from "../entities/app-update/update-protocol.ts";
 import type { DesktopBridge } from "../entities/host/desktop-bridge.ts";
-import type { LocalHostResult, LocalHostState } from "../entities/local-host/local-host-protocol.ts";
+import type { LocalHostResult, LocalHostState, LocalHostStopResult } from "../entities/local-host/local-host-protocol.ts";
 import { HostsContext, type HostsState } from "../entities/host/host-store.ts";
 
 const MINUTE = 60_000;
@@ -877,6 +877,8 @@ export type FakeLocalHostOptions = {
   stopLines?: readonly string[];
   /** stop() keeps waiting until cancelStop(), like a host with running tasks. */
   stopWaits?: boolean;
+  /** A stop is already running, as when Settings closed while it waited; followStop() joins it. */
+  stopInFlight?: boolean;
   startResult?: LocalHostResult;
 };
 
@@ -886,43 +888,63 @@ const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0
  * A desktop main process over a host installed on this Mac. state() follows
  * start and stop; stop() prints its lines and then finishes, or waits for
  * cancelStop() with `stopWaits`, as `service stop` does with running tasks.
+ * Like main, it keeps a running stop's lines for followStop().
  */
 export function fakeLocalHost(options: FakeLocalHostOptions): NonNullable<DesktopBridge["localHost"]> {
   let state = options.state;
-  const listeners = new Set<(line: string) => void>();
+  const listeners = new Set<(lines: readonly string[]) => void>();
+  let lines: readonly string[] = [];
+  let inFlight: Promise<LocalHostStopResult> | undefined;
   let cancel: (() => void) | undefined;
   const set = (running: boolean): void => {
     if (state.kind === "installed") {
-      state = { kind: "installed", running, stopped: !running, detail: running ? "running (pid 4242)" : "stopped" };
+      state = { kind: "installed", running, stopped: !running, stopping: false, detail: running ? "running (pid 4242)" : "stopped" };
     }
   };
+  const push = (): void => {
+    for (const listener of listeners) listener(lines);
+  };
+  const runStop = async (): Promise<LocalHostStopResult> => {
+    for (const line of options.stopLines ?? []) {
+      await tick();
+      lines = [...lines, line];
+      push();
+    }
+    if (options.stopWaits) {
+      await new Promise<void>((resolve) => {
+        cancel = resolve;
+      });
+      return { outcome: "cancelled" };
+    }
+    set(false);
+    return { outcome: "stopped" };
+  };
+  const begin = (): Promise<LocalHostStopResult> =>
+    (inFlight = runStop().finally(() => {
+      inFlight = undefined;
+      lines = [];
+    }));
+  if (options.stopInFlight) void begin();
   return {
-    state: fn(async () => state),
+    state: fn(async (): Promise<LocalHostState> =>
+      inFlight !== undefined && state.kind === "installed" ? { ...state, stopping: true, detail: "stopping" } : state,
+    ),
     start: fn(async () => {
       const result = options.startResult ?? { ok: true as const };
       if (result.ok) set(true);
       return result;
     }),
-    stop: fn(async () => {
-      for (const line of options.stopLines ?? []) {
-        await tick();
-        for (const listener of listeners) listener(line);
-      }
-      if (options.stopWaits) {
-        await new Promise<void>((resolve) => {
-          cancel = resolve;
-        });
-        return { outcome: "cancelled" as const };
-      }
-      set(false);
-      return { outcome: "stopped" as const };
+    stop: fn(async () => inFlight ?? begin()),
+    followStop: fn(async () => {
+      if (inFlight !== undefined && lines.length > 0) push();
+      return inFlight;
     }),
     cancelStop: fn(async () => {
       cancel?.();
       cancel = undefined;
     }),
     runSetup: fn(async (): Promise<LocalHostResult> => ({ ok: true })),
-    onStopLine: (listener) => {
+    onStopLines: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },

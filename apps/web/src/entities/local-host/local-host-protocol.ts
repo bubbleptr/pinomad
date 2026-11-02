@@ -16,6 +16,8 @@ export type LocalHostState =
       readonly running: boolean;
       /** Turned off with `service stop`; stays off across logins. */
       readonly stopped: boolean;
+      /** A stop this app started is still waiting for tasks; `followStop` joins it. */
+      readonly stopping: boolean;
       /** The CLI's one-line description of the service. */
       readonly detail: string;
     }
@@ -30,5 +32,5 @@ export type LocalHostStopResult =
   | { readonly outcome: "cancelled" }
   | { readonly outcome: "failed"; readonly message: string };
 
-/** Main → renderer: each line `service stop` prints while it waits for running tasks. */
-export const localHostStopLineChannel = "pinomad:localHost:stopLine";
+/** Main → renderer: every line `service stop` printed so far while it waits for running tasks, sent on each new one. */
+export const localHostStopLinesChannel = "pinomad:localHost:stopLines";

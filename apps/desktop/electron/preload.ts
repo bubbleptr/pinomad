@@ -8,7 +8,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { DesktopBridge } from "../../web/src/entities/host/desktop-bridge.ts";
 import { updateEventChannel, type UpdateStatus } from "../../web/src/entities/app-update/update-protocol.ts";
-import { localHostStopLineChannel } from "../../web/src/entities/local-host/local-host-protocol.ts";
+import { localHostStopLinesChannel } from "../../web/src/entities/local-host/local-host-protocol.ts";
 
 // Main installs the local-host handlers on macOS only; elsewhere the bridge
 // has no localHost and the renderer shows no switch.
@@ -19,15 +19,16 @@ const localHost: DesktopBridge["localHost"] =
         state: () => ipcRenderer.invoke("pinomad:localHost:state"),
         start: () => ipcRenderer.invoke("pinomad:localHost:start"),
         stop: () => ipcRenderer.invoke("pinomad:localHost:stop"),
+        followStop: () => ipcRenderer.invoke("pinomad:localHost:followStop"),
         cancelStop: () => ipcRenderer.invoke("pinomad:localHost:cancelStop"),
         runSetup: (serverOrigin) => ipcRenderer.invoke("pinomad:localHost:runSetup", serverOrigin),
-        onStopLine(listener: (line: string) => void) {
-          const handler = (_event: Electron.IpcRendererEvent, line: string) => {
-            listener(line);
+        onStopLines(listener: (lines: readonly string[]) => void) {
+          const handler = (_event: Electron.IpcRendererEvent, lines: readonly string[]) => {
+            listener(lines);
           };
-          ipcRenderer.on(localHostStopLineChannel, handler);
+          ipcRenderer.on(localHostStopLinesChannel, handler);
           return () => {
-            ipcRenderer.removeListener(localHostStopLineChannel, handler);
+            ipcRenderer.removeListener(localHostStopLinesChannel, handler);
           };
         },
       };

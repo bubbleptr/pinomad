@@ -20,7 +20,7 @@ import { platformWindowChrome } from "./window-chrome.ts";
 import type { StoredHostConnectionChange } from "@pinomad/client/stored-host.ts";
 import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { updateEventChannel } from "../../web/src/entities/app-update/update-protocol.ts";
-import { localHostStopLineChannel } from "../../web/src/entities/local-host/local-host-protocol.ts";
+import { localHostStopLinesChannel } from "../../web/src/entities/local-host/local-host-protocol.ts";
 
 const APP_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
 const rendererDirectory = fileURLToPath(new URL("../renderer", import.meta.url));
@@ -181,14 +181,11 @@ function installLocalHostIpc(localHost: LocalHost): void {
   ipcMain.handle("pinomad:localHost:state", handle(() => localHost.state()));
   ipcMain.handle("pinomad:localHost:start", handle(() => localHost.start()));
   // Lines go back to the window that asked: it is the one showing Cancel.
-  ipcMain.handle(
-    "pinomad:localHost:stop",
-    handle((event) =>
-      localHost.stop((line) => {
-        if (!event.sender.isDestroyed()) event.sender.send(localHostStopLineChannel, line);
-      }),
-    ),
-  );
+  const linesTo = (event: IpcMainInvokeEvent) => (lines: readonly string[]) => {
+    if (!event.sender.isDestroyed()) event.sender.send(localHostStopLinesChannel, lines);
+  };
+  ipcMain.handle("pinomad:localHost:stop", handle((event) => localHost.stop(linesTo(event))));
+  ipcMain.handle("pinomad:localHost:followStop", handle((event) => localHost.followStop(linesTo(event))));
   ipcMain.handle("pinomad:localHost:cancelStop", handle(() => localHost.cancelStop()));
   ipcMain.handle("pinomad:localHost:runSetup", handle((_event, serverOrigin: unknown) => localHost.runSetup(String(serverOrigin))));
 }

@@ -32,7 +32,7 @@ describe("AddHostSteps on a Mac", () => {
   });
 
   it("offers nothing extra once this Mac has a host", async () => {
-    const localHost = renderSteps({ kind: "installed", running: true, stopped: false, detail: "running" });
+    const localHost = renderSteps({ kind: "installed", running: true, stopped: false, stopping: false, detail: "running" });
     await waitFor(() => expect(localHost.state).toHaveResolved());
     await act(async () => {});
     expect(screen.queryByRole("button", { name: "Run in Terminal" })).not.toBeInTheDocument();

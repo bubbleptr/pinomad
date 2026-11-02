@@ -45,8 +45,14 @@ export interface LocalHostDeps {
 export interface LocalHost {
   state(): Promise<LocalHostState>;
   start(): Promise<LocalHostResult>;
-  /** `service stop`, which first waits for running tasks; each line it prints goes to `onLine`. */
-  stop(onLine: (line: string) => void): Promise<LocalHostStopResult>;
+  /**
+   * `service stop`, which first waits for running tasks; `onLines` gets every
+   * line it printed so far, each time one arrives. While a stop is running a
+   * second call joins it.
+   */
+  stop(onLines: (lines: readonly string[]) => void): Promise<LocalHostStopResult>;
+  /** Joins the running stop, like `stop` but never starting one; undefined when none is running. */
+  followStop(onLines: (lines: readonly string[]) => void): Promise<LocalHostStopResult | undefined>;
   /** Interrupts a waiting stop; the CLI then leaves the service running. */
   cancelStop(): void;
   /** Writes a `.command` that installs the host and joins it to `serverOrigin`, and opens it in Terminal. */
@@ -134,8 +140,14 @@ const exitFailure = (error: unknown): { stderr: string; code: number } | undefin
 const stopLine = (line: string): string => line.replace(/\s*\(Ctrl-C to cancel\)\s*$/, "");
 
 export function createLocalHost(deps: LocalHostDeps): LocalHost {
-  type StopRun = { cancelled: boolean; child?: ChildLike };
-  let stopping: StopRun | undefined;
+  type StopRun = {
+    cancelled: boolean;
+    child?: ChildLike;
+    /** What the CLI printed so far, kept for a view that comes back mid-stop. */
+    lines: string[];
+    listeners: Set<(lines: readonly string[]) => void>;
+  };
+  let stopping: { run: StopRun; result: Promise<LocalHostStopResult> } | undefined;
 
   type Cli = { file: string; args: (command: readonly string[]) => string[]; options: RunOptions };
 
@@ -167,6 +179,8 @@ export function createLocalHost(deps: LocalHostDeps): LocalHost {
       return { kind: "error", message: errorMessage(error) };
     }
     if (target === undefined) return { kind: "not-installed" };
+    // The CLI still reports it running; Cancel must show without a status round trip.
+    if (stopping !== undefined) return { kind: "installed", running: true, stopped: false, stopping: true, detail: "stopping" };
     let stdout: string;
     try {
       // status connects to the host with its own 3s deadline.
@@ -179,7 +193,7 @@ export function createLocalHost(deps: LocalHostDeps): LocalHost {
     const status = parseStatus(stdout);
     if (status === undefined) return { kind: "too-old" };
     if (!status.installed) return { kind: "not-installed" };
-    return { kind: "installed", running: status.running, stopped: status.stopped, detail: status.detail };
+    return { kind: "installed", running: status.running, stopped: status.stopped, stopping: false, detail: status.detail };
   }
 
   async function start(): Promise<LocalHostResult> {
@@ -195,11 +209,25 @@ export function createLocalHost(deps: LocalHostDeps): LocalHost {
     }
   }
 
-  async function stop(onLine: (line: string) => void): Promise<LocalHostStopResult> {
-    if (stopping !== undefined) return { outcome: "failed", message: "The host is already stopping." };
+  function follow({ run, result }: NonNullable<typeof stopping>, onLines: (lines: readonly string[]) => void) {
+    run.listeners.add(onLines);
+    if (run.lines.length > 0) onLines([...run.lines]);
+    return result;
+  }
+
+  function stop(onLines: (lines: readonly string[]) => void): Promise<LocalHostStopResult> {
+    if (stopping !== undefined) return follow(stopping, onLines);
     // Claimed before the first await, so a second stop or a Cancel lands on this one.
-    const run: StopRun = { cancelled: false };
-    stopping = run;
+    const run: StopRun = { cancelled: false, lines: [], listeners: new Set() };
+    stopping = { run, result: runStop(run).finally(() => (stopping = undefined)) };
+    return follow(stopping, onLines);
+  }
+
+  async function followStop(onLines: (lines: readonly string[]) => void): Promise<LocalHostStopResult | undefined> {
+    return stopping === undefined ? undefined : follow(stopping, onLines);
+  }
+
+  async function runStop(run: StopRun): Promise<LocalHostStopResult> {
     try {
       const target = await cli();
       if (target === undefined) return { outcome: "failed", message: "The PiNomad host isn't installed on this Mac." };
@@ -209,7 +237,9 @@ export function createLocalHost(deps: LocalHostDeps): LocalHost {
       let stderr = "";
       if (child.stdout !== null) {
         createInterface({ input: child.stdout }).on("line", (line) => {
-          if (line.trim() !== "") onLine(stopLine(line));
+          if (line.trim() === "") return;
+          run.lines.push(stopLine(line));
+          for (const listener of run.listeners) listener([...run.lines]);
         });
       }
       child.stderr?.setEncoding("utf8").on("data", (chunk: string) => {
@@ -225,16 +255,14 @@ export function createLocalHost(deps: LocalHostDeps): LocalHost {
       });
     } catch (error) {
       return { outcome: "failed", message: errorMessage(error) };
-    } finally {
-      stopping = undefined;
     }
   }
 
   function cancelStop(): void {
     if (stopping === undefined) return;
-    stopping.cancelled = true;
+    stopping.run.cancelled = true;
     // Ctrl-C, as in a terminal: the CLI gives up waiting and leaves the service on.
-    stopping.child?.kill("SIGINT");
+    stopping.run.child?.kill("SIGINT");
   }
 
   async function runSetup(serverOrigin: string): Promise<LocalHostResult> {
@@ -251,5 +279,5 @@ export function createLocalHost(deps: LocalHostDeps): LocalHost {
     return failure === "" ? { ok: true } : { ok: false, message: failure };
   }
 
-  return { state, start, stop, cancelStop, runSetup };
+  return { state, start, stop, followStop, cancelStop, runSetup };
 }

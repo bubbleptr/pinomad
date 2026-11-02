@@ -56,13 +56,16 @@ export interface DesktopBridge {
   readonly localHost?: {
     state(): Promise<LocalHostState>;
     start(): Promise<LocalHostResult>;
-    /** Resolves once the CLI exits; lines it prints while waiting for tasks arrive on onStopLine. */
+    /** Resolves once the CLI exits; what it prints while waiting for tasks arrives on onStopLines. A second call joins the first. */
     stop(): Promise<LocalHostStopResult>;
+    /** Joins a stop still waiting (state's `stopping`), never starting one; undefined when it already ended. */
+    followStop(): Promise<LocalHostStopResult | undefined>;
     /** Interrupts a waiting stop; the service stays on and stop() resolves "cancelled". */
     cancelStop(): Promise<void>;
     /** Opens Terminal on a script that installs the host and joins it to this server. */
     runSetup(serverOrigin: string): Promise<LocalHostResult>;
-    onStopLine(listener: (line: string) => void): () => void;
+    /** Every line the running stop printed so far, on each new one. */
+    onStopLines(listener: (lines: readonly string[]) => void): () => void;
   };
 }
 
