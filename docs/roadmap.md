@@ -10,6 +10,8 @@
 
 [M10 上手简化](https://github.com/bubbleptr/pinomad/milestone/8)：以「官方服务端 + 账号」为唯一主线，新用户注册、在宿主上跑一行命令并在浏览器里确认、在其他设备上登录就能用，不用预装 Node、复制令牌或扫码；客户端只做控制面，不带宿主。先修过时文档、做没有宿主时的首页和退出登录撤销本机，再做浏览器确认加入，`pinomad up` 和安装脚本跟在它后面，文档改版和桌面端的本机宿主开关排在最后。设计见 `docs/research/account-first-onboarding.md`。
 
+[M11 右侧面板](https://github.com/bubbleptr/pinomad/milestone/9)：Web/桌面端的右侧面板改成可切换多个页的容器，现有的 Tasks 和 Changes 搬进来，再加 Terminal；Overview 浮层只放摘要，详情进面板。先定页模型并修订 ADR-0039，再落容器和 Tasks、Changes；Terminal 的宿主端和协议可以并行做，界面排在容器之后。iOS 不在本阶段。
+
 ## 以后
 
 - [Backlog](https://github.com/bubbleptr/pinomad/issues?q=is%3Aopen+is%3Aissue+no%3Amilestone+-label%3Alater+-label%3Atech-debt)：没排进阶段的具体小项
