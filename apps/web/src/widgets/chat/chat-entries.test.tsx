@@ -139,6 +139,7 @@ describe("local submission states", () => {
     const metadata = row.querySelector<HTMLElement>(".chat-message__metadata")!;
     expect(copy).not.toBeNull();
     expect(copy).not.toContainElement(metadata);
+    expect(row).toHaveClass("chat-message__metadata-row--persistent");
     expect(row.firstElementChild).toBe(copy);
     expect(metadata.querySelector('[data-slot="chat-message-actions"]')).toBeNull();
 
@@ -150,9 +151,16 @@ describe("local submission states", () => {
     expect(edit).toHaveAttribute("data-variant", "ghost");
   });
 
-  it("renders Delivered only for a committed newest bubble", () => {
+  it("uses only the double check for a committed newest bubble", () => {
     renderUser({ ...userEntry(Date.now()), status: "delivered" });
-    expect(screen.getByText("Delivered")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Delivered" })).toBeInTheDocument();
+    expect(screen.queryByText("Delivered")).not.toBeInTheDocument();
+  });
+
+  it("keeps metadata visible when a file-only message has no Copy action", () => {
+    const { container } = renderUser({ ...userEntry(Date.now()), text: "", status: "delivered" });
+    expect(container.querySelector(".chat-message__metadata-row")).toHaveClass("chat-message__metadata-row--persistent");
+    expect(screen.queryByRole("button", { name: "Copy" })).not.toBeInTheDocument();
   });
 });
 

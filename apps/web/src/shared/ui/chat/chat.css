@@ -253,7 +253,6 @@ mark.chat-skill-mention {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-0-5);
-  opacity: 0;
   transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
@@ -265,15 +264,9 @@ mark.chat-skill-mention {
   white-space: nowrap;
 }
 
-.chat-message:hover .chat-message__actions,
-.chat-message:focus-within .chat-message__actions,
-.chat-message__actions--persist {
-  opacity: 1;
-}
-
 /* Copy, status, time and the local actions share one row under the bubble.
-   Copy is outside the metadata component, so it never adds a separator dot;
-   it stays mounted and only fades, keeping status/time in place. */
+   Copy is outside the metadata component, so it never adds a separator dot.
+   The row keeps its space while hidden, so revealing it cannot shift text. */
 .chat-message__metadata-row {
   display: inline-flex;
   min-width: 0;
@@ -281,6 +274,7 @@ mark.chat-skill-mention {
   min-height: 28px;
   align-items: center;
   gap: var(--spacing-1);
+  transition: opacity var(--duration-fast) var(--ease-standard);
 }
 
 .chat-message__metadata {
@@ -289,12 +283,29 @@ mark.chat-skill-mention {
 
 .chat-message__copy {
   flex: none;
-  pointer-events: none;
 }
 
-.chat-message:hover .chat-message__copy,
-.chat-message:focus-within .chat-message__copy {
-  pointer-events: auto;
+/* Quiet metadata is a desktop refinement: touch keeps it visible, and keyboard
+   focus reveals it before an action is used. Delivery problems stay persistent. */
+@media (hover: hover) and (pointer: fine) {
+  .chat-message__actions,
+  .chat-message__metadata-row:not(.chat-message__metadata-row--persistent) {
+    opacity: 0;
+  }
+
+  .chat-message:hover .chat-message__actions,
+  .chat-message:focus-within .chat-message__actions,
+  .chat-message:hover .chat-message__metadata-row:not(.chat-message__metadata-row--persistent),
+  .chat-message:focus-within .chat-message__metadata-row:not(.chat-message__metadata-row--persistent) {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-message__actions,
+  .chat-message__metadata-row {
+    transition: none;
+  }
 }
 
 /* A local send's error is secondary text until the row is acted on. */
