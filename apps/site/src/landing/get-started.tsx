@@ -6,8 +6,7 @@ import type { LandingCopy } from "./copy.tsx";
 import { StarIcon } from "./icons.tsx";
 
 const INSTALL = "curl -fsSL https://pinomad.si/install.sh | sh";
-// The full path: a new Mac doesn't have ~/.local/bin on PATH yet.
-const UP = "~/.local/bin/pinomad up";
+const UP = "pinomad up";
 
 /** The newest changelog entry, read from the changelog when the page is prerendered. */
 export type LatestRelease = { version: string; date: string };

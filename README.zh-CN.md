@@ -21,7 +21,7 @@
 
    ```sh
    curl -fsSL https://pinomad.si/install.sh | sh
-   ~/.local/bin/pinomad up
+   pinomad up
    ```
 
    已经用 npm 装过？脚本不会动它；先 `pinomad upgrade`，再 `pinomad up`。

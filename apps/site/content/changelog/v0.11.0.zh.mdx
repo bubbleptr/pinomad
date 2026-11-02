@@ -1,0 +1,26 @@
+---
+title: 一条命令加一个短码，把宿主加进账号
+version: v0.11.0
+date: 2026-11-02
+---
+
+**升级前**
+
+- 先升级服务端。用短码确认宿主、公用电脑退出登录都要新的服务端；0.10.0 的宿主和 App 连它照常能用。
+- 用 npm 装过的，先 `pinomad upgrade` 再 `pinomad up`：老版本没有这个命令。
+
+**加入宿主**
+
+- 安装脚本不需要机器上有 Node：`curl -fsSL https://pinomad.si/install.sh | sh` 把自带的 Node 和 pinomad 装进 `~/.pinomad/runtime`，`pinomad` 命令放在 `~/.local/bin`。支持 Apple 芯片的 Mac 和 x64、arm64 的 Linux。
+- `pinomad up` 一条命令装好宿主：先问其他设备怎么连这台机器（经服务端、只在局域网和 tailnet、或者都要），再把它加入账号、装好服务。`pinomad status` 查看加入的账号、局域网端口、服务状态和宿主是否在线。
+- 宿主加入账号不再需要先在网页上生成令牌：宿主打印一个短码，在已登录的 Web、Mac App 或 iPhone 上输入，核对机器的名字和系统后确认。一次性令牌命令还在 **Advanced** 里，给脚本用。
+- **Add a host** 和账号下还没有宿主时的新首页，在 Web、Mac App 和 iPhone 上都改成安装脚本加 `pinomad up`。
+
+**账号**
+
+- 在公用电脑上退出登录：勾上 **This is a shared computer**（iPhone 上是打开 **Remove this iPhone from my hosts**），服务端会请这台设备经账号加入过的每台宿主吊销它，设备也会忘掉这些宿主。
+
+**修复**
+
+- 从账号里移除的设备不会再收到推送。
+- iPhone 退出登录后马上重新登录，推送登记会恢复。

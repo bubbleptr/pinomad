@@ -1,0 +1,26 @@
+---
+title: Add a host with one command and a code
+version: v0.11.0
+date: 2026-11-02
+---
+
+**Before you upgrade**
+
+- Upgrade the server first. Confirming a host with a code and the shared-computer sign-out need the new server; hosts and apps on 0.10.0 keep working with it.
+- Already installed with npm? Run `pinomad upgrade` before `pinomad up`: older versions don't have it.
+
+**Adding a host**
+
+- The install script needs no Node on the machine: `curl -fsSL https://pinomad.si/install.sh | sh` puts its own Node and pinomad in `~/.pinomad/runtime` and the `pinomad` command in `~/.local/bin`. It covers Apple silicon Macs and Linux on x64 or arm64.
+- `pinomad up` sets a host up in one command. It asks how your other devices should reach it (through the server, only on your local network and tailnet, or both), adds it to your account, and installs the service. `pinomad status` shows the account, the LAN port, the service and whether the host answers.
+- Adding a host to your account no longer needs a token from the web: the host prints a short code, and you enter it where you're signed in (the web, the Mac app or the iPhone), check the machine's name and system, and confirm. The one-time token command is still under **Advanced** for scripts.
+- **Add a host** and the new home screen you see when your account has no hosts yet show the install script and `pinomad up`, on the web, in the Mac app and on the iPhone.
+
+**Accounts**
+
+- Signing out on a shared computer: tick **This is a shared computer** (on the iPhone, turn on **Remove this iPhone from my hosts**) and the server asks each host this device joined through the account to revoke it; the device forgets those hosts too.
+
+**Fixes**
+
+- A device removed from the account no longer keeps receiving push notifications.
+- An iPhone that signed in again right after signing out registers for push again.

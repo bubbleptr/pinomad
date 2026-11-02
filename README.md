@@ -21,7 +21,7 @@ A self-hosted coding agent built on [Pi Durable](https://www.npmjs.com/package/@
 
    ```sh
    curl -fsSL https://pinomad.si/install.sh | sh
-   ~/.local/bin/pinomad up
+   pinomad up
    ```
 
    Already installed with npm? The script leaves that install alone; run `pinomad upgrade`, then `pinomad up`.

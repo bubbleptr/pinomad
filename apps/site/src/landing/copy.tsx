@@ -226,6 +226,7 @@ export const copy: Record<Lang, LandingCopy> = {
       lead: "Free and open source under Apache-2.0. The host runs on macOS or Linux; the install script brings its own Node.",
       notes: [
         <>
+          On a new Mac the script asks you to run <code>pinomad up</code> in a new terminal window.{" "}
           <code>pinomad up</code> prints a code. Enter it at app.pinomad.si, signed in to your account (sign-up is by
           invite), and the host joins your account and keeps running as a service. Sign in on your other devices and
           they connect on their own, then add your Claude, ChatGPT, or Copilot subscription, an API key, or a local
@@ -404,7 +405,7 @@ export const copy: Record<Lang, LandingCopy> = {
       lead: "免费开源，Apache-2.0 许可。宿主支持 macOS 和 Linux，安装脚本自带 Node。",
       notes: [
         <>
-          <code>pinomad up</code> 会打印一个短码，登录 app.pinomad.si
+          新 Mac 上脚本会提示在新的终端窗口里跑 <code>pinomad up</code>。<code>pinomad up</code> 会打印一个短码，登录 app.pinomad.si
           输入它（注册要邀请码），宿主就加入了你的账号，并作为服务常驻运行。其他设备登录同一个账号就会自动连上；再到 Settings
           → Providers 登录已有的 Claude / ChatGPT / Copilot 订阅，或填入 API Key、本地 Ollama / vLLM 端点。
         </>,

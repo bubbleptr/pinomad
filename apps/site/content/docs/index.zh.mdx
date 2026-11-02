@@ -17,10 +17,10 @@ description: 注册账号，一条命令把宿主加进来，在其他设备上�
 
 ```sh
 curl -fsSL https://pinomad.si/install.sh | sh
-~/.local/bin/pinomad up
+pinomad up
 ```
 
-第一行装好 pinomad，它自带 Node。`pinomad up` 接着问其他设备怎么连这台宿主，直接回车就是经官方服务端。它会打印一个要打开的网页和一个短码（形如 `WDJB-MJHT`），能开浏览器时会自动打开这个网页：
+第一行装好 pinomad，它自带 Node。脚本提示时（新 Mac 上会提示），在新的终端窗口里跑 `pinomad up`：脚本把 pinomad 加进了 PATH，只有新开的窗口才读得到。`pinomad up` 接着问其他设备怎么连这台宿主，直接回车就是经官方服务端。它会打印一个要打开的网页和一个短码（形如 `WDJB-MJHT`），能开浏览器时会自动打开这个网页：
 
 1. 在网页上登录账号，输入短码。Web 和 Mac App 里的 **Add a host** 也有同样的输入框。
 2. 核对页面上显示的名字和系统，只在确实是你自己在那台机器上发起的时候确认。
@@ -28,7 +28,7 @@ curl -fsSL https://pinomad.si/install.sh | sh
 
 以后再加一台宿主，在那台机器上跑同样两行。
 
-脚本把 Node 和 pinomad 装进 `~/.pinomad/runtime`，`pinomad` 命令放在 `~/.local/bin`。这个目录不在 PATH 里时（新 Mac 上就不在），脚本会打印要加进 shell 配置文件的那一行；加之前先用完整路径 `~/.local/bin/pinomad`。支持 Apple 芯片的 Mac 和 x64、arm64 的 Linux（glibc）。其他平台，或者想用自己装的 Node 25+，先 `npm i -g pinomad`，再 `pinomad up`。已经用 npm 装过 pinomad 的，脚本不会动它，也不会建 `~/.local/bin/pinomad`；先 `pinomad upgrade`，再 `pinomad up`。
+脚本把 Node 和 pinomad 装进 `~/.pinomad/runtime`，`pinomad` 命令放在 `~/.local/bin`；这个目录还不在 PATH 里时，脚本把它加进 shell 配置文件（`~/.zshrc`、`~/.bashrc` 等）。支持 Apple 芯片的 Mac 和 x64、arm64 的 Linux（glibc）。其他平台，或者想用自己装的 Node 25+，先 `npm i -g pinomad`，再 `pinomad up`。已经用 npm 装过 pinomad 的，脚本不会动它；先 `pinomad upgrade`，再 `pinomad up`。
 
 ## 3. 在其他设备上登录
 
@@ -55,7 +55,7 @@ pinomad upgrade     # 装上 pinomad@latest，等正在跑的任务结束后重�
 
 `pinomad upgrade` 只升级 pinomad；再跑一次安装脚本会连它自带的 Node 一起更新。服务参数、日志和各平台的注意事项见[常驻运行](/zh/docs/service/)。
 
-卸载：先 `pinomad service uninstall`，再删掉 `~/.pinomad/runtime` 和 `~/.local/bin/pinomad`。`~/.pinomad` 里其余的数据会留着，要删自己删。
+卸载：先 `pinomad service uninstall`，再删掉 `~/.pinomad/runtime`、`~/.local/bin/pinomad`，以及 shell 配置文件里以 `# added by https://pinomad.si/install.sh` 结尾的那一行。`~/.pinomad` 里其余的数据会留着，要删自己删。
 
 ## 客户端
 

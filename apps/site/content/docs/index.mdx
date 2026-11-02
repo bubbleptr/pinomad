@@ -17,10 +17,10 @@ On the machine that should run the agent (macOS or Linux), run:
 
 ```sh
 curl -fsSL https://pinomad.si/install.sh | sh
-~/.local/bin/pinomad up
+pinomad up
 ```
 
-The first line installs pinomad with its own Node. `pinomad up` then asks how your other devices should reach this host; press Enter to go through the official server. It prints a page to open and a code like `WDJB-MJHT`, and opens the page in your browser when it can:
+The first line installs pinomad with its own Node. If the script says so (it does on a new Mac), run `pinomad up` in a new terminal window: it put pinomad on your PATH, and only new windows read that. `pinomad up` then asks how your other devices should reach this host; press Enter to go through the official server. It prints a page to open and a code like `WDJB-MJHT`, and opens the page in your browser when it can:
 
 1. On the page, signed in to your account, enter the code. **Add a host** in the web or Mac app has the same field.
 2. Check the name and system it shows, and confirm only if you started this on that machine.
@@ -28,7 +28,7 @@ The first line installs pinomad with its own Node. `pinomad up` then asks how yo
 
 To add another host later, run the same two lines on that machine.
 
-The script puts Node and pinomad in `~/.pinomad/runtime` and the `pinomad` command in `~/.local/bin`. If that directory isn't on your PATH (it isn't on a new Mac), the script prints the line to add to your shell profile; until then, type the full `~/.local/bin/pinomad`. It covers Apple silicon Macs and Linux on x64 or arm64 (glibc). Anywhere else, or to use a Node 25+ you already have, run `npm i -g pinomad` and then `pinomad up`. If pinomad is already installed with npm, the script leaves it alone and creates no `~/.local/bin/pinomad`; run `pinomad upgrade`, then `pinomad up`.
+The script puts Node and pinomad in `~/.pinomad/runtime` and the `pinomad` command in `~/.local/bin`, and adds that directory to your shell profile (`~/.zshrc`, `~/.bashrc` and so on) when it isn't on your PATH yet. It covers Apple silicon Macs and Linux on x64 or arm64 (glibc). Anywhere else, or to use a Node 25+ you already have, run `npm i -g pinomad` and then `pinomad up`. If pinomad is already installed with npm, the script leaves it alone; run `pinomad upgrade`, then `pinomad up`.
 
 ## 3. Sign in on your other devices
 
@@ -55,7 +55,7 @@ pinomad upgrade     # install pinomad@latest, wait for running tasks, restart
 
 `pinomad upgrade` updates pinomad only; running the install script again updates its Node too. Service flags, logs and platform caveats: [Running as a service](/zh/docs/service/) (Chinese).
 
-To uninstall, run `pinomad service uninstall`, then delete `~/.pinomad/runtime` and `~/.local/bin/pinomad`. Your data in the rest of `~/.pinomad` stays until you delete it.
+To uninstall, run `pinomad service uninstall`, then delete `~/.pinomad/runtime`, `~/.local/bin/pinomad`, and the line in your shell profile that ends in `# added by https://pinomad.si/install.sh`. Your data in the rest of `~/.pinomad` stays until you delete it.
 
 ## Clients
 
