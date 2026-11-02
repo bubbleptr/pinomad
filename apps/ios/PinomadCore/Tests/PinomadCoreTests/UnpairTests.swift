@@ -13,23 +13,25 @@ import Testing
         let steps = Steps()
         await unpairHost(
             revoke: { await steps.add("revoke") },
-            forget: { await steps.add("forget") })
-        #expect(await steps.all == ["revoke", "forget"])
+            forget: { await steps.add("forget answered=\($0)") })
+        #expect(await steps.all == ["revoke", "forget answered=true"])
     }
 
     @Test func forgetsAnUnreachableHostHereOnly() async {
         let steps = Steps()
-        await unpairHost(revoke: nil, forget: { await steps.add("forget") })
-        #expect(await steps.all == ["forget"])
+        await unpairHost(revoke: nil, forget: { await steps.add("forget answered=\($0)") })
+        #expect(await steps.all == ["forget answered=false"])
     }
 
-    /// The session can end under the call — the host closes a device that
-    /// unpaired itself — or the call can time out; this end still goes.
-    @Test func forgetsHereWhenTheHostCallFails() async {
+    /// The call can time out or the session can close under it; this end
+    /// still goes, but the host may still hold this device (and its push
+    /// registration), so the forget hears the host didn't answer.
+    @Test(arguments: [SessionError.sessionClosed, SessionError.connectionLost])
+    func forgetsHereWhenTheHostCallFails(error: SessionError) async {
         let steps = Steps()
         await unpairHost(
-            revoke: { throw SessionError.sessionClosed },
-            forget: { await steps.add("forget") })
-        #expect(await steps.all == ["forget"])
+            revoke: { throw error },
+            forget: { await steps.add("forget answered=\($0)") })
+        #expect(await steps.all == ["forget answered=false"])
     }
 }
