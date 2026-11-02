@@ -322,7 +322,7 @@ function HostList({
               isRevoked={match.stored !== undefined && state.rejectedHostKeys.includes(match.stored.hostKey)}
               isPairing={pairing === match.host.hostId}
               isBusy={pairing !== undefined}
-              isRemoveDisabled={removing !== undefined}
+              isRemoveDisabled={removing !== undefined || pairing === match.host.hostId}
               onPair={() => pair(match.host.hostId)}
               onRemove={() => setRemoving(match.host)}
             />

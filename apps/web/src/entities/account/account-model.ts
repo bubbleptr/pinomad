@@ -257,6 +257,11 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   }
   const flights = new Map<string, Flight>();
   let stopVisibility: (() => void) | undefined;
+  /**
+   * Removals this page made, per account host slot. A manual pairing that
+   * started before one must not store the host it took off the account.
+   */
+  const removals = new Map<string, number>();
   /** watchForHost's live watch per hostId, with its pending refresh between ticks. */
   const hostWatches = new Map<string, { readonly watch: object; readonly timer?: ReturnType<typeof setTimeout> }>();
 
@@ -623,10 +628,12 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     if (client === undefined) return fail("unauthenticated");
     const active = client;
     const started = epoch;
+    const slot = slotKey(active.origin, hostId);
+    const removed = removals.get(slot);
     declined.remove({ serverOrigin: active.origin, hostId });
     // An explicit join wins over an automatic round already in flight.
     cancelAccountRegistration(hostId);
-    const pending = unsaved.get(slotKey(active.origin, hostId));
+    const pending = unsaved.get(slot);
     if (pending !== undefined) {
       return (await savePending(active, pending)) ? { ok: true, value: pending } : fail("pairing_not_saved");
     }
@@ -640,6 +647,9 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     // Signed out while the handshake ran (a shared-computer sign-out may
     // already have forgotten this server's hosts): the key must not land.
     if (!live(active, started)) return fail("stale");
+    // Removed from the account while the handshake ran: storing the key
+    // would bring the host back on this device.
+    if (removals.get(slot) !== removed) return fail("host_removed");
     const enriched = enrich(hostId, result.value);
     clearRejected(enriched.hostKey);
     try {
@@ -713,15 +723,20 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
         // Removed from another device, or a server that predates removal
         // (also 404): the list says which. Either way this device's pairing
         // stays — nothing here confirmed the host left.
+        // A failed refresh proves neither, so its error keeps the form open.
         const listed = await refresh(active, user);
-        if (listed.ok && listed.value.some((match) => match.host.hostId === hostId)) return fail("remove_unsupported");
+        if (!listed.ok) return listed;
+        if (listed.value.some((match) => match.host.hostId === hostId)) return fail("remove_unsupported");
       }
       return result;
     }
-    // Nothing may pair the gone host again: an automatic flight in progress,
-    // a failed save waiting for its retry, a watch after a confirm.
+    // Nothing may pair the gone host again: an automatic flight or a manual
+    // pairing in progress, a failed save waiting for its retry, a watch after
+    // a confirm.
+    const slot = slotKey(active.origin, hostId);
+    removals.set(slot, (removals.get(slot) ?? 0) + 1);
     cancelAccountRegistration(hostId);
-    if (unsaved.delete(slotKey(active.origin, hostId))) publishUnsaved();
+    if (unsaved.delete(slot)) publishUnsaved();
     clearTimeout(hostWatches.get(hostId)?.timer);
     hostWatches.delete(hostId);
     // A failure to forget is logged there; the server side is done, and the

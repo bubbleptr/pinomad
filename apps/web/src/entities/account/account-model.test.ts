@@ -1242,23 +1242,41 @@ describe("removing a host from the account (#512)", () => {
     text: () => Promise.resolve(body === undefined ? "" : JSON.stringify(body)),
   });
 
+  const pairingOffer = {
+    url: "wss://relay.example.com/c/h1",
+    hostKey: toBase64Url(generateKeyPair().publicKey),
+    secret: toBase64Url(generateKeyPair().privateKey),
+    expiresAt: Date.now() + 60_000,
+  };
+
   /**
    * Signed in (cookie mode) with `stored` paired and the account listing
    * `listed`; a 204 from `remove` takes h1 off the list. `removed` records
-   * every host the model drops.
+   * every host the model drops; `relist` puts h1 back on the account, as
+   * `pinomad up` on it would.
    */
-  const signedInWith = async (stored: StoredHost[], remove: () => Answer, listed: string[] = ["h1"]) => {
+  const signedInWith = async (
+    stored: StoredHost[],
+    remove: () => Answer,
+    listed: string[] = ["h1"],
+    options?: { failListAfterRemove?: boolean; connect?: () => Promise<void> },
+  ) => {
     const store = hosts(stored);
     const removed: string[] = [];
     const calls: { url: string; init: AccountFetchInit | undefined }[] = [];
     let accountHosts = listed.map((hostId) => accountHost("A".repeat(43), hostId));
+    let listFails = false;
     const impl: AccountFetch = (url, init) => {
       calls.push({ url, init });
       if (url.endsWith("/api/me")) return Promise.resolve(answer(200, USER));
-      if (url.endsWith("/api/hosts")) return Promise.resolve(answer(200, accountHosts));
+      if (url.endsWith("/api/hosts")) {
+        return listFails ? Promise.reject(new Error("offline")) : Promise.resolve(answer(200, accountHosts));
+      }
+      if (url.endsWith("/api/hosts/h1/pairing")) return Promise.resolve(answer(200, pairingOffer));
       if (url.endsWith("/api/hosts/h1/remove")) {
         const result = remove();
         if (result.status === 204) accountHosts = accountHosts.filter((row) => row.hostId !== "h1");
+        listFails = options?.failListAfterRemove === true;
         return Promise.resolve(result);
       }
       return Promise.resolve(answer(404, { error: "not_found" }));
@@ -1266,6 +1284,7 @@ describe("removing a host from the account (#512)", () => {
     const setup = makeModel({
       fake: { impl, calls },
       store,
+      ...(options?.connect === undefined ? {} : { connect: options.connect }),
       removeHost: (hostKey) => {
         removed.push(hostKey);
         return store.remove(hostKey);
@@ -1275,7 +1294,10 @@ describe("removing a host from the account (#512)", () => {
     const hostLists = () => calls.filter((call) => call.url.endsWith("/api/hosts")).length;
     const listedIds = () =>
       setup.model.state.status === "signed-in" ? setup.model.state.hosts.map((match) => match.host.hostId) : [];
-    return { ...setup, removed, hostLists, listedIds };
+    const relist = () => {
+      accountHosts = [accountHost("A".repeat(43), "h1")];
+    };
+    return { ...setup, removed, hostLists, listedIds, relist };
   };
 
   const vouched = (hostId: string) => storedHost({ account: { serverOrigin: ORIGIN, hostId, vouched: true } });
@@ -1328,6 +1350,64 @@ describe("removing a host from the account (#512)", () => {
       error: { code: "not_found", status: 404 },
     });
     expect(setup.store.stored).toEqual([mine]);
+  });
+
+  it("on a 404 whose confirming refresh fails, returns that failure and keeps this device's pairing", async () => {
+    // A server too old to remove hosts also answers 404; without a list that
+    // says h1 is gone, the form must stay open.
+    const mine = vouched("h1");
+    const setup = await signedInWith([mine], () => answer(404, { error: "not_found" }), ["h1"], {
+      failListAfterRemove: true,
+    });
+    const before = setup.hostLists();
+    expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({
+      ok: false,
+      error: { code: "network" },
+    });
+    expect(setup.hostLists()).toBe(before + 1);
+    expect(setup.removed).toEqual([]);
+    expect(setup.store.stored).toEqual([mine]);
+    expect(setup.model.state.status).toBe("signed-in");
+  });
+
+  describe("a manual pairing of the host in flight", () => {
+    const delayedHandshake = () => {
+      let finish!: () => void;
+      const handshake = new Promise<void>((resolve) => (finish = resolve));
+      let markStarted!: () => void;
+      const started = new Promise<void>((resolve) => (markStarted = resolve));
+      return {
+        finish,
+        started,
+        connect: () => {
+          markStarted();
+          return handshake;
+        },
+      };
+    };
+
+    it("is discarded when it finishes after the host was removed", async () => {
+      const handshake = delayedHandshake();
+      const setup = await signedInWith([], () => answer(204), ["h1"], { connect: handshake.connect });
+      const pairing = setup.model.pairHost("h1");
+      await handshake.started;
+      expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
+
+      handshake.finish();
+      expect(await pairing).toEqual({ ok: false, error: { code: "host_removed" } });
+      expect(setup.paired).toEqual([]);
+      expect(setup.store.stored).toEqual([]);
+    });
+
+    it("started after the host rejoined the account lands as usual", async () => {
+      const setup = await signedInWith([], () => answer(204));
+      expect((await setup.model.removeHost({ hostId: "h1", password: "pw" })).ok).toBe(true);
+      setup.relist();
+      expect((await setup.model.refreshHosts()).ok).toBe(true);
+
+      expect((await setup.model.pairHost("h1")).ok).toBe(true);
+      expect(setup.paired).toHaveLength(1);
+    });
   });
 
   it("signs out when the session is gone", async () => {
