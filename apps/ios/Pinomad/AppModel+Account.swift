@@ -538,23 +538,14 @@ extension AppModel {
 
     /// What this iPhone does once `hostId` is off the account, however that
     /// was learned: drop its notice and the account pairing the server
-    /// issued for it. A registration of it may still be on its way: an
-    /// invite in flight goes stale, and a running handshake finishes only to
-    /// be undone. Closing it instead could drop the result after the core
-    /// already saved it, leaving the pairing behind.
+    /// issued for it, and refuse any pairing of it still on its way.
     private func forgetRemovedHost(_ hostId: String, session: AccountSession) {
         newHostNotices.removeAll { $0.hostId == hostId }
         knownAccountHosts.dismiss(
             serverOrigin: session.serverOrigin, username: session.username, hostIds: [hostId])
-        // Only this host's asks: an explicit join of another one started
-        // while the removal waited carries on (and clears its own busy state).
-        accountPairingEpochs.invalidate(hostId: hostId)
-        if let runtime = automaticPairingRuntimes.removeValue(forKey: hostId) {
-            pairingRegistry.finish(.automatic(hostId: hostId))
-            accountRegistrationInFlight.remove(hostId)
-            runtime.refusesPairing = true
-            refusingPairingRuntimes.append(runtime)
-        }
+        // Only this host's asks: a join of another one started while the
+        // removal waited carries on (and clears its own busy state).
+        refuseAccountPairings(hostId: hostId)
         forgetAccountHosts(serverOrigin: session.serverOrigin, hostId: hostId)
     }
 
@@ -636,14 +627,15 @@ extension AppModel {
         }
         accountRegistrationInFlight.remove(hostId)
         accountPairingEpochs.invalidateAll()
-        let ticket = accountPairingEpochs.ticket()
+        let ticket = accountPairingEpochs.ticket(hostId: hostId)
         accountBusy = true
         accountPairingHostId = hostId
         accountError = nil
         declinedAccountHosts.remove(serverOrigin: session.serverOrigin, hostId: hostId)
         defer {
-            // A connection or another pairing invalidated this ask while it
-            // was waiting; that path already cleared the indicators.
+            // A connection, another pairing, or this host's removal or forget
+            // invalidated this ask while it was waiting; that path already
+            // cleared the indicators.
             if accountPairingEpochs.isCurrent(ticket) {
                 accountBusy = false
                 accountPairingHostId = nil

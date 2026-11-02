@@ -2,8 +2,8 @@ import Testing
 @testable import PinomadCore
 
 /// Which in-flight account pairing asks a late answer may still act on
-/// (#512): removing or forgetting one host makes only that host's asks
-/// stale, while a sign-in change or a chosen connection makes all of them
+/// (#512): removing or forgetting one host makes only that host's asks,
+/// automatic or explicit, stale, while a sign-in change or a chosen connection makes all of them
 /// stale.
 @Suite("Account pairing epochs")
 struct AccountPairingEpochsTests {
@@ -11,13 +11,11 @@ struct AccountPairingEpochsTests {
         var epochs = AccountPairingEpochs()
         let removed = epochs.ticket(hostId: "a")
         let other = epochs.ticket(hostId: "b")
-        let explicit = epochs.ticket()
 
         epochs.invalidate(hostId: "a")
 
         #expect(!epochs.isCurrent(removed))
         #expect(epochs.isCurrent(other))
-        #expect(epochs.isCurrent(explicit))
     }
 
     /// A list refresh that was already in flight can start the removed
@@ -36,12 +34,12 @@ struct AccountPairingEpochsTests {
     @Test func invalidatingAllMakesEveryAskStale() {
         var epochs = AccountPairingEpochs()
         let host = epochs.ticket(hostId: "a")
-        let explicit = epochs.ticket()
+        let other = epochs.ticket(hostId: "b")
 
         epochs.invalidateAll()
 
         #expect(!epochs.isCurrent(host))
-        #expect(!epochs.isCurrent(explicit))
+        #expect(!epochs.isCurrent(other))
         #expect(epochs.isCurrent(epochs.ticket(hostId: "a")))
     }
 }

@@ -22,6 +22,21 @@ import Testing
         #expect(StoredHosts(hosts: [record("a")], activeHostKey: "a").forgetting("a").active == nil)
     }
 
+    /// Taking back a refused pairing's save (#512) removes only that save.
+    /// A newer pairing of the same host (a QR code, a rejoin) stored under
+    /// the same host key with its own device key stays.
+    @Test func withdrawingRemovesOnlyThatPairingsOwnSave() {
+        let refused = HostRecord(url: "ws://b:1/", hostKey: "b", privateKey: "old")
+        let saved = StoredHosts(hosts: [record("a"), refused], activeHostKey: "b")
+        #expect(saved.withdrawing(refused)?.hosts.map(\.hostKey) == ["a"])
+
+        let newer = HostRecord(url: "ws://b:1/", hostKey: "b", privateKey: "new")
+        let replaced = StoredHosts(hosts: [record("a"), newer], activeHostKey: "b")
+        #expect(replaced.withdrawing(refused) == nil)
+
+        #expect(StoredHosts(hosts: [record("a")]).withdrawing(refused) == nil)
+    }
+
     /// Only a stored host can become active — a stale key (forgotten from
     /// another screen meanwhile) leaves the choice alone.
     @Test func activatingNeedsAStoredHost() {

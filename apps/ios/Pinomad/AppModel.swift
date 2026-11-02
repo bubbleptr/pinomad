@@ -285,10 +285,10 @@ final class AppModel {
     /// Auto-registration runtimes by hostId, so sign-out or a forget can
     /// really abandon a handshake that already started.
     var automaticPairingRuntimes: [String: HostRuntime] = [:]
-    /// Registrations of a host removed from the account while their
-    /// handshake ran (#512). Nothing closes them early: the core saves a
-    /// pairing before the app hears of it, so only their own result, which
-    /// paired() takes back, or failure ends them.
+    /// Account pairings of a host removed from the account or forgotten
+    /// while their handshake ran (#512). Nothing closes them early: the core
+    /// saves a pairing before the app hears of it, so only their own result,
+    /// which paired() takes back, or failure ends them.
     var refusingPairingRuntimes: [HostRuntime] = []
     var accountRejectedHostKeys: Set<String> = []
     /// This install's account device id, sent with every sign-in (ADR-0037 §1).
@@ -569,6 +569,7 @@ final class AppModel {
                 account: account)
             let runtime = HostRuntime(hostKey: nil, host: nil, isPairing: true)
             runtime.autoRegisterHostId = autoRegisterHostId
+            runtime.accountHostId = account?.hostId
             configure(runtime)
             runtime.attach(session, sameHost: false)
             if focus {
@@ -874,13 +875,10 @@ final class AppModel {
         // Cancelling in-flight registrations for this identity is part of
         // forgetting it; a late handshake must not resurrect it.
         if let account = record?.account {
-            accountPairingEpochs.invalidate(hostId: account.hostId)
+            refuseAccountPairings(hostId: account.hostId)
             accountRegistrationInFlight.remove(account.hostId)
             unsavedAccountHosts.removeValue(forKey: account.hostId)
             pairingRegistry.finish(.automatic(hostId: account.hostId))
-            if let runtime = automaticPairingRuntimes.removeValue(forKey: account.hostId) {
-                runtime.close()
-            }
         }
         do {
             try store.update { $0 = $0.forgetting(hostKey) }
@@ -906,6 +904,41 @@ final class AppModel {
         if let warning { pushForgetWarning = warning }
         updatePushVisibility()
         advancePushTarget()
+    }
+
+    /// Stop every account pairing of `hostId` still on its way: the host
+    /// left the account or this iPhone forgot it (#512). Asks waiting on an
+    /// invite go stale. A running handshake, automatic or explicit, is left
+    /// to finish and its save taken back: closing it could drop the result
+    /// after the core already saved it.
+    func refuseAccountPairings(hostId: String) {
+        accountPairingEpochs.invalidate(hostId: hostId)
+        // An explicit join of this host waiting on its invite holds a stale
+        // ticket now, so it won't clear the indicators itself.
+        if accountPairingHostId == hostId {
+            accountPairingHostId = nil
+            accountBusy = false
+        }
+        if let runtime = automaticPairingRuntimes.removeValue(forKey: hostId) {
+            pairingRegistry.finish(.automatic(hostId: hostId))
+            accountRegistrationInFlight.remove(hostId)
+            refuse(runtime)
+        }
+        if let runtime = pairingRuntime, runtime.accountHostId == hostId, runtime.hostKey == nil {
+            // The pair page goes too, without connectActive(): that would
+            // also make every other account ask stale.
+            refuse(runtime)
+            pairingRuntime = nil
+            pairingRegistry.finish(.manual)
+            pairing.clear()
+            hostBeforePairing = nil
+            syncPhase()
+        }
+    }
+
+    private func refuse(_ runtime: HostRuntime) {
+        runtime.refusesPairing = true
+        refusingPairingRuntimes.append(runtime)
     }
 
     func setConnectionMode(_ mode: HostConnectionMode, for hostKey: String) {
@@ -1045,12 +1078,13 @@ final class AppModel {
 
     private func paired(_ runtime: HostRuntime, host: HostRecord, saveError: String?) {
         if runtime.refusesPairing {
-            // Its host left the account during the handshake (#512). Another
-            // registration of the same host may have started since, so this
-            // one touches none of the per-host bookkeeping.
+            // Its host left the account or was forgotten during the
+            // handshake (#512). Another pairing of the same host may have
+            // started since, so this one touches none of the per-host
+            // bookkeeping.
             refusingPairingRuntimes.removeAll { $0 === runtime }
             runtime.close()
-            if saveError == nil { undoAutomaticSave(host) }
+            if saveError == nil { undoRefusedSave(host) }
             return
         }
         runtime.identify(host)
@@ -1069,7 +1103,7 @@ final class AppModel {
             if declined {
                 runtime.close()
                 runtimes.removeValue(forKey: host.hostKey)
-                if saveError == nil { undoAutomaticSave(host) }
+                if saveError == nil { undoRefusedSave(host) }
                 return
             }
             if saveError != nil {
@@ -1105,13 +1139,15 @@ final class AppModel {
         advancePushTarget()
     }
 
-    /// The core saved a refused registration before telling us; take that
-    /// save back, and the launch-host mark it came with.
-    private func undoAutomaticSave(_ host: HostRecord) {
+    /// The core saved a refused pairing before telling us; take that save
+    /// back, and the launch-host mark it came with. A newer pairing of the
+    /// same host saved since (a QR code, a rejoin) is not this one's to undo.
+    private func undoRefusedSave(_ host: HostRecord) {
         let focusKey = runtimeTable.focus?.hostKey
         do {
             try store.update { stored in
-                stored = stored.forgetting(host.hostKey)
+                guard let withdrawn = stored.withdrawing(host) else { return }
+                stored = withdrawn
                 if let focusKey { stored = stored.activating(focusKey) }
             }
         } catch {
