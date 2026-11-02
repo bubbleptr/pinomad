@@ -9,19 +9,25 @@ private let pairingHowTo = "Run `pinomad pair` on the host, or open Settings →
 /// the confirm page — there's nothing to edit in a link.
 struct PairingSources: View {
     let model: AppModel
+    /// Off where another way to pair is the page's primary action.
+    var prominent = true
 
     @State private var invalid = false
 
     var body: some View {
         VStack(spacing: 12) {
-            Button {
+            let scan = Button {
                 model.present(.scanner)
             } label: {
                 Label("Scan QR Code", image: .scanQrCode)
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.tactile(.glassProminent))
             .controlSize(.large)
+            if prominent {
+                scan.buttonStyle(.tactile(.glassProminent))
+            } else {
+                scan.buttonStyle(.tactile(.glass))
+            }
 
             // The system paste control: reading the pasteboard from a tap
             // on it needs no permission prompt. It draws its own filled

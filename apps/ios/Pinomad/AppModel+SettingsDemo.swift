@@ -5,7 +5,9 @@ import PinomadCore
 /// `PINOMAD_DEMO_SETTINGS`: the settings pages without a host — two paired
 /// machines (the first connected, renamed, with three devices, this one
 /// among them), a chat, and one archived root. `failed`
-/// fails the first machine and opens its failure page; `pairing` the first-run
+/// fails the first machine and opens its failure page; `rejected` has the
+/// first machine refuse this device after its view arrived, and
+/// `rejected-page` opens that machine's page; `pairing` the first-run
 /// page with nothing paired; `first-host` the same, signed in to an account
 /// with no hosts (#493), and `first-host-…` its host-link demos (#497);
 /// `account` adds a signed-in account (its calls
@@ -89,6 +91,10 @@ extension AppModel {
             notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
             agents: nil, conversation: nil
         ))
+        if mode.hasPrefix("rejected") {
+            failDevHost("demo-mbp", .revoked)
+            if mode == "rejected-page" { navPath = [.machineUnavailable("demo-mbp")] }
+        }
     }
 
     /// The host-link demos (#497) over the first-host home: `first-host-confirm`

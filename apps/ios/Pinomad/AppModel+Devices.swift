@@ -8,7 +8,8 @@ extension AppModel {
         sessionHost.flatMap { devicePublicKey(privateKey: $0.privateKey) }
     }
 
-    /// Unpair a device. Revoking this one ends the connection with 4401.
+    /// Unpair another device from the connected host. This device's own
+    /// pairing goes through `unpair(_:)`, which also forgets the host here.
     func revoke(device publicKey: String) {
         invokeSetting(.revokeDevice(publicKey: publicKey))
     }

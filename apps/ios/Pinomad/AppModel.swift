@@ -798,11 +798,19 @@ final class AppModel {
         unsavedHostKeys.removeAll()
     }
 
+    /// Unpair this device from one host. The pairing lives at both ends, so
+    /// while the host is connected it is asked to drop this device's key
+    /// before the host is forgotten here; unreachable, only this end goes
+    /// and the host keeps listing this device until it is unpaired there.
+    func unpair(_ hostKey: String) {
+        forget(hostKey, revokeOnHost: true)
+    }
+
     /// Forget one host: close only its runtime, clear its push registration,
     /// and remember the decline if it was an account host (ADR-0035 §5).
     /// `decline: false` is for a shared-device sign-out (#494): the owner
     /// signing in here again should get the host back on its own.
-    func forget(_ hostKey: String, decline: Bool = true) {
+    func forget(_ hostKey: String, decline: Bool = true, revokeOnHost: Bool = false) {
         #if DEBUG
         if devHostsInjected {
             showToast("Demo data: hosts aren't forgotten.")
@@ -821,7 +829,7 @@ final class AppModel {
             case .forget:
                 break
             case .forgetWithWarning:
-                warning = "Forgot this host. It may still have this device registered for notifications; revoke this device on the host's Devices page to stop them."
+                warning = "Removed this host here. It may still have this device registered for notifications; unpair this device under Settings → Devices on the host to stop them."
             case .clearThenForget:
                 do {
                     guard let session = self.runtimes[hostKey]?.session else {
@@ -830,12 +838,31 @@ final class AppModel {
                     try await self.clearPushRegistration(on: session)
                     self.push.setMayHaveRegistration(false, for: hostKey)
                 } catch is PushUnregisterTimeout {
-                    warning = "Forgot this host, but the host timed out clearing notifications. Revoke this device on the host's Devices page to stop them."
+                    warning = "Removed this host here, but the host timed out clearing notifications. Unpair this device under Settings → Devices on the host to stop them."
                 } catch {
-                    warning = "Forgot this host, but couldn't clear notifications (\(self.describe(error))). Revoke this device on the host's Devices page to stop them."
+                    warning = "Removed this host here, but couldn't clear notifications (\(self.describe(error))). Unpair this device under Settings → Devices on the host to stop them."
                 }
             }
-            self.forgetNow(hostKey, record: record, warning: warning, decline: decline)
+            // After the push clear: the host closes a device that unpaired
+            // itself, so nothing can follow the revoke on this connection.
+            await unpairHost(
+                revoke: revokeOnHost ? self.ownKeyRevoke(on: hostKey) : nil,
+                forget: { @MainActor [warning] in
+                    self.forgetNow(hostKey, record: record, warning: warning, decline: decline)
+                })
+        }
+    }
+
+    /// Asks `hostKey` to drop this device's own key over its live
+    /// connection; nil when the host can't hear about it now.
+    private func ownKeyRevoke(on hostKey: String) -> (@Sendable () async throws -> Void)? {
+        guard let runtime = runtimes[hostKey], runtime.isConnectedNow,
+              let session = runtime.session,
+              let privateKey = hostRecord(for: hostKey)?.privateKey,
+              let publicKey = devicePublicKey(privateKey: privateKey)
+        else { return nil }
+        return {
+            try await Self.invoke(.revokeDevice(publicKey: publicKey), on: session, timeout: UnpairTimeout())
         }
     }
 
@@ -845,16 +872,22 @@ final class AppModel {
             hostMinor: runtime.hostMinor, method: "setPushToken")
     }
 
-    /// The clear is bounded: a black-holed connection must not keep the
-    /// pairing on the device forever.
     private func clearPushRegistration(on session: PinomadSession) async throws {
+        try await Self.invoke(.setPushToken(token: nil), on: session, timeout: PushUnregisterTimeout())
+    }
+
+    /// The calls a forget waits on are bounded: a black-holed connection
+    /// must not keep the pairing on the device forever.
+    private nonisolated static func invoke(
+        _ call: FfiCall, on session: PinomadSession, timeout: some Error & Sendable
+    ) async throws {
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
-                _ = try await session.invoke(.setPushToken(token: nil))
+                _ = try await session.invoke(call)
             }
             group.addTask {
                 try await Task.sleep(for: .seconds(5))
-                throw PushUnregisterTimeout()
+                throw timeout
             }
             defer { group.cancelAll() }
             _ = try await group.next()
@@ -962,7 +995,8 @@ final class AppModel {
             self.handleRegistrationFailure(runtime, failure: failure)
         }
         runtime.onUnauthorized = { [weak self] runtime, host in
-            guard let self else { return }
+            // A host this device is unpairing from closes it on purpose.
+            guard let self, !self.forgettingHosts.contains(host.hostKey) else { return }
             self.markAccountRejected(host)
         }
         runtime.onHostName = { [weak self] hostKey, name in
@@ -1125,6 +1159,10 @@ final class AppModel {
     /// ids restart per session and would collide across hosts. The source
     /// machine is named only when there is more than one to tell apart.
     private func presentToast(_ runtime: HostRuntime, notice: Notice) {
+        // A host on its way out has nothing left to report: one from before
+        // #529 closes a device that unpaired itself before answering, which
+        // lands here as "Disconnected from host".
+        if let hostKey = runtime.hostKey, forgettingHosts.contains(hostKey) { return }
         nextToastID &-= 1
         var message = notice.message
         if hosts.hosts.count > 1, let hostKey = runtime.hostKey, let label = hostLabels[hostKey] {

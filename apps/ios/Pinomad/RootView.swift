@@ -131,7 +131,7 @@ struct MachineUnavailableView: View {
 }
 
 /// Why the host can't be used, and the ways out that fit: a fresh link,
-/// forgetting the host, updating one side, retrying, or another host.
+/// pairing again, updating one side, retrying, or another host.
 /// `hostKey` is the stored machine a pushed page is about; nil for the
 /// whole-screen page of a manual pairing or an unreadable keychain.
 private struct FailureView: View {
@@ -143,6 +143,15 @@ private struct FailureView: View {
     private var subjectKey: String? { hostKey ?? model.currentHostKey }
 
     var body: some View {
+        // A manual pairing keeps its Cancel; the rest get the way back.
+        if failure == .revoked, !pairing, let key = subjectKey {
+            DeviceRejectedView(model: model, hostKey: key)
+        } else {
+            failureBody
+        }
+    }
+
+    private var failureBody: some View {
         VStack(spacing: 16) {
             Image(.triangleAlert)
                 .font(.system(size: 40))
@@ -176,15 +185,6 @@ private struct FailureView: View {
                     }
                         .buttonStyle(.tactile(.borderedProminent))
                 }
-                if failure == .revoked, let key = subjectKey {
-                    if model.accountHostId(for: key) != nil {
-                        Button("Pair again with your account") { model.repairViaAccount(hostKey: key) }
-                            .buttonStyle(.tactile(.bordered))
-                            .disabled(model.accountBusy)
-                    }
-                    Button("Forget this host", role: .destructive) { model.forget(key) }
-                        .buttonStyle(.tactile(.bordered))
-                }
                 if pairing {
                     Button("Cancel") { model.cancelPairing() }
                         .buttonStyle(.tactile(.bordered))
@@ -199,12 +199,6 @@ private struct FailureView: View {
                 }
             }
             .controlSize(.large)
-            if failure == .revoked, let error = model.accountError {
-                Text(error)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-                    .multilineTextAlignment(.center)
-            }
         }
     }
 
@@ -230,6 +224,64 @@ private struct FailureView: View {
         case .unreachable(let message):
             message
         }
+    }
+}
+
+/// The host refused this device (4401): it was unpaired there, or its
+/// pairing never took. Pairing again comes first — through the account when
+/// it can vouch for this host, else a fresh link — and unpairing the dead
+/// entry here second. A bare 4401 never removes it on its own (ADR-0032 §6).
+private struct DeviceRejectedView: View {
+    let model: AppModel
+    let hostKey: String
+
+    private var label: String { model.machineLabel(hostKey) }
+    private var viaAccount: Bool { model.accountHostId(for: hostKey) != nil }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("\(label) no longer accepts this device")
+                    .font(.title2.weight(.semibold))
+                Text("This device was unpaired from it, or its pairing was never accepted. Pair again to keep using it.")
+                    .foregroundStyle(.secondary)
+            }
+            if viaAccount {
+                VStack(alignment: .leading, spacing: 8) {
+                    Button {
+                        model.repairViaAccount(hostKey: hostKey)
+                    } label: {
+                        Text("Pair again with your account").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.tactile(.glassProminent))
+                    .controlSize(.large)
+                    .disabled(model.accountBusy)
+                    if let error = model.accountError {
+                        Text(error)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Text(viaAccount ? "Or pair with a link" : "Pair with a link")
+                    .font(.headline)
+                Text(.init("Run `pinomad pair` on \(label), or open Settings → Devices → Pair a device on a device still paired with it."))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                PairingSources(model: model, prominent: !viaAccount)
+                    .padding(.top, 4)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Button("Unpair \(label)", role: .destructive) { model.unpair(hostKey) }
+                if model.accountSession == nil {
+                    Button("Sign in to pair through your account") { model.present(.account) }
+                }
+            }
+            .buttonStyle(.borderless)
+            .font(.subheadline)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -265,7 +317,7 @@ struct ConnectionBanner: View {
             case .failed(let failure)?:
                 bar {
                     Image(.triangleAlert)
-                    Text(failure.title).lineLimit(1)
+                    Text(failure.statusTitle).lineLimit(1)
                     Spacer(minLength: 8)
                     Button("Details") { model.navPath.append(.machineUnavailable(hostKey)) }
                         .buttonStyle(.tactile(.bordered))
@@ -359,6 +411,12 @@ extension ConnectFailure {
         case .directUnavailable: "Direct connection unavailable"
         case .unreachable: "Couldn't reach the host"
         }
+    }
+
+    /// The failure as a machine's status, where the rows say how each
+    /// machine stands rather than what went wrong.
+    var statusTitle: String {
+        self == .revoked ? "Not paired" : title
     }
 }
 

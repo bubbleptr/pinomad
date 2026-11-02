@@ -9,6 +9,9 @@ private let hostNameLogger = Logger(subsystem: "build.kieran.pinomad", category:
 /// registration, so forgetting proceeds with the revocation warning.
 struct PushUnregisterTimeout: Error {}
 
+/// The host didn't answer an unpair in time; this end is removed anyway.
+struct UnpairTimeout: Error {}
+
 /// A pairing link waiting for the reader's go-ahead. `url` is where it
 /// would connect, or nil when the link isn't a usable pairing link.
 struct PendingPairing: Equatable {
@@ -45,7 +48,9 @@ extension AppModel {
     /// and the cross-machine lists (#429).
     var machineRoots: [MachineRoot] {
         machines.flatMap { host -> [MachineRoot] in
-            guard let organized = runtimes[host.hostKey]?.snapshot?.organized else { return [] }
+            guard !isRejected(host.hostKey),
+                  let organized = runtimes[host.hostKey]?.snapshot?.organized
+            else { return [] }
             return allRoots(organized).map {
                 MachineRoot(hostKey: host.hostKey, node: $0.node, project: $0.project)
             }
@@ -65,8 +70,26 @@ extension AppModel {
             case "direct": return "Connected · Direct"
             default: return "Connected · Local"
             }
+        case .failed(.revoked): return "Not paired"
         case .failed: return "Offline"
         }
+    }
+
+    /// The host refused this device (4401): it was unpaired there, or its
+    /// pairing never took. Its last view is no longer this device's to browse.
+    func isRejected(_ hostKey: String) -> Bool {
+        runtimes[hostKey]?.phase == .failed(.revoked)
+    }
+
+    /// What unpairing `hostKey` does, which depends on whether the host can
+    /// still hear about it.
+    func unpairMessage(_ hostKey: String) -> String {
+        let label = machineLabel(hostKey)
+        if isConnected(hostKey) {
+            return "\(label) will stop accepting this device, and this device forgets it. Connecting again needs a new pairing link."
+        }
+        if isRejected(hostKey) { return "\(label) no longer accepts this device. This removes it here." }
+        return "\(label) isn't connected, so only this device forgets it. \(label) keeps listing this device until you unpair it under Settings → Devices there."
     }
 
     /// What the screens call the focused host.

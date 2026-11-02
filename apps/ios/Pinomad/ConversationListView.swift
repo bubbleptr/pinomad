@@ -26,7 +26,9 @@ struct ConversationListView: View {
             if !query.isEmpty {
                 searchResults(roots)
             } else {
-                if model.machines.contains(where: { model.runtimes[$0.hostKey]?.snapshot != nil }) {
+                if model.machines.contains(where: {
+                    model.runtimes[$0.hostKey]?.snapshot != nil && !model.isRejected($0.hostKey)
+                }) {
                     StatusTiles(roots: roots.map(\.node)) { filter in
                         model.navPath.append(.conversations(hostKey: nil, filter: filter))
                     }
@@ -127,7 +129,7 @@ private struct MachineGroup: View {
                     Image(.cloudOff)
                         .font(.body)
                         .frame(width: 28)
-                    Text(failure.title)
+                    Text(failure.statusTitle)
                         .lineLimit(1)
                 }
                 .foregroundStyle(.secondary)
