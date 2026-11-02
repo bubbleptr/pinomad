@@ -68,7 +68,8 @@ ours() { grep -qF "$MARKER" "$1" 2>/dev/null; }
 # opens login shells, which read .bash_profile (or what stands in for it)
 # instead of .bashrc.
 profile() {
-  case ${SHELL##*/} in
+  shell=${SHELL:-}
+  case ${shell##*/} in
     zsh) say "${ZDOTDIR:-$HOME}/.zshrc" ;;
     fish) say "${XDG_CONFIG_HOME:-$HOME/.config}/fish/conf.d/pinomad.fish" ;;
     bash)

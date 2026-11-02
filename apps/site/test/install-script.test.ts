@@ -30,12 +30,13 @@ async function tempDir(): Promise<string> {
 async function runInstaller(
   env: Record<string, string>,
   args: readonly string[] = [],
+  shell = "/bin/sh",
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   const text = await readFile(script, "utf8");
   return new Promise((resolve, reject) => {
     // `sh -s -- …` is how the apps pass a command through. Detached, so the
     // script finds no /dev/tty even when the tests run in a terminal.
-    const child = spawn("/bin/sh", args.length === 0 ? [] : ["-s", "--", ...args], {
+    const child = spawn(shell, args.length === 0 ? [] : ["-s", "--", ...args], {
       env,
       detached: true,
       stdio: ["pipe", "pipe", "pipe"],
@@ -166,6 +167,19 @@ describe("install.sh", () => {
       expect(zshrc.match(/\.local\/bin/g)).toHaveLength(1);
       expect(zshrc).toContain('export PATH="$HOME/.local/bin:$PATH"');
       expect(second.stdout).toMatch(/new terminal.*pinomad up/);
+    });
+
+    // dash, /bin/sh on Debian and Ubuntu, doesn't fill in SHELL the way bash does.
+    it.skipIf(!hasBuild || !existsSync("/bin/dash"))("falls back to ~/.profile when SHELL isn't set", async () => {
+      const home = await tempDir();
+      await fakeRuntime(home);
+
+      const run = await runInstaller({ HOME: home, PATH: SYSTEM_PATH }, ["--version"], "/bin/dash");
+
+      expect(run.stderr).toBe("");
+      expect(run.code).toBe(0);
+      expect(await readFile(join(home, ".profile"), "utf8")).toContain('export PATH="$HOME/.local/bin:$PATH"');
+      expect(run.stdout).toContain("0.0.0-test");
     });
 
     it.skipIf(!hasBuild)("leaves the profile alone when ~/.local/bin is already on PATH", async () => {
