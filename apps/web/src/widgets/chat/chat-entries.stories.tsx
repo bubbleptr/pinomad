@@ -83,6 +83,7 @@ const meta = {
     entry: run({ elapsedMs: 16_400, steps: narrated, answer }, { forkEntryId: "entry-9", endedAt: now - 5_000 }),
     connected: true,
     openInPanel: fn(),
+    onOpenFork: fn(),
     onFork: fn(),
     onRetrySubmission: fn(),
     onEditSubmission: fn(),

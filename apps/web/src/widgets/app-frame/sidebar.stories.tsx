@@ -8,13 +8,17 @@ import {
   fakeView,
   BACKGROUND_SUBAGENT_ID,
   DEVBOX_HOST,
+  FORK_ID,
   HOME_HOST,
   NAS_HOST,
+  NESTED_FORK_ID,
   PARSER_ID,
   signedIn,
+  SECOND_FORK_ID,
   withAccount,
   withBackgroundSubagents,
   withDesktopUpdates,
+  withForks,
   withHosts,
 } from "../../test/story-fixtures.tsx";
 import { SidebarContent, SidebarFooter, SidebarHeaderBand } from "./sidebar.tsx";
@@ -92,6 +96,24 @@ export const Empty: Story = {
     machines: fakeMachines({ home: fakeView({ organized: { chats: [], projects: [], archived: [] } }) }).slice(0, 1),
     shownId: undefined,
   },
+};
+
+const forkMachines = () => fakeMachines({ home: withForks(fakeView()) });
+
+/** A fork is an independent row after its root, in the same project group. */
+export const ForkRows: Story = { args: { machines: forkMachines(), shownId: PARSER_ID } };
+
+/** Selecting a fork deselects its root; the two rows never compete. */
+export const ForkSelected: Story = { args: { machines: forkMachines(), shownId: FORK_ID } };
+
+/** Legacy fork-of-a-fork data keeps every fork navigable, depth-first. */
+export const LegacyNestedForks: Story = {
+  args: { machines: forkMachines(), shownId: NESTED_FORK_ID },
+};
+
+/** The second root-level fork still follows the first one's legacy descendant. */
+export const SecondForkSelected: Story = {
+  args: { machines: forkMachines(), shownId: SECOND_FORK_ID },
 };
 
 const backgroundMachines = (options?: { longTitles?: boolean; includeForkChild?: boolean }) =>

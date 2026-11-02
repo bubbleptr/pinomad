@@ -36,6 +36,9 @@ export const FORK_ID = id(4);
 export const SUBAGENT_ID = id(5);
 export const BACKGROUND_SUBAGENT_ID = id(8);
 export const FORK_BACKGROUND_SUBAGENT_ID = id(9);
+/** Two more forks used by the sidebar's legacy and multi-fork stories. */
+export const SECOND_FORK_ID = id(10);
+export const NESTED_FORK_ID = id(11);
 /** A conversation of another family, with no forks or subagents. */
 export const DARK_MODE_ID = id(2);
 
@@ -72,6 +75,52 @@ const index: HostIndex = {
 
 export const organized = organize(index, summaries);
 export const summaryOf = (target: ConversationId) => summaries.find((summary) => summary.id === target);
+
+/**
+ * Add a second root-level fork and a legacy fork-of-a-fork. Depth-first
+ * `threadsOf` order puts the nested fork directly after its parent, then the
+ * second root fork.
+ */
+export function withForks(view: DurableView): DurableView {
+  const secondFork: ConversationNode = {
+    summary: {
+      id: SECOND_FORK_ID,
+      kind: "fork",
+      parent: PARSER_ID,
+      forkedAt: "5",
+      title: "Compare a table-driven parser",
+      status: "running",
+      updatedAt: now - 20 * MINUTE,
+    },
+    children: [],
+  };
+  const nestedFork: ConversationNode = {
+    summary: {
+      id: NESTED_FORK_ID,
+      kind: "fork",
+      parent: FORK_ID,
+      forkedAt: "6",
+      title: "Revisit the frame cost",
+      updatedAt: now - 30 * MINUTE,
+    },
+    children: [],
+  };
+  const attach = (node: ConversationNode): ConversationNode => {
+    const children = node.children.map(attach);
+    if (node.summary.id === PARSER_ID) return { ...node, children: [...children, secondFork] };
+    if (node.summary.id === FORK_ID) return { ...node, children: [...children, nestedFork] };
+    return { ...node, children };
+  };
+  return {
+    ...view,
+    organized: {
+      ...view.organized,
+      chats: view.organized.chats.map(attach),
+      projects: view.organized.projects.map((project) => ({ ...project, conversations: project.conversations.map(attach) })),
+      archived: view.organized.archived.map((entry) => ({ ...entry, node: attach(entry.node) })),
+    },
+  };
+}
 
 /** Add background work at both the root and its fork without changing real parents. */
 export function withBackgroundSubagents(

@@ -1,24 +1,21 @@
-// The side panel belongs to the family the main column shows: while another
-// family's conversation is still loading, the old family's fork must not stay
-// open beside it (its composer would send into a conversation no longer shown).
+// The side panel belongs to the family the main column shows. It lists only
+// Foreground Tasks; Forks are independent conversations in the sidebar now.
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { DARK_MODE_ID, fakeRemote, fakeView, FORK_ID, forkConversation, PARSER_ID } from "../../test/story-fixtures.tsx";
+import { DARK_MODE_ID, fakeRemote, fakeView, PARSER_ID, SUBAGENT_ID, subagentConversation } from "../../test/story-fixtures.tsx";
 import { SidePanel } from "./side-panel.tsx";
 
-const view = fakeView({ side: { id: FORK_ID, conversation: forkConversation(), docs: [] } });
+const view = fakeView({ side: { id: SUBAGENT_ID, conversation: subagentConversation(), docs: [] } });
 
-function renderPanel(shownId: typeof PARSER_ID) {
+function renderPanel(shownId: typeof PARSER_ID, panelView = view) {
   render(
     <SidePanel
-      view={view}
-      remote={fakeRemote(view)}
+      view={panelView}
+      remote={fakeRemote(panelView)}
       shownId={shownId}
       narrow={false}
       open
       onOpenChange={vi.fn()}
-      tab="threads"
-      onTabChange={vi.fn()}
       openInPanel={vi.fn()}
       onOpenInMain={vi.fn()}
     />,
@@ -26,13 +23,25 @@ function renderPanel(shownId: typeof PARSER_ID) {
 }
 
 describe("SidePanel family", () => {
-  it("keeps a fork of the shown family open", () => {
+  it("keeps a task of the shown family open, with no Threads shell", () => {
     renderPanel(PARSER_ID);
-    expect(screen.getByRole("button", { name: "Open in main" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Back to tasks" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /Threads/ })).toBeNull();
+    expect(screen.queryByRole("tab")).toBeNull();
   });
 
-  it("hides a fork of another family the moment that family is shown", () => {
+  it("keeps the header and back button while the task snapshot loads", () => {
+    const loading = fakeView({ side: { id: SUBAGENT_ID, docs: [] } });
+    renderPanel(PARSER_ID, loading);
+    expect(screen.getByRole("button", { name: "Back to tasks" })).toBeInTheDocument();
+    expect(screen.getByText("Loading conversation…")).toBeInTheDocument();
+    expect(screen.getByText("Read-only · subagent")).toBeInTheDocument();
+  });
+
+  it("hides a task of another family the moment that family is shown", () => {
     renderPanel(DARK_MODE_ID);
-    expect(screen.queryByRole("button", { name: "Open in main" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Back to tasks" })).not.toBeInTheDocument();
+    // The other family has no tasks; the panel says so rather than showing a fork list.
+    expect(screen.getByText("No tasks yet")).toBeInTheDocument();
   });
 });

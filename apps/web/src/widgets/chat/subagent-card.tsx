@@ -35,7 +35,7 @@ function SubagentCard({
 }: {
   tool: ChatToolItem;
   summary: ConversationSummary | undefined;
-  openInPanel: (id: ConversationId, tab: "threads" | "tasks") => void;
+  openInPanel: (id: ConversationId) => void;
 }) {
   const detail = pinomadOf(tool);
   const pinomad = detail?.kind === "subagent" ? detail : undefined;
@@ -65,7 +65,7 @@ function SubagentCard({
         />
         <span className="min-w-0 flex-1 truncate text-sm">{name}</span>
         {pinomad === undefined ? null : (
-          <Button label="View" variant="ghost" size="sm" onClick={() => openInPanel(pinomad.conversationId, "tasks")} />
+          <Button label="View" variant="ghost" size="sm" onClick={() => openInPanel(pinomad.conversationId)} />
         )}
       </HStack>
       <div className="text-xs text-muted">
@@ -98,7 +98,7 @@ export function SubagentCards({
 }: {
   tools: readonly { key: string; tool: ChatToolItem }[];
   summaryOf?: (id: ConversationId) => ConversationSummary | undefined;
-  openInPanel: (id: ConversationId, tab: "threads" | "tasks") => void;
+  openInPanel: (id: ConversationId) => void;
 }) {
   if (tools.length === 0) return null;
   return (

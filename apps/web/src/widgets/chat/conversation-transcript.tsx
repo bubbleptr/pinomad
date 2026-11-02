@@ -1,7 +1,7 @@
 // The rendered transcript of a ConversationView — shared by the main column
 // and the side panel's detail views. Items come from deriveChat; each run
 // entry delegates to ChatEntryView.
-import { ChatMessageList, ChatSystemMessage } from "@astryxdesign/core/Chat";
+import { ChatMessageList } from "@astryxdesign/core/Chat";
 import { useMemo } from "react";
 import type { ConversationId, ConversationView } from "@earendil-works/pi-durable";
 import { classify, type PresentationType, type TodoState } from "@pinomad/protocol/presentation.ts";
@@ -20,17 +20,16 @@ export function ConversationTranscript({
   connected,
   canFork,
   openInPanel,
+  onOpenFork,
   onFork,
+  forkDisabled,
   forksAt,
   summaryOf,
-  ownOnly,
-  forkSource,
   onRetry,
   onRetrySubmission,
   onEditSubmission,
   submissionEditDisabled,
   submissionEditTooltip,
-  localEditAttachmentsUnsupported,
   docs,
   submissions,
   mergeQueuedSubmissions,
@@ -39,20 +38,16 @@ export function ConversationTranscript({
   toolPresentations: Record<string, PresentationType>;
   connected: boolean;
   canFork: boolean;
-  /** Threads/tasks inside a transcript open beside the main area, not in it. */
-  openInPanel: (id: ConversationId, tab: "threads" | "tasks") => void;
+  /** Foreground tasks inside a transcript open beside the main area, not in it. */
+  openInPanel: (id: ConversationId) => void;
+  /** A forked message's chip opens that fork in the main area. */
+  onOpenFork: (id: ConversationId) => void;
   onFork: (entryId: string) => void;
+  /** Another fork create is already pending on this workbench. */
+  forkDisabled?: boolean;
   forksAt?: (entryId: string) => ConversationId[];
   /** Live summaries for subagent cards inside the transcript. */
   summaryOf?: (id: ConversationId) => ConversationSummary | undefined;
-  /**
-   * A fork beside its parent: render only the fork's own entries — the
-   * inherited prefix already fills the main column — opened by a
-   * "Forked from …" divider naming `forkSource`.
-   */
-  ownOnly?: boolean;
-  /** The parent conversation's display name, for the "Forked from" divider. */
-  forkSource?: string;
   /**
    * Resubmits the user message the newest run answered, when that run failed —
    * its images and picked skills go back too. The retry carries a requestId derived from the
@@ -74,8 +69,6 @@ export function ConversationTranscript({
   submissionEditDisabled?: boolean;
   /** Why the local Edit is disabled. */
   submissionEditTooltip?: string;
-  /** No image/file tray here, so local sends with attachments cannot be edited. */
-  localEditAttachmentsUnsupported?: boolean;
   /** The conversation's extension documents; its todo list rides under the newest run. */
   docs?: readonly ExtensionDocView[];
   /** Client-side sends that have not been replaced by the host's fact yet. */
@@ -85,16 +78,9 @@ export function ConversationTranscript({
 }) {
   const busy = isBusy(conversation);
   const today = useToday();
-  const view = useMemo(
-    () =>
-      ownOnly
-        ? { ...conversation, entries: conversation.entries.filter((entry) => entry.conversationId === conversation.conversation.id) }
-        : conversation,
-    [conversation, ownOnly],
-  );
   const items = useMemo(
-    () => deriveChat(view, toolPresentations, busy, submissions ?? [], { mergeQueuedSubmissions }),
-    [view, toolPresentations, busy, submissions, mergeQueuedSubmissions],
+    () => deriveChat(conversation, toolPresentations, busy, submissions ?? [], { mergeQueuedSubmissions }),
+    [conversation, toolPresentations, busy, submissions, mergeQueuedSubmissions],
   );
   const retry = useMemo(() => retryOf(items), [items]);
   const todoState = useMemo(() => todoOf(docs), [docs]);
@@ -108,28 +94,28 @@ export function ConversationTranscript({
   );
   // One card at a time: only the newest run gets the list (ADR-0026 §4).
   const latestRun = items.findLastIndex((item) => item.kind === "run");
-  if (items.length === 0 && !ownOnly) return null;
+  if (items.length === 0) return null;
   return (
     <ChatMessageList isStreaming={busy} gap={0}>
       {/* Pace's live-session-column gutter: centered column with horizontal
           padding; chat.css's CoT rail expects that breathing room. */}
       <div className="mx-auto flex w-full max-w-[44rem] flex-col gap-8 px-4 pb-6 pt-2">
-        {ownOnly ? <ChatSystemMessage variant="divider">Forked from {forkSource}</ChatSystemMessage> : null}
         {items.map((item, index) => (
           <ChatEntryView
             key={item.id}
             entry={item}
             connected={connected}
             openInPanel={openInPanel}
+            onOpenFork={onOpenFork}
             onFork={onFork}
             canFork={canFork}
+            forkDisabled={forkDisabled}
             forksAt={forksAt}
             summaryOf={summaryOf}
             onRetrySubmission={onRetrySubmission}
             onEditSubmission={onEditSubmission}
             submissionEditDisabled={submissionEditDisabled}
             submissionEditTooltip={submissionEditTooltip}
-            localEditAttachmentsUnsupported={localEditAttachmentsUnsupported}
             today={today}
             {...(index === latestRun && todo !== undefined ? { todo } : {})}
             onRetry={

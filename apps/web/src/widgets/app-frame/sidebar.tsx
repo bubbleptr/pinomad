@@ -7,12 +7,12 @@ import { IconButton } from "@astryxdesign/core/IconButton";
 import { SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { ConversationNode, Home, Project } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
-import { backgroundSubagentsOf, displayName, familyStatus, type FamilyStatus } from "@pinomad/client/family.ts";
+import { backgroundSubagentsOf, displayName, familyStatus, threadsOf, type FamilyStatus } from "@pinomad/client/family.ts";
 import { useAppUpdate } from "../../entities/app-update/use-app-update.ts";
 import { ModelLogo } from "../../entities/model/model-logo.tsx";
 import { ArchiveArrowDown, Bot, ChatBubble, FolderAdd, FolderClosed, FolderOpenState, MoreHorizontal, Pencil, Plus, Settings, Trash2, UserCircle } from "../../shared/ui/icons.tsx";
@@ -301,9 +301,10 @@ function BackgroundSubagentRow({
 }
 
 /**
- * One root conversation row and its background descendants. Status/recency
- * still aggregate the complete family; only the visible background projection
- * gets child rows. Forks and foreground subagents stay out of the sidebar.
+ * One conversation row: a root with its visible background descendants, or a
+ * fork. Both are independently navigable; the root still aggregates the whole
+ * family's status, while only the background projection gets child rows. The
+ * fork row has no children — background work belongs to the root, once.
  */
 function ConversationRow({
   machineKey,
@@ -311,6 +312,7 @@ function ConversationRow({
   shown,
   disabled,
   remote,
+  kind = "root",
   onOpen,
   onSelect,
 }: {
@@ -319,22 +321,29 @@ function ConversationRow({
   shown: ConversationId | undefined;
   disabled: boolean;
   remote: RemoteDurable;
+  /** A fork is an independent conversation; only a root owns Background rows. */
+  kind?: "root" | "fork";
   onOpen: (id: ConversationId) => void;
   onSelect?: () => void;
 }) {
   const { summary } = node;
-  const status = familyStatus(node);
-  const backgrounds = backgroundSubagentsOf(node);
+  const fork = kind === "fork";
+  // Family status includes forks and background work; a fork's own row carries
+  // only its own status.
+  const status = fork ? summary.status : familyStatus(node);
+  const backgrounds = fork ? [] : backgroundSubagentsOf(node);
   const shownBackground = shown !== undefined && backgrounds.some((each) => each.summary.id === shown);
+  // A fork row owns its selection. The root represents hidden descendants
+  // (foreground work) but never a visible background or fork row.
+  const forkShown = !fork && threadsOf(node).some((each) => each.summary.id === shown);
+  const selected = fork
+    ? summary.id === shown
+    : summary.id === shown
+      || (shown !== undefined && !shownBackground && !forkShown && flattenNodes([node]).some((each) => each.summary.id === shown));
   const storageKey = conversationExpandedKey(machineKey, summary.id);
   const [expanded, setExpanded] = useState(() => window.localStorage.getItem(storageKey) !== "false");
   const [renaming, setRenaming] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
-  // A root still represents descendants the sidebar does not show (forks and
-  // foreground work), but never competes with a visible background child.
-  const selected =
-    summary.id === shown
-    || (shown !== undefined && !shownBackground && flattenNodes([node]).some((each) => each.summary.id === shown));
   const changeExpanded = (next: boolean): void => {
     window.localStorage.setItem(storageKey, String(next));
     setExpanded(next);
@@ -402,6 +411,7 @@ function ConversationRow({
     <div
       ref={rowRef}
       className="pigui-sidenav-row-with-actions pigui-sidenav-session-row"
+      data-kind={fork ? "fork" : "root"}
       {...(status === undefined ? {} : { "data-status": status })}
     >
       {item}
@@ -428,11 +438,17 @@ function ConversationRow({
               icon: <Pencil aria-hidden="true" size={16} />,
               onClick: () => setRenaming(true),
             },
-            {
-              label: "Archive",
-              icon: <ArchiveArrowDown aria-hidden="true" size={16} />,
-              onClick: () => void remote.controller.archive(summary.id, true),
-            },
+            // The host archives only top-level index entries; archiving the
+            // root still takes the whole family (ADR-0039 §1).
+            ...(fork
+              ? []
+              : [
+                  {
+                    label: "Archive",
+                    icon: <ArchiveArrowDown aria-hidden="true" size={16} />,
+                    onClick: () => void remote.controller.archive(summary.id, true),
+                  },
+                ]),
           ]}
         />
       </HStack>
@@ -603,18 +619,35 @@ function MachineSection({
       writeExpandedProjects(key, next);
       return next;
     });
-  const row = (node: ConversationNode) =>
+  // A root and its forks are sibling rows in the same project / Chat group:
+  // root order stays, forks follow their root in the family's stable,
+  // depth-first order (legacy nested forks included).
+  const familyRows = (node: ConversationNode) =>
     remote === undefined ? null : (
-      <ConversationRow
-        key={node.summary.id}
-        machineKey={key}
-        node={node}
-        shown={shownId}
-        disabled={disabled}
-        remote={remote}
-        onOpen={onOpen}
-        onSelect={onSelect}
-      />
+      <Fragment key={node.summary.id}>
+        <ConversationRow
+          machineKey={key}
+          node={node}
+          shown={shownId}
+          disabled={disabled}
+          remote={remote}
+          onOpen={onOpen}
+          onSelect={onSelect}
+        />
+        {threadsOf(node).map((fork) => (
+          <ConversationRow
+            key={fork.summary.id}
+            machineKey={key}
+            node={fork}
+            shown={shownId}
+            disabled={disabled}
+            remote={remote}
+            kind="fork"
+            onOpen={onOpen}
+            onSelect={onSelect}
+          />
+        ))}
+      </Fragment>
     );
   const chatsOpen = folds[CHATS_FOLD] ?? true;
 
@@ -675,7 +708,7 @@ function MachineSection({
                   label="Chats"
                   isDisabled={disabled}
                 >
-                  {organized.chats.map(row)}
+                  {organized.chats.map(familyRows)}
                 </SideNavItem>
               </div>
             )}
@@ -696,7 +729,7 @@ function MachineSection({
                     {conversations.length === 0 ? (
                       <SideNavItem icon={<SessionGlyphSlot />} isDisabled label="No conversations" />
                     ) : (
-                      conversations.map(row)
+                      conversations.map(familyRows)
                     )}
                   </SideNavItem>
                   <HStack className="pigui-sidenav-row-actions" gap={0.5} vAlign="center">

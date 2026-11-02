@@ -23,7 +23,7 @@ import type { CallMethods } from "@pinomad/protocol/frames.ts";
 import { outgoingImage, type ImageVariant } from "@pinomad/protocol/images.ts";
 import { findConversation, type ConversationNode, type Home } from "@pinomad/protocol/organization.ts";
 import { currentAgentOf } from "./entities/conversation/current-agent.ts";
-import { displayName, forksAt, rootOf } from "@pinomad/client/family.ts";
+import { displayName, forksAt, rootOf, taskGroupsOf } from "@pinomad/client/family.ts";
 import { hostLabels, mergeStoredHost, updateStoredHostConnection, updateStoredHostEndpoints } from "@pinomad/client/stored-host.ts";
 import { candidatePlan, preferredLegacyUrl } from "@pinomad/protocol/remote-candidates.ts";
 import { requestNotificationPermission } from "./entities/conversation/notification-permission.ts";
@@ -37,7 +37,7 @@ import { ConversationComposer } from "./widgets/composer/conversation-composer.t
 import { takeBackForConversation, type PendingTakeBack } from "./widgets/composer/take-back.ts";
 import { ConversationTranscript } from "./widgets/chat/conversation-transcript.tsx";
 import { ComposerSkeleton, ConversationSkeleton, ConversationUnavailable } from "./widgets/chat/conversation-skeleton.tsx";
-import { SidePanel, type PanelTab } from "./widgets/side-panel/side-panel.tsx";
+import { SidePanel } from "./widgets/side-panel/side-panel.tsx";
 import { OverviewCard } from "./widgets/overview/overview-card.tsx";
 import { DiffView } from "./presentation/diff.tsx";
 import { PendingQuestions } from "./presentation/question.tsx";
@@ -96,6 +96,22 @@ type Loaded = {
   readonly hosts: readonly StoredHost[];
   readonly focus: HostFocus | null;
   readonly address: ResolvedAddress | undefined;
+};
+
+/** One fork creation per Workbench; its invisible side is the handoff to main. */
+type ForkOperation = {
+  readonly parentId: ConversationId;
+  readonly entryId: string;
+  /** The side already open before the fork call; anything else is a candidate. */
+  readonly sideBeforeId: ConversationId | undefined;
+  /** The staged side once its snapshot or summary identifies our fork. */
+  stagedId: ConversationId | undefined;
+  /** The summary matched; main was opened and the staged side is retired. */
+  confirmed: boolean;
+  /** The side was replaced or disappeared, or it is not our fork. */
+  cancelled: boolean;
+  /** The fork controller call, including its first submit, has settled. */
+  commandSettled: boolean;
 };
 
 export function App() {
@@ -808,8 +824,9 @@ export function Workbench({
   // so a same-host selection made while it was in flight wins.
   const focusRef = useRef(focus);
   focusRef.current = focus;
-  // A draft create resolves after an arbitrary delay; if focus moved to
-  // another host meanwhile, this workbench is gone and must not pull it back.
+  // A draft create or a fork's first submit resolves after an arbitrary delay;
+  // if focus moved to another host meanwhile, this workbench is gone and must
+  // not pull it back.
   const live = useRef(true);
   useEffect(() => {
     // StrictMode runs the cleanup/setup pair once on mount; restore the flag
@@ -819,6 +836,33 @@ export function Workbench({
       live.current = false;
     };
   }, []);
+
+  // One fork at a time per workbench. The invisible side stages the new fork
+  // until its summary proves parent and forkedAt; main stays on the parent
+  // throughout, so focus keeps its ordinary single responsibility.
+  const forkOp = useRef<ForkOperation | null>(null);
+  const [forkBusy, setForkBusy] = useState(false);
+  const finishFork = useCallback((op: ForkOperation) => {
+    if (forkOp.current !== op) return;
+    forkOp.current = null;
+    if (live.current) setForkBusy(false);
+  }, []);
+  const settleForkIfDone = useCallback(
+    (op: ForkOperation) => {
+      if (forkOp.current !== op || !op.commandSettled) return;
+      if (op.confirmed || op.cancelled) {
+        finishFork(op);
+        return;
+      }
+      const side = remote.view.current().side;
+      // A different side may be the staged fork whose snapshot/summary has not
+      // arrived yet; let the handoff effect identify it. No side, or the old
+      // user side still shown, means this command staged nothing.
+      if (side !== undefined && side.id !== op.sideBeforeId) return;
+      finishFork(op);
+    },
+    [finishFork, remote],
+  );
   // The 5.12 name the connected host announced rides back into the stored
   // entry — bound to this connection's hostKey, not whichever host is focused.
   useHostNameSync(hostKey, view.settings);
@@ -850,13 +894,81 @@ export function Workbench({
   const openConversation = useCallback(
     (id: ConversationId): void => {
       if (framed) setLocalDrafting(false);
-      // For a stored host the focus effect performs the one switch; a token
-      // client has no focus entry and opens directly.
-      if (hostKey !== undefined) focusConversation({ hostKey, conversationId: id });
-      else openTarget(id);
+      // Only the multi-host ReadyHost route owns app focus. A one-shot
+      // connection may carry a hostKey without that composition and opens its
+      // own main slot directly.
+      if (hostOpen !== undefined && hostKey !== undefined) {
+        focusConversation({ hostKey, conversationId: id });
+      } else {
+        openTarget(id);
+      }
     },
-    [focusConversation, framed, hostKey, openTarget],
+    [focusConversation, framed, hostKey, hostOpen, openTarget],
   );
+  // The fork call stages the new fork on the invisible side. Main stays on the
+  // parent; only the summary proves parent and forkedAt and lets us follow.
+  useEffect(() => {
+    const op = forkOp.current;
+    if (op === null || op.confirmed || op.cancelled) return;
+    const cancel = (): void => {
+      op.cancelled = true;
+      if (op.stagedId !== undefined && remote.view.current().side?.id === op.stagedId) {
+        void remote.controller.showSide(undefined);
+      }
+      settleForkIfDone(op);
+    };
+    // Any ordinary main switch or focus move means the reader left the parent:
+    // do not follow the staged fork.
+    const mainId = view.conversation?.conversation.id;
+    if (mainId !== undefined && mainId !== op.parentId) {
+      cancel();
+      return;
+    }
+    if (
+      hostOpen !== undefined
+      && hostKey !== undefined
+      && (focus?.hostKey !== hostKey || focus.conversationId !== op.parentId)
+    ) {
+      cancel();
+      return;
+    }
+    const side = view.side;
+    // The command may not have reached showSide yet; the old side is expected.
+    if (!op.commandSettled && (side === undefined || side.id === op.sideBeforeId)) return;
+    if (side === undefined || side.id === op.sideBeforeId) {
+      cancel();
+      return;
+    }
+    if (op.stagedId !== undefined && side.id !== op.stagedId) {
+      // A Task detail or another side replaced the stage; never close it.
+      cancel();
+      return;
+    }
+    const summary = findConversation(view.organized, side.id)?.summary;
+    const summaryMatches =
+      summary?.kind === "fork" && summary.parent === op.parentId && summary.forkedAt === op.entryId;
+    const parent = side.conversation?.conversation.parent;
+    const sideMatches = parent?.conversationId === op.parentId && String(parent.at) === op.entryId;
+    if (!summaryMatches && !sideMatches) {
+      // No snapshot or summary yet: wait for evidence rather than deciding.
+      if (summary === undefined && side.conversation === undefined) return;
+      cancel();
+      return;
+    }
+    op.stagedId = side.id;
+    if (!summaryMatches) {
+      // The side names our parent/entry, but only its summary proves the fork
+      // identity required to follow it into main.
+      if (summary !== undefined) cancel();
+      return;
+    }
+    op.confirmed = true;
+    openConversation(side.id);
+    // Retire only the side that is still this staged fork; a Task detail the
+    // reader opened instead must not be closed.
+    if (remote.view.current().side?.id === side.id) void remote.controller.showSide(undefined);
+    settleForkIfDone(op);
+  }, [focus, hostKey, hostOpen, openConversation, remote, settleForkIfDone, view.conversation, view.organized, view.side]);
   useRunNotifications(
     view,
     hostKey,
@@ -897,9 +1009,9 @@ export function Workbench({
     window.localStorage.setItem(OVERVIEW_OPEN_KEY, String(open));
     setOverviewOpen(open);
   };
-  // The side panel: open state and tab live here so chat entries can open it.
+  // The side panel holds Tasks only; its open state lives here so chat
+  // entries and the overview can open it.
   const [panelOpen, setPanelOpen] = useState(false);
-  const [panelTab, setPanelTab] = useState<PanelTab>("threads");
   // A failed/unconfirmed send edited from the transcript flows back into the
   // composer that owns skill picks and attachment chips. Bind the draft to the
   // conversation it came from: switching away must not fill another composer.
@@ -907,6 +1019,45 @@ export function Workbench({
   const [takingBack, setTakingBack] = useState<ConversationId>();
   const [editorState, setEditorState] = useState({ occupied: false, locked: false });
   const toast = useToast();
+  // Create the fork on the invisible side first, then hand it to main once the
+  // summary proves its parent and forkedAt. Main stays on the parent until
+  // then; no focus hold is involved.
+  const createFork = useCallback(
+    async (entryId: string, text: string): Promise<void> => {
+      if (forkOp.current !== null) return;
+      const current = remote.view.current();
+      const parentId = current.conversation?.conversation.id;
+      if (parentId === undefined) return;
+      const op: ForkOperation = {
+        parentId,
+        entryId,
+        sideBeforeId: current.side?.id,
+        stagedId: undefined,
+        confirmed: false,
+        cancelled: false,
+        commandSettled: false,
+      };
+      forkOp.current = op;
+      setForkBusy(true);
+      try {
+        await remote.controller.fork(entryId, text, undefined, { show: "side" });
+      } catch (error) {
+        if (forkOp.current !== op) return;
+        // A transport failure can reject instead of becoming a notice; do not
+        // keep waiting for a stage that this command could not hand off.
+        op.cancelled = true;
+        if (live.current) {
+          toast({ body: error instanceof Error ? error.message : String(error), type: "error" });
+        }
+      } finally {
+        if (forkOp.current === op) {
+          op.commandSettled = true;
+          settleForkIfDone(op);
+        }
+      }
+    },
+    [remote, settleForkIfDone, toast],
+  );
   const shownConversationId = conversation?.conversation.id;
   const takeBackForShown = takeBackForConversation(takeBack, shownConversationId);
   const takingBackHere = takingBack !== undefined && takingBack === shownConversationId;
@@ -918,6 +1069,7 @@ export function Workbench({
       : undefined;
   // "Open in main" promotes a conversation to the main column and closes the side —
   // the family root stays the same, so the close rule below must not fire for it.
+  // Fork chips and background subagents from Tasks use it too.
   const openInMain = useCallback(
     (id: ConversationId) => {
       openConversation(id);
@@ -929,24 +1081,22 @@ export function Workbench({
     [remote, narrow, openConversation],
   );
   const openInPanel = useCallback(
-    (id: ConversationId, tab: "threads" | "tasks") => {
+    (id: ConversationId) => {
       const summary = findConversation(view.organized, id)?.summary;
       // Every subagent entry follows its lifecycle: background belongs in the
       // read-only main view, foreground stays in the right-hand Tasks detail.
-      if (tab === "tasks" && summary?.kind === "subagent" && summary.lifecycle === "background") {
+      if (summary?.kind === "subagent" && summary.lifecycle === "background") {
         openInMain(id);
         return;
       }
-      setPanelTab(tab);
       setPanelOpen(true);
       void remote.controller.showSide(id);
     },
     [remote, view.organized, openInMain],
   );
   const openTasks = (id?: ConversationId): void => {
-    if (id !== undefined) return openInPanel(id, "tasks");
+    if (id !== undefined) return openInPanel(id);
     void remote.controller.showSide(undefined);
-    setPanelTab("tasks");
     setPanelOpen(true);
   };
   // Keyed on the shown id, not the loaded view: a different family's side
@@ -980,10 +1130,11 @@ export function Workbench({
       : shownSummary.kind === "subagent"
         ? shownSummary.role
         : currentAgentOf(shownSummary);
-  // A fork or subagent of the shown family still at work: the closed panel's
-  // button carries a dot so the activity is not out of sight entirely.
+  // The closed panel's button only mirrors Foreground work that Tasks can
+  // show; a fork running where the panel has no row must not light it.
   const liveRoot = shownId === undefined ? undefined : rootOf(view.organized, shownId);
-  const liveActivity = liveRoot !== undefined && anyAtWork(liveRoot.children);
+  const liveTasks = liveRoot === undefined ? [] : taskGroupsOf(liveRoot).flatMap((group) => group.tasks);
+  const liveActivity = anyAtWork(liveTasks);
   const parentId = shownSummary?.parent;
   const parentSummary =
     parentId === undefined ? undefined : findConversation(view.organized, parentId)?.summary;
@@ -1147,7 +1298,9 @@ export function Workbench({
                 toolPresentations={view.toolPresentations}
                 connected={view.connection === "connected"}
                 canFork={canFork}
+                forkDisabled={forkBusy}
                 openInPanel={openInPanel}
+                onOpenFork={openInMain}
                 onFork={setForkTarget}
                 forksAt={forksAtForShown}
                 summaryOf={summaryOf}
@@ -1221,8 +1374,6 @@ export function Workbench({
             narrow={false}
             open={panelOpen}
             onOpenChange={setPanelOpen}
-            tab={panelTab}
-            onTabChange={setPanelTab}
             openInPanel={openInPanel}
             onOpenInMain={openInMain}
           />
@@ -1240,8 +1391,6 @@ export function Workbench({
           narrow
           open={panelOpen}
           onOpenChange={setPanelOpen}
-          tab={panelTab}
-          onTabChange={setPanelTab}
           openInPanel={openInPanel}
           onOpenInMain={openInMain}
         />
@@ -1249,13 +1398,10 @@ export function Workbench({
       {forkTarget === undefined ? null : (
         <ForkDialog
           entryId={forkTarget}
-          remote={remote}
           connected={view.connection === "connected"}
+          busy={forkBusy}
           onClose={() => setForkTarget(undefined)}
-          onForked={() => {
-            setPanelTab("threads");
-            setPanelOpen(true);
-          }}
+          onCreate={createFork}
         />
       )}
       {changesOpen && conversation !== undefined && (
@@ -1306,23 +1452,22 @@ export function Workbench({
 
 function ForkDialog({
   entryId,
-  remote,
   connected,
+  busy,
   onClose,
-  onForked,
+  onCreate,
 }: {
   entryId: string;
-  remote: RemoteDurable;
   connected: boolean;
+  busy: boolean;
   onClose: () => void;
-  /** The fork opens beside the main conversation — the caller opens the panel. */
-  onForked: () => void;
+  /** Creates on the main slot; the workbench adopts and focuses it. */
+  onCreate: (entryId: string, prompt: string) => Promise<void>;
 }) {
   const [prompt, setPrompt] = useState("Continue from here.");
   const fork = (): void => {
     requestNotificationPermission();
-    void remote.controller.fork(entryId, prompt.trim(), undefined, { show: "side" });
-    onForked();
+    void onCreate(entryId, prompt.trim());
     onClose();
   };
   return (
@@ -1344,7 +1489,12 @@ function ForkDialog({
           <LayoutFooter>
             <HStack gap={2} hAlign="end">
               <Button label="Cancel" variant="secondary" onClick={onClose} />
-              <Button label="Fork" variant="primary" isDisabled={!connected || prompt.trim() === ""} onClick={fork} />
+              <Button
+                label={busy ? "Forking…" : "Fork"}
+                variant="primary"
+                isDisabled={!connected || busy || prompt.trim() === ""}
+                onClick={fork}
+              />
             </HStack>
           </LayoutFooter>
         }
