@@ -53,7 +53,7 @@ export interface LocalHost {
   stop(onLines: (lines: readonly string[]) => void): Promise<LocalHostStopResult>;
   /** Joins the running stop, like `stop` but never starting one; undefined when none is running. */
   followStop(onLines: (lines: readonly string[]) => void): Promise<LocalHostStopResult | undefined>;
-  /** Interrupts a waiting stop; the CLI then leaves the service running. */
+  /** Interrupts a stop still waiting for tasks; the CLI then leaves the service running. Once it is stopping the service, the CLI finishes. */
   cancelStop(): void;
   /** Writes a `.command` that installs the host and joins it to `serverOrigin`, and opens it in Terminal. */
   runSetup(serverOrigin: string): Promise<LocalHostResult>;
@@ -248,8 +248,9 @@ export function createLocalHost(deps: LocalHostDeps): LocalHost {
       return await new Promise<LocalHostStopResult>((resolve) => {
         child.on("error", (error) => resolve({ outcome: "failed", message: errorMessage(error) }));
         child.on("close", (code) => {
-          if (run.cancelled) resolve({ outcome: "cancelled" });
-          else if (code === 0) resolve({ outcome: "stopped" });
+          // The CLI ignores a Cancel that lands once it is stopping the service; it exits 0 then.
+          if (code === 0) resolve({ outcome: "stopped" });
+          else if (run.cancelled) resolve({ outcome: "cancelled" });
           else resolve({ outcome: "failed", message: lastLine(stderr) ?? `pinomad exited with ${code ?? "a signal"}` });
         });
       });

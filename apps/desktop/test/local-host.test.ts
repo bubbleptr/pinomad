@@ -208,6 +208,21 @@ describe("stop", () => {
     expect(child.kill).toHaveBeenCalledWith("SIGINT");
   });
 
+  it("a cancel that comes too late, once the CLI is already stopping the service, reports what happened: stopped", async () => {
+    const child = fakeChild();
+    // The CLI holds SIGINT once launchd's disable ran, and finishes the stop.
+    child.kill.mockImplementation(() => true);
+    const spawn = vi.fn<SpawnLike>(() => child);
+    const { host } = localHost(await homeWith("packaged"), { spawn });
+
+    const done = host.stop(() => {});
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    host.cancelStop();
+    child.exit(0);
+
+    expect(await done).toEqual({ outcome: "stopped" });
+  });
+
   it("cancel before the CLI starts never starts it", async () => {
     const spawn = vi.fn<SpawnLike>(() => fakeChild());
     const { host } = localHost(await homeWith("packaged"), { spawn });

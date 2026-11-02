@@ -60,7 +60,7 @@ export interface DesktopBridge {
     stop(): Promise<LocalHostStopResult>;
     /** Joins a stop still waiting (state's `stopping`), never starting one; undefined when it already ended. */
     followStop(): Promise<LocalHostStopResult | undefined>;
-    /** Interrupts a waiting stop; the service stays on and stop() resolves "cancelled". */
+    /** Interrupts a stop still waiting for tasks; the service stays on and stop() resolves "cancelled". Too late once the CLI is stopping the service: stop() then resolves "stopped". */
     cancelStop(): Promise<void>;
     /** Opens Terminal on a script that installs the host and joins it to this server. */
     runSetup(serverOrigin: string): Promise<LocalHostResult>;
