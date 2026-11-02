@@ -616,6 +616,8 @@ const invokeOp = (client: AccountClient, op: AccountOpDesc): Promise<unknown> =>
       return client.listDevices();
     case "kickDevice":
       return client.kickDevice(op.id, op.password);
+    case "removeHost":
+      return client.removeHost(op.hostId, op.password);
     case "lookupHostLink":
       return client.lookupHostLink(op.userCode);
     case "confirmHostLink":
@@ -659,9 +661,11 @@ async function accountVector(): Promise<VectorFile> {
                   ? { kind: "deleteAccount", password: "p" }
                   : c.kind === "kickDevice"
                     ? { kind: "kickDevice", id: 1, password: "p" }
-                    : c.kind === "lookupHostLink" || c.kind === "confirmHostLink" || c.kind === "denyHostLink"
-                      ? { kind: c.kind, userCode: "WDJB-MJHT" }
-                      : { kind: c.kind };
+                    : c.kind === "removeHost"
+                      ? { kind: "removeHost", hostId: "h", password: "p" }
+                      : c.kind === "lookupHostLink" || c.kind === "confirmHostLink" || c.kind === "denyHostLink"
+                        ? { kind: c.kind, userCode: "WDJB-MJHT" }
+                        : { kind: c.kind };
       const result = await invokeOp(bearerClient("https://relay.example.com", "tok", respondFetch(c.status, c.body)), op);
       return { name: c.name, kind: c.kind, status: c.status, body: c.body, expect: wire(result) };
     }),
