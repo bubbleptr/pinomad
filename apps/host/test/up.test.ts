@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { joinServer } from "../src/cli/join.ts";
 import { statusReport } from "../src/cli/status.ts";
 import { main as up, resolveReach, upHost } from "../src/cli/up.ts";
-import { forgetRemovedServer, readServerConfig, writeServerConfig } from "../src/server-config.ts";
+import { markRemoved, readRemovalNotice, readServerConfig, writeServerConfig } from "../src/server-config.ts";
 import { asUser, codeIn, fakeManager, joinToken, seededSpec, startServer, type Started } from "./server-support.ts";
 import { tempDir, useCleanups } from "./support.ts";
 
@@ -115,6 +115,21 @@ describe("upHost", () => {
     expect(outcome.service).toBe("installed");
     expect(fake.installs.map((spec) => spec.hostArgs)).toEqual([[]]);
     expect(await readServerConfig(dir)).toMatchObject({ origin: started.origin, username: "admin" });
+  });
+
+  it("after the account removed it, joins the server that removed it again (#512)", async () => {
+    const dir = await dataDir();
+    const started = await startServer();
+    const fake = fakeManager();
+    await joinServer({ origin: started.origin, token: await joinToken(started), dataDir: dir }, { manager: fake.manager });
+    await markRemoved(dir, (await readServerConfig(dir))!);
+
+    // No --origin: the removed join's server, not the official one.
+    const flow = confirmingDeps(started, fake.manager);
+    const outcome = await upHost({ dataDir: dir, reach: { server: true, lan: false } }, flow.deps);
+    expect(outcome.joined).toMatchObject({ origin: started.origin, fresh: true });
+    expect(await readServerConfig(dir)).toMatchObject({ origin: started.origin });
+    expect(await readRemovalNotice(dir)).toBeUndefined();
   });
 
   it("both: one install carries --remote-port and the join", async () => {
@@ -322,7 +337,7 @@ describe("statusReport", () => {
     const started = await startServer();
     const fake = fakeManager(seededSpec(dir, []));
     await joinServer({ origin: started.origin, token: await joinToken(started), dataDir: dir }, { manager: fake.manager });
-    expect(await forgetRemovedServer(dir, (await readServerConfig(dir))!)).toBe(true);
+    await markRemoved(dir, (await readServerConfig(dir))!);
 
     const removed = await statusReport({ dataDir: dir }, { manager: fake.manager });
     expect(removed.server).toBeUndefined();

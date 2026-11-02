@@ -97,7 +97,7 @@ import { SubagentDoc } from "./subagent-doc.ts";
 import { attachAutoTitle } from "./auto-title.ts";
 import { TitleDoc } from "./title-doc.ts";
 import { admitDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
-import { forgetRemovedServer, normalizeOrigin, readServerBinding, readServerConfig, SERVER_CONFIG_FILE } from "./server-config.ts";
+import { markRemoved, normalizeOrigin, readServerBinding, readServerConfig, REMOVAL_NOTICE_FILE } from "./server-config.ts";
 import { attachPushSender, revokeDevice, setPushToken, type PushTimers, type PushTransport } from "./push.ts";
 import { toolTarget } from "@pinomad/protocol/tool-target.ts";
 import { type RelayLink, relayWsBase, startRelayLink } from "./relay-link.ts";
@@ -593,9 +593,11 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   });
   if (secure?.relay !== undefined) {
     const relayOrigin = secure.relay.origin;
-    // The binding this link runs under: a removal only takes back that
-    // server.json, never one a later re-join wrote (#512).
-    const linkBinding = (await readServerConfig(options.dataDir).catch(() => undefined))?.binding;
+    // The join this link runs under: a removal ends that one, never one a
+    // later re-join wrote (#512).
+    const startConfig = await readServerConfig(options.dataDir).catch(() => undefined);
+    const linkJoin =
+      startConfig !== undefined && normalizeOrigin(startConfig.origin) === normalizeOrigin(relayOrigin) ? startConfig : undefined;
     /**
      * The binding this control connection may act for, re-read on every
      * account request: a re-join rewrites server.json before the host
@@ -675,17 +677,19 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
         } else if (state.status === "connecting") {
           console.log(JSON.stringify({ event: "relay", status: "connecting", origin: link.origin }));
         } else if (state.status === "removed") {
-          // Like `pinomad leave` from the other side (#512): server.json goes,
-          // so a restart doesn't dial this server again, and `pinomad status`
-          // says what happened. The service definition already names no
-          // server — join and up write it without --relay.
+          // Like `pinomad leave` from the other side (#512): the notice makes
+          // this join's server.json read as not joined, so a restart doesn't
+          // dial this server again and `pinomad status` says what happened.
+          // The service definition already names no server — join and up
+          // write it without --relay.
           broadcast("warning", state.reason);
           console.error(state.reason);
-          forgetRemovedServer(options.dataDir, {
+          markRemoved(options.dataDir, {
             origin: relayOrigin,
-            ...(linkBinding === undefined ? {} : { binding: linkBinding }),
+            ...(linkJoin?.binding === undefined ? {} : { binding: linkJoin.binding }),
+            ...(linkJoin?.username === undefined ? {} : { username: linkJoin.username }),
           }).catch((error: unknown) => {
-            console.error(`could not remove ${SERVER_CONFIG_FILE}: ${error instanceof Error ? error.message : String(error)}`);
+            console.error(`could not write ${REMOVAL_NOTICE_FILE}: ${error instanceof Error ? error.message : String(error)}`);
           });
         } else {
           broadcast("warning", state.reason);

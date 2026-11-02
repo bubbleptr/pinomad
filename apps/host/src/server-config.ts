@@ -5,10 +5,13 @@
 // one could dial a different server than the operator meant. Every write also
 // stamps a fresh random `binding`: the incarnation account offers mint under,
 // so a re-join — even to the same origin — retires outstanding ones.
-// When the account removes the host (#512), server.json gives way to a
-// removal notice that `pinomad status` shows until the next join.
+// When the account removes the host (#512), the host writes a removal notice
+// naming that server.json's origin and binding; from then on that server.json
+// reads as "not joined" until a join writes a new binding and drops the
+// notice. Nothing ever moves server.json, so a concurrent join or a crash
+// can't lose one.
 import { randomBytes } from "node:crypto";
-import { link, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 export const SERVER_CONFIG_FILE = "server.json";
@@ -27,9 +30,11 @@ export interface ServerConfig {
   readonly username?: string;
 }
 
-/** The server and account that removed this host (#512). */
+/** The server and account that removed this host (#512), and the join it ended. */
 export interface RemovalNotice {
   readonly origin: string;
+  /** The removed server.json's binding; absent when it had none, or there was none. */
+  readonly binding?: string;
   readonly username?: string;
   readonly removedAt: number;
 }
@@ -37,8 +42,20 @@ export interface RemovalNotice {
 /** Trailing slashes never distinguish a server; every comparison normalizes them away. */
 export const normalizeOrigin = (origin: string): string => origin.replace(/\/+$/, "");
 
-export const readServerConfig = (dataDir: string): Promise<ServerConfig | undefined> =>
-  readServerConfigAt(join(dataDir, SERVER_CONFIG_FILE));
+/**
+ * The server this host is joined to, or undefined — also when the account
+ * removed that very join (#512). A notice that doesn't read counts as none:
+ * the host then dials once more and the server's 4611 writes it again.
+ */
+export async function readServerConfig(dataDir: string): Promise<ServerConfig | undefined> {
+  const config = await readServerConfigAt(join(dataDir, SERVER_CONFIG_FILE));
+  if (config === undefined) return undefined;
+  const notice = await readRemovalNotice(dataDir).catch(() => undefined);
+  return notice !== undefined && endsJoin(notice, config) ? undefined : config;
+}
+
+const endsJoin = (notice: RemovalNotice, config: ServerConfig): boolean =>
+  normalizeOrigin(notice.origin) === normalizeOrigin(config.origin) && notice.binding === config.binding;
 
 async function readServerConfigAt(path: string): Promise<ServerConfig | undefined> {
   let text: string;
@@ -83,73 +100,24 @@ export async function writeServerConfig(dataDir: string, config: Omit<ServerConf
 }
 
 /**
- * The account removed this host (#512): server.json gives way to a removal
- * notice, but only the server.json the removed link ran under — same origin
- * and binding. A re-join, even to the same server, writes a fresh binding
- * and must survive. The file is claimed by renaming it aside, so a join
- * writing a new one meanwhile is never deleted; a claimed file that turns
- * out newer goes back unless yet another write took its place. False when
- * nothing was forgotten.
+ * The account at `removed.origin` removed this host (#512): records the
+ * notice that makes the server.json with that binding read as not joined.
+ * A join since then wrote a different binding, which the notice leaves alone.
  */
-export async function forgetRemovedServer(
+export async function markRemoved(
   dataDir: string,
-  removed: { readonly origin: string; readonly binding?: string },
+  removed: { readonly origin: string; readonly binding?: string; readonly username?: string },
   removedAt = Date.now(),
-): Promise<boolean> {
-  const path = join(dataDir, SERVER_CONFIG_FILE);
-  const claimed = `${path}.removed-${process.pid}-${randomBytes(4).toString("hex")}`;
-  try {
-    await rename(path, claimed);
-  } catch (error) {
-    if ((error as { code?: string }).code === "ENOENT") return false;
-    throw error;
-  }
-  let keep = false;
-  try {
-    const config = await readServerConfigAt(claimed).catch(() => undefined);
-    if (
-      config === undefined ||
-      normalizeOrigin(config.origin) !== normalizeOrigin(removed.origin) ||
-      config.binding !== removed.binding
-    ) {
-      try {
-        await putBack(claimed, path);
-      } catch (error) {
-        keep = true;
-        throw new Error(`could not put back ${path}; it is at ${claimed}: ${error instanceof Error ? error.message : String(error)}`);
-      }
-      return false;
-    }
-    await writeJsonFile(join(dataDir, REMOVAL_NOTICE_FILE), {
-      origin: normalizeOrigin(config.origin),
-      ...(config.username === undefined ? {} : { username: config.username }),
-      removedAt,
-    });
-    return true;
-  } finally {
-    // Unless putting it back failed: then it is the only copy of a newer join.
-    if (!keep) await rm(claimed, { force: true });
-  }
+): Promise<void> {
+  await writeJsonFile(join(dataDir, REMOVAL_NOTICE_FILE), {
+    origin: normalizeOrigin(removed.origin),
+    ...(removed.binding === undefined ? {} : { binding: removed.binding }),
+    ...(removed.username === undefined ? {} : { username: removed.username }),
+    removedAt,
+  });
 }
 
-/**
- * Returns a claimed server.json unless a newer one took its place. link(),
- * unlike rename(), never replaces that newer file; where the filesystem has
- * no hard links (exFAT), a rename after checking the name is still free is
- * the fallback.
- */
-async function putBack(claimed: string, path: string): Promise<void> {
-  try {
-    await link(claimed, path);
-    return;
-  } catch (error) {
-    if ((error as { code?: string }).code === "EEXIST") return;
-  }
-  if (await readFile(path).then(() => true, () => false)) return;
-  await rename(claimed, path);
-}
-
-/** The notice `forgetRemovedServer` left, or undefined when there is none. */
+/** The notice `markRemoved` left, or undefined when there is none. */
 export async function readRemovalNotice(dataDir: string): Promise<RemovalNotice | undefined> {
   const path = join(dataDir, REMOVAL_NOTICE_FILE);
   let text: string;
@@ -165,13 +133,25 @@ export async function readRemovalNotice(dataDir: string): Promise<RemovalNotice 
   } catch {
     throw new Error(`${path} is not valid JSON — delete it`);
   }
-  const { origin, username, removedAt } = (value ?? {}) as { origin?: unknown; username?: unknown; removedAt?: unknown };
+  const { origin, binding, username, removedAt } = (value ?? {}) as {
+    origin?: unknown;
+    binding?: unknown;
+    username?: unknown;
+    removedAt?: unknown;
+  };
   if (typeof origin !== "string" || typeof removedAt !== "number") throw new Error(`${path} is missing "origin" or "removedAt" — delete it`);
-  return { origin, ...(typeof username === "string" && username !== "" ? { username } : {}), removedAt };
+  return {
+    origin,
+    ...(typeof binding === "string" && binding !== "" ? { binding } : {}),
+    ...(typeof username === "string" && username !== "" ? { username } : {}),
+    removedAt,
+  };
 }
 
-export const removeServerConfig = (dataDir: string): Promise<void> =>
-  rm(join(dataDir, SERVER_CONFIG_FILE), { force: true });
+export async function removeServerConfig(dataDir: string): Promise<void> {
+  await rm(join(dataDir, SERVER_CONFIG_FILE), { force: true });
+  await rm(join(dataDir, REMOVAL_NOTICE_FILE), { force: true });
+}
 
 /**
  * The random incarnation in the current server.json (ADR-0022 §6): each

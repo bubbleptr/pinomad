@@ -794,7 +794,7 @@ describe("relay link", () => {
     if (state.status !== "removed") throw new Error("unreachable");
     expect(state.reason).toContain(origin);
     expect(state.reason).toContain("pinomad up");
-    // The notice lands after server.json moves aside: wait for the notice.
+    // server.json stays on disk; the notice makes it read as not joined.
     await eventually(async () => (await readRemovalNotice(dir.path)) !== undefined);
     expect(await readServerConfig(dir.path)).toBeUndefined();
     expect(await readRemovalNotice(dir.path)).toMatchObject({ origin, username: "admin" });
@@ -819,9 +819,8 @@ describe("relay link", () => {
 
     await removeFromAccount(origin, hostId);
     await waitForRelayState(host, "removed");
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await eventually(async () => (await readRemovalNotice(dir.path)) !== undefined);
     expect((await readServerConfig(dir.path))?.origin).toBe("https://other.example.com");
-    expect(await readRemovalNotice(dir.path)).toBeUndefined();
   });
 
   it("keeps a server.json a re-join wrote after this link started, even for the same server", async () => {
@@ -841,9 +840,8 @@ describe("relay link", () => {
 
     await removeFromAccount(origin, hostId);
     await waitForRelayState(host, "removed");
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await eventually(async () => (await readRemovalNotice(dir.path)) !== undefined);
     expect(await readServerConfig(dir.path)).toEqual(rejoined);
-    expect(await readRemovalNotice(dir.path)).toBeUndefined();
   });
 
   it("disconnects a relay-carried device when it is revoked", async () => {
