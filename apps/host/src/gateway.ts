@@ -2047,6 +2047,13 @@ class GatewayClient {
       await this.send({ type: "result", id, ok: true, value: value ?? null });
     } catch (error) {
       await this.send({ type: "result", id, ok: false, error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+    // A device unpairing itself is closed only once its result is out:
+    // closing first would turn its own request into a dropped call.
+    const device = this.devicePublicKey;
+    if (method === "revokeDevice" && device !== undefined && (args as CallMethods["revokeDevice"]["args"]).publicKey === device) {
+      this.#hooks.closeDevice(device);
     }
   }
 
@@ -2180,7 +2187,8 @@ class GatewayClient {
         await revokeDevice(this.#options.harness, publicKey, context);
         // Signal connections and pending peers have no device record of their
         // own; closing the business clients is not enough (ADR-0033 §3).
-        this.#hooks.closeDevice(publicKey);
+        // This device's own connections close after its result (#answer).
+        if (publicKey !== this.devicePublicKey) this.#hooks.closeDevice(publicKey);
         return null;
       }
       case "rtcOffer": {

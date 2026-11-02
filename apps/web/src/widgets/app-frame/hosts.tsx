@@ -17,9 +17,16 @@ import type { RemoteDurable, RtcDiagnostics } from "@pinomad/protocol/remote-dur
 import type { RtcCandidateEnd } from "@pinomad/protocol/rtc.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { browserRtcAvailable } from "../../entities/host/browser-rtc.ts";
-import { connectionStatus, hostStatusText, useHostRuntimeInfos, type HostRuntimeInfo } from "../../entities/host/host-runtimes.ts";
+import {
+  connectionStatus,
+  hostStatusText,
+  terminalReason,
+  useHostRuntimeInfos,
+  type HostRuntimeInfo,
+} from "../../entities/host/host-runtimes.ts";
 import { useHosts } from "../../entities/host/host-store.ts";
 import { PairingLinkForm } from "../../entities/host/pairing-link-form.tsx";
+import { unpairHost } from "../../entities/host/unpair.ts";
 import { Computer } from "../../shared/ui/icons.tsx";
 import { AccountDialog } from "../account/account-dialog.tsx";
 import {
@@ -199,7 +206,7 @@ export function HostsMenu({ onLocate }: { onLocate?: (hostKey: string) => void }
 
 /**
  * Settings → Hosts: every paired host with its own runtime status, switching
- * focus, forgetting one, and pairing another. Belongs to this device, not to
+ * focus, unpairing one, and pairing another. Belongs to this device, not to
  * the focused host, so it works while every connection is down too.
  */
 export function HostsSection({
@@ -210,7 +217,7 @@ export function HostsSection({
 }) {
   const paired = usePairedHosts();
   const { setConnection, forget, focus } = useHosts();
-  const [forgetting, setForgetting] = useState<StoredHost>();
+  const [unpairing, setUnpairing] = useState<StoredHost>();
   const [connectionFor, setConnectionFor] = useState<StoredHost>();
   const [modeError, setModeError] = useState<string>();
   const connectionInfo =
@@ -238,7 +245,7 @@ export function HostsSection({
 
   const toggleConnection = (host: StoredHost): void => {
     setModeError(undefined);
-    setForgetting(undefined);
+    setUnpairing(undefined);
     setConnectionFor((previous) => (previous?.hostKey === host.hostKey ? undefined : host));
   };
 
@@ -311,13 +318,13 @@ export function HostsSection({
                       onClick={() => toggleConnection(host)}
                     />
                     <Button
-                      label="Forget…"
-                      aria-label={`Forget ${label}…`}
+                      label="Unpair…"
+                      aria-label={`Unpair ${label}…`}
                       variant="ghost"
                       size="sm"
                       onClick={() => {
                         setConnectionFor(undefined);
-                        setForgetting(host);
+                        setUnpairing(host);
                       }}
                     />
                   </HStack>
@@ -405,28 +412,26 @@ export function HostsSection({
           </HStack>
         </VStack>
       )}
-      {forgetting === undefined ? null : (
-        // Forgetting drops only this device's stored key; the host keeps the
-        // device registration until it is revoked there.
-        <VStack gap={2} role="group" aria-label={`Forget ${paired.label(forgetting)}?`}>
-          <Text weight="semibold">{`Forget ${paired.label(forgetting)}?`}</Text>
-          <Text type="supporting">
-            This device needs a new pairing link to connect to it again. The host still lists this device — revoke
-            it under Settings → Devices on that host to remove it completely.
-          </Text>
+      {unpairing === undefined ? null : (
+        <VStack gap={2} role="group" aria-label={`Unpair ${paired.label(unpairing)}?`}>
+          <Text weight="semibold">{`Unpair ${paired.label(unpairing)}?`}</Text>
+          <Text type="supporting">{unpairText(paired.label(unpairing), paired.info(unpairing))}</Text>
           <HStack gap={2} hAlign="end">
-            <Button label="Cancel" variant="secondary" size="sm" onClick={() => setForgetting(undefined)} />
+            <Button label="Cancel" variant="secondary" size="sm" onClick={() => setUnpairing(undefined)} />
             <Button
-              label="Forget this host"
+              label="Unpair"
               variant="destructive"
               size="sm"
               onClick={() => {
-                const host = forgetting;
-                setForgetting(undefined);
+                const host = unpairing;
+                const info = paired.info(host);
+                setUnpairing(undefined);
                 setConnectionFor(undefined);
-                void forget(host.hostKey).catch((error: unknown) =>
-                  console.error("Could not forget the host", error),
-                );
+                void unpairHost({
+                  host,
+                  remote: info?.phase === "ready" && connectionStatus(info) === "connected" ? info.remote : undefined,
+                  forget,
+                }).catch((error: unknown) => console.error("Could not unpair the host", error));
               }}
             />
           </HStack>
@@ -439,6 +444,15 @@ export function HostsSection({
       </VStack>
     </VStack>
   );
+}
+
+/** What unpairing does depends on whether the host can still hear about it. */
+function unpairText(label: string, info: HostRuntimeInfo | undefined): string {
+  if (connectionStatus(info) === "connected") {
+    return `${label} will stop accepting this device, and this device forgets it. Connecting again needs a new pairing link.`;
+  }
+  if (terminalReason(info) === "rejected") return `${label} no longer accepts this device. This removes it here.`;
+  return `${label} isn't connected, so only this device forgets it. ${label} keeps listing this device until you unpair it under Settings → Devices there.`;
 }
 
 /**

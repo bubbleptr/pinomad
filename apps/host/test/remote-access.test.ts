@@ -232,6 +232,23 @@ describe("remote access", () => {
     await waitForView(tokenClient.view, (view) => view.devices.length === 0);
   });
 
+  it("answers a device that unpairs itself before closing it", async () => {
+    const host = await startFauxHost(defer, { remote: { port: 0 } });
+    const tokenClient = await connectTo(defer, host);
+    const { url } = await createPairing(tokenClient);
+    const { secret } = pairFrom(url);
+    const device = generateKeyPair();
+    const remote = await connectDevice(host, device, { secret, name: "phone" });
+
+    await remote.controller.revokeDevice(toBase64Url(device.publicKey));
+
+    // A dropped call surfaces as "Disconnected from host"; the device asked
+    // for this close and must get its result first.
+    expect(remote.view.current().notices.map((notice) => notice.message)).not.toContain("Disconnected from host");
+    await waitForView(remote.view, (view) => view.unauthorized === true);
+    await waitForView(tokenClient.view, (view) => view.devices.length === 0);
+  });
+
   it("keeps an established session alive past the handshake timeout", async () => {
     const host = await startFauxHost(defer, { remote: { port: 0, handshakeTimeoutMs: 100 } });
     const tokenClient = await connectTo(defer, host);

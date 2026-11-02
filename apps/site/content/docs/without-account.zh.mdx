@@ -25,7 +25,7 @@ pinomad up --lan    # 给配对设备开 7422 端口，并装好服务
 pinomad pair        # 一次性的二维码和链接，5 分钟后过期
 ```
 
-iPhone App 扫码，Mac App 粘贴链接，每台设备各跑一次 `pinomad pair`。远程端口只接受配对过的设备，不需要的设备可以在 Settings → Devices 里吊销。`--remote-port N` 换端口。
+iPhone App 扫码，Mac App 粘贴链接，每台设备各跑一次 `pinomad pair`。远程端口只接受配对过的设备，不需要的设备可以在 Settings → Devices 里点 Unpair 解除配对。`--remote-port N` 换端口。
 
 配对链接里带着宿主的地址。没有 `--public-url` 时，用的是宿主探测到的局域网地址；在 tailnet 里或走隧道时，给宿主加上 `--public-url http://<tailnet-ip>:7422`，让它指向那个地址。服务的写法是 `pinomad service install --remote-port 7422 --public-url …`，细节见[远程访问](/zh/docs/remote-access/)。
 

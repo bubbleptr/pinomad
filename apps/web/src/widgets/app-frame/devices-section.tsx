@@ -14,19 +14,26 @@ import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
+import { useHosts } from "../../entities/host/host-store.ts";
+import { unpairHost } from "../../entities/host/unpair.ts";
 
 /** Settings → Devices: the devices paired with this host, the account switch, and a new pairing offer. */
 export function DevicesSection({
   view,
   remote,
   self,
+  hostKey,
 }: {
   view: DurableView;
   remote: RemoteDurable;
   self?: KeyPair;
+  /** The stored pairing `self` belongs to; unpairing this device forgets it here too. */
+  hostKey?: string;
 }) {
+  const { hosts, forget } = useHosts();
   const connected = view.connection === "connected";
   const selfKey = self === undefined ? undefined : toBase64Url(self.publicKey);
+  const [unpairing, setUnpairing] = useState<DeviceEntry>();
   const [offer, setOffer] = useState<{ url: string; expiresAt: number }>();
   const [pairError, setPairError] = useState<string>();
   const pair = (): void => {
@@ -47,10 +54,25 @@ export function DevicesSection({
               device={device}
               isSelf={device.publicKey === selfKey}
               connected={connected}
-              remote={remote}
+              onUnpair={() => setUnpairing(device)}
             />
           ))}
         </List>
+      )}
+      {unpairing === undefined ? null : (
+        <UnpairDeviceConfirm
+          device={unpairing}
+          isSelf={unpairing.publicKey === selfKey}
+          onCancel={() => setUnpairing(undefined)}
+          onConfirm={() => {
+            setUnpairing(undefined);
+            const host = unpairing.publicKey === selfKey ? hosts.find((each) => each.hostKey === hostKey) : undefined;
+            // This device's own pairing ends at both ends, or the next
+            // connection would only find the host refusing it.
+            if (host !== undefined) void unpairHost({ host, remote, forget });
+            else void remote.controller.revokeDevice(unpairing.publicKey);
+          }}
+        />
       )}
       <AccountDevicesSwitch view={view} remote={remote} />
       {pairError === undefined ? null : <Banner status="error" title="Could not create a pairing offer" description={pairError} />}
@@ -99,12 +121,12 @@ function DeviceRow({
   device,
   isSelf,
   connected,
-  remote,
+  onUnpair,
 }: {
   device: DeviceEntry;
   isSelf: boolean;
   connected: boolean;
-  remote: RemoteDurable;
+  onUnpair: () => void;
 }) {
   const source = device.source === undefined ? "" : ` ${SOURCE_LABEL[device.source]}`;
   return (
@@ -115,15 +137,44 @@ function DeviceRow({
         <HStack gap={2} vAlign="center">
           {isSelf ? <Token label="This device" size="sm" /> : null}
           <Button
-            label="Revoke"
+            label="Unpair…"
+            aria-label={`Unpair ${device.name}…`}
             variant="ghost"
             size="sm"
             isDisabled={!connected}
-            onClick={() => void remote.controller.revokeDevice(device.publicKey)}
+            onClick={onUnpair}
           />
         </HStack>
       }
     />
+  );
+}
+
+function UnpairDeviceConfirm({
+  device,
+  isSelf,
+  onCancel,
+  onConfirm,
+}: {
+  device: DeviceEntry;
+  isSelf: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const title = isSelf ? "Unpair this device?" : `Unpair ${device.name}?`;
+  return (
+    <VStack gap={2} role="group" aria-label={title}>
+      <Text weight="semibold">{title}</Text>
+      <Text type="supporting">
+        {isSelf
+          ? "This host will stop accepting this device, and this device forgets the host. Connecting again needs a new pairing link."
+          : "This host will stop accepting it. It can pair again with a new pairing link."}
+      </Text>
+      <HStack gap={2} hAlign="end">
+        <Button label="Cancel" variant="secondary" size="sm" onClick={onCancel} />
+        <Button label="Unpair" variant="destructive" size="sm" onClick={onConfirm} />
+      </HStack>
+    </VStack>
   );
 }
 

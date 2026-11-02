@@ -55,12 +55,12 @@ To remove the device you're using, sign out with **This is a shared computer** t
 
 The server only knows what went through the account:
 
-- A device paired with a QR code, or paired through the account before your host and the server supported this list, isn't on it. Revoke it in the host's Settings → Devices.
-- A host running an older version doesn't report the devices it admits, so the server can't ask it to revoke one. The Remove form names those hosts; revoke the device there, or update the host with `pinomad upgrade` so later pairings are covered.
+- A device paired with a QR code, or paired through the account before your host and the server supported this list, isn't on it. Unpair it in the host's Settings → Devices.
+- A host running an older version doesn't report the devices it admits, so the server can't ask it to revoke one. The Remove form names those hosts; unpair the device there, or update the host with `pinomad upgrade` so later pairings are covered.
 - Apps from before this list show up as **Unknown device**, once per sign-in.
 
 ## Delete your account
 
 To delete your account, click **Delete account** at the bottom of the account panel on the web or in the Mac app, or tap **Delete Account** at the bottom of the iPhone's account page, and enter your password. The server deletes the account along with its sessions, host bindings and push registrations, and every device is signed out. The admin account can't be deleted.
 
-Hosts joined to the account lose their connection to the server right away. To reach one through a server again, run `pinomad join` on it with another account. Your devices stay registered on each host, because the host keeps that list itself: a device that reaches the host directly (same network or Tailscale) still connects. To remove a device, revoke it in the host's Settings → Devices, or remove it under **Devices** before you delete the account.
+Hosts joined to the account lose their connection to the server right away. To reach one through a server again, run `pinomad join` on it with another account. Your devices stay registered on each host, because the host keeps that list itself: a device that reaches the host directly (same network or Tailscale) still connects. To remove a device, unpair it in the host's Settings → Devices, or remove it under **Devices** before you delete the account.

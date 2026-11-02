@@ -205,6 +205,33 @@ describe("the app frame across hosts", () => {
     await waitFor(() => expect(screen.getByTestId("focus").textContent).toBe(`${DEVBOX_HOST.hostKey}:draft`));
   });
 
+  it("drops a rejected machine's last projects and points its group at the explanation", async () => {
+    const registry = createHostRuntimeRegistry();
+    const connect = (options: RemoteDurableOptions): Promise<RemoteDurable> => {
+      const url = "candidates" in options ? options.candidates[0]?.url ?? "" : "";
+      // Revoked mid-session: the view keeps its last snapshot but is terminal.
+      const view = url.includes("omarchy") ? fakeView({ connection: "closed", unauthorized: true }) : fakeView();
+      return Promise.resolve({ ...fakeRemote(view), close: () => {} });
+    };
+    render(
+      <Harness
+        hosts={[HOME_HOST, DEVBOX_HOST]}
+        initialFocus={{ hostKey: HOME_HOST.hostKey, conversationId: id(2) }}
+        connect={connect}
+        registry={registry}
+      />,
+    );
+    await waitFor(() => expect(registry.get(DEVBOX_HOST.hostKey)?.phase).toBe("ready"));
+    const home = screen.getByRole("group", { name: "kieran-mbp" });
+    const devbox = screen.getByRole("group", { name: "omarchy" });
+    expect(within(home).getByRole("button", { name: "pinomad" })).toBeDefined();
+
+    expect(within(devbox).queryByRole("button", { name: "pinomad" })).toBeNull();
+    await userEvent.click(within(devbox).getByRole("button", { name: "Not paired" }));
+
+    await waitFor(() => expect(screen.getByTestId("focus").textContent).toBe(`${DEVBOX_HOST.hostKey}:draft`));
+  });
+
   it("locates a machine from the hosts list without moving focus", async () => {
     const registry = createHostRuntimeRegistry();
     render(
@@ -382,7 +409,7 @@ describe("the app frame across hosts", () => {
   });
 
   it.each([
-    ["a revoked pairing", () => new UnauthorizedError(), "This device isn't paired"],
+    ["a revoked pairing", () => new UnauthorizedError(), "no longer accepts this device"],
     ["a protocol mismatch", () => new ProtocolMismatchError(6, 5), "Client out of date"],
   ])("keeps the frame when the focused host fails with %s", async (_name, makeError, message) => {
     const registry = createHostRuntimeRegistry();

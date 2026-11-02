@@ -456,6 +456,8 @@ export interface SidebarMachine {
   /** The host's latest snapshot; absent until its first connection is ready. */
   readonly view?: DurableView;
   readonly remote?: RemoteDurable;
+  /** The host refused this device (4401); its last snapshot is no longer this device's to browse. */
+  readonly rejected?: boolean;
 }
 
 /** A request to bring one machine's group into view; `seq` repeats a locate. */
@@ -552,7 +554,7 @@ function MachineSection({
   onShow?: () => void;
   onSelect?: (() => void) | undefined;
 }) {
-  const { key, label, view, remote } = machine;
+  const { key, label, view, remote, rejected = false } = machine;
   const disabled = view?.connection !== "connected";
   const contentId = useId();
   const headerRef = useRef<HTMLDivElement>(null);
@@ -564,7 +566,7 @@ function MachineSection({
   const [addOpen, setAddOpen] = useState(false);
   const [removing, setRemoving] = useState<Project>();
   const [folds, setFolds] = useState(() => readExpandedProjects(key));
-  const organized = view?.organized;
+  const organized = rejected ? undefined : view?.organized;
   const start = (home: Home): void => {
     onDraft(home);
     onSelect?.();
@@ -652,7 +654,7 @@ function MachineSection({
         {!expanded ? null : organized === undefined ? (
           <SideNavItem
             icon={<SessionGlyphSlot />}
-            label="No conversations available"
+            label={rejected ? "Not paired" : "No conversations available"}
             isDisabled={onShow === undefined}
             onClick={() => {
               onShow?.();

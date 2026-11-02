@@ -78,6 +78,15 @@ export const OfflineMachine: Story = {
   args: { machines: fakeMachines({ devbox: devboxView({ connection: "reconnecting" }) }) },
 };
 
+/** Unpaired from omarchy: its last projects drop out, leaving one row that opens the explanation. */
+export const RejectedMachine: Story = {
+  args: {
+    machines: fakeMachines({ devbox: devboxView({ connection: "closed", unauthorized: true }) }).map((machine) =>
+      machine.label === "omarchy" ? { ...machine, rejected: true } : machine,
+    ),
+  },
+};
+
 export const Empty: Story = {
   args: {
     machines: fakeMachines({ home: fakeView({ organized: { chats: [], projects: [], archived: [] } }) }).slice(0, 1),

@@ -8,7 +8,7 @@ import { keyPairFromPrivate } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { useOptionalComposerSlotState } from "../../entities/composer/composer-context.tsx";
 import { newDraftKey } from "../../entities/composer/composer-store.ts";
-import { connectionStatus, useHostRuntimeInfos } from "../../entities/host/host-runtimes.ts";
+import { connectionStatus, terminalReason, useHostRuntimeInfos } from "../../entities/host/host-runtimes.ts";
 import { readLastNewHost, selectNewChatHost } from "../../entities/host/last-new-host.ts";
 import { useHosts } from "../../entities/host/host-store.ts";
 import { hostLabels } from "@pinomad/client/stored-host.ts";
@@ -42,6 +42,7 @@ export function HostFrame({ children }: { children: ReactNode }) {
       ...(ready === undefined ? {} : { view: ready.view, remote: ready.remote }),
       ...(device === undefined ? {} : { device }),
       ...(info === undefined ? {} : { retry: info.retry }),
+      ...(terminalReason(info) === "rejected" ? { rejected: true } : {}),
     };
   });
 

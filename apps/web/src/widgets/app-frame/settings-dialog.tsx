@@ -295,7 +295,7 @@ function sectionBody(
       return {
         title: "Devices",
         supporting: <Text as="p" type="supporting">Paired devices can reach this host over the secure channel.</Text>,
-        body: <DevicesSection view={view} remote={remote} self={device} />,
+        body: <DevicesSection view={view} remote={remote} self={device} {...(hostKey === undefined ? {} : { hostKey })} />,
       };
     case "providers":
       return {
