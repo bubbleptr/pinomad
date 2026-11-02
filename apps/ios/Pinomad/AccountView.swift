@@ -16,6 +16,7 @@ struct AccountView: View {
     @State private var leavingHosts = false
     @State private var passwordChanged = false
     @State private var removingDevice: AccountDevice?
+    @State private var removingHost: PendingAccountHost?
     #if DEBUG
     /// `PINOMAD_DEMO_ACCOUNT=delete` opens on the Delete Account form.
     @State private var devDeleting = false
@@ -181,16 +182,26 @@ struct AccountView: View {
         .navigationDestination(item: $removingDevice) { device in
             RemoveDeviceView(model: model, device: device)
         }
+        .navigationDestination(item: $removingHost) { host in
+            RemoveHostView(model: model, host: host, server: hostOf(session.serverOrigin))
+        }
         .refreshable {
             await model.refreshHostsAndAccount()
             await model.accountRefreshDevices()
         }
         .task {
+            // The new-host notice's Remove, from outside this sheet.
+            if let host = model.pendingHostRemoval {
+                model.pendingHostRemoval = nil
+                removingHost = host
+            }
             #if DEBUG
             let page = model.devAccountPage
             model.devAccountPage = nil
             switch page {
             case "remove": removingDevice = model.accountDevices?.first(where: \.removable)
+            case "remove-host":
+                removingHost = model.accountRows.first.map { PendingAccountHost(hostId: $0.hostId, name: $0.name) }
             case "delete": devDeleting = true
             case "add": devAdding = true
             default: break
@@ -238,11 +249,18 @@ struct AccountView: View {
             Text("Your account is signed out on every device, and each one needs to sign in again before it gets notifications. Paired hosts stay paired.")
         }
         // The root shows it while no sheet is up; here while this one is.
+        // With several hosts, their rows are right here to remove.
         .alert("New Host Joined", isPresented: Binding(
             get: { model.newHostNotice != nil },
             set: { if !$0 { model.dismissNewHostNotice() } }
         )) {
-            Button("OK") { model.dismissNewHostNotice() }
+            Button("OK", role: .cancel) { model.dismissNewHostNotice() }
+            if model.newHostNotices.count == 1, let host = model.newHostNotices.first {
+                Button("Remove from Account", role: .destructive) {
+                    model.dismissNewHostNotice()
+                    removingHost = host
+                }
+            }
         } message: {
             Text((model.newHostNotice ?? "") + "\n\n" + HostLinkCopy.newHostsHint)
         }
@@ -343,6 +361,21 @@ struct AccountView: View {
             Spacer()
             accountAction(row)
         }
+        // However this iPhone paired with it: removal is the server's act.
+        .swipeActions {
+            if !model.accountBusy {
+                Button("Remove", role: .destructive) { removeHost(row) }
+                    .tint(.red)
+            }
+        }
+        .contextMenu {
+            Button("Remove from Account", image: .trash2, role: .destructive) { removeHost(row) }
+                .disabled(model.accountBusy)
+        }
+    }
+
+    private func removeHost(_ row: AccountHostRow) {
+        removingHost = PendingAccountHost(hostId: row.hostId, name: row.name)
     }
 
     @ViewBuilder

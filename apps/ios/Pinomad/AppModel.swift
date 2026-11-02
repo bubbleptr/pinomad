@@ -260,6 +260,9 @@ final class AppModel {
     /// The hosts that notice is about, as persisted until the reader
     /// dismisses it.
     var newHostNotices: [PendingAccountHost] = []
+    /// The host the notice's Remove asked the account sheet to open the
+    /// removal form for (#512); the sheet takes it once.
+    var pendingHostRemoval: PendingAccountHost?
     /// The refreshes after a confirm on this iPhone, until that host pairs.
     var hostJoinWatch: Task<Void, Never>?
     var accountRecord: AccountRecord?

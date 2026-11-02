@@ -399,9 +399,10 @@ extension AppModel {
         accountSignOutWarning = joined.isEmpty ? nil : joined
     }
 
-    /// Forget every stored host linked to `serverOrigin`'s account, without
-    /// declining it (#494). Hosts paired by QR code carry no link and stay.
-    private func forgetAccountHosts(serverOrigin: String) {
+    /// Forget every stored host linked to `serverOrigin`'s account, or only
+    /// `hostId`'s, without declining it (#494, #512). Hosts paired by QR
+    /// code carry no vouch and stay.
+    private func forgetAccountHosts(serverOrigin: String, hostId: String? = nil) {
         // Saved pairings, plus account pairings whose keychain write failed:
         // those live only in memory (a runtime, a retry slot) until saved.
         var candidates = hosts.hosts
@@ -409,12 +410,13 @@ extension AppModel {
             if let host = runtimes[key]?.host { candidates.append(host) }
         }
         let unsavedOurs = AccountHosts.vouchedHostKeys(
-            serverOrigin: serverOrigin, hosts: Array(unsavedAccountHosts.values))
-        for (hostId, host) in unsavedAccountHosts where unsavedOurs.contains(host.hostKey) {
-            unsavedAccountHosts.removeValue(forKey: hostId)
+            serverOrigin: serverOrigin, hostId: hostId, hosts: Array(unsavedAccountHosts.values))
+        for (slot, host) in unsavedAccountHosts where unsavedOurs.contains(host.hostKey) {
+            unsavedAccountHosts.removeValue(forKey: slot)
         }
         var keys: [String] = []
-        for key in AccountHosts.vouchedHostKeys(serverOrigin: serverOrigin, hosts: candidates) + unsavedOurs
+        for key in AccountHosts.vouchedHostKeys(serverOrigin: serverOrigin, hostId: hostId, hosts: candidates)
+            + unsavedOurs
         where !keys.contains(key) && hostRecord(for: key) != nil {
             keys.append(key)
         }
@@ -489,6 +491,64 @@ extension AppModel {
             }
             return failure
         }
+    }
+
+    /// Take a host off the account (#512). This iPhone then forgets the
+    /// pairing the account issued for it, without declining it: a rejoin is
+    /// the reader's own act again and should pair on its own. A QR pairing
+    /// with it stays.
+    func accountRemoveHost(_ host: PendingAccountHost, password: String) async -> AccountFailure? {
+        #if DEBUG
+        if devHostsInjected, accountSession != nil {
+            // A demo account has no server, and its hosts aren't forgotten.
+            try? await Task.sleep(for: .milliseconds(400))
+            accountRows.removeAll { $0.hostId == host.hostId }
+            newHostNotices.removeAll { $0.hostId == host.hostId }
+            return nil
+        }
+        #endif
+        guard let session = accountSession, let api = accountAPI() else {
+            return AccountFailure(code: "unauthenticated")
+        }
+        let result = await api.removeHost(hostId: host.hostId, password: password)
+        guard accountSession == session else { return nil }
+        switch result {
+        case .success:
+            newHostNotices.removeAll { $0.hostId == host.hostId }
+            knownAccountHosts.dismiss(
+                serverOrigin: session.serverOrigin, username: session.username, hostIds: [host.hostId])
+            forgetAccountHosts(serverOrigin: session.serverOrigin, hostId: host.hostId)
+            await accountRefreshHosts()
+            return nil
+        case .failure(let failure) where failure.code == "not_found":
+            // Gone already (removed from another device), or a server that
+            // predates removal: a list asked for after the answer tells
+            // which. One already in flight may predate it, and a failed one
+            // keeps the old rows, so no verdict then.
+            let fresh = !accountRefreshing
+            await accountRefreshHosts()
+            if fresh, accountSession == session, accountHostsError == nil,
+               accountRows.contains(where: { $0.hostId == host.hostId }) {
+                return AccountFailure(code: "remove_host_unsupported", status: 404)
+            }
+            return nil
+        case .failure(let failure):
+            if failure.clearsSession {
+                accountSignOutWarning = endAccountSession(notice: AccountCopy.message(failure))
+            }
+            return failure
+        }
+    }
+
+    /// How this iPhone holds `hostId`, for the removal form to say what
+    /// stays.
+    func removedHostPairing(_ hostId: String) -> RemovedHostPairing {
+        guard let session = accountSession else { return .none }
+        if !AccountHosts.vouchedHostKeys(serverOrigin: session.serverOrigin, hostId: hostId, hosts: hosts.hosts).isEmpty {
+            return .account
+        }
+        let stored = accountRows.first { $0.hostId == hostId }?.storedHostKey
+        return stored.flatMap { hostRecord(for: $0) } != nil ? .qrCode : .none
     }
 
     /// Delete the account (#451). The server ends every session and drops

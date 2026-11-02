@@ -527,6 +527,18 @@ public struct AccountAPI: Sendable {
         }
     }
 
+    /// Takes a host off the account (#512): the server unbinds it and tells
+    /// it to stop connecting. The password again, as for kicking a device
+    /// (ADR-0037 §3); 403 `wrong_password` is a refusal, not a sign-out, and
+    /// 404 `not_found` also comes from servers that predate it.
+    public func removeHost(hostId: String, password: String) async -> Result<Void, AccountFailure> {
+        switch await request(.removeHost(hostId: hostId, password: password), kind: .removeHost) {
+        case .success(.unit): return .success(())
+        case .failure(let failure): return .failure(failure)
+        default: return .failure(.invalidResponse)
+        }
+    }
+
     private func request(
         _ op: AccountOp,
         kind: AccountOpKind
@@ -734,12 +746,14 @@ public enum AccountHosts {
 
     /// The hosts a shared-device sign-out forgets (#494): those whose key
     /// came from `serverOrigin`'s own offer. A link `reconcile` adopted onto
-    /// a QR pairing isn't vouched, so that pairing stays.
-    public static func vouchedHostKeys(serverOrigin: String, hosts: [HostRecord]) -> [String] {
+    /// a QR pairing isn't vouched, so that pairing stays. With `hostId`, only
+    /// that host's: what removing it from the account forgets (#512).
+    public static func vouchedHostKeys(serverOrigin: String, hostId: String? = nil, hosts: [HostRecord]) -> [String] {
         let origin = normalizeServerOrigin(origin: serverOrigin)
         return hosts.compactMap { host in
             guard let link = host.account, link.vouched == true,
-                  normalizeServerOrigin(origin: link.serverOrigin) == origin
+                  normalizeServerOrigin(origin: link.serverOrigin) == origin,
+                  hostId == nil || link.hostId == hostId
             else { return nil }
             return host.hostKey
         }
@@ -757,6 +771,15 @@ extension AccountDevice {
 }
 
 // MARK: - Copy
+
+/// How this iPhone holds a host being removed from the account (#512).
+public enum RemovedHostPairing: Sendable {
+    case none
+    /// Paired through the account: removing it forgets it here too.
+    case account
+    /// Paired by QR code: that pairing stays.
+    case qrCode
+}
 
 public enum AccountCopy {
     public static func deviceHostState(_ state: AccountDeviceHostState) -> String {
@@ -779,6 +802,17 @@ public enum AccountCopy {
         default:
             let names = unreachable.dropLast().joined(separator: ", ") + " and " + unreachable[unreachable.count - 1]
             return base + " \(names) can't be asked. If \(name) joined them, revoke it on each one."
+        }
+    }
+
+    /// What removing `name` from the account does (#512), and what this
+    /// iPhone keeps: it forgets a pairing the account issued, not a QR one.
+    public static func removeHostExplanation(name: String, server: String, pairedHere: RemovedHostPairing) -> String {
+        let base = "This takes \(name) off your account and it stops connecting through \(server). Only running pinomad up on \(name) brings it back."
+        switch pairedHere {
+        case .none: return base
+        case .account: return base + " This iPhone forgets it too."
+        case .qrCode: return base + " This iPhone stays paired with it by QR code; forget it in Settings to stop connecting."
         }
     }
 
@@ -831,6 +865,8 @@ public enum AccountCopy {
         case "weak_password": "Use a password of at least 12 characters."
         case "current_device": "That's the device you're using. Sign out instead."
         case "admin_account": "The server's admin account can't be deleted."
+        // Set by the app: a 404 for a host the list fetched after it still has.
+        case "remove_host_unsupported": "This server can't remove hosts. Run pinomad leave on the host, or update the server."
         default: "Something went wrong (" + failure.code + ")."
         }
     }

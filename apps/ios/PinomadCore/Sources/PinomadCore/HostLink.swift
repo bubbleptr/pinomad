@@ -59,8 +59,8 @@ public enum HostLinkCopy {
     public static let ipDiffersWarning =
         "This request came from a different network address than this iPhone. If you aren't at that computer, deny it."
 
-    /// The once-per-host notice (#497). There's no removing a host from the
-    /// account here; forgetting it stops this iPhone from connecting.
+    /// The once-per-host notice (#497). Its way out is removing the host
+    /// from the account (#512), which stops it on every device.
     public static func newHostsNotice(_ names: [String]) -> String {
         switch names.count {
         case 0: ""
@@ -70,7 +70,7 @@ public enum HostLinkCopy {
     }
 
     public static let newHostsHint =
-        "If you didn't add it, forget it in Settings so this iPhone stops connecting to it."
+        "If you didn't add it, remove it from your account."
 
     /// The server answers one 404 for a wrong, used or expired code.
     public static func message(_ failure: AccountFailure, stage: Stage) -> String {
