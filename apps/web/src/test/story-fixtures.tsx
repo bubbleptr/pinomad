@@ -12,7 +12,7 @@ import type { HostProviders, LoginFlow, LoginMethod, ProviderInfo } from "@pinom
 import { PROTOCOL } from "@pinomad/protocol/frames.ts";
 import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
-import { organize, type HostIndex, type Project } from "@pinomad/protocol/organization.ts";
+import { organize, type ConversationNode, type HostIndex, type Project } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { ConversationSummary, DurableController, DurableView, ModelSummary } from "@pinomad/protocol/view.ts";
 import { AccountContext } from "../entities/account/account-context.tsx";
@@ -34,6 +34,8 @@ export const WEBSITE: Project = { path: "/Users/kieran/code/website", name: "web
 export const PARSER_ID = id(1);
 export const FORK_ID = id(4);
 export const SUBAGENT_ID = id(5);
+export const BACKGROUND_SUBAGENT_ID = id(8);
+export const FORK_BACKGROUND_SUBAGENT_ID = id(9);
 /** A conversation of another family, with no forks or subagents. */
 export const DARK_MODE_ID = id(2);
 
@@ -70,6 +72,56 @@ const index: HostIndex = {
 
 export const organized = organize(index, summaries);
 export const summaryOf = (target: ConversationId) => summaries.find((summary) => summary.id === target);
+
+/** Add background work at both the root and its fork without changing real parents. */
+export function withBackgroundSubagents(
+  view: DurableView,
+  options: { longTitles?: boolean; includeForkChild?: boolean } = {},
+): DurableView {
+  const { longTitles = false, includeForkChild = true } = options;
+  const rootBackground: ConversationNode = {
+    summary: {
+      id: BACKGROUND_SUBAGENT_ID,
+      kind: "subagent",
+      parent: PARSER_ID,
+      lifecycle: "background",
+      model: { provider: "anthropic", modelId: "claude-sonnet-4-5" },
+      title: longTitles ? "Trace the owning task and child conversation through every reconnect attempt" : "Inspect socket owner",
+      status: "running",
+      updatedAt: now - MINUTE,
+      activity: { tool: "read", target: "apps/host/src/gateway.ts" },
+    },
+    children: [],
+  };
+  const forkBackground: ConversationNode = {
+    summary: {
+      id: FORK_BACKGROUND_SUBAGENT_ID,
+      kind: "subagent",
+      parent: FORK_ID,
+      lifecycle: "background",
+      model: { provider: "openai", modelId: "gpt-5.2" },
+      title: longTitles ? "Verify the final retry behavior on a real device" : "Verify retry on device",
+      ...(longTitles ? { status: "failed" as const } : {}),
+      updatedAt: now - 2 * MINUTE,
+    },
+    children: [],
+  };
+  const attach = (node: ConversationNode): ConversationNode => {
+    const children = node.children.map(attach);
+    if (node.summary.id === PARSER_ID) return { ...node, children: [...children, rootBackground] };
+    if (includeForkChild && node.summary.id === FORK_ID) return { ...node, children: [...children, forkBackground] };
+    return { ...node, children };
+  };
+  return {
+    ...view,
+    organized: {
+      ...view.organized,
+      chats: view.organized.chats.map(attach),
+      projects: view.organized.projects.map((project) => ({ ...project, conversations: project.conversations.map(attach) })),
+      archived: view.organized.archived.map((entry) => ({ ...entry, node: attach(entry.node) })),
+    },
+  };
+}
 
 // --- Conversation entries (shapes as packages/client/test/cot-view-cases.ts) ---
 
@@ -190,10 +242,10 @@ export function forkConversation(): ConversationView {
 }
 
 /** The running subagent's transcript: its task, one finished tool and one in flight. */
-export function subagentConversation(): ConversationView {
-  const { user, assistant, result } = transcript(SUBAGENT_ID);
+export function subagentConversation(conversationId: ConversationId = SUBAGENT_ID, parent: ConversationId = PARSER_ID): ConversationView {
+  const { user, assistant, result } = transcript(conversationId);
   return {
-    conversation: { id: SUBAGENT_ID, kind: "subagent", parent: PARSER_ID },
+    conversation: { id: conversationId, kind: "subagent", parent },
     entries: [
       user("Write regression tests for parseList: a trailing comma, two commas, and an empty list."),
       assistant([call("s1", "read", { path: "test/parser.test.ts" })], "toolUse"),

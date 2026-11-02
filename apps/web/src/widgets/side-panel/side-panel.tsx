@@ -1,6 +1,6 @@
 // The right-side panel (ADR-0019's thread/task model): Threads lists the
-// shown conversation's family forks and Tasks its subagents — both open
-// inside the panel via `view.side` instead of replacing the main column.
+// shown conversation's family forks and Tasks its foreground subagents — both
+// open inside the panel via `view.side`; background subagents open in main.
 // Forks are talkable (composer, targeted submit/abort/answer); subagents are
 // read-only. The conversation's at-a-glance state lives in the Overview card.
 import { Button } from "@astryxdesign/core/Button";
@@ -88,6 +88,12 @@ function PanelContent({
   const groups = root === undefined ? [] : taskGroupsOf(root);
   const taskCount = groups.reduce((total, group) => total + group.tasks.length, 0);
   const closeSide = (): void => void remote.controller.showSide(undefined);
+  const backgroundSideId = sideSummary?.kind === "subagent" && sideSummary.lifecycle === "background" ? sideSummary.id : undefined;
+  // Older links may still name a background detail explicitly. Promote rather
+  // than rendering a second Tasks entry point for the same conversation.
+  useEffect(() => {
+    if (backgroundSideId !== undefined) onOpenInMain(backgroundSideId);
+  }, [backgroundSideId, onOpenInMain]);
 
   return (
     <VStack className="h-full min-h-0" gap={0}>
@@ -150,7 +156,7 @@ function PanelContent({
           </Scrollable>
         )
       ) : (
-        side !== undefined && sideSummary?.kind === "subagent" ? (
+        side !== undefined && sideSummary?.kind === "subagent" && sideSummary.lifecycle !== "background" ? (
           <TaskDetail
             view={view}
             remote={remote}

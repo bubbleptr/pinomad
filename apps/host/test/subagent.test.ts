@@ -116,6 +116,10 @@ describe("subagent tool", () => {
     const details = result.details as { conversationId: number; model?: string; startedAt?: number };
     expect(details.conversationId).toBe(child!.id);
     const shown = client.view.current().models[0]!;
+    expect(child).toMatchObject({
+      lifecycle: "foreground",
+      model: { provider: shown.provider, modelId: shown.modelId },
+    });
     expect(details.model).toBe(`${shown.provider}/${shown.modelId}`);
     expect(typeof details.startedAt).toBe("number");
   });

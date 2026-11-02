@@ -6,18 +6,33 @@ import {
   fakeHosts,
   fakeMachines,
   fakeView,
+  BACKGROUND_SUBAGENT_ID,
   DEVBOX_HOST,
   HOME_HOST,
   NAS_HOST,
   PARSER_ID,
   signedIn,
   withAccount,
+  withBackgroundSubagents,
   withDesktopUpdates,
   withHosts,
 } from "../../test/story-fixtures.tsx";
 import { SidebarContent, SidebarFooter, SidebarHeaderBand } from "./sidebar.tsx";
 
 // The SideNav AppFrame mounts these into, minus its resizable width.
+function SidebarFrame(args: Parameters<typeof SidebarContent>[0]) {
+  return (
+    <div className="h-[calc(100vh-3rem)] w-[260px]">
+      <SideNav
+        header={<SidebarHeaderBand onCollapse={fn()} />}
+        footer={<SidebarFooter onOpenSettings={fn()} onOpenAccount={fn()} onLocateHost={fn()} />}
+      >
+        <SidebarContent {...args} />
+      </SideNav>
+    </div>
+  );
+}
+
 const meta = {
   title: "Widgets/AppFrame/Sidebar",
   component: SidebarContent,
@@ -33,16 +48,7 @@ const meta = {
     onOpen: fn(),
     onShowMachine: fn(),
   },
-  render: (args) => (
-    <div className="h-[calc(100vh-3rem)] w-[260px]">
-      <SideNav
-        header={<SidebarHeaderBand onCollapse={fn()} />}
-        footer={<SidebarFooter onOpenSettings={fn()} onOpenAccount={fn()} onLocateHost={fn()} />}
-      >
-        <SidebarContent {...args} />
-      </SideNav>
-    </div>
-  ),
+  render: (args) => <SidebarFrame {...args} />,
 } satisfies Meta<typeof SidebarContent>;
 
 export default meta;
@@ -76,5 +82,45 @@ export const Empty: Story = {
   args: {
     machines: fakeMachines({ home: fakeView({ organized: { chats: [], projects: [], archived: [] } }) }).slice(0, 1),
     shownId: undefined,
+  },
+};
+
+const backgroundMachines = (options?: { longTitles?: boolean; includeForkChild?: boolean }) =>
+  fakeMachines({ home: withBackgroundSubagents(fakeView(), options) });
+
+const setBackgroundExpanded = (expanded: boolean): void => {
+  window.localStorage.setItem(`pinomad.conversationSidebar.expanded.${HOME_HOST.hostKey}.${PARSER_ID}`, String(expanded));
+};
+
+/** The real production tree: foreground stays in Tasks; both background parents appear here. */
+export const BackgroundSubagents: Story = {
+  args: { machines: backgroundMachines(), shownId: BACKGROUND_SUBAGENT_ID },
+  render: (args) => {
+    setBackgroundExpanded(true);
+    return <SidebarFrame {...args} />;
+  },
+};
+
+export const BackgroundSubagentsCollapsed: Story = {
+  args: { machines: backgroundMachines(), shownId: PARSER_ID },
+  render: (args) => {
+    setBackgroundExpanded(false);
+    return <SidebarFrame {...args} />;
+  },
+};
+
+export const BackgroundSubagentsLongTitles: Story = {
+  args: { machines: backgroundMachines({ longTitles: true }), shownId: BACKGROUND_SUBAGENT_ID },
+  render: (args) => {
+    setBackgroundExpanded(true);
+    return <SidebarFrame {...args} />;
+  },
+};
+
+export const BackgroundSubagentSingle: Story = {
+  args: { machines: backgroundMachines({ includeForkChild: false }), shownId: BACKGROUND_SUBAGENT_ID },
+  render: (args) => {
+    setBackgroundExpanded(true);
+    return <SidebarFrame {...args} />;
   },
 };

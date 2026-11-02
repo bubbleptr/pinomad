@@ -21,6 +21,7 @@ import {
   InboxDoc,
   type JsonObject,
   LiveDoc,
+  type ModelRef,
   type SubmissionId,
   type SubmissionRecord,
   type Tx,
@@ -1222,6 +1223,7 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
       const subagent = await harness.snapshot(SubagentDoc, record.id, context);
       if (typeof subagent?.label === "string" && subagent.label !== "") facts.label = subagent.label;
       if (typeof subagent?.role === "string" && subagent.role !== "") facts.role = subagent.role;
+      facts.model = modelRefOf(subagent?.model);
     }
     // Absent is meaningful: a conversation created before RoleDoc existed
     // falls back to the index entry; an explicit null is "no agent".
@@ -1290,9 +1292,10 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
           facts.agent = roleNameOf(change.value as { name?: unknown } | null);
           touched.add(id);
         } else if (change.record.kind === SubagentDoc.definition.kind) {
-          const value = change.value as { label?: unknown; role?: unknown } | null;
+          const value = change.value as { label?: unknown; role?: unknown; model?: unknown } | null;
           facts.label = typeof value?.label === "string" && value.label !== "" ? value.label : undefined;
           facts.role = typeof value?.role === "string" && value.role !== "" ? value.role : undefined;
+          facts.model = modelRefOf(value?.model);
           touched.add(id);
         } else if (change.record.kind === TitleDoc.definition.kind) {
           const named = (change.value as { title?: unknown } | null)?.title;
@@ -1415,6 +1418,8 @@ type ConversationFacts = {
   label?: string;
   /** The named agent the subagent ran as, if the call gave one. */
   role?: string;
+  /** The subagent's effective model at creation, if the host recorded it. */
+  model?: ModelRef;
   /** The own RoleDoc's name: a role, explicit null, or undefined when absent. */
   agent?: string | null;
 };
@@ -1423,6 +1428,14 @@ type ConversationFacts = {
 function roleNameOf(value: { name?: unknown } | null | undefined): string | null | undefined {
   if (value === null || value === undefined) return undefined;
   return typeof value.name === "string" ? value.name : value.name === null ? null : undefined;
+}
+
+/** `SubagentDoc.model`'s `provider/modelId`, split at the provider boundary. */
+function modelRefOf(value: unknown): ModelRef | undefined {
+  if (typeof value !== "string") return undefined;
+  const slash = value.indexOf("/");
+  if (slash <= 0 || slash === value.length - 1) return undefined;
+  return { provider: value.slice(0, slash), modelId: value.slice(slash + 1) };
 }
 
 /** The top-level id → role column of an index value; absent/corrupt entries read as no role. */
@@ -1476,6 +1489,8 @@ function summaryOf(
   return {
     id: record.id,
     kind: record.owner !== undefined ? "subagent" : record.parent !== undefined ? "fork" : "conversation",
+    ...(record.owner === undefined ? {} : { lifecycle: "foreground" as const }),
+    ...(facts.model === undefined ? {} : { model: facts.model }),
     ...(parent === undefined ? {} : { parent }),
     // The client's forkable-entry ids are the string form of EntryId.
     ...(record.parent === undefined ? {} : { forkedAt: String(record.parent.at) }),
@@ -1493,6 +1508,9 @@ function sameSummary(a: ConversationSummary, b: ConversationSummary): boolean {
   return (
     a.id === b.id
     && a.kind === b.kind
+    && a.lifecycle === b.lifecycle
+    && a.model?.provider === b.model?.provider
+    && a.model?.modelId === b.model?.modelId
     && a.parent === b.parent
     && a.forkedAt === b.forkedAt
     && a.title === b.title

@@ -22,7 +22,7 @@ pub use crate::folder_path::FolderCrumb;
 pub use crate::frames::{ApnsEnvironment, ApnsPushToken, HostFeature, ImageVariant, ProtocolVersion};
 pub use crate::model::{AgentDraft, AgentDraftProblem, AgentDraftSource, ModelPick, ModelRef, ThinkingLevel};
 pub use crate::organization::{
-    ConversationStatus, HomeKind, SummaryActivity, SummaryKind,
+    ConversationStatus, HomeKind, SubagentLifecycle, SummaryActivity, SummaryKind,
 };
 pub use crate::patch::{PatchFile, PatchLine, PatchLineKind};
 pub use crate::presentation::{
@@ -698,6 +698,12 @@ pub struct ConversationSummary {
     /// Absent when the wire id is missing or not a non-negative integer.
     pub id: Option<u64>,
     pub kind: Option<SummaryKind>,
+    /// Stable subagent lifecycle; absent on pre-5.26 hosts.
+    #[uniffi(default = None)]
+    pub lifecycle: Option<SubagentLifecycle>,
+    /// The subagent's actual creation model, when recorded.
+    #[uniffi(default = None)]
+    pub model: Option<ModelRef>,
     pub parent: Option<u64>,
     pub forked_at: Option<String>,
     pub title: Option<String>,
@@ -720,6 +726,8 @@ impl ConversationSummary {
         ConversationSummary {
             id: core.id,
             kind: core.kind,
+            lifecycle: core.lifecycle,
+            model: core.model,
             parent: core.parent,
             forked_at: core.forked_at,
             title: core.title,
@@ -742,6 +750,12 @@ impl ConversationSummary {
         }
         if let Some(kind) = &self.kind {
             set(&mut object, "kind", Json::from(kind.as_str()));
+        }
+        if let Some(lifecycle) = &self.lifecycle {
+            set(&mut object, "lifecycle", Json::from(lifecycle.as_str()));
+        }
+        if let Some(model) = &self.model {
+            set(&mut object, "model", model.to_json());
         }
         if let Some(parent) = self.parent {
             set(&mut object, "parent", Json::Number(parent as f64));

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { organize, findConversation } from "@pinomad/protocol/organization.ts";
 import type { ConversationNode, Organized } from "@pinomad/protocol/organization.ts";
-import { displayName, familyStatus, familyUpdatedAt, forksAt, relativeTime, rootOf, taskGroupsOf, threadsOf } from "../src/family.ts";
+import { backgroundSubagentsOf, displayName, familyStatus, familyUpdatedAt, forksAt, relativeTime, rootOf, taskGroupsOf, threadsOf } from "../src/family.ts";
 import {
   DISPLAY_NAME_CASES,
   FAMILY_CASES,
@@ -105,14 +105,19 @@ describe("threadsOf / taskGroupsOf", () => {
     expect(threadsOf(root).map((n) => n.summary.id)).toEqual([2, 5]);
     const groups = taskGroupsOf(root);
     expect(groups.map((group) => group.label)).toEqual(["This conversation", "worktree fork"]);
-    expect(groups[0]!.tasks.map((n) => n.summary.id)).toEqual([4]);
+    expect(groups[0]!.tasks.map((n) => n.summary.id)).toEqual([4, 12]);
     expect(groups[1]!.tasks.map((n) => n.summary.id)).toEqual([6]);
+    // Background descendants flatten under the root without changing the real parent tree.
+    expect(backgroundSubagentsOf(root).map((n) => n.summary.id)).toEqual([10, 11]);
+    expect(backgroundSubagentsOf(root)[1]!.summary.parent).toBe(5);
   });
 
   it("is empty for a conversation with no children", () => {
     const bare = nodeOf("sub-in-fork", 9);
     expect(threadsOf(bare)).toEqual([]);
     expect(taskGroupsOf(bare)).toEqual([]);
+    // A pre-lifecycle subagent defaults to foreground.
+    expect(backgroundSubagentsOf(nodeOf("idle", 1))).toEqual([]);
   });
 
   it("walks legacy trees: several forks per message and forks nested inside forks", () => {

@@ -92,6 +92,9 @@ export const FAMILY_TREE: FamilyInput = {
     sum(2, { kind: "fork", parent: 1 }),
     sum(5, { kind: "fork", parent: 1, title: "worktree fork" }),
     sum(6, { kind: "subagent", parent: 5 }),
+    sum(10, { kind: "subagent", parent: 1, lifecycle: "background", model: { provider: "anthropic", modelId: "claude-sonnet-4-5" } }),
+    sum(11, { kind: "subagent", parent: 5, lifecycle: "background" }),
+    sum(12, { kind: "subagent", parent: 1, lifecycle: "future-lifecycle" }),
     sum(9),
   ],
 };

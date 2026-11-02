@@ -46,6 +46,10 @@ export interface ConversationSummary {
   readonly kind: "conversation" | "fork" | "subagent";
   /** Fork source conversation, or the conversation owning the subagent's task. */
   readonly parent?: ConversationId;
+  /** Subagents only: their stable lifecycle class. Absent on pre-5.26 hosts means foreground. */
+  readonly lifecycle?: "foreground" | "background";
+  /** Subagents only: the model they actually started with, when the host recorded it. */
+  readonly model?: ModelRef;
   /** Forks only: the parent entry the fork inherits through. */
   readonly forkedAt?: string;
   /** The generated or manual name when set, else the first user message; for a subagent its task. */

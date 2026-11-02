@@ -361,6 +361,49 @@ body {
   }
 }
 
+/* Background subagents form one flattened visual layer below their root.
+   The real parent tree is unchanged; these lines are decorative only. */
+.pigui-background-tree-children {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pigui-sidebar-row-gap);
+  margin-inline-start: 24px;
+}
+
+.pigui-background-tree-child {
+  position: relative;
+}
+
+.pigui-background-tree-child::before,
+.pigui-background-tree-child::after {
+  position: absolute;
+  left: -7px;
+  content: "";
+  pointer-events: none;
+}
+
+/* Intermediate branches continue through the gap to the next row. */
+.pigui-background-tree-child:not(:last-child)::before {
+  top: 50%;
+  bottom: calc(-1 * var(--pigui-sidebar-row-gap));
+  border-left: 1px dashed var(--muted);
+}
+
+/* Every branch bends into its row; the last needs no vertical continuation. */
+.pigui-background-tree-child::after {
+  top: calc(-1 * var(--pigui-sidebar-row-gap));
+  width: 12px;
+  height: calc(50% + var(--pigui-sidebar-row-gap));
+  border-bottom: 1px dashed var(--muted);
+  border-left: 1px dashed var(--muted);
+  border-bottom-left-radius: 6px;
+}
+
+.pigui-sidenav-session-row [role="group"][aria-hidden="true"] .pigui-background-tree-child::before,
+.pigui-sidenav-session-row [role="group"][aria-hidden="true"] .pigui-background-tree-child::after {
+  display: none;
+}
+
 /* Astryx nested SideNavItem children use padding-inline-start: var(--spacing-6)
    at StyleX ID-level specificity. Conversation rows already lead with a glyph
    slot the same size as the project folder, so that extra indent pushes titles

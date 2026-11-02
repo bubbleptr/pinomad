@@ -81,7 +81,7 @@ _Avoid_: 轮次、turn、回合
 _Avoid_: 分支（那是 Git 的概念）、副本、子对话
 
 **子代理（Subagent）**:
-父对话某次运行中派出去的任务，拥有自己的对话，和父对话共用执行检出。它属于派出它的那次运行，对用户只读，呈现方式和 task 一样：有状态和结果。可以按名字用某个具名 Agent。
+父对话派出去的任务，拥有自己的对话，和父对话共用执行检出，可以按名字用某个具名 Agent。生命周期分为 Foreground 和 Background：Foreground 属于派出它的那次运行，在右侧 Tasks 呈现；Background 独立于那次运行，在左侧按 root 家族压成一层展示（包括 fork 的后代），真实 parent 不变。两种都对用户只读；在主内容区打开时也不能提交、重试、改模型或普通中止。
 _Avoid_: 子任务、worker、子对话
 
 **具名 Agent（Agent Role）**:
