@@ -93,6 +93,35 @@ export function launchdState(disabled: boolean, printed: string | undefined): Se
   };
 }
 
+/**
+ * The service state from `systemctl --user show` (LoadState, ActiveState,
+ * SubState, MainPID, ExecMainStatus, UnitFileState). Stopped means disabled
+ * and done: inactive or failed. A unit waiting out RestartSec is
+ * "activating", and systemd still starts it even when disabled.
+ */
+export function systemdState(shown: string): ServiceState {
+  const fields = Object.fromEntries(shown.trim().split("\n").map((line) => line.split("=", 2) as [string, string]));
+  if (fields.LoadState === "not-found") return NOT_INSTALLED;
+  const pid = Number(fields.MainPID ?? "0");
+  const active = fields.ActiveState === "active";
+  const done = fields.ActiveState === "inactive" || fields.ActiveState === "failed";
+  if (fields.UnitFileState === "disabled" && done) return { installed: true, stopped: true, running: false, detail: "stopped" };
+  return {
+    installed: true,
+    stopped: false,
+    running: active && pid > 0,
+    ...(pid > 0 ? { pid } : {}),
+    detail: [
+      fields.ActiveState ?? "unknown",
+      fields.SubState ?? "",
+      ...(pid > 0 ? [`pid ${pid}`] : []),
+      ...(fields.ExecMainStatus === undefined || fields.ExecMainStatus === "0" ? [] : [`last exit ${fields.ExecMainStatus}`]),
+    ]
+      .filter((part) => part !== "")
+      .join(", "),
+  };
+}
+
 /** macOS: ~/Library/LaunchAgents/pinomad.host.plist, gui/<uid>/pinomad.host. */
 const launchd: ServiceManager = {
   async install(spec) {
@@ -223,26 +252,7 @@ const systemd: ServiceManager = {
       ({ stdout }) => stdout,
       () => undefined,
     );
-    if (shown === undefined) return NOT_INSTALLED;
-    const fields = Object.fromEntries(shown.trim().split("\n").map((line) => line.split("=", 2) as [string, string]));
-    if (fields.LoadState === "not-found") return NOT_INSTALLED;
-    const pid = Number(fields.MainPID ?? "0");
-    const active = fields.ActiveState === "active";
-    if (fields.UnitFileState === "disabled" && !active) return { installed: true, stopped: true, running: false, detail: "stopped" };
-    return {
-      installed: true,
-      stopped: false,
-      running: active && pid > 0,
-      ...(pid > 0 ? { pid } : {}),
-      detail: [
-        fields.ActiveState ?? "unknown",
-        fields.SubState ?? "",
-        ...(pid > 0 ? [`pid ${pid}`] : []),
-        ...(fields.ExecMainStatus === undefined || fields.ExecMainStatus === "0" ? [] : [`last exit ${fields.ExecMainStatus}`]),
-      ]
-        .filter((part) => part !== "")
-        .join(", "),
-    };
+    return shown === undefined ? NOT_INSTALLED : systemdState(shown);
   },
 
   async logs(_dataDir, lines, follow) {

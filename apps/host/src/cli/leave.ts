@@ -104,10 +104,14 @@ export async function leaveServer(
       const rewriting = stripped !== undefined && stripped.hostArgs.length !== previous!.hostArgs.length;
       if (state!.stopped) {
         // `service stop` (#501) keeps it off: nothing runs to restart, and a
-        // rewrite turns it back on, so it goes off again right after.
+        // rewrite turns it back on, so it goes off again right after, also
+        // when the rewrite enabled it and then failed.
         if (rewriting) {
-          await manager.install(stripped!);
-          await manager.stop();
+          try {
+            await manager.install(stripped!);
+          } finally {
+            await manager.stop();
+          }
         }
         notes.push(`the service is stopped and stays off until \`${commandHint("service")} start\``);
       } else {

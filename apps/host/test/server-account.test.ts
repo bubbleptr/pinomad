@@ -723,6 +723,29 @@ describe("leaveServer", () => {
     }
   });
 
+  it("turns a stopped service back off even when rewriting it fails after enabling it", async () => {
+    const started = await startServer();
+    const data = await tempDir();
+    defer(data.remove);
+    const fake = fakeManager(seededSpec(data.path, []));
+    await joinServer({ origin: started.origin, token: await joinToken(started), dataDir: data.path }, { manager: fake.manager });
+    await fake.manager.install(seededSpec(data.path, ["--relay", "https://old.example.com"]));
+    await fake.manager.stop();
+    // systemd: enable went through, the restart hit the start limit.
+    const install = fake.manager.install;
+    fake.manager = {
+      ...fake.manager,
+      install: async (spec) => {
+        await install(spec);
+        throw new Error("start-limit-hit");
+      },
+    };
+
+    const outcome = await leaveServer({ dataDir: data.path }, { manager: fake.manager });
+    expect(outcome.warnings.join(" ")).toMatch(/start-limit-hit/);
+    expect((await fake.manager.state()).stopped).toBe(true);
+  });
+
   it("refuses to leave when there is nothing to leave", async () => {
     const data = await tempDir();
     defer(data.remove);

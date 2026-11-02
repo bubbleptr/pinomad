@@ -126,7 +126,16 @@ export async function stopService({
     });
     if (address !== undefined) await waitUntilIdle(address, connect, log);
   }
-  await manager.stop();
+  // Ctrl-C (the Mac App's Cancel) only interrupts the wait: once launchd's
+  // disable ran, stopping before bootout would leave a running host that
+  // no longer starts at login.
+  const holdInterrupt = (): void => {};
+  process.on("SIGINT", holdInterrupt);
+  try {
+    await manager.stop();
+  } finally {
+    process.off("SIGINT", holdInterrupt);
+  }
   // launchd's bootout can fail after disable went through, leaving the host running.
   const after = await manager.state();
   if (!after.stopped) {
