@@ -817,6 +817,28 @@ describe("relay link", () => {
     expect(await readRemovalNotice(dir.path)).toBeUndefined();
   });
 
+  it("keeps a server.json a re-join wrote after this link started, even for the same server", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const { origin, hostId } = await startTestRelay(dir.path);
+    await writeServerConfig(dir.path, { origin, username: "admin" });
+    const host = await startFauxHost(defer, {
+      dataDir: dir.path,
+      relay: { origin, reconnectDelayMs: QUICK_RECONNECT },
+    });
+    await waitForRelayState(host, "registered");
+    // `pinomad up` re-joined this server while the old link still ran: a
+    // fresh binding the removal below didn't hit.
+    await writeServerConfig(dir.path, { origin, username: "admin" });
+    const rejoined = await readServerConfig(dir.path);
+
+    await removeFromAccount(origin, hostId);
+    await waitForRelayState(host, "removed");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(await readServerConfig(dir.path)).toEqual(rejoined);
+    expect(await readRemovalNotice(dir.path)).toBeUndefined();
+  });
+
   it("disconnects a relay-carried device when it is revoked", async () => {
     const dir = await tempDir();
     defer(dir.remove);

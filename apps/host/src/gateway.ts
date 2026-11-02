@@ -588,6 +588,9 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   });
   if (secure?.relay !== undefined) {
     const relayOrigin = secure.relay.origin;
+    // The binding this link runs under: a removal only takes back that
+    // server.json, never one a later re-join wrote (#512).
+    const linkBinding = (await readServerConfig(options.dataDir).catch(() => undefined))?.binding;
     /**
      * The binding this control connection may act for, re-read on every
      * account request: a re-join rewrites server.json before the host
@@ -673,7 +676,10 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
           // server — join and up write it without --relay.
           broadcast("warning", state.reason);
           console.error(state.reason);
-          forgetRemovedServer(options.dataDir, relayOrigin).catch((error: unknown) => {
+          forgetRemovedServer(options.dataDir, {
+            origin: relayOrigin,
+            ...(linkBinding === undefined ? {} : { binding: linkBinding }),
+          }).catch((error: unknown) => {
             console.error(`could not remove ${SERVER_CONFIG_FILE}: ${error instanceof Error ? error.message : String(error)}`);
           });
         } else {

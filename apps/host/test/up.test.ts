@@ -322,7 +322,7 @@ describe("statusReport", () => {
     const started = await startServer();
     const fake = fakeManager(seededSpec(dir, []));
     await joinServer({ origin: started.origin, token: await joinToken(started), dataDir: dir }, { manager: fake.manager });
-    expect(await forgetRemovedServer(dir, started.origin)).toBe(true);
+    expect(await forgetRemovedServer(dir, (await readServerConfig(dir))!)).toBe(true);
 
     const removed = await statusReport({ dataDir: dir }, { manager: fake.manager });
     expect(removed.server).toBeUndefined();
