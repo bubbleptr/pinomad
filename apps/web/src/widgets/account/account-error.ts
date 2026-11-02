@@ -50,6 +50,8 @@ export function accountErrorMessage(error: AccountError): string {
       return "Use a password of at least 12 characters.";
     case "wrong_password":
       return "The current password is wrong.";
+    case "remove_unsupported":
+      return "This server can't remove hosts yet. Run pinomad leave on the host instead.";
     case "current_device":
       return "That's the device you're using. Sign out instead.";
     case "admin_account":

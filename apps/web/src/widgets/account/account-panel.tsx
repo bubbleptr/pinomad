@@ -29,6 +29,7 @@ import { OFFICIAL_SERVER_ORIGIN } from "../../shared/official-server.ts";
 import { useNow } from "../../shared/use-now.ts";
 import { accountErrorMessage } from "./account-error.ts";
 import { AddHostSteps } from "./add-host.tsx";
+import { RemoveHost } from "./remove-host.tsx";
 
 /**
  * Sign in to the account server, see its hosts, pair or connect to them, and
@@ -289,6 +290,7 @@ function HostList({
   const now = useNow(30_000);
   const { focus, focusHost } = useHosts();
   const [pairing, setPairing] = useState<string>();
+  const [removing, setRemoving] = useState<AccountHostMatch["host"]>();
   const pair = (hostId: string): void => {
     setPairing(hostId);
     onError(undefined);
@@ -320,10 +322,24 @@ function HostList({
               isRevoked={match.stored !== undefined && state.rejectedHostKeys.includes(match.stored.hostKey)}
               isPairing={pairing === match.host.hostId}
               isBusy={pairing !== undefined}
+              isRemoveDisabled={removing !== undefined}
               onPair={() => pair(match.host.hostId)}
+              onRemove={() => setRemoving(match.host)}
             />
           ))}
         </List>
+      )}
+      {removing === undefined ? null : (
+        <VStack gap={2}>
+          <Text weight="semibold">Remove {removing.name}</Text>
+          <RemoveHost
+            account={account}
+            hostId={removing.hostId}
+            name={removing.name}
+            serverOrigin={state.serverOrigin}
+            onClose={() => setRemoving(undefined)}
+          />
+        </VStack>
       )}
     </VStack>
   );
@@ -343,7 +359,9 @@ function HostRow({
   isRevoked,
   isPairing,
   isBusy,
+  isRemoveDisabled,
   onPair,
+  onRemove,
 }: {
   match: AccountHostMatch;
   now: number;
@@ -351,7 +369,9 @@ function HostRow({
   isRevoked: boolean;
   isPairing: boolean;
   isBusy: boolean;
+  isRemoveDisabled: boolean;
   onPair: () => void;
+  onRemove: () => void;
 }) {
   const { focusHost } = useHosts();
   const { host, status, stored } = match;
@@ -390,7 +410,12 @@ function HostRow({
       label={host.name}
       description={detail}
       startContent={<StatusDot variant={host.online ? "success" : "neutral"} label={host.online ? "Online" : "Offline"} />}
-      endContent={end}
+      endContent={
+        <HStack gap={1} vAlign="center">
+          {end}
+          <Button label="Remove" variant="ghost" size="sm" isDisabled={isRemoveDisabled} onClick={onRemove} />
+        </HStack>
+      }
     />
   );
 }

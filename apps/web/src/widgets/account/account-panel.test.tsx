@@ -66,6 +66,7 @@ function fakeModel(initial: AccountState): AccountModel & { setState(next: Accou
     deleteAccount: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     listDevices: vi.fn(() => Promise.resolve({ ok: true as const, value: [] as readonly AccountDevice[] })),
     kickDevice: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
+    removeHost: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     pairHost: vi.fn(() => Promise.resolve({ ok: false as const, error: { code: "host_timeout" } })),
     retryUnsavedHost: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     hostRejected: vi.fn(),
@@ -462,6 +463,44 @@ describe("account devices (#452)", () => {
     renderPanel(model);
     await act(async () => {});
     expect(screen.queryByText("Devices")).toBeNull();
+  });
+});
+
+describe("removing a host (#512)", () => {
+  const boxId = "h".repeat(43);
+  const withHost = () =>
+    fakeModel(signedIn([{ host: host({ name: "box", hostId: boxId }), status: "paired", stored: stored(KEY_A), linkable: false, autoRegister: false }]));
+
+  it("removes a host after the password and says what that does", async () => {
+    const model = withHost();
+    renderPanel(model);
+    await userEvent.click(within(row("box")).getByRole("button", { name: "Remove" }));
+    expect(screen.getByText(/stops connecting through nomad\.example/)).toBeTruthy();
+    expect(screen.getByText(/pinomad up/)).toBeTruthy();
+    await act(async () => {
+      await userEvent.type(screen.getByLabelText("Password"), "my password{Enter}");
+    });
+    expect(model.removeHost).toHaveBeenCalledWith({ hostId: boxId, password: "my password" });
+    expect(screen.queryByLabelText("Password")).toBeNull();
+  });
+
+  it("keeps the form when the password is wrong", async () => {
+    const model = withHost();
+    vi.mocked(model.removeHost).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
+    renderPanel(model);
+    await userEvent.click(within(row("box")).getByRole("button", { name: "Remove" }));
+    await userEvent.type(screen.getByLabelText("Password"), "wrong{Enter}");
+    expect(await screen.findByText("The current password is wrong.")).toBeTruthy();
+    expect(screen.getByLabelText("Password")).toBeTruthy();
+  });
+
+  it("says so when the server can't remove hosts", async () => {
+    const model = withHost();
+    vi.mocked(model.removeHost).mockResolvedValueOnce({ ok: false, error: { code: "remove_unsupported" } });
+    renderPanel(model);
+    await userEvent.click(within(row("box")).getByRole("button", { name: "Remove" }));
+    await userEvent.type(screen.getByLabelText("Password"), "pw{Enter}");
+    expect(await screen.findByText(/pinomad leave/)).toBeTruthy();
   });
 });
 

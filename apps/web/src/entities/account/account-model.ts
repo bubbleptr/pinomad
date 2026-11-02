@@ -132,6 +132,15 @@ export interface AccountModel {
    * (ADR-0037 §3). A refusal keeps this session; the caller reloads the list.
    */
   kickDevice(input: { id: number; password: string }): Promise<AccountResult<void>>;
+  /**
+   * Takes a host off the account (#512), with the password as for a kick: it
+   * stops connecting through the server until `pinomad up` runs on it again.
+   * This device then forgets the key the account gave it for that host; a QR
+   * pairing stays. A 404 refreshes the list: a host still on it means a
+   * server that can't remove hosts (`remove_unsupported`), otherwise it was
+   * already gone (`not_found`).
+   */
+  removeHost(input: { hostId: string; password: string }): Promise<AccountResult<void>>;
   createJoinToken(): Promise<AccountResult<JoinToken>>;
   /**
    * The host waiting behind a code typed from its terminal (#496); the code
@@ -327,12 +336,12 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   const live = (active: AccountClient, started: number): boolean => client === active && started === epoch;
 
   /**
-   * Drops every stored host linked to `origin`'s account, closing its
-   * runtime, without declining it: the owner signing in here again later
-   * should get those hosts back on their own (#494). False when any of them
-   * may still be stored.
+   * Drops every stored host linked to `origin`'s account (or only `hostId`),
+   * closing its runtime, without declining it: the owner signing in here
+   * again later should get those hosts back on their own (#494). False when
+   * any of them may still be stored.
    */
-  const forgetAccountHosts = async (origin: string): Promise<boolean> => {
+  const forgetAccountHosts = async (origin: string, hostId?: string): Promise<boolean> => {
     let stored: StoredHost[];
     try {
       stored = await deps.hosts.list();
@@ -343,7 +352,9 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     // Only keys the account issued: a QR pairing that later adopted the link
     // is the host's own, and stays.
     const vouched = (host: StoredHost): boolean =>
-      host.account?.vouched === true && normalizeServerOrigin(host.account.serverOrigin) === origin;
+      host.account?.vouched === true
+      && normalizeServerOrigin(host.account.serverOrigin) === origin
+      && (hostId === undefined || host.account.hostId === hostId);
     for (const host of stored.filter(vouched)) {
       await (deps.removeHost?.(host.hostKey) ?? deps.hosts.remove(host.hostKey)).catch((error: unknown) =>
         console.error("Could not forget a host", error),
@@ -689,6 +700,37 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     void tick(HOST_WATCH_REFRESHES);
   };
 
+  const removeHost = async ({ hostId, password }: { hostId: string; password: string }): Promise<AccountResult<void>> => {
+    if (client === undefined || state.status !== "signed-in") return fail("unauthenticated");
+    const active = client;
+    const started = epoch;
+    const user = state.user;
+    const result = await active.removeHost(hostId, password);
+    if (!live(active, started)) return result;
+    if (!result.ok) {
+      if (isUnauthenticated(result.error)) signedOut();
+      else if (result.error.code === "not_found") {
+        // Removed from another device, or a server that predates removal
+        // (also 404): the list says which. Either way this device's pairing
+        // stays — nothing here confirmed the host left.
+        const listed = await refresh(active, user);
+        if (listed.ok && listed.value.some((match) => match.host.hostId === hostId)) return fail("remove_unsupported");
+      }
+      return result;
+    }
+    // Nothing may pair the gone host again: an automatic flight in progress,
+    // a failed save waiting for its retry, a watch after a confirm.
+    cancelAccountRegistration(hostId);
+    if (unsaved.delete(slotKey(active.origin, hostId))) publishUnsaved();
+    clearTimeout(hostWatches.get(hostId)?.timer);
+    hostWatches.delete(hostId);
+    // A failure to forget is logged there; the server side is done, and the
+    // host stops answering through it either way.
+    await forgetAccountHosts(active.origin, hostId);
+    if (live(active, started)) await refresh(active, user);
+    return { ok: true, value: undefined };
+  };
+
   /** Login and sign-up share everything but the call that mints the session. */
   const signIn = async (
     serverOrigin: string | undefined,
@@ -824,6 +866,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       ),
     listDevices: () => authed((active) => active.listDevices()),
     kickDevice: ({ id, password }) => authed((active) => active.kickDevice(id, password)),
+    removeHost,
     createJoinToken: () => authed((active) => active.createJoinToken()),
     lookupHostLink: (userCode) => authed((active) => active.lookupHostLink(userCode)),
     confirmHostLink: (userCode) => authed((active) => active.confirmHostLink(userCode)),

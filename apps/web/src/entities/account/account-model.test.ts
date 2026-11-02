@@ -1233,3 +1233,107 @@ describe("signing out of a shared computer (#494)", () => {
     expect(setup.paired).toEqual([]);
   });
 });
+
+describe("removing a host from the account (#512)", () => {
+  type Answer = Awaited<ReturnType<AccountFetch>>;
+  const answer = (status: number, body?: unknown): Answer => ({
+    status,
+    json: () => (body === undefined ? Promise.reject(new Error("empty")) : Promise.resolve(body)),
+    text: () => Promise.resolve(body === undefined ? "" : JSON.stringify(body)),
+  });
+
+  /**
+   * Signed in (cookie mode) with `stored` paired and the account listing
+   * `listed`; a 204 from `remove` takes h1 off the list. `removed` records
+   * every host the model drops.
+   */
+  const signedInWith = async (stored: StoredHost[], remove: () => Answer, listed: string[] = ["h1"]) => {
+    const store = hosts(stored);
+    const removed: string[] = [];
+    const calls: { url: string; init: AccountFetchInit | undefined }[] = [];
+    let accountHosts = listed.map((hostId) => accountHost("A".repeat(43), hostId));
+    const impl: AccountFetch = (url, init) => {
+      calls.push({ url, init });
+      if (url.endsWith("/api/me")) return Promise.resolve(answer(200, USER));
+      if (url.endsWith("/api/hosts")) return Promise.resolve(answer(200, accountHosts));
+      if (url.endsWith("/api/hosts/h1/remove")) {
+        const result = remove();
+        if (result.status === 204) accountHosts = accountHosts.filter((row) => row.hostId !== "h1");
+        return Promise.resolve(result);
+      }
+      return Promise.resolve(answer(404, { error: "not_found" }));
+    };
+    const setup = makeModel({
+      fake: { impl, calls },
+      store,
+      removeHost: (hostKey) => {
+        removed.push(hostKey);
+        return store.remove(hostKey);
+      },
+    });
+    await vi.waitFor(() => expect(setup.model.state.status).toBe("signed-in"));
+    const hostLists = () => calls.filter((call) => call.url.endsWith("/api/hosts")).length;
+    const listedIds = () =>
+      setup.model.state.status === "signed-in" ? setup.model.state.hosts.map((match) => match.host.hostId) : [];
+    return { ...setup, removed, hostLists, listedIds };
+  };
+
+  const vouched = (hostId: string) => storedHost({ account: { serverOrigin: ORIGIN, hostId, vouched: true } });
+  /** A QR pairing that later adopted the account link. */
+  const adopted = (hostId: string) => storedHost({ account: { serverOrigin: ORIGIN, hostId } });
+
+  it("sends the password, then forgets the account's key for that host here; QR pairings and other hosts stay", async () => {
+    const mine = vouched("h1");
+    const qr = adopted("h1");
+    const other = vouched("h2");
+    const setup = await signedInWith([mine, qr, other], () => answer(204), ["h1", "h2"]);
+
+    expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
+    const call = setup.calls.find((each) => each.url.endsWith("/api/hosts/h1/remove"))!;
+    expect(JSON.parse(call.init!.body!)).toEqual({ password: "pw" });
+    expect(setup.removed).toEqual([mine.hostKey]);
+    expect(setup.store.stored).toEqual([qr, other]);
+    expect(setup.listedIds()).toEqual(["h2"]);
+  });
+
+  it("keeps the session and every stored host when the password is wrong", async () => {
+    const mine = vouched("h1");
+    const setup = await signedInWith([mine], () => answer(403, { error: "wrong_password" }));
+    expect(await setup.model.removeHost({ hostId: "h1", password: "nope" })).toEqual({
+      ok: false,
+      error: { code: "wrong_password", status: 403 },
+    });
+    expect(setup.removed).toEqual([]);
+    expect(setup.store.stored).toEqual([mine]);
+    expect(setup.model.state.status).toBe("signed-in");
+  });
+
+  it("on a 404 refreshes the list; a host still listed means the server can't remove hosts", async () => {
+    const mine = vouched("h1");
+    const setup = await signedInWith([mine], () => answer(404, { error: "not_found" }));
+    const before = setup.hostLists();
+    expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({
+      ok: false,
+      error: { code: "remove_unsupported" },
+    });
+    expect(setup.hostLists()).toBe(before + 1);
+    expect(setup.store.stored).toEqual([mine]);
+  });
+
+  it("on a 404 for a host already off the list, says so without touching this device's pairing", async () => {
+    const mine = vouched("h1");
+    const setup = await signedInWith([mine], () => answer(404, { error: "not_found" }), []);
+    expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({
+      ok: false,
+      error: { code: "not_found", status: 404 },
+    });
+    expect(setup.store.stored).toEqual([mine]);
+  });
+
+  it("signs out when the session is gone", async () => {
+    const setup = await signedInWith([vouched("h1")], () => answer(401, { error: "unauthenticated" }));
+    expect((await setup.model.removeHost({ hostId: "h1", password: "pw" })).ok).toBe(false);
+    expect(setup.model.state.status).toBe("signed-out");
+    expect(setup.store.stored).toHaveLength(1);
+  });
+});
