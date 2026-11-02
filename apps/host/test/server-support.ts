@@ -67,9 +67,14 @@ export async function joinToken(started: Started): Promise<string> {
  * A ServiceManager that never touches the OS: installs are recorded and the
  * "installed" state is whatever spec was seeded or last installed.
  */
-export function fakeManager(seed?: ServiceSpec): { manager: ServiceManager; installs: ServiceSpec[]; restarts: () => number } {
+/** `stopped`: the seeded service was turned off with `service stop` (#501); an install turns it back on. */
+export function fakeManager(
+  seed?: ServiceSpec,
+  options?: { readonly stopped?: boolean },
+): { manager: ServiceManager; installs: ServiceSpec[]; restarts: () => number } {
   const installs: ServiceSpec[] = [];
   let spec = seed;
+  let stopped = options?.stopped === true;
   let restarts = 0;
   return {
     installs,
@@ -78,6 +83,7 @@ export function fakeManager(seed?: ServiceSpec): { manager: ServiceManager; inst
       async install(next) {
         installs.push(next);
         spec = next;
+        stopped = false;
         return "/fake/pinomad.service";
       },
       async uninstall() {
@@ -86,8 +92,19 @@ export function fakeManager(seed?: ServiceSpec): { manager: ServiceManager; inst
       async restart() {
         restarts += 1;
       },
+      async start() {
+        stopped = false;
+      },
+      async stop() {
+        stopped = true;
+      },
       async state() {
-        return { installed: spec !== undefined, running: spec !== undefined, detail: spec === undefined ? "not installed" : "running" };
+        return {
+          installed: spec !== undefined,
+          stopped: spec !== undefined && stopped,
+          running: spec !== undefined && !stopped,
+          detail: spec === undefined ? "not installed" : stopped ? "stopped" : "running",
+        };
       },
       async logs() {},
       async read() {

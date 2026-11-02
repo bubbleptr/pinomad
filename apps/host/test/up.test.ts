@@ -91,6 +91,15 @@ describe("upHost", () => {
     expect(fake.restarts()).toBe(0);
   });
 
+  it("turns a service the Mac App switched off back on, even with the same args (#501)", async () => {
+    const dir = await dataDir();
+    const fake = fakeManager(seededSpec(dir, ["--port", "7500", "--remote-port", "7000"]), { stopped: true });
+    const outcome = await upHost({ dataDir: dir, reach: { server: false, lan: true } }, { manager: fake.manager });
+    expect(outcome.service).toBe("updated");
+    expect(fake.installs).toHaveLength(1);
+    expect((await fake.manager.state()).running).toBe(true);
+  });
+
   it("turning LAN off drops --remote-port and --public-url and keeps the rest", async () => {
     const dir = await dataDir();
     const started = await startServer();

@@ -9,7 +9,9 @@ const manager = (): ServiceManager => ({
   install: async () => "/fake/pinomad.service",
   uninstall: async () => {},
   restart: async () => {},
-  state: async () => ({ installed: true, running: true, detail: "running" }),
+  start: async () => {},
+  stop: async () => {},
+  state: async () => ({ installed: true, stopped: false, running: true, detail: "running" }),
   logs: async () => {},
   read: async () => undefined,
 });
