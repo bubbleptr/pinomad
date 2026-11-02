@@ -8,7 +8,7 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import { commandHint } from "../distribution.ts";
-import { normalizeOrigin, readServerConfig } from "../server-config.ts";
+import { normalizeOrigin, readRemovalNotice, readServerConfig } from "../server-config.ts";
 import { argValue, withoutArg, withoutRelayArgs } from "../service/definition.ts";
 import { serviceManager } from "../service/manager.ts";
 import { DEFAULT_DATA_DIR } from "./host-address.ts";
@@ -42,6 +42,10 @@ export function resolveReach(
   if (current !== undefined) return { server: flags.server ?? current.server, lan: flags.lan ?? current.lan };
   return { server: flags.server ?? !flags.lan, lan: flags.lan ?? !flags.server };
 }
+
+/** The server that last removed this host (#512); an unreadable notice names none. */
+const lastRemovedOrigin = async (dataDir: string): Promise<string | undefined> =>
+  (await readRemovalNotice(dataDir).catch(() => undefined))?.origin;
 
 /** How the host is reached today, or undefined on a host with neither a service nor a join. */
 async function currentReach(dataDir: string, deps?: JoinDeps): Promise<Reach | undefined> {
@@ -90,8 +94,9 @@ export async function upHost(
   const manager = deps?.manager ?? serviceManager();
   const slot = await openServiceSlot(dataDir, manager);
   const config = await readServerConfig(dataDir);
-  // Without --origin a joined host stays with its own server.
-  const origin = normalizeOrigin(args.origin ?? config?.origin ?? OFFICIAL_SERVER_ORIGIN);
+  // Without --origin a joined host stays with its own server, and one the
+  // account removed goes back to the server that removed it (#512).
+  const origin = normalizeOrigin(args.origin ?? config?.origin ?? (await lastRemovedOrigin(dataDir)) ?? OFFICIAL_SERVER_ORIGIN);
   if (reach.server && config !== undefined && normalizeOrigin(config.origin) !== origin) {
     throw new Error(
       `this host is joined to ${config.origin} — run \`${commandHint("leave")}\` first to join ${origin}, ` +
@@ -193,7 +198,9 @@ export async function main(argv: readonly string[], deps?: UpDeps): Promise<void
   const log = deps?.log ?? ((line: string) => console.log(line));
   try {
     const dataDir = resolve(values["data-dir"] ?? DEFAULT_DATA_DIR);
-    const origin = normalizeOrigin(values.origin ?? (await readServerConfig(dataDir))?.origin ?? OFFICIAL_SERVER_ORIGIN);
+    const origin = normalizeOrigin(
+      values.origin ?? (await readServerConfig(dataDir))?.origin ?? (await lastRemovedOrigin(dataDir)) ?? OFFICIAL_SERVER_ORIGIN,
+    );
     // Also refuses another data dir's service before anyone is asked anything.
     const current = await currentReach(dataDir, deps);
     let reach = resolveReach({ server: values.server, lan: values.lan }, current);

@@ -12,7 +12,7 @@ import { browserCommand } from "../src/cli/host-link.ts";
 import { joinServer } from "../src/cli/join.ts";
 import { leaveServer } from "../src/cli/leave.ts";
 import { probeServerAccounts } from "../src/cli/server-ops.ts";
-import { readServerBinding, readServerConfig, writeServerConfig } from "../src/server-config.ts";
+import { markRemoved, readRemovalNotice, readServerBinding, readServerConfig, writeServerConfig } from "../src/server-config.ts";
 import type { ServiceSpec } from "../src/service/definition.ts";
 import {
   asUser,
@@ -422,6 +422,20 @@ describe("leaveServer", () => {
     expect(hostsRow(started.accounts, joined.hostId)).toBeUndefined();
     expect(await readServerConfig(data.path)).toBeUndefined();
     expect(fake.installs.at(-1)!.hostArgs).toEqual(["--port", "7420"]);
+  });
+
+  it("clears a join the account already removed, without asking the server (#512)", async () => {
+    const started = await startServer();
+    const data = await tempDir();
+    defer(data.remove);
+    const fake = fakeManager(seededSpec(data.path, []));
+    await joinServer({ origin: started.origin, token: await joinToken(started), dataDir: data.path }, { manager: fake.manager });
+    await markRemoved(data.path, (await readServerConfig(data.path))!);
+
+    const outcome = await leaveServer({ dataDir: data.path }, { manager: fake.manager });
+    expect(outcome.notes.join(" ")).toMatch(/already removed/);
+    expect(await stat(join(data.path, "server.json")).catch(() => undefined)).toBeUndefined();
+    expect(await readRemovalNotice(data.path)).toBeUndefined();
   });
 
   it("still removes server.json when the server is unreachable, and says so", async () => {

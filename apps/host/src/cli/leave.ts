@@ -9,7 +9,7 @@ import { parseArgs } from "node:util";
 import { relayHostId } from "@pinomad/protocol/relay.ts";
 import { loadHostKey, loadRelayKey } from "../devices.ts";
 import { commandHint } from "../distribution.ts";
-import { readServerConfig, removeServerConfig } from "../server-config.ts";
+import { readRemovalNotice, readServerConfig, removeServerConfig } from "../server-config.ts";
 import { argValue, withoutRelayArgs } from "../service/definition.ts";
 import { serviceManager, type ServiceManager } from "../service/manager.ts";
 import { assertSecureServerOrigin, probeServerAccounts, runServerOperation } from "./server-ops.ts";
@@ -38,7 +38,13 @@ export async function leaveServer(
 ): Promise<LeaveOutcome> {
   const dataDir = resolve(args.dataDir);
   const config = await readServerConfig(dataDir);
-  if (config === undefined) throw new Error(`not joined — no server.json in ${dataDir}`);
+  if (config === undefined) {
+    // The account removed this host already (#512): only local state is left.
+    const removed = await readRemovalNotice(dataDir);
+    if (removed === undefined) throw new Error(`not joined — no server.json in ${dataDir}`);
+    await removeServerConfig(dataDir);
+    return { origin: removed.origin, warnings: [], notes: ["the account had already removed this host"] };
+  }
   const origin = config.origin;
   const warnings: string[] = [];
   const notes: string[] = [];

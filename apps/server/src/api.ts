@@ -3,7 +3,7 @@
 // POST /api/logout (`{ revoke: true }` also takes this device off its hosts, #494),
 // POST /api/sessions/revoke-all, GET /api/me, POST /api/password (#450),
 // POST /api/me/delete (#451), GET /api/devices and POST /api/devices/:id/kick
-// (ADR-0037),
+// (ADR-0037), POST /api/hosts/:hostId/remove (#512),
 // POST /api/join-tokens, POST /api/push-tokens and POST /api/push-tokens/remove
 // (ADR-0036), and for the admin GET/POST /api/invites and
 // POST /api/invites/revoke (#449). Host links (#495, RFC 8628) put a device
@@ -72,8 +72,8 @@ export interface ApiContext {
   readonly trustProxy: boolean;
   /** Server-vouched pairing (ADR-0022 §4) for /api/hosts. */
   readonly pairing: PairingBroker;
-  /** Closes a host's control connection once its account binding is gone. */
-  readonly disconnectHost: (hostId: string) => void;
+  /** Closes a host's control connection once its account binding is gone; `removed` when the account removed it (#512). */
+  readonly disconnectHost: (hostId: string, removed?: boolean) => void;
   /** Drops a deleted account's relay limit state: users.id is reusable, so a new account must not inherit it (#453). */
   readonly forgetAccount: (userId: number) => void;
   /**
@@ -496,6 +496,54 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     }
     if (accounts.revokeInvite(id)) send(204);
     else deny(404, "not_found");
+    return;
+  }
+
+  const hostRemove = /^\/api\/hosts\/([A-Za-z0-9_-]{43})\/remove$/.exec(pathname);
+  if (hostRemove !== null) {
+    if (method !== "POST") {
+      deny(405, "method_not_allowed", { allow: "POST" });
+      return;
+    }
+    const token = sessionToken(request);
+    if (token === undefined || accounts.authenticate(token) === undefined) {
+      deny(401, "unauthenticated");
+      return;
+    }
+    const body = await readJson(request);
+    if (!body.ok) {
+      deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
+      return;
+    }
+    // The password again, as for kicking a device (ADR-0037 §3): it acts on
+    // a machine other than this one, and only its terminal can bring it back.
+    const value = body.value as { password?: unknown } | null;
+    if (typeof value?.password !== "string" || [...value.password].length > MAX_PASSWORD_CODEPOINTS) {
+      deny(400, "invalid_request");
+      return;
+    }
+    // Re-read: the session may have ended while the body trickled in.
+    const current = accounts.authenticate(token);
+    if (current === undefined) {
+      deny(401, "unauthenticated");
+      return;
+    }
+    const result = await accounts.removeHost({
+      userId: current.userId,
+      username: current.username,
+      password: value.password,
+      hostId: hostRemove[1]!,
+    });
+    if (result.status === "limited") {
+      deny(429, "rate_limited");
+      return;
+    }
+    if (result.status === "refused") {
+      deny(result.reason === "not_found" ? 404 : 403, result.reason);
+      return;
+    }
+    ctx.disconnectHost(hostRemove[1]!, true);
+    send(204);
     return;
   }
 

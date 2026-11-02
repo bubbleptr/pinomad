@@ -30,7 +30,9 @@ export type RelayLinkState =
    * push but configures no APNs environment.
    */
   | { readonly status: "registered"; readonly push?: readonly ApnsEnvironment[] }
-  | { readonly status: "rejected"; readonly reason: string };
+  | { readonly status: "rejected"; readonly reason: string }
+  /** The account removed this host (#512): terminal, the link never dials again. */
+  | { readonly status: "removed"; readonly reason: string };
 
 /**
  * The host's answer to the server's `pairing-request` (ADR-0022 §4): a minted
@@ -406,6 +408,14 @@ export function startRelayLink(options: {
       }
     }
     if (stopped) return;
+    if (code === RELAY_CLOSE.hostRemoved) {
+      stopped = true;
+      setState({
+        status: "removed",
+        reason: `relay ${origin}: the account removed this host (${hostId}); join it again with \`pinomad up\` (${code})`,
+      });
+      return;
+    }
     const rejection = REJECTION_REASONS[code];
     if (rejection !== undefined) {
       const reason = `relay ${origin}: ${rejection(hostId)} (${code})`;
@@ -437,6 +447,7 @@ export function startRelayLink(options: {
     origin,
     state: () => state,
     sendPush(request) {
+      if (state.status === "removed") return Promise.resolve({ result: "unavailable", reason: "the account removed this host" });
       const socket = control;
       if (stopped || socket === undefined || socket.readyState !== WebSocket.OPEN || state.status !== "registered") {
         return Promise.resolve({ result: "retry", reason: "control disconnected" });

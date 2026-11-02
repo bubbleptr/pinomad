@@ -5,7 +5,7 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { commandHint } from "../distribution.ts";
-import { readServerConfig, type ServerConfig } from "../server-config.ts";
+import { readRemovalNotice, readServerConfig, type RemovalNotice, type ServerConfig } from "../server-config.ts";
 import { argValue } from "../service/definition.ts";
 import { serviceManager, type ServiceManager, type ServiceState } from "../service/manager.ts";
 import { DEFAULT_DATA_DIR } from "./host-address.ts";
@@ -13,6 +13,8 @@ import { reachabilityLine, versionLine } from "./service.ts";
 
 export interface StatusReport {
   readonly server?: ServerConfig;
+  /** Set when the account removed this host and it hasn't joined since (#512). */
+  readonly removed?: RemovalNotice;
   /** The service's LAN port; undefined when the LAN listener is off or there is no service. */
   readonly lanPort?: string;
   readonly service: ServiceState;
@@ -29,6 +31,7 @@ export async function statusReport(
   const dataDir = resolve(args.dataDir);
   const manager = deps?.manager ?? serviceManager();
   const server = await readServerConfig(dataDir);
+  const removed = server === undefined ? await readRemovalNotice(dataDir) : undefined;
   const service = await manager.state();
   const spec = service.installed ? await manager.read() : undefined;
   const own = spec !== undefined && resolve(spec.dataDir) === dataDir;
@@ -36,6 +39,7 @@ export async function statusReport(
   const port = own ? argValue(spec.hostArgs, "--port") : undefined;
   return {
     ...(server === undefined ? {} : { server }),
+    ...(removed === undefined ? {} : { removed }),
     ...(lanPort === undefined ? {} : { lanPort }),
     service,
     ...(port === undefined ? {} : { port }),
@@ -48,11 +52,13 @@ export async function main(argv: readonly string[]): Promise<void> {
   const dataDir = resolve(values["data-dir"] ?? DEFAULT_DATA_DIR);
   try {
     const report = await statusReport({ dataDir });
-    const { server } = report;
+    const { server, removed } = report;
     console.log(
-      server === undefined
-        ? `server: not joined (\`${commandHint("up")}\` to join)`
-        : `server: ${server.username === undefined ? "joined" : server.username} at ${server.origin}`,
+      server !== undefined
+        ? `server: ${server.username === undefined ? "joined" : server.username} at ${server.origin}`
+        : removed !== undefined
+          ? `server: removed from ${removed.username === undefined ? "its account" : `${removed.username}'s account`} at ${removed.origin} (\`${commandHint("up")}\` to join again)`
+          : `server: not joined (\`${commandHint("up")}\` to join)`,
     );
     console.log(`LAN and tailnet: ${report.lanPort === undefined ? "off" : `port ${report.lanPort}`}`);
     console.log(`service: ${report.service.installed ? report.service.detail : "not installed"}`);

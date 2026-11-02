@@ -97,7 +97,7 @@ import { SubagentDoc } from "./subagent-doc.ts";
 import { attachAutoTitle } from "./auto-title.ts";
 import { TitleDoc } from "./title-doc.ts";
 import { admitDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
-import { normalizeOrigin, readServerBinding, readServerConfig } from "./server-config.ts";
+import { markRemoved, normalizeOrigin, readServerBinding, readServerConfig, REMOVAL_NOTICE_FILE } from "./server-config.ts";
 import { attachPushSender, revokeDevice, setPushToken, type PushTimers, type PushTransport } from "./push.ts";
 import { toolTarget } from "@pinomad/protocol/tool-target.ts";
 import { type RelayLink, relayWsBase, startRelayLink } from "./relay-link.ts";
@@ -397,8 +397,12 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   // One LAN probe supplies both the pairing page and its direct candidate. The
   // relay stays first in Auto order, but a loopback relay is client-local and
   // never enters the published set, exactly like a loopback direct address.
+  // A link the account removed (#512) never dials again: it stays for its
+  // state and close(), but nothing may send a device to it.
+  const reachableRelay = (): RelayLink | undefined => (relay?.state().status === "removed" ? undefined : relay);
   const currentAdvertisement = (): { readonly endpoints: HostEndpoint[]; readonly advertiseUrl?: string } => {
     const advertiseUrl = remote?.advertiseUrl;
+    const relay = reachableRelay();
     const endpoints = remoteEndpointCandidates({
       ...(relay === undefined ? {} : { relay: { origin: relay.origin, hostId: relay.hostId } }),
       ...(advertiseUrl === undefined ? {} : { direct: { advertiseUrl } }),
@@ -447,6 +451,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
         // offer or leave the caller with a link older clients cannot use.
         const advertisement = currentAdvertisement();
         const endpointSet = checkedEndpointSet(advertisement.endpoints);
+        const relay = reachableRelay();
         const relayReachable = endpointSet.endpoints.some((endpoint) => endpoint.role === "relay");
         // The offer's source is the link it rides on: a reachable URL is a
         // "qr" offer; a loopback-only one is "local" (ADR-0020 §4, ADR-0022 §6).
@@ -588,6 +593,11 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   });
   if (secure?.relay !== undefined) {
     const relayOrigin = secure.relay.origin;
+    // The join this link runs under: a removal ends that one, never one a
+    // later re-join wrote (#512).
+    const startConfig = await readServerConfig(options.dataDir).catch(() => undefined);
+    const linkJoin =
+      startConfig !== undefined && normalizeOrigin(startConfig.origin) === normalizeOrigin(relayOrigin) ? startConfig : undefined;
     /**
      * The binding this control connection may act for, re-read on every
      * account request: a re-join rewrites server.json before the host
@@ -666,6 +676,21 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
           console.log(JSON.stringify({ event: "relay", status: "registered", origin: link.origin, hostId: link.hostId, push }));
         } else if (state.status === "connecting") {
           console.log(JSON.stringify({ event: "relay", status: "connecting", origin: link.origin }));
+        } else if (state.status === "removed") {
+          // Like `pinomad leave` from the other side (#512): the notice makes
+          // this join's server.json read as not joined, so a restart doesn't
+          // dial this server again and `pinomad status` says what happened.
+          // The service definition already names no server — join and up
+          // write it without --relay.
+          broadcast("warning", state.reason);
+          console.error(state.reason);
+          markRemoved(options.dataDir, {
+            origin: relayOrigin,
+            ...(linkJoin?.binding === undefined ? {} : { binding: linkJoin.binding }),
+            ...(linkJoin?.username === undefined ? {} : { username: linkJoin.username }),
+          }).catch((error: unknown) => {
+            console.error(`could not write ${REMOVAL_NOTICE_FILE}: ${error instanceof Error ? error.message : String(error)}`);
+          });
         } else {
           broadcast("warning", state.reason);
           console.error(state.reason);

@@ -18,11 +18,19 @@ export async function tempDir(dirs: string[], prefix = "pinomad-server-"): Promi
   return dir;
 }
 
+/** Rewrites a current database back to schema 6: no record of removed hosts (#512). */
+export function downgradeToSchema6(dataDir: string): void {
+  const db = new DatabaseSync(join(dataDir, "server.sqlite"));
+  db.exec("DROP TABLE removed_hosts; PRAGMA user_version = 6;");
+  db.close();
+}
+
 /**
  * Rewrites a current database back to schema 5: no host-link requests, join
  * tokens bound to no host (#495).
  */
 export function downgradeToSchema5(dataDir: string): void {
+  downgradeToSchema6(dataDir);
   const db = new DatabaseSync(join(dataDir, "server.sqlite"));
   db.exec(`
     DROP TABLE host_link_requests;
