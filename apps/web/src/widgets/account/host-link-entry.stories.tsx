@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { HOST_LINK_REQUEST, signedIn, withAccount } from "../../test/story-fixtures.tsx";
-import { HostLinkCodeForm, HostLinkConfirm, HostLinkEntry, HostLinkOutcome } from "./host-link-entry.tsx";
+import { HostLinkCodeForm, HostLinkConfirm, HostLinkEntry, HostLinkOutcome, HostLinkRequestEntry } from "./host-link-entry.tsx";
 
 // Confirming a host that ran `pinomad join <origin>` without a token (#496),
 // one story per step. The container starts on the entry; the later steps are
@@ -34,6 +34,21 @@ export const LookupRateLimited: Story = {
   render: () => (
     <HostLinkCodeForm code="KXHNBWCV" error={{ code: "rate_limited", status: 429 }} onChange={fn()} onSubmit={fn()} />
   ),
+};
+
+/** Opened by `pinomad up` on this computer (#513): looked up by itself, nothing to type, no way back to a code. */
+export const RequestFromThisComputer: Story = {
+  render: () => <HostLinkRequestEntry requestId={"r".repeat(43)} navigate={fn()} onClose={fn()} />,
+};
+
+/** That request is gone: expired, or answered already. */
+export const RequestNotFound: Story = {
+  decorators: [
+    withAccount(signedIn(), {
+      lookupHostLinkRequest: async () => ({ ok: false, error: { code: "not_found", status: 404 } }),
+    }),
+  ],
+  render: () => <HostLinkRequestEntry requestId="gone" navigate={fn()} onClose={fn()} />,
 };
 
 /** Which machine is asking, before anything is sent. */

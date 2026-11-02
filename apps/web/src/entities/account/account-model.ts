@@ -159,6 +159,14 @@ export interface AccountModel {
    */
   watchForHost(hostId: string): void;
   denyHostLink(userCode: string): Promise<AccountResult<void>>;
+  /**
+   * A loopback host link (#513): the host behind the request id in the
+   * confirm URL. Confirm and deny answer where to send the browser, the
+   * host's own `http://127.0.0.1` listener; nothing else gets through.
+   */
+  lookupHostLinkRequest(requestId: string): Promise<AccountResult<HostLinkRequest>>;
+  confirmHostLinkRequest(requestId: string): Promise<AccountResult<string>>;
+  denyHostLinkRequest(requestId: string): Promise<AccountResult<string>>;
   /** Admin only (#449). */
   listInvites(): Promise<AccountResult<readonly AccountInvite[]>>;
   createInvite(): Promise<AccountResult<CreatedInvite>>;
@@ -917,6 +925,9 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     lookupHostLink: (userCode) => authed((active) => active.lookupHostLink(userCode)),
     confirmHostLink: (userCode) => authed((active) => active.confirmHostLink(userCode)),
     denyHostLink: (userCode) => authed((active) => active.denyHostLink(userCode)),
+    lookupHostLinkRequest: (requestId) => authed((active) => active.lookupHostLinkRequest(requestId)),
+    confirmHostLinkRequest: (requestId) => authed((active) => active.confirmHostLinkRequest(requestId)),
+    denyHostLinkRequest: (requestId) => authed((active) => active.denyHostLinkRequest(requestId)),
     watchForHost,
     listInvites: () => authed((active) => active.listInvites()),
     createInvite: () => authed((active) => active.createInvite()),
