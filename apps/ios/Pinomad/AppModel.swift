@@ -278,13 +278,18 @@ final class AppModel {
     var accountRefreshing = false
     var accountRefreshPending = false
     var accountPairingHostId: String?
-    var accountPairingGeneration: UInt64 = 0
+    var accountPairingEpochs = AccountPairingEpochs()
     /// In-flight automatic registrations, by hostId, so a refresh re-entry
     /// cannot start a second handshake for the same account host.
     var accountRegistrationInFlight: Set<String> = []
     /// Auto-registration runtimes by hostId, so sign-out or a forget can
     /// really abandon a handshake that already started.
     var automaticPairingRuntimes: [String: HostRuntime] = [:]
+    /// Registrations of a host removed from the account while their
+    /// handshake ran (#512). Nothing closes them early: the core saves a
+    /// pairing before the app hears of it, so only their own result, which
+    /// paired() takes back, or failure ends them.
+    var refusingPairingRuntimes: [HostRuntime] = []
     var accountRejectedHostKeys: Set<String> = []
     /// This install's account device id, sent with every sign-in (ADR-0037 §1).
     let accountDeviceIds = AccountDeviceIdSource(store: KeychainAccountDeviceIdStore())
@@ -396,7 +401,7 @@ final class AppModel {
     /// twice.
     private var runtimesForFanout: [HostRuntime] {
         var all = Array(runtimes.values)
-        for runtime in automaticPairingRuntimes.values
+        for runtime in Array(automaticPairingRuntimes.values) + refusingPairingRuntimes
         where !all.contains(where: { $0 === runtime }) {
             all.append(runtime)
         }
@@ -868,8 +873,8 @@ final class AppModel {
         forgettingHosts.remove(hostKey)
         // Cancelling in-flight registrations for this identity is part of
         // forgetting it; a late handshake must not resurrect it.
-        accountPairingGeneration &+= 1
         if let account = record?.account {
+            accountPairingEpochs.invalidate(hostId: account.hostId)
             accountRegistrationInFlight.remove(account.hostId)
             unsavedAccountHosts.removeValue(forKey: account.hostId)
             pairingRegistry.finish(.automatic(hostId: account.hostId))
@@ -1039,6 +1044,15 @@ final class AppModel {
     }
 
     private func paired(_ runtime: HostRuntime, host: HostRecord, saveError: String?) {
+        if runtime.refusesPairing {
+            // Its host left the account during the handshake (#512). Another
+            // registration of the same host may have started since, so this
+            // one touches none of the per-host bookkeeping.
+            refusingPairingRuntimes.removeAll { $0 === runtime }
+            runtime.close()
+            if saveError == nil { undoAutomaticSave(host) }
+            return
+        }
         runtime.identify(host)
         runtimes[host.hostKey] = runtime
         accountRejectedHostKeys.remove(host.hostKey)
@@ -1047,29 +1061,15 @@ final class AppModel {
             pairingRegistry.finish(.automatic(hostId: autoHostId))
             automaticPairingRuntimes.removeValue(forKey: autoHostId)
             accountRegistrationInFlight.remove(autoHostId)
-            // A forget or explicit decline during the handshake, or the
-            // host's removal from the account (#512), wins over the late
-            // registration (ADR-0035 §5). The core saved it before telling
-            // us, so refusing means taking that save back.
+            // A forget or explicit decline during the handshake wins over
+            // the late registration (ADR-0035 §5).
             let declined = host.account.map {
                 declinedAccountHosts.contains(serverOrigin: $0.serverOrigin, hostId: $0.hostId)
             } ?? false
-            if declined || runtime.refusesPairing {
+            if declined {
                 runtime.close()
                 runtimes.removeValue(forKey: host.hostKey)
-                if saveError == nil {
-                    // The save also made it the launch host; give that back.
-                    let focusKey = runtimeTable.focus?.hostKey
-                    do {
-                        try store.update { stored in
-                            stored = stored.forgetting(host.hostKey)
-                            if let focusKey { stored = stored.activating(focusKey) }
-                        }
-                    } catch {
-                        lastError = "Couldn't forget this host: \(describe(error))"
-                    }
-                    reloadHosts()
-                }
+                if saveError == nil { undoAutomaticSave(host) }
                 return
             }
             if saveError != nil {
@@ -1105,9 +1105,29 @@ final class AppModel {
         advancePushTarget()
     }
 
+    /// The core saved a refused registration before telling us; take that
+    /// save back, and the launch-host mark it came with.
+    private func undoAutomaticSave(_ host: HostRecord) {
+        let focusKey = runtimeTable.focus?.hostKey
+        do {
+            try store.update { stored in
+                stored = stored.forgetting(host.hostKey)
+                if let focusKey { stored = stored.activating(focusKey) }
+            }
+        } catch {
+            lastError = "Couldn't forget this host: \(describe(error))"
+        }
+        reloadHosts()
+    }
+
     /// An account registration that never named its host has no table entry;
     /// drop it and let the next refresh decide again.
     private func handleRegistrationFailure(_ runtime: HostRuntime, failure: ConnectFailure) {
+        if runtime.refusesPairing {
+            refusingPairingRuntimes.removeAll { $0 === runtime }
+            runtime.close()
+            return
+        }
         guard let hostId = runtime.autoRegisterHostId else { return }
         accountRegistrationInFlight.remove(hostId)
         pairingRegistry.finish(.automatic(hostId: hostId))

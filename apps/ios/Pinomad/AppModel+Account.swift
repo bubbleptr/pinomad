@@ -291,10 +291,10 @@ extension AppModel {
             return
         }
 
-        let generation = accountPairingGeneration
+        let ticket = accountPairingEpochs.ticket(hostId: hostId)
         switch await api.requestPairing(hostId: hostId) {
         case .failure(let failure):
-            guard accountSession == session, generation == accountPairingGeneration else {
+            guard accountSession == session, accountPairingEpochs.isCurrent(ticket) else {
                 accountRegistrationInFlight.remove(hostId)
                 return
             }
@@ -308,7 +308,7 @@ extension AppModel {
                     serverOrigin: session.serverOrigin, hostId: hostId)
             }
         case .success(let offer):
-            guard accountSession == session, generation == accountPairingGeneration,
+            guard accountSession == session, accountPairingEpochs.isCurrent(ticket),
                   !declinedAccountHosts.contains(
                     serverOrigin: session.serverOrigin, hostId: hostId)
             else {
@@ -514,33 +514,48 @@ extension AppModel {
         guard accountSession == session else { return nil }
         switch result {
         case .success:
-            newHostNotices.removeAll { $0.hostId == host.hostId }
-            knownAccountHosts.dismiss(
-                serverOrigin: session.serverOrigin, username: session.username, hostIds: [host.hostId])
-            // A registration of a new host may still be on its way: an
-            // invite in flight goes stale, and a running handshake finishes
-            // only to be undone. Closing it instead could drop the result
-            // after the core already saved it, leaving the pairing behind.
-            accountPairingGeneration &+= 1
-            automaticPairingRuntimes[host.hostId]?.refusesPairing = true
-            forgetAccountHosts(serverOrigin: session.serverOrigin, hostId: host.hostId)
+            forgetRemovedHost(host.hostId, session: session)
             await accountRefreshHosts()
             return nil
         case .failure(let failure) where failure.code == "not_found":
-            // Gone already (removed from another device), or a server that
-            // predates removal: only a list asked for after the answer tells
-            // which.
+            // Gone already (removed from another device, or an earlier try
+            // whose answer was lost), or a server that predates removal:
+            // only a list asked for after the answer tells which.
             let fresh = !accountRefreshing
             await accountRefreshHosts()
             let answered = fresh && accountSession == session && accountHostsError == nil
-            return AccountHosts.removeHostNotFound(
+            let failure = AccountHosts.removeHostNotFound(
                 hostId: host.hostId, listedAfter: answered ? accountRows.map(\.hostId) : nil)
+            if failure == nil { forgetRemovedHost(host.hostId, session: session) }
+            return failure
         case .failure(let failure):
             if failure.clearsSession {
                 accountSignOutWarning = endAccountSession(notice: AccountCopy.message(failure))
             }
             return failure
         }
+    }
+
+    /// What this iPhone does once `hostId` is off the account, however that
+    /// was learned: drop its notice and the account pairing the server
+    /// issued for it. A registration of it may still be on its way: an
+    /// invite in flight goes stale, and a running handshake finishes only to
+    /// be undone. Closing it instead could drop the result after the core
+    /// already saved it, leaving the pairing behind.
+    private func forgetRemovedHost(_ hostId: String, session: AccountSession) {
+        newHostNotices.removeAll { $0.hostId == hostId }
+        knownAccountHosts.dismiss(
+            serverOrigin: session.serverOrigin, username: session.username, hostIds: [hostId])
+        // Only this host's asks: an explicit join of another one started
+        // while the removal waited carries on (and clears its own busy state).
+        accountPairingEpochs.invalidate(hostId: hostId)
+        if let runtime = automaticPairingRuntimes.removeValue(forKey: hostId) {
+            pairingRegistry.finish(.automatic(hostId: hostId))
+            accountRegistrationInFlight.remove(hostId)
+            runtime.refusesPairing = true
+            refusingPairingRuntimes.append(runtime)
+        }
+        forgetAccountHosts(serverOrigin: session.serverOrigin, hostId: hostId)
     }
 
     /// How this iPhone holds `hostId`, for the removal form to say what
@@ -620,8 +635,8 @@ extension AppModel {
             runtime.close()
         }
         accountRegistrationInFlight.remove(hostId)
-        accountPairingGeneration &+= 1
-        let generation = accountPairingGeneration
+        accountPairingEpochs.invalidateAll()
+        let ticket = accountPairingEpochs.ticket()
         accountBusy = true
         accountPairingHostId = hostId
         accountError = nil
@@ -629,7 +644,7 @@ extension AppModel {
         defer {
             // A connection or another pairing invalidated this ask while it
             // was waiting; that path already cleared the indicators.
-            if generation == accountPairingGeneration {
+            if accountPairingEpochs.isCurrent(ticket) {
                 accountBusy = false
                 accountPairingHostId = nil
             }
@@ -654,7 +669,7 @@ extension AppModel {
 
         switch await api.requestPairing(hostId: hostId) {
         case .failure(let failure):
-            guard accountSession == session, generation == accountPairingGeneration else { return false }
+            guard accountSession == session, accountPairingEpochs.isCurrent(ticket) else { return false }
             if failure.clearsSession {
                 accountSignOutWarning = endAccountSession(notice: "You were signed out. Sign in again.")
             } else {
@@ -666,7 +681,7 @@ extension AppModel {
             }
             return false
         case .success(let offer):
-            guard accountSession == session, generation == accountPairingGeneration else { return false }
+            guard accountSession == session, accountPairingEpochs.isCurrent(ticket) else { return false }
             guard let link = accountPairingLink(offer: offer) else {
                 accountError = AccountCopy.message(AccountFailure(code: "invalid_offer"))
                 return false
@@ -681,8 +696,10 @@ extension AppModel {
 
     /// Make any in-flight account pairing ask stale. A connection the reader
     /// chose while it waited wins; the late offer must not steal it.
+    /// A registration already refused (a removed host's) is left to finish:
+    /// only its result takes the core's save back.
     func invalidateAccountPairing() {
-        accountPairingGeneration &+= 1
+        accountPairingEpochs.invalidateAll()
         for (hostId, runtime) in automaticPairingRuntimes {
             pairingRegistry.finish(.automatic(hostId: hostId))
             runtime.close()
@@ -934,7 +951,8 @@ extension AppModel {
         hostJoinWatch = nil
         accountNotice = notice
         // In-flight registrations belong to the session that just ended.
-        accountPairingGeneration &+= 1
+        // A refused one (a removed host's) still finishes, to be undone.
+        accountPairingEpochs.invalidateAll()
         accountRegistrationInFlight.removeAll()
         for (hostId, runtime) in automaticPairingRuntimes {
             pairingRegistry.finish(.automatic(hostId: hostId))
