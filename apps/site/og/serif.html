@@ -1,0 +1,56 @@
+<!doctype html>
+<meta charset="utf-8" />
+<!-- Rendered by scripts/og.ts at 2x; out/plate.png and out/logo.png are written by the script. -->
+<style>
+  @font-face {
+    font-family: "Geist Serif";
+    src: url(fonts/GeistSerifVF.woff2);
+    font-weight: 100 900;
+  }
+  html, body { margin: 0; }
+  .og {
+    position: relative;
+    width: 1200px;
+    height: 630px;
+    overflow: hidden;
+    background: #2a8ad8 url(out/plate.png) center / cover;
+  }
+  .lockup {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 30px;
+  }
+  .lockup img {
+    width: 136px;
+    height: 136px;
+    filter: drop-shadow(0 12px 28px rgb(0 50 110 / 0.22));
+  }
+  .lockup span {
+    font: 500 100px/1 "Geist Serif";
+    letter-spacing: -0.02em;
+    color: #fff;
+    text-shadow: 0 2px 28px rgb(0 50 110 / 0.2);
+    /* box = cap top to baseline, so the group centers on ink, not line metrics */
+    text-box: trim-both cap alphabetic;
+  }
+</style>
+<div class="og">
+  <div class="lockup">
+    <img src="out/logo.png" alt="" />
+    <span>PiNomad</span>
+  </div>
+</div>
+<script>
+  // ?color=0d2b4f (hex without #): dark wordmark for when it sits on cloud, with a white glow instead of the blue shadow
+  const color = new URLSearchParams(location.search).get("color");
+  if (color) {
+    const span = document.querySelector(".lockup span");
+    span.style.color = `#${color}`;
+    span.style.textShadow = "0 0 24px rgb(255 255 255 / 0.35)";
+  }
+</script>

@@ -15,3 +15,4 @@ storybook-static/
 .tanstack/
 .wrangler/
 .output/
+apps/site/og/out/
