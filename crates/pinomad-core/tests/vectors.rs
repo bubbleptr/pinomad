@@ -121,6 +121,7 @@ fn feature_of(name: &str) -> HostFeature {
         "attachments" => HostFeature::Attachments,
         "rtc" => HostFeature::Rtc,
         "submitEntry" => HostFeature::SubmitEntry,
+        "terminals" => HostFeature::Terminals,
         other => panic!("unknown feature {other}"),
     }
 }
@@ -381,10 +382,9 @@ fn endpoint_sets_parse_like_the_reference() {
 fn recorded_host_frames_parse_and_apply() {
     let frames = load("host-frames");
     let mut streams: HashMap<String, Json> = HashMap::new();
-    let mut counts: HashMap<&str, usize> = HashMap::new();
     for raw in frames.as_array().unwrap().iter() {
         let frame = classify_server_frame(raw.clone());
-        *counts.entry(variant(&frame)).or_default() += 1;
+        assert_eq!(variant(&frame), as_text(field(raw, "type")), "recorded frames classify by type");
         match &frame {
             ServerFrame::Snapshot { stream, value } => {
                 let name = stream.as_str().expect("snapshot stream").to_string_lossy();
@@ -406,10 +406,6 @@ fn recorded_host_frames_parse_and_apply() {
             _ => {}
         }
     }
-    assert_eq!(counts.get("hello"), Some(&1));
-    assert_eq!(counts.get("ops"), Some(&19));
-    assert_eq!(counts.get("snapshot"), Some(&15));
-    assert_eq!(counts.get("result"), Some(&1));
     // The recorded conversation's final state is fully formed JSON — spot
     // check the shape the client relies on.
     let conversation = streams

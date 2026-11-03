@@ -455,6 +455,59 @@ describe("parseClientFrame", () => {
     expect(kinds({ type: "call", id: 1, method: "deleteAgent", args: { name: 1 } })).toBe("malformed");
   });
 
+  it("accepts the terminal calls; rejects malformed shapes", () => {
+    const call = (method: string, args: unknown): unknown => ({ type: "call", id: 1, method, args });
+    const id = "4f1c2b9e-1d2a-4c3b-9e8f-0a1b2c3d4e5f";
+    expect(kinds(call("openTerminal", { conversationId: 7, cols: 80, rows: 24 }))).toBe("frame");
+    expect(kinds(call("openTerminal", { conversationId: 7, cols: 0, rows: 24 }))).toBe("malformed");
+    expect(kinds(call("openTerminal", { conversationId: 7, cols: 80.5, rows: 24 }))).toBe("malformed");
+    expect(kinds(call("openTerminal", { conversationId: 0, cols: 80, rows: 24 }))).toBe("malformed");
+    expect(kinds(call("terminalInput", { terminalId: id, data: "ls\r" }))).toBe("frame");
+    expect(kinds(call("terminalInput", { terminalId: id, data: "" }))).toBe("frame");
+    expect(kinds(call("terminalInput", { terminalId: "", data: "x" }))).toBe("malformed");
+    expect(kinds(call("terminalInput", { terminalId: id, data: 3 }))).toBe("malformed");
+    expect(kinds(call("resizeTerminal", { terminalId: id, cols: 120, rows: 40 }))).toBe("frame");
+    expect(kinds(call("resizeTerminal", { terminalId: id, cols: 120 }))).toBe("malformed");
+    expect(kinds(call("renameTerminal", { terminalId: id, name: "dev" }))).toBe("frame");
+    expect(kinds(call("renameTerminal", { terminalId: id, name: null }))).toBe("frame");
+    expect(kinds(call("renameTerminal", { terminalId: id, name: 4 }))).toBe("malformed");
+    expect(kinds(call("restartTerminal", { terminalId: id, cols: 80, rows: 24 }))).toBe("frame");
+    expect(kinds(call("restartTerminal", { terminalId: id }))).toBe("malformed");
+    expect(kinds(call("closeTerminal", { terminalId: id }))).toBe("frame");
+    expect(kinds(call("closeTerminal", {}))).toBe("malformed");
+  });
+
+  it("accepts terminal streams and a subscribe's since; rejects malformed names", () => {
+    const id = "4f1c2b9e-1d2a-4c3b-9e8f-0a1b2c3d4e5f";
+    expect(parseClientFrame({ type: "subscribe", stream: "terminals:7" })).toEqual({
+      kind: "frame",
+      frame: { type: "subscribe", stream: "terminals:7" },
+    });
+    expect(parseClientFrame({ type: "subscribe", stream: `terminal:${id}`, since: 512 })).toEqual({
+      kind: "frame",
+      frame: { type: "subscribe", stream: `terminal:${id}`, since: 512 },
+    });
+    // since only means something on a terminal stream, and only as a position.
+    expect(parseClientFrame({ type: "subscribe", stream: "terminals:7", since: 5 })).toEqual({
+      kind: "frame",
+      frame: { type: "subscribe", stream: "terminals:7" },
+    });
+    expect(kinds({ type: "subscribe", stream: `terminal:${id}`, since: -1 })).toBe("malformed");
+    expect(kinds({ type: "subscribe", stream: `terminal:${id}`, since: "5" })).toBe("malformed");
+    expect(kinds({ type: "subscribe", stream: "terminals:0" })).toBe("malformed");
+    expect(kinds({ type: "subscribe", stream: "terminal:" })).toBe("malformed");
+    expect(kinds({ type: "unsubscribe", stream: `terminal:${id}` })).toBe("frame");
+  });
+
+  it("introduces terminals at minor 27", () => {
+    expect(hostSupportsCall(26, "openTerminal")).toBe(false);
+    expect(hostSupportsFeature(26, "terminals")).toBe(false);
+    for (const method of ["openTerminal", "terminalInput", "resizeTerminal", "renameTerminal", "restartTerminal", "closeTerminal"] as const) {
+      expect(hostSupportsCall(27, method)).toBe(true);
+    }
+    expect(hostSupportsFeature(27, "terminals")).toBe(true);
+  });
+
   it("ignores frames whose type it does not know", () => {
     expect(kinds({ type: "ping" })).toBe("unknownType");
     expect(kinds({ type: "ping", extra: 1 })).toBe("unknownType");

@@ -1,12 +1,12 @@
 {
   "protocol": {
     "major": 5,
-    "minor": 26
+    "minor": 27
   },
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":26},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":27},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -16,17 +16,17 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":26},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":27},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
       "expect": "hello"
     },
     {
       "name": "signalHello",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":26},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":27},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
       "expect": "signalHello"
     },
     {
       "name": "signalHello-no-rtc",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":26}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":27}}",
       "expect": "signalHello"
     },
     {
@@ -280,6 +280,10 @@
         "since": 0
       },
       {
+        "name": "closeTerminal",
+        "since": 27
+      },
+      {
         "name": "compact",
         "since": 0
       },
@@ -332,6 +336,10 @@
         "since": 1
       },
       {
+        "name": "openTerminal",
+        "since": 27
+      },
+      {
         "name": "ping",
         "since": 23
       },
@@ -346,6 +354,18 @@
       {
         "name": "renameConversation",
         "since": 4
+      },
+      {
+        "name": "renameTerminal",
+        "since": 27
+      },
+      {
+        "name": "resizeTerminal",
+        "since": 27
+      },
+      {
+        "name": "restartTerminal",
+        "since": 27
       },
       {
         "name": "revokeDevice",
@@ -390,6 +410,10 @@
       {
         "name": "submit",
         "since": 0
+      },
+      {
+        "name": "terminalInput",
+        "since": 27
       },
       {
         "name": "updateAgent",
@@ -490,6 +514,10 @@
       {
         "name": "submitEntry",
         "since": 25
+      },
+      {
+        "name": "terminals",
+        "since": 27
       }
     ]
   },
@@ -583,6 +611,18 @@
       "minor": 0,
       "call": "changes",
       "expect": true
+    },
+    {
+      "name": "closeTerminal@27",
+      "minor": 27,
+      "call": "closeTerminal",
+      "expect": true
+    },
+    {
+      "name": "closeTerminal@26",
+      "minor": 26,
+      "call": "closeTerminal",
+      "expect": false
     },
     {
       "name": "compact@0",
@@ -717,6 +757,18 @@
       "expect": false
     },
     {
+      "name": "openTerminal@27",
+      "minor": 27,
+      "call": "openTerminal",
+      "expect": true
+    },
+    {
+      "name": "openTerminal@26",
+      "minor": 26,
+      "call": "openTerminal",
+      "expect": false
+    },
+    {
       "name": "ping@23",
       "minor": 23,
       "call": "ping",
@@ -756,6 +808,42 @@
       "name": "renameConversation@3",
       "minor": 3,
       "call": "renameConversation",
+      "expect": false
+    },
+    {
+      "name": "renameTerminal@27",
+      "minor": 27,
+      "call": "renameTerminal",
+      "expect": true
+    },
+    {
+      "name": "renameTerminal@26",
+      "minor": 26,
+      "call": "renameTerminal",
+      "expect": false
+    },
+    {
+      "name": "resizeTerminal@27",
+      "minor": 27,
+      "call": "resizeTerminal",
+      "expect": true
+    },
+    {
+      "name": "resizeTerminal@26",
+      "minor": 26,
+      "call": "resizeTerminal",
+      "expect": false
+    },
+    {
+      "name": "restartTerminal@27",
+      "minor": 27,
+      "call": "restartTerminal",
+      "expect": true
+    },
+    {
+      "name": "restartTerminal@26",
+      "minor": 26,
+      "call": "restartTerminal",
       "expect": false
     },
     {
@@ -865,6 +953,18 @@
       "minor": 0,
       "call": "submit",
       "expect": true
+    },
+    {
+      "name": "terminalInput@27",
+      "minor": 27,
+      "call": "terminalInput",
+      "expect": true
+    },
+    {
+      "name": "terminalInput@26",
+      "minor": 26,
+      "call": "terminalInput",
+      "expect": false
     },
     {
       "name": "updateAgent@6",
@@ -1044,6 +1144,18 @@
       "name": "submitEntry@24",
       "minor": 24,
       "feature": "submitEntry",
+      "expect": false
+    },
+    {
+      "name": "terminals@27",
+      "minor": 27,
+      "feature": "terminals",
+      "expect": true
+    },
+    {
+      "name": "terminals@26",
+      "minor": 26,
+      "feature": "terminals",
       "expect": false
     }
   ],

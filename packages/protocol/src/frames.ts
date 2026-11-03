@@ -7,6 +7,7 @@ import type { ImageResult, OutgoingImage } from "./images.ts";
 import type { HostDevices } from "./devices.ts";
 import type { McpStatus } from "./mcp.ts";
 import type { RtcAnswer, RtcHello, RtcOfferArgs } from "./rtc.ts";
+import type { TerminalId, TerminalsHello } from "./terminals.ts";
 import type { CommandListing } from "./commands.ts";
 import type { FileListing, FileScope, FolderListing, Home, HostIndex, Project, SkillListing, SkillScope } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
@@ -63,7 +64,13 @@ export function hostStreams(hostMinor: number): readonly HostStreamName[] {
  * task graph. A subscription starts with a snapshot; ops follow and apply
  * to it with chord's `applyImmutable`.
  */
-export type StreamName = `conversation:${ConversationId}` | `doc:${string}:${ConversationId}` | "tasks" | HostStreamName;
+export type StreamName =
+  | `conversation:${ConversationId}`
+  | `doc:${string}:${ConversationId}`
+  | "tasks"
+  | `terminals:${ConversationId}`
+  | `terminal:${TerminalId}`
+  | HostStreamName;
 
 export const conversationStream = (id: ConversationId): StreamName => `conversation:${id}`;
 export const docStream = (kind: string, id: ConversationId): StreamName => `doc:${kind}:${id}`;
@@ -93,7 +100,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 26 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 27 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -353,6 +360,22 @@ export interface CallMethods {
    * that sent it. Signal-only connections accept it too.
    */
   ping: { args: { id: string }; result: { id: string } };
+  /**
+   * Terminals (5.27, ADR-0041). `openTerminal` starts a shell in the owner's
+   * checkout — the family root's, or a legacy fork's own worktree — and
+   * refuses past `hello.terminals.limit`. The list and exits arrive on
+   * `terminals:<conversationId>`, output on `terminal:<id>`.
+   */
+  openTerminal: { args: { conversationId: ConversationId; cols: number; rows: number }; result: { terminalId: TerminalId } };
+  /** Keystrokes or a paste. The pty also takes this connection's last reported size. */
+  terminalInput: { args: { terminalId: TerminalId; data: string }; result: null };
+  resizeTerminal: { args: { terminalId: TerminalId; cols: number; rows: number }; result: null };
+  /** `null` drops the rename and goes back to the shell's window title. */
+  renameTerminal: { args: { terminalId: TerminalId; name: string | null }; result: null };
+  /** A new shell in the same tab; the output stream restarts with a `reset`. */
+  restartTerminal: { args: { terminalId: TerminalId; cols: number; rows: number }; result: null };
+  /** Ends the process and removes the tab. */
+  closeTerminal: { args: { terminalId: TerminalId }; result: null };
 }
 
 /** APNs device-token registration (ADR-0025 §7, protocol 5.9). */
@@ -419,6 +442,12 @@ export const CALL_SINCE: Record<CallMethod, number> = {
   appendAttachment: 19,
   rtcOffer: 23,
   ping: 23,
+  openTerminal: 27,
+  terminalInput: 27,
+  resizeTerminal: 27,
+  renameTerminal: 27,
+  restartTerminal: 27,
+  closeTerminal: 27,
 };
 
 /** Whether a host of the given minor version knows `method`. */
@@ -451,6 +480,8 @@ export const FEATURE_SINCE = {
    * on whether the field arrived.
    */
   submitEntry: 25,
+  /** The `terminals:` and `terminal:` streams, the `output` frame, and a subscribe's `since` (27, ADR-0041). */
+  terminals: 27,
 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
@@ -485,6 +516,8 @@ export type ServerFrame =
        * unavailable; the business hello is otherwise unchanged.
        */
       readonly rtc?: RtcHello;
+      /** Terminals (5.27, ADR-0041). Absent → the pty module is not loaded, or the host predates them. */
+      readonly terminals?: TerminalsHello;
     }
   | {
       /**
@@ -499,6 +532,14 @@ export type ServerFrame =
     }
   | { readonly type: "snapshot"; readonly stream: StreamName; readonly value: unknown }
   | { readonly type: "ops"; readonly stream: StreamName; readonly ops: readonly Op[] }
+  /**
+   * Terminal output on a `terminal:<id>` stream (5.27, ADR-0041). `seq` is
+   * the stream position after `data`, counted in UTF-16 code units and never
+   * reset. `reset` says `data` replays the host's whole buffer, so the
+   * client clears its screen first — the subscribe's `since` fell out of the
+   * buffer, or the terminal restarted.
+   */
+  | { readonly type: "output"; readonly stream: `terminal:${TerminalId}`; readonly seq: number; readonly data: string; readonly reset?: true }
   /** The stream will send nothing more, for example an unknown conversation. */
   | { readonly type: "ended"; readonly stream: StreamName; readonly reason: string }
   | { readonly type: "result"; readonly id: number; readonly ok: true; readonly value: unknown }
@@ -516,6 +557,13 @@ export type ClientFrame =
        * client reads both forms.
        */
       readonly images?: "ref";
+      /**
+       * A `terminal:` stream's position the client already has (5.27) — the
+       * last `output.seq` it received: the host sends what came after it, or
+       * its whole buffer with `reset`.
+       * Other streams ignore it.
+       */
+      readonly since?: number;
     }
   | { readonly type: "unsubscribe"; readonly stream: StreamName }
   | {
@@ -547,9 +595,15 @@ export function parseClientFrame(value: unknown): ParsedClientFrame {
     const stream = value.stream;
     if (typeof stream !== "string") return { kind: "malformed" };
     if (isStreamName(stream)) {
+      if (value.type === "unsubscribe") return { kind: "frame", frame: { type: "unsubscribe", stream } };
+      if (stream.startsWith("terminal:") && value.since !== undefined) {
+        const since = value.since;
+        if (typeof since !== "number" || !Number.isSafeInteger(since) || since < 0) return { kind: "malformed" };
+        return { kind: "frame", frame: { type: "subscribe", stream, since } };
+      }
       // A value this host doesn't know is a newer client's form: fall back to inline.
-      const refs = value.type === "subscribe" && value.images === "ref";
-      return { kind: "frame", frame: refs ? { type: "subscribe", stream, images: "ref" } : { type: value.type, stream } };
+      const refs = value.images === "ref";
+      return { kind: "frame", frame: refs ? { type: "subscribe", stream, images: "ref" } : { type: "subscribe", stream } };
     }
     // A name under a known stream kind is a malformed frame; anything else is
     // a stream this host predates.
@@ -569,13 +623,14 @@ export function parseClientFrame(value: unknown): ParsedClientFrame {
 }
 
 /** Every stream name's kind: fixed names plus the `conversation:`/`doc:` prefixes. */
-const STREAM_KINDS = new Set(["conversation", "doc", "tasks", ...HOST_STREAM_NAMES]);
+const STREAM_KINDS = new Set(["conversation", "doc", "tasks", "terminals", "terminal", ...HOST_STREAM_NAMES]);
 
 function isStreamName(stream: string): stream is StreamName {
   return (
     stream === "tasks"
     || (HOST_STREAM_NAMES as readonly string[]).includes(stream)
-    || /^(?:conversation:|doc:.+:)[1-9]\d*$/.test(stream)
+    || /^(?:conversation:|doc:.+:|terminals:)[1-9]\d*$/.test(stream)
+    || /^terminal:[\w-]+$/.test(stream)
   );
 }
 
@@ -628,7 +683,21 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
     && typeof args.role.prompt === "string"
     && (args.role.model === undefined || typeof args.role.model === "string")
     && (args.role.thinkingLevel === undefined || typeof args.role.thinkingLevel === "string");
+  const terminalId = (): boolean => nonempty(args.terminalId);
+  const size = (): boolean =>
+    [args.cols, args.rows].every((n) => typeof n === "number" && Number.isSafeInteger(n) && n >= 1);
   switch (method) {
+    case "openTerminal":
+      return conversationId() && size();
+    case "terminalInput":
+      return terminalId() && typeof args.data === "string";
+    case "resizeTerminal":
+    case "restartTerminal":
+      return terminalId() && size();
+    case "renameTerminal":
+      return terminalId() && (args.name === null || typeof args.name === "string");
+    case "closeTerminal":
+      return terminalId();
     case "submit":
       return (
         conversationId() && typeof args.text === "string" && (args.whenBusy === "steer" || args.whenBusy === "followUp")

@@ -24,6 +24,7 @@ import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import type { BuiltinExtension } from "./builtin-extension.ts";
 import { startGateway, validatePublicUrl } from "./gateway.ts";
 import type { RtcOptions } from "./rtc.ts";
+import type { StartTerminalsOptions } from "./terminals.ts";
 import { AttachmentStore } from "./attachments.ts";
 import { withAnswerTiming } from "./answer-timing.ts";
 
@@ -113,6 +114,8 @@ export interface OpenHostOptions {
    * tests inject a failing loader or a fake peer factory.
    */
   readonly rtc?: RtcOptions;
+  /** Terminal seams (ADR-0041): the shell, its environment, the pty loader. Absent runs the login shell. */
+  readonly terminals?: StartTerminalsOptions;
 }
 
 export interface OpenedHost {
@@ -300,6 +303,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
             },
           }),
       ...(options.rtc === undefined ? {} : { rtc: options.rtc }),
+      ...(options.terminals === undefined ? {} : { terminals: options.terminals }),
       secure: {
         hostKey,
         offers,

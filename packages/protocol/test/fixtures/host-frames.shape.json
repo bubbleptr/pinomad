@@ -38,6 +38,9 @@
         "directory": "string",
         "id": "string"
       },
+      "terminals": {
+        "limit": "number"
+      },
       "toolPresentations": {
         "edit": "string",
         "write": "string"
