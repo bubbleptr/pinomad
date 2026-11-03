@@ -60,7 +60,6 @@ export function landingHead(lang: Lang, softwareVersion?: string) {
       { property: "og:url", content: url },
       { property: "og:title", content: c.title },
       { property: "og:description", content: c.social },
-      { name: "twitter:card", content: "summary" },
       { name: "twitter:title", content: c.title },
       { name: "twitter:description", content: c.social },
       { "script:ld+json": softwareApplication(lang, softwareVersion) },
