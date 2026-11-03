@@ -682,7 +682,11 @@ export function fakeTerminals({
       const set = watchers.get(owner) ?? new Set();
       watchers.set(owner, set);
       set.add(listener);
-      listener({ kind: "ready", list: listOf(owner) });
+      // Like the client: a fresh stream is loading until the host's snapshot lands.
+      listener({ kind: "loading" });
+      queueMicrotask(() => {
+        if (set.has(listener)) listener({ kind: "ready", list: listOf(owner) });
+      });
       return () => void set.delete(listener);
     }),
     attach: fn((_terminalId: string, sink: TerminalOutputSink) => {

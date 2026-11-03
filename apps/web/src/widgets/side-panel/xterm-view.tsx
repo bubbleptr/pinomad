@@ -125,11 +125,13 @@ export default function XtermView({
       sent = { cols: screen.cols, rows: screen.rows };
       terminals.resize(terminalId, sent);
     };
-    fitNow();
     const detach = terminals.attach(terminalId, {
       output: (data, reset) => writeOutput(screen, data, reset),
       ended: () => {},
     });
+    // After attach: the client keeps an attached terminal's size to send
+    // again after a reconnect, and the replay doesn't wait on the size.
+    fitNow();
     const typing = screen.onData((data) => terminals.input(terminalId, data));
     const observer = new ResizeObserver(fitNow);
     observer.observe(element);

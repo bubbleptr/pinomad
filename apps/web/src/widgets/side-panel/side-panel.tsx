@@ -340,16 +340,15 @@ export function SidePanel({
     maxSizePx: 720,
     autoSaveId: "pinomad-side-panel",
   });
-  // Main switches to its next conversation before that snapshot lands; until
-  // the loaded one is the shown one, its terminals are not the ones to show.
-  const loadedId = view.conversation?.conversation.id;
   const content = (barStart?: ReactNode, barEnd?: ReactNode) =>
     surface === "changes" ? (
       <ChangesSurface view={view} remote={remote} shownId={shownId} busy={busy} barStart={barStart} barEnd={barEnd} />
     ) : surface === "terminal" ? (
       <TerminalSurface
         terminals={remote.terminals}
-        conversationId={loadedId !== undefined && loadedId === shownId ? loadedId : undefined}
+        // The host finds the owner from this id; the shown conversation's own
+        // snapshot need not have landed.
+        conversationId={shownId}
         connected={view.connection === "connected"}
         stacked={narrow}
         barStart={barStart}

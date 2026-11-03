@@ -30,10 +30,13 @@ describe("TerminalSurface", () => {
   it("keeps one owner's selection across its conversations and remembers each owner's", async () => {
     const terminals = fakeTerminals({ lists: { 1: [dev, shell], 7: [{ ...shell, id: "t-other", name: "other" }] }, owners: { 4: id(1) } });
     const { show } = renderSurface(terminals, id(1));
-    fireEvent.click(screen.getByRole("button", { name: "Terminal 2" }));
-    expect(await screen.findByTestId("screen")).toHaveTextContent("t-shell");
+    fireEvent.click(await screen.findByRole("button", { name: "Terminal 2" }));
+    const shown = await screen.findByTestId("screen");
+    expect(shown).toHaveTextContent("t-shell");
 
-    show(id(4));
+    // Same owner: the screen stays mounted, no reload and no replay.
+    await act(async () => show(id(4)));
+    expect(screen.getByTestId("screen")).toBe(shown);
     expect(selectedTab()).toBe("t-shell");
     show(id(7));
     await waitFor(() => expect(screen.getByTestId("screen")).toHaveTextContent("t-other"));
@@ -44,7 +47,7 @@ describe("TerminalSurface", () => {
   it("offers a first terminal when there is none, then selects it once the host lists it", async () => {
     const terminals = fakeTerminals({ lists: { 1: [] } });
     renderSurface(terminals, id(1));
-    fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
+    fireEvent.click(await screen.findByRole("button", { name: "New terminal" }));
     await waitFor(() => expect(screen.getByTestId("screen")).toHaveTextContent("t-new-1"));
     expect(selectedTab()).toBe("t-new-1");
   });
@@ -52,13 +55,14 @@ describe("TerminalSurface", () => {
   it("selects a new terminal beside existing ones, not the first tab", async () => {
     const terminals = fakeTerminals({ lists: { 1: [dev] } });
     renderSurface(terminals, id(1));
-    await act(async () => fireEvent.click(screen.getByRole("button", { name: "New terminal" })));
+    const button = await screen.findByRole("button", { name: "New terminal" });
+    await act(async () => fireEvent.click(button));
     await waitFor(() => expect(selectedTab()).toBe("t-new-1"));
   });
 
-  it("disables New terminal once the owner has the host's limit", () => {
+  it("disables New terminal once the owner has the host's limit", async () => {
     renderSurface(fakeTerminals({ lists: { 1: [dev, shell] }, limit: 2 }), id(1));
-    expect(screen.getByRole("button", { name: "New terminal" })).toHaveAttribute("aria-disabled", "true");
+    expect(await screen.findByRole("button", { name: "New terminal" })).toHaveAttribute("aria-disabled", "true");
   });
 
   it("says why a host has no terminals", () => {
@@ -69,7 +73,7 @@ describe("TerminalSurface", () => {
   it("shows an exited terminal's code and restarts it", async () => {
     const terminals = fakeTerminals({ lists: { 1: [tests] } });
     renderSurface(terminals, id(1));
-    expect(screen.getByText("exit 1")).toBeInTheDocument();
+    expect(await screen.findByText("exit 1")).toBeInTheDocument();
     expect(screen.getByText("The process exited with code 1.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Restart" }));
     expect(terminals.restart).toHaveBeenCalledWith("t-tests", { cols: 80, rows: 24 });

@@ -42,11 +42,18 @@ function memoryOf(terminals: object): Map<ConversationId, SelectionMemory> {
   return memory;
 }
 
+/**
+ * The shown conversation's list. Moving to another conversation keeps the
+ * last list until the next one lands: within one owner it is the same list,
+ * and the screen must not unmount and replay in between.
+ */
 function useTerminalsState(terminals: RemoteTerminals, conversationId: ConversationId | undefined): TerminalsState | undefined {
   const [state, setState] = useState<TerminalsState>();
   useEffect(() => {
     if (conversationId === undefined) return;
-    return terminals.watch(conversationId, setState);
+    return terminals.watch(conversationId, (next) =>
+      setState((previous) => (next.kind === "loading" && previous?.kind === "ready" ? previous : next)),
+    );
   }, [terminals, conversationId]);
   return conversationId === undefined ? undefined : state;
 }
