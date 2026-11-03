@@ -3,7 +3,8 @@
 // row, level with that header, for its status and actions. Tasks is the
 // family's Foreground subagents grouped by owner, opening read-only detail via
 // `view.side`; Background subagents open in main and never repeat here.
-// Changes is the shown conversation's checkout diff (changes-surface.tsx).
+// Changes is the shown conversation's checkout diff (changes-surface.tsx);
+// Terminal is the terminals' owner's shells (terminal-surface.tsx).
 import { Dialog } from "@astryxdesign/core/Dialog";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
@@ -20,18 +21,20 @@ import { displayName, forksAt, relativeTime, rootOf, taskGroupsOf } from "@pinom
 import { useNow } from "../../shared/use-now.ts";
 import { taskTally } from "../../entities/conversation/task-tally.ts";
 import { AnimatedSidebarRight } from "../../shared/ui/animated-icons.tsx";
-import { ArrowLeft, Bot, Cancel, FileDiff } from "../../shared/ui/icons.tsx";
+import { ArrowLeft, Bot, Cancel, CommandLine, FileDiff } from "../../shared/ui/icons.tsx";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
 import { ConversationSkeleton } from "../chat/conversation-skeleton.tsx";
 import { ChangesSurface } from "./changes-surface.tsx";
 import { SurfaceBar } from "./surface-bar.tsx";
+import { TerminalSurface } from "./terminal-surface.tsx";
 
-export type PanelSurface = "tasks" | "changes";
+export type PanelSurface = "tasks" | "changes" | "terminal";
 
 const SURFACES: readonly { readonly id: PanelSurface; readonly label: string; readonly icon: ReactNode }[] = [
   { id: "tasks", label: "Tasks", icon: <Bot className="size-4" aria-hidden="true" /> },
   { id: "changes", label: "Changes", icon: <FileDiff className="size-4" aria-hidden="true" /> },
+  { id: "terminal", label: "Terminal", icon: <CommandLine className="size-4" aria-hidden="true" /> },
 ];
 
 /** A stored surface id, or Tasks when it names none of today's surfaces. */
@@ -337,9 +340,21 @@ export function SidePanel({
     maxSizePx: 720,
     autoSaveId: "pinomad-side-panel",
   });
+  // Main switches to its next conversation before that snapshot lands; until
+  // the loaded one is the shown one, its terminals are not the ones to show.
+  const loadedId = view.conversation?.conversation.id;
   const content = (barStart?: ReactNode, barEnd?: ReactNode) =>
     surface === "changes" ? (
       <ChangesSurface view={view} remote={remote} shownId={shownId} busy={busy} barStart={barStart} barEnd={barEnd} />
+    ) : surface === "terminal" ? (
+      <TerminalSurface
+        terminals={remote.terminals}
+        conversationId={loadedId !== undefined && loadedId === shownId ? loadedId : undefined}
+        connected={view.connection === "connected"}
+        stacked={narrow}
+        barStart={barStart}
+        barEnd={barEnd}
+      />
     ) : (
       <TasksSurface
         view={view}
