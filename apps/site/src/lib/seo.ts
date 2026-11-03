@@ -2,6 +2,22 @@ import type { Lang } from "./i18n.ts";
 
 export const siteOrigin = "https://pinomad.si";
 
+const socialImage = `${siteOrigin}/og.jpg`;
+
+/**
+ * Link-preview image for every page (public/og.jpg). The root route sets it;
+ * route meta with the same name or property overrides it.
+ */
+export const socialImageMeta = [
+  { property: "og:image", content: socialImage },
+  { property: "og:image:width", content: "1200" },
+  { property: "og:image:height", content: "630" },
+  { property: "og:image:type", content: "image/jpeg" },
+  { property: "og:image:alt", content: "PiNomad" },
+  { name: "twitter:card", content: "summary_large_image" },
+  { name: "twitter:image", content: socialImage },
+];
+
 export type PageAlternates = Partial<Record<Lang, string>>;
 
 export type PageLink = { rel: string; href: string; hrefLang?: string };

@@ -1,11 +1,16 @@
 import { createRootRoute, HeadContent, Outlet, Scripts, useLocation } from "@tanstack/react-router";
 import { htmlLang, langOf } from "@/lib/i18n.ts";
+import { socialImageMeta } from "@/lib/seo.ts";
 import favicon from "../../../web/public/favicon.svg?url";
 import touchIcon from "../../../web/public/apple-touch-icon.png?url";
 
 export const Route = createRootRoute({
   head: () => ({
-    meta: [{ charSet: "utf-8" }, { name: "viewport", content: "width=device-width, initial-scale=1" }],
+    meta: [
+      { charSet: "utf-8" },
+      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      ...socialImageMeta,
+    ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: favicon },
       { rel: "apple-touch-icon", href: touchIcon },
