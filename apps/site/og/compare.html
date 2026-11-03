@@ -1,0 +1,51 @@
+<!doctype html>
+<meta charset="utf-8" />
+<style>
+  html, body { margin: 0; background: #f4f4f2; }
+  body {
+    width: 2160px;
+    padding: 56px 64px 64px;
+    box-sizing: border-box;
+    font-family: "PingFang SC", -apple-system, sans-serif;
+    color: #1d1d1f;
+  }
+  h1 { margin: 0 0 6px; font-size: 34px; font-weight: 600; }
+  p { margin: 0 0 40px; font-size: 20px; color: #6e6e73; }
+  .grid {
+    display: grid;
+    grid-template-columns: 96px 1fr 1fr;
+    gap: 20px 24px;
+    align-items: center;
+  }
+  .col { font-size: 22px; font-weight: 600; padding-bottom: 4px; }
+  .row { font-size: 22px; font-weight: 600; writing-mode: vertical-rl; justify-self: center; }
+  figure { margin: 0; position: relative; }
+  img { display: block; width: 100%; border-radius: 14px; box-shadow: 0 1px 3px rgb(0 0 0 / 0.12); }
+  figcaption {
+    position: absolute;
+    left: 14px;
+    top: 14px;
+    min-width: 40px;
+    height: 40px;
+    border-radius: 20px;
+    background: rgb(0 0 0 / 0.62);
+    color: #fff;
+    font-size: 22px;
+    font-weight: 600;
+    display: grid;
+    place-items: center;
+  }
+</style>
+<h1>PiNomad OG 图候选</h1>
+<p>1200×630，链接分享卡片用。</p>
+<div class="grid">
+  <div></div>
+  <div class="col">Geist Serif · 云拖影 + 颗粒</div>
+  <div class="col">Geist Pixel · Bayer 像素抖动</div>
+  <div class="row">B1 · 云在四角</div>
+  <figure><img src="out/1-b1-serif.jpg" /><figcaption>1</figcaption></figure>
+  <figure><img src="out/2-b1-pixel.png" /><figcaption>2</figcaption></figure>
+  <div class="row">A3 · 低处云带</div>
+  <figure><img src="out/3-a3-serif.jpg" /><figcaption>3</figcaption></figure>
+  <figure><img src="out/4-a3-pixel.png" /><figcaption>4</figcaption></figure>
+</div>
