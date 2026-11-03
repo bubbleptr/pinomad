@@ -45,6 +45,15 @@ import {
   type RtcSelectedPair,
 } from "./rtc.ts";
 import { type FrameConnection, type FrameHandlers, type FrameTransport, webSocketTransport } from "./transport.ts";
+import {
+  isTerminalsHello,
+  terminalsStream,
+  terminalStream,
+  type TerminalId,
+  type TerminalList,
+  type TerminalsHello,
+  type TerminalSize,
+} from "./terminals.ts";
 import { isBusy } from "./transcript.ts";
 import type {
   ConversationDefaults,
@@ -260,9 +269,43 @@ export type RemoteDurableOptions = (
   readonly clock?: RtcClock;
 };
 
+/** One conversation's terminals as `RemoteTerminals.watch` reports them. */
+export type TerminalsState =
+  | { readonly kind: "unavailable"; readonly reason: string }
+  | { readonly kind: "loading" }
+  | { readonly kind: "ready"; readonly list: TerminalList };
+
+export interface TerminalOutputSink {
+  /** `reset`: `data` replays the host's whole buffer; clear the screen first. */
+  output(data: string, reset: boolean): void;
+  /** The host ended the stream (the terminal closed, or never existed). */
+  ended(reason: string): void;
+}
+
+/**
+ * Terminals (5.27, ADR-0041) beside the view: output is pushed to a sink, not
+ * held as state. Streams come back after a reconnect on their own — output
+ * from the last position received — and never hold the reconnect's call gate.
+ */
+export interface RemoteTerminals {
+  /** Calls `listener` at once with the current state, then on every change. */
+  watch(conversationId: ConversationId, listener: (state: TerminalsState) => void): () => void;
+  /** One sink per terminal; attaching again replaces it and replays from the start. */
+  attach(terminalId: TerminalId, sink: TerminalOutputSink): () => void;
+  open(conversationId: ConversationId, size: TerminalSize): Promise<TerminalId>;
+  /** Sent at once, never queued behind commands; a failure is dropped (the list says why). */
+  input(terminalId: TerminalId, data: string): void;
+  /** Like input; the size is sent again after a reconnect, since the host keeps it per connection. */
+  resize(terminalId: TerminalId, size: TerminalSize): void;
+  rename(terminalId: TerminalId, name: string | null): Promise<void>;
+  restart(terminalId: TerminalId, size: TerminalSize): Promise<void>;
+  close(terminalId: TerminalId): Promise<void>;
+}
+
 export interface RemoteDurable {
   readonly view: DurableViewSource;
   readonly controller: DurableController;
+  readonly terminals: RemoteTerminals;
   /** Switching mode reconnects the whole client (ADR-0033 §3). */
   setConnectionMode(mode: ConnectionMode): void;
   /** Current path, P2P phase, last failure, selected ICE type, cooldown. */
@@ -561,6 +604,16 @@ class RemoteClient {
   #helloDefaults: ConversationDefaults = {};
   /** The last hello's packaged version, absent on source checkouts — `view.host.version`. */
   #hostVersion: string | undefined;
+  /** The last hello's `terminals`: absent when the host's pty module didn't load. */
+  #hostTerminals: TerminalsHello | undefined;
+  /** `terminals:<id>` streams and who watches them, kept across reconnects. */
+  readonly #terminalWatchers = new Map<StreamName, Set<(state: TerminalsState) => void>>();
+  /** `terminal:<id>` streams and their sinks, kept across reconnects. */
+  readonly #terminalSinks = new Map<StreamName, TerminalOutputSink>();
+  /** The last `output.seq` per attached stream: the `since` of a resubscribe. */
+  readonly #terminalPositions = new Map<StreamName, number>();
+  /** The last size sent per attached terminal, sent again on a new connection. */
+  readonly #terminalSizes = new Map<TerminalId, TerminalSize>();
   #attempt = 0;
   /**
    * One random suffix per coordinator instance. The host caches answered
@@ -833,6 +886,7 @@ class RemoteClient {
     this.#helloModels = frame.models;
     this.#helloDefaults = frame.defaults ?? {};
     this.#hostVersion = frame.hostVersion;
+    this.#hostTerminals = isTerminalsHello(frame.terminals) ? frame.terminals : undefined;
     this.#fresh.clear();
     // A host that got older between reconnects no longer covers every host
     // stream; drop the ones it predates together with their values.
@@ -848,6 +902,7 @@ class RemoteClient {
     }
     if (this.#current !== undefined) for (const stream of this.#conversationStreams(this.#current)) this.#wanted.add(stream);
     if (this.#side !== undefined) for (const stream of this.#conversationStreams(this.#side)) this.#wanted.add(stream);
+    this.#terminalsAvailability();
     for (const stream of this.#wanted) this.#subscribe(stream);
     if (frame.endpointSet !== undefined) {
       const parsed = parseEndpointSet(frame.endpointSet);
@@ -956,6 +1011,7 @@ class RemoteClient {
       this.#resolveReady({
         view: this.#viewSource(),
         controller: this.#controller(),
+        terminals: this.#terminals(),
         setConnectionMode: (mode) => this.setConnectionMode(mode),
         rtcDiagnostics: () => this.rtcDiagnostics(),
         close: () => this.#close(),
@@ -970,6 +1026,9 @@ class RemoteClient {
     // releases commands queued during the outage (ADR-0034 §6).
     await this.#recoverSubmissions();
     if (!this.#isActive(dial)) return;
+    for (const [terminalId, size] of this.#terminalSizes) {
+      this.#callNow("resizeTerminal", { terminalId, ...size }).catch(() => {});
+    }
     this.#finishSyncGate();
     this.#afterCarrierReady(dial);
   }
@@ -2167,6 +2226,11 @@ class RemoteClient {
     switch (frame.type) {
       case "snapshot":
         if (!this.#wanted.has(frame.stream)) return;
+        if (frame.stream.startsWith("terminals:")) {
+          this.#values.set(frame.stream, frame.value);
+          this.#notifyTerminals(frame.stream, { kind: "ready", list: frame.value as TerminalList });
+          return;
+        }
         this.#values.set(frame.stream, frame.value);
         this.#fresh.add(frame.stream);
         this.#streamVersions.set(frame.stream, (this.#streamVersions.get(frame.stream) ?? 0) + 1);
@@ -2178,7 +2242,18 @@ class RemoteClient {
         this.#values.set(frame.stream, applyImmutable(this.#values.get(frame.stream), frame.ops));
         this.#refresh();
         return;
+      case "output": {
+        const sink = this.#terminalSinks.get(frame.stream);
+        if (sink === undefined || !this.#wanted.has(frame.stream)) return;
+        this.#terminalPositions.set(frame.stream, frame.seq);
+        sink.output(frame.data, frame.reset === true);
+        return;
+      }
       case "ended": {
+        if (frame.stream.startsWith("terminals:") || frame.stream.startsWith("terminal:")) {
+          this.#endTerminalStream(frame.stream, frame.reason);
+          return;
+        }
         this.#wanted.delete(frame.stream);
         this.#values.delete(frame.stream);
         this.#fresh.delete(frame.stream);
@@ -2301,7 +2376,131 @@ class RemoteClient {
    */
   #subscribe(stream: StreamName): void {
     const refs = stream.startsWith("conversation:") && hostSupportsFeature(this.#hostMinor, "imageRefs");
-    this.#send({ type: "subscribe", stream, ...(refs ? { images: "ref" as const } : {}) });
+    const since = this.#terminalPositions.get(stream);
+    this.#send({
+      type: "subscribe",
+      stream,
+      ...(refs ? { images: "ref" as const } : {}),
+      ...(since === undefined ? {} : { since }),
+    });
+  }
+
+  /** Why this host has no terminals, or undefined when it has them. */
+  #terminalsUnavailable(): string | undefined {
+    if (!hostSupportsFeature(this.#hostMinor, "terminals")) {
+      return "The host is too old for terminals (needs protocol 5.27); run `pinomad upgrade` on the host";
+    }
+    if (this.#hostTerminals === undefined) return "The host couldn't load its terminal module; its log says which package is missing";
+    return undefined;
+  }
+
+  /**
+   * A hello decides again whether the watched lists and attached outputs are
+   * wanted: a host that lost terminals ends them, one that has them takes
+   * them back into the resubscribe.
+   */
+  #terminalsAvailability(): void {
+    const reason = this.#terminalsUnavailable();
+    if (reason === undefined) {
+      for (const stream of this.#terminalWatchers.keys()) this.#wanted.add(stream);
+      for (const stream of this.#terminalSinks.keys()) this.#wanted.add(stream);
+      return;
+    }
+    for (const stream of [...this.#terminalWatchers.keys()]) {
+      this.#wanted.delete(stream);
+      this.#values.delete(stream);
+      this.#notifyTerminals(stream, { kind: "unavailable", reason });
+    }
+    for (const stream of [...this.#terminalSinks.keys()]) this.#endTerminalStream(stream, reason);
+  }
+
+  #notifyTerminals(stream: StreamName, state: TerminalsState): void {
+    for (const listener of [...(this.#terminalWatchers.get(stream) ?? [])]) listener(state);
+  }
+
+  /** The host ended a terminal stream, or this host has no terminals. */
+  #endTerminalStream(stream: StreamName, reason: string): void {
+    this.#wanted.delete(stream);
+    this.#values.delete(stream);
+    if (stream.startsWith("terminals:")) {
+      this.#notifyTerminals(stream, { kind: "unavailable", reason });
+      return;
+    }
+    const sink = this.#terminalSinks.get(stream);
+    this.#terminalSinks.delete(stream);
+    this.#terminalPositions.delete(stream);
+    this.#terminalSizes.delete(stream.slice("terminal:".length));
+    sink?.ended(reason);
+  }
+
+  #terminalCall<M extends CallMethod>(method: M, args: CallMethods[M]["args"]): Promise<CallMethods[M]["result"]> {
+    const reason = this.#terminalsUnavailable();
+    return reason === undefined ? this.#call(method, args) : Promise.reject(new Error(reason));
+  }
+
+  #terminals(): RemoteTerminals {
+    return {
+      watch: (conversationId, listener) => {
+        const stream = terminalsStream(conversationId);
+        let listeners = this.#terminalWatchers.get(stream);
+        const first = listeners === undefined;
+        if (listeners === undefined) this.#terminalWatchers.set(stream, (listeners = new Set()));
+        listeners.add(listener);
+        const reason = this.#terminalsUnavailable();
+        const list = this.#values.get(stream) as TerminalList | undefined;
+        listener(
+          reason !== undefined
+            ? { kind: "unavailable", reason }
+            : list !== undefined
+              ? { kind: "ready", list }
+              : { kind: "loading" },
+        );
+        if (first && reason === undefined) {
+          this.#wanted.add(stream);
+          if (this.#helloReceived) this.#subscribe(stream);
+        }
+        return () => {
+          if (!listeners.delete(listener) || listeners.size > 0) return;
+          this.#terminalWatchers.delete(stream);
+          if (!this.#wanted.delete(stream)) return;
+          this.#values.delete(stream);
+          this.#send({ type: "unsubscribe", stream });
+        };
+      },
+      attach: (terminalId, sink) => {
+        const stream = terminalStream(terminalId);
+        const reason = this.#terminalsUnavailable();
+        if (reason !== undefined) {
+          sink.ended(reason);
+          return () => {};
+        }
+        // Replacing a sink starts its output over: the new one has no screen yet.
+        if (this.#terminalSinks.has(stream) && this.#wanted.has(stream)) this.#send({ type: "unsubscribe", stream });
+        this.#terminalSinks.set(stream, sink);
+        this.#terminalPositions.delete(stream);
+        this.#wanted.add(stream);
+        if (this.#helloReceived) this.#subscribe(stream);
+        return () => {
+          if (this.#terminalSinks.get(stream) !== sink) return;
+          this.#terminalSinks.delete(stream);
+          this.#terminalPositions.delete(stream);
+          this.#terminalSizes.delete(terminalId);
+          if (this.#wanted.delete(stream)) this.#send({ type: "unsubscribe", stream });
+        };
+      },
+      open: (conversationId, size) =>
+        this.#terminalCall("openTerminal", { conversationId, ...size }).then(({ terminalId }) => terminalId),
+      input: (terminalId, data) => {
+        this.#terminalCall("terminalInput", { terminalId, data }).catch(() => {});
+      },
+      resize: (terminalId, size) => {
+        if (this.#terminalSinks.has(terminalStream(terminalId))) this.#terminalSizes.set(terminalId, size);
+        this.#terminalCall("resizeTerminal", { terminalId, ...size }).catch(() => {});
+      },
+      rename: (terminalId, name) => this.#terminalCall("renameTerminal", { terminalId, name }).then(() => {}),
+      restart: (terminalId, size) => this.#terminalCall("restartTerminal", { terminalId, ...size }).then(() => {}),
+      close: (terminalId) => this.#terminalCall("closeTerminal", { terminalId }).then(() => {}),
+    };
   }
 
   /** A host-level stream's latest value, or undefined until its first snapshot lands. */

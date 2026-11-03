@@ -6,6 +6,7 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import { WebSocket } from "ws";
 import { describe, expect, it } from "vitest";
 import type { ServerFrame } from "@pinomad/protocol/frames.ts";
+import type { TerminalsState } from "@pinomad/protocol/remote-durable.ts";
 import type { TerminalList } from "@pinomad/protocol/terminals.ts";
 import { connectTo, startChat, startFauxHost, useCleanups } from "./support.ts";
 
@@ -156,6 +157,21 @@ describe("gateway terminals", () => {
     expect(alive(pid)).toBe(true);
     await host.close();
     await until(() => !alive(pid));
+  });
+
+  it("lets a RemoteDurable client open a terminal, type into it and read the output", async () => {
+    const host = await startFauxHost(defer, { answers: ["hello"] });
+    const durable = await connectTo(defer, host);
+    const conversationId = await startChat(durable, "hi");
+    let state: TerminalsState | undefined;
+    defer(durable.terminals.watch(conversationId, (next) => (state = next)));
+    const terminalId = await durable.terminals.open(conversationId, SIZE);
+    await until(() => state?.kind === "ready" && state.list.terminals.some((terminal) => terminal.id === terminalId));
+
+    let text = "";
+    defer(durable.terminals.attach(terminalId, { output: (data, reset) => (text = reset ? data : text + data), ended: () => {} }));
+    durable.terminals.input(terminalId, "echo client-$((2 + 3))\r");
+    await until(() => /client-5\r?\n/.test(text));
   });
 
   it("refuses terminal calls and leaves hello.terminals out when the pty module is missing", async () => {
