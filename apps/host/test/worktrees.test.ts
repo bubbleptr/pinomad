@@ -681,6 +681,90 @@ describe("worktree checkouts", () => {
     expect(childPrompt).not.toContain("This conversation is a fork");
   });
 
+  // ADR-0040 §5: terminals belong to the conversation whose checkout record
+  // covers the directory — the root for a shared checkout, a pre-ADR fork for
+  // its own worktree — and start there.
+  it("gives a family one set of terminals, and a pre-ADR fork with its own worktree its own", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const repoDir = join(dir.path, "repo");
+    await initRepo(repoDir);
+    const dataDir = await tempDir();
+    defer(dataDir.remove);
+    const host = await startFauxHost(defer, {
+      dataDir: dataDir.path,
+      projects: [repoDir],
+      extensions: [coding],
+      answers: ["parent done", "fork done", "more done", "legacy done"],
+    });
+    const client = await connectTo(defer, host);
+    const raw = await socketTo(host);
+    const size = { cols: 80, rows: 24 };
+    const listOf = async (conversationId: ConversationId) => {
+      const result = await call(raw, "openTerminal", { conversationId, ...size });
+      expect(result.ok).toBe(true);
+      raw.socket.send(JSON.stringify({ type: "subscribe", stream: `terminals:${conversationId}` }));
+      for (;;) {
+        const snapshot = raw.frames.findLast(
+          (frame): frame is Extract<ServerFrame, { type: "snapshot" }> => frame.type === "snapshot" && frame.stream === `terminals:${conversationId}`,
+        );
+        if (snapshot !== undefined) return snapshot.value as { owner: ConversationId; terminals: { id: string }[] };
+        await once(raw.socket, "message");
+      }
+    };
+
+    const parent = await startConversation(client, { kind: "project", path: repoDir }, "parent");
+    await settled(client, "parent done");
+    const parentCwd = cwdOf(client);
+    const parentBase = client.view.current().checkout!.base;
+    const entryId = String(client.view.current().conversation!.entries.at(-1)!.id);
+    await client.controller.fork(entryId, "fork work");
+    await settled(client, "fork done");
+    const fork = client.view.current().conversation!.conversation.id;
+
+    // The fork shares the root's checkout, so both see the root's list.
+    const fromFork = await listOf(fork);
+    expect(fromFork.owner).toBe(parent);
+    expect(fromFork.terminals).toHaveLength(1);
+
+    // A pre-ADR fork: its own record and worktree. One fork per message
+    // (ADR-0019 §3), so it forks the parent's next answer.
+    await client.controller.switchConversation(parent);
+    await client.controller.submit("more", "followUp");
+    await settled(client, "more done");
+    await client.controller.fork(String(client.view.current().conversation!.entries.at(-1)!.id), "legacy work");
+    await settled(client, "legacy done");
+    const legacy = client.view.current().conversation!.conversation.id;
+    const legacyCwd = join(dataDir.path, "worktrees", String(legacy));
+    const branch = worktreeBranch(legacy, branchSuffix());
+    await git(repoDir, ["worktree", "add", "-b", branch, legacyCwd, parentBase]);
+    await host.harness.commit(async (tx) => {
+      const doc = await tx.doc(IndexDoc);
+      doc.checkouts ??= [];
+      doc.checkouts.push({ conversationId: legacy, path: legacyCwd, repo: await realpath(repoDir), subdir: "", branch, base: parentBase });
+      (await tx.doc(AgentDoc, legacy)).cwd = legacyCwd;
+    }, BACKGROUND_CONTEXT);
+    const fromLegacy = await listOf(legacy);
+    expect(fromLegacy.owner).toBe(legacy);
+    expect(fromLegacy.terminals).toHaveLength(1);
+
+    // Each shell starts in its owner's checkout.
+    for (const [list, cwd] of [[fromFork, parentCwd], [fromLegacy, legacyCwd]] as const) {
+      const stream = `terminal:${list.terminals[0]!.id}`;
+      raw.socket.send(JSON.stringify({ type: "subscribe", stream }));
+      await call(raw, "terminalInput", { terminalId: list.terminals[0]!.id, data: "pwd -P\r" });
+      const real = await realpath(cwd);
+      for (;;) {
+        const text = raw.frames
+          .filter((frame): frame is Extract<ServerFrame, { type: "output" }> => frame.type === "output" && frame.stream === stream)
+          .map((frame) => frame.data)
+          .join("");
+        if (text.includes(`${real}\r\n`)) break;
+        await once(raw.socket, "message");
+      }
+    }
+  });
+
   it("keeps today's prompt for a fork that owns a worktree record (pre-ADR)", async () => {
     const dir = await tempDir();
     defer(dir.remove);
