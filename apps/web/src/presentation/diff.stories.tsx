@@ -18,6 +18,25 @@ const modified = [
   "",
 ].join("\n");
 
+// Two hunks far apart in one file: the gap between them has no contents to expand.
+const twoHunks = [
+  "diff --git a/src/config.rs b/src/config.rs",
+  "index 8888888..9999999 100644",
+  "--- a/src/config.rs",
+  "+++ b/src/config.rs",
+  "@@ -3,4 +3,4 @@ use std::path::PathBuf;",
+  " pub struct Config {",
+  "-    pub root: String,",
+  "+    pub root: PathBuf,",
+  "     pub verbose: bool,",
+  " }",
+  "@@ -40,2 +40,3 @@ impl Config {",
+  "     fn load() -> Self {",
+  "+        let verbose = std::env::var(\"VERBOSE\").is_ok();",
+  "         todo!()",
+  "",
+].join("\n");
+
 const newFile = [
   "diff --git a/new.txt b/new.txt",
   "new file mode 100644",
@@ -76,6 +95,10 @@ export const Modified: Story = {};
 
 export const SeveralFiles: Story = {
   args: { patch: [modified, newFile, deleted, renamed].join("") },
+};
+
+export const TwoHunks: Story = {
+  args: { patch: twoHunks },
 };
 
 export const Binary: Story = {

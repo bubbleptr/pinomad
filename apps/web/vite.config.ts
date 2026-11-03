@@ -25,6 +25,13 @@ export function webViteBase(root: string): UserConfig {
       alias: {
         // Pace's `@/` convention, so files copied from it keep working (ADR-0014).
         "@": join(root, "src"),
+        // @pierre/diffs would ship every Shiki grammar (for its no-WebAssembly
+        // fallback) and two theme catalogs; these stand-ins keep a curated set
+        // of grammars and its two default themes.
+        "shiki/langs": join(root, "src/presentation/pierre/shiki-langs.ts"),
+        "shiki/wasm": join(root, "src/presentation/pierre/shiki-wasm.ts"),
+        "@pierre/highlights/themes/loader": join(root, "src/presentation/pierre/highlights-themes.ts"),
+        "@pierre/theming/themes": join(root, "src/presentation/pierre/theming-themes.ts"),
         react: dirname(requireFromWeb.resolve("react/package.json")),
         "react-dom": dirname(requireFromWeb.resolve("react-dom/package.json")),
       },

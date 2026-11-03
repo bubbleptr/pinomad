@@ -2,8 +2,12 @@
 // tool-result diffs keep rendering every line.
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import type { ReactNode } from "react";
+import { describe, expect, it, vi } from "vitest";
 import { DiffView } from "./diff.tsx";
+
+// jsdom has no shadow-DOM highlighter; the plain lines stand in for it.
+vi.mock("./highlighted-diff.tsx", () => ({ default: ({ fallback }: { fallback: ReactNode }) => fallback }));
 
 function filePatch(path: string, lines: number): string {
   const added = Array.from({ length: lines }, (_, index) => `+${path} line ${index}`);

@@ -5,9 +5,11 @@
 
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { chromium } from "@playwright/test";
 import { build } from "vite";
 import { expect, it } from "vitest";
+import { coding } from "@pinomad/host/src/extensions/coding.ts";
 import { startFauxHost, tempDir, useCleanups } from "@pinomad/host/test/support.ts";
 
 const defer = useCleanups();
@@ -17,9 +19,22 @@ it("runs the built client served by the host without CSP violations", async () =
   const out = await tempDir();
   defer(out.remove);
   await build({ configFile: webConfig, logLevel: "error", build: { outDir: join(out.path, "dist"), emptyOutDir: true } });
+  const project = await tempDir();
+  defer(project.remove);
+  const projectName = project.path.split("/").at(-1)!;
   const host = await startFauxHost(defer, {
     webRoot: join(out.path, "dist"),
-    answers: ["Here it is:\n\n```ts\nconst answer: number = 42;\n```\n"],
+    projects: [project.path],
+    extensions: [coding],
+    answers: [
+      fauxAssistantMessage(fauxToolCall("write", { path: "answer.ts", content: "const answer = 41;\n" }), {
+        stopReason: "toolUse",
+      }),
+      fauxAssistantMessage(fauxToolCall("edit", { path: "answer.ts", edits: [{ oldText: "41", newText: "42" }] }), {
+        stopReason: "toolUse",
+      }),
+      "Here it is:\n\n```ts\nconst answer: number = 42;\n```\n",
+    ],
   });
   const origin = new URL(host.url.replace(/^ws/, "http")).origin;
 
@@ -40,6 +55,8 @@ it("runs the built client served by the host without CSP violations", async () =
   expect(response?.headers()["content-security-policy"]).toContain("default-src 'self'");
   const prompt = page.getByRole("textbox", { name: "Prompt" }).or(page.getByRole("combobox", { name: "Prompt" }));
   await prompt.waitFor();
+  await page.getByRole("button", { name: projectName, exact: true }).hover();
+  await page.getByRole("button", { name: `New conversation in ${projectName}`, exact: true }).click();
 
   // A pasted image renders from a data: URL; the fenced answer runs Astryx's
   // highlighter, which injects its <style> elements at runtime.
@@ -60,7 +77,17 @@ it("runs the built client served by the host without CSP violations", async () =
   await prompt.fill("show me code");
   await prompt.press("Enter");
   await page.getByTestId("message-images").getByRole("button", { name: /Image 1/ }).waitFor();
-  await page.getByText("const answer").waitFor();
+  await page.getByText("const answer: number").waitFor();
+
+  // The edit's diff compiles the highlighter's WebAssembly engine
+  // (wasm-unsafe-eval) and colors its tokens.
+  await page.locator('[data-slot="chat-trace-trigger"]').click();
+  await page.getByRole("button", { name: /Edited answer.ts/ }).click();
+  await page
+    .locator('[data-line-type="change-addition"]', { hasText: "42" })
+    .locator('span[style*="--diffs-token-light"]')
+    .first()
+    .waitFor();
 
   expect(refused).toEqual([]);
 });

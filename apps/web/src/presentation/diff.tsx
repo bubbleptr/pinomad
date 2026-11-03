@@ -1,15 +1,17 @@
-// A unified-patch renderer (ADR-0005): show the parsed files, hunks, and
-// lines with theme colors — green added, red removed, subdued hunk markers.
+// A unified-patch renderer (ADR-0005): each file's header and +N −M from
+// @pinomad/client/patch.ts (shared with the native clients), its body
+// syntax-highlighted by @pierre/diffs (highlighted-diff.tsx, loaded lazily),
+// with plain green/red lines while that loads or when it can't place a file.
 // Used for tool-result details and the side panel's Changes surface, which
-// folds a long patch's files so opening it stays cheap. The
-// parser itself lives in @pinomad/client/patch.ts (shared with the native
-// clients).
+// folds a long patch's files so opening it stays cheap.
 import { parsePatch } from "@pinomad/client/patch.ts";
-import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { lazy, Suspense, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { ChevronRight } from "../shared/ui/icons.tsx";
+
+const HighlightedFile = lazy(() => import("./highlighted-diff.tsx"));
 
 const fileStyle: CSSProperties = {
   fontFamily: "var(--font-family-code)",
@@ -69,18 +71,27 @@ export function DiffView({ patch, collapsible = false }: { patch: string; collap
             {!open ? null : file.binary === true ? (
               <Text type="supporting">Binary file</Text>
             ) : file.lines.length === 0 ? null : (
-              <div style={fileStyle}>
-                {file.lines.map((line, lineIndex) => (
-                  <div key={lineIndex} style={kindStyles[line.kind]}>
-                    {line.text}
-                  </div>
-                ))}
-              </div>
+              <Suspense fallback={<PlainLines lines={file.lines} />}>
+                <HighlightedFile patch={patch} index={index} path={file.path} fallback={<PlainLines lines={file.lines} />} />
+              </Suspense>
             )}
           </VStack>
         );
       })}
     </VStack>
+  );
+}
+
+/** A file's lines without highlighting. */
+function PlainLines({ lines }: { lines: ReturnType<typeof parsePatch>[number]["lines"] }) {
+  return (
+    <div style={fileStyle}>
+      {lines.map((line, lineIndex) => (
+        <div key={lineIndex} style={kindStyles[line.kind]}>
+          {line.text}
+        </div>
+      ))}
+    </div>
   );
 }
 
