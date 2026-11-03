@@ -127,16 +127,16 @@ describe("Terminals", () => {
     const list = watchList(terminals);
     const id = terminals.open(OWNER, "/", SIZE);
     const output = watchOutput(terminals, id);
-    terminals.input(id, "echo before; exit 3\r");
+    terminals.input(id, "echo before-$((1 + 1)); exit 3\r");
     await list.until((value) => value.terminals[0]?.exit !== undefined);
     expect(list.current().terminals[0]!.exit).toEqual({ code: 3 });
 
     terminals.restart(id, SIZE);
     await list.until((value) => value.terminals[0]?.exit === undefined);
-    terminals.input(id, "echo after\r");
-    await output.until(/after/);
+    terminals.input(id, "echo after-$((1 + 1))\r");
+    await output.until(/after-2\r?\n/);
     expect(output.frames.some((frame) => frame.reset === true)).toBe(true);
-    expect(output.text()).not.toContain("before");
+    expect(output.text()).not.toContain("before-2");
   });
 
   it("resizes the pty and reports the size in the list", async () => {
@@ -180,25 +180,25 @@ describe("Terminals", () => {
     const terminals = terminalsFor({ bufferSize: 4096 });
     const id = terminals.open(OWNER, "/", SIZE);
     const first = watchOutput(terminals, id);
-    terminals.input(id, "echo mark-one\r");
-    await first.until(/mark-one\r?\n/);
+    terminals.input(id, "echo mark-$((0 + 1))\r");
+    await first.until(/mark-1\r?\n/);
     const position = first.frames.at(-1)!.seq;
     first.detach();
 
-    terminals.input(id, "echo mark-two\r");
+    terminals.input(id, "echo mark-$((1 + 1))\r");
     const live = watchOutput(terminals, id);
-    await live.until(/mark-two\r?\n/);
+    await live.until(/mark-2\r?\n/);
 
     const resumed = watchOutput(terminals, id, position);
-    await resumed.until(/mark-two/);
+    await resumed.until(/mark-2\r?\n/);
     expect(resumed.frames[0]!.reset).toBeUndefined();
-    expect(resumed.text()).not.toContain("mark-one\r\n");
+    expect(resumed.text()).not.toContain("mark-1\r\n");
 
     // Push the remembered position out of the 4 KiB buffer.
-    terminals.input(id, "i=0; while [ $i -lt 600 ]; do echo filler-$i; i=$((i+1)); done; echo mark-three\r");
-    await live.until(/mark-three\r?\n/);
+    terminals.input(id, "i=0; while [ $i -lt 600 ]; do echo filler-$i; i=$((i+1)); done; echo mark-$((2 + 1))\r");
+    await live.until(/mark-3\r?\n/);
     const late = watchOutput(terminals, id, position);
-    await late.until(/mark-three/);
+    await late.until(/mark-3\r?\n/);
     expect(late.frames[0]!.reset).toBe(true);
     expect(late.frames[0]!.data.length).toBeLessThanOrEqual(4096);
   });
@@ -208,8 +208,8 @@ describe("Terminals", () => {
     const id = terminals.open(OWNER, "/", SIZE);
     terminals.attach(id, undefined, { output: () => new Promise(() => {}), ended: () => {} });
     const reader = watchOutput(terminals, id);
-    terminals.input(id, "i=0; while [ $i -lt 500 ]; do echo line-$i; i=$((i+1)); done; echo finished\r");
-    await reader.until(/finished\r?\n/);
+    terminals.input(id, "i=0; while [ $i -lt 500 ]; do echo line-$i; i=$((i+1)); done; echo fin-$((6 * 7))\r");
+    await reader.until(/fin-42\r?\n/);
   });
 
   it("ends viewers and drops the entry on close", async () => {
