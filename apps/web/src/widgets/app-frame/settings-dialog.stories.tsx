@@ -1,6 +1,14 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn, userEvent, within } from "storybook/test";
-import { fakeMachines, fakeView, HOME_HOST, NAS_HOST, withDesktopUpdates, withHosts } from "../../test/story-fixtures.tsx";
+import {
+  fakeMachines,
+  fakeView,
+  HOME_HOST,
+  NAS_HOST,
+  withDesktopLocalHost,
+  withDesktopUpdates,
+  withHosts,
+} from "../../test/story-fixtures.tsx";
 import { SettingsDialog } from "./settings-dialog.tsx";
 
 const meta = {
@@ -49,6 +57,14 @@ export const Hosts: Story = open("Hosts");
 export const Updates: Story = {
   ...open("Updates"),
   decorators: [withDesktopUpdates({ state: "ready", currentVersion: "0.9.0", availableVersion: "0.10.0" })],
+};
+
+/** The Mac app adds This Mac, the switch over the host installed here (#501). */
+export const ThisMac: Story = {
+  ...open("This Mac"),
+  decorators: [
+    withDesktopLocalHost({ state: { kind: "installed", running: true, stopped: false, stopping: false, detail: "running (pid 4242)" } }),
+  ],
 };
 
 /** Disconnected, the host group has nothing live, so the dialog lands on this device's hosts. */

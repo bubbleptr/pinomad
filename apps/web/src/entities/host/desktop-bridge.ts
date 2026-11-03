@@ -1,6 +1,7 @@
 import type { StoredHostConnectionChange } from "@pinomad/client/stored-host.ts";
 import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import type { UpdateStatus } from "../app-update/update-protocol.ts";
+import type { LocalHostResult, LocalHostState, LocalHostStopResult } from "../local-host/local-host-protocol.ts";
 import type { StoredHost } from "./host-store.ts";
 
 /**
@@ -46,6 +47,25 @@ export interface DesktopBridge {
     check(): Promise<UpdateStatus>;
     install(): Promise<UpdateStatus>;
     onStatus(listener: (status: UpdateStatus) => void): () => void;
+  };
+  /**
+   * The "This Mac" switch over the host the user installed (#501): main runs
+   * that install's `pinomad service` CLI. macOS only; absent elsewhere and in
+   * the browser, where no switch shows.
+   */
+  readonly localHost?: {
+    state(): Promise<LocalHostState>;
+    start(): Promise<LocalHostResult>;
+    /** Resolves once the CLI exits; what it prints while waiting for tasks arrives on onStopLines. A second call joins the first. */
+    stop(): Promise<LocalHostStopResult>;
+    /** Joins a stop still waiting (state's `stopping`), never starting one; undefined when it already ended. */
+    followStop(): Promise<LocalHostStopResult | undefined>;
+    /** Interrupts a stop still waiting for tasks; the service stays on and stop() resolves "cancelled". Too late once the CLI is stopping the service: stop() then resolves "stopped". */
+    cancelStop(): Promise<void>;
+    /** Opens Terminal on a script that installs the host and joins it to this server. */
+    runSetup(serverOrigin: string): Promise<LocalHostResult>;
+    /** Every line the running stop printed so far, on each new one. */
+    onStopLines(listener: (lines: readonly string[]) => void): () => void;
   };
 }
 

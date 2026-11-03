@@ -1,12 +1,37 @@
 // Sandboxed preload: ipcRenderer.invoke reaches only the pinomad:hosts:*,
-// pinomad:account:*, pinomad:updates:* and pinomad:device:name handlers in
-// main (the paired-host list behind safeStorage, the app updater, and the
+// pinomad:account:*, pinomad:updates:*, pinomad:localHost:* (macOS) and
+// pinomad:device:name handlers in main (the paired-host list behind
+// safeStorage, the app updater, the installed host's service switch, and the
 // pairing-time device label), and the document marker tells the renderer which
 // platform owns the window — the renderer has no Node `process`. Copied from
 // Pace's pattern.
 import { contextBridge, ipcRenderer } from "electron";
 import type { DesktopBridge } from "../../web/src/entities/host/desktop-bridge.ts";
 import { updateEventChannel, type UpdateStatus } from "../../web/src/entities/app-update/update-protocol.ts";
+import { localHostStopLinesChannel } from "../../web/src/entities/local-host/local-host-protocol.ts";
+
+// Main installs the local-host handlers on macOS only; elsewhere the bridge
+// has no localHost and the renderer shows no switch.
+const localHost: DesktopBridge["localHost"] =
+  process.platform !== "darwin"
+    ? undefined
+    : {
+        state: () => ipcRenderer.invoke("pinomad:localHost:state"),
+        start: () => ipcRenderer.invoke("pinomad:localHost:start"),
+        stop: () => ipcRenderer.invoke("pinomad:localHost:stop"),
+        followStop: () => ipcRenderer.invoke("pinomad:localHost:followStop"),
+        cancelStop: () => ipcRenderer.invoke("pinomad:localHost:cancelStop"),
+        runSetup: (serverOrigin) => ipcRenderer.invoke("pinomad:localHost:runSetup", serverOrigin),
+        onStopLines(listener: (lines: readonly string[]) => void) {
+          const handler = (_event: Electron.IpcRendererEvent, lines: readonly string[]) => {
+            listener(lines);
+          };
+          ipcRenderer.on(localHostStopLinesChannel, handler);
+          return () => {
+            ipcRenderer.removeListener(localHostStopLinesChannel, handler);
+          };
+        },
+      };
 
 const bridge: DesktopBridge = {
   hosts: {
@@ -39,6 +64,7 @@ const bridge: DesktopBridge = {
       };
     },
   },
+  ...(localHost === undefined ? {} : { localHost }),
 };
 
 contextBridge.exposeInMainWorld("pinomadDesktop", bridge);

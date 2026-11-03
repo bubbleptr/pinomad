@@ -8,6 +8,8 @@ import { Text } from "@astryxdesign/core/Text";
 import { useState } from "react";
 import type { AccountError, JoinToken } from "@pinomad/client/account.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
+import { RunInTerminalButton } from "../../entities/local-host/run-in-terminal.tsx";
+import { localHostBridge, useLocalHostState } from "../../entities/local-host/use-local-host.ts";
 import { useNow } from "../../shared/use-now.ts";
 import { accountErrorMessage } from "./account-error.ts";
 import { HostLinkEntry } from "./host-link-entry.tsx";
@@ -25,10 +27,13 @@ export const joinCommand = (serverOrigin: string): string =>
 /**
  * How a new host joins this account (#496): the command to run on it, the
  * field for the code it then prints, and, folded away for scripts, the old
- * one-time token command that needs no confirmation. Shared by the account
- * panel's Add a host and the first-host home.
+ * one-time token command that needs no confirmation. In the Mac app with no
+ * host installed here, Run in Terminal does the same on this Mac (#501).
+ * Shared by the account panel's Add a host and the first-host home.
  */
 export function AddHostSteps({ serverOrigin }: { serverOrigin: string }) {
+  const localHost = localHostBridge();
+  const { state: localState, pollUntilInstalled } = useLocalHostState(localHost);
   return (
     <VStack gap={4} style={{ width: "100%" }}>
       <VStack gap={2}>
@@ -36,12 +41,19 @@ export function AddHostSteps({ serverOrigin }: { serverOrigin: string }) {
         {/* No language: shell highlighting splits the server address into colors. */}
         <CodeBlock code={joinCommand(serverOrigin)} hasCopyButton isWrapped width="100%" />
       </VStack>
+      {localHost !== undefined && localState?.kind === "not-installed" ? (
+        <VStack gap={2}>
+          <Text type="supporting">Or run it on this Mac in Terminal, then enter the code it shows below.</Text>
+          <RunInTerminalButton bridge={localHost} serverOrigin={serverOrigin} />
+        </VStack>
+      ) : null}
       <VStack gap={2}>
         <Text type="supporting">
-          It asks how your other devices should reach the host; press Enter to go through this server. Then it prints a
-          code. Enter it here to add the host to your account:
+          It asks how your other devices should reach the host; press Enter to go through this server. Then it opens a
+          page to confirm the host, or, on a computer without a browser, prints a code. Enter that code here:
         </Text>
-        <HostLinkEntry />
+        {/* A host confirmed from Run in Terminal installs after this; Run in Terminal goes once it has. */}
+        <HostLinkEntry onSettled={(outcome) => outcome === "confirmed" && pollUntilInstalled()} />
       </VStack>
       <TokenCommand />
     </VStack>

@@ -187,6 +187,15 @@ try {
   );
   if (marker !== "kept") throw new Error("switching hosts reloaded the window");
 
+  // The This Mac switch's IPC answers through the real preload and main (#501).
+  // Read-only: with no pinomad.host plist no CLI runs; with one, `status --json` only reads.
+  const localHost = await page.evaluate(async () => {
+    const bridge = (window as unknown as { pinomadDesktop?: { localHost?: { state(): Promise<{ kind: string }> } } }).pinomadDesktop;
+    return bridge?.localHost === undefined ? "absent" : (await bridge.localHost.state()).kind;
+  });
+  const expected = process.platform === "darwin" ? ["not-installed", "installed", "too-old", "error"] : ["absent"];
+  if (!expected.includes(localHost)) throw new Error(`local host state over IPC: ${localHost}`);
+
   // Going back to B finds its conversation intact.
   await groupB.getByRole("button", { name: "hello from electron on B", exact: true }).click();
   await prompt.waitFor({ timeout: 30_000 });
