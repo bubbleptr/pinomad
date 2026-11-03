@@ -10,7 +10,7 @@ import { IconButton } from "@astryxdesign/core/IconButton";
 import { VStack } from "@astryxdesign/core/Layout";
 import { Tab, TabList, TabMenu } from "@astryxdesign/core/TabList";
 import { Text } from "@astryxdesign/core/Text";
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { RemoteTerminals, TerminalsState } from "@pinomad/protocol/remote-durable.ts";
 import type { TerminalId, TerminalInfo, TerminalList } from "@pinomad/protocol/terminals.ts";
@@ -52,22 +52,30 @@ function useTerminalsState(terminals: RemoteTerminals, conversationId: Conversat
 }
 
 /**
- * How many tabs fit before the row overflows: start from all of them, drop
- * one per layout pass until the row fits, start over when the row resizes.
+ * How many tabs fit before the row overflows: start from all of them and drop
+ * one per layout pass until the row fits. A wider row or new labels (a
+ * shell's new title) start over; tabs that change size on their own (styles
+ * arriving after the first measure) are measured again.
  */
-function useFittingTabs(row: React.RefObject<HTMLDivElement | null>, count: number): number {
-  const [fit, setFit] = useState(count);
+function useFittingTabs(row: RefObject<HTMLDivElement | null>, count: number, labels: string): number {
   const [width, setWidth] = useState(0);
-  useEffect(() => setFit(count), [count, width]);
+  const key = `${count}\u0000${width}\u0000${labels}`;
+  const [state, setState] = useState({ key, fit: count });
+  const [, remeasure] = useState(0);
+  const fit = state.key === key ? state.fit : count;
   useLayoutEffect(() => {
     const element = row.current;
-    if (element !== null && element.scrollWidth > element.clientWidth && fit > 1) setFit(fit - 1);
+    if (element !== null && element.scrollWidth > element.clientWidth && fit > 1) setState({ key, fit: fit - 1 });
   });
   useEffect(() => {
     const element = row.current;
     if (element === null) return;
-    const observer = new ResizeObserver(() => setWidth(element.clientWidth));
+    const observer = new ResizeObserver(() => {
+      setWidth(element.clientWidth);
+      remeasure((n) => n + 1);
+    });
     observer.observe(element);
+    if (element.firstElementChild !== null) observer.observe(element.firstElementChild);
     return () => observer.disconnect();
   }, [row]);
   return fit;
@@ -270,7 +278,11 @@ function TerminalTabs({
   onSelect: (id: TerminalId) => void;
 }) {
   const row = useRef<HTMLDivElement>(null);
-  const fit = useFittingTabs(row, list.terminals.length);
+  const fit = useFittingTabs(
+    row,
+    list.terminals.length,
+    list.terminals.map((terminal) => `${terminal.name}\u0000${terminal.exit === undefined ? "" : exitLabel(terminal.exit)}`).join("\u0001"),
+  );
   const { inline, overflow } = partitionTabs(list.terminals, selectedId, fit);
   return (
     <div ref={row} className="min-w-0 flex-1 overflow-hidden">
@@ -280,7 +292,7 @@ function TerminalTabs({
             key={terminal.id}
             value={terminal.id}
             label={terminal.name}
-            className={terminal.exit === undefined ? undefined : "text-muted"}
+            className={terminal.exit === undefined ? "pinomad-terminal-tab" : "pinomad-terminal-tab text-muted"}
             endContent={
               terminal.exit === undefined ? undefined : <span className="text-xs text-muted">{exitLabel(terminal.exit)}</span>
             }

@@ -797,3 +797,22 @@ html[data-pinomad-vibrancy] .pigui-app-layout .astryx-layout-panel:has(.astryx-s
   );
 }
 
+
+/* A terminal tab carries the shell's window title, often a whole path: cap
+   the tab and end its label in an ellipsis. Tabs never shrink below their
+   label, so tabs that don't fit go to the menu instead of becoming
+   indistinguishable stubs. The label is a grid stacking the text over a
+   hidden bold copy (Astryx keeps the width steady that way). */
+.pinomad-terminal-tab {
+  flex-shrink: 0;
+  max-width: 10rem;
+}
+
+.pinomad-terminal-tab > span:not([aria-hidden]):has(> span) {
+  min-width: 0;
+}
+
+.pinomad-terminal-tab > span:not([aria-hidden]) > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

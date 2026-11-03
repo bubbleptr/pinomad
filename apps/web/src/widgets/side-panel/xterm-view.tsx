@@ -79,6 +79,16 @@ function themeFor(element: HTMLElement): ITheme {
   };
 }
 
+/**
+ * Write host output, clearing first on a replay. The clear goes into the
+ * stream (RIS) rather than `reset()`, which runs at once while writes are
+ * still waiting to be parsed: a second replay would land after a clear that
+ * already happened.
+ */
+export function writeOutput(screen: Pick<Terminal, "write">, data: string, reset: boolean): void {
+  screen.write(reset ? `\x1bc${data}` : data);
+}
+
 export default function XtermView({
   terminals,
   terminalId,
@@ -117,10 +127,7 @@ export default function XtermView({
     };
     fitNow();
     const detach = terminals.attach(terminalId, {
-      output: (data, reset) => {
-        if (reset) screen.reset();
-        screen.write(data);
-      },
+      output: (data, reset) => writeOutput(screen, data, reset),
       ended: () => {},
     });
     const typing = screen.onData((data) => terminals.input(terminalId, data));
