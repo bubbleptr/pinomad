@@ -1303,9 +1303,9 @@ it("renders a real edit's diff inside the tool row instead of the raw args", asy
   await page.getByRole("button", { name: /Edited notes.txt/ }).click();
 
   const editDetail = page.locator('[data-slot="chat-tool-step-detail"]').last();
-  // The diff view carries the hunk lines; the args and output panes are gone.
-  await editDetail.getByText("-beta", { exact: true }).waitFor();
-  await editDetail.getByText("+delta", { exact: true }).waitFor();
+  // The highlighted diff carries the hunk lines; the args and output panes are gone.
+  await editDetail.locator('[data-line-type="change-deletion"]', { hasText: "beta" }).waitFor();
+  await editDetail.locator('[data-line-type="change-addition"]', { hasText: "delta" }).waitFor();
   expect(await editDetail.locator('[data-slot="chat-tool-args"]').count()).toBe(0);
   expect(await editDetail.locator('[data-slot="chat-tool-result"]').count()).toBe(0);
 });
@@ -1737,6 +1737,7 @@ it("summarizes changes and subagents in the overview card and links to their det
   // The Changes row switches the open panel to its Changes surface.
   await changes.click();
   await panel.getByText("tracked.txt", { exact: false }).first().waitFor();
+  await panel.locator('[data-line-type="change-addition"]', { hasText: "B" }).waitFor();
   expect(await page.getByRole("dialog").count()).toBe(0);
 
   // A binary-only change has no text lines but is still a change.
