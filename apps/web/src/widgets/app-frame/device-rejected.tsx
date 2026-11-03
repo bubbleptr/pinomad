@@ -46,7 +46,7 @@ export function DeviceRejected({ hostKey }: { hostKey: string }) {
         )}
         <Button
           label={label === undefined ? "Unpair" : `Unpair ${label}`}
-          variant="ghost"
+          variant="secondary"
           size="sm"
           onClick={() => void forget(hostKey)}
         />

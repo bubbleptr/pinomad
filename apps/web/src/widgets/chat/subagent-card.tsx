@@ -65,7 +65,7 @@ function SubagentCard({
         />
         <span className="min-w-0 flex-1 truncate text-sm">{name}</span>
         {pinomad === undefined ? null : (
-          <Button label="View" variant="ghost" size="sm" onClick={() => openInPanel(pinomad.conversationId)} />
+          <Button label="View" variant="secondary" size="sm" onClick={() => openInPanel(pinomad.conversationId)} />
         )}
       </HStack>
       <div className="text-xs text-muted">

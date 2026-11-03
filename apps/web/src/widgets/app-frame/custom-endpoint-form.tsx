@@ -297,13 +297,13 @@ export function CustomEndpointForm({
         </div>
         <HStack gap={2} vAlign="center" wrap="wrap">
           {existing === undefined ? null : (
-            <Button label="Remove endpoint…" variant="ghost" isDisabled={!connected} onClick={() => setConfirmingRemove(true)} />
+            <Button label="Remove endpoint…" variant="secondary" isDisabled={!connected} onClick={() => setConfirmingRemove(true)} />
           )}
           {removeError === undefined ? null : <InlineError message={removeError} />}
           <div style={{ marginInlineStart: "auto" }}>
             <HStack gap={2} vAlign="center" wrap="wrap">
               {saveError === undefined ? null : <InlineError message={saveError} />}
-              <Button label="Cancel" variant="ghost" onClick={onCancel} />
+              <Button label="Cancel" variant="secondary" onClick={onCancel} />
               <Button
                 label={existing === undefined ? "Add endpoint" : "Save changes"}
                 variant="primary"

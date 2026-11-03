@@ -504,7 +504,7 @@ function Connection({
             <Button label="Save a key here" size="sm" isDisabled={!connected} onClick={() => onLogin("api_key")} />
           )}
           {oauth === undefined ? null : (
-            <Button label={useOAuthLabel(oauth)} variant="ghost" size="sm" isDisabled={!connected} onClick={() => onLogin("oauth")} />
+            <Button label={useOAuthLabel(oauth)} variant="secondary" size="sm" isDisabled={!connected} onClick={() => onLogin("oauth")} />
           )}
         </HStack>
       </VStack>
@@ -532,7 +532,7 @@ function Connection({
               })
             }
           />
-          <Button label="Cancel" variant="ghost" size="sm" onClick={() => setConfirming(false)} />
+          <Button label="Cancel" variant="secondary" size="sm" onClick={() => setConfirming(false)} />
           {error === undefined ? null : <InlineError message={error} />}
         </HStack>
       </VStack>
@@ -550,7 +550,7 @@ function Connection({
       )}
       <HStack gap={2} wrap="wrap">
         <Button label={isKey ? "Replace key" : "Sign in again"} size="sm" isDisabled={!connected} onClick={() => onLogin(stored.kind)} />
-        <Button label={isKey ? "Remove key…" : "Log out…"} variant="ghost" size="sm" isDisabled={!connected} onClick={() => setConfirming(true)} />
+        <Button label={isKey ? "Remove key…" : "Log out…"} variant="secondary" size="sm" isDisabled={!connected} onClick={() => setConfirming(true)} />
       </HStack>
       {hasOther ? (
         <div>
@@ -603,7 +603,7 @@ function StoredLoginCard({ login, connected, remote }: { login: StoredLogin; con
               isDisabled={!connected}
               onClick={() => void remote.controller.logout(login.providerId)}
             />
-            <Button label="Cancel" variant="ghost" size="sm" onClick={() => setConfirming(false)} />
+            <Button label="Cancel" variant="secondary" size="sm" onClick={() => setConfirming(false)} />
           </HStack>
         </VStack>
       ) : null}

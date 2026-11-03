@@ -307,7 +307,7 @@ export function HostsSection({
                       <Button
                         label="Switch"
                         aria-label={`Switch to ${label}`}
-                        variant="ghost"
+                        variant="secondary"
                         size="sm"
                         onClick={() => paired.focusHost(host.hostKey)}
                       />
@@ -315,14 +315,14 @@ export function HostsSection({
                     <Button
                       label="Connection…"
                       aria-label={`Connection to ${label}`}
-                      variant="ghost"
+                      variant="secondary"
                       size="sm"
                       onClick={() => toggleConnection(host)}
                     />
                     <Button
                       label="Unpair…"
                       aria-label={`Unpair ${label}…`}
-                      variant="ghost"
+                      variant="secondary"
                       size="sm"
                       onClick={() => {
                         setConnectionFor(undefined);
@@ -474,7 +474,7 @@ export function HostsFallback() {
       <HostsSection />
       {account.state.status === "unavailable" ? null : (
         <div>
-          <Button label="Account…" variant="ghost" size="sm" onClick={() => setAccountOpen(true)} />
+          <Button label="Account…" variant="secondary" size="sm" onClick={() => setAccountOpen(true)} />
         </div>
       )}
       {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}

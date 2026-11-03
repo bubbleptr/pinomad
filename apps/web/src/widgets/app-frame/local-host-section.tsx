@@ -99,7 +99,7 @@ function LocalHostControls({ bridge, pollIntervalMs }: { bridge: LocalHostBridge
           status="error"
           title="Couldn't check the host on this Mac"
           description={state.message}
-          endContent={<Button label="Try again" variant="ghost" onClick={() => void refresh()} />}
+          endContent={<Button label="Try again" variant="secondary" onClick={() => void refresh()} />}
         />
       );
     case "too-old":

@@ -34,7 +34,7 @@ export function NewHostNotices({ knownHosts = browserKnownHosts }: { knownHosts?
         uniqueID: `new-host:${hostId}`,
         // It may land while the user looks elsewhere; it waits to be read.
         isAutoHide: false,
-        endContent: <Button label="Remove" variant="ghost" size="sm" onClick={() => setRemoving({ hostId, name })} />,
+        endContent: <Button label="Remove" variant="secondary" size="sm" onClick={() => setRemoving({ hostId, name })} />,
         onHide: () => dismissals.current.delete(hostId),
       });
       dismissals.current.set(hostId, dismiss);

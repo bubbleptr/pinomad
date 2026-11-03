@@ -50,7 +50,7 @@ export function RemoveHost({ account, hostId, name, serverOrigin, onClose }: Rem
       )}
       <HStack gap={2}>
         <Button label="Remove host" variant="destructive" isLoading={busy} isDisabled={password === ""} onClick={submit} />
-        <Button label="Cancel" variant="ghost" onClick={() => onClose(false)} />
+        <Button label="Cancel" variant="secondary" onClick={() => onClose(false)} />
       </HStack>
     </VStack>
   );

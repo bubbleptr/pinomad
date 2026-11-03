@@ -664,7 +664,7 @@ export function SecureClient({
         endContent={
           <Button
             label="Retry"
-            variant="ghost"
+            variant="secondary"
             onClick={() => {
               void paired(unsaved).then(
                 () => {

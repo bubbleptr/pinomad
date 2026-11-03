@@ -259,7 +259,7 @@ export function HostLinkCodeForm({
       )}
       <HStack gap={2} vAlign="center">
         <Button label="Continue" variant="primary" isLoading={isBusy} isDisabled={!isCompleteUserCode(code)} onClick={onSubmit} />
-        {onCancel === undefined ? null : <Button label="Cancel" variant="ghost" onClick={onCancel} />}
+        {onCancel === undefined ? null : <Button label="Cancel" variant="secondary" onClick={onCancel} />}
       </HStack>
     </VStack>
   );
@@ -324,7 +324,7 @@ export function HostLinkConfirm({
             </Tooltip>
             <Button
               label={copied ? "Copied" : "Copy"}
-              variant="ghost"
+              variant="secondary"
               size="sm"
               icon={copied ? <Check aria-hidden="true" style={iconSize} /> : <Copy aria-hidden="true" style={iconSize} />}
               onClick={() => {
