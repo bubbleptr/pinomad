@@ -168,7 +168,7 @@ export function LoginPanel({
             isDisabled={!connected}
             onClick={start}
           />
-          <Button label="Cancel" variant="ghost" onClick={onCancel} />
+          <Button label="Cancel" variant="secondary" onClick={onCancel} />
         </HStack>
       </VStack>
     );
@@ -232,7 +232,7 @@ function Status({ label }: { label: string }) {
 function CancelRow({ error, onCancel }: { error?: string; onCancel: () => void }) {
   return (
     <HStack gap={2} vAlign="center" wrap="wrap">
-      <Button label="Cancel" variant="ghost" onClick={onCancel} />
+      <Button label="Cancel" variant="secondary" onClick={onCancel} />
       {error === undefined ? null : <InlineError message={error} />}
     </HStack>
   );
@@ -427,7 +427,7 @@ function PromptForm({
         )}
         <HStack gap={2} vAlign="center" wrap="wrap">
           <Button label="Continue" variant="primary" type="submit" isLoading={sending} isDisabled={!canSubmit} />
-          <Button label="Cancel" variant="ghost" onClick={onCancel} />
+          <Button label="Cancel" variant="secondary" onClick={onCancel} />
           {cancelError === undefined ? null : <InlineError message={cancelError} />}
         </HStack>
       </VStack>

@@ -14,6 +14,8 @@ iOS 客户端是原生的 `apps/ios`（SwiftUI + `crates/pinomad-core`，ADR-002
 
 界面改动按端分开做：Web 和桌面端（renderer 就是 `apps/web`）在 Linux 上就能开发和验证，一起做；iOS（`apps/ios`）单独做，不和 Web 的界面放进同一个 PR。只改协议或 `packages/client` 时，iOS 侧由上面的 `crates/pinomad-core` 同步规则和 CI 里 cargo job 的对照向量测试兜住；需要同步的改动会碰到 `crates/`，rust-core workflow 的 ios job 随之触发。
 
+Web 界面的设计规则在 `apps/web/DESIGN.md`：按钮只有 `primary` / `secondary` / `ghost` / `destructive` 四档，什么时候用哪档、什么尺寸都在那里，加按钮前先读。
+
 查 Astryx 组件的 props、variants 和 token 时，在 `apps/web` 下跑 `bunx astryx component <Name>`（`component --list` 列全部组件，`docs tokens` 查 token）。CLI 版本跟着 `@astryxdesign/core` 走；在仓库根目录跑会拉到 npm 上同名的无关包。不跑 `astryx init`：它会往 AGENTS.md 灌整段英文组件索引。
 
 Web 组件的 Storybook 在 `apps/web/.storybook`（`bun run storybook`，端口 6006）：story 和组件放在一起（`*.stories.tsx`），装饰器套 Astryx `Theme` 和 `styles.css`，工具栏切明暗；画布默认是对话栏宽度（44rem，居中），整屏的组件在 story 上设 `parameters: { canvasWidth: "full" }`。`src/test/stories.test.tsx` 在 jsdom 里渲染全部 story，进 `bun run test`；组件的 props 变了要同步改它的 story。

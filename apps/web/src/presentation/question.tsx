@@ -180,7 +180,7 @@ export function QuestionCard({
       </div>
       <div className="question-card__footer">
         <div className="question-card__back">
-          {pager.index > 0 ? <Button label="Back" variant="ghost" onClick={() => moveTo(pager.index - 1)} /> : null}
+          {pager.index > 0 ? <Button label="Back" variant="secondary" onClick={() => moveTo(pager.index - 1)} /> : null}
         </div>
         {count > 1 ? (
           <div className="question-card__segments" role="tablist" aria-label="Questions">
@@ -202,13 +202,13 @@ export function QuestionCard({
         ) : (
           <span />
         )}
-        <div className="question-card__action" data-ghost={shown === "skip" || undefined}>
+        <div className="question-card__action">
           {shown === "submit" ? (
             <Button label="Submit" variant="primary" isDisabled={!connected || sending} onClick={submit} />
           ) : shown === "next" ? (
             <Button label="Next" variant="secondary" onClick={advance} />
           ) : (
-            <Button label="Skip" variant="ghost" onClick={advance} />
+            <Button label="Skip" variant="secondary" onClick={advance} />
           )}
         </div>
       </div>

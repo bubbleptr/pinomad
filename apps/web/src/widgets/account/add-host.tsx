@@ -99,7 +99,7 @@ function TokenCommand() {
               status="error"
               title="Couldn't create a join command"
               description={accountErrorMessage(error)}
-              endContent={<Button label="Try again" variant="ghost" isLoading={busy} onClick={create} />}
+              endContent={<Button label="Try again" variant="secondary" isLoading={busy} onClick={create} />}
             />
           )
         ) : (

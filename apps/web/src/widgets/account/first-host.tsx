@@ -60,7 +60,7 @@ export function FirstHost({ state }: { state: Extract<AccountState, { status: "s
           <Text type="supporting">
             Signed in as {state.user} on {new URL(state.serverOrigin).host}
           </Text>
-          <Button label="Account…" variant="ghost" size="sm" onClick={() => setAccountOpen(true)} />
+          <Button label="Account…" variant="secondary" size="sm" onClick={() => setAccountOpen(true)} />
         </HStack>
       </VStack>
       {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}

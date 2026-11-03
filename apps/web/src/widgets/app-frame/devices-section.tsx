@@ -147,7 +147,7 @@ function DeviceRow({
           <Button
             label="Unpair…"
             aria-label={`Unpair ${device.name}…`}
-            variant="ghost"
+            variant="secondary"
             size="sm"
             isDisabled={!connected}
             onClick={onUnpair}

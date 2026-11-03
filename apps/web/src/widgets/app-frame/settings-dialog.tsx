@@ -397,7 +397,7 @@ function ModelsSection({ view, remote, connected }: { view: DurableView; remote:
       {settings.custom.includes("defaultModel") || settings.custom.includes("defaultThinkingLevel") ? (
         <Button
           label="Use pi's defaults"
-          variant="ghost"
+          variant="secondary"
           size="sm"
           isDisabled={!connected}
           onClick={() => void remote.controller.updateSettings({ defaultModel: null, defaultThinkingLevel: null })}
@@ -556,7 +556,7 @@ function HostNameField({ settings, remote, connected }: { settings: HostSettings
         {settings.custom.includes("hostName") ? (
           <Button
             label="Use machine name"
-            variant="ghost"
+            variant="secondary"
             size="sm"
             isDisabled={!connected}
             onClick={() => void remote.controller.updateSettings({ hostName: null })}
@@ -599,7 +599,7 @@ function ModeSetting({
           <SegmentedControlItem value="all" label="All at once" />
         </SegmentedControl>
         {customized ? (
-          <Button label="Use pi's default" variant="ghost" size="sm" isDisabled={disabled} onClick={onReset} />
+          <Button label="Use pi's default" variant="secondary" size="sm" isDisabled={disabled} onClick={onReset} />
         ) : null}
       </HStack>
     </VStack>
@@ -731,7 +731,7 @@ function AgentRoleCard({
           <Text as="p" type="supporting">Conversations already using this agent keep their copy.</Text>
           <HStack gap={2} vAlign="center">
             <Button label="Delete" variant="destructive" size="sm" isDisabled={!connected} onClick={remove} />
-            <Button label="Cancel" variant="ghost" size="sm" onClick={() => setConfirming(false)} />
+            <Button label="Cancel" variant="secondary" size="sm" onClick={() => setConfirming(false)} />
           </HStack>
         </VStack>
       ) : null}
@@ -793,7 +793,7 @@ function AgentProblemCard({
         <VStack gap={2} style={{ marginBlockStart: "var(--spacing-4)" }}>
           <HStack gap={2} vAlign="center">
             <Button label="Delete" variant="destructive" size="sm" isDisabled={!connected} onClick={remove} />
-            <Button label="Cancel" variant="ghost" size="sm" onClick={() => setConfirming(false)} />
+            <Button label="Cancel" variant="secondary" size="sm" onClick={() => setConfirming(false)} />
           </HStack>
         </VStack>
       ) : null}

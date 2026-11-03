@@ -163,6 +163,22 @@ body {
   -moz-osx-font-smoothing: auto;
 }
 
+/* —— Button tiers (apps/web/DESIGN.md) ——
+   Astryx's secondary is a 6% wash with no edge, which reads as text beside a
+   field and vanishes on the dark surface. Give it a surface fill, a hairline
+   and a 1px drop so a standalone action looks pressable. The ring is an inset
+   shadow, not a border, so the box keeps its size. Same layer as the neutral
+   theme's own button overrides, which outrank Astryx's atomic variant classes
+   without specificity hacks; hover and press still paint background-image. */
+@layer astryx-theme {
+  .astryx-button.secondary {
+    background-color: var(--color-background-surface);
+    box-shadow:
+      inset 0 0 0 1px var(--color-border),
+      0 1px 2px light-dark(oklch(0 0 0 / 6%), oklch(0 0 0 / 30%));
+  }
+}
+
 /* Low-frequency action buttons (send, steer/withdraw, refresh).
    Astryx Button already presses via `transform: scale(0.98)`; neutralize
    that so the individual `scale` does not multiply below 0.95. */

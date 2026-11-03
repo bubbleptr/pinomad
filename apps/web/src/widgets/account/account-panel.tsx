@@ -261,7 +261,7 @@ function SignedIn({
           status="warning"
           title="This pairing wasn't saved"
           description={`${host.name ?? host.url} will be lost when the app restarts.`}
-          endContent={<Button label="Retry" variant="ghost" onClick={() => retrySave(host)} />}
+          endContent={<Button label="Retry" variant="secondary" onClick={() => retrySave(host)} />}
         />
       ))}
       <HostList account={account} state={state} onError={setActionError} />
@@ -304,7 +304,7 @@ function HostList({
     <VStack gap={2}>
       <HStack gap={2} vAlign="center" hAlign="between">
         <Text weight="semibold">Hosts</Text>
-        <Button label="Refresh" variant="ghost" size="sm" onClick={() => void account.refreshHosts()} />
+        <Button label="Refresh" variant="secondary" size="sm" onClick={() => void account.refreshHosts()} />
       </HStack>
       {state.hostsError === undefined ? null : (
         <Banner status="warning" title="Couldn't refresh hosts" description={accountErrorMessage(state.hostsError)} />
@@ -413,7 +413,7 @@ function HostRow({
       endContent={
         <HStack gap={1} vAlign="center">
           {end}
-          <Button label="Remove" variant="ghost" size="sm" isDisabled={isRemoveDisabled} onClick={onRemove} />
+          <Button label="Remove" variant="secondary" size="sm" isDisabled={isRemoveDisabled} onClick={onRemove} />
         </HStack>
       }
     />
@@ -430,7 +430,7 @@ function AddHost({ account, serverOrigin }: { account: AccountModel; serverOrigi
         <Text weight="semibold">Add a host</Text>
         <Button
           label="Done"
-          variant="ghost"
+          variant="secondary"
           size="sm"
           onClick={() => {
             setOpen(false);
@@ -497,7 +497,7 @@ function Invites({ account }: { account: AccountModel }) {
           <CodeBlock code={created.code} hasCopyButton isWrapped />
           <HStack gap={2} vAlign="center" hAlign="between">
             <Text type="supporting">Works once · expires in {relativeTime(now, created.expiresAt)}</Text>
-            <Button label="Done" variant="ghost" size="sm" onClick={() => setCreated(undefined)} />
+            <Button label="Done" variant="secondary" size="sm" onClick={() => setCreated(undefined)} />
           </HStack>
         </VStack>
       )}
@@ -531,7 +531,7 @@ function InviteRow({ invite, now, onRevoke }: { invite: AccountInvite; now: numb
     <ListItem
       label="Unused"
       description={`Created ${ago(invite.createdAt, now)} · expires in ${relativeTime(now, invite.expiresAt)}`}
-      endContent={<Button label="Revoke" variant="ghost" size="sm" onClick={onRevoke} />}
+      endContent={<Button label="Revoke" variant="secondary" size="sm" onClick={onRevoke} />}
     />
   );
 }
@@ -572,7 +572,7 @@ function Devices({ account, hosts }: { account: AccountModel; hosts: readonly Ac
     <VStack gap={2}>
       <HStack gap={2} vAlign="center" hAlign="between">
         <Text weight="semibold">Devices</Text>
-        <Button label="Refresh" variant="ghost" size="sm" onClick={() => void load()} />
+        <Button label="Refresh" variant="secondary" size="sm" onClick={() => void load()} />
       </HStack>
       {error === undefined ? null : (
         <Banner status="warning" title="Couldn't load devices" description={accountErrorMessage(error)} />
@@ -622,7 +622,7 @@ function DeviceRow({
   ) : device.kickedAt !== undefined ? (
     <Token label="Removed" color="gray" size="sm" />
   ) : (
-    <Button label="Remove" variant="ghost" size="sm" isDisabled={isBusy} onClick={onRemove} />
+    <Button label="Remove" variant="secondary" size="sm" isDisabled={isBusy} onClick={onRemove} />
   );
   return (
     <ListItem
@@ -699,7 +699,7 @@ function RemoveDevice({
       )}
       <HStack gap={2}>
         <Button label="Remove device" variant="destructive" isLoading={busy} isDisabled={password === ""} onClick={submit} />
-        <Button label="Cancel" variant="ghost" onClick={() => onClose(false)} />
+        <Button label="Cancel" variant="secondary" onClick={() => onClose(false)} />
       </HStack>
     </VStack>
   );
@@ -743,7 +743,7 @@ function ChangePassword({ account }: { account: AccountModel }) {
         <HStack gap={2}>
           <Button
             label="Change password"
-            variant="ghost"
+            variant="secondary"
             onClick={() => {
               setChanged(false);
               setOpen(true);
@@ -772,7 +772,7 @@ function ChangePassword({ account }: { account: AccountModel }) {
       )}
       <HStack gap={2}>
         <Button label="Change password" variant="primary" isLoading={busy} isDisabled={!ready} onClick={submit} />
-        <Button label="Cancel" variant="ghost" onClick={close} />
+        <Button label="Cancel" variant="secondary" onClick={close} />
       </HStack>
     </VStack>
   );
@@ -826,7 +826,7 @@ function SignOut({ account, onNotice }: { account: AccountModel; onNotice: (noti
           />
           <Button
             label="Cancel"
-            variant="ghost"
+            variant="secondary"
             onClick={() => {
               setOpen(false);
               setRevoke(false);
@@ -841,7 +841,7 @@ function SignOut({ account, onNotice }: { account: AccountModel; onNotice: (noti
       <HStack gap={2}>
         <Button
           label="Sign out"
-          variant="ghost"
+          variant="secondary"
           onClick={() => {
             setConfirming(false);
             setOpen(true);
@@ -849,7 +849,7 @@ function SignOut({ account, onNotice }: { account: AccountModel; onNotice: (noti
         />
         <Button
           label={confirming ? "Sign out everywhere?" : "Sign out everywhere"}
-          variant={confirming ? "destructive" : "ghost"}
+          variant={confirming ? "destructive" : "secondary"}
           onClick={() => {
             if (!confirming) {
               setConfirming(true);
@@ -916,7 +916,7 @@ function DeleteAccount({
   if (!open) {
     return (
       <HStack gap={2}>
-        <Button label="Delete account" variant="ghost" onClick={() => setOpen(true)} />
+        <Button label="Delete account" variant="secondary" onClick={() => setOpen(true)} />
       </HStack>
     );
   }
@@ -934,7 +934,7 @@ function DeleteAccount({
       )}
       <HStack gap={2}>
         <Button label="Delete account" variant="destructive" isLoading={busy} isDisabled={password === ""} onClick={submit} />
-        <Button label="Cancel" variant="ghost" onClick={close} />
+        <Button label="Cancel" variant="secondary" onClick={close} />
       </HStack>
     </VStack>
   );
