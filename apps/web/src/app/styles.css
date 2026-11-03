@@ -169,9 +169,11 @@ body {
    and a 1px drop so a standalone action looks pressable. The ring is an inset
    shadow, not a border, so the box keeps its size. Same layer as the neutral
    theme's own button overrides, which outrank Astryx's atomic variant classes
-   without specificity hacks; hover and press still paint background-image. */
+   without specificity hacks; hover and press still paint background-image.
+   The composer's stop button is Astryx's secondary too, but it sits on the
+   composer fill, where a surface fill reads as a hole in dark mode. */
 @layer astryx-theme {
-  .astryx-button.secondary {
+  .astryx-button.secondary:not(.astryx-chat-composer *) {
     background-color: var(--color-background-surface);
     box-shadow:
       inset 0 0 0 1px var(--color-border),

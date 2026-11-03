@@ -13,7 +13,7 @@ Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。组件来�
 | `ghost` | 透明，只有字或图标 | 只有下面四种情况，见流程图。 |
 | `destructive` | 浅红底红字 | 不可撤销动作的**最后一步确认**，旁边必须有一个 `secondary` 的 Cancel。 |
 
-`secondary` 的描边和投影在 `src/app/styles.css` 的 “Button tiers” 一段里，写在 `astryx-theme` 层。Astryx 原版的 secondary 只是 6% 灰底，放在输入框旁边像一段文字，深色下几乎看不见，这是改它的原因。不要在调用处用 `className` 给按钮加边框、阴影或背景：一档按钮长什么样只在主题里定一次。
+`secondary` 的描边和投影在 `src/app/styles.css` 的 “Button tiers” 一段里，写在 `astryx-theme` 层，输入框（`.astryx-chat-composer`）里的按钮除外：停止按钮在输入框底色上，表面色反而像个洞。Astryx 原版的 secondary 只是 6% 灰底，放在输入框旁边像一段文字，深色下几乎看不见，这是改它的原因。不要在调用处用 `className` 给按钮加边框、阴影或背景：一档按钮长什么样只在主题里定一次。
 
 ### 选哪一档
 
