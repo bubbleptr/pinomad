@@ -558,8 +558,9 @@ export type ClientFrame =
        */
       readonly images?: "ref";
       /**
-       * A `terminal:` stream's position the client already has (5.27): the
-       * host sends what came after it, or its whole buffer with `reset`.
+       * A `terminal:` stream's position the client already has (5.27) — the
+       * last `output.seq` it received: the host sends what came after it, or
+       * its whole buffer with `reset`.
        * Other streams ignore it.
        */
       readonly since?: number;

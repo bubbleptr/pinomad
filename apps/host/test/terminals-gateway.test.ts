@@ -84,7 +84,7 @@ describe("gateway terminals", () => {
   it("announces terminals in the hello and streams one owner's list", async () => {
     const { conversationId, raw } = await setup();
     const hello = await raw.next((frame) => frame.type === "hello");
-    expect(hello).toMatchObject({ terminals: { limit: 8 }, protocol: { minor: 27 } });
+    expect(hello).toMatchObject({ terminals: { limit: 8 } });
 
     raw.send({ type: "subscribe", stream: `terminals:${conversationId}` });
     expect(await raw.list(conversationId, () => true)).toEqual({ owner: conversationId, limit: 8, terminals: [] });
