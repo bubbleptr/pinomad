@@ -9,7 +9,11 @@ import { fakeTerminals, TERMINALS } from "../../test/story-fixtures.tsx";
 import { TerminalSurface } from "./terminal-surface.tsx";
 
 vi.mock("./xterm-view.tsx", () => ({
-  default: ({ terminalId }: { terminalId: string }) => <div data-testid="screen">{terminalId}</div>,
+  default: ({ terminalId, enabled }: { terminalId: string; enabled: boolean }) => (
+    <div data-testid="screen" data-enabled={enabled}>
+      {terminalId}
+    </div>
+  ),
 }));
 
 const id = (n: number) => n as ConversationId;
@@ -42,6 +46,32 @@ describe("TerminalSurface", () => {
     await waitFor(() => expect(screen.getByTestId("screen")).toHaveTextContent("t-other"));
     show(id(1));
     await waitFor(() => expect(screen.getByTestId("screen")).toHaveTextContent("t-shell"));
+  });
+
+  it("keeps the screen but takes no keys or actions until the next conversation's list confirms its owner", async () => {
+    const fake = fakeTerminals({ lists: { 1: [dev], 7: [{ ...shell, id: "t-other" }] } });
+    let land: (() => void) | undefined;
+    const terminals: RemoteTerminals = {
+      ...fake,
+      watch: (conversationId, listener) => {
+        if (conversationId !== id(7)) return fake.watch(conversationId, listener);
+        listener({ kind: "loading" });
+        land = () => fake.watch(conversationId, listener);
+        return () => {};
+      },
+    };
+    const { show } = renderSurface(terminals, id(1));
+    expect(await screen.findByTestId("screen")).toHaveAttribute("data-enabled", "true");
+
+    await act(async () => show(id(7)));
+    expect(screen.getByTestId("screen")).toHaveTextContent("t-dev");
+    expect(screen.getByTestId("screen")).toHaveAttribute("data-enabled", "false");
+    expect(screen.getByRole("button", { name: "New terminal" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("button", { name: "Terminal actions" })).toBeDisabled();
+
+    await act(async () => land!());
+    await waitFor(() => expect(screen.getByTestId("screen")).toHaveTextContent("t-other"));
+    expect(screen.getByTestId("screen")).toHaveAttribute("data-enabled", "true");
   });
 
   it("offers a first terminal when there is none, then selects it once the host lists it", async () => {

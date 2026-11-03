@@ -298,6 +298,7 @@ export interface RemoteTerminals {
   /** Like input; the size is sent again after a reconnect, since the host keeps it per connection. */
   resize(terminalId: TerminalId, size: TerminalSize): void;
   rename(terminalId: TerminalId, name: string | null): Promise<void>;
+  /** `size` is for a terminal with no screen here; an attached one restarts at the size its screen last sent. */
   restart(terminalId: TerminalId, size: TerminalSize): Promise<void>;
   close(terminalId: TerminalId): Promise<void>;
 }
@@ -2498,7 +2499,8 @@ class RemoteClient {
         this.#terminalCall("resizeTerminal", { terminalId, ...size }).catch(() => {});
       },
       rename: (terminalId, name) => this.#terminalCall("renameTerminal", { terminalId, name }).then(() => {}),
-      restart: (terminalId, size) => this.#terminalCall("restartTerminal", { terminalId, ...size }).then(() => {}),
+      restart: (terminalId, size) =>
+        this.#terminalCall("restartTerminal", { terminalId, ...(this.#terminalSizes.get(terminalId) ?? size) }).then(() => {}),
       close: (terminalId) => this.#terminalCall("closeTerminal", { terminalId }).then(() => {}),
     };
   }

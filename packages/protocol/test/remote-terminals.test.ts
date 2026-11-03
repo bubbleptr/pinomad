@@ -245,6 +245,19 @@ describe("RemoteDurable terminals", () => {
     }
   });
 
+  it("restarts an attached terminal at the size this client last sent, not the one passed in", async () => {
+    const host = fakeHost();
+    const remote = await connect(host);
+    try {
+      remote.terminals.attach("t-1", { output: () => {}, ended: () => {} });
+      remote.terminals.resize("t-1", { cols: 120, rows: 40 });
+      await remote.terminals.restart("t-1", SIZE);
+      expect(calls(host.sent, "restartTerminal").map((frame) => frame.args)).toEqual([{ terminalId: "t-1", cols: 120, rows: 40 }]);
+    } finally {
+      remote.close();
+    }
+  });
+
   it("opens, renames, restarts and closes through the host's calls", async () => {
     const host = fakeHost();
     const remote = await connect(host);

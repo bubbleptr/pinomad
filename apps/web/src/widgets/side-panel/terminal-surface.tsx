@@ -45,17 +45,22 @@ function memoryOf(terminals: object): Map<ConversationId, SelectionMemory> {
 /**
  * The shown conversation's list. Moving to another conversation keeps the
  * last list until the next one lands: within one owner it is the same list,
- * and the screen must not unmount and replay in between.
+ * and the screen must not unmount and replay in between. Until then it is
+ * not `confirmed`: another owner's terminals may still be on screen.
  */
-function useTerminalsState(terminals: RemoteTerminals, conversationId: ConversationId | undefined): TerminalsState | undefined {
-  const [state, setState] = useState<TerminalsState>();
+function useTerminalsState(
+  terminals: RemoteTerminals,
+  conversationId: ConversationId | undefined,
+): { state: TerminalsState | undefined; confirmed: boolean } {
+  const [shown, setShown] = useState<{ conversationId: ConversationId; state: TerminalsState }>();
   useEffect(() => {
     if (conversationId === undefined) return;
     return terminals.watch(conversationId, (next) =>
-      setState((previous) => (next.kind === "loading" && previous?.kind === "ready" ? previous : next)),
+      setShown((previous) => (next.kind === "loading" && previous?.state.kind === "ready" ? previous : { conversationId, state: next })),
     );
   }, [terminals, conversationId]);
-  return conversationId === undefined ? undefined : state;
+  if (conversationId === undefined) return { state: undefined, confirmed: false };
+  return { state: shown?.state, confirmed: shown?.conversationId === conversationId };
 }
 
 /**
@@ -105,8 +110,10 @@ export function TerminalSurface({
   barStart?: ReactNode;
   barEnd?: ReactNode;
 }) {
-  const state = useTerminalsState(terminals, conversationId);
+  const { state, confirmed } = useTerminalsState(terminals, conversationId);
   const list = state?.kind === "ready" ? state.list : undefined;
+  // Keys and actions wait for the list to be this conversation's owner's.
+  const live = connected && confirmed;
   const [, rerender] = useState(0);
   const [renaming, setRenaming] = useState<TerminalInfo>();
   const [error, setError] = useState<string>();
@@ -153,7 +160,7 @@ export function TerminalSurface({
           size="sm"
           variant="ghost"
           tooltip={full ? `Terminal limit reached (${list.limit})` : "New terminal"}
-          isDisabled={!connected || full}
+          isDisabled={!live || full}
           onClick={openTerminal}
         />
         {selected === undefined ? null : (
@@ -165,7 +172,7 @@ export function TerminalSurface({
               label: "Terminal actions",
               size: "sm",
               variant: "ghost",
-              isDisabled: !connected,
+              isDisabled: !live,
             }}
             items={[
               { label: "Rename…", icon: <Pencil aria-hidden="true" size={16} />, onClick: () => setRenaming(selected) },
@@ -225,7 +232,7 @@ export function TerminalSurface({
           <Message>{state.reason}</Message>
         ) : selected === undefined ? (
           <div className="flex flex-1 items-center justify-center">
-            <Button label="New terminal" variant="secondary" isDisabled={!connected} onClick={openTerminal} />
+            <Button label="New terminal" variant="secondary" isDisabled={!live} onClick={openTerminal} />
           </div>
         ) : (
           <>
@@ -235,7 +242,7 @@ export function TerminalSurface({
                   key={selected.id}
                   terminals={terminals}
                   terminalId={selected.id}
-                  enabled={connected && selected.exit === undefined}
+                  enabled={live && selected.exit === undefined}
                 />
               </Suspense>
             </div>
@@ -248,7 +255,7 @@ export function TerminalSurface({
                   label="Restart"
                   variant="secondary"
                   size="sm"
-                  isDisabled={!connected}
+                  isDisabled={!live}
                   onClick={() => run(terminals.restart(selected.id, { cols: selected.cols, rows: selected.rows }))}
                 />
               </div>
@@ -260,7 +267,7 @@ export function TerminalSurface({
         <RenameTerminalDialog
           terminal={renaming}
           terminals={terminals}
-          connected={connected}
+          connected={live}
           onClose={() => setRenaming(undefined)}
         />
       )}
