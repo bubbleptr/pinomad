@@ -24,7 +24,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0026](0026-run-process-folds-out-of-transcript.md) | 运行过程在对话里收成一行：Web / 桌面按插话分段成灰色摘要行、原地展开，iOS 每次运行一颗胶囊加 sheet；todo 跟在最新一次运行后面；不加提示词凑插话和 todo |
 | [0034](0034-submission-delivery-and-recovery.md) | 提交的送达状态与断线恢复：只读 `submission` 查询、宿主在预处理前按 `requestId` 去重、`submit` 结果带 `entry`；重连后先查询再决定是否重发，是“断线不重放”的窄例外，“未确认”不等于失败 |
 | [0039](0039-fork-sidebar-conversations.md) | Web/桌面端把 Fork 作为左侧独立对话列在根对话之后，所有入口在主区打开；右侧只保留 Tasks。创建后的 focus 不被父对话抢回（修订 0007 §1/§2、0019 的 thread 呈现、0038 §2；§4 由 0040 修订） |
-| [0040](0040-side-panel-surfaces.md) | 侧面板是 Tasks、Changes、Terminal 三个固定 Surface 的容器，都跟着 root 家族走；页切换是聊天区头部的图标，面板通高、首行放当前 Surface 的状态和操作；终端归家族所有、可开多个（修订 0039 §4） |
+| [0040](0040-side-panel-surfaces.md) | 侧面板是 Tasks、Changes、Terminal 三个固定 Surface 的容器，Tasks 跟着 root 家族、Changes 跟着实际执行检出走；页切换是聊天区头部的图标，面板通高、首行放当前 Surface 的状态和操作；终端归 root 对话所有（有自己 worktree 的旧 Fork 例外）、可开多个（修订 0039 §4） |
 
 ## 宿主能力与工作组织
 

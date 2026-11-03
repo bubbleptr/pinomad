@@ -145,7 +145,7 @@ _Avoid_: 图片版本、图片格式
 ### 界面
 
 **侧面板（Side panel）**:
-Web/桌面端聊天区右侧、和对话并排的面板，放 Overview 浮层装不下的详情。里面是固定的几个 Surface，都跟着主区对话的 root 家族走；在聊天区头部右端的图标之间切换（ADR-0040）。iOS 没有侧面板。
+Web/桌面端聊天区右侧、和对话并排的面板，放 Overview 浮层装不下的详情。里面是固定的几个 Surface：Tasks 跟着主区对话的 root 家族走，Changes 跟着它的执行检出走，Terminal 跟着终端的所有者（通常是 root 对话）走；在聊天区头部右端的图标之间切换（ADR-0040）。iOS 没有侧面板。
 _Avoid_: 右栏、Inspector、Dock、抽屉
 
 **Surface**:
