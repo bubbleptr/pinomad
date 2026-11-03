@@ -37,7 +37,10 @@ export function ChangesSurface({
   barStart?: ReactNode;
   barEnd?: ReactNode;
 }) {
-  const conversationId = view.conversation?.conversation.id;
+  // Main switches to its next conversation before that snapshot lands; until
+  // the loaded one is the shown one, there is nothing of ours to show or ask for.
+  const loadedId = view.conversation?.conversation.id;
+  const conversationId = loadedId !== undefined && loadedId === shownId ? loadedId : undefined;
   const connected = view.connection === "connected";
   const [result, setResult] = useState<ChangesResult | "failed">();
   // A slow answer for the previous conversation must not paint over this one.

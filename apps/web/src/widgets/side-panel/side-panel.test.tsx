@@ -77,4 +77,32 @@ describe("SidePanel Changes", () => {
     rerender(panel(fakeView({ conversation: forkConversation() }), FORK_ID));
     await waitFor(() => expect(changes).toHaveBeenCalledTimes(2));
   });
+
+  it("shows nothing of the last conversation while the next one is still opening", async () => {
+    const changes = vi.fn(async () => ({ available: true as const, base: "c0ffee0", patch: "--- a/src/parser.ts\n+++ b/src/parser.ts\n@@ -1 +1 @@\n-a\n+b", truncated: false }));
+    const parser = fakeView();
+    const remote = fakeRemote(parser, { changes });
+    // Main already shows another conversation; its snapshot has not landed.
+    render(
+      <SidePanel
+        view={parser}
+        remote={remote}
+        shownId={DARK_MODE_ID}
+        narrow={false}
+        open
+        surface="changes"
+        busy={false}
+        liveActivity={false}
+        onOpenChange={vi.fn()}
+        onSelectSurface={vi.fn()}
+        openInPanel={vi.fn()}
+        onOpenInMain={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh changes" })).toBeDisabled();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(changes).not.toHaveBeenCalled();
+    expect(screen.queryByText("src/parser.ts")).toBeNull();
+  });
 });
