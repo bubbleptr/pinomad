@@ -6,6 +6,7 @@ import { IconButton } from "@astryxdesign/core/IconButton";
 import { VStack } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import type { ConversationId } from "@earendil-works/pi-durable";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import {
@@ -22,12 +23,15 @@ import { SurfaceBar } from "./surface-bar.tsx";
 export function ChangesSurface({
   view,
   remote,
+  shownId,
   busy,
   barStart,
   barEnd,
 }: {
   view: DurableView;
   remote: RemoteDurable;
+  /** The main column's conversation, loaded or not; undefined while drafting. */
+  shownId: ConversationId | undefined;
   /** The shown conversation is running; its edits are still landing. */
   busy: boolean;
   barStart?: ReactNode;
@@ -101,9 +105,9 @@ export function ChangesSurface({
       </SurfaceBar>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <VStack gap={2} padding={3}>
-          {conversationId === undefined ? (
+          {shownId === undefined ? (
             <Text type="supporting">Open a conversation to see what it changed.</Text>
-          ) : result === undefined ? (
+          ) : conversationId === undefined || result === undefined ? (
             <Text type="supporting">Loading…</Text>
           ) : result === "failed" ? (
             <Text type="supporting">Couldn't load the changes. Refresh to try again.</Text>

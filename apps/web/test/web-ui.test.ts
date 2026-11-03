@@ -406,6 +406,9 @@ it("keeps the chat usable on a phone with navigation and the side panel still re
   await expect.poll(() => page.getByRole("dialog").count()).toBe(0);
   await page.getByRole("button", { name: "Side panel", exact: true }).click();
   await page.getByRole("dialog").getByText("No tasks yet").waitFor();
+  // The dialog's first row switches surfaces; a chat has no repository to diff.
+  await page.getByRole("dialog").getByRole("button", { name: "Changes", exact: true }).click();
+  await page.getByRole("dialog").getByText("Chat conversations have no repository").waitFor();
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "More actions", exact: true }).click();
   await page.getByRole("menuitem", { name: /^Run a command/ }).waitFor();

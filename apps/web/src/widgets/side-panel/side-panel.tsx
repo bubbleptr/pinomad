@@ -339,7 +339,7 @@ export function SidePanel({
   });
   const content = (barStart?: ReactNode, barEnd?: ReactNode) =>
     surface === "changes" ? (
-      <ChangesSurface view={view} remote={remote} busy={busy} barStart={barStart} barEnd={barEnd} />
+      <ChangesSurface view={view} remote={remote} shownId={shownId} busy={busy} barStart={barStart} barEnd={barEnd} />
     ) : (
       <TasksSurface
         view={view}

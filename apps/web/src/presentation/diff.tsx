@@ -5,7 +5,7 @@
 // parser itself lives in @pinomad/client/patch.ts (shared with the native
 // clients).
 import { parsePatch } from "@pinomad/client/patch.ts";
-import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
@@ -35,6 +35,8 @@ export function DiffView({ patch, collapsible = false }: { patch: string; collap
   const folded = collapsible && files.reduce((sum, file) => sum + file.lines.length, 0) > FOLD_LINES;
   // Paths the reader flipped from the starting state; keyed by path so a refresh keeps them.
   const [flipped, setFlipped] = useState<ReadonlySet<string>>(new Set());
+  // Crossing the fold threshold changes what a flip means; start over.
+  useEffect(() => setFlipped(new Set()), [folded]);
   if (files.length === 0) return <Text type="supporting">No changes.</Text>;
   return (
     <VStack gap={2}>
