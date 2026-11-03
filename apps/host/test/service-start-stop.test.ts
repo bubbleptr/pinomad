@@ -1,0 +1,238 @@
+// `pinomad service start|stop` (#501): the Mac App's local-host switch runs
+// these against the installed host. Stop waits for running tasks like a
+// restart does, knocking on the port the installed service listens on.
+import { execFile } from "node:child_process";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+import { describe, expect, it, vi } from "vitest";
+import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import { serviceStatusJson, startService, stopService } from "../src/cli/service.ts";
+import { launchdDisabled, launchdState, systemdState } from "../src/service/manager.ts";
+import type { ServiceManager, ServiceState } from "../src/service/manager.ts";
+import { seededSpec } from "./server-support.ts";
+import { tempDir, useCleanups } from "./support.ts";
+
+const defer = useCleanups();
+
+const RUNNING: ServiceState = { installed: true, stopped: false, running: true, pid: 42, detail: "running, pid 42" };
+const STOPPED: ServiceState = { installed: true, stopped: true, running: false, detail: "stopped" };
+const MISSING: ServiceState = { installed: false, stopped: false, running: false, detail: "not installed" };
+
+/** `stuck`: stop goes through but the host stays loaded, as when bootout fails. */
+function manager(state: ServiceState, dataDir = "/nowhere", hostArgs: readonly string[] = [], { stuck = false } = {}) {
+  const calls: string[] = [];
+  let current = state;
+  const fake: ServiceManager = {
+    install: async () => "/fake/pinomad.host.plist",
+    uninstall: async () => {},
+    restart: async () => {},
+    start: async () => {
+      calls.push("start");
+    },
+    stop: async () => {
+      calls.push("stop");
+      if (!stuck) current = STOPPED;
+    },
+    state: async () => current,
+    logs: async () => {},
+    read: async () => (state.installed ? seededSpec(dataDir, hostArgs) : undefined),
+  };
+  return { manager: fake, calls };
+}
+
+/** A connected host with one live task until `finish()`. */
+function busyHost() {
+  let tasks: Record<string, unknown> = { t1: { kind: "turn", conversationId: "c1" } };
+  const listeners = new Set<() => void>();
+  const remote = {
+    view: {
+      current: () => ({ connection: "connected", tasks: { tasks } }),
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    },
+    controller: { toggleTasks: async () => {} },
+    close: () => {},
+  } as unknown as RemoteDurable;
+  return {
+    remote,
+    finish: () => {
+      tasks = {};
+      for (const listener of listeners) listener();
+    },
+  };
+}
+
+describe("stopService", () => {
+  it("waits for running tasks on the installed host's own port and data dir, then stops it", async () => {
+    const data = await tempDir();
+    defer(data.remove);
+    await writeFile(join(data.path, "token"), "tok\n");
+    const { manager: fake, calls } = manager(RUNNING, data.path, ["--port", "7555"]);
+    const host = busyHost();
+    let busy!: () => void;
+    const announced = new Promise<void>((resolve) => (busy = resolve));
+    const lines: string[] = [];
+    const connect = vi.fn(async () => host.remote);
+
+    const stopping = stopService({
+      force: false,
+      argv: [],
+      manager: fake,
+      connect,
+      log: (line) => {
+        lines.push(line);
+        if (line.startsWith("waiting")) busy();
+      },
+    });
+    await announced;
+    expect(calls).toEqual([]);
+    host.finish();
+
+    expect(await stopping).toBe(0);
+    expect(calls).toEqual(["stop"]);
+    expect(connect).toHaveBeenCalledWith("ws://127.0.0.1:7555", "tok");
+    expect(lines.join("\n")).toContain("conversation c1");
+  });
+
+  it("stops at once with --force, and when the host doesn't answer", async () => {
+    const forced = manager(RUNNING);
+    const connect = vi.fn(async () => busyHost().remote);
+    expect(await stopService({ force: true, argv: [], manager: forced.manager, connect, log: () => {} })).toBe(0);
+    expect(connect).not.toHaveBeenCalled();
+    expect(forced.calls).toEqual(["stop"]);
+
+    const down = manager(RUNNING);
+    const refused = async (): Promise<RemoteDurable> => Promise.reject(new Error("refused"));
+    expect(await stopService({ force: false, argv: [], manager: down.manager, connect: refused, log: () => {} })).toBe(0);
+    expect(down.calls).toEqual(["stop"]);
+  });
+
+  it("fails when the host is still loaded after the stop, instead of calling it stopped", async () => {
+    // disable went through, bootout didn't: the state still reads it running.
+    const { manager: fake, calls } = manager(RUNNING, "/nowhere", [], { stuck: true });
+    const lines: string[] = [];
+    const errors: string[] = [];
+    const code = await stopService({ force: true, argv: [], manager: fake, log: (line) => lines.push(line), logError: (line) => errors.push(line) });
+    expect(code).toBe(1);
+    expect(calls).toEqual(["stop"]);
+    expect(lines).toEqual([]);
+    expect(errors.join("\n")).toMatch(/still running/);
+  });
+
+  it("Ctrl-C once the stop itself began doesn't cut it in half (launchd: disable done, bootout not yet)", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const service = fileURLToPath(new URL("../src/cli/service.ts", import.meta.url));
+    const script = join(dir.path, "stop.ts");
+    await writeFile(
+      script,
+      `import { stopService } from ${JSON.stringify(service)};
+let stopped = false;
+const manager = {
+  state: async () => ({ installed: true, stopped, running: !stopped, detail: stopped ? "stopped" : "running" }),
+  stop: async () => {
+    process.kill(process.pid, "SIGINT");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    stopped = true;
+  },
+};
+process.exitCode = await stopService({ force: true, argv: [], manager });
+`,
+    );
+    const { stdout } = await promisify(execFile)(process.execPath, [script]);
+    expect(stdout).toMatch(/^stopped/m);
+  });
+
+  it("leaves a stopped service alone, and refuses when nothing is installed", async () => {
+    const stopped = manager(STOPPED);
+    expect(await stopService({ force: true, argv: [], manager: stopped.manager, log: () => {} })).toBe(0);
+    expect(stopped.calls).toEqual([]);
+
+    const missing = manager(MISSING);
+    expect(await stopService({ force: true, argv: [], manager: missing.manager, log: () => {} })).toBe(1);
+    expect(missing.calls).toEqual([]);
+  });
+});
+
+describe("startService", () => {
+  it("starts an installed service and refuses when there is none", async () => {
+    const stopped = manager(STOPPED);
+    expect(await startService({ manager: stopped.manager, log: () => {} })).toBe(0);
+    expect(stopped.calls).toEqual(["start"]);
+
+    const missing = manager(MISSING);
+    expect(await startService({ manager: missing.manager, log: () => {} })).toBe(1);
+    expect(missing.calls).toEqual([]);
+  });
+});
+
+describe("service status --json", () => {
+  it("is the shape the Mac App reads: one line, the service state only", () => {
+    const line = serviceStatusJson(RUNNING);
+    expect(line).not.toContain("\n");
+    expect(JSON.parse(line)).toEqual({ installed: true, stopped: false, running: true, pid: 42, detail: "running, pid 42" });
+    expect(JSON.parse(serviceStatusJson(MISSING))).toEqual({ installed: false, stopped: false, running: false, detail: "not installed" });
+  });
+});
+
+describe("launchdDisabled", () => {
+  it("reads the label's override from launchctl print-disabled, old and new formats", () => {
+    const now = 'disabled services = {\n\t\t"pinomad.host" => disabled\n\t\t"com.other" => enabled\n\t}';
+    const old = 'disabled services = {\n\t\t"pinomad.host" => true\n\t}';
+    expect(launchdDisabled(now)).toBe(true);
+    expect(launchdDisabled(old)).toBe(true);
+    expect(launchdDisabled('\t\t"pinomad.host" => enabled')).toBe(false);
+    expect(launchdDisabled('\t\t"pinomad.host" => false')).toBe(false);
+    // Another label that ends the same way is not ours.
+    expect(launchdDisabled('\t\t"x.pinomad.host" => disabled')).toBe(false);
+    expect(launchdDisabled("disabled services = {\n\t}")).toBe(false);
+  });
+});
+
+describe("launchdState", () => {
+  const loaded = "pinomad.host = {\n\tstate = running\n\tpid = 42\n}";
+
+  it("is stopped only once disabled and no longer loaded", () => {
+    expect(launchdState(true, undefined)).toMatchObject({ installed: true, stopped: true, running: false });
+  });
+
+  it("a disabled host launchd still runs is not stopped, so stop can finish the job", () => {
+    // disable went through, bootout failed or never ran.
+    expect(launchdState(true, loaded)).toMatchObject({ installed: true, stopped: false, running: true, pid: 42 });
+  });
+
+  it("an enabled host reads from launchctl print", () => {
+    expect(launchdState(false, loaded)).toMatchObject({ stopped: false, running: true, pid: 42 });
+    expect(launchdState(false, undefined)).toMatchObject({ stopped: false, running: false, detail: "not loaded" });
+  });
+});
+
+describe("systemdState", () => {
+  const show = (fields: Record<string, string>): string =>
+    Object.entries({ LoadState: "loaded", MainPID: "0", ExecMainStatus: "0", ...fields })
+      .map(([key, value]) => `${key}=${value}`)
+      .join("\n");
+
+  it("is stopped once disabled with nothing running or about to run", () => {
+    expect(systemdState(show({ UnitFileState: "disabled", ActiveState: "inactive", SubState: "dead" }))).toMatchObject({ stopped: true });
+    expect(systemdState(show({ UnitFileState: "disabled", ActiveState: "failed", SubState: "failed" }))).toMatchObject({ stopped: true });
+  });
+
+  it("a disabled host waiting out RestartSec is not stopped: systemd still starts it", () => {
+    const waiting = systemdState(show({ UnitFileState: "disabled", ActiveState: "activating", SubState: "auto-restart", ExecMainStatus: "1" }));
+    expect(waiting).toMatchObject({ installed: true, stopped: false, running: false });
+  });
+
+  it("reads a running host and a missing unit", () => {
+    expect(systemdState(show({ UnitFileState: "enabled", ActiveState: "active", SubState: "running", MainPID: "42" }))).toMatchObject({
+      stopped: false,
+      running: true,
+      pid: 42,
+    });
+    expect(systemdState(show({ LoadState: "not-found" }))).toMatchObject({ installed: false });
+  });
+});

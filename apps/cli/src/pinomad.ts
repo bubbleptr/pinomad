@@ -39,7 +39,7 @@ usage: pinomad <command> [args…]
   server --public-origin O [--data-dir D] [--trust-proxy]   run the server
   server passwd [--data-dir D] [--user U]   reset an account's password (stdin)
   relay …                              old name of server
-  service install|uninstall|status|restart|logs   user-level host service
+  service install|uninstall|status|restart|stop|start|logs   user-level host service
   upgrade [--force] [address flags]    upgrade the package and restart the service
   link [--data-dir D|--url U …]        print the browser link
   pair [--data-dir D|--url U …]        print a pairing QR

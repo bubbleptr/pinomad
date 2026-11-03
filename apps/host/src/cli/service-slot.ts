@@ -23,7 +23,7 @@ export type ServiceWrite = "installed" | "updated" | "unchanged" | "failed";
  * would take that host offline and leave this one unserved.
  */
 export async function openServiceSlot(dataDir: string, manager: ServiceManager): Promise<ServiceSlot> {
-  const state = await manager.state().catch((): ServiceState => ({ installed: false, running: false, detail: "unknown" }));
+  const state = await manager.state().catch((): ServiceState => ({ installed: false, stopped: false, running: false, detail: "unknown" }));
   const previous = state.installed ? await manager.read() : undefined;
   if (previous !== undefined && resolve(previous.dataDir) !== dataDir) {
     throw new Error(

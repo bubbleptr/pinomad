@@ -6,16 +6,20 @@ import { describe, expect, it, vi } from "vitest";
 import { isParseArgsError } from "../src/cli/args.ts";
 import { main, npmBeside } from "../src/cli/upgrade.ts";
 
+const RUNNING = { installed: true, stopped: false };
+const STOPPED = { installed: true, stopped: true };
+const MISSING = { installed: false, stopped: false };
+
 describe("upgrade", () => {
   it("rejects an unknown option before running any upgrade step", async () => {
     const run = vi.fn();
     const step = vi.fn(async () => 0);
-    const serviceInstalled = vi.fn(async () => false);
+    const serviceState = vi.fn(async () => MISSING);
     const restart = vi.fn(async () => 0);
-    await expect(main(["--bogus"], { run, step, serviceInstalled, restart })).rejects.toSatisfy(isParseArgsError);
+    await expect(main(["--bogus"], { run, step, serviceState, restart })).rejects.toSatisfy(isParseArgsError);
     expect(run).not.toHaveBeenCalled();
     expect(step).not.toHaveBeenCalled();
-    expect(serviceInstalled).not.toHaveBeenCalled();
+    expect(serviceState).not.toHaveBeenCalled();
     expect(restart).not.toHaveBeenCalled();
   });
 
@@ -25,12 +29,24 @@ describe("upgrade", () => {
     await main([], {
       run: async () => ({ stdout: "" }),
       step: async () => 0,
-      serviceInstalled: async () => true,
+      serviceState: async () => RUNNING,
       restart,
       exit,
     });
     expect(restart).toHaveBeenCalledOnce();
     expect(exit).toHaveBeenCalledWith(5);
+  });
+
+  it("upgrades a service the Mac App switched off without turning it back on (#501)", async () => {
+    const step = vi.fn(async () => 0);
+    const restart = vi.fn(async () => 0);
+    const exit = vi.fn();
+    process.exitCode = undefined;
+    await main([], { run: async () => ({ stdout: "" }), step, serviceState: async () => STOPPED, restart, exit });
+    expect(step).toHaveBeenCalled();
+    expect(restart).not.toHaveBeenCalled();
+    expect(exit).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(0);
   });
 });
 

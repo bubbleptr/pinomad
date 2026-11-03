@@ -11,6 +11,8 @@ description: 把宿主装成系统服务：service 和 upgrade 命令，各平�
 pinomad service install [--data-dir DIR --port N --remote-port N --relay URL --project DIR …]
 pinomad service status [--data-dir D] [--url U]
 pinomad service restart [--force] [--data-dir D] [--url U]
+pinomad service stop [--force]
+pinomad service start
 pinomad service logs [--follow] [-n N] [--data-dir D]
 pinomad service uninstall
 pinomad upgrade [--force]
@@ -21,6 +23,7 @@ pinomad upgrade [--force]
 - `pinomad up` 把这些收成一条命令：先问其他设备怎么连这台机器（经官方服务端 / 只在局域网和 tailnet / 都要），然后加入账号（浏览器里确认短码）、按需加上 `--remote-port`（默认 7422），最后装好或改写服务，只重启一次；已经加入同一个服务端时不会再要你确认。脚本里用 `--server` / `--lan`、`--no-server` / `--no-lan`、`--yes` 跳过提问，`--origin` 换自部署的服务端。`pinomad status` 查看加入的服务端和账号、局域网端口、服务状态和宿主是否在线。
 - **PATH 在安装时固定**：服务里 agent 的 bash 继承的是安装那一刻终端的 PATH（已经剥掉 `node_modules/.bin` 和 Bun 注入的临时目录）。后来装了新工具、PATH 变了，重新跑一次 `install` 刷新。
 - `restart` 先连上宿主读任务图，有未结束的任务就等它们跑完再重启（Ctrl-C 取消）；`--force` 立即重启，交给 Durable 恢复。打包安装时 `upgrade` 把 `pinomad@latest` 装进运行包所在的 npm 全局前缀（非全局安装会拒绝执行）+ 同样的 restart；源码检出里（`bun run upgrade`）依次 `git pull --ff-only`、`bun install`、`bun run build`，工作区有未提交改动时拒绝执行。前面任何一步失败都直接停下，不重启，服务继续跑旧代码。
+- `stop` 和 `restart` 一样先等未结束的任务跑完（`--force` 不等），然后停掉服务，并且保持关闭：重新登录或重启电脑后也不会自己起来（macOS 上是 `launchctl disable`，Linux 上是 `systemctl --user disable --now`）。服务定义、数据目录和加入的账号都留着；`start` 重新打开，`pinomad up`、`join` 重写服务时也会顺带打开；`upgrade` 照常更新代码、`leave` 照常退出账号，但都不会打开它，下次 `start` 时跑的就是新代码和新配置。`status` 和 `pinomad status` 会显示 stopped。Mac App 的"在这台 Mac 上运行宿主"开关用的就是这两条命令。
 - `uninstall` 只卸载服务，不动数据目录。
 - macOS：宿主以登录会话运行，机器重启后要能自动起来需在系统设置里打开自动登录，并为这台机器关掉睡眠。日志写到 `<数据目录>/logs/host.log`；宿主启动时和之后每 10 分钟检查一次，文件超过 10 MiB 就复制成同目录的 `host.log.1` 并原地截断 `host.log`，保留 `host.log.1` 到 `host.log.3` 三份历史、最老的丢弃（copytruncate，已装好的服务不用重装 plist）。
 - Linux：要在未登录时也运行需自己执行 `loginctl enable-linger`（install 检测到没开会提示）；日志走 `journalctl --user`。开着 ufw 时，局域网设备访问 `--remote-port` 要先放行，比如 `sudo ufw allow from 192.168.0.0/24 to any port 7422 proto tcp`（只走中继就不用开）。

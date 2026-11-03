@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // `pinomad upgrade` / `bun run upgrade` [--force] [--data-dir D] [--url U] —
-// update and restart the service (ADR-0009 §6, amended by ADR-0016). Packaged
+// update and restart the service (ADR-0009 §6, amended by ADR-0016); one
+// that `service stop` turned off only updates (#501). Packaged
 // installs pull `pinomad@latest` from npm; a source checkout pulls git +
 // reinstalls deps + rebuilds. Any failed step stops before the restart, so
 // the service keeps running the old code.
@@ -11,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs, promisify } from "node:util";
 import { commandHint, globalPrefixOf, packageDir, packagedVersion } from "../distribution.ts";
 import { serviceManager } from "../service/manager.ts";
+import type { ServiceState } from "../service/manager.ts";
 import { isParseArgsError, reportParseArgsError } from "./args.ts";
 import { hostAddressOptions } from "./host-address.ts";
 import { restartService } from "./service.ts";
@@ -36,21 +38,23 @@ export function npmBeside(execPath: string): { command: string; args: readonly s
   return existsSync(cli) ? { command: execPath, args: [cli], binDir } : { command: "npm", args: [] };
 }
 
+type UpgradeServiceState = Pick<ServiceState, "installed" | "stopped">;
+
 // A source checkout / global install without the service still upgrades
 // fine — just no restart; unsupported platforms (serviceManager throws)
 // land here too.
-const serviceInstalled = (): Promise<boolean> =>
+const serviceState = (): Promise<UpgradeServiceState> =>
   Promise.resolve()
     .then(() => serviceManager().state())
-    .then((state) => state.installed, () => false);
+    .catch(() => ({ installed: false, stopped: false }));
 
 export interface UpgradeDeps {
   /** One-shot exec for the `git status` check; defaults to execFile in the repo root. */
   readonly run?: (command: string, args: readonly string[]) => Promise<{ stdout: string }>;
   /** A foreground step (npm/git/bun, stdio inherit), `binDir` first on its PATH; injected so tests never run them. */
   readonly step?: (command: string, args: readonly string[], binDir?: string) => Promise<number>;
-  /** Whether the user service is installed; defaults to asking the platform manager. */
-  readonly serviceInstalled?: () => Promise<boolean>;
+  /** Whether the user service is installed and turned on; defaults to asking the platform manager. */
+  readonly serviceState?: () => Promise<UpgradeServiceState>;
   /** The post-install restart; defaults to `restartService`. */
   readonly restart?: (options: { force: boolean; argv: readonly string[] }) => Promise<number>;
   /** The exit after a restart ran; defaults to `process.exit`, injected by tests. */
@@ -105,8 +109,15 @@ export async function main(argv: readonly string[], deps: UpgradeDeps = {}): Pro
       return;
     }
   }
-  if (!(await (deps.serviceInstalled ?? serviceInstalled)())) {
+  const service = await (deps.serviceState ?? serviceState)();
+  if (!service.installed) {
     console.log("service not installed; upgrade done, nothing restarted");
+    process.exitCode = 0;
+    return;
+  }
+  // `service stop` (#501) keeps it off; the next start runs the new code.
+  if (service.stopped) {
+    console.log(`service stopped; upgrade done, it stays off until \`${commandHint("service")} start\``);
     process.exitCode = 0;
     return;
   }

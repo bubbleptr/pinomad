@@ -61,7 +61,15 @@ export async function main(argv: readonly string[]): Promise<void> {
           : `server: not joined (\`${commandHint("up")}\` to join)`,
     );
     console.log(`LAN and tailnet: ${report.lanPort === undefined ? "off" : `port ${report.lanPort}`}`);
-    console.log(`service: ${report.service.installed ? report.service.detail : "not installed"}`);
+    console.log(
+      `service: ${
+        !report.service.installed
+          ? "not installed"
+          : report.service.stopped
+            ? `stopped (\`${commandHint("service")} start\` to turn it back on)`
+            : report.service.detail
+      }`,
+    );
     if (report.otherDataDir !== undefined) console.log(`note: the installed service runs ${report.otherDataDir}, not ${dataDir}`);
     console.log(await versionLine());
     console.log(

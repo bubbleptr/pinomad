@@ -19,8 +19,13 @@ import {
 const run = promisify(execFile);
 
 export interface ServiceState {
-  /** False when the service manager has no such unit at all. */
+  /** False when there is no service definition at all. */
   readonly installed: boolean;
+  /**
+   * Installed but turned off with `service stop` (#501): it stays off across
+   * logins until `service start`, or a join or `up` that writes the service.
+   */
+  readonly stopped: boolean;
   readonly running: boolean;
   readonly pid?: number;
   /** One line for `service status`, e.g. "running, pid 1234". */
@@ -33,6 +38,10 @@ export interface ServiceManager {
   /** Unload and remove the definition; never touches the data dir. */
   uninstall(): Promise<void>;
   restart(): Promise<void>;
+  /** Turns an installed service back on, at login too; a running one stays as it is. */
+  start(): Promise<void>;
+  /** Stops it and keeps it off across logins; the definition and data dir stay. */
+  stop(): Promise<void>;
   state(): Promise<ServiceState>;
   logs(dataDir: string, lines: number, follow: boolean): Promise<void>;
   /**
@@ -40,6 +49,77 @@ export interface ServiceManager {
    * Undefined when nothing is installed; throws on an unparseable file.
    */
   read(): Promise<ServiceSpec | undefined>;
+}
+
+const NOT_INSTALLED: ServiceState = { installed: false, stopped: false, running: false, detail: "not installed" };
+
+/**
+ * Whether `launchctl print-disabled` lists pinomad.host as disabled: the
+ * override `service stop` sets so the agent stays off at the next login.
+ * macOS prints `=> disabled`; older releases printed `=> true`.
+ */
+export function launchdDisabled(printed: string): boolean {
+  const value = /^\s*"pinomad\.host" => (\w+)\s*$/m.exec(printed)?.[1];
+  return value === "disabled" || value === "true";
+}
+
+/**
+ * The service state from `print-disabled` and `launchctl print` (undefined
+ * when the label isn't loaded). Stopped means disabled and unloaded: disable
+ * alone leaves a running host running, as when `service stop`'s bootout
+ * failed, and a second stop must still be able to finish it.
+ */
+export function launchdState(disabled: boolean, printed: string | undefined): ServiceState {
+  if (printed === undefined) {
+    return disabled
+      ? { installed: true, stopped: true, running: false, detail: "stopped" }
+      : { installed: true, stopped: false, running: false, detail: "not loaded" };
+  }
+  const field = (name: string): string | undefined => printed.match(new RegExp(`^\\s*${name} = (.+)$`, "m"))?.[1];
+  const state = field("state") ?? "unknown";
+  const pid = field("pid");
+  const exit = field("last exit code");
+  return {
+    installed: true,
+    stopped: false,
+    running: state === "running" && pid !== undefined,
+    ...(pid === undefined ? {} : { pid: Number(pid) }),
+    detail: [
+      state,
+      ...(pid === undefined ? [] : [`pid ${pid}`]),
+      ...(exit === undefined || exit === "0" || exit === "(never exited)" ? [] : [`last exit ${exit}`]),
+      ...(disabled ? ["turned off but still loaded"] : []),
+    ].join(", "),
+  };
+}
+
+/**
+ * The service state from `systemctl --user show` (LoadState, ActiveState,
+ * SubState, MainPID, ExecMainStatus, UnitFileState). Stopped means disabled
+ * and done: inactive or failed. A unit waiting out RestartSec is
+ * "activating", and systemd still starts it even when disabled.
+ */
+export function systemdState(shown: string): ServiceState {
+  const fields = Object.fromEntries(shown.trim().split("\n").map((line) => line.split("=", 2) as [string, string]));
+  if (fields.LoadState === "not-found") return NOT_INSTALLED;
+  const pid = Number(fields.MainPID ?? "0");
+  const active = fields.ActiveState === "active";
+  const done = fields.ActiveState === "inactive" || fields.ActiveState === "failed";
+  if (fields.UnitFileState === "disabled" && done) return { installed: true, stopped: true, running: false, detail: "stopped" };
+  return {
+    installed: true,
+    stopped: false,
+    running: active && pid > 0,
+    ...(pid > 0 ? { pid } : {}),
+    detail: [
+      fields.ActiveState ?? "unknown",
+      fields.SubState ?? "",
+      ...(pid > 0 ? [`pid ${pid}`] : []),
+      ...(fields.ExecMainStatus === undefined || fields.ExecMainStatus === "0" ? [] : [`last exit ${fields.ExecMainStatus}`]),
+    ]
+      .filter((part) => part !== "")
+      .join(", "),
+  };
 }
 
 /** macOS: ~/Library/LaunchAgents/pinomad.host.plist, gui/<uid>/pinomad.host. */
@@ -52,6 +132,9 @@ const launchd: ServiceManager = {
     const domain = `gui/${process.getuid!()}/pinomad.host`;
     // A previous install may or may not be loaded; bootout's failure is fine.
     await run("launchctl", ["bootout", domain]).catch(() => {});
+    // A `service stop` left it disabled, and bootstrap refuses a disabled
+    // label: writing the service (join, up, upgrade) turns it back on.
+    await run("launchctl", ["enable", domain]);
     await run("launchctl", ["bootstrap", `gui/${process.getuid!()}`, path]);
     return path;
   },
@@ -66,27 +149,36 @@ const launchd: ServiceManager = {
     await run("launchctl", ["kickstart", "-k", `gui/${process.getuid!()}/pinomad.host`]);
   },
 
+  async start() {
+    const domain = `gui/${process.getuid!()}/pinomad.host`;
+    await run("launchctl", ["enable", domain]);
+    // Already loaded (running, or waiting to be relaunched): nothing to bootstrap.
+    if (await run("launchctl", ["print", domain]).then(() => true, () => false)) return;
+    await run("launchctl", ["bootstrap", `gui/${process.getuid!()}`, launchdPlistPath(homedir())]);
+  },
+
+  async stop() {
+    const domain = `gui/${process.getuid!()}/pinomad.host`;
+    // Disabled first: RunAtLoad would otherwise bring it back at the next login.
+    await run("launchctl", ["disable", domain]);
+    await run("launchctl", ["bootout", domain]).catch(() => {});
+  },
+
   async state() {
+    const defined = await readFile(launchdPlistPath(homedir())).then(
+      () => true,
+      () => false,
+    );
+    if (!defined) return NOT_INSTALLED;
+    const disabled = await run("launchctl", ["print-disabled", `gui/${process.getuid!()}`]).then(
+      ({ stdout }) => launchdDisabled(stdout),
+      () => false,
+    );
     const printed = await run("launchctl", ["print", `gui/${process.getuid!()}/pinomad.host`]).then(
       ({ stdout }) => stdout,
       () => undefined,
     );
-    if (printed === undefined) return { installed: false, running: false, detail: "not installed" };
-    const field = (name: string): string | undefined =>
-      printed.match(new RegExp(`^\\s*${name} = (.+)$`, "m"))?.[1];
-    const state = field("state") ?? "unknown";
-    const pid = field("pid");
-    const exit = field("last exit code");
-    return {
-      installed: true,
-      running: state === "running" && pid !== undefined,
-      ...(pid === undefined ? {} : { pid: Number(pid) }),
-      detail: [
-        state,
-        ...(pid === undefined ? [] : [`pid ${pid}`]),
-        ...(exit === undefined || exit === "0" || exit === "(never exited)" ? [] : [`last exit ${exit}`]),
-      ].join(", "),
-    };
+    return launchdState(disabled, printed);
   },
 
   async logs(dataDir, lines, follow) {
@@ -141,34 +233,26 @@ const systemd: ServiceManager = {
     await run("systemctl", ["--user", "restart", "pinomad.service"]);
   },
 
+  async start() {
+    await run("systemctl", ["--user", "enable", "--now", "pinomad.service"]);
+  },
+
+  async stop() {
+    await run("systemctl", ["--user", "disable", "--now", "pinomad.service"]);
+  },
+
   async state() {
     const shown = await run("systemctl", [
       "--user",
       "show",
       "pinomad.service",
       "-p",
-      "LoadState,ActiveState,SubState,MainPID,ExecMainStatus",
+      "LoadState,ActiveState,SubState,MainPID,ExecMainStatus,UnitFileState",
     ]).then(
       ({ stdout }) => stdout,
       () => undefined,
     );
-    if (shown === undefined) return { installed: false, running: false, detail: "not installed" };
-    const fields = Object.fromEntries(shown.trim().split("\n").map((line) => line.split("=", 2) as [string, string]));
-    if (fields.LoadState === "not-found") return { installed: false, running: false, detail: "not installed" };
-    const pid = Number(fields.MainPID ?? "0");
-    return {
-      installed: true,
-      running: fields.ActiveState === "active" && pid > 0,
-      ...(pid > 0 ? { pid } : {}),
-      detail: [
-        fields.ActiveState ?? "unknown",
-        fields.SubState ?? "",
-        ...(pid > 0 ? [`pid ${pid}`] : []),
-        ...(fields.ExecMainStatus === undefined || fields.ExecMainStatus === "0" ? [] : [`last exit ${fields.ExecMainStatus}`]),
-      ]
-        .filter((part) => part !== "")
-        .join(", "),
-    };
+    return shown === undefined ? NOT_INSTALLED : systemdState(shown);
   },
 
   async logs(_dataDir, lines, follow) {
