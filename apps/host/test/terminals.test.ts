@@ -139,6 +139,43 @@ describe("Terminals", () => {
     expect(output.text()).not.toContain("before-2");
   });
 
+  it("resets a viewer that resumes from a position before a restart", async () => {
+    const terminals = terminalsFor();
+    const id = terminals.open(OWNER, "/", SIZE);
+    const before = watchOutput(terminals, id);
+    terminals.input(id, "echo old-$((1 + 1))\r");
+    // Read everything, prompt included, so the position is the old output's end.
+    await before.until(/old-2\r?\n[^]*\$ $/);
+    const position = before.frames.at(-1)!.seq;
+    before.detach();
+
+    terminals.restart(id, SIZE);
+    const after = watchOutput(terminals, id, position);
+    terminals.input(id, "echo new-$((1 + 1))\r");
+    await after.until(/new-2\r?\n/);
+    expect(after.frames[0]!.reset).toBe(true);
+  });
+
+  it("leaves nothing behind when the pty can't start, and shows a failed restart as exited", async () => {
+    let fail = true;
+    const terminals = terminalsFor({
+      limit: 1,
+      spawn: (...args) => {
+        if (fail) throw new Error("out of ptys");
+        return spawn(...args);
+      },
+    });
+    const list = watchList(terminals);
+    expect(() => terminals.open(OWNER, "/", SIZE)).toThrow("out of ptys");
+    expect(list.current().terminals).toEqual([]);
+
+    fail = false;
+    const id = terminals.open(OWNER, "/", SIZE);
+    fail = true;
+    expect(() => terminals.restart(id, SIZE)).toThrow("out of ptys");
+    expect(list.current().terminals[0]).toMatchObject({ id, exit: { code: null } });
+  });
+
   it("resizes the pty and reports the size in the list", async () => {
     const terminals = terminalsFor();
     const list = watchList(terminals);

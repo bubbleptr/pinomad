@@ -158,7 +158,12 @@ export class Terminals {
       viewers: new Set(),
     };
     this.#terminals.set(terminal.id, terminal);
-    this.#start(terminal);
+    try {
+      this.#start(terminal);
+    } catch (error) {
+      this.#terminals.delete(terminal.id);
+      throw error;
+    }
     this.#changed(owner);
     return terminal.id;
   }
@@ -185,8 +190,10 @@ export class Terminals {
     const terminal = this.#get(id);
     this.#stop(terminal);
     // Positions keep counting; the old output is dropped, so every viewer
-    // starts over from the new shell's first output.
-    terminal.start += terminal.buffer.length + terminal.pending.length;
+    // starts over from the new shell's first output. The extra one leaves a
+    // gap: a device that read all of the old output and reconnects later
+    // holds a position the buffer no longer has, and gets a reset.
+    terminal.start += terminal.buffer.length + terminal.pending.length + 1;
     terminal.buffer = "";
     terminal.pending = "";
     terminal.titleCarry = "";
@@ -195,7 +202,14 @@ export class Terminals {
     terminal.cols = size.cols;
     terminal.rows = size.rows;
     for (const viewer of terminal.viewers) viewer.position = undefined;
-    this.#start(terminal);
+    try {
+      this.#start(terminal);
+    } catch (error) {
+      // Shown as exited, so it can be restarted again or closed.
+      terminal.exit = { code: null };
+      this.#changed(terminal.owner);
+      throw error;
+    }
     this.#changed(terminal.owner);
   }
 
