@@ -406,6 +406,9 @@ it("keeps the chat usable on a phone with navigation and the side panel still re
   await expect.poll(() => page.getByRole("dialog").count()).toBe(0);
   await page.getByRole("button", { name: "Side panel", exact: true }).click();
   await page.getByRole("dialog").getByText("No tasks yet").waitFor();
+  // The dialog's first row switches surfaces; a chat has no repository to diff.
+  await page.getByRole("dialog").getByRole("button", { name: "Changes", exact: true }).click();
+  await page.getByRole("dialog").getByText("Chat conversations have no repository").waitFor();
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "More actions", exact: true }).click();
   await page.getByRole("menuitem", { name: /^Run a command/ }).waitFor();
@@ -1731,9 +1734,10 @@ it("summarizes changes and subagents in the overview card and links to their det
   await panel.getByText("This conversation", { exact: true }).waitFor();
   await panel.getByText("count the lines", { exact: true }).waitFor();
 
+  // The Changes row switches the open panel to its Changes surface.
   await changes.click();
-  await page.getByRole("dialog").getByText("tracked.txt", { exact: false }).first().waitFor();
-  await page.keyboard.press("Escape");
+  await panel.getByText("tracked.txt", { exact: false }).first().waitFor();
+  expect(await page.getByRole("dialog").count()).toBe(0);
 
   // A binary-only change has no text lines but is still a change.
   await run("git", ["-C", repo.path, "checkout", "--", "tracked.txt"]);

@@ -3,41 +3,27 @@
 // starts. It summarizes the shown conversation — where it works, what it
 // changed, how full its context is and what it spent, which subagents are
 // busy, which tool sources are up — and links out for the detail: the
-// Changes dialog, the side panel's Tasks list. It replaces the side panel's
+// side panel's Changes and Tasks surfaces. It replaces the side panel's
 // Live tab.
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
-import { hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import { classify } from "@pinomad/protocol/presentation.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { agentOf, usageRows } from "@pinomad/client/chat.ts";
 import { contextUsage } from "@pinomad/client/context-usage.ts";
 import { displayName, rootOf, taskGroupsOf } from "@pinomad/client/family.ts";
-import { parsePatch } from "@pinomad/client/patch.ts";
 import { summaryOf } from "@pinomad/client/model.ts";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ContextMeter, formatCost } from "../../entities/conversation/context-meter.tsx";
+import { branchOf, ChangeFigure, changeStatOf, type ChangeStat } from "../../entities/conversation/change-stat.tsx";
 import { taskTally } from "../../entities/conversation/task-tally.ts";
 import { DocumentView } from "../../presentation/documents.tsx";
 import { ChevronRight, FileDiff, FolderClosed, FolderGitTwo, GitBranch } from "../../shared/ui/icons.tsx";
 
 /** Running subagents listed by name before the rest fold into the summary line. */
 const ACTIVE_ROWS = 3;
-
-type ChangeStat =
-  | { readonly kind: "loading" }
-  | { readonly kind: "unavailable"; readonly branch?: string }
-  | { readonly kind: "failed" }
-  | {
-      readonly kind: "ready";
-      readonly files: number;
-      readonly additions: number;
-      readonly deletions: number;
-      readonly truncated: boolean;
-      readonly branch?: string;
-    };
 
 /**
  * The checkout's +N −M against its base — and, on a 5.11 host, the
@@ -62,19 +48,9 @@ function useChangeStat(
     const request = ++latest.current;
     remote.controller.changes().then(
       (result) => {
-        if (request !== latest.current) return;
-        if (!result.available) return setStat({ kind: "unavailable", branch: result.branch });
-        const files = parsePatch(result.patch);
-        setStat({
-          kind: "ready",
-          files: files.length,
-          additions: files.reduce((sum, file) => sum + file.additions, 0),
-          deletions: files.reduce((sum, file) => sum + file.deletions, 0),
-          truncated: result.truncated,
-          branch: result.branch,
-        });
+        if (request === latest.current) setStat(changeStatOf(result));
       },
-      // A failed ask is not "no repository": keep the row so the dialog stays reachable.
+      // A failed ask is not "no repository": keep the row so the panel stays reachable.
       () => {
         if (request === latest.current) setStat({ kind: "failed" });
       },
@@ -83,8 +59,6 @@ function useChangeStat(
   useEffect(() => setStat({ kind: "loading" }), [conversationId]);
   return stat;
 }
-
-const count = (value: number): string => value.toLocaleString("en-US");
 
 type SectionKey = "workspace" | "usage" | "subagents" | "sources";
 
@@ -215,16 +189,7 @@ function WorkspaceSection({
         ? "Chat folder"
         : cwd?.split("/").at(-1);
   const stat = useChangeStat(remote, conversation.conversation.id, busy, view.connection === "connected", !isChat);
-  // A 5.11 host reports HEAD's branch with changes() — live, so a worktree
-  // that went detached shows nothing instead of the recorded name. Older
-  // hosts only know the checkout record's branch.
-  const minor = view.host?.protocol.minor;
-  const branch =
-    minor !== undefined && hostSupportsFeature(minor, "liveBranch")
-      ? stat.kind === "ready" || stat.kind === "unavailable"
-        ? stat.branch
-        : undefined
-      : view.checkout?.branch;
+  const branch = branchOf(view, stat);
   return (
     <Section
       section="workspace"
@@ -248,28 +213,6 @@ function WorkspaceSection({
       {branch === undefined ? null : <Row icon={<GitBranch className="size-4" />}>{branch}</Row>}
       {isChat ? null : <ChangesRow stat={stat} onOpen={onOpenChanges} />}
     </Section>
-  );
-}
-
-/** The checkout's +N −M, or why there isn't one yet. */
-function ChangeFigure({ stat }: { stat: Exclude<ChangeStat, { kind: "unavailable" }> }) {
-  return stat.kind === "loading" ? (
-    <span className="text-muted">…</span>
-  ) : stat.kind === "failed" ? (
-    <span className="text-muted">—</span>
-  ) : stat.files === 0 ? (
-    <span className="text-muted">None</span>
-  ) : stat.additions === 0 && stat.deletions === 0 ? (
-    // Binary edits, renames and mode changes touch files without text lines.
-    <span className="text-muted">
-      {stat.files} file{stat.files === 1 ? "" : "s"}
-    </span>
-  ) : (
-    // A truncated patch undercounts: "+" marks the numbers as a floor.
-    <span aria-label={`${count(stat.additions)} added, ${count(stat.deletions)} removed${stat.truncated ? " at least" : ""}`}>
-      <span className="text-success">+{count(stat.additions)}{stat.truncated ? "+" : ""}</span>{" "}
-      <span className="text-danger">−{count(stat.deletions)}{stat.truncated ? "+" : ""}</span>
-    </span>
   );
 }
 
