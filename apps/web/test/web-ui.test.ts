@@ -1731,9 +1731,10 @@ it("summarizes changes and subagents in the overview card and links to their det
   await panel.getByText("This conversation", { exact: true }).waitFor();
   await panel.getByText("count the lines", { exact: true }).waitFor();
 
+  // The Changes row switches the open panel to its Changes surface.
   await changes.click();
-  await page.getByRole("dialog").getByText("tracked.txt", { exact: false }).first().waitFor();
-  await page.keyboard.press("Escape");
+  await panel.getByText("tracked.txt", { exact: false }).first().waitFor();
+  expect(await page.getByRole("dialog").count()).toBe(0);
 
   // A binary-only change has no text lines but is still a change.
   await run("git", ["-C", repo.path, "checkout", "--", "tracked.txt"]);

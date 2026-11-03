@@ -1,13 +1,15 @@
 // A unified-patch renderer (ADR-0005): show the parsed files, hunks, and
 // lines with theme colors — green added, red removed, subdued hunk markers.
-// Used for tool-result details and the conversation Changes panel. The
+// Used for tool-result details and the side panel's Changes surface, which
+// folds a long patch's files so opening it stays cheap. The
 // parser itself lives in @pinomad/client/patch.ts (shared with the native
 // clients).
 import { parsePatch } from "@pinomad/client/patch.ts";
-import { useMemo, type CSSProperties } from "react";
+import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
+import { ChevronRight } from "../shared/ui/icons.tsx";
 
 const fileStyle: CSSProperties = {
   fontFamily: "var(--font-family-code)",
@@ -25,14 +27,21 @@ const kindStyles: Record<string, CSSProperties> = {
   meta: { color: "var(--color-text-accent)", backgroundColor: "var(--color-background-muted)" },
 };
 
-export function DiffView({ patch }: { patch: string }) {
+/** Above this many diff lines, a collapsible view starts with every file folded. */
+const FOLD_LINES = 400;
+
+export function DiffView({ patch, collapsible = false }: { patch: string; collapsible?: boolean }) {
   const files = useMemo(() => parsePatch(patch), [patch]);
+  const folded = collapsible && files.reduce((sum, file) => sum + file.lines.length, 0) > FOLD_LINES;
+  // Paths the reader flipped from the starting state; keyed by path so a refresh keeps them.
+  const [flipped, setFlipped] = useState<ReadonlySet<string>>(new Set());
   if (files.length === 0) return <Text type="supporting">No changes.</Text>;
   return (
     <VStack gap={2}>
-      {files.map((file, index) => (
-        <VStack key={`${file.path}-${index}`} gap={0}>
-          <HStack gap={2} vAlign="center" padding={1}>
+      {files.map((file, index) => {
+        const open = folded === flipped.has(file.path);
+        const heading = (
+          <>
             <Text type="supporting" weight="semibold" maxLines={1}>
               {file.oldPath !== undefined && file.oldPath !== file.path ? `${file.oldPath} → ${file.path}` : file.path}
             </Text>
@@ -41,20 +50,57 @@ export function DiffView({ patch }: { patch: string }) {
             <Text type="supporting">
               +{file.additions} −{file.deletions}
             </Text>
-          </HStack>
-          {file.binary === true ? (
-            <Text type="supporting">Binary file</Text>
-          ) : file.lines.length === 0 ? null : (
-            <div style={fileStyle}>
-              {file.lines.map((line, lineIndex) => (
-                <div key={lineIndex} style={kindStyles[line.kind]}>
-                  {line.text}
-                </div>
-              ))}
-            </div>
-          )}
-        </VStack>
-      ))}
+          </>
+        );
+        return (
+          <VStack key={`${file.path}-${index}`} gap={0}>
+            {collapsible ? (
+              <FileToggle
+                open={open}
+                onToggle={() =>
+                  setFlipped((current) => {
+                    const next = new Set(current);
+                    if (!next.delete(file.path)) next.add(file.path);
+                    return next;
+                  })
+                }
+              >
+                {heading}
+              </FileToggle>
+            ) : (
+              <HStack gap={2} vAlign="center" padding={1}>
+                {heading}
+              </HStack>
+            )}
+            {!open ? null : file.binary === true ? (
+              <Text type="supporting">Binary file</Text>
+            ) : file.lines.length === 0 ? null : (
+              <div style={fileStyle}>
+                {file.lines.map((line, lineIndex) => (
+                  <div key={lineIndex} style={kindStyles[line.kind]}>
+                    {line.text}
+                  </div>
+                ))}
+              </div>
+            )}
+          </VStack>
+        );
+      })}
     </VStack>
+  );
+}
+
+/** A file's header as the button that folds its lines. */
+function FileToggle({ open, onToggle, children }: { open: boolean; onToggle: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      className="flex min-w-0 items-center gap-2 rounded-[var(--radius-sm,6px)] p-1 text-left hover:bg-[var(--color-overlay-hover)] focus-visible:outline-2 focus-visible:outline-[var(--color-border-emphasized)]"
+      onClick={onToggle}
+    >
+      <ChevronRight className={`size-3.5 shrink-0 text-muted ${open ? "rotate-90" : ""}`} aria-hidden="true" />
+      {children}
+    </button>
   );
 }

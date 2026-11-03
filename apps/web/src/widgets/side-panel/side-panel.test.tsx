@@ -1,8 +1,8 @@
 // The side panel belongs to the family the main column shows. It lists only
 // Foreground Tasks; Forks are independent conversations in the sidebar now.
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { DARK_MODE_ID, fakeRemote, fakeView, PARSER_ID, SUBAGENT_ID, subagentConversation } from "../../test/story-fixtures.tsx";
+import { DARK_MODE_ID, fakeRemote, fakeView, FORK_ID, forkConversation, PARSER_ID, SUBAGENT_ID, subagentConversation } from "../../test/story-fixtures.tsx";
 import { SidePanel } from "./side-panel.tsx";
 
 const view = fakeView({ side: { id: SUBAGENT_ID, conversation: subagentConversation(), docs: [] } });
@@ -16,6 +16,7 @@ function renderPanel(shownId: typeof PARSER_ID, panelView = view) {
       narrow={false}
       open
       surface="tasks"
+      busy={false}
       liveActivity={false}
       onOpenChange={vi.fn()}
       onSelectSurface={vi.fn()}
@@ -46,5 +47,34 @@ describe("SidePanel family", () => {
     expect(screen.queryByRole("button", { name: "Back to tasks" })).not.toBeInTheDocument();
     // The other family has no tasks; the panel says so rather than showing a fork list.
     expect(screen.getByText("No tasks yet")).toBeInTheDocument();
+  });
+});
+
+describe("SidePanel Changes", () => {
+  it("refetches when main shows another conversation of the same family", async () => {
+    // A pre-ADR-0019 fork may own its worktree; the host answers per conversation.
+    const changes = vi.fn(async () => ({ available: true as const, base: "c0ffee0", patch: "", truncated: false }));
+    const parser = fakeView();
+    const remote = fakeRemote(parser, { changes });
+    const panel = (view: typeof parser, shownId: typeof PARSER_ID) => (
+      <SidePanel
+        view={view}
+        remote={remote}
+        shownId={shownId}
+        narrow={false}
+        open
+        surface="changes"
+        busy={false}
+        liveActivity={false}
+        onOpenChange={vi.fn()}
+        onSelectSurface={vi.fn()}
+        openInPanel={vi.fn()}
+        onOpenInMain={vi.fn()}
+      />
+    );
+    const { rerender } = render(panel(parser, PARSER_ID));
+    await waitFor(() => expect(changes).toHaveBeenCalledTimes(1));
+    rerender(panel(fakeView({ conversation: forkConversation() }), FORK_ID));
+    await waitFor(() => expect(changes).toHaveBeenCalledTimes(2));
   });
 });

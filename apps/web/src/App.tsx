@@ -18,7 +18,6 @@ import {
   useRef,
   useState,
 } from "react";
-import type { CallMethods } from "@pinomad/protocol/frames.ts";
 
 import { outgoingImage, type ImageVariant } from "@pinomad/protocol/images.ts";
 import { findConversation, type ConversationNode, type Home } from "@pinomad/protocol/organization.ts";
@@ -39,7 +38,6 @@ import { ConversationTranscript } from "./widgets/chat/conversation-transcript.t
 import { ComposerSkeleton, ConversationSkeleton, ConversationUnavailable } from "./widgets/chat/conversation-skeleton.tsx";
 import { panelSurfaceOf, SidePanel, SurfaceButtons, type PanelSurface } from "./widgets/side-panel/side-panel.tsx";
 import { OverviewCard } from "./widgets/overview/overview-card.tsx";
-import { DiffView } from "./presentation/diff.tsx";
 import { PendingQuestions } from "./presentation/question.tsx";
 import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
@@ -1182,7 +1180,6 @@ export function Workbench({
     if (framed) setLocalDrafting(true);
   };
   const [forkTarget, setForkTarget] = useState<string>();
-  const [changesOpen, setChangesOpen] = useState(false);
   // A successful connect clears the reload-once marker so the next host
   // upgrade may auto-reload again.
   useEffect(() => {
@@ -1384,7 +1381,7 @@ export function Workbench({
               conversation={conversation}
               narrow={narrow}
               busy={isBusy(conversation)}
-              onOpenChanges={() => setChangesOpen(true)}
+              onOpenChanges={() => openSurface("changes")}
               onOpenTasks={openTasks}
               onClose={() => changeOverview(false)}
             />
@@ -1399,6 +1396,7 @@ export function Workbench({
           narrow={false}
           open={panelOpen}
           surface={panelSurface}
+          busy={busy}
           liveActivity={liveActivity}
           onOpenChange={setPanelOpen}
           onSelectSurface={selectSurface}
@@ -1418,6 +1416,7 @@ export function Workbench({
           narrow
           open={panelOpen}
           surface={panelSurface}
+          busy={busy}
           liveActivity={liveActivity}
           onOpenChange={setPanelOpen}
           onSelectSurface={selectSurface}
@@ -1433,9 +1432,6 @@ export function Workbench({
           onClose={() => setForkTarget(undefined)}
           onCreate={createFork}
         />
-      )}
-      {changesOpen && conversation !== undefined && (
-        <ChangesDialog view={view} remote={remote} busy={busy} onClose={() => setChangesOpen(false)} />
       )}
     </>
   );
@@ -1525,58 +1521,6 @@ function ForkDialog({
                 isDisabled={!connected || busy || prompt.trim() === ""}
                 onClick={fork}
               />
-            </HStack>
-          </LayoutFooter>
-        }
-      />
-    </Dialog>
-  );
-}
-
-type ChangesResult = CallMethods["changes"]["result"];
-
-/** The conversation's file changes (ADR-0010/0011-B2): a worktree diff vs base, or a project dir's uncommitted diff. */
-function ChangesDialog({ view, remote, busy, onClose }: { view: DurableView; remote: RemoteDurable; busy: boolean; onClose: () => void }) {
-  const [result, setResult] = useState<ChangesResult>();
-  const refresh = useMemo(() => () => void remote.controller.changes().then(setResult).catch(() => {}), [remote]);
-  useEffect(refresh, [refresh]);
-  // An idle turn may have produced new changes; refresh once when it settles.
-  const wasBusy = useRef(busy);
-  useEffect(() => {
-    if (wasBusy.current && !busy) refresh();
-    wasBusy.current = busy;
-  }, [busy, refresh]);
-  const direct = view.checkout === undefined;
-  return (
-    <Dialog isOpen onOpenChange={(open) => (open ? undefined : onClose())} width={720}>
-      <Layout
-        header={<DialogHeader title="Changes" onOpenChange={() => onClose()} />}
-        content={
-          <LayoutContent>
-            <VStack gap={2} padding={3}>
-              {result === undefined ? (
-                <Text type="supporting">Loading…</Text>
-              ) : !result.available ? (
-                <Text type="supporting">{result.reason}</Text>
-              ) : (
-                <>
-                  {direct ? (
-                    <Text type="supporting">
-                      These are the project directory's uncommitted changes, shared with other conversations working there.
-                    </Text>
-                  ) : null}
-                  {result.truncated ? <Text type="supporting">The diff is truncated; the rest is not shown.</Text> : null}
-                  <DiffView patch={result.patch} />
-                </>
-              )}
-            </VStack>
-          </LayoutContent>
-        }
-        footer={
-          <LayoutFooter>
-            <HStack gap={2} hAlign="end">
-              <Button label="Refresh" variant="secondary" isDisabled={view.connection !== "connected"} onClick={refresh} />
-              <Button label="Close" variant="primary" onClick={onClose} />
             </HStack>
           </LayoutFooter>
         }

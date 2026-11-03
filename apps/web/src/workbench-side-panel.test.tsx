@@ -3,7 +3,7 @@
 // closes the panel, and the Tasks icon carries the live-activity dot.
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { Workbench } from "./App.tsx";
 import { HostsContext } from "./entities/host/host-store.ts";
 import { fakeHosts, fakeRemote, fakeView, HOME_HOST, PARSER_ID } from "./test/story-fixtures.tsx";
@@ -19,6 +19,30 @@ function renderWorkbench() {
 }
 
 describe("side panel surfaces", () => {
+  afterEach(() => window.localStorage.clear());
+
+  it("opens Changes from its icon, then switches to Tasks rather than closing", async () => {
+    const user = userEvent.setup();
+    renderWorkbench();
+    await user.click(screen.getByRole("button", { name: "Changes" }));
+    const panel = screen.getByRole("complementary", { name: "Side panel" });
+    expect(await within(panel).findByText("src/parser.ts")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Tasks" }));
+    expect(screen.getByRole("complementary", { name: "Side panel" })).toHaveTextContent("Write regression tests");
+  });
+
+  it("opens the overview's Changes row in the panel, not a dialog", async () => {
+    window.localStorage.setItem("pinomad.overview.open", "true");
+    const user = userEvent.setup();
+    renderWorkbench();
+    const overview = screen.getByRole("complementary", { name: "Overview" });
+    await user.click(await within(overview).findByRole("button", { name: /Changes/ }));
+    const panel = screen.getByRole("complementary", { name: "Side panel" });
+    expect(await within(panel).findByText("src/parser.ts")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("opens Tasks from its header icon and closes from the same icon", async () => {
     const user = userEvent.setup();
     renderWorkbench();

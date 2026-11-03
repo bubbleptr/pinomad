@@ -3,6 +3,7 @@
 // row, level with that header, for its status and actions. Tasks is the
 // family's Foreground subagents grouped by owner, opening read-only detail via
 // `view.side`; Background subagents open in main and never repeat here.
+// Changes is the shown conversation's checkout diff (changes-surface.tsx).
 import { Dialog } from "@astryxdesign/core/Dialog";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
@@ -19,31 +20,23 @@ import { displayName, forksAt, relativeTime, rootOf, taskGroupsOf } from "@pinom
 import { useNow } from "../../shared/use-now.ts";
 import { taskTally } from "../../entities/conversation/task-tally.ts";
 import { AnimatedSidebarRight } from "../../shared/ui/animated-icons.tsx";
-import { ArrowLeft, Bot, Cancel } from "../../shared/ui/icons.tsx";
+import { ArrowLeft, Bot, Cancel, FileDiff } from "../../shared/ui/icons.tsx";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
 import { ConversationSkeleton } from "../chat/conversation-skeleton.tsx";
+import { ChangesSurface } from "./changes-surface.tsx";
+import { SurfaceBar } from "./surface-bar.tsx";
 
-export type PanelSurface = "tasks";
+export type PanelSurface = "tasks" | "changes";
 
 const SURFACES: readonly { readonly id: PanelSurface; readonly label: string; readonly icon: ReactNode }[] = [
   { id: "tasks", label: "Tasks", icon: <Bot className="size-4" aria-hidden="true" /> },
+  { id: "changes", label: "Changes", icon: <FileDiff className="size-4" aria-hidden="true" /> },
 ];
 
 /** A stored surface id, or Tasks when it names none of today's surfaces. */
 export function panelSurfaceOf(stored: string | null): PanelSurface {
   return SURFACES.find((surface) => surface.id === stored)?.id ?? "tasks";
-}
-
-/** The panel's first row: 40px like the chat header, so their borders meet. */
-function SurfaceBar({ start, end, children }: { start?: ReactNode; end?: ReactNode; children: ReactNode }) {
-  return (
-    <div className="pinomad-drag flex h-10 shrink-0 items-center gap-1 border-b border-border px-3">
-      {start}
-      <div className="flex min-w-0 flex-1 items-center gap-1">{children}</div>
-      {end}
-    </div>
-  );
 }
 
 function LiveDot() {
@@ -316,6 +309,7 @@ export function SidePanel({
   narrow,
   open,
   surface,
+  busy,
   liveActivity,
   onOpenChange,
   onSelectSurface,
@@ -329,6 +323,8 @@ export function SidePanel({
   narrow: boolean;
   open: boolean;
   surface: PanelSurface;
+  /** The shown conversation is running; Changes refreshes once it settles. */
+  busy: boolean;
   liveActivity: boolean;
   onOpenChange: (open: boolean) => void;
   onSelectSurface: (surface: PanelSurface) => void;
@@ -341,31 +337,36 @@ export function SidePanel({
     maxSizePx: 720,
     autoSaveId: "pinomad-side-panel",
   });
+  const content = (barStart?: ReactNode, barEnd?: ReactNode) =>
+    surface === "changes" ? (
+      <ChangesSurface view={view} remote={remote} busy={busy} barStart={barStart} barEnd={barEnd} />
+    ) : (
+      <TasksSurface
+        view={view}
+        remote={remote}
+        shownId={shownId}
+        barStart={barStart}
+        barEnd={barEnd}
+        openInPanel={openInPanel}
+        onOpenInMain={onOpenInMain}
+      />
+    );
   if (narrow) {
     return (
       <Dialog isOpen={open} onOpenChange={onOpenChange} variant="fullscreen" aria-label="Side panel">
         <Layout
           content={
             <LayoutContent padding={0}>
-              <TasksSurface
-                view={view}
-                remote={remote}
-                shownId={shownId}
-                barStart={
-                  <SurfaceButtons narrow={false} open surface={surface} liveActivity={liveActivity} onSelect={onSelectSurface} />
-                }
-                barEnd={
-                  <IconButton
-                    icon={<Cancel className="size-4" aria-hidden="true" />}
-                    label="Close side panel"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => onOpenChange(false)}
-                  />
-                }
-                openInPanel={openInPanel}
-                onOpenInMain={onOpenInMain}
-              />
+              {content(
+                <SurfaceButtons narrow={false} open surface={surface} liveActivity={liveActivity} onSelect={onSelectSurface} />,
+                <IconButton
+                  icon={<Cancel className="size-4" aria-hidden="true" />}
+                  label="Close side panel"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onOpenChange(false)}
+                />,
+              )}
             </LayoutContent>
           }
         />
@@ -384,7 +385,7 @@ export function SidePanel({
       role="complementary"
     >
       <div className="h-full min-h-0 overflow-hidden">
-        <TasksSurface view={view} remote={remote} shownId={shownId} openInPanel={openInPanel} onOpenInMain={onOpenInMain} />
+        {content()}
       </div>
       <ResizeHandle
         direction="horizontal"

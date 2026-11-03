@@ -134,6 +134,7 @@ function Body({
         narrow={narrow}
         open={panelOpen}
         surface={surface}
+        busy={false}
         liveActivity
         onOpenChange={setPanelOpen}
         onSelectSurface={select}
