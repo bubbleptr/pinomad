@@ -37,6 +37,13 @@ describe("HighlightedFile", () => {
     expect(screen.getByText("plain b.ts")).toBeInTheDocument();
   });
 
+  it("shows a file's own diff when another file's path is it with a b/ in front", async () => {
+    const nested = ["diff --git a/b/foo.ts b/b/foo.ts", "--- a/b/foo.ts", "+++ b/b/foo.ts", "@@ -1 +1 @@", "-nested", "+nested!", ""];
+    const top = ["diff --git a/foo.ts b/foo.ts", "--- a/foo.ts", "+++ b/foo.ts", "@@ -1 +1 @@", "-top", "+top!", ""];
+    await show([...nested, ...top].join("\n"), "foo.ts");
+    expect(screen.getByText("highlighted foo.ts")).toBeInTheDocument();
+  });
+
   it("finds a file by its path when the patch has no diff --git line", async () => {
     await show(whole.slice(1).join("\n"), "a.ts");
     expect(screen.getByText(/^highlighted .*a\.ts$/)).toBeInTheDocument();

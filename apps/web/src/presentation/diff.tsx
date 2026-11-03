@@ -11,7 +11,11 @@ import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { ChevronRight } from "../shared/ui/icons.tsx";
 
-const HighlightedFile = lazy(() => import("./highlighted-diff.tsx"));
+// Suspense doesn't catch a chunk that fails to load; without this, a network
+// blip on first use would unmount the page instead of leaving the plain lines.
+const HighlightedFile = lazy(() =>
+  import("./highlighted-diff.tsx").catch(() => ({ default: ({ fallback }: { fallback: ReactNode }) => fallback })),
+);
 
 const fileStyle: CSSProperties = {
   fontFamily: "var(--font-family-code)",

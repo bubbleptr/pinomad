@@ -73,13 +73,23 @@ function parseFiles(patch: string): readonly FileDiffMetadata[] {
   }
 }
 
-/** Pierre's files by the paths parsePatch reads, which strips the a/ and b/ that Pierre keeps without a `diff --git` line. */
+/**
+ * Pierre's files by the paths parsePatch reads, which strips the a/ and b/
+ * that Pierre keeps without a `diff --git` line. Exact names go in first, so
+ * a stripped alias never takes the path of a real file (b/foo.ts vs foo.ts).
+ */
 function byPath(files: readonly FileDiffMetadata[]): Files {
   const map = new Map<string, FileDiffMetadata>();
+  const add = (name: string | undefined, file: FileDiffMetadata) => {
+    if (name !== undefined && !map.has(name)) map.set(name, file);
+  };
   for (const file of files) {
-    for (const name of [file.name, file.prevName, file.name.replace(/^b\//, ""), file.prevName?.replace(/^a\//, "")]) {
-      if (name !== undefined && !map.has(name)) map.set(name, file);
-    }
+    add(file.name, file);
+    add(file.prevName, file);
+  }
+  for (const file of files) {
+    add(file.name.replace(/^b\//, ""), file);
+    add(file.prevName?.replace(/^a\//, ""), file);
   }
   return map;
 }
