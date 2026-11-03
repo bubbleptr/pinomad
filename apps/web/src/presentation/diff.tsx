@@ -72,7 +72,7 @@ export function DiffView({ patch, collapsible = false }: { patch: string; collap
               <Text type="supporting">Binary file</Text>
             ) : file.lines.length === 0 ? null : (
               <Suspense fallback={<PlainLines lines={file.lines} />}>
-                <HighlightedFile patch={patch} index={index} path={file.path} fallback={<PlainLines lines={file.lines} />} />
+                <HighlightedFile patch={patch} path={file.path} fallback={<PlainLines lines={file.lines} />} />
               </Suspense>
             )}
           </VStack>

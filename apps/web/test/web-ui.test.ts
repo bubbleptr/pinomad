@@ -1737,6 +1737,7 @@ it("summarizes changes and subagents in the overview card and links to their det
   // The Changes row switches the open panel to its Changes surface.
   await changes.click();
   await panel.getByText("tracked.txt", { exact: false }).first().waitFor();
+  await panel.locator('[data-line-type="change-addition"]', { hasText: "B" }).waitFor();
   expect(await page.getByRole("dialog").count()).toBe(0);
 
   // A binary-only change has no text lines but is still a change.
