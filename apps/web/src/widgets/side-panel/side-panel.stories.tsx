@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
-import { fakeRemote, fakeView, PARSER_ID, SUBAGENT_ID, subagentConversation } from "../../test/story-fixtures.tsx";
+import { fakeRemote, fakeTerminals, fakeView, PARSER_ID, SUBAGENT_ID, subagentConversation, TERMINALS } from "../../test/story-fixtures.tsx";
 import { SidePanel } from "./side-panel.tsx";
 
 const view = fakeView();
@@ -54,3 +54,24 @@ export const Drafting: Story = { args: { shownId: undefined } };
 
 /** On a phone the panel is a fullscreen dialog. */
 export const Narrow: Story = { args: { narrow: true } };
+
+/** The owner's terminals: one tab each, an exited one greyed with its code. */
+export const Terminal: Story = {
+  args: { surface: "terminal", remote: { ...fakeRemote(view), terminals: fakeTerminals({ lists: { [PARSER_ID]: TERMINALS } }) } },
+};
+
+/** No terminal yet: one button, nothing opened on its own. */
+export const TerminalEmpty: Story = { args: { surface: "terminal" } };
+
+/** A host without the pty module, or too old, says why instead. */
+export const TerminalUnavailable: Story = {
+  args: {
+    surface: "terminal",
+    remote: { ...fakeRemote(view), terminals: fakeTerminals({ unavailable: "The host is too old for terminals (needs protocol 5.27); run `pinomad upgrade` on the host" }) },
+  },
+};
+
+/** On a phone the tabs take a second row under the surface switch. */
+export const TerminalNarrow: Story = {
+  args: { ...Terminal.args, narrow: true },
+};

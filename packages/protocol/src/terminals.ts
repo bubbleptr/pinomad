@@ -34,5 +34,14 @@ export interface TerminalsHello {
   readonly limit: number;
 }
 
+export function isTerminalsHello(value: unknown): value is TerminalsHello {
+  return value !== null && typeof value === "object" && typeof (value as { limit?: unknown }).limit === "number";
+}
+
+export interface TerminalSize {
+  readonly cols: number;
+  readonly rows: number;
+}
+
 export const terminalsStream = (id: ConversationId) => `terminals:${id}` as const;
 export const terminalStream = (id: TerminalId) => `terminal:${id}` as const;

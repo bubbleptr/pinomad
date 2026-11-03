@@ -13,7 +13,8 @@ import { PROTOCOL } from "@pinomad/protocol/frames.ts";
 import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { organize, type ConversationNode, type HostIndex, type Project } from "@pinomad/protocol/organization.ts";
-import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import type { RemoteDurable, RemoteTerminals, TerminalOutputSink, TerminalsState } from "@pinomad/protocol/remote-durable.ts";
+import type { TerminalInfo, TerminalList } from "@pinomad/protocol/terminals.ts";
 import type { ConversationSummary, DurableController, DurableView, ModelSummary } from "@pinomad/protocol/view.ts";
 import { AccountContext } from "../entities/account/account-context.tsx";
 import type { AccountModel, AccountState } from "../entities/account/account-model.ts";
@@ -621,7 +622,100 @@ export function fakeRemote(view: DurableView = fakeView(), overrides: Partial<Du
     setPushToken: fn(async () => {}),
     ...overrides,
   };
-  return { view: { current: () => view, subscribe: () => () => {} }, controller } as unknown as RemoteDurable;
+  return { view: { current: () => view, subscribe: () => () => {} }, controller, terminals: fakeTerminals() } as unknown as RemoteDurable;
+}
+
+// --- Terminals -------------------------------------------------------------------
+
+/** A shell's first screen, written on every attach. */
+export const TERMINAL_SCREEN = "\x1b[32mkieran@mbp\x1b[0m \x1b[34m~/code/parser\x1b[0m $ ";
+
+export const TERMINALS: readonly TerminalInfo[] = [
+  { id: "t-dev", name: "dev server", renamed: true, cols: 80, rows: 24 },
+  { id: "t-shell", name: "Terminal 2", renamed: false, cols: 80, rows: 24 },
+  { id: "t-tests", name: "Terminal 3", renamed: false, cols: 80, rows: 24, exit: { code: 1 } },
+];
+
+/**
+ * Terminals in memory, as the host would keep them: `owners` maps a
+ * conversation to the owner whose list it shows (itself when absent), and
+ * calls change the list and tell its watchers.
+ */
+export function fakeTerminals({
+  lists = {},
+  owners = {},
+  unavailable,
+  limit = 8,
+}: {
+  lists?: Partial<Record<number, readonly TerminalInfo[]>>;
+  owners?: Partial<Record<number, ConversationId>>;
+  unavailable?: string;
+  limit?: number;
+} = {}): RemoteTerminals {
+  const terminals = new Map<ConversationId, TerminalInfo[]>(
+    Object.entries(lists).map(([owner, list]) => [id(Number(owner)), [...(list ?? [])]]),
+  );
+  const watchers = new Map<ConversationId, Set<(state: TerminalsState) => void>>();
+  const ownerOf = (conversationId: ConversationId): ConversationId => owners[conversationId] ?? conversationId;
+  const listOf = (owner: ConversationId): TerminalList => ({ owner, limit, terminals: [...(terminals.get(owner) ?? [])] });
+  const changed = (owner: ConversationId): void => {
+    for (const watcher of watchers.get(owner) ?? []) watcher({ kind: "ready", list: listOf(owner) });
+  };
+  const update = (terminalId: string, change: (terminal: TerminalInfo) => TerminalInfo | undefined): void => {
+    for (const [owner, list] of terminals) {
+      const index = list.findIndex((terminal) => terminal.id === terminalId);
+      if (index === -1) continue;
+      const next = change(list[index]!);
+      if (next === undefined) list.splice(index, 1);
+      else list[index] = next;
+      changed(owner);
+    }
+  };
+  let opened = 0;
+  return {
+    watch: fn((conversationId: ConversationId, listener: (state: TerminalsState) => void) => {
+      if (unavailable !== undefined) {
+        listener({ kind: "unavailable", reason: unavailable });
+        return () => {};
+      }
+      const owner = ownerOf(conversationId);
+      const set = watchers.get(owner) ?? new Set();
+      watchers.set(owner, set);
+      set.add(listener);
+      // Like the client: a fresh stream is loading until the host's snapshot lands.
+      listener({ kind: "loading" });
+      queueMicrotask(() => {
+        if (set.has(listener)) listener({ kind: "ready", list: listOf(owner) });
+      });
+      return () => void set.delete(listener);
+    }),
+    attach: fn((_terminalId: string, sink: TerminalOutputSink) => {
+      sink.output(TERMINAL_SCREEN, true);
+      return () => {};
+    }),
+    open: fn(async (conversationId: ConversationId) => {
+      const owner = ownerOf(conversationId);
+      const list = terminals.get(owner) ?? [];
+      terminals.set(owner, list);
+      if (list.length >= limit) throw new Error(`Terminal limit reached (${limit})`);
+      const terminalId = `t-new-${++opened}`;
+      // The call answers before the list does, as it can on the wire.
+      queueMicrotask(() => {
+        list.push({ id: terminalId, name: `Terminal ${list.length + 1}`, renamed: false, cols: 80, rows: 24 });
+        changed(owner);
+      });
+      return terminalId;
+    }),
+    input: fn(),
+    resize: fn(),
+    rename: fn(async (terminalId: string, name: string | null) =>
+      update(terminalId, (terminal) => ({ ...terminal, name: name ?? "Terminal", renamed: name !== null })),
+    ),
+    restart: fn(async (terminalId: string) =>
+      update(terminalId, ({ exit: _exit, ...terminal }) => terminal),
+    ),
+    close: fn(async (terminalId: string) => update(terminalId, () => undefined)),
+  };
 }
 
 // --- Paired hosts ----------------------------------------------------------------
