@@ -142,6 +142,16 @@ _Avoid_: 文件引用、上传文件、图片附件
 同一图片内容的展示形式：original（原图）、thumbnail（缩略图）或 preview（预览图）。`ref` 标识原图，响应里的 `variant` 标识实际返回的规格。
 _Avoid_: 图片版本、图片格式
 
+### 界面
+
+**侧面板（Side panel）**:
+Web/桌面端聊天区右侧、和对话并排的面板，放 Overview 浮层装不下的详情。里面是固定的几个 Surface：Tasks 跟着主区对话的 root 家族走，Changes 跟着它的执行检出走，Terminal 跟着终端的所有者（通常是 root 对话）走；在聊天区头部右端的图标之间切换（ADR-0040）。iOS 没有侧面板。
+_Avoid_: 右栏、Inspector、Dock、抽屉
+
+**Surface**:
+侧面板里的一页：Tasks、Changes、Terminal。面板首行放当前 Surface 的状态和操作，不写页名。
+_Avoid_: 页签、tab、视图、面板（指整个容器时才叫面板）
+
 ### 设置
 
 **宿主设置（Host Settings）**:

@@ -3,6 +3,7 @@
 - 状态：Accepted
 - 日期：2026-11-02
 - 修订：ADR-0007 §1、§2（Fork 的展示位置）；ADR-0019 背景与"考虑过的方案"中的 thread 定位；ADR-0038 §2（"Fork 不进入左侧"）
+- 部分修订：ADR-0040 §1（右侧改成 Tasks、Changes、Terminal 三个 Surface，修订本文 §4）
 
 ## 背景
 

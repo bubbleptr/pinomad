@@ -23,7 +23,8 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0014](0014-web-client-adopts-pace-design-system.md) | Web 客户端整套采用 Pace 的视觉基础（Tailwind v4、token 桥、Hugeicons；字体后来换成系统字体），搬界面不搬数据模型（思维链组件由 0026 修订） |
 | [0026](0026-run-process-folds-out-of-transcript.md) | 运行过程在对话里收成一行：Web / 桌面按插话分段成灰色摘要行、原地展开，iOS 每次运行一颗胶囊加 sheet；todo 跟在最新一次运行后面；不加提示词凑插话和 todo |
 | [0034](0034-submission-delivery-and-recovery.md) | 提交的送达状态与断线恢复：只读 `submission` 查询、宿主在预处理前按 `requestId` 去重、`submit` 结果带 `entry`；重连后先查询再决定是否重发，是“断线不重放”的窄例外，“未确认”不等于失败 |
-| [0039](0039-fork-sidebar-conversations.md) | Web/桌面端把 Fork 作为左侧独立对话列在根对话之后，所有入口在主区打开；右侧只保留 Tasks。创建后的 focus 不被父对话抢回（修订 0007 §1/§2、0019 的 thread 呈现、0038 §2） |
+| [0039](0039-fork-sidebar-conversations.md) | Web/桌面端把 Fork 作为左侧独立对话列在根对话之后，所有入口在主区打开；右侧只保留 Tasks。创建后的 focus 不被父对话抢回（修订 0007 §1/§2、0019 的 thread 呈现、0038 §2；§4 由 0040 修订） |
+| [0040](0040-side-panel-surfaces.md) | 侧面板是 Tasks、Changes、Terminal 三个固定 Surface 的容器，Tasks 跟着 root 家族、Changes 跟着实际执行检出走；页切换是聊天区头部的图标，面板通高、首行放当前 Surface 的状态和操作；终端归 root 对话所有（有自己 worktree 的旧 Fork 例外）、可开多个（修订 0039 §4） |
 
 ## 宿主能力与工作组织
 
@@ -107,4 +108,5 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | 0019 背景、考虑过的方案：Fork 的界面是父对话旁的 thread | 由 0039 修订：Fork 不再作为 thread 或右侧入口；检出共用、一层、每消息最多一个不变 |
 | 0038 §2：Fork 不进入左侧 | 由 0039 修订：Fork 作为左侧独立行；Background 仍只在根对话的投影里出现一次，Foreground 仍不进入左侧 |
 | 0025 考虑过的方案：扫码配对的设备不一定登录过账号，所以不让设备向服务端登记 | 由 0036 修订：推送要求设备登录宿主所在的账号 |
+| 0039 §4：右侧只保留 Tasks | 由 0040 修订：右侧是 Tasks、Changes、Terminal 三个 Surface，Changes 对话框删除；活动指示仍只反映 Foreground，挂在 Tasks 图标上 |
 | 其余"以后再做" | 统一收在 GitHub Issues，带 `later` 标签 |
