@@ -415,14 +415,8 @@ export async function checkoutInfo(
  * subagents share the parent's and carry no record). Directories git refuses to
  * remove are kept and returned so the caller can warn — the branch is never deleted.
  */
-export async function cleanupArchivedWorktrees(
-  harness: Harness,
-  rootId: ConversationId,
-  context: Context,
-): Promise<{ readonly record: WorktreeCheckout; readonly reason: string }[]> {
-  const index = await harness.snapshot(IndexDoc, context);
-  const checkouts = index?.checkouts ?? [];
-  if (checkouts.length === 0) return [];
+/** `rootId` and every conversation below it, following `parent` and `owner` links. */
+export async function conversationSubtree(harness: Harness, rootId: ConversationId, context: Context): Promise<Set<ConversationId>> {
   const all: ConversationRecord[] = [];
   let cursor: Cursor | undefined;
   do {
@@ -448,6 +442,32 @@ export async function cleanupArchivedWorktrees(
       }
     }
   }
+  return subtree;
+}
+
+/** The top of `id`'s family, following `parent` and `owner` links; a broken chain stops where it breaks. */
+export async function familyRoot(harness: Harness, id: ConversationId, context: Context): Promise<ConversationId> {
+  let current = id;
+  const seen = new Set<ConversationId>();
+  while (!seen.has(current)) {
+    seen.add(current);
+    const record = await harness.commit((tx) => tx.conversation(current), context);
+    const parent = record?.parent?.conversationId ?? record?.owner?.conversationId;
+    if (parent === undefined) return current;
+    current = parent;
+  }
+  return current;
+}
+
+export async function cleanupArchivedWorktrees(
+  harness: Harness,
+  rootId: ConversationId,
+  context: Context,
+): Promise<{ readonly record: WorktreeCheckout; readonly reason: string }[]> {
+  const index = await harness.snapshot(IndexDoc, context);
+  const checkouts = index?.checkouts ?? [];
+  if (checkouts.length === 0) return [];
+  const subtree = await conversationSubtree(harness, rootId, context);
   const kept: { record: WorktreeCheckout; reason: string }[] = [];
   for (const record of checkouts.filter((checkout) => subtree.has(checkout.conversationId))) {
     const reason = await removeWorktree(record);

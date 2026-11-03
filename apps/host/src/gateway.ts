@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server as HttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { homedir, networkInterfaces } from "node:os";
@@ -71,8 +72,9 @@ import {
 import { RTC_DEFAULT_STUN, type RtcHello } from "@pinomad/protocol/rtc.ts";
 import { webSocketCarrier, type RecordCarrier } from "./secure-carrier.ts";
 import { startRtcHost, type RtcHost, type RtcOptions } from "./rtc.ts";
+import { startTerminals, type StartTerminalsOptions, type Terminals, type TerminalSize } from "./terminals.ts";
 import type { ExtensionDoc } from "./builtin-extension.ts";
-import { branchOf, changesOf, checkoutAt, gitBase, worktreeExists } from "./checkout.ts";
+import { branchOf, changesOf, checkoutAt, gitBase, worktreeExists, worktreeSettled } from "./checkout.ts";
 import { packagedVersion } from "./distribution.ts";
 import { listFolders } from "./folders.ts";
 import { createCandidateLister, enumerateRoot, listFiles, type FileLister } from "./files.ts";
@@ -106,7 +108,9 @@ import {
   addProject,
   archive,
   cleanupArchivedWorktrees,
+  conversationSubtree,
   createConversation,
+  familyRoot,
   IndexDoc,
   removeProject,
   setAgent,
@@ -310,6 +314,11 @@ export interface GatewayOptions {
    * without hello.rtc; everything else keeps working.
    */
   readonly rtc?: RtcOptions;
+  /**
+   * Terminal seams (ADR-0041). A failed lazy load of the pty module leaves
+   * the host without hello.terminals; everything else keeps working.
+   */
+  readonly terminals?: StartTerminalsOptions;
 }
 
 export interface Gateway {
@@ -380,6 +389,8 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   const clients = new Set<GatewayClient>();
   let rtc: RtcHost | undefined;
   const rtcHello = (): RtcHello | undefined => rtc?.hello();
+  // Loaded before any socket registers, so the first hello already knows.
+  const terminals = await startTerminals(options.terminals);
   const broadcast = (level: Notice["level"], message: string): void => {
     for (const client of clients) client.send({ type: "notice", level, message });
   };
@@ -423,6 +434,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     const client = new GatewayClient(connection, options, conversations, fileLister, skillLister, imageVariants, {
       devicePublicKey,
       rtcHello,
+      terminals,
       closed: (self) => {
         clients.delete(self);
         connections.delete(self);
@@ -739,6 +751,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       detachSettingsWatch();
       await detachPush?.close();
       conversations.dispose();
+      terminals?.closeAll();
       await rtc?.close();
       await Promise.all([...connections].map((connection) => connection.dispose()));
       for (const socket of server.clients) socket.terminate();
@@ -1622,7 +1635,13 @@ type Subscription = { stop(): Promise<unknown> | void };
  * target's source), so refs resolve against what this subscription currently
  * shows instead of a separate ref table.
  */
-type SubscriptionState = { subscription?: Subscription; readonly images?: ImageRefs; view?: JsonValue };
+type SubscriptionState = {
+  subscription?: Subscription;
+  readonly images?: ImageRefs;
+  view?: JsonValue;
+  /** A `terminal:` subscribe's position (5.27). */
+  readonly since?: number;
+};
 type SendFrame = (frame: ServerFrame) => Promise<void>;
 
 /** What the client is and how the gateway reaches back into its lifecycle. */
@@ -1640,6 +1659,8 @@ interface ClientHooks {
   rtcHello(): RtcHello | undefined;
   /** Answer an offer; `owner` is this connection, so only its pending peers close with it. */
   rtcOffer(owner: object, deviceKey: string | undefined, attempt: string, sdp: string): Promise<{ sdp: string }>;
+  /** The host's terminals, shared by every connection; undefined when the pty module is absent. */
+  readonly terminals: Terminals | undefined;
 }
 
 
@@ -1762,6 +1783,8 @@ class GatewayClient {
 
   readonly #hostValues: { [K in HostStreamName]?: HostValue<HostStreamValues[K]> };
   readonly #subscriptions = new Map<StreamName, SubscriptionState>();
+  /** This connection's last reported size per terminal: its input brings the pty to it. */
+  readonly #terminalSizes = new Map<string, TerminalSize>();
   #disposed = false;
 
   constructor(connection: GatewayConnection, options: GatewayOptions, conversations: ConversationList, files: FileLister, skills: SkillLister, imageVariants: ImageVariants, hooks: ClientHooks) {
@@ -1831,6 +1854,7 @@ class GatewayClient {
       // stale remote candidates without ever seeing 127.0.0.1.
       endpointSet: this.#hooks.endpointSet(),
       ...(rtc === undefined ? {} : { rtc }),
+      ...(this.#hooks.terminals === undefined ? {} : { terminals: { limit: this.#hooks.terminals.limit } }),
     });
   }
 
@@ -1845,14 +1869,15 @@ class GatewayClient {
   }
 
   async #receive(frame: ClientFrame): Promise<void> {
-    if (frame.type === "subscribe") await this.#subscribe(frame.stream, frame.images === "ref");
+    if (frame.type === "subscribe") await this.#subscribe(frame.stream, frame.images === "ref", frame.since);
     else if (frame.type === "unsubscribe") await this.#unsubscribe(frame.stream);
     else await this.#answer(frame.id, frame.method, frame.args);
   }
 
-  async #subscribe(stream: StreamName, imageRefs: boolean): Promise<void> {
+  async #subscribe(stream: StreamName, imageRefs: boolean, since: number | undefined): Promise<void> {
     const previous = this.#subscriptions.get(stream);
-    const state: SubscriptionState = imageRefs && stream.startsWith("conversation:") ? { images: new ImageRefs() } : {};
+    const state: SubscriptionState =
+      imageRefs && stream.startsWith("conversation:") ? { images: new ImageRefs() } : since === undefined ? {} : { since };
     this.#subscriptions.set(stream, state);
     const current = () => !this.#disposed && this.#subscriptions.get(stream) === state;
     const send: SendFrame = (frame) => (current() ? this.send(frame) : Promise.resolve());
@@ -1895,6 +1920,23 @@ class GatewayClient {
       return this.#forward(stream, watch, send);
     }
     if (stream === "tasks") return this.#forward(stream, await this.#options.harness.watchTaskGraph(context), send);
+    if (stream.startsWith("terminals:")) {
+      const terminals = this.#terminals();
+      const conversation = await this.#conversation(Number(stream.slice("terminals:".length)) as ConversationId);
+      const { owner } = await this.#terminalOwner(conversation);
+      return { stop: terminals.watch(owner, (value) => void send({ type: "snapshot", stream, value })) };
+    }
+    if (stream.startsWith("terminal:")) {
+      const terminalStream = stream as `terminal:${string}`;
+      const detach = this.#terminals().attach(terminalStream.slice("terminal:".length), state?.since, {
+        output: (frame) => send({ type: "output", stream: terminalStream, ...frame }),
+        ended: (reason) => {
+          void send({ type: "ended", stream, reason });
+          if (this.#subscriptions.get(stream) === state) this.#subscriptions.delete(stream);
+        },
+      });
+      return { stop: detach };
+    }
     if (stream.startsWith("doc:")) {
       const at = stream.lastIndexOf(":");
       return this.#openDoc(stream, stream.slice("doc:".length, at), Number(stream.slice(at + 1)) as ConversationId, send);
@@ -2084,6 +2126,36 @@ class GatewayClient {
 
   async #call(method: CallMethod, args: CallMethods[CallMethod]["args"]): Promise<unknown> {
     switch (method) {
+      // No await before the pty sees the input: calls are handled
+      // concurrently, and keystrokes must reach it in the order they came.
+      case "terminalInput": {
+        const input = args as CallMethods["terminalInput"]["args"];
+        this.#terminals().input(input.terminalId, input.data, this.#terminalSizes.get(input.terminalId));
+        return null;
+      }
+      case "resizeTerminal": {
+        const input = args as CallMethods["resizeTerminal"]["args"];
+        const size = { cols: input.cols, rows: input.rows };
+        this.#terminals().resize(input.terminalId, size);
+        this.#terminalSizes.set(input.terminalId, size);
+        return null;
+      }
+      case "renameTerminal": {
+        const input = args as CallMethods["renameTerminal"]["args"];
+        this.#terminals().rename(input.terminalId, input.name);
+        return null;
+      }
+      case "restartTerminal": {
+        const input = args as CallMethods["restartTerminal"]["args"];
+        const size = { cols: input.cols, rows: input.rows };
+        this.#terminals().restart(input.terminalId, size);
+        this.#terminalSizes.set(input.terminalId, size);
+        return null;
+      }
+      case "closeTerminal":
+        this.#terminals().close((args as CallMethods["closeTerminal"]["args"]).terminalId);
+        this.#terminalSizes.delete((args as CallMethods["closeTerminal"]["args"]).terminalId);
+        return null;
       case "addProject":
         return addProject(this.#options.harness, (args as CallMethods["addProject"]["args"]).path, context);
       case "removeProject":
@@ -2195,6 +2267,8 @@ class GatewayClient {
         // Archiving cleans worktree directories of the subtree but keeps
         // branches — they may hold unmerged work (ADR-0010 §7).
         if (input.archived) {
+          // The family's shells end with it, legacy forks' included (ADR-0040 §5).
+          this.#hooks.terminals?.closeOwners(await conversationSubtree(this.#options.harness, input.conversationId, context));
           const kept = await cleanupArchivedWorktrees(this.#options.harness, input.conversationId, context);
           for (const { record, reason } of kept) {
             await this.send({ type: "notice", level: "warning", message: `Kept worktree ${record.path} (branch ${record.branch}): ${reason}` });
@@ -2510,7 +2584,40 @@ class GatewayClient {
       case "changes": {
         return await this.#changes(conversation, context);
       }
+      case "openTerminal": {
+        const input = args as CallMethods["openTerminal"]["args"];
+        const terminals = this.#terminals();
+        const { owner, cwd, record } = await this.#terminalOwner(conversation);
+        // A worktree still being checked out is waited for, never opened half-written.
+        const ready = record === undefined || (await worktreeSettled(record));
+        if (!ready || !(await stat(cwd).then((info) => info.isDirectory(), () => false))) {
+          throw new Error(`The checkout is unavailable: ${cwd}`);
+        }
+        const size = { cols: input.cols, rows: input.rows };
+        const terminalId = terminals.open(owner, cwd, size);
+        this.#terminalSizes.set(terminalId, size);
+        return { terminalId };
+      }
     }
+  }
+
+  #terminals(): Terminals {
+    if (this.#hooks.terminals === undefined) throw new Error("Terminals are unavailable on this host");
+    return this.#hooks.terminals;
+  }
+
+  /**
+   * Who a conversation's terminals belong to (ADR-0040 §5): the conversation
+   * whose checkout record covers its directory — the root, or a legacy fork
+   * with its own worktree — else the family's root (a project directory or
+   * a Chat), and the directory a new shell starts in.
+   */
+  async #terminalOwner(conversation: Conversation) {
+    const cwd = (await conversation.agent(context)).cwd;
+    if (cwd === undefined) throw new Error("No working directory");
+    const record = checkoutAt((await this.#options.harness.snapshot(IndexDoc, context))?.checkouts, cwd);
+    const owner = record?.conversationId ?? (await familyRoot(this.#options.harness, conversation.id, context));
+    return { owner, cwd, record };
   }
 
   /**

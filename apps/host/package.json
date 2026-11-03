@@ -14,6 +14,7 @@
     "@earendil-works/pi-coding-agent": "1.4.0",
     "@earendil-works/pi-durable": "1.4.0",
     "@earendil-works/pi-mcp": "1.4.0",
+    "@lydell/node-pty": "1.2.0-beta.18",
     "@noble/curves": "2.4.0",
     "@pinomad/client": "workspace:*",
     "@pinomad/protocol": "workspace:*",

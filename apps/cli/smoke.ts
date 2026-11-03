@@ -115,6 +115,15 @@ const get = async (port: number): Promise<{ status: number; body: string }> => {
   return { status: response.status, body: await response.text() };
 };
 
+// Resolved from the installed package, so it finds the copy npm put there.
+const PTY_CHECK = `
+const pty = require("node:module").createRequire(process.argv[1])("@lydell/node-pty");
+const child = pty.spawn("/bin/echo", ["smoke-pty"], { cols: 80, rows: 24, cwd: "/", env: process.env });
+let out = "";
+child.onData((data) => { out += data; });
+child.onExit(() => process.exit(out.includes("smoke-pty") ? 0 : 1));
+`;
+
 const prefix = await mkdtemp(join(tmpdir(), "pinomad-smoke-prefix-"));
 const work = await mkdtemp(join(tmpdir(), "pinomad-smoke-data-"));
 try {
@@ -151,6 +160,11 @@ try {
   if (index.status !== 200 || !index.body.includes("<")) fail(`GET / on packaged host: ${index.status}`);
   await stop(host);
 
+  // Terminals need the pty's platform package: the global install must have
+  // brought it, or the host runs without hello.terminals (ADR-0041).
+  const pty = await run("node", ["-e", PTY_CHECK, join(prefix, "lib", "node_modules", "pinomad", "package.json")]);
+  if (pty.code !== 0) fail(`pty spawn from the installed package failed:\n${pty.output}`);
+
   const relayPort = await freePort();
   // First start: the bootstrap env vars create the account in a fresh data dir.
   const relay = await untilReady(
@@ -162,7 +176,7 @@ try {
   if (relayIndex.status !== 200 || !relayIndex.body.includes("<")) fail(`GET / on packaged server: ${relayIndex.status}`);
   await stop(relay);
 
-  console.log(`smoke ok: pinomad@${version} (version, host+web, server+web)`);
+  console.log(`smoke ok: pinomad@${version} (version, host+web, pty, server+web)`);
 } finally {
   await rm(prefix, { recursive: true, force: true });
   await rm(work, { recursive: true, force: true });

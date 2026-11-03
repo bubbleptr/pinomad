@@ -114,6 +114,7 @@ export async function startFauxHost(
     images,
     agentsHome,
     rtc,
+    terminals,
   }: {
     /** Script of faux responses: plain strings become assistant text, messages and factories pass through. */
     answers?: readonly (string | FauxResponseStep)[];
@@ -169,6 +170,8 @@ export async function startFauxHost(
     images?: OpenHostOptions["images"];
     /** RTC loader/factory seams (ADR-0033); absent loads node-datachannel normally. */
     rtc?: OpenHostOptions["rtc"];
+    /** Terminal seams (ADR-0041); absent runs a plain /bin/sh, never the user's login shell. */
+    terminals?: OpenHostOptions["terminals"];
   } = {},
 ): Promise<OpenedHost> {
   const dir = dataDir === undefined ? await tempDir() : { path: dataDir, remove: () => {} };
@@ -225,6 +228,10 @@ export async function startFauxHost(
     ...(push === undefined ? {} : { push }),
     ...(images === undefined ? {} : { images }),
     ...(rtc === undefined ? {} : { rtc }),
+    terminals: terminals ?? {
+      shell: { file: "/bin/sh", args: [] },
+      env: { PATH: process.env.PATH ?? "/usr/bin:/bin", PS1: "$ ", HOME: dir.path },
+    },
   });
   defer(() => host.close());
   return host;
