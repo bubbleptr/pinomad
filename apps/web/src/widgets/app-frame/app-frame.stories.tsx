@@ -1,6 +1,7 @@
 import { ChatLayout } from "@astryxdesign/core/Chat";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { ConversationId } from "@earendil-works/pi-durable";
+import { useState, type ComponentProps } from "react";
 import { fn } from "storybook/test";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -20,6 +21,7 @@ import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
 import { ComposerSkeleton, ConversationSkeleton } from "../chat/conversation-skeleton.tsx";
 import { ConversationComposer } from "../composer/conversation-composer.tsx";
 import { DraftHome } from "../draft-home/draft-home.tsx";
+import { SidePanel, SurfaceButtons, type PanelSurface } from "../side-panel/side-panel.tsx";
 import { AppFrame, FrameHeader } from "./app-frame.tsx";
 
 /**
@@ -81,22 +83,34 @@ function MainColumn({
   );
 }
 
-/** Mimics Workbench: the frame owns the shell, this owns the header and column. */
+/**
+ * Mimics Workbench: the frame owns the shell, this owns the header over the
+ * chat column and the full-height side panel beside it.
+ */
 function Body({
   view,
   remote,
   narrow,
   shownId,
   loading,
+  initialPanelOpen = false,
 }: {
   view: DurableView;
   remote: RemoteDurable;
   narrow: boolean;
   shownId: ConversationId | undefined;
   loading: boolean;
+  initialPanelOpen?: boolean;
 }) {
+  const [panelOpen, setPanelOpen] = useState(initialPanelOpen);
+  const [surface, setSurface] = useState<PanelSurface>("tasks");
+  const select = (next: PanelSurface): void => {
+    setSurface(next);
+    setPanelOpen(!(panelOpen && next === surface));
+  };
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col">
+    <div className="flex h-full min-h-0 min-w-0">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <FrameHeader
         narrow={narrow}
         title={loading ? "A conversation that is opening" : "Fix the parser's trailing-comma bug"}
@@ -105,20 +119,49 @@ function Body({
         showOverview={shownId !== undefined}
         overviewOpen={false}
         onOverviewChange={fn()}
-        panelOpen={false}
-        onPanelChange={fn()}
-        liveActivity={false}
+        panelControls={
+          <SurfaceButtons narrow={narrow} open={panelOpen} surface={surface} liveActivity onSelect={select} />
+        }
       />
-      <div className="flex min-h-0 min-w-0 flex-1">
         <div className="@container relative flex min-h-0 min-w-0 flex-1 flex-col">
           <MainColumn view={view} remote={remote} narrow={narrow} loading={loading} />
         </div>
       </div>
+      <SidePanel
+        view={view}
+        remote={remote}
+        shownId={shownId}
+        narrow={narrow}
+        open={panelOpen}
+        surface={surface}
+        liveActivity
+        onOpenChange={setPanelOpen}
+        onSelectSurface={select}
+        openInPanel={fn()}
+        onOpenInMain={fn()}
+      />
     </div>
   );
 }
 
 const view = fakeView();
+
+function renderFrame(args: ComponentProps<typeof AppFrame>, initialPanelOpen = false) {
+  const storyView = args.machines.find((machine) => machine.key === args.focusKey)?.view ?? view;
+  const storyRemote = fakeRemote(storyView);
+  return (
+    <AppFrame {...args}>
+      <Body
+        view={storyView}
+        remote={storyRemote}
+        narrow={args.narrow}
+        shownId={args.shownId}
+        loading={args.shownId !== undefined && storyView.conversation === undefined}
+        initialPanelOpen={initialPanelOpen}
+      />
+    </AppFrame>
+  );
+}
 
 const meta = {
   title: "Widgets/AppFrame/AppFrame",
@@ -146,27 +189,16 @@ const meta = {
     narrow: false,
     children: null,
   },
-  render: (args) => {
-    const storyView = args.machines.find((machine) => machine.key === args.focusKey)?.view ?? view;
-    const storyRemote = fakeRemote(storyView);
-    return (
-      <AppFrame {...args}>
-        <Body
-          view={storyView}
-          remote={storyRemote}
-          narrow={args.narrow}
-          shownId={args.shownId}
-          loading={args.shownId !== undefined && storyView.conversation === undefined}
-        />
-      </AppFrame>
-    );
-  },
+  render: (args) => renderFrame(args),
 } satisfies Meta<typeof AppFrame>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Conversation: Story = {};
+
+/** The side panel runs full height beside the chat column; its first row meets the header's border. */
+export const WithSidePanel: Story = { render: (args) => renderFrame(args, true) };
 
 const drafting = fakeView({ conversation: undefined, home: undefined, checkout: undefined, docs: [] });
 export const Drafting: Story = {

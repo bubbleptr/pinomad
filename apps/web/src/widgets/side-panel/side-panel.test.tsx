@@ -15,7 +15,10 @@ function renderPanel(shownId: typeof PARSER_ID, panelView = view) {
       shownId={shownId}
       narrow={false}
       open
+      surface="tasks"
+      liveActivity={false}
       onOpenChange={vi.fn()}
+      onSelectSurface={vi.fn()}
       openInPanel={vi.fn()}
       onOpenInMain={vi.fn()}
     />,

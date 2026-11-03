@@ -1,10 +1,11 @@
-// The right-side panel is the family's Foreground Tasks: its subagents grouped
-// by owner, opening read-only detail via `view.side`. Forks are independent
-// conversations in the sidebar now, not a panel tab (ADR-0039). Background
-// subagents open in main and never repeat here.
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
+// The right-side panel holds fixed surfaces (ADR-0040), switched from their
+// icons at the right of the chat header. Each surface owns the panel's first
+// row, level with that header, for its status and actions. Tasks is the
+// family's Foreground subagents grouped by owner, opening read-only detail via
+// `view.side`; Background subagents open in main and never repeat here.
+import { Dialog } from "@astryxdesign/core/Dialog";
 import { IconButton } from "@astryxdesign/core/IconButton";
-import { HStack, Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
+import { Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
@@ -16,10 +17,104 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { ConversationSummary, DurableView, SideConversationView } from "@pinomad/protocol/view.ts";
 import { displayName, forksAt, relativeTime, rootOf, taskGroupsOf } from "@pinomad/client/family.ts";
 import { useNow } from "../../shared/use-now.ts";
-import { ArrowLeft } from "../../shared/ui/icons.tsx";
+import { taskTally } from "../../entities/conversation/task-tally.ts";
+import { AnimatedSidebarRight } from "../../shared/ui/animated-icons.tsx";
+import { ArrowLeft, Bot, Cancel } from "../../shared/ui/icons.tsx";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
 import { ConversationSkeleton } from "../chat/conversation-skeleton.tsx";
+
+export type PanelSurface = "tasks";
+
+const SURFACES: readonly { readonly id: PanelSurface; readonly label: string; readonly icon: ReactNode }[] = [
+  { id: "tasks", label: "Tasks", icon: <Bot className="size-4" aria-hidden="true" /> },
+];
+
+/** A stored surface id, or Tasks when it names none of today's surfaces. */
+export function panelSurfaceOf(stored: string | null): PanelSurface {
+  return SURFACES.find((surface) => surface.id === stored)?.id ?? "tasks";
+}
+
+/** The panel's first row: 40px like the chat header, so their borders meet. */
+function SurfaceBar({ start, end, children }: { start?: ReactNode; end?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="pinomad-drag flex h-10 shrink-0 items-center gap-1 border-b border-border px-3">
+      {start}
+      <div className="flex min-w-0 flex-1 items-center gap-1">{children}</div>
+      {end}
+    </div>
+  );
+}
+
+function LiveDot() {
+  return (
+    <span
+      aria-label="Live activity"
+      className="pointer-events-none absolute right-1 top-1 size-2 rounded-full bg-primary"
+      role="img"
+    />
+  );
+}
+
+/**
+ * The surface switch: one icon per surface. An icon opens its surface; the
+ * shown surface's icon closes the panel. The Tasks icon carries the
+ * live-activity dot while Tasks is out of sight. A phone header has room for
+ * one button, which opens the last surface.
+ */
+export function SurfaceButtons({
+  narrow,
+  open,
+  surface,
+  liveActivity,
+  onSelect,
+}: {
+  narrow: boolean;
+  open: boolean;
+  surface: PanelSurface;
+  /** Foreground work Tasks would show is running. */
+  liveActivity: boolean;
+  onSelect: (surface: PanelSurface) => void;
+}) {
+  if (narrow) {
+    return (
+      <span className="relative">
+        <IconButton
+          icon={<AnimatedSidebarRight className="size-4" />}
+          label="Side panel"
+          size="sm"
+          tooltip="Show side panel"
+          variant="ghost"
+          onClick={() => onSelect(surface)}
+        />
+        {!open && liveActivity ? <LiveDot /> : null}
+      </span>
+    );
+  }
+  return (
+    <>
+      {SURFACES.map((entry) => {
+        const shown = open && surface === entry.id;
+        return (
+          <span key={entry.id} className="relative">
+            <IconButton
+              aria-pressed={shown}
+              // The shaded button says the surface is shown, beside aria-pressed.
+              className={shown ? "bg-[var(--color-overlay-pressed)]" : undefined}
+              icon={entry.icon}
+              label={entry.label}
+              size="sm"
+              tooltip={shown ? `Hide ${entry.label}` : `Show ${entry.label}`}
+              variant="ghost"
+              onClick={() => onSelect(entry.id)}
+            />
+            {entry.id === "tasks" && !shown && liveActivity ? <LiveDot /> : null}
+          </span>
+        );
+      })}
+    </>
+  );
+}
 
 const STATUS_VARIANT = { "needs-answer": "warning", failed: "error", running: "success" } as const;
 const STATUS_LABEL = { "needs-answer": "Waiting for your answer", failed: "Failed", running: "Running" } as const;
@@ -35,14 +130,17 @@ function StatusGlyph({ status }: { status: ConversationSummary["status"] }) {
 }
 
 /**
- * The panel's body: the shown family's Foreground Tasks, grouped by owner, or
+ * The Tasks surface: the shown family's Foreground Tasks, grouped by owner, or
  * the open subagent's read-only detail. Background subagents are promoted to
- * main rather than rendered as a second Tasks entry point.
+ * main rather than rendered as a second Tasks entry point. The bar's `start`
+ * and `end` hold the phone dialog's switch and close button.
  */
-function PanelContent({
+function TasksSurface({
   view,
   remote,
   shownId,
+  barStart,
+  barEnd,
   openInPanel,
   onOpenInMain,
 }: {
@@ -50,6 +148,8 @@ function PanelContent({
   remote: RemoteDurable;
   /** The main column's conversation, loaded or not — while drafting, the family is empty. */
   shownId: ConversationId | undefined;
+  barStart?: ReactNode;
+  barEnd?: ReactNode;
   openInPanel: (id: ConversationId) => void;
   onOpenInMain: (id: ConversationId) => void;
 }) {
@@ -72,20 +172,30 @@ function PanelContent({
     if (backgroundSideId !== undefined) onOpenInMain(backgroundSideId);
   }, [backgroundSideId, onOpenInMain]);
 
+  if (side !== undefined && sideSummary?.kind === "subagent" && sideSummary.lifecycle !== "background") {
+    return (
+      <VStack className="h-full min-h-0" gap={0}>
+        <SurfaceBar start={barStart} end={barEnd}>
+          <IconButton icon={<ArrowLeft className="size-4" aria-hidden="true" />} label="Back to tasks" size="sm" variant="ghost" onClick={closeSide} />
+          <StatusGlyph status={sideSummary.status} />
+          <span className="min-w-0 flex-1 truncate text-sm">{displayName(sideSummary)}</span>
+        </SurfaceBar>
+        <TaskDetail view={view} side={side} openInPanel={openInPanel} onOpenInMain={onOpenInMain} />
+      </VStack>
+    );
+  }
+  const { active, done, failed } = taskTally(groups.flatMap((group) => group.tasks.map((node) => node.summary)));
+  const tally = [
+    active.length > 0 ? `${active.length} running` : undefined,
+    done > 0 ? `${done} done` : undefined,
+    failed > 0 ? `${failed} failed` : undefined,
+  ].filter((part) => part !== undefined);
   return (
     <VStack className="h-full min-h-0" gap={0}>
-      {side !== undefined && sideSummary?.kind === "subagent" && sideSummary.lifecycle !== "background" ? (
-        <TaskDetail
-          view={view}
-          remote={remote}
-          side={side}
-          summary={sideSummary}
-          onBack={closeSide}
-          openInPanel={openInPanel}
-          onOpenInMain={onOpenInMain}
-        />
-      ) : (
-        <Scrollable>
+      <SurfaceBar start={barStart} end={barEnd}>
+        <span className="truncate text-sm text-muted">{tally.join(" · ")}</span>
+      </SurfaceBar>
+      <Scrollable>
           {groups.length === 0 ? (
             <Text type="supporting" className="p-3 text-muted">
               No tasks yet
@@ -115,8 +225,7 @@ function PanelContent({
               </List>
             ))
           )}
-        </Scrollable>
-      )}
+      </Scrollable>
     </VStack>
   );
 }
@@ -156,48 +265,20 @@ function SideRow({
   );
 }
 
-/** The detail's top bar: back to the list, status dot, display name. */
-function DetailHeader({
-  back,
-  title,
-  status,
-  onBack,
-}: {
-  back: string;
-  title: string;
-  status: ConversationSummary["status"];
-  onBack: () => void;
-}) {
-  return (
-    <HStack className="shrink-0 gap-1 border-b border-border px-2 py-1" vAlign="center">
-      <IconButton icon={<ArrowLeft className="size-4" aria-hidden="true" />} label={back} size="sm" variant="ghost" onClick={onBack} />
-      <StatusGlyph status={status} />
-      <span className="min-w-0 flex-1 truncate text-sm">{title}</span>
-    </HStack>
-  );
-}
-
 /** A subagent in the panel: transcript only, no way to talk to it. */
 function TaskDetail({
   view,
-  remote,
   side,
-  summary,
-  onBack,
   openInPanel,
   onOpenInMain,
 }: {
   view: DurableView;
-  remote: RemoteDurable;
   side: SideConversationView;
-  summary: ConversationSummary;
-  onBack: () => void;
   openInPanel: (id: ConversationId) => void;
   onOpenInMain: (id: ConversationId) => void;
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <DetailHeader back="Back to tasks" title={displayName(summary)} status={summary.status} onBack={onBack} />
       <div className="min-h-0 flex-1 overflow-y-auto">
         {side.conversation === undefined ? (
           <ConversationSkeleton />
@@ -224,8 +305,9 @@ function TaskDetail({
 }
 
 /**
- * Desktop: a resizable panel docked right of the main column. Narrow: a
- * fullscreen dialog — the same Tasks list and read-only detail.
+ * Desktop: a resizable, full-height panel docked right of the chat column; its
+ * first row sits level with the chat header. Narrow: a fullscreen dialog whose
+ * first row adds the surface switch and a close button.
  */
 export function SidePanel({
   view,
@@ -233,7 +315,10 @@ export function SidePanel({
   shownId,
   narrow,
   open,
+  surface,
+  liveActivity,
   onOpenChange,
+  onSelectSurface,
   openInPanel,
   onOpenInMain,
 }: {
@@ -243,7 +328,10 @@ export function SidePanel({
   shownId: ConversationId | undefined;
   narrow: boolean;
   open: boolean;
+  surface: PanelSurface;
+  liveActivity: boolean;
   onOpenChange: (open: boolean) => void;
+  onSelectSurface: (surface: PanelSurface) => void;
   openInPanel: (id: ConversationId) => void;
   onOpenInMain: (id: ConversationId) => void;
 }) {
@@ -255,15 +343,26 @@ export function SidePanel({
   });
   if (narrow) {
     return (
-      <Dialog isOpen={open} onOpenChange={onOpenChange} variant="fullscreen">
+      <Dialog isOpen={open} onOpenChange={onOpenChange} variant="fullscreen" aria-label="Side panel">
         <Layout
-          header={<DialogHeader title="Side panel" onOpenChange={onOpenChange} />}
           content={
             <LayoutContent padding={0}>
-              <PanelContent
+              <TasksSurface
                 view={view}
                 remote={remote}
                 shownId={shownId}
+                barStart={
+                  <SurfaceButtons narrow={false} open surface={surface} liveActivity={liveActivity} onSelect={onSelectSurface} />
+                }
+                barEnd={
+                  <IconButton
+                    icon={<Cancel className="size-4" aria-hidden="true" />}
+                    label="Close side panel"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => onOpenChange(false)}
+                  />
+                }
                 openInPanel={openInPanel}
                 onOpenInMain={onOpenInMain}
               />
@@ -278,13 +377,7 @@ export function SidePanel({
     // Relative + overflow clip so the overlay resize handle sits on the left edge.
     <div className="relative h-full shrink-0 border-l border-border" style={{ width: resizable.size }} aria-label="Side panel" role="complementary">
       <div className="h-full min-h-0 overflow-hidden">
-        <PanelContent
-          view={view}
-          remote={remote}
-          shownId={shownId}
-          openInPanel={openInPanel}
-          onOpenInMain={onOpenInMain}
-        />
+        <TasksSurface view={view} remote={remote} shownId={shownId} openInPanel={openInPanel} onOpenInMain={onOpenInMain} />
       </div>
       <ResizeHandle
         direction="horizontal"

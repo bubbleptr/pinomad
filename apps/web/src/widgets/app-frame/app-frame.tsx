@@ -20,7 +20,7 @@ import type { Home } from "@pinomad/protocol/organization.ts";
 import { displayName } from "@pinomad/client/family.ts";
 import { hostWindowChrome } from "../../shared/host-chrome.ts";
 import { AppleReminder } from "../../shared/ui/icons.tsx";
-import { AnimatedSidebar, AnimatedSidebarRight } from "../../shared/ui/animated-icons.tsx";
+import { AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
 import {
   SidebarContent,
   SidebarFooter,
@@ -244,9 +244,7 @@ export function FrameHeader({
   showOverview,
   overviewOpen,
   onOverviewChange,
-  panelOpen,
-  onPanelChange,
-  liveActivity,
+  panelControls,
 }: {
   narrow: boolean;
   title: string;
@@ -257,9 +255,8 @@ export function FrameHeader({
   showOverview: boolean;
   overviewOpen: boolean;
   onOverviewChange: (open: boolean) => void;
-  panelOpen: boolean;
-  onPanelChange: (open: boolean) => void;
-  liveActivity: boolean;
+  /** The side panel's surface icons (ADR-0040), last in the row next to the panel. */
+  panelControls: ReactNode;
 }) {
   const { sidebarOpen, toggleSidebar, openNav } = useFrameChrome();
   const chrome = hostWindowChrome();
@@ -324,24 +321,7 @@ export function FrameHeader({
           onClick={() => onOverviewChange(!overviewOpen)}
         />
       ) : null}
-      <span className="relative">
-        <IconButton
-          aria-pressed={panelOpen}
-          icon={<AnimatedSidebarRight className="size-4" />}
-          label="Side panel"
-          size="sm"
-          tooltip={panelOpen ? "Hide side panel" : "Show side panel"}
-          variant="ghost"
-          onClick={() => onPanelChange(!panelOpen)}
-        />
-        {!panelOpen && liveActivity ? (
-          <span
-            aria-label="Live activity"
-            className="pointer-events-none absolute right-1 top-1 size-2 rounded-full bg-primary"
-            role="img"
-          />
-        ) : null}
-      </span>
+      {panelControls}
     </div>
   );
 }
