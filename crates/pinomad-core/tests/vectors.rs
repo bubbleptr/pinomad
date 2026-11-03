@@ -121,6 +121,7 @@ fn feature_of(name: &str) -> HostFeature {
         "attachments" => HostFeature::Attachments,
         "rtc" => HostFeature::Rtc,
         "submitEntry" => HostFeature::SubmitEntry,
+        "terminals" => HostFeature::Terminals,
         other => panic!("unknown feature {other}"),
     }
 }

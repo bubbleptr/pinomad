@@ -18,7 +18,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 26 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 27 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -116,6 +116,12 @@ pub enum CallMethod {
     AppendAttachment,
     RtcOffer,
     Ping,
+    OpenTerminal,
+    TerminalInput,
+    ResizeTerminal,
+    RenameTerminal,
+    RestartTerminal,
+    CloseTerminal,
 }
 
 impl CallMethod {
@@ -164,6 +170,12 @@ impl CallMethod {
             "appendAttachment" => Self::AppendAttachment,
             "rtcOffer" => Self::RtcOffer,
             "ping" => Self::Ping,
+            "openTerminal" => Self::OpenTerminal,
+            "terminalInput" => Self::TerminalInput,
+            "resizeTerminal" => Self::ResizeTerminal,
+            "renameTerminal" => Self::RenameTerminal,
+            "restartTerminal" => Self::RestartTerminal,
+            "closeTerminal" => Self::CloseTerminal,
             _ => return None,
         })
     }
@@ -207,6 +219,12 @@ impl CallMethod {
             | Self::ListEndpointModels => 21,
             Self::RtcOffer | Self::Ping => 23,
             Self::Submission => 25,
+            Self::OpenTerminal
+            | Self::TerminalInput
+            | Self::ResizeTerminal
+            | Self::RenameTerminal
+            | Self::RestartTerminal
+            | Self::CloseTerminal => 27,
         }
     }
 }
@@ -238,6 +256,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
         HostFeature::ImageVariants => 20,
         HostFeature::Rtc => 23,
         HostFeature::SubmitEntry => 25,
+        HostFeature::Terminals => 27,
     };
     host_minor >= since
 }
@@ -278,6 +297,9 @@ pub enum HostFeature {
     /// and a queued result has none on any host, so gate on this — not on
     /// whether the field arrived.
     SubmitEntry,
+    /// Terminals (27, ADR-0041): the `terminals:` / `terminal:` streams and
+    /// the `output` frame. iOS doesn't open terminals yet.
+    Terminals,
 }
 
 
