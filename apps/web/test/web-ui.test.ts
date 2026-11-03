@@ -766,7 +766,7 @@ it("shows an empty family in the panel while drafting a new conversation", async
 
   // The panel is Tasks-only; a fork is not a panel row any more.
   const panel = page.getByRole("complementary", { name: "Side panel" });
-  await page.getByRole("button", { name: "Side panel", exact: true }).click();
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await panel.getByText("No tasks yet", { exact: true }).waitFor();
 
   // The draft home has no family — the panel must not keep the previous one's.
@@ -1613,12 +1613,12 @@ it("keeps the side panel closed until asked and keeps it open across conversatio
 
   // Closed by default: nothing of the panel is mounted.
   expect(await page.getByRole("complementary", { name: "Side panel" }).count()).toBe(0);
-  const panelToggle = page.getByRole("button", { name: "Side panel", exact: true });
-  expect(await panelToggle.getAttribute("aria-pressed")).toBe("false");
-  await panelToggle.click();
+  const tasksIcon = page.getByRole("button", { name: "Tasks", exact: true });
+  expect(await tasksIcon.getAttribute("aria-pressed")).toBe("false");
+  await tasksIcon.click();
   const panel = page.getByRole("complementary", { name: "Side panel" });
   await panel.getByText("No tasks yet", { exact: true }).waitFor();
-  expect(await page.getByRole("button", { name: "Side panel", exact: true }).getAttribute("aria-pressed")).toBe("true");
+  expect(await page.getByRole("button", { name: "Tasks", exact: true }).getAttribute("aria-pressed")).toBe("true");
 
   // Switching conversations keeps the panel open.
   await page.getByRole("button", { name: "second chat", exact: true }).click();
@@ -1626,8 +1626,29 @@ it("keeps the side panel closed until asked and keeps it open across conversatio
   await panel.getByText("No tasks yet", { exact: true }).waitFor();
 
   // And closes again.
-  await page.getByRole("button", { name: "Side panel", exact: true }).click();
+  await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await expect.poll(() => page.getByRole("complementary", { name: "Side panel" }).count()).toBe(0);
+});
+
+it("keeps the header's Tasks icon reachable beside a widened panel at the desktop minimum", async () => {
+  const webOrigin = await startWeb(defer);
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["an answer"] });
+  // The widest saved panel at the narrowest desktop width: 1024 − 260 sidebar − 720 leaves no chat column.
+  const page = await openPage(host, 1024, webOrigin, async (opened) => {
+    await opened.addInitScript(() => localStorage.setItem("astryx-resizable:pinomad-side-panel", "720"));
+  });
+  const composer = prompt(page);
+  await composer.fill("wide panel");
+  await composer.press("Enter");
+  await page.getByText("an answer", { exact: true }).waitFor();
+
+  const tasks = page.getByRole("button", { name: "Tasks", exact: true });
+  await tasks.click();
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  await panel.waitFor();
+  // The panel gives way so the chat column keeps room for its header.
+  await tasks.click({ timeout: 5_000 });
+  await expect.poll(() => panel.count()).toBe(0);
 });
 
 it("puts the conversation title in the header and the path inside the overview", async () => {
@@ -2356,7 +2377,7 @@ it("surfaces a failed command as a toast without opening the dock", async () => 
   );
   const toastBox = (await toast.boundingBox())!;
   const composerBox = (await prompt(page).boundingBox())!;
-  const dockBox = (await page.getByRole("button", { name: "Side panel", exact: true }).boundingBox())!;
+  const dockBox = (await page.getByRole("button", { name: "Tasks", exact: true }).boundingBox())!;
   const intersects = (a: typeof toastBox, b: typeof toastBox) =>
     a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
   expect(intersects(toastBox, composerBox)).toBe(false);

@@ -37,7 +37,7 @@ import { ConversationComposer } from "./widgets/composer/conversation-composer.t
 import { takeBackForConversation, type PendingTakeBack } from "./widgets/composer/take-back.ts";
 import { ConversationTranscript } from "./widgets/chat/conversation-transcript.tsx";
 import { ComposerSkeleton, ConversationSkeleton, ConversationUnavailable } from "./widgets/chat/conversation-skeleton.tsx";
-import { SidePanel } from "./widgets/side-panel/side-panel.tsx";
+import { panelSurfaceOf, SidePanel, SurfaceButtons, type PanelSurface } from "./widgets/side-panel/side-panel.tsx";
 import { OverviewCard } from "./widgets/overview/overview-card.tsx";
 import { DiffView } from "./presentation/diff.tsx";
 import { PendingQuestions } from "./presentation/question.tsx";
@@ -91,6 +91,9 @@ const anyAtWork = (nodes: readonly ConversationNode[]): boolean =>
 const OVERVIEW_OPEN_KEY = "pinomad.overview.open";
 const readOverviewOpen = (): boolean =>
   typeof window !== "undefined" && window.localStorage.getItem(OVERVIEW_OPEN_KEY) === "true";
+const PANEL_SURFACE_KEY = "pinomad.side-panel.surface";
+const readPanelSurface = (): PanelSurface =>
+  panelSurfaceOf(typeof window === "undefined" ? null : window.localStorage.getItem(PANEL_SURFACE_KEY));
 
 type Loaded = {
   readonly hosts: readonly StoredHost[];
@@ -1009,9 +1012,21 @@ export function Workbench({
     window.localStorage.setItem(OVERVIEW_OPEN_KEY, String(open));
     setOverviewOpen(open);
   };
-  // The side panel holds Tasks only; its open state lives here so chat
-  // entries and the overview can open it.
+  // The side panel's open state and surface live here so chat entries and the
+  // overview can open it on the surface they name (ADR-0040). The surface
+  // last shown is remembered; the panel itself starts closed.
   const [panelOpen, setPanelOpen] = useState(false);
+  const [panelSurface, setPanelSurface] = useState(readPanelSurface);
+  const openSurface = useCallback((surface: PanelSurface) => {
+    window.localStorage.setItem(PANEL_SURFACE_KEY, surface);
+    setPanelSurface(surface);
+    setPanelOpen(true);
+  }, []);
+  // The shown surface's icon closes the panel; any other opens its surface.
+  const selectSurface = (surface: PanelSurface): void => {
+    if (panelOpen && surface === panelSurface) setPanelOpen(false);
+    else openSurface(surface);
+  };
   // A failed/unconfirmed send edited from the transcript flows back into the
   // composer that owns skill picks and attachment chips. Bind the draft to the
   // conversation it came from: switching away must not fill another composer.
@@ -1089,15 +1104,15 @@ export function Workbench({
         openInMain(id);
         return;
       }
-      setPanelOpen(true);
+      openSurface("tasks");
       void remote.controller.showSide(id);
     },
-    [remote, view.organized, openInMain],
+    [remote, view.organized, openInMain, openSurface],
   );
   const openTasks = (id?: ConversationId): void => {
     if (id !== undefined) return openInPanel(id);
     void remote.controller.showSide(undefined);
-    setPanelOpen(true);
+    openSurface("tasks");
   };
   // Keyed on the shown id, not the loaded view: a different family's side
   // closes at the click, and loading inside one family keeps it.
@@ -1130,7 +1145,7 @@ export function Workbench({
       : shownSummary.kind === "subagent"
         ? shownSummary.role
         : currentAgentOf(shownSummary);
-  // The closed panel's button only mirrors Foreground work that Tasks can
+  // The Tasks icon's dot only mirrors Foreground work that Tasks can
   // show; a fork running where the panel has no row must not light it.
   const liveRoot = shownId === undefined ? undefined : rootOf(view.organized, shownId);
   const liveTasks = liveRoot === undefined ? [] : taskGroupsOf(liveRoot).flatMap((group) => group.tasks);
@@ -1178,8 +1193,12 @@ export function Workbench({
   if (view.unauthorized === true && rejected !== undefined) {
     return <Centered>{rejected}</Centered>;
   }
+  // The header covers the chat column only; the side panel runs full height
+  // beside it, its first row level with the header (ADR-0040).
   const body = (
-    <div className="flex h-full min-h-0 min-w-0 flex-col">
+    <div className="flex h-full min-h-0 min-w-0">
+      {/* The chat column keeps room for its header's controls; a wide panel shrinks instead. */}
+      <div className="flex min-h-0 min-w-[20rem] flex-1 flex-col">
       <FrameHeader
         narrow={narrow}
         title={drafting ? draftLabel : displayName(shownSummary)}
@@ -1189,13 +1208,18 @@ export function Workbench({
         showOverview={shownId !== undefined}
         overviewOpen={overviewOpen}
         onOverviewChange={changeOverview}
-        panelOpen={panelOpen}
-        onPanelChange={setPanelOpen}
-        liveActivity={liveActivity}
+        panelControls={
+          <SurfaceButtons
+            narrow={narrow}
+            open={panelOpen}
+            surface={panelSurface}
+            liveActivity={liveActivity}
+            onSelect={selectSurface}
+          />
+        }
       />
       {notice}
       <ConnectionBanner view={view} wsUrl={wsUrl} hostKey={hostKey} />
-      <div className="flex min-h-0 min-w-0 flex-1">
         <div className="@container relative flex min-h-0 min-w-0 flex-1 flex-col">
         {shownId === undefined ? (
           <DraftHome
@@ -1366,19 +1390,22 @@ export function Workbench({
             />
           ) : null}
         </div>
-        {!narrow ? (
-          <SidePanel
-            view={view}
-            remote={remote}
-            shownId={shownId}
-            narrow={false}
-            open={panelOpen}
-            onOpenChange={setPanelOpen}
-            openInPanel={openInPanel}
-            onOpenInMain={openInMain}
-          />
-        ) : null}
       </div>
+      {!narrow ? (
+        <SidePanel
+          view={view}
+          remote={remote}
+          shownId={shownId}
+          narrow={false}
+          open={panelOpen}
+          surface={panelSurface}
+          liveActivity={liveActivity}
+          onOpenChange={setPanelOpen}
+          onSelectSurface={selectSurface}
+          openInPanel={openInPanel}
+          onOpenInMain={openInMain}
+        />
+      ) : null}
     </div>
   );
   const extras = (
@@ -1390,7 +1417,10 @@ export function Workbench({
           shownId={shownId}
           narrow
           open={panelOpen}
+          surface={panelSurface}
+          liveActivity={liveActivity}
           onOpenChange={setPanelOpen}
+          onSelectSurface={selectSurface}
           openInPanel={openInPanel}
           onOpenInMain={openInMain}
         />

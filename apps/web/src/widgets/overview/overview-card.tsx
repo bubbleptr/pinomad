@@ -11,7 +11,7 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import { hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import { classify } from "@pinomad/protocol/presentation.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
-import type { ConversationSummary, DurableView } from "@pinomad/protocol/view.ts";
+import type { DurableView } from "@pinomad/protocol/view.ts";
 import { agentOf, usageRows } from "@pinomad/client/chat.ts";
 import { contextUsage } from "@pinomad/client/context-usage.ts";
 import { displayName, rootOf, taskGroupsOf } from "@pinomad/client/family.ts";
@@ -19,6 +19,7 @@ import { parsePatch } from "@pinomad/client/patch.ts";
 import { summaryOf } from "@pinomad/client/model.ts";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ContextMeter, formatCost } from "../../entities/conversation/context-meter.tsx";
+import { taskTally } from "../../entities/conversation/task-tally.ts";
 import { DocumentView } from "../../presentation/documents.tsx";
 import { ChevronRight, FileDiff, FolderClosed, FolderGitTwo, GitBranch } from "../../shared/ui/icons.tsx";
 
@@ -295,8 +296,6 @@ function UsageSection({ view, conversation }: { view: DurableView; conversation:
   );
 }
 
-const ACTIVE_STATUS = new Set<ConversationSummary["status"]>(["running", "needs-answer"]);
-
 function SubagentsSection({
   view,
   conversation,
@@ -309,9 +308,7 @@ function SubagentsSection({
   const root = rootOf(view.organized, conversation.conversation.id);
   const tasks = root === undefined ? [] : taskGroupsOf(root).flatMap((group) => group.tasks.map((node) => node.summary));
   if (tasks.length === 0) return null;
-  const active = tasks.filter((task) => ACTIVE_STATUS.has(task.status));
-  const failed = tasks.filter((task) => task.status === "failed").length;
-  const done = tasks.length - active.length - failed;
+  const { active, done, failed } = taskTally(tasks);
   const hidden = active.length - ACTIVE_ROWS;
   const summary = [
     hidden > 0 ? `${hidden} more running` : undefined,
