@@ -375,7 +375,14 @@ export function SidePanel({
   if (!open) return null;
   return (
     // Relative + overflow clip so the overlay resize handle sits on the left edge.
-    <div className="relative h-full shrink-0 border-l border-border" style={{ width: resizable.size }} aria-label="Side panel" role="complementary">
+    // The panel shrinks toward its minimum before the chat column gives up the
+    // room its header needs; the saved width returns once the window widens.
+    <div
+      className="relative h-full min-w-[360px] border-l border-border"
+      style={{ width: resizable.size }}
+      aria-label="Side panel"
+      role="complementary"
+    >
       <div className="h-full min-h-0 overflow-hidden">
         <TasksSurface view={view} remote={remote} shownId={shownId} openInPanel={openInPanel} onOpenInMain={onOpenInMain} />
       </div>

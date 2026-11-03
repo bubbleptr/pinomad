@@ -1197,7 +1197,8 @@ export function Workbench({
   // beside it, its first row level with the header (ADR-0040).
   const body = (
     <div className="flex h-full min-h-0 min-w-0">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {/* The chat column keeps room for its header's controls; a wide panel shrinks instead. */}
+      <div className="flex min-h-0 min-w-[20rem] flex-1 flex-col">
       <FrameHeader
         narrow={narrow}
         title={drafting ? draftLabel : displayName(shownSummary)}

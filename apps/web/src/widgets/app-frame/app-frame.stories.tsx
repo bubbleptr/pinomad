@@ -110,7 +110,7 @@ function Body({
   };
   return (
     <div className="flex h-full min-h-0 min-w-0">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-[20rem] flex-1 flex-col">
       <FrameHeader
         narrow={narrow}
         title={loading ? "A conversation that is opening" : "Fix the parser's trailing-comma bug"}

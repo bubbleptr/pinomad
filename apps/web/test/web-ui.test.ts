@@ -1630,6 +1630,27 @@ it("keeps the side panel closed until asked and keeps it open across conversatio
   await expect.poll(() => page.getByRole("complementary", { name: "Side panel" }).count()).toBe(0);
 });
 
+it("keeps the header's Tasks icon reachable beside a widened panel at the desktop minimum", async () => {
+  const webOrigin = await startWeb(defer);
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["an answer"] });
+  // The widest saved panel at the narrowest desktop width: 1024 − 260 sidebar − 720 leaves no chat column.
+  const page = await openPage(host, 1024, webOrigin, async (opened) => {
+    await opened.addInitScript(() => localStorage.setItem("astryx-resizable:pinomad-side-panel", "720"));
+  });
+  const composer = prompt(page);
+  await composer.fill("wide panel");
+  await composer.press("Enter");
+  await page.getByText("an answer", { exact: true }).waitFor();
+
+  const tasks = page.getByRole("button", { name: "Tasks", exact: true });
+  await tasks.click();
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  await panel.waitFor();
+  // The panel gives way so the chat column keeps room for its header.
+  await tasks.click({ timeout: 5_000 });
+  await expect.poll(() => panel.count()).toBe(0);
+});
+
 it("puts the conversation title in the header and the path inside the overview", async () => {
   const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["an answer"] });
