@@ -112,9 +112,11 @@ export function TerminalSurface({
   const [error, setError] = useState<string>();
 
   const memory = memoryOf(terminals);
-  const resolved = list === undefined ? undefined : resolveSelection(memory.get(list.owner), list.terminals);
+  const read = list === undefined ? undefined : memory.get(list.owner);
+  const resolved = list === undefined ? undefined : resolveSelection(read, list.terminals);
   useEffect(() => {
-    if (list !== undefined && resolved !== undefined) memory.set(list.owner, resolved.memory);
+    // A click since this render replaced the entry; this render's answer is stale.
+    if (list !== undefined && resolved !== undefined && memory.get(list.owner) === read) memory.set(list.owner, resolved.memory);
   });
   const selectedId = resolved?.selected;
   const selected = list?.terminals.find((terminal) => terminal.id === selectedId);
