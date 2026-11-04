@@ -39,12 +39,12 @@
     },
     {
       "name": "compaction",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{\"compactions\":[{\"reason\":\"manual\",\"attempt\":1}]},\"pi.inbox\":{\"items\":[]}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{\"compactions\":[{\"trigger\":\"manual\",\"attempt\":1}]},\"pi.inbox\":{\"items\":[]}}}",
       "expect": "\"Compacting (manual)...\""
     },
     {
       "name": "compaction-retry",
-      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{\"compactions\":[{\"reason\":\"manual\",\"attempt\":2,\"retry\":{\"at\":1,\"error\":\"x\"}}]},\"pi.inbox\":{\"items\":[]}}}",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{\"compactions\":[{\"trigger\":\"manual\",\"attempt\":2,\"retry\":{\"at\":1,\"error\":\"x\"}}]},\"pi.inbox\":{\"items\":[]}}}",
       "expect": "\"Retrying manual compaction (attempt 3)...\""
     }
   ],

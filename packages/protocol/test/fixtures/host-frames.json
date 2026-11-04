@@ -153,7 +153,7 @@
             "home": {
               "kind": "chat"
             },
-            "createdAt": 1793701191724,
+            "createdAt": 1793798984083,
             "requestId": "contract-1"
           }
         ]
@@ -238,7 +238,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1793701191726,
+        "updatedAt": 1793798984086,
         "currentAgent": null
       }
     ]
@@ -256,7 +256,7 @@
             {
               "role": "user",
               "content": "contract run",
-              "timestamp": 1793701191726
+              "timestamp": 1793798984086
             }
           ],
           "kind": "pi.user",
@@ -278,14 +278,16 @@
             "taskId": 13,
             "inputs": [
               12
-            ]
+            ],
+            "turns": 0,
+            "first": 11
           }
         },
         "pi.inbox": {
           "items": []
         },
         "pi.provider": {
-          "sessionId": "01a1a0ec-202b-7796-8aba-08e7475f98b0"
+          "sessionId": "01a1a6c0-5192-7624-a124-78f2167f79b4"
         },
         "pi.usage": {
           "models": {},
@@ -342,9 +344,6 @@
                     "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
                     "parameters": {
                       "type": "object",
-                      "required": [
-                        "path"
-                      ],
                       "properties": {
                         "path": {
                           "type": "string",
@@ -358,7 +357,10 @@
                           "type": "number",
                           "description": "Maximum number of lines to read"
                         }
-                      }
+                      },
+                      "required": [
+                        "path"
+                      ]
                     }
                   },
                   {
@@ -366,10 +368,6 @@
                     "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
                     "parameters": {
                       "type": "object",
-                      "required": [
-                        "path",
-                        "content"
-                      ],
                       "properties": {
                         "path": {
                           "type": "string",
@@ -379,7 +377,11 @@
                           "type": "string",
                           "description": "Content to write to the file"
                         }
-                      }
+                      },
+                      "required": [
+                        "path",
+                        "content"
+                      ]
                     }
                   },
                   {
@@ -387,10 +389,6 @@
                     "description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
                     "parameters": {
                       "type": "object",
-                      "required": [
-                        "path",
-                        "edits"
-                      ],
                       "properties": {
                         "path": {
                           "type": "string",
@@ -400,10 +398,6 @@
                           "type": "array",
                           "items": {
                             "type": "object",
-                            "required": [
-                              "oldText",
-                              "newText"
-                            ],
                             "properties": {
                               "oldText": {
                                 "type": "string",
@@ -413,11 +407,19 @@
                                 "type": "string",
                                 "description": "Replacement text for this targeted edit."
                               }
-                            }
+                            },
+                            "required": [
+                              "oldText",
+                              "newText"
+                            ]
                           },
                           "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
                         }
-                      }
+                      },
+                      "required": [
+                        "path",
+                        "edits"
+                      ]
                     }
                   },
                   {
@@ -425,9 +427,6 @@
                     "description": "Execute a bash command in the current working directory. Returns combined stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
                     "parameters": {
                       "type": "object",
-                      "required": [
-                        "command"
-                      ],
                       "properties": {
                         "command": {
                           "type": "string",
@@ -437,11 +436,14 @@
                           "type": "number",
                           "description": "Timeout in seconds (optional, no default timeout)"
                         }
-                      }
+                      },
+                      "required": [
+                        "command"
+                      ]
                     }
                   }
                 ],
-                "timestamp": 1793701191729
+                "timestamp": 1793798984091
               }
             ],
             "kind": "pi.system",
@@ -532,7 +534,7 @@
         ],
         [
           {
-            "callId": "tool:1793701191685:p9ar9m6vmhr",
+            "callId": "tool:1793798984035:ses2ktgwn3d",
             "name": "write",
             "taskId": 16,
             "status": "pending"
@@ -551,16 +553,26 @@
         "s",
         [
           "docs",
+          "pi.live",
+          "run",
+          "turns"
+        ],
+        1
+      ],
+      [
+        "s",
+        [
+          "docs",
           "pi.usage",
           "models",
           "faux/faux-1"
         ],
         {
-          "input": 692,
+          "input": 0,
           "output": 12,
           "cacheRead": 0,
           "cacheWrite": 692,
-          "totalTokens": 1396,
+          "totalTokens": 704,
           "cost": {
             "input": 0,
             "output": 0,
@@ -585,7 +597,7 @@
                 "content": [
                   {
                     "type": "toolCall",
-                    "id": "tool:1793701191685:p9ar9m6vmhr",
+                    "id": "tool:1793798984035:ses2ktgwn3d",
                     "name": "write",
                     "arguments": {
                       "path": "note.txt",
@@ -593,15 +605,15 @@
                     }
                   }
                 ],
-                "api": "faux:1793701191686:bqlx77ncw6w",
+                "api": "faux:1793798984035:71lcr6on09w",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
-                  "input": 692,
+                  "input": 0,
                   "output": 12,
                   "cacheRead": 0,
                   "cacheWrite": 692,
-                  "totalTokens": 1396,
+                  "totalTokens": 704,
                   "cost": {
                     "input": 0,
                     "output": 0,
@@ -611,7 +623,8 @@
                   }
                 },
                 "stopReason": "toolUse",
-                "timestamp": 1793701191685
+                "timestamp": 1793798984035,
+                "thinkingLevel": "off"
               }
             ],
             "kind": "pi.assistant",
@@ -646,30 +659,7 @@
           },
           "conversations": []
         }
-      ]
-    ]
-  },
-  {
-    "type": "ops",
-    "stream": "conversation:4",
-    "ops": [
-      [
-        "s",
-        [
-          "docs",
-          "pi.live",
-          "tools",
-          0,
-          "status"
-        ],
-        "running"
-      ]
-    ]
-  },
-  {
-    "type": "ops",
-    "stream": "tasks",
-    "ops": [
+      ],
       [
         "s",
         [
@@ -693,6 +683,23 @@
     ]
   },
   {
+    "type": "ops",
+    "stream": "conversation:4",
+    "ops": [
+      [
+        "s",
+        [
+          "docs",
+          "pi.live",
+          "tools",
+          0,
+          "status"
+        ],
+        "running"
+      ]
+    ]
+  },
+  {
     "type": "snapshot",
     "stream": "conversations",
     "value": [
@@ -701,7 +708,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1793701191685,
+        "updatedAt": 1793798984035,
         "currentAgent": null,
         "activity": {
           "tool": "write",
@@ -761,7 +768,7 @@
             "model": [
               {
                 "role": "toolResult",
-                "toolCallId": "tool:1793701191685:p9ar9m6vmhr",
+                "toolCallId": "tool:1793798984035:ses2ktgwn3d",
                 "toolName": "write",
                 "content": [
                   {
@@ -773,8 +780,8 @@
                   "patch": "Index: note.txt\n===================================================================\n--- note.txt\n+++ note.txt\n@@ -0,0 +1,1 @@\n+contract\n"
                 },
                 "isError": false,
-                "durationMs": 2,
-                "timestamp": 1793701191807
+                "durationMs": 1,
+                "timestamp": 1793798984164
               }
             ],
             "data": {
@@ -811,6 +818,51 @@
           },
           "conversations": []
         }
+      ],
+      [
+        "s",
+        [
+          "tasks",
+          "18"
+        ],
+        {
+          "id": 18,
+          "kind": "pi.generation",
+          "conversationId": 4,
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "pending",
+            "phase": "prepare"
+          },
+          "conversations": []
+        }
+      ],
+      [
+        "d",
+        [
+          "tasks",
+          "13"
+        ]
+      ],
+      [
+        "s",
+        [
+          "tasks",
+          "18"
+        ],
+        {
+          "id": 18,
+          "kind": "pi.generation",
+          "conversationId": 4,
+          "background": false,
+          "abortRequested": false,
+          "state": {
+            "status": "running",
+            "phase": "prepare"
+          },
+          "conversations": []
+        }
       ]
     ]
   },
@@ -839,63 +891,6 @@
     ]
   },
   {
-    "type": "ops",
-    "stream": "tasks",
-    "ops": [
-      [
-        "s",
-        [
-          "tasks",
-          "18"
-        ],
-        {
-          "id": 18,
-          "kind": "pi.generation",
-          "conversationId": 4,
-          "background": false,
-          "abortRequested": false,
-          "state": {
-            "status": "pending",
-            "phase": "prepare"
-          },
-          "conversations": []
-        }
-      ],
-      [
-        "d",
-        [
-          "tasks",
-          "13"
-        ]
-      ]
-    ]
-  },
-  {
-    "type": "ops",
-    "stream": "tasks",
-    "ops": [
-      [
-        "s",
-        [
-          "tasks",
-          "18"
-        ],
-        {
-          "id": 18,
-          "kind": "pi.generation",
-          "conversationId": 4,
-          "background": false,
-          "abortRequested": false,
-          "state": {
-            "status": "running",
-            "phase": "prepare"
-          },
-          "conversations": []
-        }
-      ]
-    ]
-  },
-  {
     "type": "snapshot",
     "stream": "conversations",
     "value": [
@@ -904,7 +899,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1793701191685,
+        "updatedAt": 1793798984035,
         "currentAgent": null
       }
     ]
@@ -991,17 +986,6 @@
           "pi.usage",
           "models",
           "faux/faux-1",
-          "input"
-        ],
-        720
-      ],
-      [
-        "s",
-        [
-          "docs",
-          "pi.usage",
-          "models",
-          "faux/faux-1",
           "output"
         ],
         16
@@ -1037,7 +1021,7 @@
           "faux/faux-1",
           "totalTokens"
         ],
-        2148
+        1428
       ],
       [
         "p",
@@ -1057,15 +1041,15 @@
                     "text": "contract done"
                   }
                 ],
-                "api": "faux:1793701191686:bqlx77ncw6w",
+                "api": "faux:1793798984035:71lcr6on09w",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
-                  "input": 28,
+                  "input": 0,
                   "output": 4,
                   "cacheRead": 692,
                   "cacheWrite": 28,
-                  "totalTokens": 752,
+                  "totalTokens": 724,
                   "cost": {
                     "input": 0,
                     "output": 0,
@@ -1075,10 +1059,11 @@
                   }
                 },
                 "stopReason": "stop",
-                "timestamp": 1793701191686,
+                "timestamp": 1793798984035,
                 "pinomad": {
-                  "answerStartedAt": 1793701191817
-                }
+                  "answerStartedAt": 1793798984176
+                },
+                "thinkingLevel": "off"
               }
             ],
             "kind": "pi.assistant",

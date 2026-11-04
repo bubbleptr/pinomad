@@ -120,11 +120,11 @@ pub fn status_text(view: &Json) -> String {
         return if compaction.get("retry").is_some_and(Json::truthy) {
             format!(
                 "Retrying {} compaction (attempt {})...",
-                js_text(compaction.get("reason")),
+                js_text(compaction.get("trigger")),
                 U16String(text::plus_one(compaction.get("attempt"))).to_string_lossy(),
             )
         } else {
-            format!("Compacting ({})...", js_text(compaction.get("reason")))
+            format!("Compacting ({})...", js_text(compaction.get("trigger")))
         };
     }
     String::new()
