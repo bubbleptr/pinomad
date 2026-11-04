@@ -1,5 +1,5 @@
 import type { Op } from "@earendil-works/chord/delta";
-import type { ConversationId, ModelRef } from "@earendil-works/pi-durable";
+import type { ConversationId, EntryId, ModelRef } from "@earendil-works/pi-durable";
 import type { AgentRole, AgentRoles } from "./agents.ts";
 import { isCustomProviderApi, type CustomProviderApi, type CustomProviderInput, type HostAuth, type HostProviders, type LoginMethod } from "./auth.ts";
 import type { EndpointSet } from "./endpoints.ts";
@@ -8,6 +8,7 @@ import type { HostDevices } from "./devices.ts";
 import type { McpStatus } from "./mcp.ts";
 import type { RtcAnswer, RtcHello, RtcOfferArgs } from "./rtc.ts";
 import type { TerminalId, TerminalsHello } from "./terminals.ts";
+import type { TranscriptPage, TranscriptWindow } from "./transcript.ts";
 import type { CommandListing } from "./commands.ts";
 import type { FileListing, FileScope, FolderListing, Home, HostIndex, Project, SkillListing, SkillScope } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
@@ -100,7 +101,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 27 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 28 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -280,6 +281,20 @@ export interface CallMethods {
     args: { conversationId: ConversationId; entryId: string; removeTools?: readonly string[] };
     result: { conversationId: ConversationId };
   };
+  /**
+   * Older transcript entries for a `window` subscription (5.28). `before` is
+   * the shown view's `before`, the newest entry it lacks; the page holds the
+   * entries up to and including it, oldest first, at least `limit` unless
+   * the transcript starts sooner, extended back to the turn they fall in (up
+   * to MAX_TRANSCRIPT_PAGE). The result's `before` is the entry just ahead of
+   * them, absent at the transcript's start. Answers only a conversation this
+   * connection subscribes to, with images in that subscription's form; refs
+   * stay answerable while it lives.
+   */
+  earlierEntries: {
+    args: { conversationId: ConversationId; before: EntryId; limit: number };
+    result: TranscriptPage;
+  };
   /** Answer a pending `pinomad.question` request; `first` is true for the write that settled it. */
   answer: {
     args: { conversationId: ConversationId; kind: string; requestId: string; answers: QuestionAnswer[] };
@@ -438,6 +453,7 @@ export const CALL_SINCE: Record<CallMethod, number> = {
   deleteAgent: 6,
   setPushToken: 7,
   image: 15,
+  earlierEntries: 28,
   beginAttachment: 19,
   appendAttachment: 19,
   rtcOffer: 23,
@@ -482,6 +498,8 @@ export const FEATURE_SINCE = {
   submitEntry: 25,
   /** The `terminals:` and `terminal:` streams, the `output` frame, and a subscribe's `since` (27, ADR-0041). */
   terminals: 27,
+  /** A conversation subscribe's `window` and the `earlierEntries` call (28). */
+  transcriptPaging: 28,
 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
@@ -564,6 +582,13 @@ export type ClientFrame =
        * Other streams ignore it.
        */
       readonly since?: number;
+      /**
+       * A `conversation:` stream's first snapshot holds only the newest
+       * turns (5.28); older entries come from `earlierEntries`. Without it
+       * the snapshot holds the whole transcript. Other streams and older
+       * hosts ignore it.
+       */
+      readonly window?: TranscriptWindow;
     }
   | { readonly type: "unsubscribe"; readonly stream: StreamName }
   | {
@@ -603,7 +628,18 @@ export function parseClientFrame(value: unknown): ParsedClientFrame {
       }
       // A value this host doesn't know is a newer client's form: fall back to inline.
       const refs = value.images === "ref";
-      return { kind: "frame", frame: refs ? { type: "subscribe", stream, images: "ref" } : { type: "subscribe", stream } };
+      let window: TranscriptWindow | undefined;
+      if (stream.startsWith("conversation:") && value.window !== undefined) {
+        if (!record(value.window) || !positive(value.window.limit) || !(value.window.from === undefined || positive(value.window.from))) {
+          return { kind: "malformed" };
+        }
+        const limit = value.window.limit;
+        window = value.window.from === undefined ? { limit } : { limit, from: value.window.from as EntryId };
+      }
+      return {
+        kind: "frame",
+        frame: { type: "subscribe", stream, ...(refs ? { images: "ref" as const } : {}), ...(window === undefined ? {} : { window }) },
+      };
     }
     // A name under a known stream kind is a malformed frame; anything else is
     // a stream this host predates.
@@ -741,6 +777,8 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
       );
     case "changes":
       return conversationId();
+    case "earlierEntries":
+      return conversationId() && positive(args.before) && positive(args.limit);
     case "image":
       return nonempty(args.ref) && (args.variant === undefined || args.variant === "thumbnail" || args.variant === "preview");
     case "beginAttachment":
@@ -868,6 +906,10 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function positive(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
 }
 
 function nonempty(value: unknown): value is string {

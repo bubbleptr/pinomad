@@ -606,6 +606,7 @@ export function fakeRemote(view: DurableView = fakeView(), overrides: Partial<Du
         { name: "compact", description: "Summarize older context to free up space", argumentHint: "[instructions]", source: "builtin" as const },
       ],
     })),
+    loadEarlier: fn(async () => {}),
     createPairing: fn(async () => ({ url: `pinomad://pair#${key("P")}`, expiresAt: Date.now() + 5 * MINUTE })),
     revokeDevice: fn(async () => {}),
     logout: fn(async () => {}),

@@ -1,4 +1,61 @@
-import type { ConversationView, EntryRecord } from "@earendil-works/pi-durable";
+import type { ConversationView, EntryId, EntryRecord } from "@earendil-works/pi-durable";
+
+/** A conversation subscribe's window (5.28): what the first snapshot holds. */
+export interface TranscriptWindow {
+  /**
+   * The newest entries the first snapshot holds, extended back to the turn
+   * the oldest falls in. The host clamps it to MAX_TRANSCRIPT_PAGE.
+   */
+  readonly limit: number;
+  /**
+   * Start the first snapshot here instead, inclusive, however many entries
+   * follow: a resubscribe keeping everything the client had loaded.
+   */
+  readonly from?: EntryId;
+}
+
+/** Entries oldest first; `before` is the entry just ahead of them, absent at the transcript's start. */
+export interface TranscriptPage {
+  readonly entries: readonly EntryRecord[];
+  readonly before?: EntryId;
+}
+
+/** How many entries a client asks for per window or page. */
+export const TRANSCRIPT_PAGE = 50;
+/** The most entries a host puts in one page or one window start, turn extension included. */
+export const MAX_TRANSCRIPT_PAGE = 500;
+
+/**
+ * The view a client shows: the pages it loaded with `earlierEntries` ahead of
+ * the stream's window. Every derivation reads this, never the bare window.
+ */
+export function withEarlier(view: ConversationView, earlier: TranscriptPage | undefined): ConversationView {
+  if (earlier === undefined) return view;
+  const { before: _window, ...rest } = view;
+  return {
+    ...rest,
+    entries: [...earlier.entries, ...view.entries],
+    ...(earlier.before === undefined ? {} : { before: earlier.before }),
+  };
+}
+
+/**
+ * `earlier` with `page` ahead of it. A page asked for a `before` that the
+ * shown view no longer has (it was requested before a resubscribe replaced
+ * the window) would leave a gap or an overlap, so it is dropped.
+ */
+export function addEarlier(
+  shown: ConversationView,
+  earlier: TranscriptPage | undefined,
+  requested: EntryId,
+  page: TranscriptPage,
+): TranscriptPage | undefined {
+  if (shown.before !== requested) return earlier;
+  return {
+    entries: [...page.entries, ...(earlier?.entries ?? [])],
+    ...(page.before === undefined ? {} : { before: page.before }),
+  };
+}
 
 export type TranscriptLine =
   | { readonly role: "user"; readonly text: string }

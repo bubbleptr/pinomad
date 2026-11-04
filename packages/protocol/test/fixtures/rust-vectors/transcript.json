@@ -1,0 +1,45 @@
+{
+  "page": 50,
+  "cases": [
+    {
+      "name": "first-page",
+      "window": "{\"conversation\":{\"id\":1,\"createdAt\":5},\"entries\":[{\"id\":20,\"conversationId\":1,\"kind\":\"pi.user\"},{\"id\":21,\"conversationId\":1,\"kind\":\"pi.user\"}],\"docs\":{\"pi.live\":{\"schema\":2}},\"before\":18}",
+      "requested": 18,
+      "page": "{\"entries\":[{\"id\":15,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m15\"}]},{\"id\":18,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m18\"}]}],\"before\":12}",
+      "expectEarlier": "{\"entries\":[{\"id\":15,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m15\"}]},{\"id\":18,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m18\"}]}],\"before\":12}",
+      "expectShown": "{\"conversation\":{\"id\":1,\"createdAt\":5},\"entries\":[{\"id\":15,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m15\"}]},{\"id\":18,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m18\"}]},{\"id\":20,\"conversationId\":1,\"kind\":\"pi.user\"},{\"id\":21,\"conversationId\":1,\"kind\":\"pi.user\"}],\"docs\":{\"pi.live\":{\"schema\":2}},\"before\":12}"
+    },
+    {
+      "name": "reaches-start",
+      "window": "{\"conversation\":{\"id\":1,\"createdAt\":5},\"entries\":[{\"id\":20,\"conversationId\":1,\"kind\":\"pi.user\"},{\"id\":21,\"conversationId\":1,\"kind\":\"pi.user\"}],\"docs\":{\"pi.live\":{\"schema\":2}},\"before\":18}",
+      "earlier": "{\"entries\":[{\"id\":15,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m15\"}]},{\"id\":18,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m18\"}]}],\"before\":12}",
+      "requested": 12,
+      "page": "{\"entries\":[{\"id\":11,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m11\"}]},{\"id\":12,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m12\"}]}]}",
+      "expectEarlier": "{\"entries\":[{\"id\":11,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m11\"}]},{\"id\":12,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m12\"}]},{\"id\":15,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m15\"}]},{\"id\":18,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m18\"}]}]}",
+      "expectShown": "{\"conversation\":{\"id\":1,\"createdAt\":5},\"entries\":[{\"id\":11,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m11\"}]},{\"id\":12,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m12\"}]},{\"id\":15,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m15\"}]},{\"id\":18,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m18\"}]},{\"id\":20,\"conversationId\":1,\"kind\":\"pi.user\"},{\"id\":21,\"conversationId\":1,\"kind\":\"pi.user\"}],\"docs\":{\"pi.live\":{\"schema\":2}}}"
+    },
+    {
+      "name": "stale-request",
+      "window": "{\"conversation\":{\"id\":1,\"createdAt\":5},\"entries\":[{\"id\":20,\"conversationId\":1,\"kind\":\"pi.user\"},{\"id\":21,\"conversationId\":1,\"kind\":\"pi.user\"}],\"docs\":{\"pi.live\":{\"schema\":2}},\"before\":18}",
+      "earlier": "{\"entries\":[{\"id\":15,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m15\"}]},{\"id\":18,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m18\"}]}],\"before\":12}",
+      "requested": 18,
+      "page": "{\"entries\":[{\"id\":18,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m18\"}]}]}",
+      "expectEarlier": "{\"entries\":[{\"id\":15,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m15\"}]},{\"id\":18,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m18\"}]}],\"before\":12}",
+      "expectShown": "{\"conversation\":{\"id\":1,\"createdAt\":5},\"entries\":[{\"id\":15,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m15\"}]},{\"id\":18,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m18\"}]},{\"id\":20,\"conversationId\":1,\"kind\":\"pi.user\"},{\"id\":21,\"conversationId\":1,\"kind\":\"pi.user\"}],\"docs\":{\"pi.live\":{\"schema\":2}},\"before\":12}"
+    },
+    {
+      "name": "stale-after-resubscribe",
+      "window": "{\"conversation\":{\"id\":1,\"createdAt\":5},\"entries\":[{\"id\":15,\"conversationId\":1,\"kind\":\"pi.user\"},{\"id\":18,\"conversationId\":1,\"kind\":\"pi.user\"},{\"id\":20,\"conversationId\":1,\"kind\":\"pi.user\"}],\"docs\":{\"pi.live\":{\"schema\":2}},\"before\":12}",
+      "requested": 18,
+      "page": "{\"entries\":[{\"id\":18,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m18\"}]}],\"before\":12}",
+      "expectShown": "{\"conversation\":{\"id\":1,\"createdAt\":5},\"entries\":[{\"id\":15,\"conversationId\":1,\"kind\":\"pi.user\"},{\"id\":18,\"conversationId\":1,\"kind\":\"pi.user\"},{\"id\":20,\"conversationId\":1,\"kind\":\"pi.user\"}],\"docs\":{\"pi.live\":{\"schema\":2}},\"before\":12}"
+    },
+    {
+      "name": "whole-window",
+      "window": "{\"conversation\":{\"id\":1,\"createdAt\":5},\"entries\":[{\"id\":1,\"conversationId\":1,\"kind\":\"pi.user\"},{\"id\":2,\"conversationId\":1,\"kind\":\"pi.user\"}],\"docs\":{\"pi.live\":{\"schema\":2}}}",
+      "requested": 1,
+      "page": "{\"entries\":[{\"id\":1,\"conversationId\":1,\"kind\":\"pi.user\",\"model\":[{\"role\":\"user\",\"content\":\"m1\"}]}]}",
+      "expectShown": "{\"conversation\":{\"id\":1,\"createdAt\":5},\"entries\":[{\"id\":1,\"conversationId\":1,\"kind\":\"pi.user\"},{\"id\":2,\"conversationId\":1,\"kind\":\"pi.user\"}],\"docs\":{\"pi.live\":{\"schema\":2}}}"
+    }
+  ]
+}

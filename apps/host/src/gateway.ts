@@ -89,6 +89,7 @@ import { attachmentBlock } from "@pinomad/protocol/attachments.ts";
 import type { AttachmentStore } from "./attachments.ts";
 import type { ImageProcessor } from "@earendil-works/pi-durable/tools";
 import { ImageRefs } from "./image-refs.ts";
+import { MAX_TRANSCRIPT_PAGE, type TranscriptPage, type TranscriptWindow } from "@pinomad/protocol/transcript.ts";
 import { ImageVariants } from "./image-variants.ts";
 import type { AgentRoleStore } from "./agent-roles.ts";
 import type { AgentRoles } from "@pinomad/protocol/agents.ts";
@@ -1629,11 +1630,50 @@ function titleOf(entry: EntryRecord | undefined): { title?: string } {
 }
 
 /**
- * Clients render the whole transcript and have no paging, so the conversation
- * stream asks for a window that never splices (Durable's default keeps the
- * newest 50–100 entries).
+ * A window that never splices (Durable's default keeps the newest 50–100
+ * entries): a client subscribed without `window` renders the whole transcript,
+ * and one with it pages older entries in itself, so neither handles a drop.
  */
 const WHOLE_TRANSCRIPT = { min: Number.MAX_SAFE_INTEGER, max: Number.MAX_SAFE_INTEGER };
+
+/** Entries a client's derivation starts a new row at, so a page starting here never splits a run. */
+const TURN_STARTS = new Set(["pi.user", "pi.compaction", "pi.reset"]);
+
+/**
+ * The entries up to and including `before` (from the newest without it),
+ * oldest first: at least `limit` of them, then back to the turn the oldest
+ * falls in, at most MAX_TRANSCRIPT_PAGE; with the id just ahead of them.
+ */
+async function turnPage(conversation: Conversation, before: EntryId | undefined, limit: number): Promise<TranscriptPage> {
+  const want = Math.min(limit, MAX_TRANSCRIPT_PAGE);
+  const done = (taken: readonly EntryRecord[]): boolean =>
+    taken.length >= MAX_TRANSCRIPT_PAGE || (taken.length >= want && TURN_STARTS.has(taken.at(-1)!.kind));
+  const query = { order: "descending" as const, ...(before === undefined ? {} : { maxEntryId: before }) };
+  const taken: EntryRecord[] = [];
+  let cursor: Cursor | undefined;
+  for (;;) {
+    const page = await conversation.entries(query, Math.max(want + 1 - taken.length, 64), cursor, context);
+    for (const entry of page.items) {
+      if (done(taken)) return { entries: taken.reverse(), before: entry.id };
+      taken.push(entry);
+    }
+    if (page.next === undefined) return { entries: taken.reverse() };
+    cursor = page.next;
+  }
+}
+
+/** The view window for a conversation subscribe: the whole transcript without `window`, else from a turn start on. */
+async function viewWindow(conversation: Conversation, window: TranscriptWindow | undefined) {
+  if (window === undefined) return WHOLE_TRANSCRIPT;
+  const from = window.from ?? (await startOf(conversation, window.limit));
+  return from === undefined ? WHOLE_TRANSCRIPT : { ...WHOLE_TRANSCRIPT, from };
+}
+
+/** Where the newest page starts, or undefined when it reaches the transcript's start. */
+async function startOf(conversation: Conversation, limit: number): Promise<EntryId | undefined> {
+  const page = await turnPage(conversation, undefined, limit);
+  return page.before === undefined ? undefined : page.entries[0]!.id;
+}
 
 /**
  * The ops a client applies for one watch call. A document watch now outlives a
@@ -1717,6 +1757,10 @@ type SubscriptionState = {
   view?: JsonValue;
   /** A `terminal:` subscribe's position (5.27). */
   readonly since?: number;
+  /** A `conversation:` subscribe's window (5.28). */
+  readonly window?: TranscriptWindow;
+  /** Raw entries `earlierEntries` sent on a ref subscription, so `image` answers their refs too. */
+  earlier?: JsonValue[];
 };
 type SendFrame = (frame: ServerFrame) => Promise<void>;
 
@@ -1945,15 +1989,23 @@ class GatewayClient {
   }
 
   async #receive(frame: ClientFrame): Promise<void> {
-    if (frame.type === "subscribe") await this.#subscribe(frame.stream, frame.images === "ref", frame.since);
+    if (frame.type === "subscribe") await this.#subscribe(frame.stream, frame.images === "ref", frame.since, frame.window);
     else if (frame.type === "unsubscribe") await this.#unsubscribe(frame.stream);
     else await this.#answer(frame.id, frame.method, frame.args);
   }
 
-  async #subscribe(stream: StreamName, imageRefs: boolean, since: number | undefined): Promise<void> {
+  async #subscribe(
+    stream: StreamName,
+    imageRefs: boolean,
+    since: number | undefined,
+    window: TranscriptWindow | undefined,
+  ): Promise<void> {
     const previous = this.#subscriptions.get(stream);
-    const state: SubscriptionState =
-      imageRefs && stream.startsWith("conversation:") ? { images: new ImageRefs() } : since === undefined ? {} : { since };
+    const state: SubscriptionState = {
+      ...(imageRefs && stream.startsWith("conversation:") ? { images: new ImageRefs() } : {}),
+      ...(since === undefined ? {} : { since }),
+      ...(window === undefined ? {} : { window }),
+    };
     this.#subscriptions.set(stream, state);
     const current = () => !this.#disposed && this.#subscriptions.get(stream) === state;
     const send: SendFrame = (frame) => (current() ? this.send(frame) : Promise.resolve());
@@ -2018,7 +2070,7 @@ class GatewayClient {
       return this.#openDoc(stream, stream.slice("doc:".length, at), Number(stream.slice(at + 1)) as ConversationId, send);
     }
     const conversation = await this.#conversation(Number(stream.slice("conversation:".length)) as ConversationId);
-    return this.#forward(stream, await conversation.watch(context, WHOLE_TRANSCRIPT), send, state);
+    return this.#forward(stream, await conversation.watch(context, await viewWindow(conversation, state?.window)), send, state);
   }
 
   /** The in-memory value source for a host stream, or undefined for the watch-/doc-backed ones. */
@@ -2117,7 +2169,8 @@ class GatewayClient {
   #shownImage(ref: string): MessageImage | undefined {
     for (const state of this.#subscriptions.values()) {
       if (state.images === undefined || state.view === undefined) continue;
-      const image = state.images.image(state.view, ref);
+      const image = state.images.image(state.view, ref)
+        ?? (state.earlier === undefined ? undefined : state.images.image({ entries: state.earlier }, ref));
       if (image !== undefined) return image;
     }
     return undefined;
@@ -2451,6 +2504,17 @@ class GatewayClient {
       case "listSkills": {
         const input = args as CallMethods["listSkills"]["args"];
         return listSkills(this.#options.harness, this.#skills, input.scope, context);
+      }
+      case "earlierEntries": {
+        const { conversationId, before, limit } = args as CallMethods["earlierEntries"]["args"];
+        const state = this.#subscriptions.get(`conversation:${conversationId}`);
+        if (state === undefined) throw new Error(`Not subscribed to conversation ${conversationId}`);
+        const page = await turnPage(await this.#conversation(conversationId), before, limit);
+        if (state.images === undefined) return page;
+        const raw = page.entries as unknown as JsonValue[];
+        state.earlier = [...(state.earlier ?? []), ...raw];
+        const { entries } = (await state.images.value({ entries: raw })) as unknown as TranscriptPage;
+        return { ...page, entries };
       }
       case "image": {
         const input = args as CallMethods["image"]["args"];

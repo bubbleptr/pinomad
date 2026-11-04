@@ -1449,3 +1449,68 @@ async function waitForSent(sent: readonly ClientFrame[], method: string): Promis
   }
   throw new Error(`${method} was never sent`);
 }
+
+describe("RemoteDurable transcript paging", () => {
+  const conversation = (ids: number[], before?: number) => ({
+    conversation: { id: 1 },
+    entries: ids.map((entry) => ({ id: entry, kind: "pi.user" })),
+    docs: {},
+    ...(before === undefined ? {} : { before }),
+  });
+  const windows = (sent: readonly ClientFrame[]) =>
+    sent.flatMap((frame) => (frame.type === "subscribe" && frame.stream === "conversation:1" ? [frame.window] : []));
+  const shownIds = (remote: RemoteDurable) => remote.view.current().conversation?.entries.map((entry) => entry.id);
+
+  it("asks a 5.28 host for a window and an older one for the whole transcript", async () => {
+    const paged = fakeTransport([{}]);
+    const older = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 27 } });
+    const remotes = [await connectRemoteDurable({ transport: paged.transport }), await connectRemoteDurable({ transport: older.transport })];
+    try {
+      for (const remote of remotes) await remote.controller.switchConversation(id(1));
+      expect(windows(paged.sent)).toEqual([{ limit: 50 }]);
+      expect(windows(older.sent)).toEqual([undefined]);
+    } finally {
+      for (const remote of remotes) remote.close();
+    }
+  });
+
+  it("shows loaded pages ahead of the window and resubscribes from the oldest after a reconnect", async () => {
+    const pages: Record<number, unknown> = {
+      18: { entries: [{ id: 15, kind: "pi.user" }, { id: 18, kind: "pi.user" }], before: 12 },
+      12: { entries: [{ id: 11, kind: "pi.user" }, { id: 12, kind: "pi.user" }] },
+    };
+    const fake = fakeTransport([{}], undefined, (frame) =>
+      frame.method === "earlierEntries" ? { ok: true, value: pages[(frame.args as { before: number }).before] } : undefined,
+    );
+    fake.hold("conversation:1" as StreamName);
+    const remote = await connectRemoteDurable({ transport: fake.transport, reconnectDelayMs: { min: 10, max: 10 } });
+    try {
+      const switched = remote.controller.switchConversation(id(1));
+      await waitForView(remote, () => windows(fake.sent).length === 1);
+      fake.release("conversation:1" as StreamName, conversation([20, 21], 18));
+      await switched;
+
+      await remote.controller.loadEarlier(id(1));
+      expect(shownIds(remote)).toEqual([15, 18, 20, 21]);
+      expect(remote.view.current().conversation?.before).toBe(12);
+
+      fake.disconnect();
+      await waitForView(remote, () => windows(fake.sent).length === 2);
+      expect(windows(fake.sent)[1]).toEqual({ limit: 50, from: 15 });
+      // The new snapshot starts at `from`, so it replaces the loaded page rather than following it.
+      fake.release("conversation:1" as StreamName, conversation([15, 18, 20, 21, 22], 12));
+      await waitForView(remote, (view) => view.conversation?.entries.length === 5);
+      expect(shownIds(remote)).toEqual([15, 18, 20, 21, 22]);
+
+      await remote.controller.loadEarlier(id(1));
+      expect(shownIds(remote)).toEqual([11, 12, 15, 18, 20, 21, 22]);
+      expect(remote.view.current().conversation?.before).toBeUndefined();
+      // At the start there is nothing to ask for.
+      const calls = fake.sent.filter((frame) => frame.type === "call" && frame.method === "earlierEntries").length;
+      await remote.controller.loadEarlier(id(1));
+      expect(fake.sent.filter((frame) => frame.type === "call" && frame.method === "earlierEntries")).toHaveLength(calls);
+    } finally {
+      remote.close();
+    }
+  });
+});
