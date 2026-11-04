@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, safeStorage, shell, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, safeStorage, session, shell, type IpcMainInvokeEvent } from "electron";
 import { autoUpdater } from "electron-updater";
 import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { installAppMenu, reportUpdateCheck } from "./app-menu.ts";
 import { pairingFragmentFromDeepLink } from "./deep-link.ts";
+import { devRequestHeaders, devResponseHeaders } from "./dev-origin.ts";
 import { desktopDeviceName } from "./device-name.ts";
 import { createHostStore, type StoredAccount, type StoredHost } from "./host-store.ts";
 import { createLocalHost, type LocalHost } from "./local-host.ts";
@@ -84,6 +85,21 @@ function createMainWindow(): BrowserWindow {
 }
 
 const devEntry = process.env.ELECTRON_RENDERER_URL;
+
+/** Dev only: the account server must see the dev renderer as app://pinomad (dev-origin.ts). */
+function installDevOriginRewrite(devOrigin: string): void {
+  const { webRequest } = session.defaultSession;
+  // The account API is https-only; Vite's HMR socket and host ws(s):// links keep their real Origin.
+  const filter = { urls: ["https://*/*"] };
+  webRequest.onBeforeSendHeaders(filter, (details, callback) => {
+    const requestHeaders = devRequestHeaders(details.requestHeaders, devOrigin, APP_ORIGIN);
+    callback(requestHeaders === undefined ? {} : { requestHeaders });
+  });
+  webRequest.onHeadersReceived(filter, (details, callback) => {
+    const responseHeaders = details.responseHeaders && devResponseHeaders(details.responseHeaders, devOrigin, APP_ORIGIN);
+    callback(responseHeaders === undefined ? {} : { responseHeaders });
+  });
+}
 
 /** Every privileged invoke channel shares this caller check. */
 function isOurRendererFrame(event: IpcMainInvokeEvent): boolean {
@@ -256,6 +272,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   void app.whenReady().then(() => {
+    if (devEntry !== undefined) installDevOriginRewrite(new URL(devEntry).origin);
     // Unpackaged runs (today's desktop:e2e included) are already disabled by
     // !isPackaged; PINOMAD_E2E exists in case an E2E ever drives a packaged
     // build, where isPackaged is true and it would hit GitHub 10s in.
