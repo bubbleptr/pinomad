@@ -2,7 +2,7 @@
 // and the side panel's detail views. Items come from deriveChat; each run
 // entry delegates to ChatEntryView.
 import { ChatMessageList } from "@astryxdesign/core/Chat";
-import { useMemo } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import type { ConversationId, ConversationView } from "@earendil-works/pi-durable";
 import { classify, type PresentationType, type TodoState } from "@pinomad/protocol/presentation.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
@@ -33,6 +33,7 @@ export function ConversationTranscript({
   docs,
   submissions,
   mergeQueuedSubmissions,
+  onLoadEarlier,
 }: {
   conversation: ConversationView;
   toolPresentations: Record<string, PresentationType>;
@@ -75,6 +76,8 @@ export function ConversationTranscript({
   submissions?: readonly LogicalSubmission[];
   /** No queue list in this transcript; queue-placed local sends render as bubbles. */
   mergeQueuedSubmissions?: boolean;
+  /** Loads the turns before the view; offered on scrolling to the top while the view has a `before`. */
+  onLoadEarlier?: () => Promise<void>;
 }) {
   const busy = isBusy(conversation);
   const today = useToday();
@@ -94,9 +97,43 @@ export function ConversationTranscript({
   );
   // One card at a time: only the newest run gets the list (ADR-0026 §4).
   const latestRun = items.findLastIndex((item) => item.kind === "run");
+
+  const list = useRef<HTMLDivElement>(null);
+  // Distance from the scroller's bottom before a load, so the turns it adds
+  // land above what the reader was looking at (Safari has no overflow-anchor).
+  const anchor = useRef<{ scroller: HTMLElement; fromBottom: number } | undefined>(undefined);
+  const before = conversation.before;
+  // A new identity per `before` and per reconnect re-arms the list's top
+  // sentinel, so a page too short to scroll still loads the next one.
+  const loadEarlier = useCallback(async () => {
+    if (onLoadEarlier === undefined) return;
+    const scroller = scrollerOf(list.current);
+    if (scroller !== undefined) anchor.current = { scroller, fromBottom: scroller.scrollHeight - scroller.scrollTop };
+    try {
+      await onLoadEarlier();
+    } catch {
+      // Offline or the host refused: the sentinel stays, and the next
+      // reconnect re-arms it.
+      anchor.current = undefined;
+    }
+    // `before` and `connected` are deps only to re-arm the sentinel.
+  }, [onLoadEarlier, before, connected]);
+  const oldest = items[0]?.id;
+  useLayoutEffect(() => {
+    const pending = anchor.current;
+    if (pending === undefined) return;
+    anchor.current = undefined;
+    pending.scroller.scrollTop = pending.scroller.scrollHeight - pending.fromBottom;
+  }, [oldest]);
+
   if (items.length === 0) return null;
   return (
-    <ChatMessageList isStreaming={busy} gap={0}>
+    <ChatMessageList
+      ref={list}
+      isStreaming={busy}
+      gap={0}
+      scrollToTopAction={onLoadEarlier !== undefined && connected && before !== undefined ? loadEarlier : undefined}
+    >
       {/* Pace's live-session-column gutter: centered column with horizontal
           padding; chat.css's CoT rail expects that breathing room. */}
       <div className="mx-auto flex w-full max-w-[44rem] flex-col gap-8 px-4 pb-6 pt-2">
@@ -128,6 +165,15 @@ export function ConversationTranscript({
       </div>
     </ChatMessageList>
   );
+}
+
+/** The nearest ancestor that scrolls vertically: the chat layout's area, or the side panel's. */
+function scrollerOf(element: HTMLElement | null): HTMLElement | undefined {
+  for (let node = element?.parentElement; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node);
+    if (overflowY === "auto" || overflowY === "scroll") return node;
+  }
+  return undefined;
 }
 
 function todoOf(docs: readonly ExtensionDocView[] | undefined): TodoState | undefined {

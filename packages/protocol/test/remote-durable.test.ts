@@ -1458,7 +1458,7 @@ describe("RemoteDurable transcript paging", () => {
     ...(before === undefined ? {} : { before }),
   });
   const windows = (sent: readonly ClientFrame[]) =>
-    sent.flatMap((frame) => (frame.type === "subscribe" && frame.stream === "conversation:1" ? [frame.window] : []));
+    sent.flatMap((frame) => (frame.type === "subscribe" && frame.stream === ("conversation:1" as StreamName) ? [frame.window] : []));
   const shownIds = (remote: RemoteDurable) => remote.view.current().conversation?.entries.map((entry) => entry.id);
 
   it("asks a 5.28 host for a window and an older one for the whole transcript", async () => {

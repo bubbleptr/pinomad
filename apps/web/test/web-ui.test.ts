@@ -1757,6 +1757,50 @@ it("summarizes changes and subagents in the overview card and links to their det
   await expect.poll(() => overview.count()).toBe(0);
 });
 
+it("loads older turns when scrolling to the top of a long conversation, keeping the reader's place", async () => {
+  const webOrigin = await startWeb(defer);
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["done"] });
+  const observer = await connectTo(defer, host);
+  const id = await startChat(observer, "long history");
+  await waitForView(observer.view, (view) => view.conversation !== undefined && !isBusy(view.conversation));
+  await host.harness.commit(async (tx) => {
+    for (let index = 0; index < 150; index += 1) {
+      await tx.appendEntry(id, { kind: "pi.user", model: [{ role: "user", content: `turn ${index}`, timestamp: index }] });
+    }
+  }, BACKGROUND_CONTEXT);
+
+  const page = await openPage(host, 1280, webOrigin);
+  await page.getByRole("button", { name: "long history", exact: true }).first().click();
+  const log = page.getByRole("log");
+  await log.getByText("turn 149", { exact: true }).waitFor();
+  // The first snapshot holds only the newest turns.
+  expect(await log.getByText("turn 0", { exact: true }).count()).toBe(0);
+
+  const scrollToTop = () =>
+    log.evaluate((element) => {
+      let node = element.parentElement;
+      while (node !== null && !["auto", "scroll"].includes(getComputedStyle(node).overflowY)) node = node.parentElement;
+      node!.scrollTop = 0;
+    });
+  // The oldest shown turn stays where the reader saw it while older ones land above.
+  const oldest = log.getByText("turn 100", { exact: true });
+  await scrollToTop();
+  const seenAt = (await oldest.boundingBox())!.y;
+  await log.getByText("turn 99", { exact: true }).waitFor({ state: "attached" });
+  await expect.poll(async () => Math.abs((await oldest.boundingBox())!.y - seenAt)).toBeLessThan(40);
+
+  await expect
+    .poll(
+      async () => {
+        await scrollToTop();
+        return log.getByText("turn 0", { exact: true }).count();
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(1);
+  await log.getByText("long history", { exact: true }).waitFor({ state: "attached" });
+});
+
 it("collapses the sidebar into the header toggle and restores it", async () => {
   const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });

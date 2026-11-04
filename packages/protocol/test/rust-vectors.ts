@@ -683,7 +683,7 @@ function transcriptVector(): VectorFile {
       ...(before === undefined ? {} : { before }),
     }) as unknown as ConversationView;
   const page = (ids: readonly number[], before?: number): TranscriptPage =>
-    ({ entries: ids.map((id) => entry(id, { model: [{ role: "user", content: `m${id}` }] })), ...(before === undefined ? {} : { before }) }) as TranscriptPage;
+    ({ entries: ids.map((id) => entry(id, { model: [{ role: "user", content: `m${id}` }] })), ...(before === undefined ? {} : { before }) }) as unknown as TranscriptPage;
   const cases: { name: string; window: ConversationView; earlier?: TranscriptPage; requested: number; page: TranscriptPage }[] = [
     { name: "first-page", window: view([20, 21], 18), requested: 18, page: page([15, 18], 12) },
     { name: "reaches-start", window: view([20, 21], 18), earlier: page([15, 18], 12), requested: 12, page: page([11, 12]) },
