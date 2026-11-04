@@ -1,6 +1,6 @@
 # ADR-0017：客户端形态——桌面端 Electron（仅 macOS），移动端 Expo
 
-- 状态：Accepted；第 3 条（移动端用 Expo）由 ADR-0024 取代，第 4 条（Hermes）已于 2026-10-19 随 `apps/mobile` 删除失效
+- 状态：Accepted；第 3 条（移动端用 Expo）由 ADR-0024 取代，第 4 条（Hermes）已于 2026-10-19 随 `apps/mobile` 删除失效；第 1 条于 2026-11-04 补充（见文末）
 - 日期：2026-10-10
 
 ## 背景
@@ -32,3 +32,15 @@ ADR-0003 定了桌面、Web、移动端都是客户端，但没定各端用什�
 - 移动端要补 `getRandomValues`（ADR-0008 已经预见）。其他 Web API 在 Hermes 上是否都有（例如 `TextEncoder`、`WebSocket` 的行为），要在第一次跑通时验证，不能假定。
 - 移动端界面要重写，React DOM 换成 React Native。Astryx 和从 Pace 搬来的组件不能直接用；不依赖 DOM 的视图推导（例如 `CotView`）可以挪到共享的位置复用。设计 token 怎么在两端共享，到时再定。
 - Electron 的签名公证需要 Apple 开发者账号和 CI 里的证书；Expo 的 iOS 构建和分发（EAS、TestFlight）是另一条发布线，和 npm 包的发布（ADR-0016）互相独立。
+
+## 补充（2026-11-04）：App 自带宿主服务的启动器
+
+第 1 条说 main 进程只管窗口、钥匙串、通知、深链和更新。现在多了一样：App 里带一个启动器 `Contents/Helpers/PiNomad Host.app`（`apps/desktop/host-launcher/`）。由 App 设置的宿主服务，launchd 先起这个启动器，再由它把 node 起为子进程。启动器不含宿主代码，宿主照旧来自 `~/.pinomad/runtime`，App 仍然只是客户端（ADR-0003 §2）。
+
+原因：macOS 的文件访问授权（“文稿”“桌面”等）记在 launchd 起的那个进程名下，它起的子进程都算在它头上。服务直接起 node 时，宿主和它开的终端都以 `node` 的名义申请，授权又是按 node 的官方签名记的，等于放给了这台机器上所有官方 node。经启动器起，申请和授权都落在 App 的签名上。启动器必须一直当父进程，不能 `exec` 成 node，否则又变回 node 的身份。
+
+取舍：
+- **服务依赖 App 的位置。** plist 指向 App 里的启动器，App 删掉或挪走后服务起不来。所以只有从“应用程序”文件夹运行时 App 才传 `--launcher`；`pinomad up` 遇到已经不存在的启动器会去掉它，`pinomad service install` 写出的定义不带启动器。
+- **只覆盖 App 设置的服务。** 从终端装的服务仍然直接起 node，弹窗仍然是 `node`。
+- **启动器会执行别人给它的任何命令。** 同一用户下的程序可以用 `open -a "…/PiNomad Host.app" --args …` 起它，借用用户给 PiNomad 的文件授权。这里不加限制：宿主的代码在 `~/.pinomad/runtime`，同一用户本来就能改写它，等服务重启（或自己 `launchctl kickstart`）后照样以 PiNomad 的身份运行。真要封住，启动器就只能运行我们签名的代码，也就是下面没选的那个方案。和改动前相比范围反而更小：之前的授权给的是所有官方签名的 node。
+- **没选的方案**：在 CI 里用我们的证书重签 node 并自己分发。这要自己跟 Node 的安全更新，hardened runtime 还会拒绝加载 npm 依赖里临时签名的原生插件（node-pty、node-datachannel），除非关掉库校验。
