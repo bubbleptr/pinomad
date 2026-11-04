@@ -93,7 +93,7 @@ export function QueuedList({
   items: readonly QueueItem[];
   /** The connection is live and the host has the 5.14 queued-input calls. */
   canAct: boolean;
-  /** The connection is live and the host has 5.28's reorderQueued. */
+  /** The connection is live and the host has 5.29's reorderQueued. */
   canReorder: boolean;
   /** A run is in flight; Steer only makes sense while one is. */
   busy: boolean;

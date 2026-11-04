@@ -1,7 +1,7 @@
 // A queued message above a busy composer, drawn as a card: a drag handle on
 // the left, icon actions that wait for hover, and one column on the right for
 // the steer mark. Steer, Edit, and Withdraw are the protocol's 5.14 queued-input
-// calls; reordering is 5.28's reorderQueued.
+// calls; reordering is 5.29's reorderQueued.
 import { IconButton } from "@astryxdesign/core/IconButton";
 import type { ComponentProps, FocusEvent, KeyboardEvent, ReactNode, Ref } from "react";
 import { ArrowBigUpDash, Cancel, GripVertical, Pencil, RefreshCw } from "../icons.tsx";

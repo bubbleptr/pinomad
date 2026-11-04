@@ -82,7 +82,7 @@ export const Narrow: Story = {
   ),
 };
 
-// A host older than 5.28 has no reorderQueued: no handles, everything else stays.
+// A host older than 5.29 has no reorderQueued: no handles, everything else stays.
 export const NoReorder: Story = {
   args: { canReorder: false },
 };
