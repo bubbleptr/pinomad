@@ -5,6 +5,7 @@ import { homedir, networkInterfaces } from "node:os";
 import { join, sep } from "node:path";
 import type { Context, JsonValue } from "@earendil-works/chord";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { Op } from "@earendil-works/chord/delta";
 import { clampThinkingLevel, getSupportedThinkingLevels, type ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { Models } from "@earendil-works/pi-ai/models";
 import {
@@ -1206,6 +1207,15 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
   #list: readonly ConversationSummary[] = [];
   #unsubscribe: () => void = () => {};
   #notifying = false;
+  #harness!: Harness;
+  /**
+   * pi.live watches of the running conversations. Running tool progress is a
+   * deferred commit that reaches the commit observer only once stored, often
+   * folded into the commit that settles the tool, so the summary's activity
+   * follows the live document instead. Absent until the watch attaches.
+   */
+  readonly #live = new Map<ConversationId, WatchHandle<Readonly<LiveState>> | undefined>();
+  #disposed = false;
 
   private constructor(docs: readonly ExtensionDoc[] | undefined) {
     this.#questionTokens = (docs ?? []).filter((doc) => doc.presentation === "pinomad.question").map((doc) => doc.token);
@@ -1214,6 +1224,7 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
 
   static async open(harness: Harness, docs: readonly ExtensionDoc[] | undefined): Promise<ConversationList> {
     const list = new ConversationList(docs);
+    list.#harness = harness;
     const summaries: ConversationSummary[] = [];
     let cursor: Cursor | undefined;
     const records: ConversationRecord[] = [];
@@ -1235,12 +1246,14 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
     }
     list.#list = summaries;
     // A commit listener only records; it calls no Session API.
-    list.#unsubscribe = harness.subscribeCommits((publication) => list.#observe(publication));
+    const observation = harness.observeCommits({ advance: (publication) => list.#observe(publication), end: () => {} });
+    list.#unsubscribe = () => observation.detach();
     // A commit between the index snapshot and the subscription is applied to
     // the store but reaches no listener — re-read and re-derive what moved.
     const touched = new Set<ConversationId>();
     list.#reindex(await harness.snapshot(IndexDoc, context), touched);
     list.#refreshSummaries(touched);
+    for (const [id, facts] of list.#facts) list.#followLive(id, facts.running === true);
     return list;
   }
 
@@ -1302,24 +1315,25 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
         facts.calls = entry.kind === "pi.assistant" ? callsOf(message) : undefined;
       } else if (change.type === "document") {
         const id = change.conversationId;
+        const value = change.kind === "change" ? change.value : null;
         if (id === undefined) {
           // The session-scoped index carries each top-level conversation's
           // `role` — a write re-derives every summary that resolves to it.
-          if (change.record.kind === IndexDoc.definition.kind) this.#reindex(change.value as HostIndex | null, touched);
+          if (change.record.kind === IndexDoc.definition.kind) this.#reindex(value as HostIndex | null, touched);
           continue;
         }
         const facts = this.#fact(id);
         if (change.record.kind === "pi.live") {
-          const live = change.value as LiveState | null;
+          const live = value as LiveState | null;
           const wasRunning = facts.running === true;
           facts.running = live?.run !== undefined;
           facts.tools = live?.tools;
           touched.add(id);
+          this.#followLive(id, facts.running);
           // A subagent's run keeps its call-given label; only ownerless and
           // forked conversations are candidates for a generated name.
           if (wasRunning && !facts.running && this.#records.get(id)?.owner === undefined) ended.add(id);
         } else if (this.#questionKinds.has(change.record.kind)) {
-          const value = change.value;
           const pending = Value.Check(QuestionSchema, value) && value.requests.some((request) => request.resolution === undefined);
           const next = new Set(facts.pending);
           if (pending) next.add(change.record.kind);
@@ -1327,16 +1341,16 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
           facts.pending = next;
           touched.add(id);
         } else if (change.record.kind === RoleDoc.definition.kind) {
-          facts.agent = roleNameOf(change.value as { name?: unknown } | null);
+          facts.agent = roleNameOf(value as { name?: unknown } | null);
           touched.add(id);
         } else if (change.record.kind === SubagentDoc.definition.kind) {
-          const value = change.value as { label?: unknown; role?: unknown; model?: unknown } | null;
-          facts.label = typeof value?.label === "string" && value.label !== "" ? value.label : undefined;
-          facts.role = typeof value?.role === "string" && value.role !== "" ? value.role : undefined;
-          facts.model = modelRefOf(value?.model);
+          const subagent = value as { label?: unknown; role?: unknown; model?: unknown } | null;
+          facts.label = typeof subagent?.label === "string" && subagent.label !== "" ? subagent.label : undefined;
+          facts.role = typeof subagent?.role === "string" && subagent.role !== "" ? subagent.role : undefined;
+          facts.model = modelRefOf(subagent?.model);
           touched.add(id);
         } else if (change.record.kind === TitleDoc.definition.kind) {
-          const named = (change.value as { title?: unknown } | null)?.title;
+          const named = (value as { title?: unknown } | null)?.title;
           facts.named = typeof named === "string" && named !== "" ? named : undefined;
           touched.add(id);
         }
@@ -1430,9 +1444,51 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
     });
   }
 
+  /** Start or stop following a conversation's pi.live; safe to call from the commit observer. */
+  #followLive(id: ConversationId, running: boolean): void {
+    if (!running || this.#disposed) {
+      const watch = this.#live.get(id);
+      this.#live.delete(id);
+      void watch?.stop();
+      return;
+    }
+    if (this.#live.has(id)) return;
+    this.#live.set(id, undefined);
+    // A commit observer must not call Session APIs; attach after it returns.
+    setImmediate(() => {
+      void this.#harness.watchDoc(LiveDoc, id, context).then(
+        async (watch) => {
+          if (watch === undefined) return;
+          if (this.#live.get(id) !== undefined || !this.#live.has(id)) {
+            await watch.stop();
+            return;
+          }
+          this.#live.set(id, watch);
+          const apply = (live: Readonly<LiveState>): void => {
+            const facts = this.#fact(id);
+            if (live.run === undefined) return;
+            facts.tools = live.tools;
+            this.#refreshSummaries(new Set([id]));
+          };
+          apply(watch.value);
+          watch.start(async (call) => {
+            if (call.kind === "value") apply(call.value);
+          });
+        },
+        (error: unknown) => {
+          if (this.#live.get(id) === undefined) this.#live.delete(id);
+          console.error(`conversation ${id}: could not follow pi.live: ${error instanceof Error ? error.message : String(error)}`);
+        },
+      );
+    });
+  }
+
   dispose(): void {
+    this.#disposed = true;
     this.#unsubscribe();
     this.#listeners.clear();
+    for (const watch of this.#live.values()) void watch?.stop();
+    this.#live.clear();
   }
 }
 
@@ -1571,6 +1627,26 @@ function titleOf(entry: EntryRecord | undefined): { title?: string } {
   const title = stripUserBlocks(message.content).text.replace(/\s+/g, " ").trim();
   return title === "" ? {} : { title };
 }
+
+/**
+ * Clients render the whole transcript and have no paging, so the conversation
+ * stream asks for a window that never splices (Durable's default keeps the
+ * newest 50–100 entries).
+ */
+const WHOLE_TRANSCRIPT = { min: Number.MAX_SAFE_INTEGER, max: Number.MAX_SAFE_INTEGER };
+
+/**
+ * The ops a client applies for one watch call. A document watch now outlives a
+ * retirement and reports it as a call with no ops; clients still see the root
+ * become null, as when the watch ended with `[["r", null]]`. A document created
+ * at the address later arrives as `[["r", value]]`, possibly in the same call.
+ */
+const shownOps = (call: { readonly ops: readonly Op[]; readonly retired: boolean }): readonly Op[] =>
+  isGone(call) ? [["r", null]] : call.ops;
+
+/** A retirement that no later document at the address replaced within the same (folded) call. */
+const isGone = (call: { readonly ops: readonly Op[]; readonly retired: boolean }): boolean =>
+  call.retired && !call.ops.some((op) => op[0] === "r");
 
 /**
  * What a scan of the conversation's own entries teaches the summary: the title is
@@ -1942,7 +2018,7 @@ class GatewayClient {
       return this.#openDoc(stream, stream.slice("doc:".length, at), Number(stream.slice(at + 1)) as ConversationId, send);
     }
     const conversation = await this.#conversation(Number(stream.slice("conversation:".length)) as ConversationId);
-    return this.#forward(stream, await conversation.watch(context), send, state);
+    return this.#forward(stream, await conversation.watch(context, WHOLE_TRANSCRIPT), send, state);
   }
 
   /** The in-memory value source for a host stream, or undefined for the watch-/doc-backed ones. */
@@ -1964,15 +2040,19 @@ class GatewayClient {
     let inner: Subscription | undefined;
     let stopped = false;
     // Observe creation before probing absence, so a commit cannot fall between the two.
-    const unsubscribe = harness.subscribeCommits((publication) => {
-      const matches = publication.changes.some(
-        (change) => (change.type === "document" || change.type === "document.copy") && change.record.kind === kind && change.conversationId === id,
-      );
-      if (!matches) return;
-      unsubscribe();
-      // A commit listener must not call Session APIs; attach after it returns.
-      setImmediate(() => signalCreation());
+    const observation = harness.observeCommits({
+      advance: (publication) => {
+        const matches = publication.changes.some(
+          (change) => (change.type === "document" || change.type === "document.copy") && change.record.kind === kind && change.conversationId === id,
+        );
+        if (!matches) return;
+        unsubscribe();
+        // A commit observer must not call Session APIs; attach after it returns.
+        setImmediate(() => signalCreation());
+      },
+      end: () => {},
     });
+    const unsubscribe = (): void => observation.detach();
     try {
       const existing = await harness.watchDoc(token, id, context);
       if (existing !== undefined) {
@@ -2012,7 +2092,7 @@ class GatewayClient {
   async #forward<T>(stream: StreamName, watch: WatchHandle<T>, send: SendFrame, state?: SubscriptionState): Promise<Subscription> {
     if (state?.images === undefined) {
       await send({ type: "snapshot", stream, value: watch.value });
-      watch.start((_value, ops) => send({ type: "ops", stream, ops }));
+      watch.start((call) => (call.kind === "value" ? send({ type: "ops", stream, ops: shownOps(call) }) : Promise.resolve()));
       return watch;
     }
     const images = state.images;
@@ -2022,9 +2102,11 @@ class GatewayClient {
     // finding its block here, so nothing has to accumulate per ref.
     state.view = before;
     await send({ type: "snapshot", stream, value: await images.value(before) });
-    watch.start(async (value, ops) => {
+    watch.start(async (call) => {
+      if (call.kind !== "value") return;
+      const ops = shownOps(call);
       const sent = await images.ops(ops, before);
-      before = value as JsonValue;
+      before = isGone(call) ? null : (call.value as JsonValue);
       state.view = before;
       return send({ type: "ops", stream, ops: sent });
     });

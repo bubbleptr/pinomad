@@ -34,6 +34,8 @@ describe("statusText", () => {
     expect(statusText(STATUS_CASES.find((c) => c.name === "tools")!.input)).toBe("");
     expect(statusText(STATUS_CASES.find((c) => c.name === "retry")!.input)).toBe("Retrying (attempt 2): overloaded");
     expect(statusText(STATUS_CASES.find((c) => c.name === "compaction")!.input)).toBe("Compacting (manual)...");
+    // A 1.4.0 host still sends the compaction's trigger as `reason`.
+    expect(statusText(STATUS_CASES.find((c) => c.name === "compaction-old-host")!.input)).toBe("Compacting (threshold)...");
   });
 
   it("shows a deferred generation", () => {

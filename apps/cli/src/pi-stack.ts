@@ -4,6 +4,7 @@ import { join } from "node:path";
 /** Pi packages no manifest imports directly but the runtime needs at the same exact version. */
 export const PI_TRANSITIVE = [
   "@earendil-works/pi-agent-core",
+  "@earendil-works/pi-schema",
   "@earendil-works/pi-telemetry",
   "@earendil-works/pi-tui",
 ] as const;
