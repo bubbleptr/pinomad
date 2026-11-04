@@ -31,8 +31,8 @@
     "desktop:e2e": "cd apps/desktop && bun run build && node test/e2e.ts"
   },
   "devDependencies": {
-    "@types/node": "^26.0.0",
+    "@types/node": "^26.6.6",
     "typescript": "^5.5.4",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.12"
   }
 }
