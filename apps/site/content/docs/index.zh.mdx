@@ -28,7 +28,7 @@ pinomad up
 
 那台机器开不了浏览器时（经 SSH，或者没有桌面的 Linux 服务器），或者跑的是 `pinomad up --code`，它改为打印一个要打开的网页和一个短码（形如 `WDJB-MJHT`）。在任意设备上打开网页、登录、输入短码；Web 和 Mac App 里的 **Add a host** 也有同样的输入框。只输入你自己终端上显示的短码。
 
-Mac App 里登录后，**Run in Terminal**（在添加第一台宿主的页面上，以及 Settings → **This Mac**）会在这台 Mac 的"终端"里跑同样的安装，把它打印的短码输入 App 即可。之后 Settings → **This Mac** 可以开关这台宿主：关掉后重启电脑也不会自己起来，直到你再打开；关着时其他设备连不上这台 Mac，正在跑的任务会先跑完。终端里的 `pinomad service stop` 和 `pinomad service start` 做的是同一件事。
+Mac App 里登录后，**Set up this Mac**（在添加第一台宿主的页面上，以及 Settings → **This Mac**）会在后台跑同样的安装，并把这台 Mac 加进你的账号，不用打开终端，也不用输短码。失败时 App 会给出命令，可以自己在终端里跑。之后 Settings → **This Mac** 可以开关这台宿主：关掉后重启电脑也不会自己起来，直到你再打开；关着时其他设备连不上这台 Mac，正在跑的任务会先跑完。终端里的 `pinomad service stop` 和 `pinomad service start` 做的是同一件事。
 
 以后再加一台宿主，在那台机器上跑同样两行。
 

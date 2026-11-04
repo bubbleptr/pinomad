@@ -32,5 +32,14 @@ export type LocalHostStopResult =
   | { readonly outcome: "cancelled" }
   | { readonly outcome: "failed"; readonly message: string };
 
+export type LocalHostSetupResult =
+  | { readonly outcome: "done" }
+  /** Cancel killed the installer; whatever it had put in ~/.pinomad/runtime a re-run replaces. */
+  | { readonly outcome: "cancelled" }
+  | { readonly outcome: "failed"; readonly message: string };
+
+/** Main → renderer: every line the installer printed so far, sent on each new one. */
+export const localHostSetupLinesChannel = "pinomad:localHost:setupLines";
+
 /** Main → renderer: every line `service stop` printed so far while it waits for running tasks, sent on each new one. */
 export const localHostStopLinesChannel = "pinomad:localHost:stopLines";

@@ -1,10 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, safeStorage, session, shell, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, safeStorage, session, shell, type IpcMainInvokeEvent } from "electron";
 import { autoUpdater } from "electron-updater";
 import { execFile, spawn } from "node:child_process";
-import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { homedir, hostname, tmpdir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { installAppMenu, reportUpdateCheck } from "./app-menu.ts";
@@ -21,7 +20,10 @@ import { platformWindowChrome } from "./window-chrome.ts";
 import type { StoredHostConnectionChange } from "@pinomad/client/stored-host.ts";
 import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { updateEventChannel } from "../../web/src/entities/app-update/update-protocol.ts";
-import { localHostStopLinesChannel } from "../../web/src/entities/local-host/local-host-protocol.ts";
+import {
+  localHostSetupLinesChannel,
+  localHostStopLinesChannel,
+} from "../../web/src/entities/local-host/local-host-protocol.ts";
 
 const APP_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
 const rendererDirectory = fileURLToPath(new URL("../renderer", import.meta.url));
@@ -203,7 +205,17 @@ function installLocalHostIpc(localHost: LocalHost): void {
   ipcMain.handle("pinomad:localHost:stop", handle((event) => localHost.stop(linesTo(event))));
   ipcMain.handle("pinomad:localHost:followStop", handle((event) => localHost.followStop(linesTo(event))));
   ipcMain.handle("pinomad:localHost:cancelStop", handle(() => localHost.cancelStop()));
-  ipcMain.handle("pinomad:localHost:runSetup", handle((_event, serverOrigin: unknown) => localHost.runSetup(String(serverOrigin))));
+  const setupLinesTo = (event: IpcMainInvokeEvent) => (lines: readonly string[]) => {
+    if (!event.sender.isDestroyed()) event.sender.send(localHostSetupLinesChannel, lines);
+  };
+  ipcMain.handle("pinomad:localHost:install", handle((event) => localHost.install(setupLinesTo(event))));
+  ipcMain.handle("pinomad:localHost:cancelInstall", handle(() => localHost.cancelInstall()));
+  ipcMain.handle(
+    "pinomad:localHost:join",
+    handle((_event, arg: { serverOrigin?: unknown; token?: unknown } | undefined) =>
+      localHost.join(String(arg?.serverOrigin), String(arg?.token)),
+    ),
+  );
 }
 
 function openPairingLink(fragment: string): void {
@@ -306,14 +318,22 @@ if (!app.requestSingleInstanceLock()) {
         home: homedir(),
         env: process.env,
         execFile: promisify(execFile),
-        spawn: (file, args, options) => spawn(file, args, { ...options, stdio: ["ignore", "pipe", "pipe"] }),
-        openPath: (path) => shell.openPath(path),
-        tmpdir: tmpdir(),
-        randomId: () => randomBytes(8).toString("hex"),
+        spawn: (file, args, options) => spawn(file, args, { ...options, stdio: ["pipe", "pipe", "pipe"] }),
+        // Chromium's network stack: the system proxy applies, as it does to curl in Terminal.
+        fetchText: async (url) => {
+          const response = await net.fetch(url);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          return response.text();
+        },
+        killGroup: (pid, signal) => process.kill(-pid, signal),
       });
       installLocalHostIpc(localHost);
       // A stop still waiting when the app quits is cancelled: the service stays on.
-      app.on("will-quit", () => localHost.cancelStop());
+      // A detached install would outlive the app: it goes too, and a re-run replaces what it left.
+      app.on("will-quit", () => {
+        localHost.cancelStop();
+        localHost.cancelInstall();
+      });
     }
     protocol.handle(APP_SCHEME, async (request) => {
       const file = rendererFilePath(rendererDirectory, request.url);

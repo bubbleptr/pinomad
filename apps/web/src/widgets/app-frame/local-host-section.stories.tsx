@@ -71,15 +71,49 @@ export const StartFailed: Story = {
   play: clickSwitch,
 };
 
-/** No host on this Mac: Run in Terminal installs one and joins it to this account. */
+/** No host on this Mac: Set up this Mac installs one in the background and joins it to this account. */
 export const NotInstalled: Story = { decorators: [withDesktopLocalHost({ state: { kind: "not-installed" } })] };
 
-/** After Run in Terminal: the field for the code Terminal prints. */
-export const TerminalOpened: Story = {
-  decorators: [withDesktopLocalHost({ state: { kind: "not-installed" } })],
-  play: async ({ canvasElement }) => {
-    await userEvent.click(await within(canvasElement).findByRole("button", { name: "Run in Terminal" }));
-  },
+const setUp = async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+  await userEvent.click(await within(canvasElement).findByRole("button", { name: "Set up this Mac" }));
+};
+
+/** The installer running: its last lines and Cancel. */
+export const Installing: Story = {
+  decorators: [
+    withDesktopLocalHost({
+      state: { kind: "not-installed" },
+      installLines: ["Downloading Node 26.12.1 (darwin-arm64)", "Installing pinomad@latest"],
+      installWaits: true,
+    }),
+  ],
+  play: setUp,
+};
+
+/** The installer failed: its message, Try again, and the command to run by hand. */
+export const InstallFailed: Story = {
+  decorators: [
+    withDesktopLocalHost({
+      state: { kind: "not-installed" },
+      installLines: ["Downloading Node 26.12.1 (darwin-arm64)"],
+      installResult: {
+        outcome: "failed",
+        message: "install.sh: could not download https://nodejs.org/dist/v26.12.1/node-v26.12.1-darwin-arm64.tar.gz",
+      },
+    }),
+  ],
+  play: setUp,
+};
+
+/** Installed, but joining the account failed: Try again mints a fresh token without installing again. */
+export const JoinFailed: Story = {
+  decorators: [
+    withDesktopLocalHost({
+      state: { kind: "not-installed" },
+      joinResult: { ok: false, message: "the join token expired — generate a fresh one" },
+    }),
+  ],
+  play: setUp,
 };
 
 /** Signed out there is no account for the new host to join. */

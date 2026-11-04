@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { joinCommand } from "./add-host.tsx";
+import { joinCommand } from "./join-command.ts";
 
 describe("joinCommand", () => {
   // The install script runs pinomad up itself, always for this page's

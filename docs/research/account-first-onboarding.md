@@ -129,6 +129,8 @@ Web、Mac App、iPhone 都只是控制面，不带 Node，也不安装或托管�
 
 代价是 Mac 上的新用户要看一次终端。"在终端中运行"和安装脚本把这一步压到点一下按钮、在 App 里输入短码。
 
+后来改了（feat/background-local-host-setup）："在终端中运行"换成 **Set up this Mac**，App 在后台跑安装脚本，再用已登录账号签发的一次性 join token 跑 `pinomad up --server --token-stdin`，不打开终端，也不用输短码。PATH 取自交互式登录 shell，和在终端里装一样。宿主仍是安装脚本装的独立服务，控制面这条不变。
+
 ### 4.1 Mac App 的"本机宿主"开关
 
 控制面里可以有一个开关，管的是独立安装的宿主服务，不是 App 自带的进程：

@@ -20,7 +20,12 @@ import { AccountContext } from "../entities/account/account-context.tsx";
 import type { AccountModel, AccountState } from "../entities/account/account-model.ts";
 import type { UpdateStatus } from "../entities/app-update/update-protocol.ts";
 import type { DesktopBridge } from "../entities/host/desktop-bridge.ts";
-import type { LocalHostResult, LocalHostState, LocalHostStopResult } from "../entities/local-host/local-host-protocol.ts";
+import type {
+  LocalHostResult,
+  LocalHostSetupResult,
+  LocalHostState,
+  LocalHostStopResult,
+} from "../entities/local-host/local-host-protocol.ts";
 import { HostsContext, type HostsState } from "../entities/host/host-store.ts";
 
 const MINUTE = 60_000;
@@ -974,6 +979,13 @@ export type FakeLocalHostOptions = {
   /** A stop is already running, as when Settings closed while it waited; followStop() joins it. */
   stopInFlight?: boolean;
   startResult?: LocalHostResult;
+  /** Printed by install() before it finishes, one per tick. */
+  installLines?: readonly string[];
+  /** install() keeps running until cancelInstall(), like a slow download. */
+  installWaits?: boolean;
+  installResult?: LocalHostSetupResult;
+  /** On ok, state() reports the host installed and running, as `pinomad up` leaves it. */
+  joinResult?: LocalHostResult;
 };
 
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
@@ -987,6 +999,25 @@ const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0
 export function fakeLocalHost(options: FakeLocalHostOptions): NonNullable<DesktopBridge["localHost"]> {
   let state = options.state;
   const listeners = new Set<(lines: readonly string[]) => void>();
+  const setupListeners = new Set<(lines: readonly string[]) => void>();
+  let installing: Promise<LocalHostSetupResult> | undefined;
+  let cancelInstall: (() => void) | undefined;
+  const runInstall = async (): Promise<LocalHostSetupResult> => {
+    let printed: readonly string[] = [];
+    for (const line of options.installLines ?? []) {
+      await tick();
+      printed = [...printed, line];
+      for (const listener of setupListeners) listener(printed);
+    }
+    if (options.installWaits) {
+      await new Promise<void>((resolve) => {
+        cancelInstall = resolve;
+      });
+      return { outcome: "cancelled" };
+    }
+    await tick();
+    return options.installResult ?? { outcome: "done" };
+  };
   let lines: readonly string[] = [];
   let inFlight: Promise<LocalHostStopResult> | undefined;
   let cancel: (() => void) | undefined;
@@ -1037,10 +1068,24 @@ export function fakeLocalHost(options: FakeLocalHostOptions): NonNullable<Deskto
       cancel?.();
       cancel = undefined;
     }),
-    runSetup: fn(async (): Promise<LocalHostResult> => ({ ok: true })),
+    install: fn(async () => (installing ??= runInstall().finally(() => (installing = undefined)))),
+    cancelInstall: fn(async () => {
+      cancelInstall?.();
+      cancelInstall = undefined;
+    }),
+    join: fn(async (_serverOrigin: string, _token: string): Promise<LocalHostResult> => {
+      await tick();
+      const result = options.joinResult ?? { ok: true as const };
+      if (result.ok) state = { kind: "installed", running: true, stopped: false, stopping: false, detail: "running (pid 4242)" };
+      return result;
+    }),
     onStopLines: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+    onSetupLines: (listener) => {
+      setupListeners.add(listener);
+      return () => setupListeners.delete(listener);
     },
   };
 }

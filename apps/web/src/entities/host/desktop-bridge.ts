@@ -1,7 +1,12 @@
 import type { StoredHostConnectionChange } from "@pinomad/client/stored-host.ts";
 import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import type { UpdateStatus } from "../app-update/update-protocol.ts";
-import type { LocalHostResult, LocalHostState, LocalHostStopResult } from "../local-host/local-host-protocol.ts";
+import type {
+  LocalHostResult,
+  LocalHostSetupResult,
+  LocalHostState,
+  LocalHostStopResult,
+} from "../local-host/local-host-protocol.ts";
 import type { StoredHost } from "./host-store.ts";
 
 /**
@@ -62,10 +67,16 @@ export interface DesktopBridge {
     followStop(): Promise<LocalHostStopResult | undefined>;
     /** Interrupts a stop still waiting for tasks; the service stays on and stop() resolves "cancelled". Too late once the CLI is stopping the service: stop() then resolves "stopped". */
     cancelStop(): Promise<void>;
-    /** Opens Terminal on a script that installs the host and joins it to this server. */
-    runSetup(serverOrigin: string): Promise<LocalHostResult>;
+    /** Runs install.sh in the background; what it prints arrives on onSetupLines. A second call joins the first. */
+    install(): Promise<LocalHostSetupResult>;
+    /** Kills a running install; install() then resolves "cancelled". */
+    cancelInstall(): Promise<void>;
+    /** `pinomad up` with a one-time join token for `serverOrigin`: joins the account and installs the service. */
+    join(serverOrigin: string, token: string): Promise<LocalHostResult>;
     /** Every line the running stop printed so far, on each new one. */
     onStopLines(listener: (lines: readonly string[]) => void): () => void;
+    /** Every line the running install printed so far, on each new one. */
+    onSetupLines(listener: (lines: readonly string[]) => void): () => void;
   };
 }
 

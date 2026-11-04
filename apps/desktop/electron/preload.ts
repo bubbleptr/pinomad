@@ -8,7 +8,20 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { DesktopBridge } from "../../web/src/entities/host/desktop-bridge.ts";
 import { updateEventChannel, type UpdateStatus } from "../../web/src/entities/app-update/update-protocol.ts";
-import { localHostStopLinesChannel } from "../../web/src/entities/local-host/local-host-protocol.ts";
+import {
+  localHostSetupLinesChannel,
+  localHostStopLinesChannel,
+} from "../../web/src/entities/local-host/local-host-protocol.ts";
+
+function onLines(channel: string, listener: (lines: readonly string[]) => void): () => void {
+  const handler = (_event: Electron.IpcRendererEvent, lines: readonly string[]) => {
+    listener(lines);
+  };
+  ipcRenderer.on(channel, handler);
+  return () => {
+    ipcRenderer.removeListener(channel, handler);
+  };
+}
 
 // Main installs the local-host handlers on macOS only; elsewhere the bridge
 // has no localHost and the renderer shows no switch.
@@ -21,16 +34,11 @@ const localHost: DesktopBridge["localHost"] =
         stop: () => ipcRenderer.invoke("pinomad:localHost:stop"),
         followStop: () => ipcRenderer.invoke("pinomad:localHost:followStop"),
         cancelStop: () => ipcRenderer.invoke("pinomad:localHost:cancelStop"),
-        runSetup: (serverOrigin) => ipcRenderer.invoke("pinomad:localHost:runSetup", serverOrigin),
-        onStopLines(listener: (lines: readonly string[]) => void) {
-          const handler = (_event: Electron.IpcRendererEvent, lines: readonly string[]) => {
-            listener(lines);
-          };
-          ipcRenderer.on(localHostStopLinesChannel, handler);
-          return () => {
-            ipcRenderer.removeListener(localHostStopLinesChannel, handler);
-          };
-        },
+        install: () => ipcRenderer.invoke("pinomad:localHost:install"),
+        cancelInstall: () => ipcRenderer.invoke("pinomad:localHost:cancelInstall"),
+        join: (serverOrigin, token) => ipcRenderer.invoke("pinomad:localHost:join", { serverOrigin, token }),
+        onStopLines: (listener) => onLines(localHostStopLinesChannel, listener),
+        onSetupLines: (listener) => onLines(localHostSetupLinesChannel, listener),
       };
 
 const bridge: DesktopBridge = {

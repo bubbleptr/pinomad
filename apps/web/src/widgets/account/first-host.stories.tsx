@@ -37,7 +37,7 @@ type Story = StoryObj<typeof meta>;
 /** Signed in, no hosts at all: the command without a token and the field for the code it prints. */
 export const Default: Story = {};
 
-/** In the Mac app with no host installed here: Run in Terminal sets this Mac up. */
+/** In the Mac app with no host installed here: Set up this Mac installs one in the background. */
 export const OnThisMac: Story = { decorators: [withDesktopLocalHost({ state: { kind: "not-installed" } })] };
 
 /** For scripts: the one-time token command, minted only once Advanced opens. */
