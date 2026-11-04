@@ -383,6 +383,43 @@ it("logs a stored login out from the Providers section", async () => {
   await dialog.getByText("Connect a model provider", { exact: true }).waitFor();
 });
 
+it("resizes the Terminal side panel from its left edge and keeps its width when reopened", async () => {
+  const webOrigin = await startWeb(defer);
+  const project = await tempDir();
+  defer(project.remove);
+  const projectName = project.path.split("/").at(-1)!;
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], projects: [project.path], answers: ["ready"] });
+  const page = await openPage(host, 1440, webOrigin);
+  await page.getByRole("button", { name: projectName, exact: true }).hover();
+  await page.getByRole("button", { name: `New conversation in ${projectName}`, exact: true }).click();
+  await prompt(page).fill("hello");
+  await prompt(page).press("Enter");
+  await page.getByText("ready", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Terminal", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "Side panel", exact: true });
+  await panel.getByRole("button", { name: "New terminal", exact: true }).click();
+  await panel.locator(".xterm-screen").waitFor();
+  const before = (await panel.boundingBox())!;
+  // Grab the visible split, not the handle locator: a misplaced handle must fail.
+  await page.mouse.move(before.x + 3, before.y + before.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(before.x - 97, before.y + before.height / 2, { steps: 10 });
+  await page.mouse.up();
+  await expect.poll(async () => Math.round((await panel.boundingBox())!.width)).toBe(Math.round(before.width + 100));
+  await shot(page, "terminal-panel-resized");
+  // The lower half must be draggable too, not just the grip's upper hit area.
+  const widened = (await panel.boundingBox())!;
+  await page.mouse.move(widened.x + 3, widened.y + widened.height * 0.75);
+  await page.mouse.down();
+  await page.mouse.move(widened.x + 43, widened.y + widened.height * 0.75, { steps: 10 });
+  await page.mouse.up();
+  await expect.poll(async () => Math.round((await panel.boundingBox())!.width)).toBe(Math.round(before.width + 60));
+  await page.getByRole("button", { name: "Terminal", exact: true }).click();
+  await panel.waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: "Terminal", exact: true }).click();
+  await expect.poll(async () => Math.round((await panel.boundingBox())!.width)).toBe(Math.round(before.width + 60));
+});
+
 it("keeps the chat usable on a phone with navigation and the side panel still reachable", async () => {
   const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
