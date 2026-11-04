@@ -612,7 +612,7 @@ fn interop_facade_pairs_creates_and_reconnects() {
 
     // Phase 2: pair through the facade — the scanned link goes in, the
     // stored-host record comes out as `FfiCommand::Paired`.
-    let client = PinomadClient::pair(link, "interop-rust".to_string(), None).expect("pair link");
+    let client = PinomadClient::pair(link, "interop-rust".to_string(), None, false).expect("pair link");
     let mut remote = FacadeDriver::new(client);
     remote.wait_until(Duration::from_secs(15), |driver| driver.ready.is_some());
     assert_eq!(remote.ready, Some(FfiReadyOutcome::Connected));
@@ -664,7 +664,7 @@ fn interop_facade_pairs_creates_and_reconnects() {
         rtc_signal_only: None,
     })
     .expect("the emitted record validates");
-    let client2 = PinomadClient::connect(stored).expect("connect to stored host");
+    let client2 = PinomadClient::connect(stored, false).expect("connect to stored host");
     let mut remote2 = FacadeDriver::new(client2);
     remote2.wait_until(Duration::from_secs(15), |driver| driver.ready.is_some());
     assert_eq!(remote2.ready, Some(FfiReadyOutcome::Connected));
@@ -715,7 +715,7 @@ fn interop_facade_handoff_keeps_invite_endpoint_set() {
         Some(2),
         "the invite must retain both candidates"
     );
-    let client = PinomadClient::pair(handoff_link, "interop-handoff".to_string(), None).expect("pair link");
+    let client = PinomadClient::pair(handoff_link, "interop-handoff".to_string(), None, false).expect("pair link");
     let mut remote = FacadeDriver::new(client);
     remote.wait_until(Duration::from_secs(20), |driver| driver.ready.is_some());
     assert_eq!(remote.ready, Some(FfiReadyOutcome::Connected));

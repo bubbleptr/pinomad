@@ -297,6 +297,7 @@ fn candidate_options(
     pairing: Option<crate::secure_channel::Pairing>,
     connection_mode: crate::connection_mode::ConnectionMode,
     rtc: Option<crate::remote_durable::RtcOptions>,
+    transcript_paging: bool,
 ) -> RemoteDurableOptions {
     use crate::secure_channel::{PairingState, SecureTransport, UnavailableTransport};
 
@@ -356,6 +357,7 @@ fn candidate_options(
         // #406: the iOS UI renders local sends and their retry/take-back,
         // so the controller tracks them from the first connection.
         logical_submissions: true,
+        transcript_paging,
     }
 }
 
@@ -370,11 +372,16 @@ impl PinomadClient {
     /// After this call the platform takes the commands from `take()` and
     /// drives the socket; the completed pairing arrives as
     /// `FfiCommand::Paired` — that payload is what the keychain stores.
-    #[uniffi::constructor]
+    ///
+    /// `transcript_paging` subscribes conversations with a window (5.28):
+    /// the first snapshot holds the newest turns and `FfiCall::LoadEarlier`
+    /// pages older ones in. Off by default — the whole transcript arrives.
+    #[uniffi::constructor(default(transcript_paging = false))]
     pub fn pair(
         link: String,
         device_name: String,
         device_private_key: Option<String>,
+        transcript_paging: bool,
     ) -> Result<Arc<Self>, ClientError> {
         let parsed = crate::pairing_link::parse_pairing_link(&link)
             .ok_or(ClientError::InvalidPairingLink)?;
@@ -404,14 +411,16 @@ impl PinomadClient {
                 device_private_key: private.clone(),
                 signal_only_hint: false,
             }),
+            transcript_paging,
         );
         Ok(Arc::new(Self::new(RemoteDurable::new(options))))
     }
 
     /// Reconnect to a stored host — `host` is the record the keychain kept
     /// (run it through `validate_stored_host` after reading it back).
-    #[uniffi::constructor]
-    pub fn connect(host: StoredHost) -> Result<Arc<Self>, ClientError> {
+    /// `transcript_paging` as for `pair`.
+    #[uniffi::constructor(default(transcript_paging = false))]
+    pub fn connect(host: StoredHost, transcript_paging: bool) -> Result<Arc<Self>, ClientError> {
         let host = validate_stored_host(host)
             .map_err(|error| ClientError::InvalidStoredHost { message: error.to_string() })?;
         let endpoint_set = host.endpoint_set.as_ref().and_then(EndpointSet::to_core);
@@ -432,6 +441,7 @@ impl PinomadClient {
                 device_private_key: host.private_key.clone(),
                 signal_only_hint: host.rtc_signal_only.unwrap_or(false),
             }),
+            transcript_paging,
         );
         Ok(Arc::new(Self::new(RemoteDurable::new(options))))
     }
@@ -551,6 +561,7 @@ mod tests {
             None,
             crate::connection_mode::ConnectionMode::Auto,
             None,
+            false,
         );
         assert!(options.logical_submissions);
     }

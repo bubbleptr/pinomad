@@ -15,6 +15,7 @@ use pinomad_core::endpoints::{parse_endpoint_set, parse_endpoint_set_text, Parse
 use pinomad_core::json::Json;
 use pinomad_core::pairing_link::{pairing_fragment, parse_pair_param, parse_pairing_link};
 use pinomad_core::rtc::rtc_address_scope;
+use pinomad_core::transcript::{add_earlier, with_earlier, TranscriptPage, TranscriptWindow, TRANSCRIPT_PAGE};
 
 fn fixtures() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../packages/protocol/test/fixtures")
@@ -92,6 +93,10 @@ fn client_frames_encode_byte_identical() {
             "subscribe" => ClientFrame::Subscribe {
                 stream: decoded.get("stream").unwrap().as_str().unwrap().clone(),
                 images: decoded.get("images").and_then(Json::as_str).map(|v| v.to_string_lossy()) == Some("ref".to_string()),
+                window: decoded.get("window").map(|window| TranscriptWindow {
+                    limit: window.get("limit").and_then(Json::as_number).expect("window.limit") as u32,
+                    from: window.get("from").and_then(Json::as_number).map(|from| from as u64),
+                }),
             },
             "unsubscribe" => ClientFrame::Unsubscribe {
                 stream: decoded.get("stream").unwrap().as_str().unwrap().clone(),
@@ -122,6 +127,7 @@ fn feature_of(name: &str) -> HostFeature {
         "rtc" => HostFeature::Rtc,
         "submitEntry" => HostFeature::SubmitEntry,
         "terminals" => HostFeature::Terminals,
+        "transcriptPaging" => HostFeature::TranscriptPaging,
         other => panic!("unknown feature {other}"),
     }
 }
@@ -414,4 +420,28 @@ fn recorded_host_frames_parse_and_apply() {
     assert!(conversation.is_object());
     let entries = conversation.get("entries").and_then(Json::as_array);
     assert!(entries.is_some_and(|entries| !entries.is_empty()));
+}
+
+/// `withEarlier` / `addEarlier` (5.28): one `loadEarlier` result at a time.
+/// The pages kept and the view shown must match the reference byte for byte,
+/// entry objects passed through untouched.
+#[test]
+fn transcript_pages_merge_like_the_reference() {
+    let file = load("rust-vectors/transcript");
+    assert_eq!(field(&file, "page").as_number(), Some(TRANSCRIPT_PAGE as f64), "page size");
+    let page_of = |value: &Json| TranscriptPage::from_json(&Json::parse(&as_text(value)).unwrap()).unwrap();
+    for case in field(&file, "cases").as_array().unwrap().iter() {
+        let name = as_text(field(case, "name"));
+        let window = Json::parse(&as_text(field(case, "window"))).unwrap();
+        let earlier = case.get("earlier").map(page_of);
+        let requested = field(case, "requested").as_number().unwrap() as u64;
+        let page = page_of(field(case, "page"));
+        let kept = add_earlier(&with_earlier(&window, earlier.as_ref()), earlier.as_ref(), requested, &page);
+        assert_eq!(
+            kept.as_ref().map(|kept| kept.to_json().to_json()),
+            case.get("expectEarlier").map(as_text),
+            "{name}: earlier"
+        );
+        assert_eq!(with_earlier(&window, kept.as_ref()).to_json(), as_text(field(case, "expectShown")), "{name}: shown");
+    }
 }

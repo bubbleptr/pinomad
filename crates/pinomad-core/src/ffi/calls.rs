@@ -178,7 +178,8 @@ fn answers_json(answers: &[QuestionAnswer]) -> Json {
 /// `ListFolders`, `RenameConversation`, `SetPushToken`, `Changes`,
 /// `CreatePairing`, `WithdrawQueued`, `SteerQueued`, and the provider calls
 /// `BeginLogin` … `RemoveCustomProvider`) and the out-of-queue `ListFiles`,
-/// `ListSkills`, `Image` and `ListEndpointModels`; the rest fail into a view notice
+/// `ListSkills`, `Image`, `ListCommands`, `LoadEarlier` and
+/// `ListEndpointModels`; the rest fail into a view notice
 /// while reporting `OperationSucceeded { value: Unit }`.
 #[derive(Clone, Debug, uniffi::Enum)]
 pub enum FfiCall {
@@ -322,6 +323,13 @@ pub enum FfiCall {
     /// the command queue like `listSkills`. Resolves `CallResult::Commands`.
     /// Needs a 5.17 host.
     ListCommands { conversation_id: u64 },
+    /// Page the turns before the shown view of `conversation_id` (the main
+    /// or side conversation) in ahead of it (5.28); `ConversationSnapshot::
+    /// has_earlier` says whether there are any. Sent outside the command
+    /// queue like `listCommands`; resolves `Unit` once they show, rejects
+    /// with the host's error. A no-op without `has_earlier`. Calls while
+    /// one is loading share it.
+    LoadEarlier { conversation_id: u64 },
     /// Create one host-stored upload slot (5.19, issue #321). Resolves
     /// `CallResult::BeginAttachment`; sent outside the command queue like
     /// `listFiles`, so chunks never wait behind a submit.
@@ -487,6 +495,7 @@ impl FfiCall {
             },
             FfiCall::Image { ref_, variant } => Call::Image { ref_, variant: variant.unwrap_or_default() },
             FfiCall::ListCommands { conversation_id } => Call::ListCommands { conversation_id },
+            FfiCall::LoadEarlier { conversation_id } => Call::LoadEarlier { conversation_id },
             FfiCall::BeginAttachment { name, size } => Call::BeginAttachment { name, size },
             FfiCall::AppendAttachment { attachment_id, offset, data } => {
                 Call::AppendAttachment { attachment_id, offset, data }

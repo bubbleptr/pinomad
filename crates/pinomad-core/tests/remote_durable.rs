@@ -337,21 +337,36 @@ impl Harness {
     }
 
     fn with_options(host: ScriptedHost, delays: (u64, u64), logical: bool) -> Self {
+        Self::configured(host, delays, |options| options.logical_submissions = logical)
+    }
+
+    /// Opted into transcript paging (5.28), like a client with a "load
+    /// earlier" control.
+    fn paged(host: ScriptedHost) -> Self {
+        Self::configured(host, (20, 20), |options| options.transcript_paging = true)
+    }
+
+    fn configured(
+        host: ScriptedHost,
+        delays: (u64, u64),
+        configure: impl FnOnce(&mut RemoteDurableOptions),
+    ) -> Self {
+        let mut options = RemoteDurableOptions {
+            reconnect_delay_ms: Some(delays),
+            request_id: Some(Box::new({
+                let mut n = 0u64;
+                move || {
+                    n += 1;
+                    format!("request-{n}")
+                }
+            })),
+            ..RemoteDurableOptions::single(Box::new(PlaintextTransport {
+                url: "ws://fake/".to_string(),
+            }))
+        };
+        configure(&mut options);
         let mut harness = Harness {
-            remote: RemoteDurable::new(RemoteDurableOptions {
-                reconnect_delay_ms: Some(delays),
-                request_id: Some(Box::new({
-                    let mut n = 0u64;
-                    move || {
-                        n += 1;
-                        format!("request-{n}")
-                    }
-                })),
-                logical_submissions: logical,
-                ..RemoteDurableOptions::single(Box::new(PlaintextTransport {
-                    url: "ws://fake/".to_string(),
-                }))
-            }),
+            remote: RemoteDurable::new(options),
             host,
             ready: None,
             ops: HashMap::new(),
@@ -3260,4 +3275,193 @@ fn logical_submit_timeout_releases_the_serialized_queue() {
         remaining[0].get("requestId").and_then(Json::as_str).unwrap().to_string_lossy(),
         "r2"
     );
+}
+
+// ─── transcript paging (5.28) ─────────────────────────────────────────────
+
+/// A `conversation:1` view of `ids`, with `before` when older entries exist.
+fn paged_view(ids: &[u64], before: Option<u64>) -> Json {
+    let mut fields = vec![
+        ("conversation", obj(&[("id", Json::from(1.0))])),
+        (
+            "entries",
+            Json::array(ids.iter().map(|id| obj(&[("id", Json::from(*id as f64)), ("kind", Json::from("pi.user"))])).collect()),
+        ),
+        ("docs", obj(&[])),
+    ];
+    if let Some(before) = before {
+        fields.push(("before", Json::from(before as f64)));
+    }
+    obj(&fields)
+}
+
+/// An `earlierEntries` result.
+fn page(ids: &[u64], before: Option<u64>) -> Json {
+    let mut fields = vec![(
+        "entries",
+        Json::array(ids.iter().map(|id| obj(&[("id", Json::from(*id as f64)), ("kind", Json::from("pi.user"))])).collect()),
+    )];
+    if let Some(before) = before {
+        fields.push(("before", Json::from(before as f64)));
+    }
+    obj(&fields)
+}
+
+fn shown_ids(h: &Harness) -> Vec<u64> {
+    h.dig(&["conversation", "entries"])
+        .and_then(|entries| entries.as_array().cloned())
+        .map(|entries| entries.iter().map(|entry| entry.get("id").and_then(Json::as_number).unwrap() as u64).collect())
+        .unwrap_or_default()
+}
+
+fn window_of(h: &Harness, stream: &str) -> Option<String> {
+    h.host.subscription(stream).and_then(|frame| frame.get("window").map(Json::to_json))
+}
+
+#[test]
+fn transcript_window_needs_the_opt_in_and_a_5_28_host() {
+    let mut paged = Harness::paged(ScriptedHost::new(vec![obj(&[])], vec![]));
+    paged.invoke(1, switch_to(1));
+    assert_eq!(window_of(&paged, "conversation:1").as_deref(), Some(r#"{"limit":50}"#));
+    // Only a conversation stream carries it.
+    assert_eq!(window_of(&paged, &format!("doc:{DOC_KIND}:1")), None);
+    assert_eq!(window_of(&paged, "conversations"), None);
+
+    let mut whole = setup();
+    whole.invoke(1, switch_to(1));
+    assert!(whole.host.subscription("conversation:1").is_some());
+    assert_eq!(window_of(&whole, "conversation:1"), None);
+
+    let mut older = Harness::paged(ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(27.0))]));
+    older.invoke(1, switch_to(1));
+    assert!(older.host.subscription("conversation:1").is_some());
+    assert_eq!(window_of(&older, "conversation:1"), None);
+}
+
+#[test]
+fn load_earlier_shows_pages_ahead_and_resubscribes_from_the_oldest() {
+    let mut host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    host.snapshots.insert("conversation:1".to_string(), paged_view(&[20, 21], Some(18)));
+    host.call_result_queue.insert(
+        "earlierEntries".to_string(),
+        VecDeque::from([page(&[15, 18], Some(12)), page(&[11, 12], None)]),
+    );
+    let mut h = Harness::paged(host);
+    h.invoke(1, switch_to(1));
+    assert_eq!(shown_ids(&h), vec![20, 21]);
+
+    let views = h.views;
+    h.invoke(2, Call::LoadEarlier { conversation_id: 1 });
+    assert_eq!(h.ops.get(&2), Some(&Ok(None)));
+    assert!(h.views > views, "the platform hears the page arrive");
+    assert_eq!(
+        h.host.method("earlierEntries")[0].get("args").map(Json::to_json).as_deref(),
+        Some(r#"{"conversationId":1,"before":18,"limit":50}"#)
+    );
+    assert_eq!(shown_ids(&h), vec![15, 18, 20, 21]);
+    assert_eq!(h.dig(&["conversation", "before"]).and_then(|v| v.as_number()), Some(12.0));
+
+    // The reconnect asks for everything from the oldest shown entry; that
+    // snapshot replaces the loaded page rather than following it.
+    h.host.snapshots.insert("conversation:1".to_string(), paged_view(&[15, 18, 20, 21, 22], Some(12)));
+    h.disconnect(1000, None);
+    h.fire_timer();
+    assert_eq!(window_of(&h, "conversation:1").as_deref(), Some(r#"{"limit":50,"from":15}"#));
+    assert_eq!(shown_ids(&h), vec![15, 18, 20, 21, 22]);
+
+    h.invoke(3, Call::LoadEarlier { conversation_id: 1 });
+    assert_eq!(h.ops.get(&3), Some(&Ok(None)));
+    assert_eq!(shown_ids(&h), vec![11, 12, 15, 18, 20, 21, 22]);
+    assert!(h.dig(&["conversation", "before"]).is_none());
+
+    // At the start there is nothing to ask for.
+    let calls = h.host.method("earlierEntries").len();
+    h.invoke(4, Call::LoadEarlier { conversation_id: 1 });
+    assert_eq!(h.ops.get(&4), Some(&Ok(None)));
+    assert_eq!(h.host.method("earlierEntries").len(), calls);
+}
+
+#[test]
+fn load_earlier_calls_share_the_one_in_flight() {
+    let mut host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    host.snapshots.insert("conversation:1".to_string(), paged_view(&[20, 21], Some(18)));
+    host.hung_methods.insert("earlierEntries".to_string());
+    let mut h = Harness::paged(host);
+    h.invoke(1, switch_to(1));
+
+    h.invoke(2, Call::LoadEarlier { conversation_id: 1 });
+    h.invoke(3, Call::LoadEarlier { conversation_id: 1 });
+    assert_eq!(h.host.method("earlierEntries").len(), 1);
+    assert!(!h.ops.contains_key(&2) && !h.ops.contains_key(&3));
+
+    h.answer_last("earlierEntries", page(&[15, 18], Some(12)));
+    assert_eq!(h.ops.get(&2), Some(&Ok(None)));
+    assert_eq!(h.ops.get(&3), Some(&Ok(None)));
+    assert_eq!(shown_ids(&h), vec![15, 18, 20, 21]);
+
+    // Settled, so the next call loads the next page.
+    h.invoke(4, Call::LoadEarlier { conversation_id: 1 });
+    assert_eq!(h.host.method("earlierEntries").len(), 2);
+    assert_eq!(
+        h.host.method("earlierEntries")[1].get("args").and_then(|args| args.get("before")).and_then(Json::as_number),
+        Some(12.0)
+    );
+}
+
+#[test]
+fn a_failed_load_earlier_rejects_every_shared_call() {
+    let mut host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    host.snapshots.insert("conversation:1".to_string(), paged_view(&[20, 21], Some(18)));
+    host.hung_methods.insert("earlierEntries".to_string());
+    let mut h = Harness::paged(host);
+    h.invoke(1, switch_to(1));
+    h.invoke(2, Call::LoadEarlier { conversation_id: 1 });
+    h.invoke(3, Call::LoadEarlier { conversation_id: 1 });
+
+    let id = h.host.method("earlierEntries")[0].get("id").cloned().unwrap();
+    h.deliver(obj(&[
+        ("type", Json::from("result")),
+        ("id", id),
+        ("ok", Json::Bool(false)),
+        ("error", Json::from("not subscribed")),
+    ]));
+    assert_eq!(h.ops.get(&2), Some(&Err("not subscribed".to_string())));
+    assert_eq!(h.ops.get(&3), Some(&Err("not subscribed".to_string())));
+    assert_eq!(shown_ids(&h), vec![20, 21]);
+}
+
+#[test]
+fn switching_away_drops_the_loaded_pages() {
+    let mut host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    host.snapshots.insert("conversation:1".to_string(), paged_view(&[20, 21], Some(18)));
+    host.call_results.insert("earlierEntries".to_string(), page(&[15, 18], Some(12)));
+    let mut h = Harness::paged(host);
+    h.invoke(1, switch_to(1));
+    h.invoke(2, Call::LoadEarlier { conversation_id: 1 });
+    assert_eq!(shown_ids(&h), vec![15, 18, 20, 21]);
+
+    h.invoke(3, switch_to(2));
+    h.invoke(4, switch_to(1));
+    assert_eq!(window_of(&h, "conversation:1").as_deref(), Some(r#"{"limit":50}"#));
+    assert_eq!(shown_ids(&h), vec![20, 21]);
+    assert_eq!(h.dig(&["conversation", "before"]).and_then(|v| v.as_number()), Some(18.0));
+}
+
+#[test]
+fn a_load_earlier_lost_with_its_connection_does_not_block_the_next() {
+    let mut host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    host.snapshots.insert("conversation:1".to_string(), paged_view(&[20, 21], Some(18)));
+    host.hung_methods.insert("earlierEntries".to_string());
+    let mut h = Harness::paged(host);
+    h.invoke(1, switch_to(1));
+    h.invoke(2, Call::LoadEarlier { conversation_id: 1 });
+    h.invoke(3, Call::LoadEarlier { conversation_id: 1 });
+
+    h.disconnect(1000, None);
+    h.fire_timer();
+    assert!(matches!(h.ops.get(&2), Some(Err(_))), "{:?}", h.ops.get(&2));
+    assert!(matches!(h.ops.get(&3), Some(Err(_))), "{:?}", h.ops.get(&3));
+
+    h.invoke(4, Call::LoadEarlier { conversation_id: 1 });
+    assert_eq!(h.host.method("earlierEntries").len(), 2);
 }
