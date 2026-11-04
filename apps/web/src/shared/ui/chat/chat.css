@@ -1512,3 +1512,9 @@ details[open] > .chain-of-thought-rail__tool-row .chain-of-thought-rail__disclos
     }
   }
 }
+
+/* Reordered cards slide to their new places (queued-list.tsx). */
+::view-transition-group(.queued-card) {
+  animation-duration: 220ms;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+}

@@ -1,5 +1,6 @@
 import type { QueueItem } from "@pinomad/client/chat.ts";
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent } from "react";
+import { flushSync } from "react-dom";
 import { ChatQueuedMessage } from "../../shared/ui/chat/chat-queued-message.tsx";
 
 type Side = "before" | "after";
@@ -14,6 +15,54 @@ export function reorderBefore(items: readonly QueueItem[], moved: number, target
   const inputs = items.filter((item) => item.id !== undefined && item.id !== moved && item.mode !== "write");
   const at = inputs.findIndex((item) => item.id === target);
   return inputs[at + 1]?.id;
+}
+
+const keyOf = (item: QueueItem): string => (item.id === undefined ? `local:${item.requestId}` : String(item.id));
+
+/**
+ * Slide the cards to their new places when the inbox only changed order: the
+ * old order renders once more, then a View Transition swaps in the new one and
+ * the browser animates each named card between the two. Anything else (rows
+ * added or removed), reduced motion, a hidden page, or no API just renders.
+ */
+function useReorderTransition(items: readonly QueueItem[]): readonly QueueItem[] {
+  const committed = useRef<readonly string[]>([]);
+  const [released, setReleased] = useState<string>();
+  const order = items.map(keyOf);
+  const signature = order.join(" ");
+  const previous = committed.current;
+  const reordered =
+    previous.length === order.length &&
+    previous.join(" ") !== signature &&
+    order.every((key) => previous.includes(key));
+  const animate =
+    reordered &&
+    released !== signature &&
+    typeof document !== "undefined" &&
+    typeof document.startViewTransition === "function" &&
+    document.visibilityState === "visible" &&
+    !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const shown = animate ? previous.map((key) => items.find((item) => keyOf(item) === key)!) : items;
+  // The update callback runs a frame later; a render in between must not
+  // start a second transition for the same order.
+  const starting = useRef<string | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (!animate) {
+      committed.current = order;
+      return;
+    }
+    if (starting.current === signature) return;
+    starting.current = signature;
+    const transition = document.startViewTransition(() => {
+      flushSync(() => setReleased(signature));
+      committed.current = order;
+    });
+    // A skipped transition still runs its update; clear the guard either way.
+    void transition.finished.finally(() => {
+      if (starting.current === signature) starting.current = undefined;
+    });
+  });
+  return shown;
 }
 
 /** A delivery caption for a local row; a host row needs none, it is in the inbox. */
@@ -75,6 +124,9 @@ export function QueuedList({
     setDragState(next);
   };
   const [armed, setArmed] = useState<number>();
+  const shown = useReorderTransition(items);
+  // view-transition-name is page-global: scope it to this list.
+  const scope = useId().replace(/[^a-zA-Z0-9]/g, "");
   // The handle that last moved by keyboard: React may re-insert its row when
   // the inbox reorders, which blurs it, so focus is put back afterwards.
   const keyboardFocus = useRef<number | undefined>(undefined);
@@ -88,7 +140,7 @@ export function QueuedList({
     }
     // One restore per move: every arrow press sets it again.
     if (handle === undefined || document.activeElement === handle) keyboardFocus.current = undefined;
-  }, [items]);
+  }, [shown]);
   if (items.length === 0) return null;
 
   const bodyOf = (item: QueueItem): string => {
@@ -109,7 +161,7 @@ export function QueuedList({
 
   return (
     <div className="mx-auto mb-3 grid w-full gap-1.5" data-testid="queued-message-list">
-      {items.map((item) => {
+      {shown.map((item) => {
         const isLocal = item.id === undefined;
         // Writes are protocol-rejected by both calls; only inputs are actionable.
         const actionable = !isLocal && canAct && item.mode !== "write";
@@ -133,6 +185,12 @@ export function QueuedList({
           <ChatQueuedMessage
             key={isLocal ? `local:${item.requestId}` : id}
             data-testid={isLocal ? "local-queued-message" : "chat-queued-message"}
+            style={
+              {
+                viewTransitionName: `queued-${scope}-${keyOf(item).replace(/[^a-zA-Z0-9-]/g, "")}`,
+                viewTransitionClass: "queued-card",
+              } as CSSProperties
+            }
             body={bodyOf(item)}
             mode={item.mode}
             status={isLocal ? localCaption(item.status) : undefined}
