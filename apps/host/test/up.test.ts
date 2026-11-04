@@ -165,6 +165,30 @@ describe("upHost", () => {
     expect(fake.installs.at(-1)!.hostArgs).toEqual(["--remote-port", "7422"]);
   });
 
+  it("a join token, as the Mac App passes it, joins with nobody confirming anything", async () => {
+    const dir = await dataDir();
+    const started = await startServer();
+    const fake = fakeManager();
+    const flow = confirmingDeps(started, fake.manager);
+    const token = await joinToken(started);
+    const outcome = await upHost({ dataDir: dir, origin: started.origin, reach: { server: true, lan: false }, token }, flow.deps);
+    expect(flow.requests).not.toContain("/api/host-link/start");
+    expect(outcome.joined).toMatchObject({ username: "admin", fresh: true });
+    expect(outcome.service).toBe("installed");
+  });
+
+  it("a host already joined to that server leaves the join token unspent", async () => {
+    const dir = await dataDir();
+    const started = await startServer();
+    const fake = fakeManager();
+    await joinServer({ origin: started.origin, token: await joinToken(started), dataDir: dir }, { manager: fake.manager });
+    const token = await joinToken(started);
+    const outcome = await upHost({ dataDir: dir, origin: started.origin, reach: { server: true, lan: false }, token }, { manager: fake.manager });
+    expect(outcome.joined).toMatchObject({ fresh: false });
+    // Still good for another host.
+    await joinServer({ origin: started.origin, token, dataDir: await dataDir() }, { manager: fakeManager().manager });
+  });
+
   it("re-running the server path restarts even when the args are the same", async () => {
     // A join whose idle restart was cancelled (Ctrl-C) left server.json written
     // and the host still running without it; a re-run must finish that restart.
@@ -292,6 +316,36 @@ describe("pinomad up", () => {
     await up(["--data-dir", dir, "--yes"], { manager: fake.manager, interactive: false, log: () => {} });
     expect(errors).toEqual([]);
     expect(process.exitCode).toBeUndefined();
+  });
+
+  it("--token-stdin reads the join token from stdin and never prints a code", async () => {
+    capture();
+    const started = await startServer();
+    const flow = confirmingDeps(started);
+    const token = await joinToken(started);
+    await up(["--data-dir", await dataDir(), "--server", "--origin", started.origin, "--token-stdin"], {
+      ...flow.deps,
+      interactive: false,
+      readStdin: async () => `${token}\n`,
+    });
+    expect(process.exitCode).toBeUndefined();
+    expect(flow.requests).not.toContain("/api/host-link/start");
+    expect(flow.lines.join("\n")).toMatch(/joined admin/);
+    expect(flow.lines.join("\n")).not.toContain(token);
+  });
+
+  it("--token-stdin with nothing on stdin fails before asking the server", async () => {
+    const errors = capture();
+    const started = await startServer();
+    const flow = confirmingDeps(started);
+    await up(["--data-dir", await dataDir(), "--server", "--origin", started.origin, "--token-stdin"], {
+      ...flow.deps,
+      interactive: false,
+      readStdin: async () => "  \n",
+    });
+    expect(process.exitCode).toBe(1);
+    expect(errors.join("\n")).toMatch(/stdin/);
+    expect(flow.requests).toEqual([]);
   });
 
   it("--yes takes the server path by default and says which server before the code", async () => {

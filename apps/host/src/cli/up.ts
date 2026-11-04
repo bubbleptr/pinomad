@@ -87,6 +87,8 @@ export async function upHost(
     readonly remotePort?: string;
     /** Join by a printed code instead of the browser redirect (#513). */
     readonly code?: boolean;
+    /** A one-time join token: nobody confirms anything. Unspent when the host is already joined. */
+    readonly token?: string;
   },
   deps?: JoinDeps,
 ): Promise<UpOutcome> {
@@ -117,7 +119,10 @@ export async function upHost(
   const notes: string[] = [];
 
   if (reach.server && config === undefined) {
-    const joined = await joinServer({ origin, dataDir, code: args.code, editHostArgs: lan }, { ...deps, manager });
+    const joined = await joinServer(
+      { origin, dataDir, code: args.code, ...(args.token === undefined ? {} : { token: args.token }), editHostArgs: lan },
+      { ...deps, manager },
+    );
     return {
       joined: { origin: joined.origin, username: joined.username, fresh: true },
       ...(lanPort === undefined ? {} : { lanPort }),
@@ -148,6 +153,14 @@ export interface UpDeps extends JoinDeps {
   readonly interactive?: boolean;
   /** Asks one question and resolves with the answer line. */
   readonly ask?: (question: string) => Promise<string>;
+  /** All of stdin, for `--token-stdin`. */
+  readonly readStdin?: () => Promise<string>;
+}
+
+async function readAllStdin(): Promise<string> {
+  let text = "";
+  for await (const chunk of process.stdin) text += String(chunk);
+  return text;
 }
 
 async function askOnTerminal(question: string): Promise<string> {
@@ -187,7 +200,8 @@ const FLAGS = `choose with flags:
   --server [--origin URL]   through a PiNomad server (default ${OFFICIAL_SERVER_ORIGIN})
   --lan [--remote-port N]   only on the local network and tailnet (default port ${DEFAULT_REMOTE_PORT})
   --server --lan            both
-  --yes                     keep what this host has, or the server on a new host`;
+  --yes                     keep what this host has, or the server on a new host
+  --token-stdin             join with a one-time token read from stdin, without a code`;
 
 export async function main(argv: readonly string[], deps?: UpDeps): Promise<void> {
   const { values } = parseArgs({
@@ -199,6 +213,8 @@ export async function main(argv: readonly string[], deps?: UpDeps): Promise<void
       yes: { type: "boolean", short: "y" },
       origin: { type: "string" },
       code: { type: "boolean" },
+      // stdin, not argv: other processes can read argv (the Mac App passes it so).
+      "token-stdin": { type: "boolean" },
       "remote-port": { type: "string" },
       "data-dir": { type: "string" },
     },
@@ -206,6 +222,11 @@ export async function main(argv: readonly string[], deps?: UpDeps): Promise<void
   const log = deps?.log ?? ((line: string) => console.log(line));
   try {
     const dataDir = resolve(values["data-dir"] ?? DEFAULT_DATA_DIR);
+    let token: string | undefined;
+    if (values["token-stdin"] === true) {
+      token = (await (deps?.readStdin ?? readAllStdin)()).trim();
+      if (token === "") throw new Error("--token-stdin: no join token on stdin");
+    }
     const origin = normalizeOrigin(
       values.origin ?? (await readServerConfig(dataDir))?.origin ?? (await lastRemovedOrigin(dataDir)) ?? OFFICIAL_SERVER_ORIGIN,
     );
@@ -241,6 +262,7 @@ export async function main(argv: readonly string[], deps?: UpDeps): Promise<void
         reach,
         ...(values["remote-port"] === undefined ? {} : { remotePort: values["remote-port"] }),
         ...(values.code === true ? { code: true } : {}),
+        ...(token === undefined ? {} : { token }),
       },
       deps,
     );

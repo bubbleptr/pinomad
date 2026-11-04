@@ -7,16 +7,15 @@ import { Switch } from "@astryxdesign/core/Switch";
 import { Text } from "@astryxdesign/core/Text";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
-import { RunInTerminalButton } from "../../entities/local-host/run-in-terminal.tsx";
 import type { LocalHostStopResult } from "../../entities/local-host/local-host-protocol.ts";
 import { localHostBridge, useLocalHostState, type LocalHostBridge } from "../../entities/local-host/use-local-host.ts";
-import { HostLinkEntry } from "../account/host-link-entry.tsx";
+import { LocalHostSetup } from "../account/local-host-setup.tsx";
 
 /**
  * Settings → This Mac, desktop on macOS only (#501): a switch over the host
  * the user installed with the install script or npm. The app runs that
  * install's `pinomad service` (ADR-0003 §2, ADR-0017) and shows its real
- * state; with nothing installed it offers Run in Terminal instead.
+ * state; with nothing installed it sets one up instead.
  */
 export function LocalHostSection({ pollIntervalMs }: { pollIntervalMs?: number }) {
   const bridge = localHostBridge();
@@ -109,7 +108,7 @@ function LocalHostControls({ bridge, pollIntervalMs }: { bridge: LocalHostBridge
         </Text>
       );
     case "not-installed":
-      return <NotInstalled bridge={bridge} onConfirmed={pollUntilInstalled} />;
+      return <NotInstalled bridge={bridge} onFinished={pollUntilInstalled} />;
     case "installed":
       return (
         <VStack gap={3}>
@@ -159,10 +158,9 @@ function LocalHostControls({ bridge, pollIntervalMs }: { bridge: LocalHostBridge
   }
 }
 
-/** Nothing installed: Run in Terminal, then the field for the code `pinomad up --code` prints. */
-function NotInstalled({ bridge, onConfirmed }: { bridge: LocalHostBridge; onConfirmed: () => void }) {
+/** Nothing installed: set it up here, joined to the signed-in account. */
+function NotInstalled({ bridge, onFinished }: { bridge: LocalHostBridge; onFinished: () => void }) {
   const account = useAccountModel();
-  const [opened, setOpened] = useState(false);
   if (account.state.status !== "signed-in") {
     return (
       <Text as="p" type="supporting">
@@ -171,21 +169,12 @@ function NotInstalled({ bridge, onConfirmed }: { bridge: LocalHostBridge; onConf
     );
   }
   return (
-    <VStack gap={4}>
-      <VStack gap={2}>
-        <Text as="p" type="supporting">
-          The PiNomad host isn't installed on this Mac. Install it in Terminal; it joins your account when it's done.
-        </Text>
-        <RunInTerminalButton bridge={bridge} serverOrigin={account.state.serverOrigin} onOpened={() => setOpened(true)} />
-      </VStack>
-      {opened ? (
-        <VStack gap={2}>
-          <Text as="p" type="supporting">
-            When Terminal shows a code, enter it here:
-          </Text>
-          <HostLinkEntry onSettled={(outcome) => outcome === "confirmed" && onConfirmed()} />
-        </VStack>
-      ) : null}
+    <VStack gap={3}>
+      <Text as="p" type="supporting">
+        The PiNomad host isn't installed on this Mac. Setting it up downloads PiNomad with its own Node, joins it to your
+        account, and adds the pinomad command to your shell profile.
+      </Text>
+      <LocalHostSetup bridge={bridge} serverOrigin={account.state.serverOrigin} onFinished={onFinished} />
     </VStack>
   );
 }

@@ -1,10 +1,10 @@
 // The "This Mac" switch drives the host the user installed, through its own
 // `pinomad service` CLI. The plist is real (rendered by the host's own
 // launchdPlist into a temp home); the CLI runs are fakes, so no launchctl,
-// no Terminal.
+// no Terminal, no installer.
 import { execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -12,7 +12,8 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import { launchdPlist, launchdPlistPath, type ServiceSpec } from "../../host/src/service/definition.ts";
 import {
   createLocalHost,
-  shellQuote,
+  ENV_PROBE,
+  parseShellEnv,
   type ExecFileLike,
   type LocalHostDeps,
   type SpawnLike,
@@ -67,9 +68,16 @@ function fakeExecFile(result: ExecFileResult) {
   });
 }
 
-/** A `service stop` child that prints what the test writes and exits when told. */
+/** A child (`service stop`, the installer, `pinomad up`) that prints what the test writes and exits when told. */
 function fakeChild() {
+  const stdin = new PassThrough();
+  let input = "";
+  stdin.setEncoding("utf8").on("data", (chunk: string) => (input += chunk));
   const child = Object.assign(new EventEmitter(), {
+    pid: 4242,
+    stdin,
+    /** Everything written to stdin so far. */
+    input: () => input,
     stdout: new PassThrough(),
     stderr: new PassThrough(),
     kill: vi.fn((signal: NodeJS.Signals) => {
@@ -87,7 +95,6 @@ function fakeChild() {
 }
 
 function localHost(home: string, overrides: Partial<LocalHostDeps> = {}) {
-  let id = 0;
   const deps: LocalHostDeps = {
     home,
     env: { HOME: home, PATH: "/usr/bin:/bin" },
@@ -95,9 +102,8 @@ function localHost(home: string, overrides: Partial<LocalHostDeps> = {}) {
     spawn: vi.fn<SpawnLike>(() => {
       throw new Error("no spawn expected");
     }),
-    openPath: vi.fn(async () => ""),
-    tmpdir: home,
-    randomId: () => `id${++id}`,
+    fetchText: vi.fn(async () => INSTALLER),
+    killGroup: vi.fn(),
     ...overrides,
   };
   return { host: createLocalHost(deps), deps };
@@ -294,7 +300,180 @@ describe("stop", () => {
   });
 });
 
-describe("runSetup", () => {
+const INSTALLER = "#!/bin/sh\necho installing\n";
+const SHELL_PATH = "/opt/homebrew/bin:/Users/me/.bun/bin:/usr/bin:/bin";
+
+/** What `$SHELL -ilc` prints: rc chatter first, then the marker and `env -0`, then a .zlogout's goodbye. */
+const shellOutput = (): string =>
+  "warning: compinit being called again\n__PINOMAD_ENV__" +
+  ["HOME=/Users/me", `PATH=${SHELL_PATH}`, "LANG=en_US.UTF-8", "MULTI=a\nb"].map((entry) => `${entry}\0`).join("") +
+  "bye\n";
+
+/** The login-shell probe answers with `shellOutput`; anything else is unexpected. */
+const shellExec = () =>
+  vi.fn<ExecFileLike>(async (file, args) => {
+    if (file === "/bin/zsh" && args[0] === "-ilc") return { stdout: shellOutput(), stderr: "" };
+    throw new Error(`unexpected ${file} ${args.join(" ")}`);
+  });
+
+const setupHost = async (overrides: Partial<LocalHostDeps> = {}) => {
+  const children: ReturnType<typeof fakeChild>[] = [];
+  const spawn = vi.fn<SpawnLike>(() => {
+    const child = fakeChild();
+    children.push(child);
+    return child;
+  });
+  const home = await homeWith();
+  const made = localHost(home, {
+    env: { HOME: home, PATH: "/usr/bin:/bin", SHELL: "/bin/zsh" },
+    execFile: shellExec(),
+    spawn,
+    ...overrides,
+  });
+  return { ...made, home, spawn, children };
+};
+
+describe("parseShellEnv", () => {
+  it.each(["/bin/sh", "/bin/zsh"])("reads what the probe prints in a real %s", async (shell) => {
+    // An empty ZDOTDIR: no rc file of whoever runs the tests changes PATH.
+    const stdout = execFileSync(shell, ["-c", ENV_PROBE], {
+      encoding: "utf8",
+      env: { PATH: "/opt/x/bin:/usr/bin:/bin", LANG: "de_DE.UTF-8", OTHER: "a=b\nc", ZDOTDIR: await tempDir("pinomad-zdotdir-") },
+    });
+    expect(parseShellEnv(`noise\n${stdout}`)).toEqual({ PATH: "/opt/x/bin:/usr/bin:/bin", LANG: "de_DE.UTF-8" });
+  });
+});
+
+describe("install", () => {
+  it("runs the downloaded installer with sh on the login shell's PATH, streaming what it prints", async () => {
+    const { host, deps, spawn, children } = await setupHost();
+    let lines: readonly string[] = [];
+
+    const done = host.install((snapshot) => (lines = snapshot));
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    const [file, args, options] = spawn.mock.calls[0]!;
+    expect([file, args]).toEqual(["/bin/sh", ["-s"]]);
+    // The service freezes this PATH (ADR-0009 §4): the user's, not the app's /usr/bin:/bin.
+    expect(options.env.PATH).toBe(SHELL_PATH);
+    expect(options.env.LANG).toBe("en_US.UTF-8");
+    expect(options.env.MULTI).toBeUndefined();
+    // Its own process group, so Cancel reaches curl and npm too.
+    expect(options.detached).toBe(true);
+    expect(deps.fetchText).toHaveBeenCalledWith("https://pinomad.si/install.sh");
+    const child = children[0]!;
+    await vi.waitFor(() => expect(child.input()).toBe(INSTALLER));
+    child.stdout.write("Downloading Node 26.12.1 (darwin-arm64)\n");
+    child.stderr.write("npm warn deprecated\n");
+    child.exit(0);
+
+    expect(await done).toEqual({ outcome: "done" });
+    expect(lines).toEqual(["Downloading Node 26.12.1 (darwin-arm64)", "npm warn deprecated"]);
+  });
+
+  it("fails before downloading anything when the login shell's PATH can't be read", async () => {
+    const execFile = vi.fn<ExecFileLike>(async () => {
+      throw Object.assign(new Error("Command failed"), { code: 1, stdout: "", stderr: "zsh: no such option" });
+    });
+    const { host, deps, spawn } = await setupHost({ execFile });
+
+    const result = await host.install(() => {});
+    expect(result).toMatchObject({ outcome: "failed", message: expect.stringMatching(/PATH/) });
+    expect(deps.fetchText).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("says the installer couldn't be downloaded", async () => {
+    const { host, spawn } = await setupHost({ fetchText: vi.fn(async () => Promise.reject(new Error("getaddrinfo ENOTFOUND"))) });
+
+    expect(await host.install(() => {})).toEqual({
+      outcome: "failed",
+      message: "Couldn't download the installer: getaddrinfo ENOTFOUND",
+    });
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("reports the installer's own last stderr line when it fails", async () => {
+    const { host, spawn, children } = await setupHost();
+    const done = host.install(() => {});
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    children[0]!.stderr.write("install.sh: checksum mismatch for node.tar.gz; nothing was installed\n");
+    children[0]!.exit(1);
+
+    expect(await done).toEqual({ outcome: "failed", message: "install.sh: checksum mismatch for node.tar.gz; nothing was installed" });
+  });
+
+  it("an installer that dies before reading its script fails the install instead of crashing main", async () => {
+    const { host, spawn, children } = await setupHost();
+    const done = host.install(() => {});
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    children[0]!.stdin.emit("error", Object.assign(new Error("write EPIPE"), { code: "EPIPE" }));
+    children[0]!.exit(127);
+
+    expect(await done).toEqual({ outcome: "failed", message: "the installer exited with 127" });
+  });
+
+  it("cancel kills the installer's whole process group", async () => {
+    const { host, deps, spawn, children } = await setupHost();
+    const done = host.install(() => {});
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+
+    host.cancelInstall();
+    expect(deps.killGroup).toHaveBeenCalledWith(4242, "SIGTERM");
+    children[0]!.exit(null, "SIGTERM");
+    expect(await done).toEqual({ outcome: "cancelled" });
+  });
+
+  it("cancel before the installer starts never starts it", async () => {
+    const { host, spawn } = await setupHost();
+    const done = host.install(() => {});
+    host.cancelInstall();
+
+    expect(await done).toEqual({ outcome: "cancelled" });
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("a second install joins the running one, lines so far included", async () => {
+    const { host, spawn, children } = await setupHost();
+    const first = host.install(() => {});
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    children[0]!.stdout.write("Installing pinomad@latest\n");
+    await vi.waitFor(async () => {
+      let seen: readonly string[] = [];
+      void host.install((lines) => (seen = lines));
+      expect(seen).toEqual(["Installing pinomad@latest"]);
+    });
+    const second = host.install(() => {});
+    children[0]!.exit(0);
+
+    expect(await first).toEqual({ outcome: "done" });
+    expect(await second).toEqual({ outcome: "done" });
+    expect(spawn).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("join", () => {
+  it("runs pinomad up with the token on stdin, never in argv, ~/.local/bin first on the shell's PATH", async () => {
+    const { host, home, spawn, children } = await setupHost();
+    const done = host.join("https://app.pinomad.si/some/path?x=1", "join-7f3a9c");
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    const [file, args, options] = spawn.mock.calls[0]!;
+    // Only the origin survives.
+    expect([file, args]).toEqual(["pinomad", ["up", "--server", "--origin", "https://app.pinomad.si", "--token-stdin"]]);
+    expect(options.env.PATH).toBe(`${join(home, ".local", "bin")}:${SHELL_PATH}`);
+    await vi.waitFor(() => expect(children[0]!.input()).toBe("join-7f3a9c\n"));
+    children[0]!.exit(0);
+
+    expect(await done).toEqual({ ok: true });
+  });
+
+  it("allows plain http on localhost for development", async () => {
+    const { host, spawn, children } = await setupHost();
+    const done = host.join("http://127.0.0.1:8787", "join-7f3a9c");
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    children[0]!.exit(0);
+    expect(await done).toEqual({ ok: true });
+  });
+
   it.each([
     "not a url",
     "http://pinomad.si",
@@ -302,45 +481,19 @@ describe("runSetup", () => {
     "javascript:alert(1)",
     "file:///etc/passwd",
     "http://192.168.1.4:8080",
-  ])("refuses %s and writes nothing", async (origin) => {
-    const home = await homeWith();
-    const { host, deps } = localHost(home);
-
-    expect(await host.runSetup(origin)).toMatchObject({ ok: false });
-    expect(deps.openPath).not.toHaveBeenCalled();
-    await expect(stat(join(home, "pinomad-setup-id1.command"))).rejects.toThrow();
+  ])("refuses %s and runs nothing", async (origin) => {
+    const { host, spawn } = await setupHost();
+    expect(await host.join(origin, "join-7f3a9c")).toMatchObject({ ok: false });
+    expect(spawn).not.toHaveBeenCalled();
   });
 
-  it("writes an executable .command for the server's origin and opens it", async () => {
-    const home = await homeWith();
-    const { host, deps } = localHost(home);
+  it("reports the CLI's last stderr line when the join fails", async () => {
+    const { host, spawn, children } = await setupHost();
+    const done = host.join("https://app.pinomad.si", "join-7f3a9c");
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    children[0]!.stderr.write("the join token expired — generate a fresh one\n");
+    children[0]!.exit(1);
 
-    expect(await host.runSetup("https://app.pinomad.si/some/path?x=1")).toEqual({ ok: true });
-
-    const path = join(home, "pinomad-setup-id1.command");
-    expect(deps.openPath).toHaveBeenCalledWith(path);
-    expect((await stat(path)).mode & 0o777).toBe(0o755);
-    const script = await readFile(path, "utf8");
-    expect(script.startsWith("#!/bin/sh\n")).toBe(true);
-    // Only the origin survives, quoted for the shell.
-    expect(script).toContain("pinomad up --server --code --origin 'https://app.pinomad.si'\n");
-    expect(script).not.toContain("/some/path");
-  });
-
-  it("allows plain http on localhost for development", async () => {
-    const { host } = localHost(await homeWith());
-    expect(await host.runSetup("http://127.0.0.1:8787")).toEqual({ ok: true });
-    expect(await host.runSetup("http://localhost:8787")).toEqual({ ok: true });
-  });
-
-  it("reports Terminal refusing to open the file", async () => {
-    const { host } = localHost(await homeWith(), { openPath: async () => "Failed to open path" });
-    expect(await host.runSetup("https://pinomad.si")).toEqual({ ok: false, message: "Failed to open path" });
-  });
-});
-
-describe("shellQuote", () => {
-  it.each(["https://pinomad.si", "it's", "$(touch /tmp/x)`id`", "a'b'c", ""])("round-trips %j through sh", (value) => {
-    expect(execFileSync("/bin/sh", ["-c", `printf %s ${shellQuote(value)}`], { encoding: "utf8" })).toBe(value);
+    expect(await done).toEqual({ ok: false, message: "the join token expired — generate a fresh one" });
   });
 });

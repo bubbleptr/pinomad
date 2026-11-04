@@ -7,12 +7,12 @@ export type LocalHostBridge = NonNullable<DesktopBridge["localHost"]>;
 /** The bridge's switch over the host installed on this Mac; undefined in the browser and off macOS. */
 export const localHostBridge = (): LocalHostBridge | undefined => window.pinomadDesktop?.localHost;
 
-/** How long `pollUntilInstalled` keeps looking: `pinomad up` installs the service once the code is confirmed. */
+/** How long `pollUntilInstalled` keeps looking: `pinomad up` installs the service once the host has joined. */
 const POLL_TIMEOUT_MS = 120_000;
 
 /**
  * The installed host's real state, read on mount, on `refresh()`, and when
- * the window regains focus — the user comes back from Terminal after
+ * the window regains focus — the user comes back from a terminal after
  * installing, or after `pinomad service` changed it there. `undefined` until
  * the first read lands. `pollUntilInstalled()` re-reads every
  * `pollIntervalMs` until the service runs, for up to two minutes: a host

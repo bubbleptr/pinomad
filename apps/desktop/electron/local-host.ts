@@ -3,24 +3,29 @@
 // the user installed by running that install's own `pinomad service` CLI. The
 // launchd plist names that install — its Node, its script, its PATH — so the
 // CLI runs exactly as the service does, whatever this GUI process's PATH is.
+// Setting a host up runs install.sh and `pinomad up` in the background on
+// the login shell's PATH, which the service then keeps (ADR-0009 §4).
 // Always execFile/spawn with an argv, never a shell.
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
-import type { Readable } from "node:stream";
+import type { Readable, Writable } from "node:stream";
 import { launchdPlistPath, specFromLaunchdPlist, type ServiceSpec } from "../../host/src/service/definition.ts";
 import type {
   LocalHostResult,
+  LocalHostSetupResult,
   LocalHostState,
   LocalHostStopResult,
 } from "../../web/src/entities/local-host/local-host-protocol.ts";
 
-type RunOptions = { env: NodeJS.ProcessEnv; cwd: string; timeout?: number };
+type RunOptions = { env: NodeJS.ProcessEnv; cwd: string; timeout?: number; detached?: boolean };
 
 /** promisify(execFile): rejects with `code` (exit status, or an errno string) plus `stdout`/`stderr`. */
 export type ExecFileLike = (file: string, args: string[], options: RunOptions) => Promise<{ stdout: string; stderr: string }>;
 
 export interface ChildLike {
+  readonly pid?: number | undefined;
+  readonly stdin: Writable | null;
   readonly stdout: Readable | null;
   readonly stderr: Readable | null;
   kill(signal: NodeJS.Signals): boolean;
@@ -36,10 +41,10 @@ export interface LocalHostDeps {
   readonly env: NodeJS.ProcessEnv;
   readonly execFile: ExecFileLike;
   readonly spawn: SpawnLike;
-  /** Electron's shell.openPath: resolves to "" on success, an error message otherwise. */
-  readonly openPath: (path: string) => Promise<string>;
-  readonly tmpdir: string;
-  readonly randomId: () => string;
+  /** GETs a URL's body as text; rejects on a network error or a non-2xx answer. */
+  readonly fetchText: (url: string) => Promise<string>;
+  /** Signals a detached child's whole process group. */
+  readonly killGroup: (pid: number, signal: NodeJS.Signals) => void;
 }
 
 export interface LocalHost {
@@ -55,12 +60,19 @@ export interface LocalHost {
   followStop(onLines: (lines: readonly string[]) => void): Promise<LocalHostStopResult | undefined>;
   /** Interrupts a stop still waiting for tasks; the CLI then leaves the service running. Once it is stopping the service, the CLI finishes. */
   cancelStop(): void;
-  /** Writes a `.command` that installs the host and joins it to `serverOrigin`, and opens it in Terminal. */
-  runSetup(serverOrigin: string): Promise<LocalHostResult>;
+  /**
+   * Runs install.sh in the background; `onLines` gets everything it printed
+   * so far, each time a line arrives. While an install is running a second
+   * call joins it.
+   */
+  install(onLines: (lines: readonly string[]) => void): Promise<LocalHostSetupResult>;
+  /** Kills a running install, curl and npm included. */
+  cancelInstall(): void;
+  /** `pinomad up` with a one-time join token: joins `serverOrigin` and installs the service, nobody confirming a code. */
+  join(serverOrigin: string, token: string): Promise<LocalHostResult>;
 }
 
-/** Single-quoted for sh: the only character to escape inside '' is ' itself. */
-export const shellQuote = (value: string): string => `'${value.replace(/'/g, `'\\''`)}'`;
+export const INSTALLER_URL = "https://pinomad.si/install.sh";
 
 const CHECKOUT_MAIN = /(^|\/)apps\/host\/src\/main\.ts$/;
 
@@ -107,18 +119,25 @@ function setupOrigin(serverOrigin: string): string | undefined {
   return undefined;
 }
 
-// `--code`: the user is signed in here, not in a browser, so they type the
-// printed code into the app. `--server` keeps up from asking how devices
-// connect. The installer drops pinomad in ~/.local/bin, which this fresh shell
-// doesn't have on PATH yet.
-const setupScript = (origin: string): string => `#!/bin/sh
-# Written by the PiNomad app: installs the PiNomad host on this Mac and adds it to your account.
-rm -f -- "$0"
-set -e
-curl -fsSL https://pinomad.si/install.sh | sh
-PATH="$HOME/.local/bin:$PATH"
-pinomad up --server --code --origin ${shellQuote(origin)}
-`;
+const ENV_MARKER = "__PINOMAD_ENV__";
+/** Valid in sh, zsh, bash and fish; the marker cuts off what rc files print first. */
+export const ENV_PROBE = `printf '%s' ${ENV_MARKER}; command env -0`;
+/** What the service definition keeps of the installing environment (definition.ts). */
+const SHELL_ENV_KEYS = ["PATH", "LANG", "LC_ALL"] as const;
+
+/** The variables `env -0` printed after the marker; a .zlogout's output after the last NUL is dropped. */
+export function parseShellEnv(stdout: string): Partial<Record<(typeof SHELL_ENV_KEYS)[number], string>> | undefined {
+  const start = stdout.indexOf(ENV_MARKER);
+  if (start === -1) return undefined;
+  const entries = stdout.slice(start + ENV_MARKER.length).split("\0").slice(0, -1);
+  const env: Partial<Record<(typeof SHELL_ENV_KEYS)[number], string>> = {};
+  for (const entry of entries) {
+    const eq = entry.indexOf("=");
+    const key = entry.slice(0, eq) as (typeof SHELL_ENV_KEYS)[number];
+    if (eq > 0 && SHELL_ENV_KEYS.includes(key)) env[key] = entry.slice(eq + 1);
+  }
+  return env.PATH === undefined ? undefined : env;
+}
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -138,6 +157,21 @@ const exitFailure = (error: unknown): { stderr: string; code: number } | undefin
 
 /** What the terminal-only Ctrl-C hint becomes here, where Cancel is a button. */
 const stopLine = (line: string): string => line.replace(/\s*\(Ctrl-C to cancel\)\s*$/, "");
+
+/**
+ * Hands a child its stdin and closes it. A child that exits before reading
+ * it all makes the write fail with EPIPE; unheard, that error would crash
+ * main. Its exit status says what went wrong.
+ */
+function feed(child: ChildLike, input?: string): void {
+  child.stdin?.on("error", () => {});
+  child.stdin?.end(input);
+}
+
+/** Every non-empty line a stream prints, as it arrives. */
+function onLinesOf(stream: Readable | null, push: (line: string) => void): void {
+  if (stream !== null) createInterface({ input: stream }).on("line", (line) => line.trim() !== "" && push(line));
+}
 
 export function createLocalHost(deps: LocalHostDeps): LocalHost {
   type StopRun = {
@@ -234,6 +268,7 @@ export function createLocalHost(deps: LocalHostDeps): LocalHost {
       if (run.cancelled) return { outcome: "cancelled" };
       const child = deps.spawn(target.file, target.args(["stop"]), target.options);
       run.child = child;
+      feed(child);
       let stderr = "";
       if (child.stdout !== null) {
         createInterface({ input: child.stdout }).on("line", (line) => {
@@ -266,19 +301,131 @@ export function createLocalHost(deps: LocalHostDeps): LocalHost {
     stopping.run.child?.kill("SIGINT");
   }
 
-  async function runSetup(serverOrigin: string): Promise<LocalHostResult> {
+  /**
+   * The environment Terminal would give the install: this app's, with PATH
+   * (and the locale) from an interactive login shell, where Homebrew, nvm or
+   * bun put theirs. A Finder-launched app has only /usr/bin:/bin, and the
+   * service would keep that for the agent's bash.
+   */
+  let shellEnv: Promise<NodeJS.ProcessEnv> | undefined;
+  function loginEnv(): Promise<NodeJS.ProcessEnv> {
+    shellEnv ??= (async () => {
+      const shell = deps.env.SHELL?.startsWith("/") === true ? deps.env.SHELL : "/bin/zsh";
+      let stdout: string;
+      try {
+        ({ stdout } = await deps.execFile(shell, ["-ilc", ENV_PROBE], { env: deps.env, cwd: deps.home, timeout: 15_000 }));
+      } catch (error) {
+        const failure = exitFailure(error);
+        const detail = failure === undefined ? errorMessage(error) : (lastLine(failure.stderr) ?? `${shell} exited with ${failure.code}`);
+        throw new Error(`Couldn't read the PATH from your shell (${shell}): ${detail}`);
+      }
+      const env = parseShellEnv(stdout);
+      if (env === undefined) throw new Error(`Couldn't read the PATH from your shell (${shell}): it printed no environment.`);
+      return { ...deps.env, ...env };
+    })();
+    // Only a read that worked is kept: Try again asks the shell again.
+    shellEnv.catch(() => (shellEnv = undefined));
+    return shellEnv;
+  }
+
+  type InstallRun = { cancelled: boolean; child?: ChildLike; lines: string[]; listeners: Set<(lines: readonly string[]) => void> };
+  let installing: { run: InstallRun; result: Promise<LocalHostSetupResult> } | undefined;
+
+  function install(onLines: (lines: readonly string[]) => void): Promise<LocalHostSetupResult> {
+    // Claimed before the first await, so a second install or a Cancel lands on this one.
+    if (installing === undefined) {
+      const run: InstallRun = { cancelled: false, lines: [], listeners: new Set() };
+      installing = { run, result: runInstall(run).finally(() => (installing = undefined)) };
+    }
+    const { run, result } = installing;
+    run.listeners.add(onLines);
+    if (run.lines.length > 0) onLines([...run.lines]);
+    return result;
+  }
+
+  async function runInstall(run: InstallRun): Promise<LocalHostSetupResult> {
+    let env: NodeJS.ProcessEnv;
+    let script: string;
+    try {
+      env = await loginEnv();
+      if (run.cancelled) return { outcome: "cancelled" };
+      try {
+        script = await deps.fetchText(INSTALLER_URL);
+      } catch (error) {
+        throw new Error(`Couldn't download the installer: ${errorMessage(error)}`);
+      }
+    } catch (error) {
+      return { outcome: "failed", message: errorMessage(error) };
+    }
+    if (run.cancelled) return { outcome: "cancelled" };
+    // `curl … | sh` without the pipe: sh reads the script it was handed.
+    // Its own process group, so Cancel also reaches the curl and npm it runs.
+    const child = deps.spawn("/bin/sh", ["-s"], { env, cwd: deps.home, detached: true });
+    run.child = child;
+    feed(child, script);
+    let stderr = "";
+    const push = (line: string): void => {
+      run.lines.push(line);
+      for (const listener of run.listeners) listener([...run.lines]);
+    };
+    onLinesOf(child.stdout, push);
+    onLinesOf(child.stderr, (line) => {
+      stderr += `${line}\n`;
+      push(line);
+    });
+    return new Promise<LocalHostSetupResult>((resolve) => {
+      child.on("error", (error) => resolve({ outcome: "failed", message: errorMessage(error) }));
+      child.on("close", (code) => {
+        if (code === 0) resolve({ outcome: "done" });
+        else if (run.cancelled) resolve({ outcome: "cancelled" });
+        else resolve({ outcome: "failed", message: lastLine(stderr) ?? `the installer exited with ${code ?? "a signal"}` });
+      });
+    });
+  }
+
+  function cancelInstall(): void {
+    if (installing === undefined) return;
+    installing.run.cancelled = true;
+    const pid = installing.run.child?.pid;
+    if (pid === undefined) return;
+    try {
+      deps.killGroup(pid, "SIGTERM");
+    } catch {
+      // ESRCH: it exited on its own meanwhile; close reports that.
+    }
+  }
+
+  // Not `join`: that is path.join here.
+  async function joinAccount(serverOrigin: string, token: string): Promise<LocalHostResult> {
     const origin = setupOrigin(serverOrigin);
     if (origin === undefined) return { ok: false, message: `Refusing to set up a host for ${serverOrigin}: not an https server.` };
-    const path = join(deps.tmpdir, `pinomad-setup-${deps.randomId()}.command`);
+    let env: NodeJS.ProcessEnv;
     try {
-      // wx: never follow or reuse a file someone else put there.
-      await writeFile(path, setupScript(origin), { mode: 0o755, flag: "wx" });
+      env = await loginEnv();
     } catch (error) {
       return { ok: false, message: errorMessage(error) };
     }
-    const failure = await deps.openPath(path);
-    return failure === "" ? { ok: true } : { ok: false, message: failure };
+    // The installer's launcher, unless a pinomad from npm is on the shell's PATH
+    // instead (install.sh then leaves it alone). `--server` asks nothing.
+    const child = deps.spawn("pinomad", ["up", "--server", "--origin", origin, "--token-stdin"], {
+      env: { ...env, PATH: `${join(deps.home, ".local", "bin")}:${env.PATH ?? ""}` },
+      cwd: deps.home,
+    });
+    // stdin, not argv: any process on this Mac can read another's argv.
+    feed(child, `${token}\n`);
+    child.stdout?.resume();
+    let stderr = "";
+    child.stderr?.setEncoding("utf8").on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    return new Promise<LocalHostResult>((resolve) => {
+      child.on("error", (error) => resolve({ ok: false, message: `Couldn't run pinomad: ${errorMessage(error)}` }));
+      child.on("close", (code) => {
+        if (code === 0) resolve({ ok: true });
+        else resolve({ ok: false, message: lastLine(stderr) ?? `pinomad exited with ${code ?? "a signal"}` });
+      });
+    });
   }
 
-  return { state, start, stop, followStop, cancelStop, runSetup };
+  return { state, start, stop, followStop, cancelStop, install, cancelInstall, join: joinAccount };
 }

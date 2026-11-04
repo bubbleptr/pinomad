@@ -122,32 +122,48 @@ describe("LocalHostSection", () => {
     expect(await hostSwitch()).not.toBeChecked();
   });
 
-  it("offers Run in Terminal for this account's server when nothing is installed, then the code field", async () => {
+  it("sets up this Mac for this account's server with a minted token, and shows the switch once it runs", async () => {
     const account = signedIn();
-    const { localHost, user } = renderSection({ state: { kind: "not-installed" } }, account);
+    const { localHost, user } = renderSection({ state: { kind: "not-installed" }, installLines: ["Downloading Node 26.12.1"] });
 
-    await user.click(await screen.findByRole("button", { name: "Run in Terminal" }));
+    await user.click(await screen.findByRole("button", { name: "Set up this Mac" }));
 
-    expect(localHost.runSetup).toHaveBeenCalledWith((account as Extract<AccountState, { status: "signed-in" }>).serverOrigin);
-    expect(await screen.findByRole("textbox")).toBeInTheDocument();
-    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+    // No code to type: the token comes from the signed-in account.
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(localHost.join).toHaveBeenCalledWith((account as Extract<AccountState, { status: "signed-in" }>).serverOrigin, expect.any(String)),
+    );
+    // `pinomad up` writes the definition a moment before launchd starts it;
+    // the view keeps reading until the host is up, not just installed.
+    expect(await hostSwitch()).toBeChecked();
+    expect(await screen.findByText("running (pid 4242)")).toBeInTheDocument();
   });
 
-  it("shows the switch once the host confirmed here finishes installing", async () => {
-    const { localHost, user } = renderSection({ state: { kind: "not-installed" } });
-    await user.click(await screen.findByRole("button", { name: "Run in Terminal" }));
-    await user.type(await screen.findByRole("textbox"), "kxhn bwcv");
-    await user.click(screen.getByRole("button", { name: "Continue" }));
-    await user.click(await screen.findByRole("button", { name: "Confirm" }));
-    await screen.findByText(/joined your account/);
+  it("shows the installer's lines and cancels it", async () => {
+    const { localHost, user } = renderSection({
+      state: { kind: "not-installed" },
+      installLines: ["Downloading Node 26.12.1"],
+      installWaits: true,
+    });
+    await user.click(await screen.findByRole("button", { name: "Set up this Mac" }));
+    expect(await screen.findByRole("log", { name: "Install progress" })).toHaveTextContent("Downloading Node 26.12.1");
 
-    // `pinomad up` installs the service only after the code is confirmed,
-    // writing its definition a moment before launchd starts it.
-    const loading: LocalHostState = { kind: "installed", running: false, stopped: false, stopping: false, detail: "not loaded" };
-    vi.mocked(localHost.state).mockResolvedValueOnce(loading).mockResolvedValue(running);
-    expect(await hostSwitch()).toBeChecked();
-    // It keeps reading until the host is up, not just until it is installed.
-    expect(await screen.findByText("running (pid 4242)")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(localHost.cancelInstall).toHaveBeenCalledTimes(1);
+    expect(await screen.findByRole("button", { name: "Set up this Mac" })).toBeInTheDocument();
+    expect(localHost.join).not.toHaveBeenCalled();
+  });
+
+  it("a failed install says why and offers the command to run by hand", async () => {
+    const { user } = renderSection({
+      state: { kind: "not-installed" },
+      installResult: { outcome: "failed", message: "install.sh: checksum mismatch" },
+    });
+    await user.click(await screen.findByRole("button", { name: "Set up this Mac" }));
+
+    expect(await screen.findByText("install.sh: checksum mismatch")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(screen.getByText(/curl -fsSL https:\/\/pinomad\.si\/install\.sh/)).toBeInTheDocument();
   });
 
   it("shows no switch for a host too old to report its state", async () => {

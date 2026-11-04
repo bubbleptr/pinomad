@@ -8,27 +8,19 @@ import { Text } from "@astryxdesign/core/Text";
 import { useState } from "react";
 import type { AccountError, JoinToken } from "@pinomad/client/account.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
-import { RunInTerminalButton } from "../../entities/local-host/run-in-terminal.tsx";
 import { localHostBridge, useLocalHostState } from "../../entities/local-host/use-local-host.ts";
 import { useNow } from "../../shared/use-now.ts";
 import { accountErrorMessage } from "./account-error.ts";
 import { HostLinkEntry } from "./host-link-entry.tsx";
-
-/**
- * Install pinomad with its own Node (#499), and the script then runs `pinomad
- * up` (#498), which asks for a code to confirm (#495). The script runs it, not
- * a second line: this terminal's PATH doesn't have ~/.local/bin yet on a new
- * Mac. `--origin` always: up otherwise keeps a host on the server it already
- * joined.
- */
-export const joinCommand = (serverOrigin: string): string =>
-  `curl -fsSL https://pinomad.si/install.sh | sh -s -- up --origin ${serverOrigin.replace(/\/+$/, "")}`;
+import { joinCommand } from "./join-command.ts";
+import { LocalHostSetup } from "./local-host-setup.tsx";
 
 /**
  * How a new host joins this account (#496): the command to run on it, the
  * field for the code it then prints, and, folded away for scripts, the old
  * one-time token command that needs no confirmation. In the Mac app with no
- * host installed here, Run in Terminal does the same on this Mac (#501).
+ * host installed here, Set up this Mac does the same here, with no terminal
+ * and no code (#501).
  * Shared by the account panel's Add a host and the first-host home.
  */
 export function AddHostSteps({ serverOrigin }: { serverOrigin: string }) {
@@ -43,8 +35,8 @@ export function AddHostSteps({ serverOrigin }: { serverOrigin: string }) {
       </VStack>
       {localHost !== undefined && localState?.kind === "not-installed" ? (
         <VStack gap={2}>
-          <Text type="supporting">Or run it on this Mac in Terminal, then enter the code it shows below.</Text>
-          <RunInTerminalButton bridge={localHost} serverOrigin={serverOrigin} />
+          <Text type="supporting">Or set up this Mac, with no terminal:</Text>
+          <LocalHostSetup bridge={localHost} serverOrigin={serverOrigin} onFinished={pollUntilInstalled} />
         </VStack>
       ) : null}
       <VStack gap={2}>
@@ -52,7 +44,7 @@ export function AddHostSteps({ serverOrigin }: { serverOrigin: string }) {
           It asks how your other devices should reach the host; press Enter to go through this server. Then it opens a
           page to confirm the host, or, on a computer without a browser, prints a code. Enter that code here:
         </Text>
-        {/* A host confirmed from Run in Terminal installs after this; Run in Terminal goes once it has. */}
+        {/* A host confirmed here may be this Mac, run from a terminal: Set up this Mac goes once it has installed. */}
         <HostLinkEntry onSettled={(outcome) => outcome === "confirmed" && pollUntilInstalled()} />
       </VStack>
       <TokenCommand />
