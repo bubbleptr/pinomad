@@ -487,6 +487,20 @@ describe("join", () => {
     expect(spawn).not.toHaveBeenCalled();
   });
 
+  it("a pinomad from before --token-stdin says to upgrade, not its stack trace", async () => {
+    const { host, spawn, children } = await setupHost();
+    const done = host.join("https://app.pinomad.si", "join-7f3a9c");
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    children[0]!.stderr.write(
+      "node:internal/util/parse_args/parse_args:98\n" +
+        "TypeError [ERR_PARSE_ARGS_UNKNOWN_OPTION]: Unknown option '--token-stdin'. To specify a positional argument starting with a '-', place it at the end of the command after '--', as in '-- \"--token-stdin\"\n" +
+        "\nNode.js v26.12.1\n",
+    );
+    children[0]!.exit(1);
+
+    expect(await done).toEqual({ ok: false, message: expect.stringContaining("pinomad upgrade") });
+  });
+
   it("reports the CLI's last stderr line when the join fails", async () => {
     const { host, spawn, children } = await setupHost();
     const done = host.join("https://app.pinomad.si", "join-7f3a9c");

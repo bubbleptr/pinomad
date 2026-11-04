@@ -74,6 +74,9 @@ export interface LocalHost {
 
 export const INSTALLER_URL = "https://pinomad.si/install.sh";
 
+const TOO_OLD_TO_JOIN =
+  "The pinomad on this Mac is too old to be set up from the app. Run pinomad upgrade in a terminal, then try again.";
+
 const CHECKOUT_MAIN = /(^|\/)apps\/host\/src\/main\.ts$/;
 
 /**
@@ -422,6 +425,8 @@ export function createLocalHost(deps: LocalHostDeps): LocalHost {
       child.on("error", (error) => resolve({ ok: false, message: `Couldn't run pinomad: ${errorMessage(error)}` }));
       child.on("close", (code) => {
         if (code === 0) resolve({ ok: true });
+        // A pinomad from npm that install.sh left alone may predate the flag.
+        else if (stderr.includes("Unknown option '--token-stdin'")) resolve({ ok: false, message: TOO_OLD_TO_JOIN });
         else resolve({ ok: false, message: lastLine(stderr) ?? `pinomad exited with ${code ?? "a signal"}` });
       });
     });
