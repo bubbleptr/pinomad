@@ -11,7 +11,7 @@ import { OverviewCard } from "./overview-card.tsx";
 
 type ChangesResult = CallMethods["changes"]["result"];
 
-function renderCard(minor: number, result: ChangesResult, checkoutBranch?: string, overrides: Partial<DurableView> = {}) {
+function renderCard(minor: number, result: ChangesResult, checkoutBranch?: string, overrides: Partial<DurableView> = {}, busy = false) {
   const changes = vi.fn(async () => result);
   const remote = { controller: { changes } } as unknown as RemoteDurable;
   const conversation = {
@@ -33,20 +33,44 @@ function renderCard(minor: number, result: ChangesResult, checkoutBranch?: strin
     mcp: null,
     ...overrides,
   } as unknown as DurableView;
-  const { unmount } = render(
+  const card = (busy: boolean) => (
     <OverviewCard
       view={view}
       remote={remote}
       conversation={conversation}
       narrow={false}
-      busy={false}
+      busy={busy}
       onOpenChanges={() => {}}
       onOpenTasks={() => {}}
       onClose={() => {}}
-    />,
+    />
   );
-  return { changes, unmount };
+  const { unmount, rerender } = render(card(busy));
+  return { changes, unmount, setBusy: (next: boolean) => rerender(card(next)) };
 }
+
+describe("OverviewCard changes refresh", () => {
+  it("loads when opened during a run and refreshes when the run settles, not when one starts", async () => {
+    const { changes, setBusy } = renderCard(11, {
+      available: true,
+      base: "c0ffee",
+      branch: "main",
+      patch: "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-before\n+after\n",
+      truncated: false,
+    }, undefined, {}, true);
+    expect(await screen.findByLabelText("1 added, 1 removed")).toBeVisible();
+    expect(changes).toHaveBeenCalledTimes(1);
+
+    changes.mockResolvedValue({ available: true, base: "c0ffee", patch: "", truncated: false });
+    setBusy(false);
+    expect(await screen.findByText("None")).toBeVisible();
+    expect(changes).toHaveBeenCalledTimes(2);
+
+    setBusy(true);
+    expect(changes).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("None")).toBeVisible();
+  });
+});
 
 describe("OverviewCard workspace branch", () => {
   it("shows the branch changes() returns on a 5.11 host, even with no diff", async () => {
