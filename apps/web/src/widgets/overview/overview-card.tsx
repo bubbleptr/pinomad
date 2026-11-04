@@ -6,7 +6,7 @@
 // side panel's Changes and Tasks surfaces. It replaces the side panel's
 // Live tab.
 import { StatusDot } from "@astryxdesign/core/StatusDot";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { classify } from "@pinomad/protocol/presentation.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -30,9 +30,9 @@ const ACTIVE_ROWS = 3;
  * checkout's live branch (`branch` is undefined for detached HEAD and
  * non-git directories). Fetched when the card mounts, when the conversation
  * changes, whenever a run settles, and when the connection comes back — the
- * moments the number or the branch can move or a failed ask can succeed —
- * never while a run streams edits. A stale answer from a previous
- * conversation is dropped.
+ * moments the number or the branch can move or a failed ask can succeed.
+ * Opening during a run still fetches once; streaming updates don't poll.
+ * A stale answer from a previous conversation is dropped.
  */
 function useChangeStat(
   remote: RemoteDurable,
@@ -43,8 +43,7 @@ function useChangeStat(
 ): ChangeStat {
   const [stat, setStat] = useState<ChangeStat>({ kind: "loading" });
   const latest = useRef(0);
-  useEffect(() => {
-    if (!enabled || busy || !connected) return;
+  const refresh = useCallback(() => {
     const request = ++latest.current;
     remote.controller.changes().then(
       (result) => {
@@ -55,8 +54,19 @@ function useChangeStat(
         if (request === latest.current) setStat({ kind: "failed" });
       },
     );
-  }, [remote, conversationId, busy, connected, enabled]);
+  }, [remote]);
   useEffect(() => setStat({ kind: "loading" }), [conversationId]);
+  useEffect(() => {
+    if (enabled && connected) refresh();
+    return () => {
+      latest.current++;
+    };
+  }, [refresh, conversationId, connected, enabled]);
+  const wasBusy = useRef(busy);
+  useEffect(() => {
+    if (wasBusy.current && !busy && enabled && connected) refresh();
+    wasBusy.current = busy;
+  }, [busy, enabled, connected, refresh]);
   return stat;
 }
 
