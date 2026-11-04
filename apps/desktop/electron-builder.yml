@@ -20,6 +20,9 @@ files:
 # notarization on with -c.forceCodeSigning=true -c.mac.notarize=true.
 forceCodeSigning: false
 
+# Builds the host launcher into Contents/Helpers before signing (host-launcher/).
+afterPack: host-launcher/after-pack.cjs
+
 artifactName: ${productName}-${version}-${arch}.${ext}
 
 # electron-updater's app-update.yml/latest-mac.yml metadata — the CI still

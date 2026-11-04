@@ -752,9 +752,10 @@ struct SubmissionRecord {
     timer: Option<u32>,
     /// Admission is confirmed; no timeout applies while waiting for its entry.
     admitted: bool,
-    confirming: bool,
-    /// Snapshot version last checked for a missing entry.
+    /// Conversation snapshot version last checked for a missing entry or inbox row.
     checked_version: Option<u64>,
+    /// The inline inbox doc last checked; any change to it asks again.
+    checked_inbox: Option<Json>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -5169,19 +5170,57 @@ impl RemoteDurable {
             || self.earlier.get(&stream).is_some_and(|page| has(&page.entries))
     }
 
+    /// A conversation's inbox: a harness doc inside the conversation view,
+    /// never a `doc:` stream of its own.
+    fn inbox_of(&self, conversation: u64) -> Option<&Json> {
+        self.values
+            .get(&conversation_stream(conversation).0)
+            .and_then(|view| view.get("docs"))
+            .and_then(|docs| docs.get("pi.inbox"))
+    }
+
     fn submission_inbox_has(&self, index: usize) -> bool {
         let record = &self.submissions[index];
         let (Some(conversation), Some(submission)) = (record.conversation_id, record.submission_id) else {
             return false;
         };
-        self.values
-            .get(&doc_stream(&U16String::from_str("pi.inbox"), conversation).0)
+        self.inbox_of(conversation)
             .and_then(|inbox| inbox.get("items"))
             .and_then(Json::as_array)
             .is_some_and(|items| items.iter().any(|item| item.get("id").and_then(|value| num_id(Some(value))) == Some(submission)))
     }
-    /// Settle records whose entry or inbox row has now arrived; recheck an
-    /// admitted entry a fresh snapshot lacks (a reset may have trimmed it).
+
+    fn confirm_in_flight(&self, index: usize) -> bool {
+        self.submission_queries.values().any(|query| *query == SubmissionQuery::Confirm(index))
+    }
+
+    /// Whether the inbox is the instance the last query saw. Ops rebuild every
+    /// object on a changed path, so a row added and removed in one batch still
+    /// counts as a change even though the contents compare equal.
+    fn inbox_unchanged(&self, index: usize, conversation: u64) -> bool {
+        match (self.submissions[index].checked_inbox.as_ref(), self.inbox_of(conversation)) {
+            (Some(Json::Object(a)), Some(Json::Object(b))) => Arc::ptr_eq(a, b),
+            (None, None) => true,
+            _ => false,
+        }
+    }
+
+    /// Remember what a query about to start answers; a later snapshot or
+    /// inbox change asks again.
+    fn mark_submission_checked(&mut self, index: usize) {
+        let Some(conversation) = self.submissions[index].conversation_id else {
+            return;
+        };
+        let version = self.stream_versions.get(&conversation_stream(conversation).0).copied().unwrap_or(0);
+        let inbox = self.inbox_of(conversation).cloned();
+        self.submissions[index].checked_version = Some(version);
+        self.submissions[index].checked_inbox = inbox;
+    }
+
+    /// Settle records whose entry or inbox row has now arrived. Recheck an
+    /// admitted entry a fresh snapshot lacks (a reset may have trimmed it), and
+    /// a queued record whose row is not in the inbox: it may have been consumed
+    /// or withdrawn before we saw it, its add and removal arriving as one change.
     fn reconcile_submissions(&mut self) {
         for index in 0..self.submissions.len() {
             if self.submissions[index].phase == SubmissionPhase::Settled
@@ -5201,24 +5240,20 @@ impl RemoteDurable {
             {
                 continue;
             }
-            // Either the transcript or the inbox moving can turn an admitted
-            // row into a stale one, so check once per version of both.
+            // Ask once per fresh snapshot and once per inbox change, one query
+            // at a time; a change during it is asked about when it returns.
             let version = self
                 .stream_versions
                 .get(&conversation_stream(conversation).0)
                 .copied()
-                .unwrap_or(0)
-                .wrapping_add(
-                    self.stream_versions
-                        .get(&doc_stream(&U16String::from_str("pi.inbox"), conversation).0)
-                        .copied()
-                        .unwrap_or(0),
-                );
-            if self.submissions[index].checked_version != Some(version)
+                .unwrap_or(0);
+            let changed = self.submissions[index].checked_version != Some(version)
+                || !self.inbox_unchanged(index, conversation);
+            if changed
                 && self.fresh.contains(&conversation_stream(conversation).0)
-                && !self.submissions[index].confirming
+                && !self.confirm_in_flight(index)
             {
-                self.submissions[index].checked_version = Some(version);
+                self.mark_submission_checked(index);
                 self.send_submission_query(index, SubmissionQuery::Confirm(index));
             }
         }
@@ -5348,23 +5383,12 @@ impl RemoteDurable {
             if self.submission_entry_present(index) {
                 self.settle_submission(index);
             }
+        } else if self.submission_inbox_has(index) {
+            // The inbox row arrived before the result: that row is the fact.
+            self.settle_submission(index);
         } else {
             self.submissions[index].phase = SubmissionPhase::InFlight;
-            if let Some(conversation) = self.submissions[index].conversation_id {
-                // This query answers the current snapshot; the next one may re-ask.
-                self.submissions[index].checked_version = Some(
-                    self.stream_versions
-                        .get(&conversation_stream(conversation).0)
-                        .copied()
-                        .unwrap_or(0)
-                        .wrapping_add(
-                            self.stream_versions
-                                .get(&doc_stream(&U16String::from_str("pi.inbox"), conversation).0)
-                                .copied()
-                                .unwrap_or(0),
-                        ),
-                );
-            }
+            self.mark_submission_checked(index);
             self.send_submission_query(index, SubmissionQuery::Confirm(index));
         }
         let _ = self.refresh();
@@ -5430,8 +5454,8 @@ impl RemoteDurable {
             error: None,
             timer: None,
             admitted: false,
-            confirming: false,
             checked_version: None,
+            checked_inbox: None,
         });
         self.submission_by_request.insert(request_id.clone(), index);
         self.queue.push_back((
@@ -5659,6 +5683,10 @@ impl RemoteDurable {
                     // over. A known entry still waits for its snapshot.
                     self.settle_submission(index);
                     let _ = self.refresh();
+                }
+                // The inbox may have moved while the query was out; its answer predates that.
+                if self.submissions[index].phase != SubmissionPhase::Settled {
+                    self.reconcile_submissions();
                 }
             }
             SubmissionQuery::RecoveryQuery(index) => {

@@ -323,14 +323,13 @@ impl Harness {
     }
 
     fn logical(mut host: ScriptedHost) -> Self {
-        // Logical rows reconcile against the inbox doc as well as the transcript.
+        // As the real host announces them: `pi.inbox` travels inside the
+        // conversation view, never as its own `doc:` stream.
         host.hello_extras.push((
             "docs".to_string(),
-            Json::array(vec![
-                obj(&[("kind", Json::from(DOC_KIND)), ("presentation", Json::from(DOC_KIND))]),
-                obj(&[("kind", Json::from("pi.inbox"))]),
-            ]),
+            Json::array(vec![obj(&[("kind", Json::from(DOC_KIND)), ("presentation", Json::from(DOC_KIND))])]),
         ));
+        host.snapshots.entry("conversation:1".to_string()).or_insert_with(|| user_view(vec![]));
         let mut harness = Self::with_options(host, (20, 20), true);
         harness.invoke(0, switch_to(1));
         harness
@@ -543,6 +542,15 @@ impl Harness {
 
     fn submission_queries(&self) -> Vec<Json> {
         self.host.method("submission")
+    }
+
+    /// Ops delivered out of band on the current connection.
+    fn ops(&mut self, stream: &str, ops: Vec<Json>) {
+        self.deliver(obj(&[
+            ("type", Json::from("ops")),
+            ("stream", Json::from(stream)),
+            ("ops", Json::array(ops)),
+        ]));
     }
 
     /// A snapshot delivered out of band on the current connection.
@@ -2613,6 +2621,42 @@ fn user_view(entries: Vec<Json>) -> Json {
     ])
 }
 
+fn user_view_with_inbox(entries: Vec<Json>, inbox: Vec<Json>) -> Json {
+    obj(&[
+        ("conversation", obj(&[("id", Json::Number(1.0))])),
+        ("entries", Json::array(entries)),
+        (
+            "docs",
+            obj(&[("pi.live", obj(&[])), ("pi.inbox", obj(&[("items", Json::array(inbox))]))]),
+        ),
+    ])
+}
+
+fn inbox_row(id: u64, mode: &str, content: &str) -> Json {
+    obj(&[
+        ("id", Json::Number(id as f64)),
+        ("mode", Json::from(mode)),
+        ("content", Json::from(content)),
+    ])
+}
+
+/// `["s", path, value]`: set one path in the conversation view.
+fn set_op(path: &[&str], value: Json) -> Json {
+    Json::array(vec![
+        Json::from("s"),
+        Json::array(path.iter().map(|segment| Json::from(*segment)).collect()),
+        value,
+    ])
+}
+
+fn set_inbox_op(rows: Vec<Json>) -> Json {
+    set_op(&["docs", "pi.inbox", "items"], Json::array(rows))
+}
+
+fn set_entries_op(entries: Vec<Json>) -> Json {
+    set_op(&["entries"], Json::array(entries))
+}
+
 fn submit_call(request_id: &str, text: &str) -> Call {
     Call::Submit {
         text: text.to_string(),
@@ -2870,28 +2914,97 @@ fn logical_submit_ignores_another_devices_entry_and_inbox_row() {
         ]),
     );
     h.invoke(1, submit_call("r1", "hello"));
-    h.snapshot("conversation:1", user_view(vec![logical_user_entry(99, "other device")]));
     h.snapshot(
-        "doc:pi.inbox:1",
-        obj(&[("items", Json::array(vec![obj(&[
-            ("id", Json::Number(8.0)),
-            ("mode", Json::from("steer")),
-            ("content", Json::from("other")),
-        ])]))]),
+        "conversation:1",
+        user_view_with_inbox(vec![logical_user_entry(99, "other device")], vec![inbox_row(8, "steer", "other")]),
     );
     assert_eq!(
         h.only_submission().get("phase").and_then(Json::as_str).unwrap().to_string_lossy(),
         "inFlight"
     );
-    h.snapshot(
-        "doc:pi.inbox:1",
-        obj(&[("items", Json::array(vec![obj(&[
-            ("id", Json::Number(7.0)),
-            ("mode", Json::from("followUp")),
-            ("content", Json::from("hello")),
-        ])]))]),
+    h.ops("conversation:1", vec![set_inbox_op(vec![inbox_row(7, "followUp", "hello")])]);
+    assert!(h.submissions().is_empty());
+}
+
+#[test]
+fn logical_queued_steer_settles_on_its_inline_inbox_row() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.set_result("submit", obj(&[("submissionId", Json::Number(7.0))]));
+    h.set_result(
+        "submission",
+        obj(&[("submissionId", Json::Number(7.0)), ("status", Json::from("queued"))]),
+    );
+    // The host's inbox ops reach the client before the submit result.
+    h.ops("conversation:1", vec![set_inbox_op(vec![inbox_row(7, "steer", "hello")])]);
+    h.invoke(1, submit_call("r1", "hello"));
+    assert!(h.submissions().is_empty());
+    // The run takes the steer: no local row comes back.
+    h.ops(
+        "conversation:1",
+        vec![set_inbox_op(vec![]), set_entries_op(vec![logical_user_entry(42, "hello")])],
     );
     assert!(h.submissions().is_empty());
+}
+
+#[test]
+fn logical_queued_row_seen_only_as_one_inbox_change_asks_again() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.set_result("submit", obj(&[("submissionId", Json::Number(7.0))]));
+    h.set_result(
+        "submission",
+        obj(&[("submissionId", Json::Number(7.0)), ("status", Json::from("queued"))]),
+    );
+    h.invoke(1, submit_call("r1", "hello"));
+    assert_eq!(h.submission_queries().len(), 1);
+    assert_eq!(h.submissions().len(), 1);
+    h.set_result(
+        "submission",
+        obj(&[
+            ("submissionId", Json::Number(7.0)),
+            ("status", Json::from("placed")),
+            ("entry", Json::Number(42.0)),
+        ]),
+    );
+    // The row's add and removal reach the client as one inbox change.
+    h.ops(
+        "conversation:1",
+        vec![set_inbox_op(vec![]), set_entries_op(vec![logical_user_entry(42, "hello")])],
+    );
+    assert!(h.submissions().is_empty());
+    assert_eq!(h.submission_queries().len(), 2);
+}
+
+#[test]
+fn logical_inbox_change_during_a_query_asks_again_when_it_returns() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.set_result("submit", obj(&[("submissionId", Json::Number(7.0))]));
+    h.host.hung_methods.insert("submission".to_string());
+    h.invoke(1, submit_call("r1", "hello"));
+    assert_eq!(h.submission_queries().len(), 1);
+    // Before the host's answer lands, the row was already consumed.
+    h.ops(
+        "conversation:1",
+        vec![set_inbox_op(vec![]), set_entries_op(vec![logical_user_entry(42, "hello")])],
+    );
+    assert_eq!(h.submission_queries().len(), 1, "one query at a time");
+    h.host.hung_methods.remove("submission");
+    h.set_result(
+        "submission",
+        obj(&[
+            ("submissionId", Json::Number(7.0)),
+            ("status", Json::from("placed")),
+            ("entry", Json::Number(42.0)),
+        ]),
+    );
+    h.answer_last(
+        "submission",
+        obj(&[("submissionId", Json::Number(7.0)), ("status", Json::from("queued"))]),
+    );
+    assert!(h.submissions().is_empty());
+    assert_eq!(h.submission_queries().len(), 2);
 }
 
 #[test]

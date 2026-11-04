@@ -383,6 +383,43 @@ it("logs a stored login out from the Providers section", async () => {
   await dialog.getByText("Connect a model provider", { exact: true }).waitFor();
 });
 
+it("resizes the Terminal side panel from its left edge and keeps its width when reopened", async () => {
+  const webOrigin = await startWeb(defer);
+  const project = await tempDir();
+  defer(project.remove);
+  const projectName = project.path.split("/").at(-1)!;
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], projects: [project.path], answers: ["ready"] });
+  const page = await openPage(host, 1440, webOrigin);
+  await page.getByRole("button", { name: projectName, exact: true }).hover();
+  await page.getByRole("button", { name: `New conversation in ${projectName}`, exact: true }).click();
+  await prompt(page).fill("hello");
+  await prompt(page).press("Enter");
+  await page.getByText("ready", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Terminal", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "Side panel", exact: true });
+  await panel.getByRole("button", { name: "New terminal", exact: true }).click();
+  await panel.locator(".xterm-screen").waitFor();
+  const before = (await panel.boundingBox())!;
+  // Grab the visible split, not the handle locator: a misplaced handle must fail.
+  await page.mouse.move(before.x + 3, before.y + before.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(before.x - 97, before.y + before.height / 2, { steps: 10 });
+  await page.mouse.up();
+  await expect.poll(async () => Math.round((await panel.boundingBox())!.width)).toBe(Math.round(before.width + 100));
+  await shot(page, "terminal-panel-resized");
+  // The lower half must be draggable too, not just the grip's upper hit area.
+  const widened = (await panel.boundingBox())!;
+  await page.mouse.move(widened.x + 3, widened.y + widened.height * 0.75);
+  await page.mouse.down();
+  await page.mouse.move(widened.x + 43, widened.y + widened.height * 0.75, { steps: 10 });
+  await page.mouse.up();
+  await expect.poll(async () => Math.round((await panel.boundingBox())!.width)).toBe(Math.round(before.width + 60));
+  await page.getByRole("button", { name: "Terminal", exact: true }).click();
+  await panel.waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: "Terminal", exact: true }).click();
+  await expect.poll(async () => Math.round((await panel.boundingBox())!.width)).toBe(Math.round(before.width + 60));
+});
+
 it("keeps the chat usable on a phone with navigation and the side panel still reachable", async () => {
   const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
@@ -1693,6 +1730,7 @@ it("summarizes changes and subagents in the overview card and links to their det
   await run("git", ["-C", repo.path, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "init"]);
   // Two lines changed, one added: the card sums the patch to +2 −1.
   await writeFile(join(repo.path, "tracked.txt"), "a\nB\nc\nd\n");
+  const gate = deferred();
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
     projects: [repo.path],
@@ -1700,11 +1738,15 @@ it("summarizes changes and subagents in the overview card and links to their det
       createSubagent({ models, modelSummaries, exclude: [] }),
     ],
     answers: [
-      fauxAssistantMessage(fauxToolCall("subagent", { task: "count the lines" }), { stopReason: "toolUse" }),
+      async () => {
+        await gate.promise;
+        return fauxAssistantMessage(fauxToolCall("subagent", { task: "count the lines" }), { stopReason: "toolUse" });
+      },
       "child answer",
       "parent final",
     ],
   });
+  defer(gate.resolve);
   const page = await openPage(host, 1280, webOrigin);
   await page.getByRole("button", { name: "New chat", exact: true }).click();
   await page.getByRole("combobox", { name: "Project", exact: true }).click();
@@ -1719,15 +1761,18 @@ it("summarizes changes and subagents in the overview card and links to their det
   expect(await checkout.isChecked()).toBe(false);
   await prompt(page).fill("delegate");
   await prompt(page).press("Enter");
-  await page.getByText("parent final", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Stop", exact: true }).waitFor();
 
-  // Starting the conversation opened the card.
+  // Starting the conversation opened the card, even while the run is busy.
   const toggle = page.getByRole("button", { name: "Overview", exact: true });
   expect(await toggle.getAttribute("aria-pressed")).toBe("true");
   const overview = page.getByRole("complementary", { name: "Overview" });
   await overview.getByRole("img", { name: "Project folder" }).waitFor();
   const changes = overview.getByRole("button", { name: /Changes/ });
   await changes.getByLabel("2 added, 1 removed", { exact: true }).waitFor();
+  await shot(page, "overview-changes-while-busy");
+  gate.resolve();
+  await page.getByText("parent final", { exact: true }).waitFor();
   await overview.getByRole("button", { name: "1 done", exact: true }).click();
   const panel = page.getByRole("complementary", { name: "Side panel" });
   // The Tasks list, grouped by owner.

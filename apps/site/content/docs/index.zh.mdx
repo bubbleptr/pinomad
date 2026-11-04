@@ -30,6 +30,8 @@ pinomad up
 
 Mac App 里登录后，**Set up this Mac**（在添加第一台宿主的页面上，以及 Settings → **This Mac**）会在后台跑同样的安装，并把这台 Mac 加进你的账号，不用打开终端，也不用输短码。失败时 App 会给出命令，可以自己在终端里跑。之后 Settings → **This Mac** 可以开关这台宿主：关掉后重启电脑也不会自己起来，直到你再打开；关着时其他设备连不上这台 Mac，正在跑的任务会先跑完。终端里的 `pinomad service stop` 和 `pinomad service start` 做的是同一件事。
 
+这样装好的宿主通过 Mac App 里的一个小辅助程序运行，所以宿主上的东西（终端、agent）第一次打开“文稿”或“桌面”文件夹时，macOS 弹窗里写的是 **PiNomad**，不是 `node`。代价是 App 要一直留在“应用程序”里。删掉 App 后，在终端里跑一次 `pinomad service install`，宿主就不再依赖它。App 带上这个辅助程序之前就装好的宿主仍然以 `node` 申请；要换过来，跑 `pinomad up --yes --launcher "/Applications/PiNomad.app/Contents/Helpers/PiNomad Host.app/Contents/MacOS/pinomad-host"`（等正在跑的任务结束后重启宿主）。
+
 以后再加一台宿主，在那台机器上跑同样两行。
 
 脚本把 Node 和 pinomad 装进 `~/.pinomad/runtime`，`pinomad` 命令放在 `~/.local/bin`；这个目录还不在 PATH 里时，脚本把它加进 shell 配置文件（`~/.zshrc`、`~/.bashrc` 等）。支持 Apple 芯片的 Mac 和 x64、arm64 的 Linux（glibc）。其他平台，或者想用自己装的 Node 25+，先 `npm i -g pinomad`，再 `pinomad up`。已经用 npm 装过 pinomad 的，脚本不会动它；先 `pinomad upgrade`，再 `pinomad up`。

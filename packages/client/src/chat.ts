@@ -55,7 +55,9 @@ export function statusText(view: ConversationView): string {
   if (generation?.retry !== undefined) return `Retrying (attempt ${generation.attempt + 1}): ${generation.retry.error}`;
   if (generation?.deferred !== undefined) return "Waiting for deferred response...";
   if (compaction !== undefined) {
-    return compaction.retry ? `Retrying ${compaction.trigger} compaction (attempt ${compaction.attempt + 1})...` : `Compacting (${compaction.trigger})...`;
+    // A 1.4.0 host (protocol 5.27) still calls the field `reason`.
+    const trigger = compaction.trigger ?? (compaction as { reason?: string }).reason;
+    return compaction.retry ? `Retrying ${trigger} compaction (attempt ${compaction.attempt + 1})...` : `Compacting (${trigger})...`;
   }
   return "";
 }

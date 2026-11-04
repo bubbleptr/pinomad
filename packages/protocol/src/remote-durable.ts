@@ -407,8 +407,10 @@ interface SubmissionRecord {
   /** Admission is confirmed; no timeout applies while waiting for its entry. */
   admitted: boolean;
   confirming: boolean;
-  /** Snapshot version last checked for a missing entry. */
+  /** Conversation snapshot version last checked for a missing entry or inbox row. */
   checkedVersion?: number;
+  /** The inline inbox doc last checked; any change to it asks again. */
+  checkedInbox?: unknown;
 }
 
 /**
@@ -2699,13 +2701,25 @@ class RemoteClient {
     return shown.entries.some((entry) => String(entry.id) === String(record.entry));
   }
 
+  /** A conversation's inbox: a harness doc inside the conversation view, never a `doc:` stream of its own. */
+  #inboxOf(id: ConversationId | undefined): { readonly items?: readonly { readonly id?: unknown }[] } | undefined {
+    if (id === undefined) return undefined;
+    const view = this.#values.get(conversationStream(id)) as ConversationView | undefined;
+    return view?.docs?.["pi.inbox"] as { readonly items?: readonly { readonly id?: unknown }[] } | undefined;
+  }
+
   /** Whether the host's inbox currently shows the row this submission became. */
   #inboxHas(record: SubmissionRecord): boolean {
-    if (record.conversationId === undefined || record.submissionId === undefined) return false;
-    const inbox = this.#values.get(docStream("pi.inbox", record.conversationId)) as
-      | { readonly items?: readonly { readonly id?: unknown }[] }
-      | undefined;
-    return (inbox?.items ?? []).some((item) => String(item.id) === String(record.submissionId));
+    if (record.submissionId === undefined) return false;
+    const items = this.#inboxOf(record.conversationId)?.items ?? [];
+    return items.some((item) => String(item.id) === String(record.submissionId));
+  }
+
+  /** Remember what a query about to start answers; a later snapshot or inbox change asks again. */
+  #markChecked(record: SubmissionRecord): void {
+    if (record.conversationId === undefined) return;
+    record.checkedVersion = this.#streamVersions.get(conversationStream(record.conversationId)) ?? 0;
+    record.checkedInbox = this.#inboxOf(record.conversationId);
   }
 
   /**
@@ -2743,22 +2757,23 @@ class RemoteClient {
       }
       // An admitted record with an entry the fresh snapshot lacks may have
       // been trimmed by a reset after it committed; a queued record with no
-      // inbox row may have been consumed or withdrawn before we saw it. Ask
-      // once per fresh snapshot in both cases.
+      // inbox row may have been consumed or withdrawn before we saw it (its
+      // add and removal can reach us as one change). Ask once per fresh
+      // snapshot and once per inbox change; one query at a time, and a change
+      // during it is asked about when it returns.
       if (
         record.conversationId !== undefined
-        && record.submissionId !== undefined
+        && !record.confirming
         && record.admitted
         && (record.entry !== undefined || !this.#inboxHas(record))
       ) {
         const stream = conversationStream(record.conversationId);
-        // Either the transcript or the inbox moving can turn an admitted row
-        // into a stale one, so check once per version of both.
-        const version =
-          (this.#streamVersions.get(stream) ?? 0)
-          + (this.#streamVersions.get(docStream("pi.inbox", record.conversationId)) ?? 0);
-        if (this.#fresh.has(stream) && record.checkedVersion !== version) {
-          record.checkedVersion = version;
+        if (
+          this.#fresh.has(stream)
+          && (record.checkedVersion !== (this.#streamVersions.get(stream) ?? 0)
+            || record.checkedInbox !== this.#inboxOf(record.conversationId))
+        ) {
+          this.#markChecked(record);
           void this.#confirmSubmission(record);
         }
       }
@@ -2802,6 +2817,8 @@ class RemoteClient {
     } finally {
       record.confirming = false;
     }
+    // The inbox may have moved while the query was out; its answer predates that.
+    if (!this.#closed && !this.#submissionSettled(record)) this.#reconcileSubmissions();
   }
 
   #submissionArgs(record: SubmissionRecord): CallMethods["submit"]["args"] {
@@ -2845,14 +2862,12 @@ class RemoteClient {
     } else if (record.entry !== undefined) {
       record.phase = "inFlight";
       if (this.#entryPresent(record)) this.#settleSubmission(record);
+    } else if (this.#inboxHas(record)) {
+      // The inbox row arrived before the result: that row is the fact.
+      this.#settleSubmission(record);
     } else {
       record.phase = "inFlight";
-      if (record.conversationId !== undefined) {
-        // This query answers the current snapshot; the next one may re-ask.
-        record.checkedVersion =
-          (this.#streamVersions.get(conversationStream(record.conversationId)) ?? 0)
-          + (this.#streamVersions.get(docStream("pi.inbox", record.conversationId)) ?? 0);
-      }
+      this.#markChecked(record);
       void this.#confirmSubmission(record);
     }
     this.#touchSubmissions();

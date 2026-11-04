@@ -398,7 +398,6 @@ export function SidePanel({
   }
   if (!open) return null;
   return (
-    // Relative + overflow clip so the overlay resize handle sits on the left edge.
     // The panel shrinks toward its minimum before the chat column gives up the
     // room its header needs; the saved width returns once the window widens.
     <div
@@ -413,6 +412,10 @@ export function SidePanel({
       <ResizeHandle
         direction="horizontal"
         position="overlay"
+        // Overlay defaults to the end edge; isReversed only changes drag direction.
+        className="start-0! end-auto!"
+        // Centering keeps Astryx's grab zone full-height instead of shifted up by 50%.
+        pillPlacement="center"
         isReversed
         label="Resize side panel"
         resizable={resizable.props}
