@@ -62,13 +62,16 @@ function fakeTransport(
   /** Subscribes to a held stream get no snapshot until `release` sends one. */
   hold: (stream: StreamName) => void;
   release: (stream: StreamName, value: unknown) => void;
-  /** Calls to a held method are recorded but never answered. */
+  /** Calls to a held method are recorded and wait for `answerHeld`. */
   holdCall: (method: string) => void;
+  /** Answer the `index`-th held call ok with `value`, on the latest connection. */
+  answerHeld: (index: number, value: unknown) => void;
 } {
   const opened: FrameHandlers[] = [];
   const sent: ClientFrame[] = [];
   const held = new Set<StreamName>();
   const heldCalls = new Set<string>();
+  const heldFrames: Extract<ClientFrame, { type: "call" }>[] = [];
   const transport: FrameTransport = {
     label: "fake",
     open(handlers): FrameConnection {
@@ -94,8 +97,11 @@ function fakeTransport(
             const snapshot: ServerFrame = { type: "snapshot", stream: frame.stream, value: snapshotFor(frame.stream) };
             queueMicrotask(() => handlers.message(JSON.stringify(snapshot)));
           } else if (frame.type === "call") {
-            // A hung call is recorded but never answers — the client keeps it pending.
-            if (heldCalls.has(frame.method)) return;
+            // A hung call is recorded and answers only through `answerHeld`.
+            if (heldCalls.has(frame.method)) {
+              heldFrames.push(frame);
+              return;
+            }
             // Fork creates a new conversation; every other call resolves void.
             const value =
               frame.method === "fork"
@@ -129,6 +135,10 @@ function fakeTransport(
     },
     holdCall: (method) => {
       heldCalls.add(method);
+    },
+    answerHeld: (index, value) => {
+      const result: ServerFrame = { type: "result", id: heldFrames[index]!.id, ok: true, value };
+      queueMicrotask(() => opened.at(-1)?.message(JSON.stringify(result)));
     },
   };
 }
@@ -1471,6 +1481,39 @@ describe("RemoteDurable transcript paging", () => {
       expect(windows(older.sent)).toEqual([undefined]);
     } finally {
       for (const remote of remotes) remote.close();
+    }
+  });
+
+  it("neither shares nor applies a load from a released subscription", async () => {
+    const fake = fakeTransport([{}]);
+    fake.hold("conversation:1" as StreamName);
+    fake.holdCall("earlierEntries");
+    const remote = await connectRemoteDurable({ transport: fake.transport });
+    const loads = () => fake.sent.filter((frame) => frame.type === "call" && frame.method === "earlierEntries").length;
+    const show = async () => {
+      const switched = remote.controller.switchConversation(id(1));
+      await waitForView(remote, () => windows(fake.sent).length > 0);
+      fake.release("conversation:1" as StreamName, conversation([20, 21], 18));
+      await switched;
+    };
+    try {
+      await show();
+      const stale = remote.controller.loadEarlier(id(1));
+      // Away and back: a new subscription whose view has the same `before`.
+      await remote.controller.switchConversation(id(2));
+      await show();
+      const fresh = remote.controller.loadEarlier(id(1));
+      expect(loads()).toBe(2);
+
+      fake.answerHeld(0, { entries: [{ id: 15, kind: "pi.user" }, { id: 18, kind: "pi.user" }], before: 12 });
+      await stale;
+      expect(shownIds(remote)).toEqual([20, 21]);
+
+      fake.answerHeld(1, { entries: [{ id: 15, kind: "pi.user" }, { id: 18, kind: "pi.user" }], before: 12 });
+      await fresh;
+      expect(shownIds(remote)).toEqual([15, 18, 20, 21]);
+    } finally {
+      remote.close();
     }
   });
 

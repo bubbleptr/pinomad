@@ -1062,7 +1062,8 @@ pub struct RemoteDurable {
     /// window (5.28); a snapshot replaces them.
     earlier: HashMap<Vec<u16>, TranscriptPage>,
     /// The `loadEarlier` op in flight per conversation stream, and the
-    /// later calls that share its outcome.
+    /// later calls that share its outcome. A snapshot, end or release drops
+    /// the entry: its page belongs to the subscription before.
     loading_earlier: HashMap<Vec<u16>, u64>,
     earlier_followers: HashMap<u64, Vec<u64>>,
     fresh: HashSet<Vec<u16>>,
@@ -3733,8 +3734,10 @@ impl RemoteDurable {
         let was_fresh = self.conversation_is_fresh();
         self.values.insert(units.clone(), value);
         // A conversation snapshot starts at the oldest entry this client
-        // held (`window.from`), so it covers the loaded pages.
+        // held (`window.from`), so it covers the loaded pages; a load still
+        // in flight belongs to the subscription before.
         self.earlier.remove(&units);
+        self.loading_earlier.remove(&units);
         self.fresh.insert(units.clone());
         *self.stream_versions.entry(units.clone()).or_insert(0) += 1;
         if !was_fresh && self.conversation_is_fresh() {
@@ -3804,6 +3807,7 @@ impl RemoteDurable {
         self.wanted.remove(&units);
         self.values.remove(&units);
         self.earlier.remove(&units);
+        self.loading_earlier.remove(&units);
         self.fresh.remove(&units);
         let reason_text = U16String::js_string(&reason).to_string_lossy();
         let stream_text = U16String(units.clone()).to_string_lossy();
@@ -4596,7 +4600,10 @@ impl RemoteDurable {
                         Ok(page) => page,
                         Err(error) => return self.fail_op(index, &error),
                     };
-                    // Released meanwhile: there is nothing to show it ahead of.
+                    // Answered for a subscription since replaced or released.
+                    if self.loading_earlier.get(&stream) != Some(&self.active[index].op_id) {
+                        continue;
+                    }
                     let Some(shown) = self.shown_view(&stream) else { continue };
                     if let Some(earlier) = add_earlier(&shown, self.earlier.get(&stream), requested, &page) {
                         self.earlier.insert(stream, earlier);
@@ -4791,6 +4798,7 @@ impl RemoteDurable {
             self.wanted.remove(&stream);
             self.values.remove(&stream);
             self.earlier.remove(&stream);
+            self.loading_earlier.remove(&stream);
             self.fresh.remove(&stream);
             // The stream will never deliver a snapshot again; a reconnect
             // barrier must not keep waiting for it. Releasing the last

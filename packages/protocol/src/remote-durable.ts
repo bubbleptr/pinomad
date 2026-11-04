@@ -515,7 +515,11 @@ class RemoteClient {
   readonly #values = new Map<StreamName, unknown>();
   /** Older entries `loadEarlier` fetched ahead of a conversation stream's window (5.28); a snapshot replaces them. */
   readonly #earlier = new Map<StreamName, TranscriptPage>();
-  /** The `loadEarlier` in flight per conversation stream, so a sentinel that stays visible fetches once. */
+  /**
+   * The `loadEarlier` in flight per conversation stream, so a sentinel that
+   * stays visible fetches once. A snapshot, end or release drops it: its
+   * page belongs to the subscription before, and a later load starts anew.
+   */
   readonly #loadingEarlier = new Map<StreamName, Promise<void>>();
   // Filled at each hello from the announced minor — a 5.0 host never sees a
   // `models`/`auth` subscribe (ADR-0018 §1).
@@ -2239,6 +2243,7 @@ class RemoteClient {
         this.#values.set(frame.stream, frame.value);
         // A conversation snapshot starts at the oldest entry this client held (`window.from`), so it covers them.
         this.#earlier.delete(frame.stream);
+        this.#loadingEarlier.delete(frame.stream);
         this.#fresh.add(frame.stream);
         this.#streamVersions.set(frame.stream, (this.#streamVersions.get(frame.stream) ?? 0) + 1);
         this.#refresh();
@@ -2264,6 +2269,7 @@ class RemoteClient {
         this.#wanted.delete(frame.stream);
         this.#values.delete(frame.stream);
         this.#earlier.delete(frame.stream);
+        this.#loadingEarlier.delete(frame.stream);
         this.#fresh.delete(frame.stream);
         const ended = new Error(`Stream ${frame.stream} ended: ${frame.reason}`);
         for (const waiter of this.#snapshotWaiters.get(frame.stream)?.splice(0) ?? []) {
@@ -2369,6 +2375,7 @@ class RemoteClient {
       this.#wanted.delete(stream);
       this.#values.delete(stream);
       this.#earlier.delete(stream);
+      this.#loadingEarlier.delete(stream);
       this.#fresh.delete(stream);
       // No snapshot will ever be accepted for this stream again, so a sync
       // barrier waiting on it must settle now. Otherwise a clear during a
@@ -2419,8 +2426,10 @@ class RemoteClient {
     if (inFlight !== undefined) return inFlight;
     const requested = this.#shownView(stream)?.before;
     if (requested === undefined) return Promise.resolve();
-    const load = this.#call("earlierEntries", { conversationId: id, before: requested, limit: TRANSCRIPT_PAGE })
+    const load: Promise<void> = this.#call("earlierEntries", { conversationId: id, before: requested, limit: TRANSCRIPT_PAGE })
       .then((page) => {
+        // Answered for a subscription since replaced or released.
+        if (this.#loadingEarlier.get(stream) !== load) return;
         const shown = this.#shownView(stream);
         if (shown === undefined) return;
         const earlier = addEarlier(shown, this.#earlier.get(stream), requested, page);
@@ -2428,7 +2437,9 @@ class RemoteClient {
         this.#earlier.set(stream, earlier);
         this.#refresh();
       })
-      .finally(() => this.#loadingEarlier.delete(stream));
+      .finally(() => {
+        if (this.#loadingEarlier.get(stream) === load) this.#loadingEarlier.delete(stream);
+      });
     this.#loadingEarlier.set(stream, load);
     return load;
   }

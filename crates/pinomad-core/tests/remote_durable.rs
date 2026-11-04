@@ -3435,6 +3435,34 @@ fn load_earlier_calls_share_the_one_in_flight() {
 }
 
 #[test]
+fn a_load_earlier_from_a_released_subscription_is_not_shared_or_applied() {
+    let mut host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    host.snapshots.insert("conversation:1".to_string(), paged_view(&[20, 21], Some(18)));
+    host.hung_methods.insert("earlierEntries".to_string());
+    let mut h = Harness::paged(host);
+    h.invoke(1, switch_to(1));
+    h.invoke(2, Call::LoadEarlier { conversation_id: 1 });
+    // Away and back: a new subscription whose view has the same `before`.
+    h.invoke(3, switch_to(2));
+    h.invoke(4, switch_to(1));
+    h.invoke(5, Call::LoadEarlier { conversation_id: 1 });
+    assert_eq!(h.host.method("earlierEntries").len(), 2, "the new subscription loads on its own");
+
+    let stale = h.host.method("earlierEntries")[0].get("id").cloned().unwrap();
+    h.deliver(obj(&[
+        ("type", Json::from("result")),
+        ("id", stale),
+        ("ok", Json::Bool(true)),
+        ("value", page(&[15, 18], Some(12))),
+    ]));
+    assert_eq!(shown_ids(&h), vec![20, 21], "a page loaded for the released subscription is dropped");
+
+    h.answer_last("earlierEntries", page(&[15, 18], Some(12)));
+    assert_eq!(shown_ids(&h), vec![15, 18, 20, 21]);
+    assert_eq!(h.ops.get(&5), Some(&Ok(None)));
+}
+
+#[test]
 fn a_failed_load_earlier_rejects_every_shared_call() {
     let mut host = ScriptedHost::new(vec![obj(&[])], vec![]);
     host.snapshots.insert("conversation:1".to_string(), paged_view(&[20, 21], Some(18)));
