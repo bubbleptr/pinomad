@@ -19,8 +19,9 @@ import { MoreHorizontal, Pencil, Plus, RefreshCw, Trash2 } from "../../shared/ui
 import { RenameTerminalDialog } from "./rename-terminal-dialog.tsx";
 import { SurfaceBar } from "./surface-bar.tsx";
 
-// xterm measures its cell once, when the screen opens, so the code face must
-// have loaded by then; if it fails, the fallback stack is measured instead.
+// xterm measures its cell once, when the screen opens, so the code face (the
+// --font-family-code token in styles.css) must have loaded by then; if it
+// fails, the fallback stack is measured instead.
 // Suspense doesn't catch a chunk that fails to load; this keeps the surface up.
 const XtermView = lazy(() =>
   Promise.all([import("./xterm-view.tsx"), document.fonts.load('13px "Geist Mono Variable"').catch(() => [])])
