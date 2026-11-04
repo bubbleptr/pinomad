@@ -1,7 +1,6 @@
 // Spawned by rtc-node.test.ts in plain Node: the vitest worker pool does not
 // deliver node-datachannel's native thread callbacks, so the real WebRTC path
 // runs in a normal process, exactly like the host does in production.
-import { once } from "node:events";
 import { WebSocket } from "ws";
 import type { CallMethods, ServerFrame } from "@pinomad/protocol/frames.ts";
 import { PROTOCOL } from "@pinomad/protocol/frames.ts";
@@ -37,7 +36,9 @@ async function tokenCall<M extends keyof CallMethods>(
   args: CallMethods[M]["args"],
 ): Promise<CallMethods[M]["result"]> {
   const socket = new WebSocket(`${hostUrl}?token=${encodeURIComponent(token)}`);
-  await once(socket, "open");
+  // Listen before the socket opens: the host sends hello as soon as it
+  // registers the connection, often in the same read as the upgrade response,
+  // and ws then emits "open" and "message" back to back.
   let id = 1;
   return await new Promise((resolve, reject) => {
     socket.on("message", (data) => {

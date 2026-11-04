@@ -27,10 +27,11 @@ export const STATUS_CASES: NamedCase<ConversationView>[] = [
     input: chatView([], { run: {}, generation: { attempt: 1, retry: { at: 0, error: "overloaded" } } }),
   },
   { name: "deferred", input: chatView([], { run: {}, generation: { attempt: 1, deferred: true } }) },
-  { name: "compaction", input: chatView([], { compactions: [{ reason: "manual", attempt: 1 }] }) },
+  { name: "compaction", input: chatView([], { compactions: [{ trigger: "manual", attempt: 1 }] }) },
+  { name: "compaction-old-host", input: chatView([], { compactions: [{ reason: "threshold", attempt: 1 }] }) },
   {
     name: "compaction-retry",
-    input: chatView([], { compactions: [{ reason: "manual", attempt: 2, retry: { at: 1, error: "x" } }] }),
+    input: chatView([], { compactions: [{ trigger: "manual", attempt: 2, retry: { at: 1, error: "x" } }] }),
   },
 ];
 

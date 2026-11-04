@@ -467,21 +467,26 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
   };
 
   const unsubscribeConversations = conversations.subscribe(() => update());
-  const unsubscribeCommits = harness.subscribeCommits((publication) => {
-    for (const change of publication.changes) {
-      // The publication carries the adopted title — resolving waiters needs no Session read.
-      if (change.type !== "document" || change.record.kind !== TitleDoc.definition.kind) continue;
-      const id = change.conversationId;
-      if (id === undefined) continue;
-      const title = (change.value as { title?: unknown } | null)?.title;
-      if (typeof title !== "string" || title === "") continue;
-      const waiters = titleWaiters.get(id);
-      titleWaiters.delete(id);
-      for (const settle of waiters ?? []) settle(title);
-    }
+  const commits = harness.observeCommits({
+    advance: (publication) => {
+      for (const change of publication.changes) {
+        // The publication carries the adopted title — resolving waiters needs no Session read.
+        if (change.type !== "document" || change.kind !== "change" || change.record.kind !== TitleDoc.definition.kind) continue;
+        const id = change.conversationId;
+        if (id === undefined) continue;
+        const title = (change.value as { title?: unknown }).title;
+        if (typeof title !== "string" || title === "") continue;
+        const waiters = titleWaiters.get(id);
+        titleWaiters.delete(id);
+        for (const settle of waiters ?? []) settle(title);
+      }
+    },
+    end: () => {},
   });
-  indexWatch?.start(async (value) => {
-    index = value ?? undefined;
+  indexWatch?.start(async (call) => {
+    if (call.kind !== "value") return;
+    // The session index is never retired.
+    index = call.value;
     update();
   });
   update();
@@ -491,7 +496,7 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
     async close() {
       disposed = true;
       unsubscribeConversations();
-      unsubscribeCommits();
+      commits.detach();
       await indexWatch?.stop();
       for (const item of pending) drop(item);
       pending.clear();

@@ -3,7 +3,6 @@
 // The real coordinator connects to a real host over WebSocket, upgrades to a
 // real libdatachannel Peer, calls and subscribes, then loses the DataChannel
 // and reconnects over WebSocket.
-import { once } from "node:events";
 import { WebSocket } from "ws";
 import type { CallMethods } from "@pinomad/protocol/frames.ts";
 import { candidatePlan } from "@pinomad/protocol/remote-candidates.ts";
@@ -26,7 +25,9 @@ const fail = (error: unknown): never => {
 
 async function tokenCall<M extends keyof CallMethods>(method: M, args: CallMethods[M]["args"]): Promise<CallMethods[M]["result"]> {
   const socket = new WebSocket(`${hostUrl}?token=${encodeURIComponent(token)}`);
-  await once(socket, "open");
+  // Listen before the socket opens: the host sends hello as soon as it
+  // registers the connection, often in the same read as the upgrade response,
+  // and ws then emits "open" and "message" back to back.
   return await new Promise((resolve, reject) => {
     const id = 1;
     socket.on("message", (data) => {

@@ -228,7 +228,7 @@ export async function main(argv: readonly string[]): Promise<void> {
   // A failed Storage call closes the session; exit nonzero so the service
   // manager restarts a working host instead of leaving a zombie (ADR-0009).
   void host.closed.then((end) => {
-    if (end.reason !== "failed" || stopping) return;
+    if (end.kind !== "failed" || stopping) return;
     stopping = true;
     stopLogRotation();
     const error = end.error instanceof Error ? end.error.message : String(end.error);

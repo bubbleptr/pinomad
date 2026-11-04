@@ -92,10 +92,12 @@
               "attempt": "number"
             },
             "run": {
+              "first": "number",
               "inputs": [
                 "number"
               ],
-              "taskId": "number"
+              "taskId": "number",
+              "turns": "number"
             },
             "tools": [
               {
@@ -188,6 +190,7 @@
                 "provider": "string",
                 "role": "=assistant",
                 "stopReason": "string",
+                "thinkingLevel": "string",
                 "timestamp": "number",
                 "usage": {
                   "cacheRead": "number",
@@ -227,6 +230,7 @@
                 "provider": "string",
                 "role": "=assistant",
                 "stopReason": "string",
+                "thinkingLevel": "string",
                 "timestamp": "number",
                 "usage": {
                   "cacheRead": "number",

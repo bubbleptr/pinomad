@@ -53,8 +53,9 @@ const QuestionWait = defineTask<{ requestId: string }, { phase: "waiting" }, Que
             resolve(initial);
             return;
           }
-          watch.start(async (value) => {
-            const found = resolutionOf(value, task.input.requestId);
+          watch.start(async (call) => {
+            if (call.kind !== "value") return;
+            const found = resolutionOf(call.value, task.input.requestId);
             if (found !== undefined) resolve(found);
           });
           // The abort mark only ends this invocation if the phase leaves on its signal.

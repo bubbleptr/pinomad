@@ -1,6 +1,6 @@
 import type { Context } from "@earendil-works/chord";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
-import type { StorageWrite } from "@earendil-works/pi-durable";
+import type { Seq, StorageWrite } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
 import { connectTo, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
@@ -21,8 +21,8 @@ describe("session failure", () => {
         return new Proxy(storage, {
           get(target, prop) {
             if (prop === "commit") {
-              return (writes: readonly StorageWrite[], context: Context) =>
-                failWrites ? Promise.reject(new Error("injected storage failure")) : target.commit(writes, context);
+              return (batches: readonly (readonly StorageWrite[])[], receive: (index: number, seq: Seq) => void, context: Context) =>
+                failWrites ? Promise.reject(new Error("injected storage failure")) : target.commit(batches, receive, context);
             }
             const value = Reflect.get(target, prop);
             return typeof value === "function" ? value.bind(target) : value;
@@ -37,6 +37,6 @@ describe("session failure", () => {
     failWrites = true;
     await client.controller.createConversation({ kind: "chat" }, "second").catch(() => {});
     const end = await host.closed;
-    expect(end.reason).toBe("failed");
+    expect(end.kind).toBe("failed");
   });
 });

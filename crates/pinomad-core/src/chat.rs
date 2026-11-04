@@ -117,14 +117,16 @@ pub fn status_text(view: &Json) -> String {
         return "Waiting for deferred response...".to_string();
     }
     if let Some(compaction) = compaction {
+        // A 1.4.0 host (protocol 5.27) still calls the field `reason`.
+        let trigger = not_null(compaction.get("trigger")).or_else(|| compaction.get("reason"));
         return if compaction.get("retry").is_some_and(Json::truthy) {
             format!(
                 "Retrying {} compaction (attempt {})...",
-                js_text(compaction.get("reason")),
+                js_text(trigger),
                 U16String(text::plus_one(compaction.get("attempt"))).to_string_lossy(),
             )
         } else {
-            format!("Compacting ({})...", js_text(compaction.get("reason")))
+            format!("Compacting ({})...", js_text(trigger))
         };
     }
     String::new()

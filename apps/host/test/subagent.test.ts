@@ -69,7 +69,9 @@ async function watchUntil(
         resolve(value);
       };
       check(watch.value);
-      watch.start(async (value) => check(value));
+      watch.start(async (call) => {
+        if (call.kind === "value") check(call.value);
+      });
     });
   } finally {
     await watch.stop();
