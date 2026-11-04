@@ -1,12 +1,12 @@
 {
   "protocol": {
     "major": 5,
-    "minor": 27
+    "minor": 28
   },
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":27},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":28},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -16,17 +16,17 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":27},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":28},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
       "expect": "hello"
     },
     {
       "name": "signalHello",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":27},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":28},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
       "expect": "signalHello"
     },
     {
       "name": "signalHello-no-rtc",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":27}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":28}}",
       "expect": "signalHello"
     },
     {
@@ -229,6 +229,18 @@
       "wire": "{\"type\":\"call\",\"id\":27,\"method\":\"submission\",\"args\":{\"conversationId\":2,\"requestId\":\"req\"}}"
     },
     {
+      "name": "subscribe-window",
+      "wire": "{\"type\":\"subscribe\",\"stream\":\"conversation:12\",\"images\":\"ref\",\"window\":{\"limit\":50}}"
+    },
+    {
+      "name": "subscribe-window-from",
+      "wire": "{\"type\":\"subscribe\",\"stream\":\"conversation:12\",\"images\":\"ref\",\"window\":{\"limit\":50,\"from\":15}}"
+    },
+    {
+      "name": "call-earlierEntries",
+      "wire": "{\"type\":\"call\",\"id\":28,\"method\":\"earlierEntries\",\"args\":{\"conversationId\":2,\"before\":18,\"limit\":50}}"
+    },
+    {
       "name": "call-empty-args",
       "wire": "{\"type\":\"call\",\"id\":9,\"method\":\"createPairing\",\"args\":{}}"
     },
@@ -302,6 +314,10 @@
       {
         "name": "deleteAgent",
         "since": 6
+      },
+      {
+        "name": "earlierEntries",
+        "since": 28
       },
       {
         "name": "fork",
@@ -518,6 +534,10 @@
       {
         "name": "terminals",
         "since": 27
+      },
+      {
+        "name": "transcriptPaging",
+        "since": 28
       }
     ]
   },
@@ -664,6 +684,18 @@
       "name": "deleteAgent@5",
       "minor": 5,
       "call": "deleteAgent",
+      "expect": false
+    },
+    {
+      "name": "earlierEntries@28",
+      "minor": 28,
+      "call": "earlierEntries",
+      "expect": true
+    },
+    {
+      "name": "earlierEntries@27",
+      "minor": 27,
+      "call": "earlierEntries",
       "expect": false
     },
     {
@@ -1156,6 +1188,18 @@
       "name": "terminals@26",
       "minor": 26,
       "feature": "terminals",
+      "expect": false
+    },
+    {
+      "name": "transcriptPaging@28",
+      "minor": 28,
+      "feature": "transcriptPaging",
+      "expect": true
+    },
+    {
+      "name": "transcriptPaging@27",
+      "minor": 27,
+      "feature": "transcriptPaging",
       "expect": false
     }
   ],

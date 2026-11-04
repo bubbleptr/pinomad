@@ -499,6 +499,28 @@ describe("parseClientFrame", () => {
     expect(kinds({ type: "unsubscribe", stream: `terminal:${id}` })).toBe("frame");
   });
 
+  it("reads a conversation subscribe's window and the earlierEntries args (5.28)", () => {
+    const call = (method: string, args: unknown): unknown => ({ type: "call", id: 1, method, args });
+    expect(parseClientFrame({ type: "subscribe", stream: "conversation:3", images: "ref", window: { limit: 50, from: 12 } })).toEqual({
+      kind: "frame",
+      frame: { type: "subscribe", stream: "conversation:3", images: "ref", window: { limit: 50, from: 12 } },
+    });
+    // Only a conversation stream has a transcript to window; elsewhere the field is a newer client's and ignored.
+    expect(parseClientFrame({ type: "subscribe", stream: "tasks", window: "anything" })).toEqual({
+      kind: "frame",
+      frame: { type: "subscribe", stream: "tasks" },
+    });
+    expect(kinds({ type: "subscribe", stream: "conversation:3", window: { limit: 0 } })).toBe("malformed");
+    expect(kinds({ type: "subscribe", stream: "conversation:3", window: { limit: 50, from: "12" } })).toBe("malformed");
+    expect(kinds({ type: "subscribe", stream: "conversation:3", window: 50 })).toBe("malformed");
+    expect(kinds(call("earlierEntries", { conversationId: 3, before: 12, limit: 50 }))).toBe("frame");
+    expect(kinds(call("earlierEntries", { conversationId: 3, before: "12", limit: 50 }))).toBe("malformed");
+    expect(kinds(call("earlierEntries", { conversationId: 3, before: 12 }))).toBe("malformed");
+    expect(hostSupportsCall(27, "earlierEntries")).toBe(false);
+    expect(hostSupportsCall(28, "earlierEntries")).toBe(true);
+    expect(hostSupportsFeature(28, "transcriptPaging")).toBe(true);
+  });
+
   it("introduces terminals at minor 27", () => {
     expect(hostSupportsCall(26, "openTerminal")).toBe(false);
     expect(hostSupportsFeature(26, "terminals")).toBe(false);

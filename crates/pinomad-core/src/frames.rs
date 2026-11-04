@@ -6,6 +6,7 @@
 // is out of scope here: this crate is the client.
 
 use crate::json::{Json, JsonObject};
+use crate::transcript::TranscriptWindow;
 use crate::u16str::U16String;
 use std::sync::Arc;
 
@@ -18,7 +19,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 27 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 28 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -110,6 +111,7 @@ pub enum CallMethod {
     ListFiles,
     ListSkills,
     Image,
+    EarlierEntries,
     ListCommands,
     RunCommand,
     BeginAttachment,
@@ -164,6 +166,7 @@ impl CallMethod {
             "listFiles" => Self::ListFiles,
             "listSkills" => Self::ListSkills,
             "image" => Self::Image,
+            "earlierEntries" => Self::EarlierEntries,
             "listCommands" => Self::ListCommands,
             "runCommand" => Self::RunCommand,
             "beginAttachment" => Self::BeginAttachment,
@@ -225,6 +228,7 @@ impl CallMethod {
             | Self::RenameTerminal
             | Self::RestartTerminal
             | Self::CloseTerminal => 27,
+            Self::EarlierEntries => 28,
         }
     }
 }
@@ -257,6 +261,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
         HostFeature::Rtc => 23,
         HostFeature::SubmitEntry => 25,
         HostFeature::Terminals => 27,
+        HostFeature::TranscriptPaging => 28,
     };
     host_minor >= since
 }
@@ -300,6 +305,9 @@ pub enum HostFeature {
     /// Terminals (27, ADR-0041): the `terminals:` / `terminal:` streams and
     /// the `output` frame. iOS doesn't open terminals yet.
     Terminals,
+    /// A conversation subscribe's `window` and the `earlierEntries` call
+    /// (28): the first snapshot holds only the newest turns.
+    TranscriptPaging,
 }
 
 
@@ -570,8 +578,9 @@ pub fn classify_server_frame(value: Json) -> ServerFrame {
 #[derive(Clone, Debug)]
 pub enum ClientFrame {
     /// `images` asks a 5.15 host to send `{ref}` blocks for a
-    /// `conversation:` stream (ADR-0027); other streams ignore it.
-    Subscribe { stream: U16String, images: bool },
+    /// `conversation:` stream (ADR-0027); `window` asks a 5.28 host for
+    /// only the newest turns. Other streams ignore both.
+    Subscribe { stream: U16String, images: bool, window: Option<TranscriptWindow> },
     Unsubscribe { stream: U16String },
     Call { id: f64, method: U16String, args: Json },
 }
@@ -580,11 +589,14 @@ pub fn encode_client_frame(frame: &ClientFrame) -> String {
     let mut object = JsonObject::new();
     let stream_of = |stream: &U16String| Json::String(stream.clone());
     match frame {
-        ClientFrame::Subscribe { stream, images } => {
+        ClientFrame::Subscribe { stream, images, window } => {
             object.set(U16String::from_str("type"), Json::from("subscribe"));
             object.set(U16String::from_str("stream"), stream_of(stream));
             if *images {
                 object.set(U16String::from_str("images"), Json::from("ref"));
+            }
+            if let Some(window) = window {
+                object.set(U16String::from_str("window"), window.to_json());
             }
         }
         ClientFrame::Unsubscribe { stream } => {

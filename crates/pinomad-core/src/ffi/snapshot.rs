@@ -138,6 +138,11 @@ pub struct ConversationSnapshot {
     /// The composer shows them after `queue_items`.
     #[uniffi(default)]
     pub local_queue_items: Vec<LocalQueueItem>,
+    /// The shown view has a `before` (5.28): older turns exist that
+    /// `FfiCall::LoadEarlier` pages in. Always false without
+    /// `transcript_paging`, where the whole transcript arrives.
+    #[uniffi(default)]
+    pub has_earlier: bool,
 }
 
 fn connection_of(view: &Json) -> ConnectionState {
@@ -411,6 +416,7 @@ fn conversation_of(view: &Json, fresh: bool, fresh_epoch: u64) -> Option<Convers
         fresh_epoch,
         local_submissions: local_submissions_of(&local_scope),
         local_queue_items: local_queue_items_of(&local_scope),
+        has_earlier: conversation.get("before").is_some(),
     })
 }
 

@@ -24,7 +24,7 @@ use crate::frames::{
     encode_client_frame, host_streams, host_supports_call, host_supports_feature, minor_version,
     parse_host_rtc, parse_rtc_max_message_size,
 };
-use crate::json::{Json, JsonObject};
+use crate::json::{Json, JsonObject, num_key};
 use crate::organization::{checkout_of, home_of, organize};
 use crate::remote_candidates::{
     DIRECT_UNAVAILABLE, RemoteCandidate, RemoteCandidateRole, candidate_plan,
@@ -36,6 +36,7 @@ use crate::secure_channel::{
 use crate::b64::from_base64url;
 use crate::noise::{KeyPair, keypair_from_private};
 use crate::rtc::{RtcCandidateInfo, RtcSelectedPair, rtc_selected_pair};
+use crate::transcript::{TRANSCRIPT_PAGE, TranscriptPage, TranscriptWindow, add_earlier, with_earlier};
 use crate::transport::{ConnOut, Connection, Transport};
 use crate::u16str::U16String;
 
@@ -368,6 +369,13 @@ pub enum Call {
     /// conversation (ADR-0029). Same read-only, unqueued shape as
     /// `listSkills`. Needs a 5.17 host.
     ListCommands { conversation_id: u64 },
+    /// `loadEarlier` — page the turns before the shown view of
+    /// `conversation_id` (the main or side conversation) in ahead of it
+    /// (5.28). Read-only and unqueued like `listCommands`; resolves once
+    /// they show. A no-op when the view has no `before`: it reaches the
+    /// transcript's start, or it came whole (no `transcript_paging`, or a
+    /// host before 5.28). Calls while one is loading share it.
+    LoadEarlier { conversation_id: u64 },
     /// `beginAttachment` — create one host-stored upload slot (5.19, issue
     /// #321). Read-only in the same sense as `listFiles`: unqueued, so a
     /// chunk upload never waits behind a submit and never blocks one.
@@ -642,6 +650,11 @@ pub struct RemoteDurableOptions {
     /// (ADR-0034). Off by default: iOS keeps the pre-PR-3 behavior until the
     /// Web client's reconciliation has a native UI.
     pub logical_submissions: bool,
+    /// Subscribe to conversations with a `window` (5.28): the first snapshot
+    /// holds only the newest turns and `Call::LoadEarlier` pages older ones
+    /// in. Off by default, so a client without a "load earlier" control
+    /// keeps getting the whole transcript.
+    pub transcript_paging: bool,
 }
 
 impl RemoteDurableOptions {
@@ -665,6 +678,7 @@ impl RemoteDurableOptions {
             connection_mode: ConnectionMode::Auto,
             rtc: None,
             logical_submissions: false,
+            transcript_paging: false,
         }
     }
 }
@@ -802,6 +816,9 @@ enum Step {
     /// clearConversation: release the main slot, then the side slot.
     ClearConversation,
     ToggleTasks,
+    /// loadEarlier's second half: put the `earlierEntries` page ahead of the
+    /// stream's loaded pages, unless the shown `before` moved meanwhile.
+    ApplyEarlier { stream: Vec<u16>, requested: u64 },
     Done { value: DoneValue },
 }
 
@@ -1042,6 +1059,14 @@ pub struct RemoteDurable {
     next_conn: u32,
     wanted: BTreeSet<Vec<u16>>,
     values: HashMap<Vec<u16>, Json>,
+    /// Older entries `loadEarlier` fetched ahead of a conversation stream's
+    /// window (5.28); a snapshot replaces them.
+    earlier: HashMap<Vec<u16>, TranscriptPage>,
+    /// The `loadEarlier` op in flight per conversation stream, and the
+    /// later calls that share its outcome. A snapshot, end or release drops
+    /// the entry: its page belongs to the subscription before.
+    loading_earlier: HashMap<Vec<u16>, u64>,
+    earlier_followers: HashMap<u64, Vec<u64>>,
     fresh: HashSet<Vec<u16>>,
     docs: Vec<DocDecl>,
     pending_calls: HashMap<u64, u64>,
@@ -1072,6 +1097,7 @@ pub struct RemoteDurable {
     queue: VecDeque<(u64, OpKind, Call)>,
     active: Vec<ActiveOp>,
     logical_submissions: bool,
+    transcript_paging: bool,
     submissions: Vec<SubmissionRecord>,
     submission_by_request: HashMap<String, usize>,
     op_submissions: HashMap<u64, usize>,
@@ -1185,6 +1211,9 @@ impl RemoteDurable {
             next_conn: 0,
             wanted: BTreeSet::new(),
             values: HashMap::new(),
+            earlier: HashMap::new(),
+            loading_earlier: HashMap::new(),
+            earlier_followers: HashMap::new(),
             fresh: HashSet::new(),
             docs: Vec::new(),
             pending_calls: HashMap::new(),
@@ -1208,6 +1237,7 @@ impl RemoteDurable {
             queue: VecDeque::new(),
             active: Vec::new(),
             logical_submissions: options.logical_submissions,
+            transcript_paging: options.transcript_paging,
             submissions: Vec::new(),
             submission_by_request: HashMap::new(),
             op_submissions: HashMap::new(),
@@ -3403,22 +3433,46 @@ impl RemoteDurable {
     }
 
     /// Subscribe to one stream. Conversation streams ask a 5.15 host for
-    /// refs on every (re)subscribe; the minor is read here, never cached,
-    /// because a reconnect may land on another host version (ADR-0027).
+    /// refs and a 5.28 host for a window on every (re)subscribe; the minor
+    /// is read here, never cached, because a reconnect may land on another
+    /// host version (ADR-0027).
     fn subscribe_stream(&mut self, stream: Vec<u16>) {
         // Before the hello the minor is unknown; the hello's #wanted loop
         // sends this stream with the right form once it has read it.
         if !self.hello_received {
             return;
         }
-        let images = host_supports_feature(self.host_minor, HostFeature::ImageRefs)
-            && U16String(stream.clone())
-                .to_string_lossy()
-                .starts_with("conversation:");
+        let conversation = U16String(stream.clone())
+            .to_string_lossy()
+            .starts_with("conversation:");
+        let images = conversation && host_supports_feature(self.host_minor, HostFeature::ImageRefs);
+        let window = conversation.then(|| self.window(&stream)).flatten();
         self.send(ClientFrame::Subscribe {
             stream: U16String(stream),
             images,
+            window,
         });
+    }
+
+    /// `#window` — a conversation stream's window on a 5.28 host: the newest
+    /// page, or on a resubscribe everything from the oldest entry still
+    /// shown, so scrolling back survives a reconnect.
+    fn window(&self, stream: &[u16]) -> Option<TranscriptWindow> {
+        if !self.transcript_paging || !host_supports_feature(self.host_minor, HostFeature::TranscriptPaging) {
+            return None;
+        }
+        let from = self
+            .shown_view(stream)
+            .and_then(|view| view.get("entries").and_then(Json::as_array).and_then(|entries| entries.first().cloned()))
+            .and_then(|entry| num_key(entry.get("id")));
+        Some(TranscriptWindow { limit: TRANSCRIPT_PAGE, from })
+    }
+
+    /// `#shownView` — a conversation stream's view as shown: its window with
+    /// the older pages loaded ahead of it. Every derivation reads this.
+    fn shown_view(&self, stream: &[u16]) -> Option<Json> {
+        let view = self.values.get(stream)?;
+        Some(with_earlier(view, self.earlier.get(stream)))
     }
 
     /// `#receive` — one complete JSON text frame; errors are candidate
@@ -3680,6 +3734,11 @@ impl RemoteDurable {
         }
         let was_fresh = self.conversation_is_fresh();
         self.values.insert(units.clone(), value);
+        // A conversation snapshot starts at the oldest entry this client
+        // held (`window.from`), so it covers the loaded pages; a load still
+        // in flight belongs to the subscription before.
+        self.earlier.remove(&units);
+        self.loading_earlier.remove(&units);
         self.fresh.insert(units.clone());
         *self.stream_versions.entry(units.clone()).or_insert(0) += 1;
         if !was_fresh && self.conversation_is_fresh() {
@@ -3748,6 +3807,8 @@ impl RemoteDurable {
         };
         self.wanted.remove(&units);
         self.values.remove(&units);
+        self.earlier.remove(&units);
+        self.loading_earlier.remove(&units);
         self.fresh.remove(&units);
         let reason_text = U16String::js_string(&reason).to_string_lossy();
         let stream_text = U16String(units.clone()).to_string_lossy();
@@ -3906,6 +3967,12 @@ impl RemoteDurable {
                 other => call = other,
             }
         }
+        if let Call::LoadEarlier { conversation_id } = &call {
+            if let Some(leader) = self.loading_earlier.get(&conversation_stream(*conversation_id).0) {
+                self.earlier_followers.entry(*leader).or_default().push(op);
+                return;
+            }
+        }
         let kind = op_kind(&call);
         if let Some(handoff) = self.handoff.as_mut() {
             // The atomic barrier closed the new-call entrance; the op waits
@@ -3944,6 +4011,11 @@ impl RemoteDurable {
         }
         match self.op_steps(&call) {
             Ok(steps) => {
+                if let Call::LoadEarlier { conversation_id } = &call {
+                    if steps.iter().any(|step| matches!(step, Step::Call { .. })) {
+                        self.loading_earlier.insert(conversation_stream(*conversation_id).0, op_id);
+                    }
+                }
                 self.active.push(ActiveOp {
                     op_id,
                     kind,
@@ -4365,6 +4437,20 @@ impl RemoteDurable {
                 let args = obj(&[("conversationId", Json::Number(*conversation_id as f64))]);
                 steps.push_back(Step::Call { method: "listCommands", args });
             }
+            Call::LoadEarlier { conversation_id } => {
+                let stream = conversation_stream(*conversation_id).0;
+                if let Some(requested) = self.shown_view(&stream).and_then(|view| num_key(view.get("before"))) {
+                    let args = obj(&[
+                        ("conversationId", Json::Number(*conversation_id as f64)),
+                        ("before", Json::Number(requested as f64)),
+                        ("limit", Json::Number(TRANSCRIPT_PAGE as f64)),
+                    ]);
+                    steps.push_back(Step::Call { method: "earlierEntries", args });
+                    steps.push_back(Step::ApplyEarlier { stream, requested });
+                }
+                steps.push_back(Step::Done { value: DoneValue::Unit });
+                return Ok(steps);
+            }
             Call::BeginAttachment { name, size } => {
                 if !host_supports_call(self.host_minor, "beginAttachment") {
                     return Err(too_old("5.19"));
@@ -4509,6 +4595,24 @@ impl RemoteDurable {
                         return self.fail_op(index, &error);
                     }
                 }
+                Step::ApplyEarlier { stream, requested } => {
+                    let result = self.active[index].last_result.clone().unwrap_or(Json::Null);
+                    let page = match TranscriptPage::from_json(&result) {
+                        Ok(page) => page,
+                        Err(error) => return self.fail_op(index, &error),
+                    };
+                    // Answered for a subscription since replaced or released.
+                    if self.loading_earlier.get(&stream) != Some(&self.active[index].op_id) {
+                        continue;
+                    }
+                    let Some(shown) = self.shown_view(&stream) else { continue };
+                    if let Some(earlier) = add_earlier(&shown, self.earlier.get(&stream), requested, &page) {
+                        self.earlier.insert(stream, earlier);
+                        if let Err(error) = self.refresh() {
+                            return self.fail_op(index, &error);
+                        }
+                    }
+                }
                 Step::ToggleTasks => {
                     let tasks = key("tasks");
                     if self.wanted.remove(&tasks) {
@@ -4587,7 +4691,16 @@ impl RemoteDurable {
         } else {
             self.out.push(Command::OperationSucceeded { op: op.op_id, value });
         }
+        for follower in self.take_earlier_followers(op.op_id) {
+            self.out.push(Command::OperationSucceeded { op: follower, value: None });
+        }
         self.pump();
+    }
+
+    /// A settled `loadEarlier`'s shared callers; its stream may load again.
+    fn take_earlier_followers(&mut self, op_id: u64) -> Vec<u64> {
+        self.loading_earlier.retain(|_, leader| *leader != op_id);
+        self.earlier_followers.remove(&op_id).unwrap_or_default()
     }
 
     /// Op failed mid-flight: a request reports the error; commands and the
@@ -4652,6 +4765,13 @@ impl RemoteDurable {
                 self.out.push(Command::OperationSucceeded { op: op_id, value: None });
             }
         }
+        for follower in self.take_earlier_followers(op_id) {
+            self.out.push(Command::OperationFailed {
+                op: follower,
+                error: error.to_string(),
+                carrier_lost,
+            });
+        }
         self.pump();
     }
 
@@ -4678,6 +4798,8 @@ impl RemoteDurable {
             }
             self.wanted.remove(&stream);
             self.values.remove(&stream);
+            self.earlier.remove(&stream);
+            self.loading_earlier.remove(&stream);
             self.fresh.remove(&stream);
             // The stream will never deliver a snapshot again; a reconnect
             // barrier must not keep waiting for it. Releasing the last
@@ -5025,15 +5147,27 @@ impl RemoteDurable {
         let (Some(conversation), Some(entry)) = (record.conversation_id, record.entry) else {
             return false;
         };
+        // The shown view without building it: the window, then the pages
+        // loaded ahead of it (they never outlive the window).
+        let stream = conversation_stream(conversation).0;
+        let has = |entries: &[Json]| {
+            entries.iter().any(|item| item.get("id").and_then(|value| num_id(Some(value))) == Some(entry))
+        };
+        // At or before the shown view's `before` (5.28) the entry predates
+        // the window: committed, just not loaded.
+        let before = match self.earlier.get(&stream) {
+            Some(page) => page.before,
+            None => self.values.get(&stream).and_then(|view| num_id(view.get("before"))),
+        };
+        if before.is_some_and(|before| entry <= before) {
+            return true;
+        }
         self.values
-            .get(&conversation_stream(conversation).0)
+            .get(&stream)
             .and_then(|view| view.get("entries"))
             .and_then(Json::as_array)
-            .is_some_and(|entries| {
-                entries
-                    .iter()
-                    .any(|item| item.get("id").and_then(|value| num_id(Some(value))) == Some(entry))
-            })
+            .is_some_and(|entries| has(entries))
+            || self.earlier.get(&stream).is_some_and(|page| has(&page.entries))
     }
 
     /// A conversation's inbox: a harness doc inside the conversation view,
@@ -5685,14 +5819,14 @@ impl RemoteDurable {
         } else {
             None
         };
-        let conversation = self.current.and_then(|id| self.values.get(&conversation_stream(id).0).cloned());
+        let conversation = self.current.and_then(|id| self.shown_view(&conversation_stream(id).0));
         let organized = organize(&index, &summaries)?.to_json();
         let docs = self.current.map(|id| self.docs_of(id));
         let side = self.side.map(|id| {
             let mut object = JsonObject::new();
             set(&mut object, "id", Json::Number(id as f64));
-            if let Some(value) = self.values.get(&conversation_stream(id).0) {
-                set(&mut object, "conversation", value.clone());
+            if let Some(value) = self.shown_view(&conversation_stream(id).0) {
+                set(&mut object, "conversation", value);
             }
             set(&mut object, "docs", self.docs_of(id));
             Json::Object(Arc::new(object))
@@ -5886,6 +6020,7 @@ fn op_kind(call: &Call) -> OpKind {
         | Call::ListSkills { .. }
         | Call::Image { .. }
         | Call::ListCommands { .. }
+        | Call::LoadEarlier { .. }
         | Call::BeginAttachment { .. }
         | Call::AppendAttachment { .. }
         | Call::ListEndpointModels { .. } => OpKind::Direct,

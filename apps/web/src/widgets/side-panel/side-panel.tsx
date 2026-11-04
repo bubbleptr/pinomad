@@ -176,7 +176,13 @@ function TasksSurface({
           <StatusGlyph status={sideSummary.status} />
           <span className="min-w-0 flex-1 truncate text-sm">{displayName(sideSummary)}</span>
         </SurfaceBar>
-        <TaskDetail view={view} side={side} openInPanel={openInPanel} onOpenInMain={onOpenInMain} />
+        <TaskDetail
+          view={view}
+          side={side}
+          openInPanel={openInPanel}
+          onOpenInMain={onOpenInMain}
+          onLoadEarlier={() => remote.controller.loadEarlier(side.id)}
+        />
       </VStack>
     );
   }
@@ -267,11 +273,13 @@ function TaskDetail({
   side,
   openInPanel,
   onOpenInMain,
+  onLoadEarlier,
 }: {
   view: DurableView;
   side: SideConversationView;
   openInPanel: (id: ConversationId) => void;
   onOpenInMain: (id: ConversationId) => void;
+  onLoadEarlier: () => Promise<void>;
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -281,6 +289,7 @@ function TaskDetail({
         ) : (
           <ConversationTranscript
             conversation={side.conversation}
+            onLoadEarlier={onLoadEarlier}
             docs={side.docs}
             submissions={view.submissions}
             mergeQueuedSubmissions

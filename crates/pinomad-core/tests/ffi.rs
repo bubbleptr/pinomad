@@ -194,16 +194,20 @@ impl Harness {
     /// Connect with a preconfigured host — snapshots, held streams, call
     /// results, and protocol minor are set before the client opens.
     fn boot(host: ScriptedHost, request_id: &'static str) -> Self {
-        Self::boot_with(host, request_id, false)
+        Self::boot_with(host, request_id, |_| {})
     }
 
-    fn boot_with(host: ScriptedHost, request_id: &'static str, logical: bool) -> Self {
+    fn boot_with(
+        host: ScriptedHost,
+        request_id: &'static str,
+        configure: impl FnOnce(&mut RemoteDurableOptions),
+    ) -> Self {
         let mut options = RemoteDurableOptions::single(Box::new(PlaintextTransport {
             url: "ws://fake/".to_string(),
         }));
         options.reconnect_delay_ms = Some((20, 20));
         options.request_id = Some(Box::new(move || request_id.to_string()));
-        options.logical_submissions = logical;
+        configure(&mut options);
         let client = PinomadClient::with_options(options);
         let mut harness = Harness {
             client: Arc::new(client),
@@ -710,7 +714,7 @@ fn pair_and_connect_plan_endpoint_sets_at_the_ffi_boundary() {
         "pinomad://pair#pair={key}.AQID&url={}&endpointSet={encoded}",
         encode_uri_component("ws://127.0.0.1:7420/secure")
     );
-    let client = PinomadClient::pair(link, "phone".to_string(), None).expect("pair link");
+    let client = PinomadClient::pair(link, "phone".to_string(), None, false).expect("pair link");
     let commands = client.take();
     let open = commands.iter().find_map(|command| match command {
         FfiCommand::OpenConnection { url, .. } => Some(url.clone()),
@@ -729,7 +733,7 @@ fn pair_and_connect_plan_endpoint_sets_at_the_ffi_boundary() {
         connection_mode: None,
         rtc_signal_only: None,
     };
-    let client = PinomadClient::connect(stored).expect("stored host");
+    let client = PinomadClient::connect(stored, false).expect("stored host");
     let commands = client.take();
     let open = commands.iter().find_map(|command| match command {
         FfiCommand::OpenConnection { url, .. } => Some(url.clone()),
@@ -742,7 +746,7 @@ fn pair_and_connect_plan_endpoint_sets_at_the_ffi_boundary() {
 fn pair_validates_reused_key_material_before_any_candidate() {
     use pinomad_core::ffi::{ClientError, PinomadClient};
     let link = "pinomad://pair#pair=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA.AQID&url=ws%3A%2F%2F127.0.0.1%3A1%2F";
-    let result = PinomadClient::pair(link.to_string(), "phone".to_string(), Some("bad".to_string()));
+    let result = PinomadClient::pair(link.to_string(), "phone".to_string(), Some("bad".to_string()), false);
     assert!(matches!(result, Err(ClientError::KeyMaterial { .. })));
 }
 
@@ -758,7 +762,7 @@ fn an_explicit_empty_planned_set_never_dials_the_legacy_url() {
         endpoint_set: Some(EndpointSet { schema_version: 1, endpoints: vec![] }),
         connection_mode: None,
         rtc_signal_only: None,
-    })
+    }, false)
     .expect("empty planned set is a valid stored host");
     let commands = client.take();
     assert!(!commands
@@ -1919,7 +1923,7 @@ fn connect_rejects_bad_key_material() {
         endpoint_set: None,
         connection_mode: None,
         rtc_signal_only: None,
-    });
+    }, false);
     assert!(matches!(result, Err(ClientError::InvalidStoredHost { .. })));
 }
 
@@ -2657,7 +2661,7 @@ fn logical_view(entries: Vec<Json>, busy: bool, inbox: Vec<Json>) -> Json {
 fn logical_harness(view: Json) -> Harness {
     let mut host = ScriptedHost::new();
     host.snapshots.insert("conversation:1".to_string(), view);
-    let mut harness = Harness::boot_with(host, "req-1", true);
+    let mut harness = Harness::boot_with(host, "req-1", |options| options.logical_submissions = true);
     harness.invoke(0, FfiCall::SwitchConversation { id: 1 });
     harness
 }
@@ -2802,4 +2806,39 @@ fn a_busy_send_joins_the_local_queue_instead_of_the_transcript() {
     h.invoke(2, FfiCall::TakeBackSubmission { request_id: "r4".to_string() });
     assert!(matches!(h.ops.get(&2), Some(Ok(CallResult::TakeBackSubmission { draft: Some(_) }))));
     assert!(h.client.snapshot().unwrap().conversation.unwrap().local_queue_items.is_empty());
+}
+
+/// Transcript paging through the facade (5.28): `has_earlier` tracks the
+/// shown view's `before`, and `LoadEarlier` resolves `Unit` once the page
+/// shows ahead of the window.
+#[test]
+fn load_earlier_pages_in_and_clears_has_earlier() {
+    let entry = |id: f64| {
+        obj(&[
+            ("id", Json::from(id)),
+            ("kind", Json::from("pi.user")),
+            ("model", Json::array(vec![obj(&[("role", Json::from("user")), ("content", Json::from("hi"))])])),
+        ])
+    };
+    let mut host = ScriptedHost::new();
+    host.snapshots.insert(
+        "conversation:1".to_string(),
+        obj(&[
+            ("conversation", obj(&[("id", Json::from(1.0))])),
+            ("entries", Json::array(vec![entry(20.0)])),
+            ("before", Json::from(18.0)),
+        ]),
+    );
+    host.call_results.insert("earlierEntries".to_string(), obj(&[("entries", Json::array(vec![entry(18.0)]))]));
+    let mut h = Harness::boot_with(host, "req-1", |options| options.transcript_paging = true);
+    h.invoke(1, FfiCall::SwitchConversation { id: 1 });
+    let shown = h.client.snapshot().unwrap().conversation.expect("conversation");
+    assert!(shown.has_earlier);
+    let rows = shown.chat.len();
+
+    h.invoke(2, FfiCall::LoadEarlier { conversation_id: 1 });
+    assert_eq!(h.ops.get(&2), Some(&Ok(CallResult::Unit)));
+    let shown = h.client.snapshot().unwrap().conversation.expect("conversation");
+    assert!(!shown.has_earlier);
+    assert!(shown.chat.len() > rows, "the earlier entry shows");
 }

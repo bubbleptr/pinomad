@@ -29,6 +29,8 @@ import {
   type HostEndpoint,
 } from "../src/endpoints.ts";
 import { pairingFragment, parsePairParam, parsePairingLink } from "../src/pairing-link.ts";
+import { addEarlier, TRANSCRIPT_PAGE, withEarlier, type TranscriptPage } from "../src/transcript.ts";
+import type { ConversationView, EntryId } from "@earendil-works/pi-durable";
 
 export interface VectorFile {
   readonly name: string;
@@ -181,6 +183,13 @@ function framesVector(): VectorFile {
     {
       name: "call-submission",
       wire: wire({ type: "call", id: 27, method: "submission", args: { conversationId: 2, requestId: "req" } }),
+    },
+    // 5.28: transcript paging.
+    { name: "subscribe-window", wire: wire({ type: "subscribe", stream: "conversation:12", images: "ref", window: { limit: 50 } }) },
+    { name: "subscribe-window-from", wire: wire({ type: "subscribe", stream: "conversation:12", images: "ref", window: { limit: 50, from: 15 } }) },
+    {
+      name: "call-earlierEntries",
+      wire: wire({ type: "call", id: 28, method: "earlierEntries", args: { conversationId: 2, before: 18, limit: 50 } }),
     },
     { name: "call-empty-args", wire: wire({ type: "call", id: 9, method: "createPairing", args: {} }) },
     { name: "call-null-arg", wire: wire({ type: "call", id: 10, method: "setPushToken", args: { token: null } }) },
@@ -658,6 +667,47 @@ function pairingVector(): VectorFile {
 }
 
 /** Every vector file, `test/fixtures/rust-vectors/<name>.json`. */
+// ─── Transcript pages ────────────────────────────────────────────────────────
+//
+// One `loadEarlier` result at a time (5.28): the shown view is `window` with
+// `earlier` ahead of it; `page` answered `requested`. The mirror must keep the
+// same pages and show the same view, entry objects passed through untouched.
+
+function transcriptVector(): VectorFile {
+  const entry = (id: number, extra: Record<string, unknown> = {}) => ({ id, conversationId: 1, kind: "pi.user", ...extra });
+  const view = (ids: readonly number[], before?: number): ConversationView =>
+    ({
+      conversation: { id: 1, createdAt: 5 },
+      entries: ids.map((id) => entry(id)),
+      docs: { "pi.live": { schema: 2 } },
+      ...(before === undefined ? {} : { before }),
+    }) as unknown as ConversationView;
+  const page = (ids: readonly number[], before?: number): TranscriptPage =>
+    ({ entries: ids.map((id) => entry(id, { model: [{ role: "user", content: `m${id}` }] })), ...(before === undefined ? {} : { before }) }) as unknown as TranscriptPage;
+  const cases: { name: string; window: ConversationView; earlier?: TranscriptPage; requested: number; page: TranscriptPage }[] = [
+    { name: "first-page", window: view([20, 21], 18), requested: 18, page: page([15, 18], 12) },
+    { name: "reaches-start", window: view([20, 21], 18), earlier: page([15, 18], 12), requested: 12, page: page([11, 12]) },
+    { name: "stale-request", window: view([20, 21], 18), earlier: page([15, 18], 12), requested: 18, page: page([18]) },
+    { name: "stale-after-resubscribe", window: view([15, 18, 20], 12), requested: 18, page: page([18], 12) },
+    { name: "whole-window", window: view([1, 2]), requested: 1, page: page([1]) },
+  ];
+  return write("transcript", {
+    page: TRANSCRIPT_PAGE,
+    cases: cases.map(({ name, window, earlier, requested, page: answered }) => {
+      const kept = addEarlier(withEarlier(window, earlier), earlier, requested as EntryId, answered);
+      return {
+        name,
+        window: wire(window),
+        ...(earlier === undefined ? {} : { earlier: wire(earlier) }),
+        requested,
+        page: wire(answered),
+        ...(kept === undefined ? {} : { expectEarlier: wire(kept) }),
+        expectShown: wire(withEarlier(window, kept)),
+      };
+    }),
+  });
+}
+
 export function buildVectors(): readonly VectorFile[] {
-  return [framesVector(), deltaVector(), recordsVector(), endpointVector(), pairingVector(), rtcScopesVector()];
+  return [framesVector(), deltaVector(), recordsVector(), endpointVector(), pairingVector(), rtcScopesVector(), transcriptVector()];
 }

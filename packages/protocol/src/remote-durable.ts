@@ -54,7 +54,7 @@ import {
   type TerminalsHello,
   type TerminalSize,
 } from "./terminals.ts";
-import { isBusy } from "./transcript.ts";
+import { addEarlier, isBusy, TRANSCRIPT_PAGE, withEarlier, type TranscriptPage, type TranscriptWindow } from "./transcript.ts";
 import type {
   ConversationDefaults,
   DurableController,
@@ -515,6 +515,14 @@ class RemoteClient {
   readonly #options: RemoteDurableOptions;
   readonly #listeners = new Set<() => void>();
   readonly #values = new Map<StreamName, unknown>();
+  /** Older entries `loadEarlier` fetched ahead of a conversation stream's window (5.28); a snapshot replaces them. */
+  readonly #earlier = new Map<StreamName, TranscriptPage>();
+  /**
+   * The `loadEarlier` in flight per conversation stream, so a sentinel that
+   * stays visible fetches once. A snapshot, end or release drops it: its
+   * page belongs to the subscription before, and a later load starts anew.
+   */
+  readonly #loadingEarlier = new Map<StreamName, Promise<void>>();
   // Filled at each hello from the announced minor — a 5.0 host never sees a
   // `models`/`auth` subscribe (ADR-0018 §1).
   readonly #wanted = new Set<StreamName>();
@@ -2235,6 +2243,9 @@ class RemoteClient {
           return;
         }
         this.#values.set(frame.stream, frame.value);
+        // A conversation snapshot starts at the oldest entry this client held (`window.from`), so it covers them.
+        this.#earlier.delete(frame.stream);
+        this.#loadingEarlier.delete(frame.stream);
         this.#fresh.add(frame.stream);
         this.#streamVersions.set(frame.stream, (this.#streamVersions.get(frame.stream) ?? 0) + 1);
         this.#refresh();
@@ -2259,6 +2270,8 @@ class RemoteClient {
         }
         this.#wanted.delete(frame.stream);
         this.#values.delete(frame.stream);
+        this.#earlier.delete(frame.stream);
+        this.#loadingEarlier.delete(frame.stream);
         this.#fresh.delete(frame.stream);
         const ended = new Error(`Stream ${frame.stream} ended: ${frame.reason}`);
         for (const waiter of this.#snapshotWaiters.get(frame.stream)?.splice(0) ?? []) {
@@ -2363,6 +2376,8 @@ class RemoteClient {
       if (keep.has(stream)) continue;
       this.#wanted.delete(stream);
       this.#values.delete(stream);
+      this.#earlier.delete(stream);
+      this.#loadingEarlier.delete(stream);
       this.#fresh.delete(stream);
       // No snapshot will ever be accepted for this stream again, so a sync
       // barrier waiting on it must settle now. Otherwise a clear during a
@@ -2380,12 +2395,55 @@ class RemoteClient {
   #subscribe(stream: StreamName): void {
     const refs = stream.startsWith("conversation:") && hostSupportsFeature(this.#hostMinor, "imageRefs");
     const since = this.#terminalPositions.get(stream);
+    const window = this.#window(stream);
     this.#send({
       type: "subscribe",
       stream,
       ...(refs ? { images: "ref" as const } : {}),
       ...(since === undefined ? {} : { since }),
+      ...(window === undefined ? {} : { window }),
     });
+  }
+
+  /**
+   * A conversation stream's window on a 5.28 host: the newest page, or on a
+   * resubscribe everything from the oldest entry still shown, so scrolling
+   * back survives a reconnect. Older hosts send the whole transcript.
+   */
+  #window(stream: StreamName): TranscriptWindow | undefined {
+    if (!stream.startsWith("conversation:") || !hostSupportsFeature(this.#hostMinor, "transcriptPaging")) return undefined;
+    const from = this.#shownView(stream)?.entries[0]?.id;
+    return from === undefined ? { limit: TRANSCRIPT_PAGE } : { limit: TRANSCRIPT_PAGE, from };
+  }
+
+  /** A conversation stream's view as shown: its window with the older pages loaded ahead of it. */
+  #shownView(stream: StreamName): ConversationView | undefined {
+    const view = this.#values.get(stream) as ConversationView | undefined;
+    return view === undefined ? undefined : withEarlier(view, this.#earlier.get(stream));
+  }
+
+  #loadEarlier(id: ConversationId): Promise<void> {
+    const stream = conversationStream(id);
+    const inFlight = this.#loadingEarlier.get(stream);
+    if (inFlight !== undefined) return inFlight;
+    const requested = this.#shownView(stream)?.before;
+    if (requested === undefined) return Promise.resolve();
+    const load: Promise<void> = this.#call("earlierEntries", { conversationId: id, before: requested, limit: TRANSCRIPT_PAGE })
+      .then((page) => {
+        // Answered for a subscription since replaced or released.
+        if (this.#loadingEarlier.get(stream) !== load) return;
+        const shown = this.#shownView(stream);
+        if (shown === undefined) return;
+        const earlier = addEarlier(shown, this.#earlier.get(stream), requested, page);
+        if (earlier === undefined) return;
+        this.#earlier.set(stream, earlier);
+        this.#refresh();
+      })
+      .finally(() => {
+        if (this.#loadingEarlier.get(stream) === load) this.#loadingEarlier.delete(stream);
+      });
+    this.#loadingEarlier.set(stream, load);
+    return load;
   }
 
   /** Why this host has no terminals, or undefined when it has them. */
@@ -2630,15 +2688,17 @@ class RemoteClient {
     this.#clearSubmissionTimer(record);
   }
 
-  #entriesOf(id: ConversationId | undefined): readonly { readonly id?: unknown }[] {
-    if (id === undefined) return [];
-    const view = this.#values.get(conversationStream(id)) as ConversationView | undefined;
-    return view?.entries ?? [];
-  }
-
+  /**
+   * Whether the submission's entry is in the transcript. One at or before a
+   * paged view's `before` (5.28) predates the window: it is committed, just
+   * not loaded.
+   */
   #entryPresent(record: SubmissionRecord): boolean {
-    if (record.entry === undefined) return false;
-    return this.#entriesOf(record.conversationId).some((entry) => String(entry.id) === String(record.entry));
+    if (record.entry === undefined || record.conversationId === undefined) return false;
+    const shown = this.#shownView(conversationStream(record.conversationId));
+    if (shown === undefined) return false;
+    if (shown.before !== undefined && Number(record.entry) <= Number(shown.before)) return true;
+    return shown.entries.some((entry) => String(entry.id) === String(record.entry));
   }
 
   /** A conversation's inbox: a harness doc inside the conversation view, never a `doc:` stream of its own. */
@@ -3101,8 +3161,7 @@ class RemoteClient {
     this.#reconcileSubmissions();
     const current = this.#current;
     const side = this.#side;
-    const conversation =
-      current === undefined ? undefined : (this.#values.get(conversationStream(current)) as ConversationView | undefined);
+    const conversation = current === undefined ? undefined : this.#shownView(conversationStream(current));
     const summaries = this.#host("conversations") ?? [];
     const index = this.#host("index") ?? { projects: [], conversations: [] };
     const devices = this.#host("devices")?.devices ?? [];
@@ -3123,7 +3182,7 @@ class RemoteClient {
           ? undefined
           : {
               id: side,
-              conversation: this.#values.get(conversationStream(side)) as ConversationView | undefined,
+              conversation: this.#shownView(conversationStream(side)),
               docs: this.#docsOf(side),
             },
       devices,
@@ -3496,6 +3555,8 @@ class RemoteClient {
         }
         return this.#call("listSkills", { scope });
       },
+      // A read, unqueued like listCommands; a no-op once the view reaches the start.
+      loadEarlier: (id) => this.#loadEarlier(id),
       // Same unqueued shape as listSkills (issue #254).
       listCommands: (id) => {
         if (!hostSupportsCall(this.#hostMinor, "listCommands")) {

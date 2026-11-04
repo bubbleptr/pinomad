@@ -1314,6 +1314,7 @@ export function Workbench({
             ) : (
               <ConversationTranscript
                 conversation={conversation}
+                onLoadEarlier={() => remote.controller.loadEarlier(conversation.conversation.id)}
                 docs={view.docs}
                 submissions={view.submissions}
                 toolPresentations={view.toolPresentations}

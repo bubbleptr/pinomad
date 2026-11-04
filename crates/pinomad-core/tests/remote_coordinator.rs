@@ -391,6 +391,7 @@ impl Harness {
             connection_mode: pinomad_core::connection_mode::ConnectionMode::Auto,
             rtc: None,
             logical_submissions: false,
+            transcript_paging: false,
         });
         let mut harness = Harness {
             remote,

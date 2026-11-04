@@ -393,6 +393,14 @@ export interface DurableController {
    * an older one rejects, and the client offers no command list of its own.
    */
   listCommands(conversationId: ConversationId): Promise<CommandListing>;
+  /**
+   * Load the turns before the shown view of `conversationId` (the main or
+   * side conversation) and show them ahead of it; resolves once they show. A
+   * no-op when the view has no `before`: it reaches the transcript's start,
+   * or the host predates paging (5.28) and sent it whole. Calls while one is
+   * loading share it.
+   */
+  loadEarlier(conversationId: ConversationId): Promise<void>;
   /** A one-time pairing offer for a new device; rejects while remote access is off. */
   createPairing(): Promise<{ url: string; expiresAt: number }>;
   /** Forget a paired device and drop its live connections. */
