@@ -75,11 +75,12 @@
   line-height: 1.6 !important;
 }
 
-/* Inline code one size step below body: the monospace face reads a size
-   larger than the sans body at equal px, and a slightly smaller chip with
-   1px vertical padding keeps 3-4px of air inside the 1.6 line box. */
+/* Inline code sized to the text around it, a touch smaller: Geist Mono's
+   x-height (0.53em) runs above the system sans (0.51em), so 0.93em lines the
+   lowercase up (13px in 14px body, and it follows headings). The smaller
+   chip with 1px vertical padding keeps 3-4px of air inside the 1.6 line box. */
 .chat-markdown .chat-inline-code {
-  font-size: var(--font-size-sm) !important;
+  font-size: 0.93em !important;
   padding-block: 1px !important;
 }
 

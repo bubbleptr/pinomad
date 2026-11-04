@@ -19,15 +19,19 @@ import { MoreHorizontal, Pencil, Plus, RefreshCw, Trash2 } from "../../shared/ui
 import { RenameTerminalDialog } from "./rename-terminal-dialog.tsx";
 import { SurfaceBar } from "./surface-bar.tsx";
 
+// xterm measures its cell once, when the screen opens, so the code face must
+// have loaded by then; if it fails, the fallback stack is measured instead.
 // Suspense doesn't catch a chunk that fails to load; this keeps the surface up.
 const XtermView = lazy(() =>
-  import("./xterm-view.tsx").catch(() => ({
-    default: () => (
-      <Text type="supporting" className="p-3">
-        Couldn't load the terminal. Reload the page to try again.
-      </Text>
-    ),
-  })),
+  Promise.all([import("./xterm-view.tsx"), document.fonts.load('13px "Geist Mono Variable"').catch(() => [])])
+    .then(([module]) => module)
+    .catch(() => ({
+      default: () => (
+        <Text type="supporting" className="p-3">
+          Couldn't load the terminal. Reload the page to try again.
+        </Text>
+      ),
+    })),
 );
 
 /** A new terminal's size until its screen is fitted; the screen resizes it at once. */

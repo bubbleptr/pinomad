@@ -3,6 +3,7 @@
 @import "@astryxdesign/core/reset.css";
 @import "@astryxdesign/core/astryx.css";
 @import "@astryxdesign/theme-neutral/theme.css";
+@import "@fontsource-variable/geist-mono";
 @import "../shared/ui/chat/chat.css";
 @import "../entities/attachment/attachments.css";
 @import "../entities/model/model-logo.css";
@@ -23,12 +24,19 @@
    @scope ([data-astryx-theme="neutral"]); at equal specificity a scoped
    declaration beats an unscoped one on scope proximity, so the doubled
    attribute selector lifts this rule above :scope (0,2,0 > 0,1,0) and the
-   override wins before proximity is even consulted. */
+   override wins before proximity is even consulted.
+
+   Code is the one bundled face. theme-neutral's code stack leads with
+   ui-monospace and "SF Mono", which only Safari resolves; Chromium (and so
+   Electron) fell through to Monaco on macOS, Consolas on Windows and
+   Liberation Mono on Linux. */
 [data-astryx-theme][data-astryx-theme] {
   --font-family-body: -apple-system, BlinkMacSystemFont, "Segoe UI",
     "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto,
     "Noto Sans CJK SC", Helvetica, Arial, sans-serif;
   --font-family-heading: var(--font-family-body);
+  --font-family-code: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo,
+    Consolas, "Liberation Mono", monospace;
 }
 
 /* —— Dark surface ladder ——
