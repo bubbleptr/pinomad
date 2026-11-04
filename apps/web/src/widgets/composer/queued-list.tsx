@@ -226,7 +226,9 @@ export function QueuedList({
             onPointerUp={() => setArmed(undefined)}
             onPointerCancel={() => setArmed(undefined)}
             onDragStart={(event: DragEvent) => {
-              if (id === undefined) return;
+              // A drag of selected body text bubbles here too; only a press
+              // on this row's handle starts a reorder, the rest stay text drags.
+              if (id === undefined || armed !== id || !movable(item)) return;
               event.dataTransfer.effectAllowed = "move";
               event.dataTransfer.setData("text/plain", item.text);
               setDrag({ id });
