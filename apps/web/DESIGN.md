@@ -25,7 +25,7 @@ Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。组件来�
    └─ 否 → 它属于下面任一种？
       ├─ 只有图标（IconButton）：侧栏、顶栏、工具栏、行内悬浮操作 → ghost
       ├─ 应用外框里的文字触发器：侧栏底部账号、顶栏面包屑、输入框工具栏（模型选择、Follow-up） → ghost
-      ├─ 对话消息上的操作行（Edit、Retry、Withdraw）；行里最该点的那个可以用 secondary（排队消息的 Steer） → ghost
+      ├─ 对话消息上的操作行（Edit、Retry、Withdraw）；行里最该点的那个可以用 secondary → ghost
       ├─ 切到另一条流程的文字链接：“Sign in instead”、“Create an account”、“Use an API key instead”、“Have a pairing link?” → ghost
       └─ 都不是 → secondary
 ```

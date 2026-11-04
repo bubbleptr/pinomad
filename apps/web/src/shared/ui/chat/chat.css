@@ -1454,17 +1454,19 @@ details[open] > .chain-of-thought-rail__tool-row .chain-of-thought-rail__disclos
   position: absolute;
   right: 0;
   left: 0;
-  height: var(--spacing-0-5);
+  height: 2px;
+  border-radius: 9999px;
   background: var(--primary);
   pointer-events: none;
 }
 
+/* The drop line sits centred in the list's 6px gap, not on a card's border. */
 .chat-queued-message[data-drop-target="before"]::before {
-  top: 0;
+  top: -5px;
 }
 
 .chat-queued-message[data-drop-target="after"]::after {
-  bottom: 0;
+  bottom: -5px;
 }
 
 .chat-queued-message__body {
@@ -1474,6 +1476,8 @@ details[open] > .chain-of-thought-rail__tool-row .chain-of-thought-rail__disclos
     opacity 150ms var(--ease-standard);
 }
 
+/* A local send the host has not admitted yet. */
+.chat-queued-message[data-local] .chat-queued-message__body,
 .chat-queued-message[data-withdrawn] .chat-queued-message__body,
 .chat-queued-message[data-steered] .chat-queued-message__body {
   color: var(--color-text-secondary);

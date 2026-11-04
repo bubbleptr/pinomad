@@ -39,6 +39,7 @@ import {
   FolderOpenIcon,
   GitBranchIcon,
   GitForkIcon,
+  GripVerticalIcon,
   Globe02Icon,
   HammerIcon,
   ImageIcon as HugeImageIcon,
@@ -126,6 +127,7 @@ export const FolderOpen = iconComponent(FolderOpenIcon);
 export const FolderOpenState = iconComponent(Folder02Icon);
 export const GitBranch = iconComponent(GitBranchIcon);
 export const GitFork = iconComponent(GitForkIcon);
+export const GripVertical = iconComponent(GripVerticalIcon);
 export const Globe = iconComponent(Globe02Icon);
 export const Hammer = iconComponent(HammerIcon);
 export const ImageIcon = iconComponent(HugeImageIcon);

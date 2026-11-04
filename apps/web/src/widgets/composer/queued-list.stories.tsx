@@ -11,6 +11,7 @@ const meta = {
       { id: 2, mode: "followUp", text: "Then open a PR against main", imageCount: 0, attachmentCount: 0, status: "sent" as const },
     ],
     canAct: true,
+    canReorder: true,
     busy: true,
     editDisabled: false,
     narrow: false,
@@ -20,6 +21,7 @@ const meta = {
     onSteer: fn(),
     onEdit: fn(),
     onWithdraw: fn(),
+    onReorder: fn(),
   },
 } satisfies Meta<typeof QueuedList>;
 
@@ -67,6 +69,20 @@ export const ComposerOccupied: Story = {
 // Disconnected, or a host older than the 5.14 queued-input calls: rows are read-only.
 export const ReadOnly: Story = {
   args: { canAct: false },
+};
+
+export const Narrow: Story = {
+  args: { narrow: true },
+  render: (args) => (
+    <div style={{ maxWidth: 375 }}>
+      <QueuedList {...args} />
+    </div>
+  ),
+};
+
+// A host older than 5.28 has no reorderQueued: no handles, everything else stays.
+export const NoReorder: Story = {
+  args: { canReorder: false },
 };
 
 export const LongMessage: Story = {
