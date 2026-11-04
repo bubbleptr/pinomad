@@ -98,10 +98,12 @@ export function ConversationTranscript({
   // One card at a time: only the newest run gets the list (ADR-0026 §4).
   const latestRun = items.findLastIndex((item) => item.kind === "run");
 
-  const list = useRef<HTMLDivElement>(null);
-  // Distance from the scroller's bottom before a load, so the turns it adds
-  // land above what the reader was looking at (Safari has no overflow-anchor).
-  const anchor = useRef<{ scroller: HTMLElement; fromBottom: number } | undefined>(undefined);
+  const column = useRef<HTMLDivElement>(null);
+  // The oldest shown row and its offset in the scroller before a load, so
+  // the turns it adds land above what the reader was looking at, however
+  // much a streaming answer grows below meanwhile (Safari has no
+  // overflow-anchor, and Chromium's does nothing at scrollTop 0).
+  const anchor = useRef<{ scroller: HTMLElement; row: Element; top: number } | undefined>(undefined);
   const before = conversation.before;
   // Callers pass a fresh arrow each render; reading it through a ref keeps
   // the list's IntersectionObserver from being rebuilt on every stream tick.
@@ -112,8 +114,9 @@ export function ConversationTranscript({
   const loadEarlier = useCallback(async () => {
     const load = loadEarlierLatest.current;
     if (load === undefined) return;
-    const scroller = scrollerOf(list.current);
-    if (scroller !== undefined) anchor.current = { scroller, fromBottom: scroller.scrollHeight - scroller.scrollTop };
+    const scroller = scrollerOf(column.current);
+    const row = column.current?.firstElementChild;
+    if (scroller !== undefined && row != null) anchor.current = { scroller, row, top: offsetIn(scroller, row) };
     try {
       await load();
     } catch {
@@ -128,20 +131,19 @@ export function ConversationTranscript({
     const pending = anchor.current;
     if (pending === undefined) return;
     anchor.current = undefined;
-    pending.scroller.scrollTop = pending.scroller.scrollHeight - pending.fromBottom;
+    if (pending.row.isConnected) pending.scroller.scrollTop += offsetIn(pending.scroller, pending.row) - pending.top;
   }, [oldest]);
 
   if (items.length === 0) return null;
   return (
     <ChatMessageList
-      ref={list}
       isStreaming={busy}
       gap={0}
       scrollToTopAction={onLoadEarlier !== undefined && connected && before !== undefined ? loadEarlier : undefined}
     >
       {/* Pace's live-session-column gutter: centered column with horizontal
           padding; chat.css's CoT rail expects that breathing room. */}
-      <div className="mx-auto flex w-full max-w-[44rem] flex-col gap-8 px-4 pb-6 pt-2">
+      <div ref={column} className="mx-auto flex w-full max-w-[44rem] flex-col gap-8 px-4 pb-6 pt-2">
         {items.map((item, index) => (
           <ChatEntryView
             key={item.id}
@@ -179,6 +181,11 @@ function scrollerOf(element: HTMLElement | null): HTMLElement | undefined {
     if (overflowY === "auto" || overflowY === "scroll") return node;
   }
   return undefined;
+}
+
+/** Where `row` sits inside the scroller's viewport. */
+function offsetIn(scroller: HTMLElement, row: Element): number {
+  return row.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
 }
 
 function todoOf(docs: readonly ExtensionDocView[] | undefined): TodoState | undefined {

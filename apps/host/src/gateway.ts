@@ -2507,13 +2507,20 @@ class GatewayClient {
       }
       case "earlierEntries": {
         const { conversationId, before, limit } = args as CallMethods["earlierEntries"]["args"];
-        const state = this.#subscriptions.get(`conversation:${conversationId}`);
+        const stream: StreamName = `conversation:${conversationId}`;
+        const state = this.#subscriptions.get(stream);
         if (state === undefined) throw new Error(`Not subscribed to conversation ${conversationId}`);
+        // A resubscribe meanwhile replaces the state that answers the page's
+        // image refs; the client loads again from the new view instead.
+        const replaced = (): boolean => this.#subscriptions.get(stream) !== state;
+        const resubscribed = () => new Error(`Conversation ${conversationId} was resubscribed while its page loaded`);
         const page = await turnPage(await this.#conversation(conversationId), before, limit);
+        if (replaced()) throw resubscribed();
         if (state.images === undefined) return page;
         const raw = page.entries as unknown as JsonValue[];
-        state.earlier = [...(state.earlier ?? []), ...raw];
         const { entries } = (await state.images.value({ entries: raw })) as unknown as TranscriptPage;
+        if (replaced()) throw resubscribed();
+        state.earlier = [...(state.earlier ?? []), ...raw];
         return { ...page, entries };
       }
       case "image": {

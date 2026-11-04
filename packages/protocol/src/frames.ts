@@ -289,7 +289,8 @@ export interface CallMethods {
    * to MAX_TRANSCRIPT_PAGE). The result's `before` is the entry just ahead of
    * them, absent at the transcript's start. Answers only a conversation this
    * connection subscribes to, with images in that subscription's form; refs
-   * stay answerable while it lives.
+   * stay answerable while it lives. Fails when the stream was resubscribed
+   * while the page loaded: load again from the new view.
    */
   earlierEntries: {
     args: { conversationId: ConversationId; before: EntryId; limit: number };

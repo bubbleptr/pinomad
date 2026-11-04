@@ -1803,6 +1803,61 @@ it("loads older turns when scrolling to the top of a long conversation, keeping 
   await log.getByText("long history", { exact: true }).waitFor({ state: "attached" });
 });
 
+it("keeps the reader's place when the transcript grows below while older turns load", async () => {
+  const webOrigin = await startWeb(defer);
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["done"] });
+  const observer = await connectTo(defer, host);
+  const id = await startChat(observer, "growing history");
+  await waitForView(observer.view, (view) => view.conversation !== undefined && !isBusy(view.conversation));
+  await host.harness.commit(async (tx) => {
+    for (let index = 0; index < 150; index += 1) {
+      await tx.appendEntry(id, { kind: "pi.user", model: [{ role: "user", content: `turn ${index}`, timestamp: index }] });
+    }
+  }, BACKGROUND_CONTEXT);
+
+  // Hold the earlierEntries answers until the bottom has grown.
+  const loads = new Set<number>();
+  const held: (() => void)[] = [];
+  let holding = true;
+  const page = await openPage(host, 1280, webOrigin, (opened) =>
+    opened.routeWebSocket(/./, (socket) => {
+      const server = socket.connectToServer();
+      socket.onMessage((message) => {
+        const frame = JSON.parse(String(message)) as { type?: string; id?: number; method?: string };
+        if (frame.type === "call" && frame.method === "earlierEntries") loads.add(frame.id!);
+        server.send(message);
+      });
+      server.onMessage((message) => {
+        const frame = JSON.parse(String(message)) as { type?: string; id?: number };
+        if (holding && frame.type === "result" && loads.has(frame.id!)) held.push(() => socket.send(message));
+        else socket.send(message);
+      });
+    }),
+  );
+  await page.getByRole("button", { name: "growing history", exact: true }).first().click();
+  const log = page.getByRole("log");
+  await log.getByText("turn 149", { exact: true }).waitFor();
+
+  const oldest = log.getByText("turn 100", { exact: true });
+  await log.evaluate((element) => {
+    let node = element.parentElement;
+    while (node !== null && !["auto", "scroll"].includes(getComputedStyle(node).overflowY)) node = node.parentElement;
+    node!.scrollTop = 0;
+  });
+  await expect.poll(() => held.length).toBe(1);
+  const seenAt = (await oldest.boundingBox())!.y;
+  // A tall message lands at the bottom while the page is in flight.
+  const tall = Array.from({ length: 80 }, (_, line) => `line ${line}`).join("\n");
+  await host.harness.commit((tx) => tx.appendEntry(id, { kind: "pi.user", model: [{ role: "user", content: tall, timestamp: 200 }] }), BACKGROUND_CONTEXT);
+  await log.getByText("line 79", { exact: false }).waitFor({ state: "attached" });
+  holding = false;
+  for (const release of held.splice(0)) release();
+
+  await log.getByText("turn 99", { exact: true }).waitFor({ state: "attached" });
+  // Allow the spinner's height; counting the bottom growth would move it by the message's whole height.
+  await expect.poll(async () => Math.abs((await oldest.boundingBox())!.y - seenAt)).toBeLessThan(100);
+});
+
 it("collapses the sidebar into the header toggle and restores it", async () => {
   const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });

@@ -155,6 +155,23 @@ describe("long transcript", () => {
     expect(result.error).toContain("Not subscribed");
   });
 
+  it("refuses a page whose subscription was replaced while it loaded", async () => {
+    const host = await startFauxHost(defer);
+    const { id } = await longChat(host, Array.from({ length: 60 }, (_, index) => user(`m${index}`)));
+
+    const client = await raw(host);
+    const stream = `conversation:${id}`;
+    client.send({ type: "subscribe", stream, images: "ref", window: { limit: 10 } });
+    const view = await client.snapshot(stream);
+    // The resubscribe lands while the page is still being read: the new
+    // subscription would not answer the page's image refs.
+    const loading = client.call("earlierEntries", { conversationId: id, before: view.before, limit: 10 });
+    client.send({ type: "subscribe", stream, images: "ref", window: { limit: 10 } });
+    const result = await loading;
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("resubscribed");
+  });
+
   it("carries a page's images as refs the image call answers", async () => {
     const host = await startFauxHost(defer);
     const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
