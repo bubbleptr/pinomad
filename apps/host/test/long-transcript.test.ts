@@ -57,6 +57,7 @@ async function raw(host: Host) {
   });
   await once(socket, "open");
   return {
+    frames,
     send: (frame: unknown) => socket.send(JSON.stringify(frame)),
     call: (method: string, args: unknown) =>
       new Promise<Result>((resolve) => {
@@ -159,14 +160,45 @@ describe("long transcript", () => {
     const host = await startFauxHost(defer);
     const { id } = await longChat(host, Array.from({ length: 60 }, (_, index) => user(`m${index}`)));
 
+    // Hold the next transcript read until released, and say when it started.
+    let gate: { started: () => void; release: Promise<void> } | undefined;
+    const harness = host.harness as { conversation: typeof host.harness.conversation };
+    const original = harness.conversation.bind(host.harness);
+    harness.conversation = (async (...args: Parameters<typeof original>) => {
+      const conversation = await original(...args);
+      if (conversation === undefined) return conversation;
+      return new Proxy(conversation, {
+        get(target, key) {
+          const value = Reflect.get(target, key) as unknown;
+          if (key !== "entries" || gate === undefined) return typeof value === "function" ? value.bind(target) : value;
+          const held = gate;
+          gate = undefined;
+          return async (...entriesArgs: Parameters<typeof target.entries>) => {
+            held.started();
+            await held.release;
+            return target.entries(...entriesArgs);
+          };
+        },
+      });
+    }) as typeof original;
+
     const client = await raw(host);
     const stream = `conversation:${id}`;
     client.send({ type: "subscribe", stream, images: "ref", window: { limit: 10 } });
     const view = await client.snapshot(stream);
-    // The resubscribe lands while the page is still being read: the new
-    // subscription would not answer the page's image refs.
+
+    let release!: () => void;
+    const started = new Promise<void>((resolve) => {
+      gate = { started: resolve, release: new Promise<void>((done) => (release = done)) };
+    });
     const loading = client.call("earlierEntries", { conversationId: id, before: view.before, limit: 10 });
+    await started;
+    // The resubscribe lands while the page is being read: the new
+    // subscription would not answer the page's image refs.
+    const snapshots = () => client.frames.filter((frame) => frame.type === "snapshot" && frame.stream === stream).length;
     client.send({ type: "subscribe", stream, images: "ref", window: { limit: 10 } });
+    await expect.poll(snapshots).toBe(2);
+    release();
     const result = await loading;
     expect(result.ok).toBe(false);
     expect(result.error).toContain("resubscribed");
