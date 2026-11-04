@@ -1,0 +1,30 @@
+---
+title: Tasks, changes and a terminal in the side panel
+version: v0.12.0
+date: 2026-11-04
+---
+
+**Before you upgrade**
+
+- Upgrade the host with `pinomad upgrade`. The terminal runs on the host, so a host on 0.11.0 shows the Terminal page as unavailable.
+- Removing a host from the account and confirming a host in the browser need the new server. Until the server is upgraded, `pinomad up` falls back to the short code.
+
+**Side panel** (web and Mac app)
+
+- The chat header has an icon for each page of the side panel: **Tasks**, **Changes** and **Terminal**. Click one to open that page, and click the open page's icon again to close the panel. The panel runs the full height of the window.
+- **Changes** moved out of its dialog into the panel. Its top row shows the branch, the lines added and removed, and a refresh button. Long patches open with every file collapsed; click a file name to expand it.
+- Diffs are syntax highlighted, in Changes and in tool results.
+- **Terminal** opens a shell on the host in the conversation's checkout. Open up to eight tabs, and rename, restart or close each one from its menu. Forks share their conversation's terminals. A terminal keeps running while you're disconnected and replays its output when you come back. Archiving the conversation closes its terminals, and so does restarting the host.
+- Forks are conversations of their own in the sidebar, listed under the conversation they came from. The panel's Threads tab is gone.
+
+**Hosts and devices**
+
+- Remove a host from your account on the web, in the Mac app or on the iPhone. It asks for your password, and only `pinomad up` on that machine brings the host back.
+- **Unpair** replaces Forget and Revoke. Unpairing a connected host asks it to stop accepting this device first, then forgets it here. When a host refuses this device, its screen says what to do next and the sidebar shows the host as **Not paired**.
+- `pinomad up` and `pinomad join` open a browser on the machine to confirm the host, with no code to type. Pass `--code` to confirm on another device instead.
+- Mac app: **Settings → This Mac** turns the host installed on this Mac off and on. The same works from a terminal with `pinomad service stop` and `pinomad service start`.
+
+**Chat**
+
+- On desktop, a message's time, Copy, Fork and delivery tick show when you hover or focus it. On touch screens they stay visible.
+- Buttons in settings and dialogs have an edge, so they no longer read as plain text.
