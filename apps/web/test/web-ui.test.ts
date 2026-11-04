@@ -1782,12 +1782,14 @@ it("loads older turns when scrolling to the top of a long conversation, keeping 
       while (node !== null && !["auto", "scroll"].includes(getComputedStyle(node).overflowY)) node = node.parentElement;
       node!.scrollTop = 0;
     });
-  // The oldest shown turn stays where the reader saw it while older ones land above.
+  // The oldest shown turn stays where the reader saw it while older ones land
+  // above. The loading spinner may or may not have pushed it down when it is
+  // measured, so allow its height; without anchoring it jumps by the page.
   const oldest = log.getByText("turn 100", { exact: true });
   await scrollToTop();
   const seenAt = (await oldest.boundingBox())!.y;
   await log.getByText("turn 99", { exact: true }).waitFor({ state: "attached" });
-  await expect.poll(async () => Math.abs((await oldest.boundingBox())!.y - seenAt)).toBeLessThan(40);
+  await expect.poll(async () => Math.abs((await oldest.boundingBox())!.y - seenAt)).toBeLessThan(100);
 
   await expect
     .poll(
