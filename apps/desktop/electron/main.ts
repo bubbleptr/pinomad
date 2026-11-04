@@ -89,11 +89,13 @@ const devEntry = process.env.ELECTRON_RENDERER_URL;
 /** Dev only: the account server must see the dev renderer as app://pinomad (dev-origin.ts). */
 function installDevOriginRewrite(devOrigin: string): void {
   const { webRequest } = session.defaultSession;
-  webRequest.onBeforeSendHeaders((details, callback) => {
+  // The account API is https-only; Vite's HMR socket and host ws(s):// links keep their real Origin.
+  const filter = { urls: ["https://*/*"] };
+  webRequest.onBeforeSendHeaders(filter, (details, callback) => {
     const requestHeaders = devRequestHeaders(details.requestHeaders, devOrigin, APP_ORIGIN);
     callback(requestHeaders === undefined ? {} : { requestHeaders });
   });
-  webRequest.onHeadersReceived((details, callback) => {
+  webRequest.onHeadersReceived(filter, (details, callback) => {
     const responseHeaders = details.responseHeaders && devResponseHeaders(details.responseHeaders, devOrigin, APP_ORIGIN);
     callback(responseHeaders === undefined ? {} : { responseHeaders });
   });
