@@ -2675,14 +2675,17 @@ class RemoteClient {
     this.#clearSubmissionTimer(record);
   }
 
-  #entriesOf(id: ConversationId | undefined): readonly { readonly id?: unknown }[] {
-    if (id === undefined) return [];
-    return this.#shownView(conversationStream(id))?.entries ?? [];
-  }
-
+  /**
+   * Whether the submission's entry is in the transcript. One at or before a
+   * paged view's `before` (5.28) predates the window: it is committed, just
+   * not loaded.
+   */
   #entryPresent(record: SubmissionRecord): boolean {
-    if (record.entry === undefined) return false;
-    return this.#entriesOf(record.conversationId).some((entry) => String(entry.id) === String(record.entry));
+    if (record.entry === undefined || record.conversationId === undefined) return false;
+    const shown = this.#shownView(conversationStream(record.conversationId));
+    if (shown === undefined) return false;
+    if (shown.before !== undefined && Number(record.entry) <= Number(shown.before)) return true;
+    return shown.entries.some((entry) => String(entry.id) === String(record.entry));
   }
 
   /** Whether the host's inbox currently shows the row this submission became. */

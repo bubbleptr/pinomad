@@ -2895,6 +2895,32 @@ fn logical_submit_ignores_another_devices_entry_and_inbox_row() {
 }
 
 #[test]
+fn logical_submit_settles_an_entry_that_predates_a_paged_window() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![]);
+    let mut h = Harness::logical(host);
+    h.set_result("submit", obj(&[
+        ("submissionId", Json::Number(7.0)),
+        ("entry", Json::Number(42.0)),
+    ]));
+    h.set_result(
+        "submission",
+        obj(&[
+            ("submissionId", Json::Number(7.0)),
+            ("status", Json::from("placed")),
+            ("entry", Json::Number(42.0)),
+        ]),
+    );
+    h.invoke(1, submit_call("r1", "hello"));
+    // The run wrote past a page while this client looked elsewhere: the entry sits below `before`.
+    let mut view = user_view(vec![logical_user_entry(60, "later")]);
+    if let Json::Object(object) = &mut view {
+        std::sync::Arc::make_mut(object).set(U16String::from_str("before"), Json::Number(50.0));
+    }
+    h.snapshot("conversation:1", view);
+    assert!(h.submissions().is_empty(), "an entry before the window is committed, not missing");
+}
+
+#[test]
 fn logical_submit_settles_a_done_record_whose_entry_was_trimmed() {
     let host = ScriptedHost::new(vec![obj(&[])], vec![]);
     let mut h = Harness::logical(host);

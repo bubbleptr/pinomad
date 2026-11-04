@@ -103,21 +103,26 @@ export function ConversationTranscript({
   // land above what the reader was looking at (Safari has no overflow-anchor).
   const anchor = useRef<{ scroller: HTMLElement; fromBottom: number } | undefined>(undefined);
   const before = conversation.before;
+  // Callers pass a fresh arrow each render; reading it through a ref keeps
+  // the list's IntersectionObserver from being rebuilt on every stream tick.
+  const loadEarlierLatest = useRef(onLoadEarlier);
+  loadEarlierLatest.current = onLoadEarlier;
   // A new identity per `before` and per reconnect re-arms the list's top
   // sentinel, so a page too short to scroll still loads the next one.
   const loadEarlier = useCallback(async () => {
-    if (onLoadEarlier === undefined) return;
+    const load = loadEarlierLatest.current;
+    if (load === undefined) return;
     const scroller = scrollerOf(list.current);
     if (scroller !== undefined) anchor.current = { scroller, fromBottom: scroller.scrollHeight - scroller.scrollTop };
     try {
-      await onLoadEarlier();
+      await load();
     } catch {
       // Offline or the host refused: the sentinel stays, and the next
       // reconnect re-arms it.
       anchor.current = undefined;
     }
     // `before` and `connected` are deps only to re-arm the sentinel.
-  }, [onLoadEarlier, before, connected]);
+  }, [before, connected]);
   const oldest = items[0]?.id;
   useLayoutEffect(() => {
     const pending = anchor.current;

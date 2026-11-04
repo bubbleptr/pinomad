@@ -5144,6 +5144,15 @@ impl RemoteDurable {
         let has = |entries: &[Json]| {
             entries.iter().any(|item| item.get("id").and_then(|value| num_id(Some(value))) == Some(entry))
         };
+        // At or before the shown view's `before` (5.28) the entry predates
+        // the window: committed, just not loaded.
+        let before = match self.earlier.get(&stream) {
+            Some(page) => page.before,
+            None => self.values.get(&stream).and_then(|view| num_id(view.get("before"))),
+        };
+        if before.is_some_and(|before| entry <= before) {
+            return true;
+        }
         self.values
             .get(&stream)
             .and_then(|view| view.get("entries"))

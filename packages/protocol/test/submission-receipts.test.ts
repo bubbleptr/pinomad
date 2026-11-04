@@ -302,6 +302,22 @@ describe("logical submissions", () => {
     }
   });
 
+  it("settles an entry that predates a paged window (5.28) without waiting for it to load", async () => {
+    const host = createHost();
+    host.setSubmissionAnswer(() => ({ ok: true, value: { submissionId: 7, status: "placed", entry: 42 } }));
+    const remote = await connected(host);
+    try {
+      const submit = remote.controller.submit("hello", "followUp", { requestId: "r1" });
+      host.answer(await waitForCall(host, "submit", 1), { ok: true, value: { submissionId: 7, entry: 42 } });
+      await submit;
+      // The run wrote past a page while this client looked elsewhere: the entry sits below `before`.
+      host.sendSnapshot("conversation:1", { ...conversationView([userEntry(60, "later")]), before: 50 });
+      await waitFor(remote, (view) => (view.submissions ?? []).length === 0);
+    } finally {
+      remote.close();
+    }
+  });
+
   it("removes a placed entry that a reset trimmed away", async () => {
     const host = createHost();
     host.setSubmitAnswer(() => ({ ok: true, value: { submissionId: 7 } }));

@@ -152,6 +152,7 @@ describe("long transcript", () => {
     const client = await raw(host);
     const result = await client.call("earlierEntries", { conversationId: id, before: ids.at(-1), limit: 10 });
     expect(result.ok).toBe(false);
+    expect(result.error).toContain("Not subscribed");
   });
 
   it("carries a page's images as refs the image call answers", async () => {
