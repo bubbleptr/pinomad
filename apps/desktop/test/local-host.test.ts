@@ -4,6 +4,7 @@
 // no Terminal, no installer.
 import { execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -334,7 +335,8 @@ const setupHost = async (overrides: Partial<LocalHostDeps> = {}) => {
 };
 
 describe("parseShellEnv", () => {
-  it.each(["/bin/sh", "/bin/zsh"])("reads what the probe prints in a real %s", async (shell) => {
+  // macOS has both; a Linux CI runner may have no zsh.
+  it.each(["/bin/sh", "/bin/zsh"].filter((shell) => existsSync(shell)))("reads what the probe prints in a real %s", async (shell) => {
     // An empty ZDOTDIR: no rc file of whoever runs the tests changes PATH.
     const stdout = execFileSync(shell, ["-c", ENV_PROBE], {
       encoding: "utf8",
