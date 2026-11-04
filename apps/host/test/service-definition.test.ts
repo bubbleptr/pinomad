@@ -158,6 +158,16 @@ describe("service definition read-back", () => {
     expect(specFromLaunchdPlist(launchdPlist(spec))).toEqual(spec);
   });
 
+  it("round-trips a launchd plist that runs node through the Mac App's launcher, which goes first", () => {
+    const launched: ServiceSpec = {
+      ...spec,
+      launcher: "/Applications/PiNomad.app/Contents/Helpers/PiNomad Host.app/Contents/MacOS/pinomad-host",
+    };
+    const plist = launchdPlist(launched);
+    expect(plist.indexOf("pinomad-host")).toBeLessThan(plist.indexOf("/opt/node dir/bin/node"));
+    expect(specFromLaunchdPlist(plist)).toEqual(launched);
+  });
+
   it("reads a definition written without entryArgs or optional env", () => {
     const minimal: ServiceSpec = {
       nodePath: "/usr/bin/node",

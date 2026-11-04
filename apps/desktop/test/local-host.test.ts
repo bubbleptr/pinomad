@@ -503,6 +503,37 @@ describe("join", () => {
     expect(await done).toEqual({ ok: false, message: expect.stringContaining("pinomad upgrade") });
   });
 
+  it("from the installed app, the service runs through the app's launcher", async () => {
+    const launcher = "/Applications/PiNomad.app/Contents/Helpers/PiNomad Host.app/Contents/MacOS/pinomad-host";
+    const { host, spawn, children } = await setupHost({ launcher });
+    const done = host.join("https://app.pinomad.si", "join-7f3a9c");
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled());
+    expect(spawn.mock.calls[0]![1]).toEqual([
+      "up",
+      "--server",
+      "--origin",
+      "https://app.pinomad.si",
+      "--token-stdin",
+      "--launcher",
+      launcher,
+    ]);
+    children[0]!.exit(0);
+    expect(await done).toEqual({ ok: true });
+  });
+
+  it("a pinomad from before --launcher still joins, the token unspent by the first try", async () => {
+    const { host, spawn, children } = await setupHost({ launcher: "/Applications/PiNomad.app/x" });
+    const done = host.join("https://app.pinomad.si", "join-7f3a9c");
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(1));
+    children[0]!.stderr.write("TypeError [ERR_PARSE_ARGS_UNKNOWN_OPTION]: Unknown option '--launcher'. To specify …\n");
+    children[0]!.exit(1);
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalledTimes(2));
+    expect(spawn.mock.calls[1]![1]).toEqual(["up", "--server", "--origin", "https://app.pinomad.si", "--token-stdin"]);
+    await vi.waitFor(() => expect(children[1]!.input()).toBe("join-7f3a9c\n"));
+    children[1]!.exit(0);
+    expect(await done).toEqual({ ok: true });
+  });
+
   it("reports the CLI's last stderr line when the join fails", async () => {
     const { host, spawn, children } = await setupHost();
     const done = host.join("https://app.pinomad.si", "join-7f3a9c");

@@ -1,9 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, safeStorage, session, shell, type IpcMainInvokeEvent } from "electron";
 import { autoUpdater } from "electron-updater";
 import { execFile, spawn } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
+import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { installAppMenu, reportUpdateCheck } from "./app-menu.ts";
@@ -12,6 +13,7 @@ import { devRequestHeaders, devResponseHeaders } from "./dev-origin.ts";
 import { desktopDeviceName } from "./device-name.ts";
 import { createHostStore, type StoredAccount, type StoredHost } from "./host-store.ts";
 import { createLocalHost, type LocalHost } from "./local-host.ts";
+import { LAUNCHER_EXECUTABLE } from "../../host/src/service/definition.ts";
 import { navigateAwayAction, windowOpenAction } from "./navigation-policy.ts";
 import { APP_HOST, APP_SCHEME, contentTypeFor, rendererFilePath, RENDERER_CSP } from "./renderer-files.ts";
 import { createAppUpdater, type AppUpdater, type AutoUpdaterLike } from "./updater.ts";
@@ -26,6 +28,17 @@ import {
 } from "../../web/src/entities/local-host/local-host-protocol.ts";
 
 const APP_ORIGIN = `${APP_SCHEME}://${APP_HOST}`;
+/**
+ * The host launcher afterPack built into this app (host-launcher/), offered
+ * only from Applications: a plist pointing into a disk image, Downloads, or
+ * a translocated copy breaks once that copy goes away.
+ */
+function hostLauncher(): string | undefined {
+  if (!app.isPackaged || !app.isInApplicationsFolder()) return undefined;
+  const path = join(dirname(app.getPath("exe")), "..", "Helpers", "PiNomad Host.app", "Contents", "MacOS", LAUNCHER_EXECUTABLE);
+  return existsSync(path) ? path : undefined;
+}
+
 const rendererDirectory = fileURLToPath(new URL("../renderer", import.meta.url));
 
 let mainWindow: BrowserWindow | null = null;
@@ -326,6 +339,7 @@ if (!app.requestSingleInstanceLock()) {
           return response.text();
         },
         killGroup: (pid, signal) => process.kill(-pid, signal),
+        launcher: hostLauncher(),
       });
       installLocalHostIpc(localHost);
       // A stop still waiting when the app quits is cancelled: the service stays on.

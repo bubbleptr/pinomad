@@ -10,7 +10,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | --- | --- |
 | [0001](0001-own-the-ui-contract.md) | PiNomad 拥有自己的 UI 契约，不兼容 Pi CLI 的扩展、配置和会话格式 |
 | [0003](0003-self-hosted-host-remote-clients.md) | 以 coding 为核心：自托管宿主执行，桌面 / Web / 移动端都只是客户端 |
-| [0017](0017-client-forms-electron-and-expo.md) | 客户端形态：桌面端 Electron 只做 macOS、页面打包进 App；Linux 用 Web；移动端 Expo；`packages/protocol` 要能在 Hermes 上运行（§3、§4 由 0024 取代；§4 已于 2026-10-19 随 `apps/mobile` 删除失效） |
+| [0017](0017-client-forms-electron-and-expo.md) | 客户端形态：桌面端 Electron 只做 macOS、页面打包进 App；Linux 用 Web；移动端 Expo；`packages/protocol` 要能在 Hermes 上运行（§3、§4 由 0024 取代；§4 已于 2026-10-19 随 `apps/mobile` 删除失效；2026-11-04 补充：App 带宿主服务的启动器） |
 | [0024](0024-native-mobile-rust-core.md) | 移动端改成原生（iOS SwiftUI，以后安卓 Compose），客户端协议核心用 Rust 写一份两端共用；核心不做 I/O，流状态是保留 UTF-16 的完整 JSON；TS 是参照，三层测试对齐 |
 | [0004](0004-built-in-first-plugin-protocol-later.md) | 先内置后开放：内置功能按扩展边界写，满足三个条件才公开插件协议 |
 
