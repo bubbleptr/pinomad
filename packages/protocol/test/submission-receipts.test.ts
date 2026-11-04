@@ -13,8 +13,9 @@ import type { FrameConnection, FrameHandlers, FrameTransport } from "../src/tran
 import type { DurableView, LogicalSubmission } from "../src/view.ts";
 
 const id = (n: number): ConversationId => n as ConversationId;
+// As the real host announces them: `pi.inbox` is a harness doc that travels
+// inside the conversation view, never as its own `doc:` stream.
 const HOST_DOCS = [
-  { kind: "pi.inbox" },
   { kind: "pinomad.question", presentation: "pinomad.question" as const },
 ];
 
@@ -66,9 +67,7 @@ function createHost(minor = PROTOCOL.minor) {
 
   const snapshotFor = (stream: string): unknown => {
     if (snapshots.has(stream)) return snapshots.get(stream);
-    if (stream.startsWith("doc:")) {
-      return stream.includes("pi.inbox") ? { items: [] } : null;
-    }
+    if (stream.startsWith("doc:")) return null;
     if (stream.startsWith("conversation:")) return conversationView([]);
     return null;
   };
@@ -275,13 +274,15 @@ describe("logical submissions", () => {
     try {
       await remote.controller.submit("hello", "followUp", { requestId: "r1" });
       await waitFor(remote, (view) => view.submissions?.[0]?.submissionId === 7);
-      host.sendSnapshot("conversation:1", conversationView([userEntry(99, "other device")]));
-      host.sendSnapshot("doc:pi.inbox:1", { items: [{ id: 8, mode: "steer", content: "other" }] });
+      host.sendSnapshot(
+        "conversation:1",
+        conversationView([userEntry(99, "other device")], [{ id: 8, mode: "steer", content: "other" }]),
+      );
       await waitFor(remote, (view) => (view.conversation?.entries.length ?? 0) === 1);
       expect(onlySubmission(remote).phase).toBe("inFlight");
 
       // The inbox row with the host id is the fact; a queued result confirms it.
-      host.sendSnapshot("doc:pi.inbox:1", { items: [{ id: 7, mode: "steer", content: "hello" }] });
+      host.sendOps("conversation:1", [["s", ["docs", "pi.inbox", "items"], [{ id: 7, mode: "steer", content: "hello" }]]]);
       await waitFor(remote, (view) => (view.submissions ?? []).length === 0);
     } finally {
       remote.close();
@@ -297,6 +298,50 @@ describe("logical submissions", () => {
       await remote.controller.submit("hello", "followUp", { requestId: "r1" });
       await waitFor(remote, (view) => (view.submissions ?? []).length === 0);
       expect(host.calls("submission")).toHaveLength(1);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("settles a queued steer on its inline inbox row, so consuming it leaves no local row", async () => {
+    const host = createHost();
+    host.setSubmitAnswer(() => ({ ok: true, value: { submissionId: 7 } }));
+    host.setSubmissionAnswer(() => ({ ok: true, value: { submissionId: 7, status: "queued" } }));
+    const remote = await connected(host);
+    try {
+      // The host's inbox ops reach the client before the submit result.
+      host.sendOps("conversation:1", [["s", ["docs", "pi.inbox", "items"], [{ id: 7, mode: "steer", content: "hello" }]]]);
+      await remote.controller.submit("hello", "steer", { requestId: "r1" });
+      await waitFor(remote, (view) => (view.submissions ?? []).length === 0);
+
+      // The run takes the steer: the row leaves the inbox and becomes an entry.
+      host.sendOps("conversation:1", [
+        ["s", ["docs", "pi.inbox", "items"], []],
+        ["s", ["entries"], [userEntry(42, "hello")]],
+      ]);
+      await waitFor(remote, (view) => (view.conversation?.entries.length ?? 0) === 1);
+      expect(submissions(remote)).toHaveLength(0);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("asks again when the inbox changed while a query was in flight", async () => {
+    const host = createHost();
+    host.setSubmitAnswer(() => ({ ok: true, value: { submissionId: 7 } }));
+    const remote = await connected(host);
+    try {
+      await remote.controller.submit("hello", "steer", { requestId: "r1" });
+      const first = await waitForCall(host, "submission", 1);
+      // Before the host's answer lands, the row was already consumed.
+      host.sendOps("conversation:1", [
+        ["s", ["docs", "pi.inbox", "items"], []],
+        ["s", ["entries"], [userEntry(42, "hello")]],
+      ]);
+      host.setSubmissionAnswer(() => ({ ok: true, value: { submissionId: 7, status: "placed", entry: 42 } }));
+      host.answer(first, { ok: true, value: { submissionId: 7, status: "queued" } });
+      await waitFor(remote, (view) => (view.submissions ?? []).length === 0);
+      expect(host.calls("submission")).toHaveLength(2);
     } finally {
       remote.close();
     }
@@ -359,7 +404,7 @@ describe("logical submissions", () => {
     }
   });
 
-  it("queries again when a queued row disappears before the inbox snapshot", async () => {
+  it("queries again when a queued row comes and goes before the client sees it", async () => {
     const host = createHost();
     host.setSubmitAnswer(() => ({ ok: true, value: { submissionId: 7 } }));
     let queries = 0;
@@ -374,7 +419,11 @@ describe("logical submissions", () => {
       await remote.controller.submit("hello", "followUp", { requestId: "r1" });
       await waitFor(remote, (view) => view.submissions?.[0]?.submissionId === 7);
       await waitForCall(host, "submission", 1);
-      host.sendSnapshot("doc:pi.inbox:1", { items: [] });
+      // The row's add and removal reach the client as one inbox change.
+      host.sendOps("conversation:1", [
+        ["s", ["docs", "pi.inbox", "items"], []],
+        ["s", ["entries"], [userEntry(42, "hello")]],
+      ]);
       await waitFor(remote, (view) => (view.submissions ?? []).length === 0);
       expect(host.calls("submission")).toHaveLength(2);
     } finally {
