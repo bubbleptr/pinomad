@@ -2582,6 +2582,45 @@ class GatewayClient {
           return { outcome: "steered" as const };
         }, context);
       }
+      case "reorderQueued": {
+        const { conversationId, submissionId, before } = args as CallMethods["reorderQueued"]["args"];
+        return await this.#options.harness.commit(async (tx) => {
+          // Validate both ids inside the commit, like steerQueued: a boundary
+          // may place either one between a read and the write.
+          const queuedState = async (id: number): Promise<"queued" | "sent" | "unavailable"> => {
+            const record = await (tx as SubmissionReadTx).submission(id as SubmissionId);
+            if (record === undefined) throw new Error(`Submission ${id} does not exist`);
+            assertQueuedInput(record, conversationId);
+            if (record.entry !== undefined) return "sent";
+            return record.status === "queued" ? "queued" : "unavailable";
+          };
+          const moved = await queuedState(submissionId);
+          if (moved !== "queued") return { outcome: moved };
+          if (before !== undefined && (await queuedState(before)) !== "queued") {
+            return { outcome: "unavailable" as const };
+          }
+          if (before === submissionId) return { outcome: "moved" as const };
+          // Array order is delivery order: pi-durable's applyBoundary (1.5.0,
+          // dist/harness/inbox.js) picks steers and follow-ups by array index
+          // and places them sorted by index, and enqueue only pushes — despite
+          // InboxState's "in ID order" comment. queued-actions.test.ts guards
+          // an upgrade that starts relying on ID order.
+          const items = (await tx.doc(InboxDoc, conversationId)).items;
+          const from = items.findIndex((candidate) => candidate.id === submissionId);
+          // Check both rows before mutating: returning commits, so an
+          // `unavailable` after the splice would drop the moved input.
+          if (from < 0 || (before !== undefined && !items.some((candidate) => candidate.id === before))) {
+            return { outcome: "unavailable" as const };
+          }
+          const [item] = items.splice(from, 1);
+          // `before` absent: after the last queued input; queued writes keep their places.
+          const to = before === undefined
+            ? items.findLastIndex((candidate) => candidate.mode !== "write") + 1
+            : items.findIndex((candidate) => candidate.id === before);
+          items.splice(to, 0, item!);
+          return { outcome: "moved" as const };
+        }, context);
+      }
       case "renameConversation": {
         const { title } = args as CallMethods["renameConversation"]["args"];
         const trimmed = title.trim();

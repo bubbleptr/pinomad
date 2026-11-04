@@ -1,12 +1,12 @@
 {
   "protocol": {
     "major": 5,
-    "minor": 28
+    "minor": 29
   },
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":28},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":29},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -16,17 +16,17 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":28},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":29},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
       "expect": "hello"
     },
     {
       "name": "signalHello",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":28},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":29},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
       "expect": "signalHello"
     },
     {
       "name": "signalHello-no-rtc",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":28}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":29}}",
       "expect": "signalHello"
     },
     {
@@ -241,6 +241,14 @@
       "wire": "{\"type\":\"call\",\"id\":28,\"method\":\"earlierEntries\",\"args\":{\"conversationId\":2,\"before\":18,\"limit\":50}}"
     },
     {
+      "name": "call-reorderQueued",
+      "wire": "{\"type\":\"call\",\"id\":28,\"method\":\"reorderQueued\",\"args\":{\"conversationId\":2,\"submissionId\":3,\"before\":4}}"
+    },
+    {
+      "name": "call-reorderQueued-to-end",
+      "wire": "{\"type\":\"call\",\"id\":29,\"method\":\"reorderQueued\",\"args\":{\"conversationId\":2,\"submissionId\":3}}"
+    },
+    {
       "name": "call-empty-args",
       "wire": "{\"type\":\"call\",\"id\":9,\"method\":\"createPairing\",\"args\":{}}"
     },
@@ -374,6 +382,10 @@
       {
         "name": "renameTerminal",
         "since": 27
+      },
+      {
+        "name": "reorderQueued",
+        "since": 29
       },
       {
         "name": "resizeTerminal",
@@ -852,6 +864,18 @@
       "name": "renameTerminal@26",
       "minor": 26,
       "call": "renameTerminal",
+      "expect": false
+    },
+    {
+      "name": "reorderQueued@29",
+      "minor": 29,
+      "call": "reorderQueued",
+      "expect": true
+    },
+    {
+      "name": "reorderQueued@28",
+      "minor": 28,
+      "call": "reorderQueued",
       "expect": false
     },
     {

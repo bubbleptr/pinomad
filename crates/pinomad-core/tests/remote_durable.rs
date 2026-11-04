@@ -2349,6 +2349,16 @@ fn withdraw_and_steer_need_a_5_14_host() {
 }
 
 #[test]
+fn reorder_needs_a_5_29_host() {
+    let host = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(28.0))]);
+    let mut h = Harness::new(host);
+    h.handle(Event::Invoke { op: 1, call: Call::SwitchConversation { id: 1 } });
+    h.invoke(2, Call::ReorderQueued { submission_id: 3, before: Some(4), target: None });
+    assert!(matches!(h.ops.get(&2), Some(Err(e)) if e.contains("needs protocol 5.29")));
+    assert!(h.host.method("reorderQueued").is_empty());
+}
+
+#[test]
 fn a_5_6_host_subscribes_to_agents() {
     let mut h = setup();
     assert!(h.host.subscribes().contains(&"agents".to_string()));

@@ -443,6 +443,25 @@ describe("RemoteDurable side conversation", () => {
     }
   });
 
+  it("sends reorderQueued's before only when given and returns the host's outcome", async () => {
+    const { transport, sent } = fakeTransport([{}], {}, (frame) =>
+      frame.method === "reorderQueued" ? { ok: true, value: { outcome: "moved" } } : undefined,
+    );
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      await remote.controller.switchConversation(id(1));
+      expect(await remote.controller.reorderQueued(5, 3)).toBe("moved");
+      expect(await remote.controller.reorderQueued(5, undefined, id(2))).toBe("moved");
+      const calls = sent.flatMap((frame) => (frame.type === "call" ? [frame] : []));
+      expect(calls.map((frame) => frame.args)).toEqual([
+        { conversationId: 1, submissionId: 5, before: 3 },
+        { conversationId: 2, submissionId: 5 },
+      ]);
+    } finally {
+      remote.close();
+    }
+  });
+
   it("rejects withdrawQueued with the host's error instead of a notice", async () => {
     const { transport } = fakeTransport([{}], {}, (frame) =>
       frame.method === "withdrawQueued" ? { ok: false, error: "Submission 9 does not exist" } : undefined,
@@ -462,6 +481,17 @@ describe("RemoteDurable side conversation", () => {
     try {
       await expect(remote.controller.withdrawQueued(3, id(1))).rejects.toThrow("needs protocol 5.14");
       await expect(remote.controller.steerQueued(3, id(1))).rejects.toThrow("pinomad upgrade");
+      expect(sent.some((frame) => frame.type === "call")).toBe(false);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("rejects reorderQueued on a 5.28 host without sending a frame", async () => {
+    const { transport, sent } = fakeTransport([{}], { protocol: { major: PROTOCOL.major, minor: 28 } });
+    const remote = await connectRemoteDurable({ transport });
+    try {
+      await expect(remote.controller.reorderQueued(3, 4, id(1))).rejects.toThrow("needs protocol 5.29");
       expect(sent.some((frame) => frame.type === "call")).toBe(false);
     } finally {
       remote.close();

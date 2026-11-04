@@ -218,7 +218,18 @@ describe("queued input calls", () => {
       ok: false,
       error: expect.stringContaining("999999"),
     });
-    for (const method of ["withdrawQueued", "steerQueued"] as const) {
+    expect(await call(raw, "reorderQueued", { conversationId, submissionId: write.id as unknown as number })).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/write/i),
+    });
+    expect(
+      await call(raw, "reorderQueued", { conversationId, submissionId: queued, before: write.id as unknown as number }),
+    ).toMatchObject({ ok: false, error: expect.stringMatching(/write/i) });
+    expect(await call(raw, "reorderQueued", { conversationId, submissionId: 999_999 })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("999999"),
+    });
+    for (const method of ["withdrawQueued", "steerQueued", "reorderQueued"] as const) {
       expect(await call(raw, method, { conversationId: other.id, submissionId: queued })).toMatchObject({
         ok: false,
         error: expect.stringMatching(/another conversation/i),
@@ -257,6 +268,86 @@ describe("queued input calls", () => {
     ]);
     expect(inboxOf(client.view.current())).toEqual([]);
     expect(await recordOf(host, queued)).toMatchObject({ status: "done" });
+  });
+
+  it("reorders queued follow-ups so they reach the transcript in the new order", async () => {
+    const gate = deferred();
+    defer(gate.resolve);
+    // Enough answers for one boundary per follow-up or one for all of them.
+    const host = await startFauxHost(defer, { answers: [gatedTool(gate.promise), "r1", "r2", "r3", "r4"] });
+    const client = await connectTo(defer, host);
+    const conversationId = await startChat(client, "investigate");
+    await waitForView(client.view, (view) => isBusy(view.conversation!));
+    const raw = await socketTo(host);
+
+    const a = await submit(raw, conversationId, "A");
+    const b = await submit(raw, conversationId, "B");
+    const c = await submit(raw, conversationId, "C");
+    await waitForView(client.view, (view) => inboxOf(view).length === 3);
+
+    expect(await call(raw, "reorderQueued", { conversationId, submissionId: c, before: a })).toMatchObject({
+      ok: true,
+      value: { outcome: "moved" },
+    });
+    await waitForView(client.view, (view) => inboxOf(view).map((item) => item.id as unknown as number).join() === [c, a, b].join());
+    // No `before`: to the end of the queue.
+    expect(await call(raw, "reorderQueued", { conversationId, submissionId: a })).toMatchObject({
+      ok: true,
+      value: { outcome: "moved" },
+    });
+    expect(await call(raw, "reorderQueued", { conversationId, submissionId: a, before: b })).toMatchObject({
+      ok: true,
+      value: { outcome: "moved" },
+    });
+    await waitForView(client.view, (view) => inboxOf(view).map((item) => item.id as unknown as number).join() === [c, a, b].join());
+
+    gate.resolve();
+    await waitForView(client.view, (view) => !isBusy(view.conversation!) && inboxOf(view).length === 0);
+    expect(transcript(client.view.current().conversation!).filter((line) => line.role === "user").map((line) => line.text)).toEqual([
+      "investigate",
+      "C",
+      "A",
+      "B",
+    ]);
+  });
+
+  it("reports sent for a placed input and unavailable when either side left the queue", async () => {
+    const gate = deferred();
+    defer(gate.resolve);
+    const host = await startFauxHost(defer, { answers: [gatedTool(gate.promise), "r1", "r2", "r3"] });
+    const client = await connectTo(defer, host);
+    const conversationId = await startChat(client, "investigate");
+    await waitForView(client.view, (view) => isBusy(view.conversation!));
+    const raw = await socketTo(host);
+    const placed = await placedSubmissionId(host, conversationId);
+
+    const a = await submit(raw, conversationId, "A");
+    const b = await submit(raw, conversationId, "B");
+    await waitForView(client.view, (view) => inboxOf(view).length === 2);
+
+    expect(await call(raw, "reorderQueued", { conversationId, submissionId: placed, before: a })).toMatchObject({
+      ok: true,
+      value: { outcome: "sent" },
+    });
+    expect(await call(raw, "reorderQueued", { conversationId, submissionId: a, before: placed })).toMatchObject({
+      ok: true,
+      value: { outcome: "unavailable" },
+    });
+    expect(await call(raw, "withdrawQueued", { conversationId, submissionId: b })).toMatchObject({
+      ok: true,
+      value: { outcome: "withdrawn" },
+    });
+    expect(await call(raw, "reorderQueued", { conversationId, submissionId: a, before: b })).toMatchObject({
+      ok: true,
+      value: { outcome: "unavailable" },
+    });
+    expect(await call(raw, "reorderQueued", { conversationId, submissionId: b, before: a })).toMatchObject({
+      ok: true,
+      value: { outcome: "unavailable" },
+    });
+
+    gate.resolve();
+    await waitForView(client.view, (view) => !isBusy(view.conversation!) && inboxOf(view).length === 0);
   });
 
   it("reports sent, unavailable and failures without closing a pending question; steered closes it", async () => {
