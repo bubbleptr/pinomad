@@ -176,7 +176,7 @@ fn answers_json(answers: &[QuestionAnswer]) -> Json {
 /// Every call the mobile UI can make, as typed data. `OperationFailed`
 /// only ever answers the Request-class variants (`AddProject`,
 /// `ListFolders`, `RenameConversation`, `SetPushToken`, `Changes`,
-/// `CreatePairing`, `WithdrawQueued`, `SteerQueued`, and the provider calls
+/// `CreatePairing`, `WithdrawQueued`, `SteerQueued`, `ReorderQueued`, and the provider calls
 /// `BeginLogin` … `RemoveCustomProvider`) and the out-of-queue `ListFiles`,
 /// `ListSkills`, `Image`, `ListCommands`, `LoadEarlier` and
 /// `ListEndpointModels`; the rest fail into a view notice
@@ -276,6 +276,11 @@ pub enum FfiCall {
     /// Promote a queued follow-up to steer in place on `target`. Request-class;
     /// resolves `CallResult::SteerQueued`. Needs a 5.14 host.
     SteerQueued { submission_id: u64, target: Option<u64> },
+    /// Move a queued input on `target` so it sits immediately before the
+    /// queued input `before`, or after the last queued input when `before` is
+    /// `None`. Request-class; resolves `CallResult::ReorderQueued`. Needs a
+    /// 5.29 host.
+    ReorderQueued { submission_id: u64, before: Option<u64>, target: Option<u64> },
     /// Hide or restore a top-level conversation in the index.
     Archive { id: u64, archived: bool },
     /// Register (`Some`) or clear (`None`) this device's APNs token.
@@ -394,6 +399,7 @@ impl FfiCall {
             FfiCall::TakeBackSubmission { .. } => Some(ResultKind::TakeBackSubmission),
             FfiCall::WithdrawQueued { .. } => Some(ResultKind::WithdrawQueued),
             FfiCall::SteerQueued { .. } => Some(ResultKind::SteerQueued),
+            FfiCall::ReorderQueued { .. } => Some(ResultKind::ReorderQueued),
             FfiCall::BeginLogin { .. } => Some(ResultKind::LoginStarted),
             FfiCall::ListEndpointModels { .. } => Some(ResultKind::EndpointModels),
             _ => None,
@@ -472,6 +478,9 @@ impl FfiCall {
             }
             FfiCall::SteerQueued { submission_id, target } => {
                 Call::SteerQueued { submission_id, target }
+            }
+            FfiCall::ReorderQueued { submission_id, before, target } => {
+                Call::ReorderQueued { submission_id, before, target }
             }
             FfiCall::Archive { id, archived } => Call::Archive { id, archived },
             FfiCall::SetPushToken { token } => Call::SetPushToken { token },

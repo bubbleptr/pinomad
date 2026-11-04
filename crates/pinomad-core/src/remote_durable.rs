@@ -288,6 +288,10 @@ pub enum Call {
     /// Promote a queued follow-up to steer in place (5.14); it is placed at
     /// the next boundary that takes steers, in queue order. Request-class.
     SteerQueued { submission_id: u64, target: Option<u64> },
+    /// Move a queued input so it sits immediately before the queued input
+    /// `before`, or after the last queued input when `before` is `None`
+    /// (5.29); inbox order is delivery order. Request-class.
+    ReorderQueued { submission_id: u64, before: Option<u64>, target: Option<u64> },
     Compact { instructions: Option<String> },
     /// `runCommand` — run the host-declared command `name` on `target`
     /// (the shown conversation by default); `args` is the text after the
@@ -4166,6 +4170,19 @@ impl RemoteDurable {
                 ]);
                 steps.push_back(Step::Call { method: "steerQueued", args });
             }
+            Call::ReorderQueued { submission_id, before, target } => {
+                if !host_supports_call(self.host_minor, "reorderQueued") {
+                    return Err(too_old("5.29"));
+                }
+                let conversation = target.or(self.current).ok_or_else(|| "No conversation selected".to_string())?;
+                let mut args = JsonObject::new();
+                set(&mut args, "conversationId", Json::Number(conversation as f64));
+                set(&mut args, "submissionId", Json::Number(*submission_id as f64));
+                if let Some(before) = before {
+                    set(&mut args, "before", Json::Number(*before as f64));
+                }
+                steps.push_back(Step::Call { method: "reorderQueued", args: Json::Object(Arc::new(args)) });
+            }
             Call::Compact { instructions } => {
                 let conversation = self.current.ok_or_else(|| "No conversation selected".to_string())?;
                 let mut args = JsonObject::new();
@@ -6010,6 +6027,7 @@ fn op_kind(call: &Call) -> OpKind {
         | Call::SetPushToken { .. }
         | Call::WithdrawQueued { .. }
         | Call::SteerQueued { .. }
+        | Call::ReorderQueued { .. }
         | Call::BeginLogin { .. }
         | Call::AnswerLogin { .. }
         | Call::CancelLogin { .. }

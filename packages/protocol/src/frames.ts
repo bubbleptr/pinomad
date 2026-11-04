@@ -101,7 +101,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 28 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 29 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -257,6 +257,17 @@ export interface CallMethods {
   steerQueued: {
     args: { conversationId: ConversationId; submissionId: number };
     result: { outcome: "steered" | "sent" | "unavailable" };
+  };
+  /**
+   * Move a queued input so it sits immediately before the queued input
+   * `before` in the inbox (5.29); `before` absent puts it after the last
+   * queued input. Inbox order is delivery order. `sent`: the moved input
+   * already reached the transcript. `unavailable`: the moved input or
+   * `before` is no longer queued — re-read the view and retry if still wanted.
+   */
+  reorderQueued: {
+    args: { conversationId: ConversationId; submissionId: number; before?: number };
+    result: { outcome: "moved" | "sent" | "unavailable" };
   };
   abort: { args: { conversationId: ConversationId }; result: null };
   compact: { args: { conversationId: ConversationId; instructions?: string }; result: { taskId: string } };
@@ -430,6 +441,7 @@ export const CALL_SINCE: Record<CallMethod, number> = {
   submission: 25,
   withdrawQueued: 14,
   steerQueued: 14,
+  reorderQueued: 29,
   abort: 0,
   compact: 0,
   runCommand: 17,
@@ -745,6 +757,12 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
     case "withdrawQueued":
     case "steerQueued":
       return conversationId() && submissionId();
+    case "reorderQueued":
+      return (
+        conversationId() && submissionId()
+        && (args.before === undefined
+          || (typeof args.before === "number" && Number.isSafeInteger(args.before) && args.before >= 1))
+      );
     case "abort":
       return conversationId();
     case "setThinkingLevel":

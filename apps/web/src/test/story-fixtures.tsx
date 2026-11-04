@@ -575,6 +575,7 @@ export function fakeRemote(view: DurableView = fakeView(), overrides: Partial<Du
     takeBackSubmission: fn(async () => undefined),
     withdrawQueued: fn(async () => "withdrawn" as const),
     steerQueued: fn(async () => "steered" as const),
+    reorderQueued: fn(async () => "moved" as const),
     compact: fn(async () => {}),
     runCommand: fn(async () => {}),
     abort: fn(async () => {}),

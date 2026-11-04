@@ -12,7 +12,7 @@ use pinomad_core::ffi::{
     LoginEvent, LoginInput, LoginLink, LoginMethod, LoginOption, LoginPrompt, LoginState, ProviderInfo, ProviderOAuth, StoredCredential, ClientError, CommandEntry, CommandInput, CommandSource, ConnectionState, ConversationChanges, ConversationCheckout,
     DeviceEntry, DeviceSource, FetchedImage, FfiCall, FfiCommand, FfiEvent, FileScope, HostSettingsState, ImageVariant, MessageImage, ModelRef,
     NewConversationHome, PatchLineKind, PinomadClient, ReadyOutcome, SkillEntry, SkillScope, SkillSource,
-    SteerOutcome, StoredHost, SubmissionDraft, SubmissionStatus, SubmitMode, ThinkingLevel,
+    ReorderOutcome, SteerOutcome, StoredHost, SubmissionDraft, SubmissionStatus, SubmitMode, ThinkingLevel,
     WithdrawOutcome,
 };
 use pinomad_core::json::{Json, JsonObject};
@@ -497,6 +497,9 @@ fn ffi_calls_encode_the_same_frames_as_the_reference() {
             attachments: vec!["A".repeat(22)],
         },
     );
+    // 5.29: reorder a queued input, before another or to the end.
+    h.invoke(15, FfiCall::ReorderQueued { submission_id: 3, before: Some(4), target: Some(2) });
+    h.invoke(16, FfiCall::ReorderQueued { submission_id: 3, before: None, target: Some(2) });
 
     let calls = call_frames(&h);
     let by_name: HashMap<String, Vec<&Json>> = calls.iter().fold(HashMap::new(), |mut acc, frame| {
@@ -519,6 +522,8 @@ fn ffi_calls_encode_the_same_frames_as_the_reference() {
         ("call-beginAttachment", by_name["beginAttachment"][0]),
         ("call-appendAttachment", by_name["appendAttachment"][0]),
         ("call-submit-attachments", by_name["submit"][1]),
+        ("call-reorderQueued", by_name["reorderQueued"][0]),
+        ("call-reorderQueued-to-end", by_name["reorderQueued"][1]),
     ]
     .into_iter()
     .collect();
@@ -610,6 +615,16 @@ fn queued_call_results_are_typed_and_queued_input_reads_on_demand() {
     h.host.call_results.insert("steerQueued".to_string(), obj(&[("outcome", Json::from("nope"))]));
     h.invoke(3, FfiCall::SteerQueued { submission_id: 3, target: Some(2) });
     assert!(matches!(h.ops.get(&3), Some(Err(error)) if error.contains("malformed steerQueued")));
+
+    h.host.call_results.insert("reorderQueued".to_string(), obj(&[("outcome", Json::from("unavailable"))]));
+    h.invoke(4, FfiCall::ReorderQueued { submission_id: 3, before: Some(4), target: Some(2) });
+    assert_eq!(
+        h.ops.get(&4),
+        Some(&Ok(CallResult::ReorderQueued { outcome: ReorderOutcome::Unavailable }))
+    );
+    h.host.call_results.insert("reorderQueued".to_string(), obj(&[("outcome", Json::from("steered"))]));
+    h.invoke(5, FfiCall::ReorderQueued { submission_id: 3, before: None, target: Some(2) });
+    assert!(matches!(h.ops.get(&5), Some(Err(error)) if error.contains("malformed reorderQueued")));
 
     let inbox = obj(&[
         ("id", Json::Number(7.0)),

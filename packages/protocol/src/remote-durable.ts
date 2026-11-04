@@ -3452,7 +3452,7 @@ class RemoteClient {
             (error: unknown) => this.#notice("error", error instanceof Error ? error.message : String(error)),
           );
       },
-      // Requests, not commands: a failed withdraw/steer must reach the
+      // Requests, not commands: a failed withdraw/steer/reorder must reach the
       // caller's Undo/Edit affordance instead of becoming a notice.
       withdrawQueued: (submissionId, target) =>
         this.#request(async () => {
@@ -3473,6 +3473,18 @@ class RemoteClient {
           const { outcome } = await this.#call("steerQueued", {
             conversationId: target ?? conversationId(),
             submissionId,
+          });
+          return outcome;
+        }),
+      reorderQueued: (submissionId, before, target) =>
+        this.#request(async () => {
+          if (!hostSupportsCall(this.#hostMinor, "reorderQueued")) {
+            throw new Error("The host is too old for this (needs protocol 5.29); run `pinomad upgrade` on the host");
+          }
+          const { outcome } = await this.#call("reorderQueued", {
+            conversationId: target ?? conversationId(),
+            submissionId,
+            ...(before === undefined ? {} : { before }),
           });
           return outcome;
         }),

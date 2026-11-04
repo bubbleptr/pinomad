@@ -42,6 +42,7 @@ pub(crate) enum ResultKind {
     AppendAttachment,
     WithdrawQueued,
     SteerQueued,
+    ReorderQueued,
     TakeBackSubmission,
     LoginStarted,
     EndpointModels,
@@ -212,6 +213,13 @@ impl PinomadClient {
                             Ok(outcome) => FfiCommand::OperationSucceeded {
                                 op,
                                 value: CallResult::SteerQueued { outcome },
+                            },
+                            Err(error) => FfiCommand::OperationFailed { op, error, carrier_lost: false },
+                        },
+                        Some(ResultKind::ReorderQueued) => match reorder_outcome_of(value.as_ref()) {
+                            Ok(outcome) => FfiCommand::OperationSucceeded {
+                                op,
+                                value: CallResult::ReorderQueued { outcome },
                             },
                             Err(error) => FfiCommand::OperationFailed { op, error, carrier_lost: false },
                         },

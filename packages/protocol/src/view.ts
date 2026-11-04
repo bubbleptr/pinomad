@@ -326,6 +326,19 @@ export interface DurableController {
    * host's error — the caller shows it.
    */
   steerQueued(submissionId: number, target?: ConversationId): Promise<"steered" | "sent" | "unavailable">;
+  /**
+   * Move a queued input on `target` (the main shown conversation by default)
+   * so it sits immediately before the queued input `before`, or after the last
+   * queued input when `before` is undefined; inbox order is delivery order.
+   * `sent` means it already reached the transcript; `unavailable` means it or
+   * `before` is no longer queued. Needs a 5.29 host; rejects with the host's
+   * error — the caller shows it.
+   */
+  reorderQueued(
+    submissionId: number,
+    before: number | undefined,
+    target?: ConversationId,
+  ): Promise<"moved" | "sent" | "unavailable">;
   /** Set the shown conversation's thinking level; rejects when the model can't take it. */
   setThinkingLevel(level: ThinkingLevel): Promise<void>;
   setModel(model: ModelRef): Promise<void>;

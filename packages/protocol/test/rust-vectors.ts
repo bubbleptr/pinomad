@@ -191,6 +191,15 @@ function framesVector(): VectorFile {
       name: "call-earlierEntries",
       wire: wire({ type: "call", id: 28, method: "earlierEntries", args: { conversationId: 2, before: 18, limit: 50 } }),
     },
+    // 5.29: reorder a queued input; `before` absent moves it to the end.
+    {
+      name: "call-reorderQueued",
+      wire: wire({ type: "call", id: 28, method: "reorderQueued", args: { conversationId: 2, submissionId: 3, before: 4 } }),
+    },
+    {
+      name: "call-reorderQueued-to-end",
+      wire: wire({ type: "call", id: 29, method: "reorderQueued", args: { conversationId: 2, submissionId: 3 } }),
+    },
     { name: "call-empty-args", wire: wire({ type: "call", id: 9, method: "createPairing", args: {} }) },
     { name: "call-null-arg", wire: wire({ type: "call", id: 10, method: "setPushToken", args: { token: null } }) },
   ];

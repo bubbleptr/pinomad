@@ -196,6 +196,8 @@ pub enum CallResult {
     WithdrawQueued { outcome: WithdrawOutcome },
     /// `steerQueued` — `unavailable` means it settled before the promotion.
     SteerQueued { outcome: SteerOutcome },
+    /// `reorderQueued` — `unavailable` means it or `before` left the queue.
+    ReorderQueued { outcome: ReorderOutcome },
     /// `beginLogin` — the flow to follow in `snapshot().providers.logins`.
     LoginStarted { login_id: String },
     /// `listEndpointModels` — the model ids the endpoint listed.
@@ -268,6 +270,13 @@ pub enum SteerOutcome {
     Unavailable,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum ReorderOutcome {
+    Moved,
+    Sent,
+    Unavailable,
+}
+
 /// Strict like the other typed results: a malformed outcome fails the op
 /// instead of guessing what the host meant.
 pub(crate) fn withdraw_outcome_of(value: Option<&Json>) -> Result<WithdrawOutcome, String> {
@@ -294,6 +303,20 @@ pub(crate) fn steer_outcome_of(value: Option<&Json>) -> Result<SteerOutcome, Str
         Some("sent") => Ok(SteerOutcome::Sent),
         Some("unavailable") => Ok(SteerOutcome::Unavailable),
         _ => Err("malformed steerQueued result: outcome".to_string()),
+    }
+}
+
+pub(crate) fn reorder_outcome_of(value: Option<&Json>) -> Result<ReorderOutcome, String> {
+    let outcome = value
+        .filter(|v| v.is_object())
+        .and_then(|v| v.get("outcome"))
+        .and_then(Json::as_str)
+        .map(|s| s.to_string_lossy());
+    match outcome.as_deref() {
+        Some("moved") => Ok(ReorderOutcome::Moved),
+        Some("sent") => Ok(ReorderOutcome::Sent),
+        Some("unavailable") => Ok(ReorderOutcome::Unavailable),
+        _ => Err("malformed reorderQueued result: outcome".to_string()),
     }
 }
 

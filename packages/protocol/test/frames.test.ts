@@ -148,6 +148,16 @@ describe("parseClientFrame", () => {
     }
   });
 
+  it("accepts reorderQueued with an optional positive integer before", () => {
+    const reorder = (args: unknown) => kinds({ type: "call", id: 1, method: "reorderQueued", args });
+    expect(reorder({ conversationId: 7, submissionId: 3 })).toBe("frame");
+    expect(reorder({ conversationId: 7, submissionId: 3, before: 4 })).toBe("frame");
+    for (const before of [0, -1, 1.5, "4", null]) {
+      expect(reorder({ conversationId: 7, submissionId: 3, before })).toBe("malformed");
+    }
+    expect(reorder({ conversationId: 7, before: 4 })).toBe("malformed");
+  });
+
   it("introduces withdrawQueued and steerQueued at minor 14", () => {
     expect(hostSupportsCall(13, "withdrawQueued")).toBe(false);
     expect(hostSupportsCall(14, "withdrawQueued")).toBe(true);

@@ -19,7 +19,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 28 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 29 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -86,6 +86,7 @@ pub enum CallMethod {
     Submission,
     WithdrawQueued,
     SteerQueued,
+    ReorderQueued,
     Abort,
     Compact,
     SetModel,
@@ -141,6 +142,7 @@ impl CallMethod {
             "submission" => Self::Submission,
             "withdrawQueued" => Self::WithdrawQueued,
             "steerQueued" => Self::SteerQueued,
+            "reorderQueued" => Self::ReorderQueued,
             "abort" => Self::Abort,
             "compact" => Self::Compact,
             "setModel" => Self::SetModel,
@@ -229,6 +231,7 @@ impl CallMethod {
             | Self::RestartTerminal
             | Self::CloseTerminal => 27,
             Self::EarlierEntries => 28,
+            Self::ReorderQueued => 29,
         }
     }
 }
