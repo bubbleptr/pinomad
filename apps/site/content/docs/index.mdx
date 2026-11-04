@@ -30,6 +30,8 @@ When no browser can open on that machine (over SSH, or on a Linux server without
 
 In the Mac app, signed in, **Set up this Mac** (on the first-host page, and in Settings → **This Mac**) runs the same install in the background and joins this Mac to your account, with no terminal and no code to type. If it fails, the app shows the command to run in a terminal yourself. Settings → **This Mac** then turns that host on and off. Off, it stays off after a restart until you turn it back on, other devices can't reach this Mac, and running tasks finish first. `pinomad service stop` and `pinomad service start` do the same from a terminal.
 
+A host set up this way runs through a small helper inside the Mac app, so when something on the host (a terminal, the agent) first opens your Documents or Desktop folder, macOS asks on behalf of **PiNomad** instead of `node`. The host then needs the app to stay in Applications. If you remove the app, run `pinomad service install` in a terminal and the host runs on its own again.
+
 To add another host later, run the same two lines on that machine.
 
 The script puts Node and pinomad in `~/.pinomad/runtime` and the `pinomad` command in `~/.local/bin`, and adds that directory to your shell profile (`~/.zshrc`, `~/.bashrc` and so on) when it isn't on your PATH yet. It covers Apple silicon Macs and Linux on x64 or arm64 (glibc). Anywhere else, or to use a Node 25+ you already have, run `npm i -g pinomad` and then `pinomad up`. If pinomad is already installed with npm, the script leaves it alone; run `pinomad upgrade`, then `pinomad up`.

@@ -16,7 +16,17 @@ export interface ServiceSpec {
   readonly hostArgs: readonly string[];
   readonly env: { readonly PATH: string; readonly LANG?: string; readonly LC_ALL?: string };
   readonly home: string;
+  /**
+   * macOS only: the Mac App's launcher (apps/desktop/host-launcher), which
+   * runs node as its child. macOS then asks for file access in the app's
+   * name instead of node's. Absent when the service runs node directly.
+   */
+  readonly launcher?: string;
 }
+
+/** The launcher's executable inside its bundle, which is how a plist tells it from node. */
+export const LAUNCHER_EXECUTABLE = "pinomad-host";
+const isLauncher = (path: string): boolean => path.endsWith(`.app/Contents/MacOS/${LAUNCHER_EXECUTABLE}`);
 
 /** The process-ish inputs installSpec needs; injected so the spec is testable. */
 export interface ServiceInputs {
@@ -182,7 +192,8 @@ export function specFromLaunchdPlist(text: string): ServiceSpec {
   }
   const workdir = /<key>WorkingDirectory<\/key>\s*<string>([\s\S]*?)<\/string>/.exec(text)?.[1];
   if (workdir === undefined) throw new Error("plist has no WorkingDirectory");
-  return specFromProgram(program, env, xmlUnescape(workdir));
+  if (program[0] === undefined || !isLauncher(program[0])) return specFromProgram(program, env, xmlUnescape(workdir));
+  return { ...specFromProgram(program.slice(1), env, xmlUnescape(workdir)), launcher: program[0] };
 }
 
 const xmlEscape = (value: string): string =>
@@ -194,7 +205,15 @@ const xmlEscape = (value: string): string =>
     .replace(/'/g, "&apos;");
 
 export function launchdPlist(spec: ServiceSpec): string {
-  const program = [spec.nodePath, spec.mainPath, ...spec.entryArgs, "--data-dir", spec.dataDir, ...spec.hostArgs];
+  const program = [
+    ...(spec.launcher === undefined ? [] : [spec.launcher]),
+    spec.nodePath,
+    spec.mainPath,
+    ...spec.entryArgs,
+    "--data-dir",
+    spec.dataDir,
+    ...spec.hostArgs,
+  ];
   const log = join(spec.dataDir, "logs", "host.log");
   const env = Object.entries(spec.env).map(([key, value]) => `    <key>${xmlEscape(key)}</key>\n    <string>${xmlEscape(value)}</string>`);
   return `<?xml version="1.0" encoding="UTF-8"?>

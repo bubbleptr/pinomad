@@ -1,6 +1,8 @@
 // The "This Mac" host switch (#501). The app is only a control panel
 // (ADR-0003 §2, ADR-0017): it never bundles or runs a host, it drives the one
-// the user installed by running that install's own `pinomad service` CLI. The
+// the user installed by running that install's own `pinomad service` CLI.
+// What it does ship is a launcher the service runs node through, so macOS
+// asks for file access as PiNomad rather than node (host-launcher/). The
 // launchd plist names that install — its Node, its script, its PATH — so the
 // CLI runs exactly as the service does, whatever this GUI process's PATH is.
 // Setting a host up runs install.sh and `pinomad up` in the background on
@@ -45,6 +47,8 @@ export interface LocalHostDeps {
   readonly fetchText: (url: string) => Promise<string>;
   /** Signals a detached child's whole process group. */
   readonly killGroup: (pid: number, signal: NodeJS.Signals) => void;
+  /** This app's host launcher, for the service it sets up; undefined when the app has none to offer (dev, not in Applications). */
+  readonly launcher?: string | undefined;
 }
 
 export interface LocalHost {
@@ -151,6 +155,9 @@ const lastLine = (text: string): string | undefined =>
     .map((line) => line.trim())
     .filter((line) => line !== "")
     .at(-1);
+
+/** The flag an older pinomad's strict parser stopped at. */
+const unknownOption = (stderr: string): string | undefined => /Unknown option '(--[a-z-]+)'/.exec(stderr)?.[1];
 
 /** A non-zero exit: execFile puts the status in a numeric `code`. A string `code` is a spawn errno. */
 const exitFailure = (error: unknown): { stderr: string; code: number } | undefined => {
@@ -408,9 +415,27 @@ export function createLocalHost(deps: LocalHostDeps): LocalHost {
     } catch (error) {
       return { ok: false, message: errorMessage(error) };
     }
+    let run = await runUp(origin, token, env, deps.launcher);
+    // A pinomad from before --launcher stops at the flag, before spending the
+    // token: join again without it, and the service runs node directly.
+    if ("code" in run && unknownOption(run.stderr) === "--launcher") run = await runUp(origin, token, env, undefined);
+    if ("error" in run) return { ok: false, message: `Couldn't run pinomad: ${errorMessage(run.error)}` };
+    if (run.code === 0) return { ok: true };
+    // A pinomad from npm that install.sh left alone may predate the flags.
+    if (unknownOption(run.stderr) !== undefined) return { ok: false, message: TOO_OLD_TO_JOIN };
+    return { ok: false, message: lastLine(run.stderr) ?? `pinomad exited with ${run.code ?? "a signal"}` };
+  }
+
+  function runUp(
+    origin: string,
+    token: string,
+    env: NodeJS.ProcessEnv,
+    launcher: string | undefined,
+  ): Promise<{ code: number | null; stderr: string } | { error: Error }> {
     // The installer's launcher, unless a pinomad from npm is on the shell's PATH
     // instead (install.sh then leaves it alone). `--server` asks nothing.
-    const child = deps.spawn("pinomad", ["up", "--server", "--origin", origin, "--token-stdin"], {
+    const args = ["up", "--server", "--origin", origin, "--token-stdin", ...(launcher === undefined ? [] : ["--launcher", launcher])];
+    const child = deps.spawn("pinomad", args, {
       env: { ...env, PATH: `${join(deps.home, ".local", "bin")}:${env.PATH ?? ""}` },
       cwd: deps.home,
     });
@@ -421,14 +446,9 @@ export function createLocalHost(deps: LocalHostDeps): LocalHost {
     child.stderr?.setEncoding("utf8").on("data", (chunk: string) => {
       stderr += chunk;
     });
-    return new Promise<LocalHostResult>((resolve) => {
-      child.on("error", (error) => resolve({ ok: false, message: `Couldn't run pinomad: ${errorMessage(error)}` }));
-      child.on("close", (code) => {
-        if (code === 0) resolve({ ok: true });
-        // A pinomad from npm that install.sh left alone may predate the flag.
-        else if (stderr.includes("Unknown option '--token-stdin'")) resolve({ ok: false, message: TOO_OLD_TO_JOIN });
-        else resolve({ ok: false, message: lastLine(stderr) ?? `pinomad exited with ${code ?? "a signal"}` });
-      });
+    return new Promise((resolve) => {
+      child.on("error", (error) => resolve({ error }));
+      child.on("close", (code) => resolve({ code, stderr }));
     });
   }
 

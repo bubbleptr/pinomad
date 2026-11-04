@@ -1,6 +1,8 @@
 // `pinomad up` / `pinomad status` (#498): one command that asks how other
 // devices reach this host, joins the account and/or opens the LAN listener,
 // and writes the service once. Real in-process server, fake service manager.
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { joinServer } from "../src/cli/join.ts";
 import { statusReport } from "../src/cli/status.ts";
@@ -424,5 +426,79 @@ describe("statusReport", () => {
       lanPort: "7422",
       service: { installed: true, running: true },
     });
+  });
+});
+
+// The Mac App runs the host through its signed launcher, so macOS asks for
+// file access in the app's name rather than node's.
+describe("up with the Mac App's launcher", () => {
+  async function launcherIn(dir: string): Promise<string> {
+    const path = join(dir, "PiNomad Host.app", "Contents", "MacOS", "pinomad-host");
+    await mkdir(join(path, ".."), { recursive: true });
+    await writeFile(path, "");
+    return path;
+  }
+
+  it("a fresh install runs the host through it", async () => {
+    const dir = await dataDir();
+    const launcher = await launcherIn(dir);
+    const fake = fakeManager();
+    await upHost({ dataDir: dir, reach: { server: false, lan: true }, launcher }, { manager: fake.manager });
+    expect(fake.installs.map((spec) => spec.launcher)).toEqual([launcher]);
+  });
+
+  it("rewrites a running service with the same args to go through it", async () => {
+    const dir = await dataDir();
+    const launcher = await launcherIn(dir);
+    const seeded = seededSpec(dir, ["--remote-port", "7422"]);
+    const fake = fakeManager(seeded);
+    const outcome = await upHost({ dataDir: dir, reach: { server: false, lan: true }, launcher }, { manager: fake.manager });
+    expect(outcome.service).toBe("updated");
+    expect(fake.installs).toEqual([{ ...seeded, launcher }]);
+  });
+
+  it("a join with a token passes it on to the service it installs", async () => {
+    const dir = await dataDir();
+    const launcher = await launcherIn(dir);
+    const started = await startServer();
+    const fake = fakeManager();
+    const token = await joinToken(started);
+    await upHost(
+      { dataDir: dir, origin: started.origin, reach: { server: true, lan: false }, token, launcher },
+      confirmingDeps(started, fake.manager).deps,
+    );
+    expect(fake.installs.at(-1)!.launcher).toBe(launcher);
+  });
+
+  it("up from a terminal keeps the launcher the service has", async () => {
+    const dir = await dataDir();
+    const launcher = await launcherIn(dir);
+    const fake = fakeManager({ ...seededSpec(dir, ["--remote-port", "7422"]), launcher });
+    const outcome = await upHost({ dataDir: dir, reach: { server: false, lan: true } }, { manager: fake.manager });
+    expect(outcome.service).toBe("unchanged");
+  });
+
+  it("drops a launcher whose app is gone, so the host can start again", async () => {
+    const dir = await dataDir();
+    const seeded = seededSpec(dir, ["--remote-port", "7422"]);
+    const fake = fakeManager({ ...seeded, launcher: join(dir, "Gone.app", "Contents", "MacOS", "pinomad-host") });
+    const outcome = await upHost({ dataDir: dir, reach: { server: false, lan: true } }, { manager: fake.manager });
+    expect(outcome.service).toBe("updated");
+    expect(fake.installs).toEqual([seeded]);
+  });
+
+  it("pinomad up refuses a --launcher that isn't there before writing anything", async () => {
+    const errors: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((line: unknown) => void errors.push(String(line)));
+    defer(() => {
+      vi.restoreAllMocks();
+      process.exitCode = undefined;
+    });
+    const dir = await dataDir();
+    const fake = fakeManager();
+    await up(["--lan", "--data-dir", dir, "--launcher", join(dir, "missing")], { manager: fake.manager });
+    expect(process.exitCode).toBe(1);
+    expect(errors.join("\n")).toContain("--launcher");
+    expect(fake.installs).toHaveLength(0);
   });
 });

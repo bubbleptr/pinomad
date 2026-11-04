@@ -56,6 +56,8 @@ export async function joinServer(
     readonly name?: string;
     /** Further host-args changes made in the same service write (`pinomad up` sets the LAN port). */
     readonly editHostArgs?: (hostArgs: readonly string[]) => readonly string[];
+    /** The Mac App's launcher for the service to run through (ServiceSpec.launcher). */
+    readonly launcher?: string;
   },
   deps?: JoinDeps,
 ): Promise<JoinOutcome> {
@@ -137,7 +139,10 @@ export async function joinServer(
     // re-join elsewhere can't contradict the definition.
     const edit = args.editHostArgs ?? ((hostArgs: readonly string[]) => hostArgs);
     // Changed either way: the host reads server.json only at startup.
-    service = await writeService(slot, (hostArgs) => edit(withoutRelayArgs(hostArgs)), { changed: true });
+    service = await writeService(slot, (hostArgs) => edit(withoutRelayArgs(hostArgs)), {
+      changed: true,
+      launcher: args.launcher,
+    });
   } catch (error) {
     throw new Error(
       `joined ${username} at ${origin}, but local setup failed: ${message(error)}\n` +

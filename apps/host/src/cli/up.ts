@@ -4,7 +4,8 @@
 // (join.ts: a code confirmed in the browser), only on the LAN and tailnet
 // (--remote-port, ADR-0008), or both; then writes the service (ADR-0009) once.
 // `join`, `service install` and `host` stay for scripts and finer control.
-import { resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import { commandHint } from "../distribution.ts";
@@ -89,6 +90,8 @@ export async function upHost(
     readonly code?: boolean;
     /** A one-time join token: nobody confirms anything. Unspent when the host is already joined. */
     readonly token?: string;
+    /** The Mac App's launcher for the service to run through (ServiceSpec.launcher). */
+    readonly launcher?: string;
   },
   deps?: JoinDeps,
 ): Promise<UpOutcome> {
@@ -120,7 +123,14 @@ export async function upHost(
 
   if (reach.server && config === undefined) {
     const joined = await joinServer(
-      { origin, dataDir, code: args.code, ...(args.token === undefined ? {} : { token: args.token }), editHostArgs: lan },
+      {
+        origin,
+        dataDir,
+        code: args.code,
+        ...(args.token === undefined ? {} : { token: args.token }),
+        ...(args.launcher === undefined ? {} : { launcher: args.launcher }),
+        editHostArgs: lan,
+      },
       { ...deps, manager },
     );
     return {
@@ -134,7 +144,7 @@ export async function upHost(
   const edit = reach.server ? (hostArgs: readonly string[]) => lan(withoutRelayArgs(hostArgs)) : lan;
   // The server path always restarts: a join whose idle restart was cancelled
   // left server.json written but unread, and same args can't tell.
-  const service = await writeService(slot, edit, { changed: reach.server });
+  const service = await writeService(slot, edit, { changed: reach.server, launcher: args.launcher });
   if (!reach.server && config !== undefined) {
     notes.push(`still joined to ${config.origin} — run \`${commandHint("leave")}\` to leave it`);
   }
@@ -215,6 +225,8 @@ export async function main(argv: readonly string[], deps?: UpDeps): Promise<void
       code: { type: "boolean" },
       // stdin, not argv: other processes can read argv (the Mac App passes it so).
       "token-stdin": { type: "boolean" },
+      // The Mac App's launcher (ServiceSpec.launcher); only the app passes it.
+      launcher: { type: "string" },
       "remote-port": { type: "string" },
       "data-dir": { type: "string" },
     },
@@ -222,6 +234,12 @@ export async function main(argv: readonly string[], deps?: UpDeps): Promise<void
   const log = deps?.log ?? ((line: string) => console.log(line));
   try {
     const dataDir = resolve(values["data-dir"] ?? DEFAULT_DATA_DIR);
+    const launcher = values.launcher;
+    if (launcher !== undefined && process.platform !== "darwin") throw new Error("--launcher is for the Mac App's service only");
+    // A plist naming a missing file would keep the host from starting at all.
+    if (launcher !== undefined && !(isAbsolute(launcher) && existsSync(launcher))) {
+      throw new Error(`--launcher ${launcher}: no such file`);
+    }
     let token: string | undefined;
     if (values["token-stdin"] === true) {
       token = (await (deps?.readStdin ?? readAllStdin)()).trim();
@@ -263,6 +281,7 @@ export async function main(argv: readonly string[], deps?: UpDeps): Promise<void
         ...(values["remote-port"] === undefined ? {} : { remotePort: values["remote-port"] }),
         ...(values.code === true ? { code: true } : {}),
         ...(token === undefined ? {} : { token }),
+        ...(launcher === undefined ? {} : { launcher }),
       },
       deps,
     );
