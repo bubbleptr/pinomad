@@ -2340,7 +2340,7 @@ it("promotes a queued follow-up to Steer and keeps Steer off writes and an idle 
   const promoted = page.getByTestId("chat-queued-message").filter({ hasText: "promote me" });
   await promoted.waitFor();
   await promoted.getByRole("button", { name: "Steer the run with this message", exact: true }).click();
-  await expect.poll(() => promoted.locator('[data-slot="queued-message-tag"]').textContent()).toBe("Steer");
+  await expect.poll(() => promoted.locator('[data-slot="queued-message-mode"]').getAttribute("data-mode")).toBe("steer");
   expect(await promoted.getByRole("button", { name: "Steer the run with this message", exact: true }).count()).toBe(0);
 
   // Two more follow-ups: the first run's final boundary takes one, the other
@@ -2376,10 +2376,60 @@ it("promotes a queued follow-up to Steer and keeps Steer off writes and an idle 
     return !isBusy(view.conversation!) && inbox.length === 1 && inbox[0]!.mode === "followUp";
   });
   await leftover.waitFor();
-  await expect.poll(() => leftover.locator('[data-slot="queued-message-tag"]').textContent()).toBe("Follow-up");
+  await expect.poll(() => leftover.locator('[data-slot="queued-message-mode"]').getAttribute("data-mode")).toBe("followUp");
   expect(await leftover.getByRole("button", { name: "Steer the run with this message", exact: true }).count()).toBe(0);
   await leftover.getByRole("button", { name: "Edit queued message", exact: true }).waitFor();
   await leftover.getByRole("button", { name: "Withdraw queued message", exact: true }).waitFor();
+});
+
+it("reorders queued follow-ups by dragging the handle or with the arrow keys", async () => {
+  const webOrigin = await startWeb(defer);
+  const gate = deferred();
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    answers: [gatedAnswer(gate.promise), "done", "done", "done"],
+  });
+  defer(gate.resolve);
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = prompt(page);
+  await composer.fill("go");
+  await composer.press("Enter");
+  await followFirst(observer);
+  await page.getByRole("button", { name: /stop/i, exact: true }).waitFor();
+
+  for (const text of ["first", "second"]) {
+    await composer.fill(text);
+    await page.getByRole("button", { name: "Follow-up", exact: true }).click();
+    await page.getByTestId("chat-queued-message").filter({ hasText: text }).waitFor();
+  }
+  const inboxTexts = (): string[] =>
+    (observer.view.current().conversation!.docs["pi.inbox"] as { items: { content: unknown }[] }).items.map((item) =>
+      JSON.stringify(item.content).includes("second") ? "second" : "first",
+    );
+  const rowTexts = (): Promise<string[]> =>
+    page.getByTestId("chat-queued-message").locator('[data-slot="queued-message-body"]').allTextContents();
+
+  const second = page.getByTestId("chat-queued-message").filter({ hasText: "second" });
+  await second.getByRole("button", { name: "Reorder queued message", exact: true }).press("ArrowUp");
+  await expect.poll(inboxTexts).toEqual(["second", "first"]);
+  await expect.poll(rowTexts).toEqual(["second", "first"]);
+  // Focus stays on the moved row's handle, so the next key keeps moving it.
+  await expect
+    .poll(() => page.evaluate(() => document.activeElement?.closest('[data-testid="chat-queued-message"]')?.textContent ?? ""))
+    .toContain("second");
+  await page.keyboard.press("ArrowDown");
+  await expect.poll(inboxTexts).toEqual(["first", "second"]);
+
+  // A pointer drag from the handle onto the top half of the other row.
+  const first = page.getByTestId("chat-queued-message").filter({ hasText: "first" });
+  await second
+    .getByRole("button", { name: "Reorder queued message", exact: true })
+    .dragTo(first, { targetPosition: { x: 40, y: 4 } });
+  await expect.poll(inboxTexts).toEqual(["second", "first"]);
+
+  gate.resolve();
+  await waitForView(observer.view, (view) => !isBusy(view.conversation!));
 });
 
 it("shows a queued follow-up above the composer until the run takes it", async () => {
@@ -2402,7 +2452,8 @@ it("shows a queued follow-up above the composer until the run takes it", async (
   // Host inbox rows only: an unconfirmed local row may coexist briefly.
   const queued = page.getByTestId("chat-queued-message");
   await queued.getByText("next task", { exact: true }).waitFor();
-  await queued.getByText("Follow-up", { exact: true }).waitFor();
+  // A follow-up carries no label, only its mode on the steer column.
+  await expect.poll(() => queued.locator('[data-slot="queued-message-mode"]').getAttribute("data-mode")).toBe("followUp");
   // Once the run takes it, the row is gone and the message is a user entry.
   await queued.first().waitFor({ state: "detached" });
   await page.getByText("followed", { exact: true }).waitFor();

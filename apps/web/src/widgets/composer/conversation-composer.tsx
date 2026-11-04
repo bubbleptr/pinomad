@@ -179,7 +179,7 @@ export function ConversationComposer({
   // Queued-input calls are requests, not commands: their outcomes and errors
   // come back here instead of becoming host notices. One request per row at a
   // time; the ref makes a double click before the next render a no-op too.
-  type PendingAction = { id: number; kind: "steer" | "withdraw" | "edit" };
+  type PendingAction = { id: number; kind: "steer" | "withdraw" | "edit" | "reorder" };
   const [pendingActions, setPendingActions] = useState<readonly PendingAction[]>([]);
   const pendingRows = useRef(new Set<number>());
   const [pendingSubmissions, setPendingSubmissions] = useState<readonly string[]>([]);
@@ -214,6 +214,7 @@ export function ConversationComposer({
     onEditorStateChange?.({ occupied: composerOccupied, locked: editInFlight || awaitingEdit || localEditInFlight });
   }, [composerOccupied, editInFlight, awaitingEdit, localEditInFlight, onEditorStateChange]);
   const canAct = !disconnected && hostSupportsCall(view.host?.protocol.minor ?? 0, "withdrawQueued");
+  const canReorder = !disconnected && hostSupportsCall(view.host?.protocol.minor ?? 0, "reorderQueued");
   const showError = (error: unknown): void => {
     toast({ body: error instanceof Error ? error.message : String(error), type: "error" });
   };
@@ -270,6 +271,19 @@ export function ConversationComposer({
       // "sent"/"unavailable" have nothing to say: the message is already out,
       // or someone else settled it before the promotion landed.
       await remote.controller.steerQueued(id, conversationId);
+    } catch (error) {
+      showError(error);
+    } finally {
+      endAction(id);
+    }
+  };
+  const reorder = async (item: QueueItem, before: number | undefined): Promise<void> => {
+    const id = item.id;
+    if (id === undefined || !beginAction(id, "reorder")) return;
+    try {
+      // "sent"/"unavailable": the row or its neighbour left the queue
+      // meanwhile; the inbox update already shows where things stand.
+      await remote.controller.reorderQueued(id, before, conversationId);
     } catch (error) {
       showError(error);
     } finally {
@@ -444,6 +458,7 @@ export function ConversationComposer({
       <QueuedList
         items={queue}
         canAct={canAct}
+        canReorder={canReorder}
         busy={busy}
         editDisabled={editDisabled}
         editTooltip={editTooltip}
@@ -457,6 +472,7 @@ export function ConversationComposer({
         }}
         onEdit={(item) => void edit(item)}
         onWithdraw={(item) => void withdraw(item)}
+        onReorder={(item, before) => void reorder(item, before)}
       />
       <ImageFileInput inputRef={fileInput} onFiles={editLocked ? () => {} : add} />
       <FilePickerInput inputRef={attachInput} onFiles={editLocked ? () => {} : addFiles} />

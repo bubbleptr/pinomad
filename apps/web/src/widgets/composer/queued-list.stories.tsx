@@ -1,4 +1,6 @@
+import type { QueueItem } from "@pinomad/client/chat.ts";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { useState } from "react";
 import { fn } from "storybook/test";
 import { QueuedList } from "./queued-list.tsx";
 
@@ -11,6 +13,7 @@ const meta = {
       { id: 2, mode: "followUp", text: "Then open a PR against main", imageCount: 0, attachmentCount: 0, status: "sent" as const },
     ],
     canAct: true,
+    canReorder: true,
     busy: true,
     editDisabled: false,
     narrow: false,
@@ -20,6 +23,7 @@ const meta = {
     onSteer: fn(),
     onEdit: fn(),
     onWithdraw: fn(),
+    onReorder: fn(),
   },
 } satisfies Meta<typeof QueuedList>;
 
@@ -69,6 +73,20 @@ export const ReadOnly: Story = {
   args: { canAct: false },
 };
 
+export const Narrow: Story = {
+  args: { narrow: true },
+  render: (args) => (
+    <div style={{ maxWidth: 375 }}>
+      <QueuedList {...args} />
+    </div>
+  ),
+};
+
+// A host older than 5.29 has no reorderQueued: no handles, everything else stays.
+export const NoReorder: Story = {
+  args: { canReorder: false },
+};
+
 export const LongMessage: Story = {
   args: {
     items: [
@@ -79,5 +97,30 @@ export const LongMessage: Story = {
         imageCount: 0, attachmentCount: 0, status: "sent" as const,
       },
     ],
+  },
+};
+
+/** Drag a handle, or focus one and press ↑/↓: the order changes as a host would apply it. */
+export const Interactive: Story = {
+  render: function Render(args) {
+    const [items, setItems] = useState<readonly QueueItem[]>([
+      { id: 1, mode: "steer", text: "Use the existing date helper instead", imageCount: 0, attachmentCount: 0, status: "sent" },
+      { id: 2, mode: "followUp", text: "Then run the release notes pass", imageCount: 0, attachmentCount: 0, status: "sent" },
+      { id: 3, mode: "followUp", text: "Open a PR against main", imageCount: 0, attachmentCount: 0, status: "sent" },
+      { id: 4, mode: "followUp", text: "Summarize what changed", imageCount: 0, attachmentCount: 0, status: "sent" },
+    ]);
+    return (
+      <QueuedList
+        {...args}
+        items={items}
+        onReorder={(moved, before) =>
+          setItems((current) => {
+            const rest = current.filter((item) => item.id !== moved.id);
+            const at = before === undefined ? rest.length : rest.findIndex((item) => item.id === before);
+            return [...rest.slice(0, at), moved, ...rest.slice(at)];
+          })
+        }
+      />
+    );
   },
 };
