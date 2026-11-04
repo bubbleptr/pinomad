@@ -26,7 +26,8 @@ export interface ServiceSpec {
 
 /** The launcher's executable inside its bundle, which is how a plist tells it from node. */
 export const LAUNCHER_EXECUTABLE = "pinomad-host";
-const isLauncher = (path: string): boolean => path.endsWith(`.app/Contents/MacOS/${LAUNCHER_EXECUTABLE}`);
+/** Only a path this matches is read back as the launcher, so it is also all `up --launcher` accepts. */
+export const isLauncher = (path: string): boolean => path.endsWith(`.app/Contents/MacOS/${LAUNCHER_EXECUTABLE}`);
 
 /** The process-ish inputs installSpec needs; injected so the spec is testable. */
 export interface ServiceInputs {

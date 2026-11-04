@@ -42,4 +42,5 @@ ADR-0003 定了桌面、Web、移动端都是客户端，但没定各端用什�
 取舍：
 - **服务依赖 App 的位置。** plist 指向 App 里的启动器，App 删掉或挪走后服务起不来。所以只有从“应用程序”文件夹运行时 App 才传 `--launcher`；`pinomad up` 遇到已经不存在的启动器会去掉它，`pinomad service install` 写出的定义不带启动器。
 - **只覆盖 App 设置的服务。** 从终端装的服务仍然直接起 node，弹窗仍然是 `node`。
+- **启动器会执行别人给它的任何命令。** 同一用户下的程序可以用 `open -a "…/PiNomad Host.app" --args …` 起它，借用用户给 PiNomad 的文件授权。这里不加限制：宿主的代码在 `~/.pinomad/runtime`，同一用户本来就能改写它，等服务重启（或自己 `launchctl kickstart`）后照样以 PiNomad 的身份运行。真要封住，启动器就只能运行我们签名的代码，也就是下面没选的那个方案。和改动前相比范围反而更小：之前的授权给的是所有官方签名的 node。
 - **没选的方案**：在 CI 里用我们的证书重签 node 并自己分发。这要自己跟 Node 的安全更新，hardened runtime 还会拒绝加载 npm 依赖里临时签名的原生插件（node-pty、node-datachannel），除非关掉库校验。

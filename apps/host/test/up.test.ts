@@ -487,6 +487,25 @@ describe("up with the Mac App's launcher", () => {
     expect(fake.installs).toEqual([seeded]);
   });
 
+  it("pinomad up refuses a --launcher outside an app bundle, which the plist couldn't be read back with", async () => {
+    const errors: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((line: unknown) => void errors.push(String(line)));
+    defer(() => {
+      vi.restoreAllMocks();
+      process.exitCode = undefined;
+    });
+    const dir = await dataDir();
+    // A symlink to the real helper, say: it exists, but isn't the bundle path.
+    const loose = join(dir, "bin", "pinomad-host");
+    await mkdir(join(dir, "bin"));
+    await writeFile(loose, "");
+    const fake = fakeManager();
+    await up(["--lan", "--data-dir", dir, "--launcher", loose], { manager: fake.manager });
+    expect(process.exitCode).toBe(1);
+    expect(errors.join("\n")).toContain("--launcher");
+    expect(fake.installs).toHaveLength(0);
+  });
+
   it("pinomad up refuses a --launcher that isn't there before writing anything", async () => {
     const errors: string[] = [];
     vi.spyOn(console, "error").mockImplementation((line: unknown) => void errors.push(String(line)));

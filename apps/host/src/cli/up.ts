@@ -10,7 +10,7 @@ import { createInterface } from "node:readline/promises";
 import { parseArgs } from "node:util";
 import { commandHint } from "../distribution.ts";
 import { normalizeOrigin, readRemovalNotice, readServerConfig } from "../server-config.ts";
-import { argValue, withoutArg, withoutRelayArgs } from "../service/definition.ts";
+import { argValue, isLauncher, LAUNCHER_EXECUTABLE, withoutArg, withoutRelayArgs } from "../service/definition.ts";
 import { serviceManager } from "../service/manager.ts";
 import { DEFAULT_DATA_DIR } from "./host-address.ts";
 import { joinServer, type JoinDeps } from "./join.ts";
@@ -236,10 +236,11 @@ export async function main(argv: readonly string[], deps?: UpDeps): Promise<void
     const dataDir = resolve(values["data-dir"] ?? DEFAULT_DATA_DIR);
     const launcher = values.launcher;
     if (launcher !== undefined && process.platform !== "darwin") throw new Error("--launcher is for the Mac App's service only");
-    // A plist naming a missing file would keep the host from starting at all.
-    if (launcher !== undefined && !(isAbsolute(launcher) && existsSync(launcher))) {
-      throw new Error(`--launcher ${launcher}: no such file`);
+    if (launcher !== undefined && !(isAbsolute(launcher) && isLauncher(launcher))) {
+      throw new Error(`--launcher ${launcher}: not a path to the launcher inside an app (….app/Contents/MacOS/${LAUNCHER_EXECUTABLE})`);
     }
+    // A plist naming a missing file would keep the host from starting at all.
+    if (launcher !== undefined && !existsSync(launcher)) throw new Error(`--launcher ${launcher}: no such file`);
     let token: string | undefined;
     if (values["token-stdin"] === true) {
       token = (await (deps?.readStdin ?? readAllStdin)()).trim();
