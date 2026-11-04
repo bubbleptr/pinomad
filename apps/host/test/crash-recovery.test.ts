@@ -36,7 +36,8 @@ it("resumes both clients after the host is killed mid-stream and restarted", asy
   const dir = await tempDir();
   defer(dir.remove);
   const port = await freePort();
-  const first = await spawnHost(dir.path, port);
+  // Slow enough (~40 characters a second) to kill well past the first store.
+  const first = await spawnHost(dir.path, port, ["--faux", LONG_ANSWER, "--faux-tps", "10"]);
 
   const connect = async (): Promise<RemoteDurable> => {
     const client = await connectRemoteDurable({ url: first.url, token: first.token, reconnectDelayMs: { min: 100, max: 500 } });
@@ -49,8 +50,10 @@ it("resumes both clients after the host is killed mid-stream and restarted", asy
   await a.controller.createConversation({ kind: "chat" }, "investigate");
   const conversationId = a.view.current().conversation!.conversation.id;
   await b.controller.switchConversation(conversationId);
-  // Kill while the answer is still streaming, partway through.
-  await waitForView(b.view, (view) => (streamingText(view.conversation!)?.length ?? 0) > 20);
+  // Kill while the answer is still streaming, partway through and past the
+  // first store: streamed text is stored up to about 1 s after it is shown
+  // (pi.progress.persistWithinMs), so this is ~2 s in.
+  await waitForView(b.view, (view) => (streamingText(view.conversation!)?.length ?? 0) > 80);
   const seenBeforeKill = streamingText(b.view.current().conversation!)!;
   expect(seenBeforeKill.length).toBeLessThan(LONG_ANSWER.length);
   first.child.kill("SIGKILL");
@@ -68,12 +71,13 @@ it("resumes both clients after the host is killed mid-stream and restarted", asy
     );
   await Promise.all([settled(a), settled(b)]);
 
-  // The committed partial survives the crash as an aborted entry; recovery then resends the request.
+  // The stored partial survives the crash as an aborted entry; recovery then resends the request.
+  // Up to the last second of what clients saw may be lost with the process.
   const [user, interrupted, answer, ...rest] = transcript(a.view.current().conversation!);
   expect(user).toEqual({ role: "user", text: "investigate" });
   expect(interrupted).toMatchObject({ role: "assistant", stopReason: "aborted" });
+  expect(interrupted!.text.length).toBeGreaterThan(0);
   expect(LONG_ANSWER.startsWith(interrupted!.text)).toBe(true);
-  expect(interrupted!.text.length).toBeGreaterThanOrEqual(seenBeforeKill.length);
   expect(answer).toEqual({ role: "assistant", text: LONG_ANSWER, stopReason: "stop" });
   expect(rest).toEqual([]);
   expect(b.view.current().conversation).toEqual(a.view.current().conversation);
