@@ -179,6 +179,20 @@ struct ConversationView: View {
                 }
             }
             .animation(swap, value: phase)
+            .background {
+                // Starts where the card's sides end and its bottom corners
+                // begin, measured from the bar's bottom so a taller bar
+                // (menus, queue) doesn't move it: anywhere higher, the
+                // blur's edge shows as a line beside the rounded corners.
+                GeometryReader { bar in
+                    BottomEdgeBlur()
+                        .padding(.top, max(0, bar.size.height
+                            - ConversationComposer.cardCornerRadius - ConversationComposer.bottomInset))
+                        .ignoresSafeArea(.container, edges: .bottom)
+                }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pageHeight = $0 }
         .environment(\.questionPageMaxHeight, max((pageHeight ?? 800) * 0.4, 160))
