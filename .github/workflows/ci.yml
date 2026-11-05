@@ -31,25 +31,18 @@ name: CI
 # use it, and they do run on server changes), and cargo skips host tests.
 # apps/site's typecheck and build live in site.yml.
 #
-# The workflow-level filter below skips PRs that touch none of the above: docs,
-# the site (site.yml), the native iOS app and AgentChatKit (rust-core.yml), the
-# server Dockerfile, and other workflows. Later patterns win, so ci.yml
-# re-includes itself after `.github/**`. If main ever gets branch protection,
-# don't mark these path-filtered checks as required: a skipped workflow or job
-# never reports success.
+# A PR that touches none of the above (docs, the site, the iOS app, deploy/,
+# other workflows) runs only `changes` and `ci-ok`, about 20 seconds.
+#
+# `ci-ok` is the one check to mark as required on main: it reports on every PR,
+# passes when each check above passed or was skipped, and fails when any failed
+# or was cancelled. Don't mark the path-filtered checks themselves as required,
+# since a skipped job never reports success. There is no workflow-level `paths`
+# filter for the same reason: a workflow that never starts never reports
+# `ci-ok`. site.yml and rust-core.yml (the iOS build) are separate workflows
+# and `ci-ok` doesn't cover them.
 on:
   pull_request:
-    paths:
-      - "**"
-      - "!docs/**"
-      - "!**/*.md"
-      - "!LICENSE"
-      - "!apps/site/**"
-      - "!apps/ios/**"
-      - "!packages/agent-chat-kit/**"
-      - "!deploy/**"
-      - "!.github/**"
-      - ".github/workflows/ci.yml"
 
 permissions:
   contents: read
@@ -203,3 +196,14 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: cargo test
       - run: cargo test -p pinomad-core --features ffi
+
+  ci-ok:
+    needs: [changes, workspace, web, cargo]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULTS: ${{ toJSON(needs.*.result) }}
+        run: |
+          echo "$RESULTS"
+          jq -e 'all(. == "success" or . == "skipped")' <<<"$RESULTS"

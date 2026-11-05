@@ -109,7 +109,7 @@ App 图标源文件是 `apps/desktop/build/icon.icon`（戴帽子的幽灵，全
 ## Git 与 worktree
 
 - worktree 里不检出 `main`：git 不允许一个分支同时检出在两个 worktree 里，占着 `main` 会让主仓库切不过去。每个 worktree 用自己的 `feat/` / `fix/` / `chore/` 分支；要最新代码就 `git fetch` 后从 `origin/main` 开分支，只推文档时用 `git push origin HEAD:main`。PR 合并后，worktree 里切到 detached HEAD 或下一个分支即可，切回 `main` 并拉取只在主仓库里做。
-- 堆叠 PR 全绿时用 `gh stack merge <stack 号> --yes --squash` 一次合入：原子操作，每个 PR 各成一个 squash 提交，最上层 PR 的 CI 跑的就是合入后的整棵树，不用逐个 retarget、rebase 再等 CI。只想先合下面几层时用 `gh stack merge <PR 号>`，合到那一层为止。
+- 堆叠 PR 全绿时用 `gh stack merge <stack 号> --yes --squash` 一次合入：原子操作，每个 PR 各成一个 squash 提交，最上层 PR 的 CI 跑的就是合入后的整棵树，不用逐个 retarget、rebase 再等 CI。只想先合下面几层时用 `gh stack merge <PR 号>`，合到那一层为止。`gh stack push` 之后先用 `gh run list --commit <head sha>` 确认 CI 在当前 head 上触发了：没触发就重推，或者告诉用户，不要猜原因。CI 的结论看 `ci-ok` 这一个检查，它汇总 ci.yml 里的全部检查（被路径过滤跳过的算通过）。
 - 手动逐个合并堆叠 PR 时，下层 PR 不要用 `gh pr merge --delete-branch`：`gh` 自己删掉 base 分支后，上层 PR 会被 GitHub 直接关闭，不会自动改 base。先把上层 PR 的 base 改成 `main`，或者让仓库设置的合并后自动删除来处理。
 - 合并 PR 前等 dureview（自部署的评审 bot）跑完再合。它每个 PR 只审一次（`.dureview.md` 的 `trigger: once`），审的是首次推送的 head：修复提交和 force-push 之后不会再出 dureview check，之前的 CHANGES_REQUESTED 也会留着。修完发现后只等 CI，不要轮询 dureview；要复审就在 PR 里评论 `/dureview`。合并后停掉为这个 PR 起的开发宿主和 Vite 等开发服务，不要留着进程。
 
