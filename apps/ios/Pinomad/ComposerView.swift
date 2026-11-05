@@ -9,6 +9,10 @@ import SwiftUI
 /// glass card holding the draft and its actions. Sits in the transcript's
 /// bottom safe-area bar, so the keyboard and the scroll inset follow it.
 struct ConversationComposer: View {
+    static let cardCornerRadius: CGFloat = 26
+    /// Space between the card and the bottom of the bar.
+    static let bottomInset: CGFloat = 8
+
     let model: AppModel
     let conversation: ConversationSnapshot
     /// The named agent the conversation runs as now, plus whether it can
@@ -195,7 +199,7 @@ struct ConversationComposer: View {
             card
         }
         .padding(.horizontal, 12)
-        .padding(.bottom, 8)
+        .padding(.bottom, Self.bottomInset)
         .sensoryFeedback(.impact(weight: .light), trigger: sends)
         .onAppear {
             #if DEBUG
@@ -321,7 +325,7 @@ struct ConversationComposer: View {
         .padding(.horizontal, 16)
         .padding(.top, 14)
         .padding(.bottom, 10)
-        .glassEffect(.regular, in: .rect(cornerRadius: 26))
+        .glassEffect(.regular, in: .rect(cornerRadius: Self.cardCornerRadius))
     }
 
     private var plusMenu: some View {

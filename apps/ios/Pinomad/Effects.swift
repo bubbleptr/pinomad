@@ -26,7 +26,8 @@ struct TopLip<S: InsettableShape>: View {
 /// gradient mask only hazes the text instead of blurring it.
 ///
 /// Core Animation's variable blur is not public API. If the filter is
-/// unavailable, nothing is drawn and the edge falls back to the system fade.
+/// unavailable, or Reduce Transparency is on, nothing is drawn and the edge
+/// falls back to the system fade.
 struct BottomEdgeBlur: UIViewRepresentable {
     var radius: CGFloat = 6
 
@@ -39,16 +40,25 @@ struct BottomEdgeBlur: UIViewRepresentable {
 
 final class VariableBlurView: UIVisualEffectView {
     private let radius: CGFloat
+    /// Points from clear to full strength, fixed so a taller bar (menus,
+    /// queued messages) keeps the same edge.
+    private let ramp: CGFloat = 32
+    private var appliedHeight: CGFloat = 0
 
     init(radius: CGFloat) {
         self.radius = radius
-        super.init(effect: UIBlurEffect(style: .regular))
+        // No effect until the filter is in place: a plain blur would cover
+        // the bar with a hard-edged slab.
+        super.init(effect: nil)
         isUserInteractionEnabled = false
         // UIKit rebuilds the effect's layers after an appearance change,
         // after this handler runs; apply the filter once it has.
         registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (view: VariableBlurView, _) in
             DispatchQueue.main.async { view.applyFilter() }
         }
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(reduceTransparencyChanged),
+            name: UIAccessibility.reduceTransparencyStatusDidChangeNotification, object: nil)
     }
 
     @available(*, unavailable)
@@ -59,18 +69,37 @@ final class VariableBlurView: UIVisualEffectView {
         applyFilter()
     }
 
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if bounds.height != appliedHeight { applyFilter() }
+    }
+
+    @objc private func reduceTransparencyChanged() {
+        applyFilter()
+    }
+
     private func applyFilter() {
-        guard window != nil,
-              let backdrop = subviews.first?.layer,
-              let filter = Self.makeFilter(radius: radius)
-        else { return }
+        guard window != nil, bounds.height > 0 else { return }
+        appliedHeight = bounds.height
+        guard !UIAccessibility.isReduceTransparencyEnabled,
+              let filter = Self.makeFilter(radius: radius, mask: Self.mask(height: bounds.height, ramp: ramp))
+        else {
+            effect = nil
+            return
+        }
+        if effect == nil { effect = UIBlurEffect(style: .regular) }
+        guard let backdrop = subviews.first?.layer else {
+            effect = nil
+            return
+        }
         backdrop.filters = [filter]
         // Drop the material's tint and grain; keep only the blur.
         for overlay in subviews.dropFirst() { overlay.alpha = 0 }
     }
 
-    private static func makeFilter(radius: CGFloat) -> NSObject? {
-        guard let filterClass = NSClassFromString("CAFilter") as? NSObject.Type else { return nil }
+    private static func makeFilter(radius: CGFloat, mask: CGImage?) -> NSObject? {
+        guard let mask,
+              let filterClass = NSClassFromString("CAFilter") as? NSObject.Type else { return nil }
         let make = NSSelectorFromString("filterWithType:")
         guard filterClass.responds(to: make),
               let filter = filterClass.perform(make, with: "variableBlur")?.takeUnretainedValue() as? NSObject
@@ -81,18 +110,20 @@ final class VariableBlurView: UIVisualEffectView {
         return filter
     }
 
-    /// Clear at the top of the bar, full strength from about halfway down.
-    /// The filter stretches the mask over the view, so a small image is enough.
-    private static let mask: CGImage? = {
-        let size = CGSize(width: 1, height: 64)
+    /// Clear at the top, full strength `ramp` points down. The filter
+    /// stretches the mask over the view, so one pixel wide is enough.
+    private static func mask(height: CGFloat, ramp: CGFloat) -> CGImage? {
+        let size = CGSize(width: 1, height: height)
         let image = UIGraphicsImageRenderer(size: size).image { context in
             let colors = [UIColor.clear.cgColor, UIColor.black.cgColor] as CFArray
-            guard let gradient = CGGradient(colorsSpace: nil, colors: colors, locations: [0, 0.5]) else { return }
+            guard let gradient = CGGradient(
+                colorsSpace: nil, colors: colors, locations: [0, min(1, ramp / height)]
+            ) else { return }
             context.cgContext.drawLinearGradient(
-                gradient, start: .zero, end: CGPoint(x: 0, y: size.height), options: .drawsAfterEndLocation)
+                gradient, start: .zero, end: CGPoint(x: 0, y: height), options: .drawsAfterEndLocation)
         }
         return image.cgImage
-    }()
+    }
 }
 
 /// A field of grey dots in the strip under the composer while the agent
