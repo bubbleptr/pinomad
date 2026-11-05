@@ -49,14 +49,30 @@ struct HostLinkTests {
 
     // MARK: - The command
 
+    private struct JoinCommandCase: Decodable {
+        let name: String
+        let serverOrigin: String
+        let token: String?
+        let command: String
+    }
+
     /// The install script (#499) runs `pinomad up` (#498) itself, which
-    /// asks for a code; the server is always named, so a host joined
-    /// elsewhere is refused instead of kept there.
-    @Test func tokenlessCommandHasTheScriptRunUpNamingTheServer() {
-        #expect(HostLinkCopy.joinCommand(serverOrigin: "https://accounts.example.com/")
-            == "curl -fsSL https://pinomad.si/install.sh | sh -s -- up --origin https://accounts.example.com")
-        #expect(HostLinkCopy.joinCommand(serverOrigin: OfficialServer.origin)
-            == "curl -fsSL https://pinomad.si/install.sh | sh -s -- up --origin https://app.pinomad.si")
+    /// asks for a code; the server is always named, the official one too, so
+    /// a host joined elsewhere is refused instead of kept there. The expected
+    /// commands are the fixture the web and server tests read, so a fix
+    /// lands on every end at once (#518, #519).
+    @Test func tokenlessCommandMatchesTheSharedFixture() throws {
+        let repo = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let data = try Data(contentsOf: repo.appending(path: "packages/protocol/test/fixtures/join-commands.json"))
+        struct Fixture: Decodable { let cases: [JoinCommandCase] }
+        // The app builds only the tokenless command; the token one comes from the server.
+        let tokenless = try JSONDecoder().decode(Fixture.self, from: data).cases.filter { $0.token == nil }
+        try #require(!tokenless.isEmpty)
+        for testCase in tokenless {
+            #expect(HostLinkCopy.joinCommand(serverOrigin: testCase.serverOrigin) == testCase.command, "\(testCase.name)")
+        }
     }
 
     // MARK: - The host id
