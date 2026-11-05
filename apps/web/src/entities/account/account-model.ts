@@ -604,9 +604,23 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
           .catch(() => undefined);
       }
     }
+    // Hosts that left the account (removed on another device, or `pinomad
+    // leave`): this device lets go of them as a removal here does, or every
+    // runtime keeps dialing a host the relay will never connect it to.
+    const listed = new Set(rows.value.map((row) => row.hostId));
+    const before = state.status === "signed-in" && state.serverOrigin === active.origin ? state.hosts : [];
+    const delisted = new Set([
+      ...before.map((match) => match.host.hostId),
+      ...stored.flatMap((host) =>
+        host.account?.vouched === true && normalizeServerOrigin(host.account.serverOrigin) === active.origin
+          ? [host.account.hostId]
+          : [],
+      ),
+    ].filter((hostId) => !listed.has(hostId)));
     setState(signedInState(active, user, matches));
     watchVisibility();
     void autoRegisterRound(active, user, matches, storedRead);
+    for (const hostId of delisted) await forgetRemovedHost(active.origin, hostId);
     return { ok: true, value: matches };
   };
 
