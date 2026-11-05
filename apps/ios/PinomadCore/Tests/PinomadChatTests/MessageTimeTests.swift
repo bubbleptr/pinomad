@@ -63,7 +63,7 @@ private func normalized(_ label: String?) -> String? {
 
 @Suite struct MessageClockTests {
     @Test func crossingMidnightRelabelsYesterday() {
-        var clock = MessageClock(now: date("2026-10-27T23:59:00Z"), calendar: calendar())
+        var clock = MessageClock(now: date("2026-10-27T23:59:00Z"), calendar: calendar(), locale: locale)
         let stamp = date("2026-10-27T23:58:00Z").timeIntervalSince1970 * 1000
         #expect(normalized(clock.time(for: stamp)?.label) == "11:58 PM")
 

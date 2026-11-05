@@ -86,9 +86,15 @@ public struct MessageTime: Equatable, Sendable {
 public struct MessageClock: Equatable, Sendable {
     public private(set) var today: Date
     private let calendar: Calendar
+    private let locale: Locale
 
-    public init(now: Date = .now, calendar: Calendar = .current) {
+    public init(
+        now: Date = .now,
+        calendar: Calendar = .current,
+        locale: Locale = .autoupdatingCurrent
+    ) {
         self.calendar = calendar
+        self.locale = locale
         self.today = calendar.startOfDay(for: now)
     }
 
@@ -104,6 +110,6 @@ public struct MessageClock: Equatable, Sendable {
 
     public func time(for timestamp: Double?) -> MessageTime? {
         guard let timestamp else { return nil }
-        return MessageTime(timestamp: timestamp, today: today, calendar: calendar)
+        return MessageTime(timestamp: timestamp, today: today, calendar: calendar, locale: locale)
     }
 }
