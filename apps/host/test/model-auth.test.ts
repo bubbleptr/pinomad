@@ -237,7 +237,8 @@ describe("openModelAuth", () => {
 
     await modelAuth.saveCustomProvider(endpoint, "sk-gateway");
 
-    expect(seen.at(-1)!.authorization).toBe("Bearer sk-gateway");
+    // The open's backfill may ask too, keyless and in parallel; the save asks with its key.
+    expect(seen.map((headers) => headers.authorization)).toContain("Bearer sk-gateway");
     expect(JSON.parse(await readFile(modelsPath, "utf8")).providers[OLLAMA.id].models).toEqual([
       { id: "gateway/opus", contextWindow: 1_000_000, maxTokens: 128_000, reasoning: true, input: ["text", "image"] },
       { id: "gateway/broken" },
@@ -246,6 +247,48 @@ describe("openModelAuth", () => {
     const opus = modelAuth.models.value.find((m) => m.modelId === "gateway/opus")!;
     expect(opus).toMatchObject({ contextWindow: 1_000_000, images: true });
     expect(opus.thinkingLevels.length).toBeGreaterThan(1);
+  });
+
+  it("doesn't hold endpoint edits behind a slow /models, nor write back an endpoint removed meanwhile", async () => {
+    let answer: (() => void) | undefined;
+    const asked = new Promise<void>((resolve) => {
+      const server = createServer((_request, response) => {
+        answer = () => {
+          if (response.headersSent) return;
+          response.setHeader("content-type", "application/json");
+          response.end(JSON.stringify({ data: [{ id: "gateway/k3", context_length: 1_048_576 }] }));
+        };
+        resolve();
+      });
+      server.listen(0, "127.0.0.1");
+      defer(() => {
+        answer?.();
+        return new Promise<void>((done) => server.close(() => done()));
+      });
+      void once(server, "listening").then(() => {
+        port = (server.address() as AddressInfo).port;
+        listening();
+      });
+    });
+    let port = 0;
+    let listening!: () => void;
+    await new Promise<void>((resolve) => (listening = resolve));
+    const baseUrl = `http://127.0.0.1:${port}/v1`;
+    const { modelsPath, modelAuth } = await fixture({
+      models: { providers: { [OLLAMA.id]: { ...OLLAMA, baseUrl, models: [{ id: "gateway/k3" }] } } },
+    });
+    await asked;
+
+    // The backfill's request is still unanswered: removing must not wait on
+    // it (a held request only gives up at the 10s endpoint timeout).
+    const started = Date.now();
+    await modelAuth.removeCustomProvider(OLLAMA.id);
+    expect(Date.now() - started).toBeLessThan(5000);
+    answer!();
+    // Saving another endpoint queues behind whatever the late answer wrote.
+    await modelAuth.saveCustomProvider({ ...OLLAMA, id: "other", baseUrl: "http://127.0.0.1:9/v1", models: ["m"] });
+
+    expect(JSON.parse(await readFile(modelsPath, "utf8")).providers[OLLAMA.id]).toBeUndefined();
   });
 
   it("fills in what /models reports for entries saved without it, on open, under fields set by hand", async () => {

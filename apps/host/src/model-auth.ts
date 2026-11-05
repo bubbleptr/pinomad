@@ -276,38 +276,48 @@ export async function openModelAuth(
   // keeps its entries as they are. Reasoning and image input stay for an
   // explicit re-save: turning reasoning on starts sending the thinking level
   // on every turn, which changes how the model runs, not just when it compacts.
-  void serial(async () => {
-    const file = await readModelsFile(options.modelsPath);
-    const reported = new Map<string, Map<string, EndpointModel>>();
-    for (const [id, endpoint] of custom) {
-      const entries = file.providers[id]?.models;
-      if (!Array.isArray(entries) || !entries.some(lacksLimits)) continue;
-      const key = (await runtime.getAuth(id))?.auth.apiKey;
-      const listed = await fetchEndpointModels(endpoint.api, endpoint.baseUrl, key).catch(() => []);
-      reported.set(id, new Map(listed.map((model) => [model.id, model])));
-    }
-    const filled = new Set<string>();
-    const fill = (target: ModelsFile): void => {
-      for (const [id, listed] of reported) {
-        const entries = target.providers[id]?.models;
-        if (!Array.isArray(entries)) continue;
-        for (const model of entries as Record<string, unknown>[]) {
-          const limits = listed.get(model.id as string);
-          // A limit already in the file, by hand or by an earlier save, stays.
-          for (const field of LIMITS) {
-            if (field in model || limits?.[field] === undefined) continue;
-            model[field] = limits[field];
-            filled.add(id);
+  // The requests run outside `serial`, so a slow endpoint never holds up a
+  // save or removal; only the merge queues, against the file as it is then.
+  const opened = await readModelsFile(options.modelsPath);
+  void Promise.all(
+    [...custom].flatMap(([id, endpoint]) => {
+      const entries = opened.providers[id]?.models;
+      if (!Array.isArray(entries) || !entries.some(lacksLimits)) return [];
+      return [
+        (async () => {
+          const key = (await runtime.getAuth(id))?.auth.apiKey;
+          const listed = await fetchEndpointModels(endpoint.api, endpoint.baseUrl, key).catch(() => []);
+          return { id, endpoint, listed: new Map(listed.map((model) => [model.id, model])) };
+        })(),
+      ];
+    }),
+  ).then((answers) =>
+    serial(async () => {
+      if (closed) return;
+      const filled = new Set<string>();
+      const fill = (target: ModelsFile): void => {
+        for (const { id, endpoint, listed } of answers) {
+          const entry = target.providers[id];
+          // Removed or pointed elsewhere while we asked: the answer is stale.
+          if (entry?.api !== endpoint.api || entry.baseUrl !== endpoint.baseUrl || !Array.isArray(entry.models)) continue;
+          for (const model of entry.models as Record<string, unknown>[]) {
+            const limits = listed.get(model.id as string);
+            // A limit already in the file, by hand or by an earlier save, stays.
+            for (const field of LIMITS) {
+              if (field in model || limits?.[field] === undefined) continue;
+              model[field] = limits[field];
+              filled.add(id);
+            }
           }
         }
-      }
-    };
-    fill(structuredClone(file));
-    if (closed || filled.size === 0) return;
-    await updateModelsFile(fill);
-    await runtime.refresh({ providers: [...filled], allowNetwork: false });
-    await republish();
-  });
+      };
+      fill(await readModelsFile(options.modelsPath));
+      if (filled.size === 0) return;
+      await updateModelsFile(fill);
+      await runtime.refresh({ providers: [...filled], allowNetwork: false });
+      await republish();
+    }),
+  );
 
   return {
     models,
