@@ -16,21 +16,20 @@ private struct Shimmer: ViewModifier {
             TimelineView(.animation) { context in
                 let period = 1.8
                 let t = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period) / period
-                content.overlay {
-                    content
-                        .foregroundStyle(.primary)
-                        .mask {
-                            LinearGradient(
-                                stops: [
-                                    .init(color: .clear, location: 0),
-                                    .init(color: .black, location: 0.5),
-                                    .init(color: .clear, location: 1),
-                                ],
-                                startPoint: UnitPoint(x: t * 2.4 - 1.2, y: 0.5),
-                                endPoint: UnitPoint(x: t * 2.4 - 0.2, y: 0.5)
-                            )
-                        }
-                }
+                // The band is the text's own fill, not a second copy laid
+                // over it: a copy is laid out on its own and, once the line
+                // truncates, lands at a different width and drifts sideways.
+                content.foregroundStyle(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .secondary, location: 0),
+                            .init(color: .primary, location: 0.5),
+                            .init(color: .secondary, location: 1),
+                        ],
+                        startPoint: UnitPoint(x: t * 2.4 - 1.2, y: 0.5),
+                        endPoint: UnitPoint(x: t * 2.4 - 0.2, y: 0.5)
+                    )
+                )
             }
         } else {
             content

@@ -195,7 +195,9 @@ private struct TraceSheetHeader: View {
             HStack(spacing: 6) {
                 Text(TraceText.headline(summary.headline))
                     .font(.headline)
-                    .foregroundStyle(summary.headline == .failed ? AnyShapeStyle(.red) : AnyShapeStyle(.primary))
+                    // A concrete colour, not `.primary`: a hierarchical style
+                    // resolves against the shimmer's gradient and would take it on.
+                    .foregroundStyle(summary.headline == .failed ? AnyShapeStyle(.red) : AnyShapeStyle(Color.primary))
                     .shimmering(isWorking)
                 if let detail = TraceText.detail(summary, isWorking: isWorking) {
                     Text(detail)
@@ -477,8 +479,8 @@ private struct ToolBatchRow: View {
         case .running(let running):
             Text(TraceText.running(running))
                 .font(.callout)
-                .foregroundStyle(.secondary)
                 .shimmering(true)
+                .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
         case .settled:
