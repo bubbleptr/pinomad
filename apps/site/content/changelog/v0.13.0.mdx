@@ -1,0 +1,39 @@
+---
+title: Reorder queued messages, and a Mac setup with no Terminal
+version: v0.13.0
+date: 2026-11-05
+---
+
+**Before you upgrade**
+
+- Upgrade the host with `pinomad upgrade`. Reordering queued messages and loading older turns need a 0.13.0 host. With an older host, the drag handle is hidden and a conversation loads its whole history at once, as before.
+
+**Queued messages** (web, Mac app and iPhone)
+
+- Each queued message is a card with a drag handle. Drag it to change the order the run picks messages up in. On the iPhone, long-press the handle; VoiceOver offers **Move up** and **Move down**.
+- Edit and Withdraw are icon buttons that show on hover, and stay visible on narrow screens. A steer shows an arrow mark instead of a "Steer" tag, and follow-ups have no label.
+- A message the run had already taken no longer shows up again as **Sending**.
+- A compaction that finishes during a run no longer shows up in the queue as `<pi.compaction>`.
+
+**Long conversations**
+
+- A conversation opens with its newest turns only. Older turns load as you scroll up.
+- Custom models saved before 0.9.0 get the context window and output limit their endpoint reports, so they no longer compact as if they had 128k tokens. Limits you set yourself stay as they are.
+- Kimi K3.1 Pro is available under Moonshot, OpenRouter and Vercel AI Gateway.
+
+**Mac app**
+
+- **Set up this Mac** installs and joins the host in the background, with progress in the app and a Cancel button. No Terminal window and no code to type.
+- The host the Mac app sets up asks macOS for file access as PiNomad, not as "node".
+
+**Web and Mac app**
+
+- Code renders in Geist Mono.
+- Settings has no title row and opens larger. On phones the header stays, for the Back button.
+- The side panel resizes from its left edge again.
+- Opening the overview during a run shows the changes and branch right away instead of waiting for the run to end.
+
+**iPhone**
+
+- Text under the composer is blurred, not just faded.
+- The live label in a tool step no longer slides between lines while it streams, and a truncated label no longer shows doubled text.
