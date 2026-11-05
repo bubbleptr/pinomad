@@ -1,8 +1,8 @@
 name: Site
 
-# PR gate for pinomad.si (apps/site): typecheck, the install script's tests,
-# and the prerendered build. The site imports the app icons from
-# apps/web/public, so those trigger it too.
+# PR gate for pinomad.si (apps/site): shellcheck and tests for the install
+# script, typecheck, and the prerendered build. The site imports the app
+# icons from apps/web/public, so those trigger it too.
 # Changes elsewhere in apps/web also rebuild the site through ci.yml's
 # `bun run build`.
 on:
@@ -27,6 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      # Preinstalled on ubuntu-latest. install.sh runs under any POSIX sh.
+      - run: shellcheck -s sh apps/site/public/install.sh
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.12
