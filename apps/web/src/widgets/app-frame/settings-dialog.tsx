@@ -26,7 +26,7 @@ import { familyUpdatedAt, relativeTime } from "@pinomad/client/family.ts";
 import { summaryOf, thinkingLevelLabels } from "@pinomad/client/model.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useNow } from "../../shared/use-now.ts";
-import { Archive, ArchiveRestore, ArrowLeft, Bot, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, Laptop, MoreHorizontal, Puzzle, RefreshCw, Sparkles } from "../../shared/ui/icons.tsx";
+import { Archive, ArchiveRestore, ArrowLeft, Bot, Cancel, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, Laptop, MoreHorizontal, Puzzle, RefreshCw, Sparkles } from "../../shared/ui/icons.tsx";
 import { AgentEditorDialog } from "./agent-editor-dialog.tsx";
 import type { FrameMachine } from "./app-frame.tsx";
 import { DevicesSection } from "./devices-section.tsx";
@@ -182,33 +182,37 @@ export function SettingsDialog({
       isOpen
       onOpenChange={(open) => (open ? undefined : onClose())}
       purpose="form"
-      width="calc(var(--spacing-10) * 22)"
+      width="min(calc(var(--spacing-10) * 26), 94vw)"
       maxHeight="90dvh"
       variant={compact ? "fullscreen" : "standard"}
       padding={4}
     >
       <Layout
         padding={4}
-        style={{ height: compact ? "100dvh" : "min(85dvh, calc(var(--spacing-10) * 17))" }}
+        style={{ height: compact ? "100dvh" : "min(88dvh, calc(var(--spacing-10) * 20))" }}
+        // On a phone the header carries the section title and the way back;
+        // beside the side nav a title row only repeats the selected item.
         header={
-          <DialogHeader
-            title={compact && section !== undefined ? sectionTitle(section) : "Settings"}
-            startContent={
-              compact && section !== undefined ? (
-                <IconButton
-                  label="Back"
-                  icon={<ArrowLeft />}
-                  variant="ghost"
-                  // DialogHeader pulls its end slot (the close X) up by spacing-2
-                  // to center on the title; the start slot needs the same lift.
-                  style={{ marginBlock: "calc(-1 * var(--spacing-2))" }}
-                  onClick={() => setSection(undefined)}
-                />
-              ) : undefined
-            }
-            onOpenChange={() => onClose()}
-            hasDivider
-          />
+          compact ? (
+            <DialogHeader
+              title={section === undefined ? "Settings" : sectionTitle(section)}
+              startContent={
+                section === undefined ? undefined : (
+                  <IconButton
+                    label="Back"
+                    icon={<ArrowLeft />}
+                    variant="ghost"
+                    // DialogHeader pulls its end slot (the close X) up by spacing-2
+                    // to center on the title; the start slot needs the same lift.
+                    style={{ marginBlock: "calc(-1 * var(--spacing-2))" }}
+                    onClick={() => setSection(undefined)}
+                  />
+                )
+              }
+              onOpenChange={() => onClose()}
+              hasDivider
+            />
+          ) : undefined
         }
         start={compact ? undefined : sectionNav}
         content={
@@ -234,6 +238,15 @@ export function SettingsDialog({
           </LayoutContent>
         }
       />
+      {compact ? null : (
+        <IconButton
+          label="Close"
+          icon={<Cancel />}
+          variant="ghost"
+          style={{ position: "absolute", insetBlockStart: "var(--spacing-6)", insetInlineEnd: "var(--spacing-6)" }}
+          onClick={onClose}
+        />
+      )}
     </Dialog>
   );
 }
