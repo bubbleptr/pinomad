@@ -285,6 +285,20 @@ public final class PinomadSession: @unchecked Sendable {
         return outcome
     }
 
+    /// Request-class, like `withdrawQueued`: move a queued input to sit right
+    /// before the queued input `before`, or last when it is nil. Needs a
+    /// 5.29 host.
+    public func reorderQueued(
+        submissionId: UInt64, before: UInt64?, target: UInt64
+    ) async throws -> ReorderOutcome {
+        let result = try await invoke(
+            .reorderQueued(submissionId: submissionId, before: before, target: target))
+        guard case .reorderQueued(let outcome) = result else {
+            throw SessionError.operationFailed("The host's reply wasn't a reorder result.")
+        }
+        return outcome
+    }
+
     public func notifyForeground() { sink.yield(.foreground) }
     public func notifyBackground() { sink.yield(.background) }
     public func notifyNetworkChanged() { sink.yield(.networkChanged) }
