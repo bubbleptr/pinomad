@@ -12,7 +12,8 @@ name: CI
 # Each filter is the check's own workspace plus everything its sources, tests
 # and tsconfig include import, transitively:
 #
-#   protocol  packages/protocol; apps/host (images.test.ts imports src/image-refs.ts)
+#   protocol  packages/protocol; apps/host (images.test.ts imports src/image-refs.ts);
+#             every package.json (earendil-pins.test.ts scans them all)
 #   client    packages/client, packages/protocol
 #   host      apps/host, apps/server (test/support.ts opens server accounts), client, protocol
 #   server    apps/server, apps/host (src imports host), client, protocol
@@ -77,6 +78,7 @@ jobs:
               - *root
               - packages/protocol/**
               - apps/host/**
+              - "**/package.json"
             client:
               - *root
               - packages/client/**
