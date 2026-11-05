@@ -857,7 +857,7 @@ private struct QueueList: View {
     let pendingRequests: Set<String>
     let onSteer: (QueueItem) -> Void
     /// Move the row right before the queued input with that id (nil: last).
-    let onReorder: (QueueItem, UInt64?) -> Void
+    let onReorder: @MainActor @Sendable (QueueItem, UInt64?) -> Void
     let onRetryLocal: (String) -> Void
     let onEdit: (QueueItem) -> Void
     let onEditLocal: (String) -> Void
@@ -989,7 +989,7 @@ private struct QueueList: View {
             .contentShape(.rect)
             .onDrag {
                 dragged = item.id
-                return NSItemProvider(object: String(item.id) as NSString)
+                return NSItemProvider(object: QueueDropDelegate.payload(item.id) as NSString)
             } preview: {
                 Text(item.text.isEmpty ? " " : item.text)
                     .font(.footnote)
@@ -1112,7 +1112,7 @@ private struct QueueDropDelegate: DropDelegate {
     let rowHeight: CGFloat
     @Binding var dragged: UInt64?
     @Binding var mark: QueueDropMark?
-    let onReorder: (QueueItem, UInt64?) -> Void
+    let onReorder: @MainActor @Sendable (QueueItem, UInt64?) -> Void
 
     private var source: QueueItem? {
         guard let dragged, dragged != target.id else { return nil }
@@ -1132,13 +1132,26 @@ private struct QueueDropDelegate: DropDelegate {
         if mark?.id == target.id { mark = nil }
     }
 
+    /// What a lifted row carries. `dragged` outlives a drag released
+    /// elsewhere, so a drop reorders only when its text names that row —
+    /// other text dropped on a row later is not mistaken for it.
+    static func payload(_ id: UInt64) -> String { "pinomad-queued:\(id)" }
+
     func performDrop(info: DropInfo) -> Bool {
         defer {
             mark = nil
             dragged = nil
         }
-        guard let source, let side = mark?.side else { return false }
-        onReorder(source, QueuedList.before(moving: source.id, onto: target.id, side: side, in: items))
+        guard let source, let side = mark?.side,
+              let provider = info.itemProviders(for: [.text]).first
+        else { return false }
+        let before = QueuedList.before(moving: source.id, onto: target.id, side: side, in: items)
+        let expected = Self.payload(source.id)
+        let onReorder = onReorder
+        _ = provider.loadObject(ofClass: NSString.self) { text, _ in
+            guard (text as? String) == expected else { return }
+            Task { @MainActor in onReorder(source, before) }
+        }
         return true
     }
 }
