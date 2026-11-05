@@ -194,6 +194,31 @@ async function readJson(
   }
 }
 
+type Session = NonNullable<ReturnType<Accounts["authenticate"]>>;
+
+/**
+ * Reads a signed-in route's body, then authenticates `token` again: the
+ * caller can hold the body back while the session is revoked, kicked or
+ * deleted elsewhere (CWE-367), so the route must act on the session as it
+ * stands now. Every signed-in route that reads a body goes through this;
+ * test/api-reauth.test.ts holds the rule.
+ */
+async function authedJson(
+  accounts: Accounts,
+  request: IncomingMessage,
+  token: string,
+  optional = false,
+): Promise<
+  | { readonly ok: true; readonly value: unknown; readonly session: Session }
+  | { readonly ok: false; readonly status: number; readonly error: string }
+> {
+  const body = await readJson(request, optional);
+  if (!body.ok) return { ok: false, status: body.tooLarge ? 413 : 400, error: body.tooLarge ? "payload_too_large" : "invalid_json" };
+  const session = accounts.authenticate(token);
+  if (session === undefined) return { ok: false, status: 401, error: "unauthenticated" };
+  return { ok: true, value: body.value, session };
+}
+
 /** Bearer token first, then the browser session cookie. */
 function sessionToken(request: IncomingMessage): string | undefined {
   const authorization = request.headers.authorization;
@@ -495,9 +520,9 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       deny(401, "unauthenticated");
       return;
     }
-    const body = await readJson(request);
+    const body = await authedJson(accounts, request, token);
     if (!body.ok) {
-      deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
+      deny(body.status, body.error);
       return;
     }
     const named = body.value as { userCode?: unknown; requestId?: unknown } | null;
@@ -511,14 +536,7 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       deny(400, "invalid_request");
       return;
     }
-    // Re-read: the session may have ended while the body trickled in, and a
-    // confirm must land on an account that is still signed in.
-    const session = accounts.authenticate(token);
-    if (session === undefined) {
-      deny(401, "unauthenticated");
-      return;
-    }
-    const args = { userId: session.userId, ip: clientIp(request, ctx.trustProxy), ...ref };
+    const args = { userId: body.session.userId, ip: clientIp(request, ctx.trustProxy), ...ref };
     const result =
       pathname === "/api/host-link/lookup"
         ? accounts.lookupHostLink(args)
@@ -560,20 +578,18 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       else send(200, accounts.createInvite(session.userId));
       return;
     }
-    const body = await readJson(request);
+    const body = await authedJson(accounts, request, token!);
     if (!body.ok) {
-      deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
+      deny(body.status, body.error);
+      return;
+    }
+    if (!body.session.admin) {
+      deny(401, "unauthenticated");
       return;
     }
     const id = (body.value as { id?: unknown } | null)?.id;
     if (typeof id !== "number" || !Number.isSafeInteger(id)) {
       deny(400, "invalid_request");
-      return;
-    }
-    // The session may have been revoked while the body trickled in, as on
-    // the push-token routes.
-    if (accounts.authenticate(token!)?.admin !== true) {
-      deny(401, "unauthenticated");
       return;
     }
     if (accounts.revokeInvite(id)) send(204);
@@ -592,9 +608,9 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       deny(401, "unauthenticated");
       return;
     }
-    const body = await readJson(request);
+    const body = await authedJson(accounts, request, token);
     if (!body.ok) {
-      deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
+      deny(body.status, body.error);
       return;
     }
     // The password again, as for kicking a device (ADR-0037 §3): it acts on
@@ -604,12 +620,7 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       deny(400, "invalid_request");
       return;
     }
-    // Re-read: the session may have ended while the body trickled in.
-    const current = accounts.authenticate(token);
-    if (current === undefined) {
-      deny(401, "unauthenticated");
-      return;
-    }
+    const current = body.session;
     const result = await accounts.removeHost({
       userId: current.userId,
       username: current.username,
@@ -750,9 +761,9 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       );
       return;
     }
-    const body = await readJson(request);
+    const body = await authedJson(accounts, request, token!);
     if (!body.ok) {
-      deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
+      deny(body.status, body.error);
       return;
     }
     // The password again, as for deleting the account: a session left on a
@@ -762,13 +773,8 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       deny(400, "invalid_request");
       return;
     }
-    // Re-read: the session may have been kicked or signed out while the body
-    // trickled in, and its device is what "current" means.
-    const current = accounts.authenticate(token!);
-    if (current === undefined) {
-      deny(401, "unauthenticated");
-      return;
-    }
+    // The session as of the body's end: its device is what "current" means.
+    const current = body.session;
     const result = await accounts.kickDevice({
       userId: current.userId,
       username: current.username,
@@ -819,9 +825,9 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     if (pathname === "/api/push-tokens" || pathname === "/api/push-tokens/remove") {
       // POST bodies, never the URL: proxies log URLs, and a token is a send
       // capability within its account.
-      const body = await readJson(request);
+      const body = await authedJson(accounts, request, token!);
       if (!body.ok) {
-        deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
+        deny(body.status, body.error);
         return;
       }
       const value = body.value as { apns?: unknown; environment?: unknown } | null;
@@ -831,30 +837,25 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
         deny(400, "invalid_request");
         return;
       }
-      // The session may have been revoked while the body trickled in; a
-      // registration written now would outlive "sign out everywhere".
-      const current = accounts.authenticate(token!);
-      if (current === undefined) {
-        deny(401, "unauthenticated");
-        return;
-      }
-      if (pathname === "/api/push-tokens") accounts.registerPushToken(session.userId, apns, environment, current.deviceId);
-      else accounts.removePushToken(session.userId, apns, environment);
+      const current = body.session;
+      if (pathname === "/api/push-tokens") accounts.registerPushToken(current.userId, apns, environment, current.deviceId);
+      else accounts.removePushToken(current.userId, apns, environment);
       send(204);
       return;
     }
     if (pathname === "/api/me/delete") {
-      const body = await readJson(request);
+      const body = await authedJson(accounts, request, token!);
       if (!body.ok) {
-        deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
+        deny(body.status, body.error);
         return;
       }
+      const current = body.session;
       const value = body.value as { password?: unknown } | null;
       if (typeof value?.password !== "string" || [...value.password].length > MAX_PASSWORD_CODEPOINTS) {
         deny(400, "invalid_request");
         return;
       }
-      const result = await accounts.deleteAccount({ userId: session.userId, username: session.username, password: value.password });
+      const result = await accounts.deleteAccount({ userId: current.userId, username: current.username, password: value.password });
       if (result.status === "limited") {
         deny(429, "rate_limited");
         return;
@@ -866,16 +867,17 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       // The bindings are gone, and with them the hosts' authorization: close
       // their control connections now rather than at their next register.
       for (const hostId of result.hostIds) ctx.disconnectHost(hostId);
-      ctx.forgetAccount(session.userId);
+      ctx.forgetAccount(current.userId);
       send(204, undefined, { "set-cookie": clearSessionCookie });
       return;
     }
     if (pathname === "/api/password") {
-      const body = await readJson(request);
+      const body = await authedJson(accounts, request, token!);
       if (!body.ok) {
-        deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
+        deny(body.status, body.error);
         return;
       }
+      const current = body.session;
       const value = body.value as { currentPassword?: unknown; newPassword?: unknown } | null;
       // Same bound as login: an over-long current password can't match, and
       // must not reach scrypt.
@@ -888,8 +890,8 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
         return;
       }
       const result = await accounts.changePassword({
-        userId: session.userId,
-        username: session.username,
+        userId: current.userId,
+        username: current.username,
         keepToken: token!,
         currentPassword: value.currentPassword,
         newPassword: value.newPassword,
@@ -921,9 +923,9 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     }
     if (pathname === "/api/logout") {
       // Clients before #494 send no body: a plain sign-out.
-      const body = await readJson(request, true);
+      const body = await authedJson(accounts, request, token!, true);
       if (!body.ok) {
-        deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
+        deny(body.status, body.error);
         return;
       }
       const value = body.value;
