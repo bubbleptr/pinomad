@@ -91,9 +91,11 @@ extension AppModel {
         if let mode = env["PINOMAD_DEMO_TRACE"] {
             // A run that keeps working: the capsule's live label, the todo
             // line and the trace sheet following new steps. `quiet` never
-            // says anything mid-run, so the label is the current action.
+            // says anything mid-run, so the label is the current action;
+            // `settle` ends the run after a few ticks with the todo still
+            // unfinished, so the line can be seen to leave.
             phase = .home
-            startTraceDemo(interims: mode != "quiet")
+            startTraceDemo(interims: mode != "quiet", settleAfter: mode == "settle" ? 5 : nil)
             return true
         }
         if let mode = env["PINOMAD_DEMO_QUESTIONS"] {
@@ -880,7 +882,7 @@ extension AppModel {
     /// Grows a live run by one step every two seconds (commands, a thinking
     /// step streaming in, and with `interims` a line to the user now and
     /// then) under a todo list half done, last written by the run before.
-    private func startTraceDemo(interims: Bool) {
+    private func startTraceDemo(interims: Bool, settleAfter: Int?) {
         navPath = [demoConversationRoute(1)]
         let start = Date.now.timeIntervalSince1970 * 1000
         let commands = ["bun run typecheck", "rg -n uploadQueue src", "bun test upload", "bun run lint"]
@@ -920,6 +922,7 @@ extension AppModel {
             var steps: [CotStep] = []
             for tick in 0..<150 {
                 guard let self, !Task.isCancelled else { return }
+                let settled = tick == settleAfter
                 // Settle what the last tick left live.
                 steps = steps.map { step in
                     switch step {
@@ -937,7 +940,9 @@ extension AppModel {
                         return step
                     }
                 }
-                if interims, tick % 4 == 1 {
+                if settled {
+                    // The run ends here: no new step, just the answer.
+                } else if interims, tick % 4 == 1 {
                     steps.append(.interim(id: "i\(tick)", text: lines[(tick / 4) % lines.count]))
                 } else if tick % 4 == 3 {
                     steps.append(.thinking(id: "t\(tick)", text: "Check the output for new failures, then decide whether to narrow the scope next.", live: true))
@@ -950,8 +955,10 @@ extension AppModel {
                     )], live: true, activeToolCallId: "c\(tick)"))
                 }
                 let live = CotView(
-                    phase: .acting, failed: false, anchorMs: start, elapsedMs: nil,
-                    todoWrittenAtMs: nil, steps: steps, answer: nil
+                    phase: settled ? .settled : .acting, failed: false, anchorMs: start,
+                    elapsedMs: settled ? Double(tick * 2_000) : nil,
+                    todoWrittenAtMs: nil, steps: steps,
+                    answer: settled ? CotAnswer(text: "Renamed the temp file per attempt; the upload tests pass.", streaming: false) : nil
                 )
                 let chat: [ChatEntry] = [
                     .user(id: "u1", text: "The upload tests fail now and then. Can you look into it?", images: []),
@@ -962,7 +969,7 @@ extension AppModel {
                 let conversation = ConversationSnapshot(
                     id: 1, chat: chat, statusText: "", queueItems: [],
                     agent: AgentState(model: nil, thinkingLevel: nil, instructions: nil, cwd: nil),
-                    questions: [], todo: todo, home: nil, checkout: nil, busy: true, contextUsage: nil, fresh: true, freshEpoch: 1
+                    questions: [], todo: todo, home: nil, checkout: nil, busy: !settled, contextUsage: nil, fresh: true, freshEpoch: 1
                 )
                 self.publishDevSnapshot(ClientSnapshot(
                     version: UInt64(tick + 1), connection: .connected, unauthorized: false,
@@ -972,6 +979,7 @@ extension AppModel {
                     agents: nil, conversation: conversation
                 ))
                 self.replyStreams.sync(chat: chat)
+                if settled { return }
                 try? await Task.sleep(for: .seconds(2))
             }
         }
