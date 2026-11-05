@@ -60,7 +60,12 @@ describe("queueItems", () => {
   it("counts the image blocks a queued input carries", () => {
     expect(queueItems(QUEUE_CASES.find((c) => c.name === "images")!.input)).toEqual([
       { id: 1, mode: "followUp", text: "look", imageCount: 2, attachmentCount: 0, status: "sent" },
-      { id: 2, mode: "write", text: "<pi.note>", imageCount: 0, attachmentCount: 0, status: "sent" },
+    ]);
+  });
+
+  it("leaves out writes the host parked in the inbox, like a compaction summary", () => {
+    expect(queueItems(QUEUE_CASES.find((c) => c.name === "compaction-write")!.input)).toEqual([
+      { id: 7, mode: "followUp", text: "after this", imageCount: 0, attachmentCount: 0, status: "sent" },
     ]);
   });
 

@@ -62,7 +62,12 @@
     {
       "name": "images",
       "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":1,\"mode\":\"followUp\",\"content\":[{\"type\":\"text\",\"text\":\"look\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"},{\"type\":\"image\",\"data\":\"aGk=\",\"mimeType\":\"image/png\"}]},{\"id\":2,\"mode\":\"write\",\"entry\":{\"kind\":\"pi.note\"}}]}}}",
-      "expect": "[{\"id\":1,\"mode\":\"followUp\",\"text\":\"look\",\"imageCount\":2,\"attachmentCount\":0,\"status\":\"sent\"},{\"id\":2,\"mode\":\"write\",\"text\":\"<pi.note>\",\"imageCount\":0,\"attachmentCount\":0,\"status\":\"sent\"}]"
+      "expect": "[{\"id\":1,\"mode\":\"followUp\",\"text\":\"look\",\"imageCount\":2,\"attachmentCount\":0,\"status\":\"sent\"}]"
+    },
+    {
+      "name": "compaction-write",
+      "view": "{\"conversation\":{\"id\":0},\"entries\":[],\"docs\":{\"pi.live\":{},\"pi.inbox\":{\"items\":[{\"id\":7,\"mode\":\"followUp\",\"content\":\"after this\"},{\"id\":8,\"mode\":\"write\",\"entry\":{\"kind\":\"pi.compaction\",\"head\":\"e1\",\"model\":[{\"role\":\"user\",\"content\":[{\"type\":\"text\",\"text\":\"summary\"}]}]}}]}}}",
+      "expect": "[{\"id\":7,\"mode\":\"followUp\",\"text\":\"after this\",\"imageCount\":0,\"attachmentCount\":0,\"status\":\"sent\"}]"
     },
     {
       "name": "images-ref",

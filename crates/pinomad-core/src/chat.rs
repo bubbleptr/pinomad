@@ -177,9 +177,9 @@ pub struct QueueItem {
     pub id: u64,
     pub mode: QueueMode,
     pub text: String,
-    /// Image blocks attached to the queued input; 0 on "write" items.
+    /// Image blocks attached to the queued input.
     pub image_count: u64,
-    /// Host-stored file attachments on the queued input; 0 on "write" items.
+    /// Host-stored file attachments on the queued input.
     #[cfg_attr(feature = "ffi", uniffi(default))]
     pub attachment_count: u64,
 }
@@ -192,18 +192,17 @@ pub fn queue_items(view: &Json) -> Vec<QueueItem> {
         .map(|items| {
             items
                 .iter()
+                // A write is an entry the harness parked until the next boundary
+                // (a compaction summary that finished mid-run), not a queued input.
+                .filter(|item| !str_eq(item.get("mode"), "write"))
                 .map(|item| {
-                    let write = str_eq(item.get("mode"), "write");
-                    let typed = if write { None } else { Some(typed_text_of(item.get("content"))) };
+                    let (text, _, files) = typed_text_of(item.get("content"));
                     QueueItem {
                         id: crate::json::num_key(item.get("id")).unwrap_or(u64::MAX),
                         mode: QueueMode::from_json(item.get("mode")),
-                        text: match &typed {
-                            Some((text, _, _)) => text.clone(),
-                            None => format!("<{}>", js_text(item.get("entry").and_then(|e| e.get("kind")))),
-                        },
-                        image_count: if write { 0 } else { image_count_of(item.get("content")) },
-                        attachment_count: typed.as_ref().map_or(0, |(_, _, files)| files.len() as u64),
+                        text,
+                        image_count: image_count_of(item.get("content")),
+                        attachment_count: files.len() as u64,
                     }
                 })
                 .collect()

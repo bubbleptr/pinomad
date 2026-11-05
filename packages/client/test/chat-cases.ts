@@ -67,6 +67,14 @@ export const QUEUE_CASES: NamedCase<ConversationView>[] = [
     ]),
   },
   {
+    // A non-blocking compaction that finishes mid-run parks its summary as a write until the next boundary.
+    name: "compaction-write",
+    input: chatView([], {}, [
+      { id: 7, mode: "followUp", content: "after this" },
+      { id: 8, mode: "write", entry: { kind: "pi.compaction", head: "e1", model: [{ role: "user", content: [text("summary")] }] } },
+    ]),
+  },
+  {
     name: "images-ref",
     input: chatView([], {}, [
       {

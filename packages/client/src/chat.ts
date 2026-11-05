@@ -71,9 +71,9 @@ export interface QueueItem {
   readonly requestId?: string;
   readonly mode: "steer" | "followUp" | "write";
   readonly text: string;
-  /** Image blocks attached to the queued input; 0 on "write" items. */
+  /** Image blocks attached to the queued input. */
   readonly imageCount: number;
-  /** Host-stored file attachments on the queued input; 0 on "write" items. */
+  /** Host-stored file attachments on the queued input. */
   readonly attachmentCount: number;
   readonly status: QueueStatus;
   /** Set only on a local row; error explains a failed send. */
@@ -85,18 +85,21 @@ export function queueItems(
   submissions: readonly LogicalSubmission[] = [],
 ): QueueItem[] {
   const inbox = (view.docs["pi.inbox"] ?? { items: [] }) as InboxState;
-  const hostItems = inbox.items.map((item) => {
-    const typed = item.mode === "write" ? undefined : stripUserBlocks(item.content as string | readonly Block[]);
-    return {
+  // A write is an entry the harness parked until the next boundary (a
+  // compaction summary that finished mid-run), not something the user queued.
+  const hostItems = inbox.items.flatMap((item) => {
+    if (item.mode === "write") return [];
+    const typed = stripUserBlocks(item.content as string | readonly Block[]);
+    return [{
       id: item.id as unknown as number,
       mode: item.mode,
       // The typed text, not the blocks the host wrote around them (ADR-0028, #321).
-      text: item.mode === "write" ? `<${String(item.entry.kind)}>` : typed!.text,
-      imageCount: item.mode === "write" ? 0 : imageCountOf(item.content as Content),
-      attachmentCount: typed?.attachments.length ?? 0,
+      text: typed.text,
+      imageCount: imageCountOf(item.content as Content),
+      attachmentCount: typed.attachments.length,
       // A host inbox row means the host has admitted it; one check.
       status: "sent" as const,
-    };
+    }];
   });
   const hostIds = new Set(hostItems.map((item) => String(item.id)));
   const localItems = submissions.flatMap((submission): QueueItem[] => {
