@@ -64,6 +64,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0032](0032-multi-endpoint-pairing-and-failover.md) | 远程访问携带多候选：配对邀请和 hello 发布 remote endpoint 集合，loopback 保持 client-local，Auto relay 优先、direct 兜底，候选级失败、整轮汇总，paired 与 ready 分离；不做服务端地址目录 |
 | [0033](0033-webrtc-p2p-and-signal-connections.md) | WebRTC DataChannel 作为第四种载体：独立信令 prologue、非 trickle 宿主作答、按库区分"已接收"的载体契约、简化切换（不回退双业务状态），不引入 TURN 和服务端信令接口；移动端锁 str0m |
 | [0035](0035-multi-host-clients.md) | 客户端同时连接所有已配对宿主：全局 `{ hostKey, conversationId }` 引用、单一聚焦（失焦释放对话订阅）、每台宿主独立运行时与三维状态、带 `declined` 的自动登记、按可见对话压制通知；去掉账号设备加入广播 |
+| [0042](0042-hosts-by-machine-routes-and-sources.md) | Settings → Hosts 按机器呈现，每台分"路"（连接维度）和"怎么认识的"（信任维度）两层，退出账号只改后者；直连在客户端按地址细分成局域网和 tailnet，只用于显示；所有路都列出，不通的写原因；列表去掉 Switch（补充 0035 §4、0032 §2） |
 
 ## 遗留项的去向
 
