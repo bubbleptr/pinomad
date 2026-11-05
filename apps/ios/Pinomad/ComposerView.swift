@@ -112,6 +112,11 @@ struct ConversationComposer: View {
         connected && model.hostSupports("withdrawQueued")
     }
 
+    /// 5.29's reorderQueued; older hosts show no handle.
+    private var canReorderQueue: Bool {
+        canActOnQueue && model.hostSupports("reorderQueued")
+    }
+
     /// An Edit's withdraw is in flight, or its outcome is unknown after a
     /// drop: the composer and every attachment entry stay locked.
     private var editLocked: Bool {
@@ -137,12 +142,16 @@ struct ConversationComposer: View {
             rows: queuedRows,
             busy: conversation.busy,
             canAct: canActOnQueue,
+            canReorder: canReorderQueue,
             editDisabled: editDisabled,
             editTooltip: editAvailability.tooltip,
             localActionsEnabled: connected,
             pending: queuePending,
             pendingRequests: model.submissionPending,
             onSteer: { model.steerQueued(conversation: conversation.id, item: $0) },
+            onReorder: { item, before in
+                model.reorderQueued(conversation: conversation.id, item: item, before: before)
+            },
             onRetryLocal: { requestId in
                 model.retrySubmission(conversation: conversation.id, requestId: requestId)
             },
@@ -448,7 +457,7 @@ struct ConversationComposer: View {
                 // Tap queues a follow-up; the long-press menu can steer
                 // the running turn instead.
                 Menu {
-                    Button("Steer the current run", image: .redo2) {
+                    Button("Steer the current run", image: .arrowBigUpDash) {
                         send(.steer)
                     }
                     Button("Send after this run (follow-up)", image: .listEnd) {
@@ -824,14 +833,18 @@ private struct StatusPill: View {
 }
 
 /// Inputs waiting on the run, oldest first; scrolls past about three.
-/// Host inbox rows say Sent (one check); local rows keep their send phase and
-/// offer Retry/Edit until the host's row replaces them (ADR-0034 §5).
+/// Host inbox rows carry no delivery mark (being in the inbox says so); local
+/// rows keep their send phase and offer Retry/Edit until the host's row
+/// replaces them (ADR-0034 §5). A steer shows its mark, a follow-up none.
+/// Host inputs drag by their handle among peers of the same mode.
 private struct QueueList: View {
     let rows: [QueuedRow]
     /// A run is in flight; Steer only makes sense while one is.
     let busy: Bool
     /// The connection is live and the host knows the 5.14 calls.
     let canAct: Bool
+    /// `canAct` and the host knows 5.29's reorderQueued.
+    let canReorder: Bool
     /// Edit is unavailable for every row — the composer already holds a
     /// draft or attachment, or another Edit is unresolved.
     let editDisabled: Bool
@@ -843,6 +856,8 @@ private struct QueueList: View {
     /// Local rows with a retry or take-back in flight.
     let pendingRequests: Set<String>
     let onSteer: (QueueItem) -> Void
+    /// Move the row right before the queued input with that id (nil: last).
+    let onReorder: @MainActor @Sendable (QueueItem, UInt64?) -> Void
     let onRetryLocal: (String) -> Void
     let onEdit: (QueueItem) -> Void
     let onEditLocal: (String) -> Void
@@ -855,6 +870,10 @@ private struct QueueList: View {
     private static let spacing: CGFloat = 6
     private static let visibleRows = 3
 
+    /// The host row being dragged, set when its handle lifts.
+    @State private var dragged: UInt64?
+    @State private var dropMark: QueueDropMark?
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Self.spacing) {
@@ -862,6 +881,7 @@ private struct QueueList: View {
                     self.row(row)
                 }
             }
+            .animation(.snappy, value: rows.map(\.id))
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollClipDisabled()
@@ -881,6 +901,15 @@ private struct QueueList: View {
         canAct && (item.mode == .followUp || item.mode == .steer)
     }
 
+    private var hostItems: [QueueItem] {
+        rows.compactMap { if case let .host(item) = $0 { item } else { nil } }
+    }
+
+    /// Has a peer of its own mode to trade places with.
+    private func movable(_ item: QueueItem) -> Bool {
+        canReorder && actionable(item) && QueuedList.peers(of: item, in: hostItems).count > 1
+    }
+
     @ViewBuilder
     private func row(_ row: QueuedRow) -> some View {
         switch row {
@@ -896,16 +925,27 @@ private struct QueueList: View {
     }
 
     private func base(_ item: QueueItem) -> some View {
-        HStack(spacing: 8) {
-            Text(tag(item.mode))
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
-            Text(item.text.isEmpty ? " " : item.text)
-                .font(.footnote)
-                .lineLimit(1)
-            counts(images: item.imageCount, files: item.attachmentCount)
-            Spacer(minLength: 0)
-            QueueDeliveryMark(status: .sent)
+        let movable = movable(item)
+        return HStack(spacing: 8) {
+            if movable {
+                handle(item)
+            }
+            HStack(spacing: 8) {
+                Text(item.text.isEmpty ? " " : item.text)
+                    .font(.footnote)
+                    .lineLimit(1)
+                counts(images: item.imageCount, files: item.attachmentCount)
+                Spacer(minLength: 0)
+                if item.mode == .steer {
+                    SteerMark()
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityActions {
+                if movable {
+                    moveActions(item)
+                }
+            }
             if actionable(item) {
                 Menu {
                     actions(item)
@@ -923,24 +963,66 @@ private struct QueueList: View {
                 .accessibilityHint("Steer, edit, or withdraw this queued message")
             }
         }
-        .padding(.leading, 12)
+        .padding(.leading, movable ? 0 : 12)
         .padding(.trailing, actionable(item) ? 2 : 12)
         .frame(minHeight: Self.rowHeight)
         .glassEffect(.regular, in: .rect(cornerRadius: 14))
+        .overlay(alignment: dropMark?.side == .after ? .bottom : .top) {
+            if dropMark?.id == item.id {
+                Capsule()
+                    .fill(.tint)
+                    .frame(height: 2)
+                    .offset(y: dropMark?.side == .after ? 4 : -4)
+            }
+        }
+        .onDrop(of: [.text], delegate: QueueDropDelegate(
+            target: item, items: hostItems, rowHeight: Self.rowHeight,
+            dragged: $dragged, mark: $dropMark, onReorder: onReorder))
+    }
+
+    /// Long-press the grip to lift the row; it drops among same-mode peers.
+    private func handle(_ item: QueueItem) -> some View {
+        Image(.gripVertical)
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(.tertiary)
+            .frame(width: 32, height: Self.rowHeight)
+            .contentShape(.rect)
+            .onDrag {
+                dragged = item.id
+                return NSItemProvider(object: QueueDropDelegate.payload(item.id) as NSString)
+            } preview: {
+                Text(item.text.isEmpty ? " " : item.text)
+                    .font(.footnote)
+                    .lineLimit(1)
+                    .padding(.horizontal, 12)
+                    .frame(width: 240, height: Self.rowHeight, alignment: .leading)
+                    .background(.regularMaterial, in: .rect(cornerRadius: 14))
+            }
+            .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private func moveActions(_ item: QueueItem) -> some View {
+        if let up = QueuedList.move(item.id, by: -1, in: hostItems) {
+            Button("Move up") { onReorder(item, up.before) }
+        }
+        if let down = QueuedList.move(item.id, by: 1, in: hostItems) {
+            Button("Move down") { onReorder(item, down.before) }
+        }
     }
 
     private func local(_ item: LocalQueueItem) -> some View {
         let status = MessageStatus(item.status)
         let pendingRequest = pendingRequests.contains(item.requestId)
         return HStack(spacing: 8) {
-            Text(tag(item.mode))
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
             Text(item.text.isEmpty ? " " : item.text)
                 .font(.footnote)
                 .lineLimit(1)
             counts(images: item.imageCount, files: item.attachmentCount)
             Spacer(minLength: 0)
+            if item.mode == .steer {
+                SteerMark()
+            }
             QueueDeliveryMark(status: status)
             if status == .unknown || status == .failed {
                 Button("Retry") {
@@ -991,7 +1073,7 @@ private struct QueueList: View {
         let blocked = pending.contains(item.id)
         // Write/other never reach here: the host rejects both calls for them.
         if item.mode == .followUp && busy {
-            Button("Steer now", image: .redo2) {
+            Button("Steer now", image: .arrowBigUpDash) {
                 onSteer(item)
             }
             .disabled(blocked)
@@ -1005,20 +1087,72 @@ private struct QueueList: View {
         }
         .disabled(blocked)
     }
+}
 
-    private func tag(_ mode: QueueMode) -> String {
-        switch mode {
-        case .steer: "Steer"
-        case .followUp: "Follow-up"
-        case .write, .other: "Queued"
-        }
+/// A steer lands at the next boundary in this run; follow-ups carry no mark.
+private struct SteerMark: View {
+    var body: some View {
+        Image(.arrowBigUpDash)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("Steer")
+    }
+}
+
+private struct QueueDropMark: Equatable {
+    let id: UInt64
+    let side: QueuedList.Side
+}
+
+/// A host row as a drop target: only a lifted peer of the same mode lands,
+/// above or below the row by which half the finger is over.
+private struct QueueDropDelegate: DropDelegate {
+    let target: QueueItem
+    let items: [QueueItem]
+    let rowHeight: CGFloat
+    @Binding var dragged: UInt64?
+    @Binding var mark: QueueDropMark?
+    let onReorder: @MainActor @Sendable (QueueItem, UInt64?) -> Void
+
+    private var source: QueueItem? {
+        guard let dragged, dragged != target.id else { return nil }
+        let peers = QueuedList.peers(of: target, in: items)
+        return peers.contains { $0.id == dragged } ? items.first { $0.id == dragged } : nil
     }
 
-    private func tag(_ mode: SubmitMode) -> String {
-        switch mode {
-        case .steer: "Steer"
-        case .followUp: "Follow-up"
+    func validateDrop(info: DropInfo) -> Bool { source != nil }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        guard source != nil else { return DropProposal(operation: .forbidden) }
+        mark = QueueDropMark(id: target.id, side: info.location.y < rowHeight / 2 ? .before : .after)
+        return DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        if mark?.id == target.id { mark = nil }
+    }
+
+    /// What a lifted row carries. `dragged` outlives a drag released
+    /// elsewhere, so a drop reorders only when its text names that row —
+    /// other text dropped on a row later is not mistaken for it.
+    static func payload(_ id: UInt64) -> String { "pinomad-queued:\(id)" }
+
+    func performDrop(info: DropInfo) -> Bool {
+        defer {
+            mark = nil
+            dragged = nil
         }
+        guard let source, let side = mark?.side,
+              let provider = info.itemProviders(for: [.text]).first
+        else { return false }
+        let before = QueuedList.before(moving: source.id, onto: target.id, side: side, in: items)
+        let expected = Self.payload(source.id)
+        let onReorder = onReorder
+        _ = provider.loadObject(ofClass: NSString.self) { text, _ in
+            guard (text as? String) == expected else { return }
+            Task { @MainActor in onReorder(source, before) }
+        }
+        return true
     }
 }
 

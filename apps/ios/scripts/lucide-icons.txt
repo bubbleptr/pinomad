@@ -4,6 +4,7 @@
 # Pinomad/Assets.xcassets/Lucide; Swift refers to them as ImageResource
 # (`triangle-alert` → `.triangleAlert`).
 archive
+arrow-big-up-dash
 arrow-right
 arrow-up
 ban
@@ -33,6 +34,7 @@ folder
 folder-git-2
 folder-plus
 git-branch
+grip-vertical
 image
 images
 inbox
@@ -45,7 +47,6 @@ monitor
 pencil
 plus
 qr-code
-redo-2
 rotate-cw
 scan-qr-code
 settings

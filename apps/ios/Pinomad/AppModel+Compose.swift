@@ -366,6 +366,26 @@ extension AppModel {
         }
     }
 
+    /// Move a queued input right before `before` (last when nil). Like
+    /// steer, every outcome is silent: `sent` and `unavailable` mean the row
+    /// already left the queue and the next snapshot shows it.
+    func reorderQueued(conversation id: UInt64, item: QueueItem, before: UInt64?) {
+        guard let runtime = focusedRuntime, runtime.isConnectedNow,
+              hostSupportsCall(hostMinor: runtime.hostMinor, method: "reorderQueued"),
+              let session = runtime.session,
+              runtime.queuedEdit.copy?.id != item.id,
+              runtime.queuePending.insert(item.id).inserted
+        else { return }
+        Task {
+            defer { runtime.queuePending.remove(item.id) }
+            do {
+                _ = try await session.reorderQueued(submissionId: item.id, before: before, target: id)
+            } catch {
+                runtime.showToast(self.describe(error), level: "error")
+            }
+        }
+    }
+
     /// Withdraw a queued row and, if the host still had it, put its text and
     /// images back. The content is read before the call because a successful
     /// withdrawal removes the row from the next snapshot.
