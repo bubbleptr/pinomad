@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "storybook": "storybook dev --port 6006 --host 127.0.0.1 --no-open",
+    "storybook": "storybook dev --host 127.0.0.1 --no-open --port ${PORT:-6006}",
     "build-storybook": "storybook build"
   },
   "dependencies": {
