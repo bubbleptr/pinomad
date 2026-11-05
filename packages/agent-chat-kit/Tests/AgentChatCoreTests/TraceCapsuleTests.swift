@@ -17,8 +17,19 @@ import Testing
             startedAt: start
         )
         let capsule = trace.capsule(at: start.addingTimeInterval(42))
-        #expect(capsule.label == .interim("Found it"))
+        #expect(capsule.label == .interim(id: "i2", line: "Found it"))
         #expect(capsule.summary.elapsed == .seconds(42))
+    }
+
+    @Test func aBlankNewestInterimFallsBackToTheStepThatHasALine() {
+        let trace = AgentTrace(
+            phase: .thinking,
+            steps: [
+                .interim(id: "i1", text: "Reading the config first."),
+                .interim(id: "i2", text: "  \n"),
+            ]
+        )
+        #expect(trace.capsule(at: start).label == .interim(id: "i1", line: "Reading the config first."))
     }
 
     @Test func aBlankInterimDoesNotHideTheCurrentAction() {

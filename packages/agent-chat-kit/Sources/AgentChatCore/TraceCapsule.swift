@@ -4,8 +4,11 @@ import Foundation
 /// place: the reader came for the answer, and the steps open in a sheet.
 public struct TraceCapsule: Sendable, Equatable {
     public enum Label: Sendable, Hashable {
-        /// The first line of what the model last said to the user mid-run.
-        case interim(String)
+        /// The first line of what the model last said to the user mid-run,
+        /// and the step it comes from. The step, not the line, is the page:
+        /// a streaming interim grows in place rather than turning the page
+        /// on every token.
+        case interim(id: String, line: String)
         /// No interim yet: the tool running now.
         case running(ToolSummary.Running)
         /// No interim and no tool running: the model is working out its
@@ -15,8 +18,9 @@ public struct TraceCapsule: Sendable, Equatable {
         case finished(TraceSummary.Headline)
     }
 
-    /// What the line names; a change turns the pager's page. Kept apart
-    /// from the clock so the page does not turn every second.
+    /// What the line names; a change of step or kind turns the pager's
+    /// page. Kept apart from the clock so the page does not turn every
+    /// second.
     public var label: Label
     /// The elapsed time and tool counts shown after the label.
     public var summary: TraceSummary
@@ -28,7 +32,7 @@ extension AgentTrace {
         let label: TraceCapsule.Label
         switch summary.headline {
         case .thinking, .working:
-            label = latestInterimLine.map(TraceCapsule.Label.interim)
+            label = latestInterimLine.map { TraceCapsule.Label.interim(id: $0.id, line: $0.line) }
                 ?? runningCall.map(TraceCapsule.Label.running)
                 ?? .thinking
         default:
@@ -38,15 +42,15 @@ extension AgentTrace {
     }
 
     /// Interims are Markdown; the capsule is one plain line.
-    private var latestInterimLine: String? {
+    private var latestInterimLine: (id: String, line: String)? {
         for step in steps.reversed() {
-            guard case let .interim(_, text) = step else { continue }
+            guard case let .interim(id, text) = step else { continue }
             let line = PlainText.of(markdown: text)
                 .split(whereSeparator: \.isNewline)
                 .lazy
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .first { !$0.isEmpty }
-            if let line { return line }
+            if let line { return (id, line) }
         }
         return nil
     }

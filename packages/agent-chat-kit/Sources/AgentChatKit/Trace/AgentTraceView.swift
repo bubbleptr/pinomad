@@ -29,7 +29,7 @@ public struct AgentTraceView: View {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 let capsule = trace.capsule(at: isWorking ? context.date : .now)
                 HStack(spacing: 6) {
-                    InlinePager(page: capsule.label) { label in
+                    InlinePager(page: capsule.label, id: \.page) { label in
                         // The mark pages with the label, so a finished
                         // run's mark arrives with its headline.
                         HStack(spacing: 5) {
@@ -76,7 +76,7 @@ public struct AgentTraceView: View {
 
     private func text(for label: TraceCapsule.Label) -> String {
         switch label {
-        case .interim(let line): line
+        case .interim(_, let line): line
         case .running(let running): TraceText.running(running)
         case .thinking: String(localized: "Thinking", bundle: .module)
         case .finished(let headline): TraceText.headline(headline)
@@ -94,6 +94,24 @@ extension AgentTrace {
 private extension TraceCapsule.Label {
     var isLive: Bool {
         if case .finished = self { false } else { true }
+    }
+
+    /// Which page of the capsule's pager this label is: an interim is its
+    /// step, whatever the line has grown to.
+    var page: Page {
+        switch self {
+        case .interim(let id, _): .interim(id)
+        case .running(let running): .running(running)
+        case .thinking: .thinking
+        case .finished(let headline): .finished(headline)
+        }
+    }
+
+    enum Page: Hashable {
+        case interim(String)
+        case running(ToolSummary.Running)
+        case thinking
+        case finished(TraceSummary.Headline)
     }
 }
 
