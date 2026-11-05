@@ -252,7 +252,10 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   const autoRegisterEnabled = deps.autoRegister !== false;
   /** Save-failed identities, keyed by account hostId (or hostKey when unlinked). */
   const unsaved = new Map<string, StoredHost>();
-  /** Bumped on sign-out and by an explicit cancel; flights compare it before acting. */
+  /**
+   * Bumped only when a session ends (endSession); flights compare it before
+   * acting. An explicit cancel sets `flight.cancelled` and leaves it alone.
+   */
   let epoch = 0;
   /**
    * A cookie-mode sign-out still waiting on the server. Its answer clears
@@ -349,6 +352,11 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     ...extra,
   });
 
+  // A new state, cookie or key write after an await should record `const
+  // started = epoch` before the await and check `live(active, started)` after
+  // it. The older checks that only compare `client === active` are equivalent
+  // because endSession both clears `client` and bumps `epoch`, and every
+  // sign-in installs a freshly created client.
   const live = (active: AccountClient, started: number): boolean => client === active && started === epoch;
 
   /**
