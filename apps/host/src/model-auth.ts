@@ -270,6 +270,36 @@ export async function openModelAuth(
     return next;
   };
 
+  // Hosts before #444 saved custom models as bare ids, which pi reads as a
+  // 128k window and so compacts long before the model has to. Record what a
+  // save would record now, in the background: an unreachable endpoint keeps
+  // its entries as they are.
+  void serial(async () => {
+    const file = await readModelsFile(options.modelsPath);
+    const reported = new Map<string, Map<string, EndpointModel>>();
+    for (const [id, endpoint] of custom) {
+      const entries = file.providers[id]?.models;
+      if (!Array.isArray(entries) || !entries.some(lacksReported)) continue;
+      const key = (await runtime.getAuth(id))?.auth.apiKey;
+      const listed = await fetchEndpointModels(endpoint.api, endpoint.baseUrl, key).catch(() => []);
+      reported.set(id, new Map(listed.map((model) => [model.id, model])));
+    }
+    if (closed || [...reported.values()].every((listed) => listed.size === 0)) return;
+    await updateModelsFile((latest) => {
+      for (const [id, listed] of reported) {
+        const entries = latest.providers[id]?.models;
+        if (!Array.isArray(entries)) continue;
+        // A field already in the file, by hand or by an earlier save, stays.
+        latest.providers[id]!.models = entries.map((model: Record<string, unknown>) => ({
+          ...listed.get(model.id as string),
+          ...model,
+        }));
+      }
+    });
+    await runtime.refresh({ providers: [...reported.keys()], allowNetwork: false });
+    await republish();
+  });
+
   return {
     models,
     auth,
@@ -520,6 +550,12 @@ type Listed = Record<string, unknown> & { readonly modalities?: { readonly input
 
 /** A `models.json` model entry: the id, plus what the endpoint reported where pi would otherwise default. */
 type EndpointModel = { readonly id: string } & Record<string, unknown>;
+
+/** A saved model entry missing a field `endpointModel` can fill from /models. */
+const lacksReported = (model: unknown): boolean =>
+  typeof model === "object" &&
+  model !== null &&
+  !("contextWindow" in model && "maxTokens" in model && "reasoning" in model && "input" in model);
 
 /** pi rejects a non-positive `contextWindow` or `maxTokens`, and a rejected entry fails the whole save. */
 const positive = (value: unknown): number | undefined =>

@@ -237,7 +237,7 @@ describe("openModelAuth", () => {
 
     await modelAuth.saveCustomProvider(endpoint, "sk-gateway");
 
-    expect(seen[0]!.authorization).toBe("Bearer sk-gateway");
+    expect(seen.at(-1)!.authorization).toBe("Bearer sk-gateway");
     expect(JSON.parse(await readFile(modelsPath, "utf8")).providers[OLLAMA.id].models).toEqual([
       { id: "gateway/opus", contextWindow: 1_000_000, maxTokens: 128_000, reasoning: true, input: ["text", "image"] },
       { id: "gateway/broken" },
@@ -246,6 +246,43 @@ describe("openModelAuth", () => {
     const opus = modelAuth.models.value.find((m) => m.modelId === "gateway/opus")!;
     expect(opus).toMatchObject({ contextWindow: 1_000_000, images: true });
     expect(opus.thinkingLevels.length).toBeGreaterThan(1);
+  });
+
+  it("fills in what /models reports for entries saved without it, on open, under fields set by hand", async () => {
+    const seen: IncomingHttpHeaders[] = [];
+    const server = createServer((request, response) => {
+      seen.push(request.headers);
+      response.setHeader("content-type", "application/json");
+      response.end(
+        JSON.stringify({
+          data: [
+            { id: "gateway/k3", context_length: 1_048_576, max_output_tokens: 131_072, reasoning: true },
+            { id: "gateway/tuned", context_length: 400_000, max_output_tokens: 32_000 },
+          ],
+        }),
+      );
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    defer(() => new Promise<void>((resolve) => server.close(() => resolve())));
+    const baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`;
+    // Bare ids are what hosts before the limits fix wrote; pi reads them as a 128k window.
+    const { modelsPath, modelAuth } = await fixture({
+      auth: { [OLLAMA.id]: { type: "api_key", key: "sk-gateway" } },
+      models: {
+        providers: {
+          [OLLAMA.id]: { ...OLLAMA, baseUrl, models: [{ id: "gateway/k3" }, { id: "gateway/tuned", contextWindow: 64_000 }] },
+        },
+      },
+    });
+
+    await until(() => modelAuth.models.value.find((m) => m.modelId === "gateway/k3")?.contextWindow === 1_048_576);
+
+    expect(seen[0]!.authorization).toBe("Bearer sk-gateway");
+    expect(JSON.parse(await readFile(modelsPath, "utf8")).providers[OLLAMA.id].models).toEqual([
+      { id: "gateway/k3", contextWindow: 1_048_576, maxTokens: 131_072, reasoning: true },
+      { id: "gateway/tuned", contextWindow: 64_000, maxTokens: 32_000 },
+    ]);
   });
 
   it("republishes a model whose only change on re-save is taking images", async () => {
