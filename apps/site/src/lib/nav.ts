@@ -4,6 +4,7 @@ import { localized, type Lang } from "./i18n.ts";
 // blog and changelog all render. Plain strings and paths only.
 
 export const githubUrl = "https://github.com/bubbleptr/pinomad";
+export const discordUrl = "https://discord.gg/ypjBbVtTE8";
 export const appUrl = "https://app.pinomad.si/";
 
 const labels = {
