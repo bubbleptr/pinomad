@@ -10,7 +10,7 @@ import type { HostSettings } from "@pinomad/protocol/settings.ts";
 import type { AutoUpgradeMode, UpgradeBlocker } from "@pinomad/protocol/upgrade.ts";
 import { packagedVersion } from "../distribution.ts";
 import { Published, type HostValue } from "../host-value.ts";
-import { serviceManager } from "../service/manager.ts";
+import { serviceManager, type ServiceManager } from "../service/manager.ts";
 import { installCommand, npmBeside, outputTail, packagePrefix, parseRelease, viewCommand, type NpmCommand } from "./npm.ts";
 import { HostUpgrader, type HostUpgraderOptions, type InstallResult, type Release } from "./upgrader.ts";
 
@@ -37,16 +37,26 @@ export interface HostUpgradeOptions {
 export const UPGRADE_EXIT_CODE = 75;
 
 /** Why this process can't upgrade itself (ADR-0043 §4). */
-export async function upgradeBlocker(dataDir: string): Promise<UpgradeBlocker | null> {
-  if (packagedVersion === undefined || packagePrefix() === undefined) return "source";
+export async function upgradeBlocker(
+  dataDir: string,
+  {
+    packaged = packagedVersion !== undefined && packagePrefix() !== undefined,
+    manager = serviceManager,
+  }: { packaged?: boolean; manager?: () => Pick<ServiceManager, "read" | "state"> } = {},
+): Promise<UpgradeBlocker | null> {
+  if (!packaged) return "source";
   try {
-    const manager = serviceManager();
-    const spec = await manager.read();
+    const service = manager();
+    const spec = await service.read();
     // A service for another data dir doesn't restart this process.
     if (spec === undefined || spec.dataDir !== dataDir) return "no-service";
-    const state = await manager.state();
+    const state = await service.state();
     if (!state.installed) return "no-service";
-    return state.stopped ? "stopped" : null;
+    if (state.stopped) return "stopped";
+    // Installed and enabled but not running (e.g. `systemctl --user stop`):
+    // this process is a foreground host, and nothing would start it again.
+    // The data-dir lock makes a running service for this dir this process.
+    return state.running ? null : "no-service";
   } catch {
     return "no-service";
   }

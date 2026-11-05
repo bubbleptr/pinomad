@@ -74,7 +74,7 @@ import { RTC_DEFAULT_STUN, type RtcHello } from "@pinomad/protocol/rtc.ts";
 import { webSocketCarrier, type RecordCarrier } from "./secure-carrier.ts";
 import { startRtcHost, type RtcHost, type RtcOptions } from "./rtc.ts";
 import { startTerminals, type StartTerminalsOptions, type Terminals, type TerminalSize } from "./terminals.ts";
-import { HOST_UPGRADING_ERROR, type HostUpgrade, type UpgradeWhen } from "@pinomad/protocol/upgrade.ts";
+import type { HostUpgrade, UpgradeWhen } from "@pinomad/protocol/upgrade.ts";
 import type { ExtensionDoc } from "./builtin-extension.ts";
 import { branchOf, changesOf, checkoutAt, gitBase, worktreeExists, worktreeSettled } from "./checkout.ts";
 import { packagedVersion } from "./distribution.ts";
@@ -336,8 +336,10 @@ export interface UpgradeService extends HostValue<HostUpgrade> {
   start(when: UpgradeWhen): Promise<void>;
   cancel(): void;
   check(): Promise<void>;
-  /** A submission or terminal output, which auto mode counts as activity. */
+  /** Terminal output, which auto mode counts as activity. */
   touch(): void;
+  /** A call that starts agent work: throws while installing, else busy until the release runs. */
+  admit(): () => void;
 }
 
 /** Calls refused with `HOST_UPGRADING_ERROR` while an upgrade installs (ADR-0043 §3). */
@@ -349,6 +351,7 @@ const NO_UPGRADES: HostValue<HostUpgrade> = constantValue<HostUpgrade>({
   blocked: "source",
   phase: "idle",
   target: null,
+  attempt: 0,
   checking: false,
   checkedAt: null,
   checkError: null,
@@ -2305,10 +2308,18 @@ class GatewayClient {
   }
 
   async #call(method: CallMethod, args: CallMethods[CallMethod]["args"]): Promise<unknown> {
-    if (AGENT_WORK_CALLS.has(method)) {
-      if (this.#options.upgrade?.installing === true) throw new Error(HOST_UPGRADING_ERROR);
-      this.#options.upgrade?.touch();
+    if (AGENT_WORK_CALLS.has(method) && this.#options.upgrade !== undefined) {
+      const release = this.#options.upgrade.admit();
+      try {
+        return await this.#dispatch(method, args);
+      } finally {
+        release();
+      }
     }
+    return this.#dispatch(method, args);
+  }
+
+  async #dispatch(method: CallMethod, args: CallMethods[CallMethod]["args"]): Promise<unknown> {
     switch (method) {
       // No await before the pty sees the input: calls are handled
       // concurrently, and keystrokes must reach it in the order they came.

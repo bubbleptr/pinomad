@@ -49,6 +49,8 @@ export interface HostUpgrade {
   readonly phase: UpgradePhase;
   /** The version `waiting` or `installing` is for. */
   readonly target: string | null;
+  /** Counts the upgrades started since the host started; `failure` names the one it belongs to. */
+  readonly attempt: number;
   /** A check against npm is running. */
   readonly checking: boolean;
   /** When the last check finished, epoch milliseconds; `null` before the first. */
@@ -56,7 +58,7 @@ export interface HostUpgrade {
   /** Why the last check failed; cleared by the next successful one. */
   readonly checkError: string | null;
   /** The last failed install: its version and the end of npm's output. Auto-upgrade skips that version. */
-  readonly failure: { readonly version: string; readonly message: string } | null;
+  readonly failure: { readonly version: string; readonly message: string; readonly attempt: number } | null;
 }
 
 /**

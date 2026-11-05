@@ -540,6 +540,7 @@
     },
     "upgrade": {
       "value": {
+        "attempt": "number",
         "available": "null",
         "blocked": "string",
         "checkedAt": "null",

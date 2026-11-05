@@ -3,6 +3,7 @@
 // timers and the exit are all injected; nothing here installs or exits.
 import { describe, expect, it } from "vitest";
 import type { AutoUpgradeMode, UpgradeBlocker } from "@pinomad/protocol/upgrade.ts";
+import { HOST_UPGRADING_ERROR } from "@pinomad/protocol/upgrade.ts";
 import { compareVersions, HostUpgrader, type Release } from "../src/upgrade/upgrader.ts";
 import { Published } from "../src/host-value.ts";
 
@@ -15,6 +16,8 @@ interface Harness {
   readonly installs: string[];
   /** `upgrader.installing` as each install saw it while npm ran. */
   readonly installingDuring: boolean[];
+  /** What `admit()` threw while npm ran. */
+  readonly admitDuring: unknown[];
   readonly restarts: number[];
   readonly busy: Published<boolean>;
   readonly mode: Published<AutoUpgradeMode>;
@@ -30,6 +33,8 @@ function harness(options: {
   current?: string;
   release?: Release;
   blocked?: UpgradeBlocker | null;
+  /** Replaces the service-state read, to hold it open. */
+  blockedRead?: () => Promise<UpgradeBlocker | null>;
   mode?: AutoUpgradeMode;
   busy?: boolean;
 } = {}): Harness {
@@ -39,6 +44,7 @@ function harness(options: {
   let checks = 0;
   const installs: string[] = [];
   const installingDuring: boolean[] = [];
+  const admitDuring: unknown[] = [];
   const restarts: number[] = [];
   const scheduled: { ms: number; run: () => void }[] = [];
   const busy = new Published(options.busy ?? false, (a, b) => a === b);
@@ -46,7 +52,7 @@ function harness(options: {
   const upgrader = new HostUpgrader({
     current: options.current ?? "0.13.0",
     protocolMajor: 5,
-    blocked: async () => options.blocked ?? null,
+    blocked: options.blockedRead ?? (async () => options.blocked ?? null),
     latest: async () => {
       checks++;
       return release;
@@ -54,6 +60,11 @@ function harness(options: {
     install: async (version) => {
       installs.push(version);
       installingDuring.push(upgrader.installing);
+      try {
+        upgrader.admit()();
+      } catch (error) {
+        admitDuring.push((error as Error).message);
+      }
       return installFailure === undefined ? { ok: true } : { ok: false, message: installFailure };
     },
     restart: () => restarts.push(now),
@@ -70,6 +81,7 @@ function harness(options: {
     upgrader,
     installs,
     installingDuring,
+    admitDuring,
     restarts,
     busy,
     mode,
@@ -225,6 +237,29 @@ describe("HostUpgrader manual upgrades", () => {
     expect(h.restarts).toEqual([]);
   });
 
+  it("counts a call still being admitted as busy, and resumes on the next tick", async () => {
+    const h = harness();
+    await begin(h);
+    const release = h.upgrader.admit();
+    await h.upgrader.start("idle");
+    expect(h.upgrader.value.phase).toBe("waiting");
+    await h.fire(MINUTE);
+    expect(h.installs).toEqual([]);
+    release();
+    await h.fire(MINUTE);
+    expect(h.installs).toEqual(["0.14.0"]);
+  });
+
+  it("refuses to admit work while installing", async () => {
+    const h = harness();
+    await begin(h);
+    h.failInstalls("boom");
+    await h.upgrader.start("now");
+    await settle();
+    expect(h.admitDuring).toEqual([HOST_UPGRADING_ERROR]);
+    expect(() => h.upgrader.admit()()).not.toThrow();
+  });
+
   it("refuses to start with nothing newer", async () => {
     const h = harness({ release: { version: "0.13.0", publishedAt: T0, protocolMajor: 5 } });
     await begin(h);
@@ -290,6 +325,25 @@ describe("HostUpgrader auto mode", () => {
     h.advance(30 * MINUTE);
     await h.fire(MINUTE);
     expect(h.installs).toEqual(["0.14.0"]);
+  });
+
+  it("re-checks every condition after reading the service state", async () => {
+    let open: (value: null) => void = () => {};
+    let held = false;
+    const h = harness({
+      mode: "auto",
+      blockedRead: () => (held ? new Promise((resolve) => (open = resolve)) : Promise.resolve(null)),
+    });
+    await begin(h);
+    h.advance(15 * MINUTE);
+    held = true;
+    void h.fire(MINUTE);
+    // A check lands while the tick waits: the new release crosses majors.
+    h.setRelease({ version: "1.0.0", publishedAt: T0 - 10 * DAY, protocolMajor: 6 });
+    await h.upgrader.check();
+    open(null);
+    await settle();
+    expect(h.installs).toEqual([]);
   });
 
   it("leaves a blocked host alone", async () => {

@@ -9,6 +9,8 @@ export type FollowOutcome =
   /** The host closed the connection with the install done: it is restarting. */
   | { readonly kind: "restarting"; readonly version: string }
   | { readonly kind: "current"; readonly version: string | null }
+  /** Another device cancelled the wait. */
+  | { readonly kind: "cancelled" }
   | { readonly kind: "failed"; readonly message: string };
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -58,7 +60,6 @@ export async function upgradeWithHost(
   }
   const checked = remote.view.current().upgrade;
   if (checked === null || checked.available === null) return { kind: "current", version: checked?.current ?? null };
-  const before = checked.failure;
   const version = checked.available.version;
   log(`upgrading the host to pinomad@${version}`);
   try {
@@ -66,25 +67,33 @@ export async function upgradeWithHost(
   } catch (error) {
     return { kind: "failed", message: message(error) };
   }
+  // The host bumps `attempt` before the call's result goes out, so this is ours.
+  const attempt = remote.view.current().upgrade?.attempt;
   return new Promise((resolve) => {
     let phase: HostUpgrade["phase"] | undefined;
     let installed = false;
+    const finish = (outcome: FollowOutcome): void => {
+      unsubscribe();
+      resolve(outcome);
+    };
     const check = (): void => {
       const view = remote.view.current();
       if (view.connection !== "connected") {
-        unsubscribe();
-        resolve(installed ? { kind: "restarting", version } : { kind: "failed", message: "lost the host before the install finished" });
+        finish(installed ? { kind: "restarting", version } : { kind: "failed", message: "lost the host before the install finished" });
         return;
       }
       const value = view.upgrade;
       if (value === null) return;
-      if (value.failure !== null && value.failure !== before && value.failure.version === version) {
-        unsubscribe();
-        resolve({ kind: "failed", message: value.failure.message });
+      if (value.failure !== null && value.failure.attempt === attempt) {
+        finish({ kind: "failed", message: value.failure.message });
         return;
       }
       if (value.phase === phase) return;
       phase = value.phase;
+      if (phase === "idle") {
+        finish({ kind: "cancelled" });
+        return;
+      }
       if (phase === "waiting") {
         log("waiting for running tasks to finish (Ctrl-C to cancel)");
         onWaiting(() => remote.controller.cancelUpgrade());

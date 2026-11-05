@@ -2109,7 +2109,7 @@
         "HostSettingsPatch": "export type HostSettingsPatch = {\n    [K in HostSettingKey]?: Exclude<HostSettings[K], null> | null;\n};",
         "HostStreamName": "export type HostStreamName = keyof HostStreamValues;",
         "HostStreamValues": "export interface HostStreamValues {\n    agents: AgentRoles;\n    auth: HostAuth;\n    conversations: ConversationSummary[];\n    devices: HostDevices;\n    index: HostIndex;\n    mcp: McpStatus | null;\n    models: ModelSummary[];\n    providers: HostProviders;\n    settings: HostSettings;\n    upgrade: HostUpgrade;\n}",
-        "HostUpgrade": "export interface HostUpgrade {\n    available: AvailableUpgrade | null;\n    blocked: UpgradeBlocker | null;\n    checkError: null | string;\n    checkedAt: null | number;\n    checking: boolean;\n    current: null | string;\n    failure: null | {\n        message: string;\n        version: string;\n    };\n    phase: UpgradePhase;\n    target: null | string;\n}",
+        "HostUpgrade": "export interface HostUpgrade {\n    attempt: number;\n    available: AvailableUpgrade | null;\n    blocked: UpgradeBlocker | null;\n    checkError: null | string;\n    checkedAt: null | number;\n    checking: boolean;\n    current: null | string;\n    failure: null | {\n        attempt: number;\n        message: string;\n        version: string;\n    };\n    phase: UpgradePhase;\n    target: null | string;\n}",
         "IMAGE_MIME_TYPES": "export const IMAGE_MIME_TYPES = [\"image/jpeg\", \"image/png\", \"image/gif\", \"image/webp\"] as const;",
         "ImageMimeType": "export type ImageMimeType = (typeof IMAGE_MIME_TYPES)[number];",
         "ImageResult": "export type ImageResult = MessageImage & {\n    variant?: ImageVariant;\n};",

@@ -2,7 +2,13 @@
 // host to go idle, stop taking new work, install the exact version that was
 // checked, and hand off to the service manager by exiting. Every effect —
 // npm, the service state, the clock, the timers, the exit — is injected.
-import type { AutoUpgradeMode, HostUpgrade, UpgradeBlocker, UpgradeWhen } from "@pinomad/protocol/upgrade.ts";
+import {
+  HOST_UPGRADING_ERROR,
+  type AutoUpgradeMode,
+  type HostUpgrade,
+  type UpgradeBlocker,
+  type UpgradeWhen,
+} from "@pinomad/protocol/upgrade.ts";
 import { Published, type HostValue } from "../host-value.ts";
 
 /** What npm says about the latest release. */
@@ -71,6 +77,8 @@ export class HostUpgrader implements HostValue<HostUpgrade> {
   #check: Promise<void> | undefined;
   /** The last time a task ran, a submission came in or a terminal printed. */
   #lastActivity: number;
+  /** Calls that start agent work and haven't finished admission yet (`admit`). */
+  #admitting = 0;
 
   constructor(options: HostUpgraderOptions) {
     this.#options = options;
@@ -82,6 +90,7 @@ export class HostUpgrader implements HostValue<HostUpgrade> {
         blocked: null,
         phase: "idle",
         target: null,
+        attempt: 0,
         checking: false,
         checkedAt: null,
         checkError: null,
@@ -110,7 +119,7 @@ export class HostUpgrader implements HostValue<HostUpgrade> {
     this.#stops.push(
       busy.subscribe((value) => {
         this.touch();
-        if (!value && this.value.phase === "waiting") void this.#install(this.value.target!);
+        if (!value) this.#installIfIdle();
       }),
       mode.subscribe((value) => {
         if (value !== "off") void this.check().catch(() => {});
@@ -131,6 +140,26 @@ export class HostUpgrader implements HostValue<HostUpgrade> {
     this.#lastActivity = this.#options.now();
   }
 
+  /**
+   * A call that starts agent work arrives: refused while installing, else
+   * counted as busy until the returned release runs — its skill expansion
+   * and attachment reads come before the task graph shows anything. A wait
+   * resumes on the next task-graph change or tick, not on the release, so
+   * the admitted work's tasks have time to show up first.
+   */
+  admit(): () => void {
+    if (this.installing) throw new Error(HOST_UPGRADING_ERROR);
+    this.touch();
+    this.#admitting++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.#admitting--;
+      this.touch();
+    };
+  }
+
   /** Asks npm now; one check at a time. */
   check(): Promise<void> {
     if (this.#options.mode.value === "off") return Promise.reject(new Error("Upgrade checks are off on this host"));
@@ -146,10 +175,23 @@ export class HostUpgrader implements HostValue<HostUpgrade> {
     if (blocked !== null) throw new Error(`This host can't upgrade itself (${blocked})`);
     if (phase !== "idle") throw new Error("An upgrade is already in progress");
     if (available === null) throw new Error("No newer release");
-    // Resolves once the upgrade started; progress is on the stream. #install
-    // sets `installing` before its first await, so no new work slips in.
-    if (when === "now" || !this.#options.busy.value) void this.#install(available.version);
-    else this.#set({ phase: "waiting", target: available.version });
+    this.#begin(when, available.version);
+  }
+
+  // Resolves once the upgrade started; progress is on the stream. #install
+  // sets `installing` before its first await, so no new work slips in.
+  #begin(when: UpgradeWhen, version: string): void {
+    this.#set({ attempt: this.value.attempt + 1 });
+    if (when === "now" || !this.#busy()) void this.#install(version);
+    else this.#set({ phase: "waiting", target: version });
+  }
+
+  #busy(): boolean {
+    return this.#options.busy.value || this.#admitting > 0;
+  }
+
+  #installIfIdle(): void {
+    if (this.value.phase === "waiting" && !this.#busy()) void this.#install(this.value.target!);
   }
 
   cancel(): void {
@@ -185,13 +227,30 @@ export class HostUpgrader implements HostValue<HostUpgrade> {
   }
 
   #autoTick(): void {
-    const { mode, busy, now } = this.#options;
+    if (this.#busy()) this.touch();
+    this.#installIfIdle();
+    const candidate = this.#autoCandidate();
+    if (candidate === undefined) return;
+    void this.#refreshBlocked().then(
+      () => {
+        // A check may have replaced `available` during the await: install
+        // only the version that still passes every condition now.
+        if (this.#autoCandidate() === candidate) this.#begin("idle", candidate);
+      },
+      () => {},
+    );
+  }
+
+  /** The version auto mode would install right now, if any (ADR-0043 §6). */
+  #autoCandidate(): string | undefined {
+    const { mode, now } = this.#options;
     const { available, blocked, phase, failure } = this.value;
-    if (busy.value) this.touch();
-    if (mode.value !== "auto" || phase !== "idle" || blocked !== null || available === null) return;
-    if (available.crossesMajor || failure?.version === available.version) return;
-    if (now() - available.publishedAt < AUTO_MIN_AGE_MS || now() - this.#lastActivity < AUTO_QUIET_MS) return;
-    void this.start("idle").catch(() => {});
+    if (mode.value !== "auto" || phase !== "idle" || blocked !== null || available === null) return undefined;
+    if (available.crossesMajor || failure?.version === available.version) return undefined;
+    if (now() - available.publishedAt < AUTO_MIN_AGE_MS || this.#busy() || now() - this.#lastActivity < AUTO_QUIET_MS) {
+      return undefined;
+    }
+    return available.version;
   }
 
   async #install(version: string): Promise<void> {
@@ -206,7 +265,7 @@ export class HostUpgrader implements HostValue<HostUpgrade> {
       this.#options.restart();
       return;
     }
-    this.#set({ phase: "idle", target: null, failure: { version, message: result.message } });
+    this.#set({ phase: "idle", target: null, failure: { version, message: result.message, attempt: this.value.attempt } });
   }
 
   #set(patch: Partial<HostUpgrade>): void {

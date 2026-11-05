@@ -66,7 +66,8 @@ export interface UpgradeDeps {
 export async function upgradeThroughHost(argv: readonly string[], force: boolean): Promise<number | undefined> {
   const service = await serviceState();
   if (!service.installed || service.stopped) return undefined;
-  const address = await hostAddress(argv).catch(() => undefined);
+  // `--force` is upgrade's own flag; the address parser rejects it.
+  const address = await hostAddress(argv.filter((arg) => arg !== "--force")).catch(() => undefined);
   if (address === undefined) return undefined;
   const remote = await connectToHost(address.url, address.token).catch(() => undefined);
   if (remote === undefined) return undefined;
@@ -89,6 +90,9 @@ export async function upgradeThroughHost(argv: readonly string[], force: boolean
         return 0;
       case "failed":
         console.error(`upgrade failed; the host keeps running the old version:\n${outcome.message}`);
+        return 1;
+      case "cancelled":
+        console.log("the upgrade was cancelled on another device");
         return 1;
       case "restarting":
         return awaitRestarted(address);
