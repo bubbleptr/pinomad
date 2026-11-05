@@ -2316,7 +2316,7 @@ it("unlocks the composer when the host rejects an edit withdrawal", async () => 
   gate.resolve();
 });
 
-it("promotes a queued follow-up to Steer and keeps Steer off writes and an idle queue", async () => {
+it("promotes a queued follow-up to Steer and leaves writes out and keeps Steer off an idle queue", async () => {
   const webOrigin = await startWeb(defer);
   const gate = deferred();
   const host = await startFauxHost(defer, {
@@ -2366,9 +2366,11 @@ it("promotes a queued follow-up to Steer and keeps Steer off writes and an idle 
     },
     BACKGROUND_CONTEXT,
   );
-  const write = page.getByTestId("chat-queued-message").filter({ hasText: "<pinomad.note>" });
-  await write.waitFor();
-  expect(await write.getByRole("button").count()).toBe(0);
+  // A write the harness parks until the next boundary is not a queued input: no row for it.
+  await waitForView(observer.view, (view) =>
+    (view.conversation!.docs["pi.inbox"] as { items: { mode: string }[] }).items.some((item) => item.mode === "write"));
+  await expect.poll(() => page.getByTestId("chat-queued-message").count()).toBe(3);
+  expect(await page.getByTestId("chat-queued-message").filter({ hasText: "pinomad.note" }).count()).toBe(0);
 
   gate.resolve();
   await waitForView(observer.view, (view) => {

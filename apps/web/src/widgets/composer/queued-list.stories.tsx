@@ -38,7 +38,6 @@ export const EveryMode: Story = {
       { id: 1, mode: "steer", text: "Use the existing date helper instead", imageCount: 0, attachmentCount: 0, status: "sent" as const },
       { id: 2, mode: "followUp", text: "Does this match the mockup?", imageCount: 1, attachmentCount: 0, status: "sent" as const },
       { id: 3, mode: "followUp", text: "", imageCount: 2, attachmentCount: 1, status: "sent" as const },
-      { id: 4, mode: "write", text: "<custom>", imageCount: 0, attachmentCount: 0, status: "sent" as const },
     ],
   },
 };
