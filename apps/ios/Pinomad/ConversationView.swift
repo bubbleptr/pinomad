@@ -179,6 +179,15 @@ struct ConversationView: View {
                 }
             }
             .animation(swap, value: phase)
+            .background {
+                // Starts a little above the bar so text meets the card's
+                // rounded corners already softened.
+                BottomEdgeBlur()
+                    .padding(.top, -24)
+                    .ignoresSafeArea(.container, edges: .bottom)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pageHeight = $0 }
         .environment(\.questionPageMaxHeight, max((pageHeight ?? 800) * 0.4, 160))
