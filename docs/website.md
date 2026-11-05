@@ -60,3 +60,14 @@ cd apps/site && bun run build && bun run preview
 从别的机器搬过来的步骤见[远程访问](https://pinomad.si/zh/docs/remote-access/)的"搬到另一台机器"，换域名见"更换服务端域名"。
 
 托管实例凭邀请码注册（#449）：管理员在账号面板的 Invites 里生成邀请码，没有邀请码的访客点落地页上的 "Open the web app" 只能看到登录页。
+
+### 发版与升级
+
+前几次发版都是照着 git 历史拼出来的，按这个顺序做：
+
+1. 更新日志写成 `apps/site/content/changelog/vX.Y.Z.mdx` 和 `vX.Y.Z.zh.mdx`，走 PR 合入（main 有分支保护，见 AGENTS.md），提交标题为 `chore(release): changelog for vX.Y.Z`。
+2. 给 main 打 `vX.Y.Z` 标签并推送。`release.yml` 会跑全量测试、签名打包桌面端、检查安装脚本，最后 `gh release create` 并 `npm publish`。等 `npm view pinomad dist-tags` 里 `latest` 变成新版本，再动服务器。
+3. VPS 上先停服务端，备份数据目录和环境变量文件（`/var/lib/pinomad/server`、`/etc/pinomad-server.env`，备份名带版本号），再 `npm i -g pinomad@X.Y.Z`、`systemctl start pinomad-server`。ssh 目标不写进仓库，问用户或查 nmem。
+4. 验证：`journalctl -u pinomad-server` 里有 `{"event":"ready",…}`；`curl -s -o /dev/null -w '%{http_code}' https://app.pinomad.si/api/me` 返回 `401`（服务在、要登录）；再用一台真实宿主走一遍 join。
+5. 宿主一起升级（`pinomad upgrade`，或 omarchy 上非登录 shell 用 `bash -lc 'pinomad upgrade'`：pinomad 装在 mise 的 Node 下）。
+6. 把 `deploy/server/Dockerfile` 的 `ARG PINOMAD_VERSION` 改成新版本，同样走 PR，标题 `chore(deploy): run the server image on pinomad X.Y.Z`。
