@@ -349,6 +349,8 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     ...extra,
   });
 
+  // Every state, cookie or key write after an await records `const started =
+  // epoch` before it and checks `live(active, started)` after it.
   const live = (active: AccountClient, started: number): boolean => client === active && started === epoch;
 
   /**

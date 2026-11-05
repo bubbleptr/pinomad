@@ -1,0 +1,40 @@
+{
+  "about": "Add a host's join command, written once for every end that builds it. Hand-written, not generated: change a command here first, then make the web (apps/web/src/widgets/account/join-command.test.ts), server (apps/server/test/join-command.test.ts) and iOS (HostLinkTests.swift) tests pass again. Cases without a token are the copy the clients build (the host prints a code to confirm); cases with one are what the server returns from POST /api/join-tokens, where <token> stands for the minted token.",
+  "cases": [
+    {
+      "name": "official server, no token",
+      "serverOrigin": "https://app.pinomad.si",
+      "official": true,
+      "token": null,
+      "command": "curl -fsSL https://pinomad.si/install.sh | sh -s -- up --origin https://app.pinomad.si"
+    },
+    {
+      "name": "self-hosted server, no token",
+      "serverOrigin": "https://accounts.example.com",
+      "official": false,
+      "token": null,
+      "command": "curl -fsSL https://pinomad.si/install.sh | sh -s -- up --origin https://accounts.example.com"
+    },
+    {
+      "name": "self-hosted server with a trailing slash, no token",
+      "serverOrigin": "https://accounts.example.com/",
+      "official": false,
+      "token": null,
+      "command": "curl -fsSL https://pinomad.si/install.sh | sh -s -- up --origin https://accounts.example.com"
+    },
+    {
+      "name": "official server, one-use token",
+      "serverOrigin": "https://app.pinomad.si",
+      "official": true,
+      "token": "<token>",
+      "command": "curl -fsSL https://pinomad.si/install.sh | sh -s -- join https://app.pinomad.si <token>"
+    },
+    {
+      "name": "self-hosted server with a trailing slash, one-use token",
+      "serverOrigin": "https://accounts.example.com/",
+      "official": false,
+      "token": "<token>",
+      "command": "curl -fsSL https://pinomad.si/install.sh | sh -s -- join https://accounts.example.com <token>"
+    }
+  ]
+}
