@@ -280,7 +280,8 @@ describe("openModelAuth", () => {
 
     expect(seen[0]!.authorization).toBe("Bearer sk-gateway");
     expect(JSON.parse(await readFile(modelsPath, "utf8")).providers[OLLAMA.id].models).toEqual([
-      { id: "gateway/k3", contextWindow: 1_048_576, maxTokens: 131_072, reasoning: true },
+      // Reasoning waits for a re-save: it changes what every request asks of the model.
+      { id: "gateway/k3", contextWindow: 1_048_576, maxTokens: 131_072 },
       { id: "gateway/tuned", contextWindow: 64_000, maxTokens: 32_000 },
     ]);
   });
