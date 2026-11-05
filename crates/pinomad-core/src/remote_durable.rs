@@ -324,6 +324,16 @@ pub enum Call {
     CreatePairing,
     RevokeDevice { public_key: String },
     Logout { provider_id: String },
+    /// `startUpgrade` (5.30, ADR-0043): resolves once the host started the
+    /// upgrade; progress is the view's `upgrade`. Direct, outside the command
+    /// queue — a wait or an install must not hold it. The caller shows the
+    /// host's error.
+    StartUpgrade { when: UpgradeWhen },
+    /// `cancelUpgrade` — end a `waiting` upgrade (5.30). Direct.
+    CancelUpgrade,
+    /// `checkUpgrade` — ask the host to check npm now; rejected while the
+    /// host's `autoUpgrade` is `off` (5.30). Direct.
+    CheckUpgrade,
     /// `beginLogin` — start a login (5.21, ADR-0031); its prompts and
     /// outcome arrive in the `providers` stream's `logins`. Request-class,
     /// like the provider calls below: the caller shows the host's error.
@@ -424,6 +434,23 @@ fn set_attachments(args: &mut JsonObject, attachments: &[String]) {
 pub enum ForkShow {
     Main,
     Side,
+}
+
+/// `UpgradeWhen` (upgrade.ts): wait for running tasks, or stop taking work now.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
+pub enum UpgradeWhen {
+    Idle,
+    Now,
+}
+
+impl UpgradeWhen {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            UpgradeWhen::Idle => "idle",
+            UpgradeWhen::Now => "now",
+        }
+    }
 }
 
 /// `LoginMethod` (auth.ts) — how a login is done.
@@ -4297,6 +4324,25 @@ impl RemoteDurable {
                 let args = obj(&[("providerId", Json::from(provider_id.clone()))]);
                 steps.push_back(Step::Call { method: "logout", args });
             }
+            Call::StartUpgrade { when } => {
+                if !host_supports_call(self.host_minor, "startUpgrade") {
+                    return Err(too_old("5.30"));
+                }
+                let args = obj(&[("when", Json::from(when.as_str()))]);
+                steps.push_back(Step::Call { method: "startUpgrade", args });
+            }
+            Call::CancelUpgrade => {
+                if !host_supports_call(self.host_minor, "cancelUpgrade") {
+                    return Err(too_old("5.30"));
+                }
+                steps.push_back(Step::Call { method: "cancelUpgrade", args: obj(&[]) });
+            }
+            Call::CheckUpgrade => {
+                if !host_supports_call(self.host_minor, "checkUpgrade") {
+                    return Err(too_old("5.30"));
+                }
+                steps.push_back(Step::Call { method: "checkUpgrade", args: obj(&[]) });
+            }
             Call::BeginLogin { provider_id, method } => {
                 if !host_supports_call(self.host_minor, "beginLogin") {
                     return Err(too_old("5.21"));
@@ -4374,6 +4420,12 @@ impl RemoteDurable {
                     && !host_supports_feature(self.host_minor, HostFeature::HostName)
                 {
                     return Err(too_old("5.12"));
+                }
+                // And autoUpgrade on a pre-5.30 host (ADR-0043).
+                if patch.get("autoUpgrade").is_some()
+                    && !host_supports_feature(self.host_minor, HostFeature::AutoUpgrade)
+                {
+                    return Err(too_old("5.30"));
                 }
                 let args = obj(&[("patch", patch.clone())]);
                 steps.push_back(Step::Call { method: "updateSettings", args });
@@ -6044,7 +6096,10 @@ fn op_kind(call: &Call) -> OpKind {
         | Call::LoadEarlier { .. }
         | Call::BeginAttachment { .. }
         | Call::AppendAttachment { .. }
-        | Call::ListEndpointModels { .. } => OpKind::Direct,
+        | Call::ListEndpointModels { .. }
+        | Call::StartUpgrade { .. }
+        | Call::CancelUpgrade
+        | Call::CheckUpgrade => OpKind::Direct,
         _ => OpKind::Command,
     }
 }

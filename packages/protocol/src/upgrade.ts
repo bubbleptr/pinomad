@@ -59,7 +59,11 @@ export interface HostUpgrade {
   readonly failure: { readonly version: string; readonly message: string } | null;
 }
 
-/** The `ok:false` error of a call that starts agent work while the host is installing an upgrade. */
+/**
+ * The `ok:false` error of a call that starts agent work — `submit`,
+ * `createConversation`, `runCommand`, `compact`, `answer` — while the host
+ * is installing an upgrade.
+ */
 export const HOST_UPGRADING_ERROR = "Host is upgrading";
 
 /** `startUpgrade`'s `when`: wait for running tasks to end, or stop taking work now. */

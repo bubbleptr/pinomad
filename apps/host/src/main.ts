@@ -228,7 +228,12 @@ export async function main(argv: readonly string[]): Promise<void> {
     if (stopping) return;
     stopping = true;
     stopLogRotation();
-    if (code === UPGRADE_EXIT_CODE) console.log(JSON.stringify({ event: "upgraded", exitCode: code }));
+    if (code === UPGRADE_EXIT_CODE) {
+      console.log(JSON.stringify({ event: "upgraded", exitCode: code }));
+      // The new release is on disk and new work is refused: a close that
+      // hangs (a shell that won't die) must not keep the old host up.
+      setTimeout(() => process.exit(code), 15_000).unref();
+    }
     void host.close().finally(() => process.exit(code));
   };
   process.on("SIGINT", () => stop(0));

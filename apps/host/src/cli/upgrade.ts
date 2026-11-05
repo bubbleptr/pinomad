@@ -17,7 +17,7 @@ import { installCommand, npmBeside, packagePrefix } from "../upgrade/npm.ts";
 import { isParseArgsError, reportParseArgsError } from "./args.ts";
 import { hostAddress, hostAddressOptions } from "./host-address.ts";
 import { awaitRestarted, connectToHost, restartService } from "./service.ts";
-import { followUpgrade, hostUpgrade } from "./upgrade-via-host.ts";
+import { upgradeWithHost } from "./upgrade-via-host.ts";
 
 export { npmBeside } from "../upgrade/npm.ts";
 
@@ -60,8 +60,8 @@ export interface UpgradeDeps {
 
 /**
  * Asks the running packaged service to upgrade itself. Undefined — upgrade
- * locally — when no service runs, the host doesn't answer, predates the
- * `upgrade` stream, can't upgrade itself, or has checks turned off.
+ * locally — when no service runs, the host doesn't answer, or
+ * `upgradeWithHost` hands the upgrade back.
  */
 export async function upgradeThroughHost(argv: readonly string[], force: boolean): Promise<number | undefined> {
   const service = await serviceState();
@@ -71,12 +71,6 @@ export async function upgradeThroughHost(argv: readonly string[], force: boolean
   const remote = await connectToHost(address.url, address.token).catch(() => undefined);
   if (remote === undefined) return undefined;
   try {
-    const upgrade = await hostUpgrade(remote);
-    if (upgrade === undefined || upgrade.blocked !== null) return undefined;
-    if (upgrade.phase !== "idle") {
-      console.error(`the host is already upgrading to pinomad@${upgrade.target ?? "?"}`);
-      return 1;
-    }
     let cancel: (() => Promise<void>) | undefined;
     const interrupt = (): void => {
       if (cancel === undefined) process.exit(130);
@@ -86,12 +80,7 @@ export async function upgradeThroughHost(argv: readonly string[], force: boolean
       });
     };
     process.on("SIGINT", interrupt);
-    const outcome = await followUpgrade(remote, force ? "now" : "idle", (line) => console.log(line), (c) => (cancel = c))
-      .catch((error: unknown) => {
-        // `checkUpgrade` refused (autoUpgrade is off): upgrade here instead.
-        console.log(`the host can't upgrade itself (${error instanceof Error ? error.message : String(error)}); upgrading here`);
-        return undefined;
-      })
+    const outcome = await upgradeWithHost(remote, force ? "now" : "idle", (line) => console.log(line), (c) => (cancel = c))
       .finally(() => process.off("SIGINT", interrupt));
     if (outcome === undefined) return undefined;
     switch (outcome.kind) {

@@ -1,6 +1,7 @@
 // `pinomad upgrade` as a client of the host's own upgrade (ADR-0043 §8): when
 // the packaged service runs and answers, the CLI asks it to upgrade itself
 // and prints the `upgrade` stream until the host goes away to restart.
+import { hostSupportsCall } from "@pinomad/protocol/frames.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { HostUpgrade, UpgradeWhen } from "@pinomad/protocol/upgrade.ts";
 
@@ -10,10 +11,11 @@ export type FollowOutcome =
   | { readonly kind: "current"; readonly version: string | null }
   | { readonly kind: "failed"; readonly message: string };
 
+const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
 /** The host's `upgrade` value once its snapshot arrived; undefined when the host predates the stream. */
 export async function hostUpgrade(remote: RemoteDurable, timeoutMs = 5000): Promise<HostUpgrade | undefined> {
-  const minor = remote.view.current().host?.protocol.minor ?? 0;
-  if (minor < 30) return undefined;
+  if (!hostSupportsCall(remote.view.current().host?.protocol.minor ?? 0, "startUpgrade")) return undefined;
   return new Promise((resolve) => {
     const timer = setTimeout(() => finish(undefined), timeoutMs);
     timer.unref();
@@ -32,22 +34,38 @@ export async function hostUpgrade(remote: RemoteDurable, timeoutMs = 5000): Prom
 }
 
 /**
- * Checks npm through the host, starts the upgrade and follows it. `cancel`
- * is set while the host waits for tasks, for the caller's Ctrl-C.
+ * Upgrades through the host: checks npm there, starts the upgrade and
+ * follows it. Undefined — upgrade locally instead — when the host predates
+ * the stream, can't upgrade itself, or refuses the check (`autoUpgrade` is
+ * off). Any later error is a failure: the host may be installing already, and
+ * a second install into the same prefix must not start here. `onWaiting`
+ * gets the cancel while the host waits for tasks, for the caller's Ctrl-C.
  */
-export async function followUpgrade(
+export async function upgradeWithHost(
   remote: RemoteDurable,
   when: UpgradeWhen,
   log: (line: string) => void,
   onWaiting: (cancel: () => Promise<void>) => void = () => {},
-): Promise<FollowOutcome> {
-  await remote.controller.checkUpgrade();
+): Promise<FollowOutcome | undefined> {
+  const initial = await hostUpgrade(remote);
+  if (initial === undefined || initial.blocked !== null) return undefined;
+  if (initial.phase !== "idle") return { kind: "failed", message: `the host is already upgrading to pinomad@${initial.target ?? "?"}` };
+  try {
+    await remote.controller.checkUpgrade();
+  } catch (error) {
+    log(`the host won't check for releases (${message(error)}); upgrading here`);
+    return undefined;
+  }
   const checked = remote.view.current().upgrade;
-  if (checked?.available === null || checked === null) return { kind: "current", version: checked?.current ?? null };
+  if (checked === null || checked.available === null) return { kind: "current", version: checked?.current ?? null };
   const before = checked.failure;
   const version = checked.available.version;
   log(`upgrading the host to pinomad@${version}`);
-  await remote.controller.startUpgrade(when);
+  try {
+    await remote.controller.startUpgrade(when);
+  } catch (error) {
+    return { kind: "failed", message: message(error) };
+  }
   return new Promise((resolve) => {
     let phase: HostUpgrade["phase"] | undefined;
     let installed = false;

@@ -10,7 +10,7 @@ use crate::ffi::types::{ApnsPushToken, ImageVariant, MessageImage, ModelRef, Que
 use crate::ffi::providers::{ApiKeyChange, CustomProviderApi, CustomProviderInput, LoginMethod};
 use crate::ffi::ResultKind;
 use crate::json::{Json, JsonObject};
-use crate::remote_durable::Call;
+use crate::remote_durable::{Call, UpgradeWhen};
 use crate::u16str::U16String;
 
 fn set(obj: &mut JsonObject, name: &str, value: Json) {
@@ -364,6 +364,13 @@ pub enum FfiCall {
     AnswerLogin { login_id: String, prompt_id: u64, value: String },
     /// Abort a running login; ended or unknown ids are a no-op. Request-class.
     CancelLogin { login_id: String },
+    /// Start upgrading the host (ADR-0043); progress is `snapshot().upgrade`.
+    /// Rejects with the host's reason. Needs a 5.30 host, like the two below.
+    StartUpgrade { when: UpgradeWhen },
+    /// End a `waiting` upgrade.
+    CancelUpgrade,
+    /// Ask the host to check npm now; rejects while `autoUpgrade` is `off`.
+    CheckUpgrade,
     /// Add or replace a custom endpoint. Request-class.
     SaveCustomProvider { provider: CustomProviderInput, api_key: ApiKeyChange },
     /// Remove a custom endpoint and its stored key. Request-class.
@@ -520,6 +527,9 @@ impl FfiCall {
                 Call::AnswerLogin { login_id, prompt_id, value }
             }
             FfiCall::CancelLogin { login_id } => Call::CancelLogin { login_id },
+            FfiCall::StartUpgrade { when } => Call::StartUpgrade { when },
+            FfiCall::CancelUpgrade => Call::CancelUpgrade,
+            FfiCall::CheckUpgrade => Call::CheckUpgrade,
             FfiCall::SaveCustomProvider { provider, api_key } => Call::SaveCustomProvider {
                 provider: provider.to_json(),
                 api_key: api_key.into_core(),
