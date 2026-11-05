@@ -1,12 +1,12 @@
 import { useId, type MouseEvent, type ReactNode } from "react";
 import type { Lang } from "@/lib/i18n.ts";
-import { githubUrl, otherLanguage, siteNav } from "@/lib/nav.ts";
-import { GitHubIcon } from "@/landing/icons.tsx";
+import { discordUrl, githubUrl, otherLanguage, siteNav } from "@/lib/nav.ts";
+import { DiscordIcon, GitHubIcon } from "@/landing/icons.tsx";
 import favicon from "../../../web/public/favicon.svg?url";
 
 /**
  * The bar at the top of every page: brand and section links on the left; language,
- * GitHub and the app on the right. Landing renders it directly; docs, blog and
+ * GitHub, Discord and the app on the right. Landing renders it directly; docs, blog and
  * changelog hand it to Fumadocs as the layout's header slot. Its classes are plain
  * CSS (site-header.css) so it looks the same under either stylesheet.
  *
@@ -46,6 +46,9 @@ export function SiteHeader({
       </a>
       <a className="header-link header-icon" href={githubUrl} aria-label="GitHub">
         <GitHubIcon />
+      </a>
+      <a className="header-link header-icon" href={discordUrl} aria-label="Discord">
+        <DiscordIcon />
       </a>
       {/* A returning visitor who uses the web app goes back to it instead. */}
       <a className="app-link when-signed-out" href={signedOut.href}>

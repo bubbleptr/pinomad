@@ -1,5 +1,5 @@
 import { localized, type Lang } from "@/lib/i18n.ts";
-import { githubUrl, otherLanguage, siteNav } from "@/lib/nav.ts";
+import { discordUrl, githubUrl, otherLanguage, siteNav } from "@/lib/nav.ts";
 import favicon from "../../../web/public/favicon.svg?url";
 import type { LandingCopy } from "./copy.tsx";
 
@@ -18,6 +18,9 @@ export function SiteFooter({ lang, t }: { lang: Lang; t: LandingCopy["footer"] }
           <ul>
             <li>
               <a href={githubUrl}>GitHub</a>
+            </li>
+            <li>
+              <a href={discordUrl}>Discord</a>
             </li>
             <li>
               <a href={localized(lang, "/docs/")}>{t.docs}</a>
