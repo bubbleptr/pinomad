@@ -12,7 +12,7 @@ import { List, ListItem } from "@astryxdesign/core/List";
 import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { findConversation } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -309,6 +309,29 @@ function TaskDetail({
   );
 }
 
+const PANEL_MIN_PX = 360;
+const PANEL_MAX_PX = 1200;
+
+/**
+ * The width the row leaves the panel once the chat column, its previous
+ * sibling, keeps its own minimum; tracked so the drag never runs past what the
+ * window can show (Astryx clamps a drag to `maxSizePx`, not the layout).
+ */
+function useRoomBeside(panel: HTMLElement | null): number | undefined {
+  const [room, setRoom] = useState<number>();
+  useEffect(() => {
+    const row = panel?.parentElement;
+    const chat = panel?.previousElementSibling;
+    if (row == null || !(chat instanceof HTMLElement)) return;
+    const measure = () => setRoom(row.clientWidth - parseFloat(getComputedStyle(chat).minWidth));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(row);
+    return () => observer.disconnect();
+  }, [panel]);
+  return room;
+}
+
 /**
  * Desktop: a resizable, full-height panel docked right of the chat column; its
  * first row sits level with the chat header. Narrow: a fullscreen dialog whose
@@ -343,12 +366,21 @@ export function SidePanel({
   openInPanel: (id: ConversationId) => void;
   onOpenInMain: (id: ConversationId) => void;
 }) {
+  const [panel, setPanel] = useState<HTMLDivElement | null>(null);
+  const room = useRoomBeside(panel);
+  const maxSizePx = Math.max(PANEL_MIN_PX, Math.min(PANEL_MAX_PX, room ?? PANEL_MAX_PX));
   const resizable = useResizable({
     defaultSize: 440,
-    minSizePx: 360,
-    maxSizePx: 720,
+    minSizePx: PANEL_MIN_PX,
+    maxSizePx,
     autoSaveId: "pinomad-side-panel",
   });
+  // A width the window no longer has would make the first stretch of a drag
+  // move nothing; settle on what fits instead.
+  const { size, resize } = resizable;
+  useEffect(() => {
+    if (size > maxSizePx) resize(maxSizePx);
+  }, [size, maxSizePx, resize]);
   const content = (barStart?: ReactNode, barEnd?: ReactNode) =>
     surface === "changes" ? (
       <ChangesSurface view={view} remote={remote} shownId={shownId} busy={busy} barStart={barStart} barEnd={barEnd} />
@@ -399,8 +431,9 @@ export function SidePanel({
   if (!open) return null;
   return (
     // The panel shrinks toward its minimum before the chat column gives up the
-    // room its header needs; the saved width returns once the window widens.
+    // room its header needs.
     <div
+      ref={setPanel}
       className="relative h-full min-w-[360px] border-l border-border"
       style={{ width: resizable.size }}
       aria-label="Side panel"
