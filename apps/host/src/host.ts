@@ -27,6 +27,7 @@ import type { RtcOptions } from "./rtc.ts";
 import type { StartTerminalsOptions } from "./terminals.ts";
 import { AttachmentStore } from "./attachments.ts";
 import { withAnswerTiming } from "./answer-timing.ts";
+import { startHostUpgrader, type HostUpgradeOptions } from "./upgrade/host-upgrader.ts";
 
 const context = BACKGROUND_CONTEXT;
 
@@ -116,6 +117,11 @@ export interface OpenHostOptions {
   readonly rtc?: RtcOptions;
   /** Terminal seams (ADR-0041): the shell, its environment, the pty loader. Absent runs the login shell. */
   readonly terminals?: StartTerminalsOptions;
+  /**
+   * Upgrades from clients (ADR-0043) for the release `current`; absent in a
+   * source checkout and in tests, where the `upgrade` stream says `source`.
+   */
+  readonly upgrade?: HostUpgradeOptions & { readonly current: string };
 }
 
 export interface OpenedHost {
@@ -173,6 +179,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
   let agentRoles: AgentRoleStore | undefined;
   let attachments: AttachmentStore | undefined;
   let extensions: readonly BuiltinExtension[] = [];
+  let upgrader: Awaited<ReturnType<typeof startHostUpgrader>> | undefined;
   try {
     const models = withAnswerTiming(options.models);
     const token = await hostToken(options.dataDir);
@@ -273,6 +280,17 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     const hostKey = await loadHostKey(options.dataDir);
     const offers = pairingOffers(options.remote?.pairingTtlMs);
     const relayKey = options.relay === undefined ? undefined : await loadRelayKey(options.dataDir);
+    upgrader =
+      options.upgrade === undefined
+        ? undefined
+        : await startHostUpgrader({
+            current: options.upgrade.current,
+            dataDir: options.dataDir,
+            harness,
+            settings: hostSettings,
+            context,
+            seams: options.upgrade,
+          });
     const gateway = await startGateway({
       harness,
       models,
@@ -304,6 +322,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
           }),
       ...(options.rtc === undefined ? {} : { rtc: options.rtc }),
       ...(options.terminals === undefined ? {} : { terminals: options.terminals }),
+      ...(upgrader === undefined ? {} : { upgrade: upgrader }),
       secure: {
         hostKey,
         offers,
@@ -372,6 +391,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       close() {
         closing ??= (async () => {
           try {
+            upgrader?.close();
             await gateway.close();
             // Close writes no outcome: a running turn resumes at the next open.
             await opened.close(context);
@@ -391,6 +411,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       },
     };
   } catch (error) {
+    upgrader?.close();
     options.modelAuth?.close();
     attachments?.close();
     agentRoles?.close();

@@ -8,6 +8,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hostPiStack } from "./src/pi-stack.ts";
+import { PROTOCOL } from "@pinomad/protocol/frames.ts";
 
 // Just enough of the Bun API this script uses; it never runs under Node and
 // bun-types is not a dependency.
@@ -137,6 +138,9 @@ await writeFile(
       homepage: "https://github.com/bubbleptr/pinomad",
       dependencies,
       ...(Object.keys(optionalDependencies).length === 0 ? {} : { optionalDependencies }),
+      // Read by older hosts from the registry before they upgrade to this
+      // release: a different major is never auto-installed (ADR-0043 §5).
+      pinomad: { protocolMajor: PROTOCOL.major },
     },
     null,
     2,

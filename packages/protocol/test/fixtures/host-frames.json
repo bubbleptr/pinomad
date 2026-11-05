@@ -3,7 +3,7 @@
     "type": "hello",
     "protocol": {
       "major": 5,
-      "minor": 27
+      "minor": 30
     },
     "session": {
       "id": "<sessionId>",
@@ -95,6 +95,7 @@
         "stun:stun.cloudflare.com:3478"
       ],
       "hostName": "kierandeMacBook-Pro",
+      "autoUpgrade": "notify",
       "custom": []
     }
   },
@@ -112,6 +113,21 @@
     "value": {
       "providers": [],
       "logins": []
+    }
+  },
+  {
+    "type": "snapshot",
+    "stream": "upgrade",
+    "value": {
+      "current": null,
+      "available": null,
+      "blocked": "source",
+      "phase": "idle",
+      "target": null,
+      "checking": false,
+      "checkedAt": null,
+      "checkError": null,
+      "failure": null
     }
   },
   {
@@ -153,7 +169,7 @@
             "home": {
               "kind": "chat"
             },
-            "createdAt": 1793798984083,
+            "createdAt": 1793905736000,
             "requestId": "contract-1"
           }
         ]
@@ -238,7 +254,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1793798984086,
+        "updatedAt": 1793905736002,
         "currentAgent": null
       }
     ]
@@ -256,7 +272,7 @@
             {
               "role": "user",
               "content": "contract run",
-              "timestamp": 1793798984086
+              "timestamp": 1793905736002
             }
           ],
           "kind": "pi.user",
@@ -287,7 +303,7 @@
           "items": []
         },
         "pi.provider": {
-          "sessionId": "01a1a6c0-5192-7624-a124-78f2167f79b4"
+          "sessionId": "01a1ad1d-393f-726a-8dc0-85f716309e77"
         },
         "pi.usage": {
           "models": {},
@@ -443,7 +459,7 @@
                     }
                   }
                 ],
-                "timestamp": 1793798984091
+                "timestamp": 1793905736007
               }
             ],
             "kind": "pi.system",
@@ -534,7 +550,7 @@
         ],
         [
           {
-            "callId": "tool:1793798984035:ses2ktgwn3d",
+            "callId": "tool:1793905735957:rlylnfsbnjq",
             "name": "write",
             "taskId": 16,
             "status": "pending"
@@ -597,7 +613,7 @@
                 "content": [
                   {
                     "type": "toolCall",
-                    "id": "tool:1793798984035:ses2ktgwn3d",
+                    "id": "tool:1793905735957:rlylnfsbnjq",
                     "name": "write",
                     "arguments": {
                       "path": "note.txt",
@@ -605,7 +621,7 @@
                     }
                   }
                 ],
-                "api": "faux:1793798984035:71lcr6on09w",
+                "api": "faux:1793905735957:avxfpute3h",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
@@ -623,7 +639,7 @@
                   }
                 },
                 "stopReason": "toolUse",
-                "timestamp": 1793798984035,
+                "timestamp": 1793905735957,
                 "thinkingLevel": "off"
               }
             ],
@@ -708,7 +724,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1793798984035,
+        "updatedAt": 1793905735957,
         "currentAgent": null,
         "activity": {
           "tool": "write",
@@ -768,7 +784,7 @@
             "model": [
               {
                 "role": "toolResult",
-                "toolCallId": "tool:1793798984035:ses2ktgwn3d",
+                "toolCallId": "tool:1793905735957:rlylnfsbnjq",
                 "toolName": "write",
                 "content": [
                   {
@@ -781,7 +797,7 @@
                 },
                 "isError": false,
                 "durationMs": 1,
-                "timestamp": 1793798984164
+                "timestamp": 1793905736081
               }
             ],
             "data": {
@@ -899,7 +915,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1793798984035,
+        "updatedAt": 1793905735957,
         "currentAgent": null
       }
     ]
@@ -1041,7 +1057,7 @@
                     "text": "contract done"
                   }
                 ],
-                "api": "faux:1793798984035:71lcr6on09w",
+                "api": "faux:1793905735957:avxfpute3h",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
@@ -1059,9 +1075,9 @@
                   }
                 },
                 "stopReason": "stop",
-                "timestamp": 1793798984035,
+                "timestamp": 1793905735957,
                 "pinomad": {
-                  "answerStartedAt": 1793798984176
+                  "answerStartedAt": 1793905736090
                 },
                 "thinkingLevel": "off"
               }

@@ -5,6 +5,7 @@
   "type": "module",
   "devDependencies": {
     "@pinomad/host": "workspace:*",
+    "@pinomad/protocol": "workspace:*",
     "@pinomad/server": "workspace:*"
   }
 }

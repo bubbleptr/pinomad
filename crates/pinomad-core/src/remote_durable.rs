@@ -5854,6 +5854,7 @@ impl RemoteDurable {
         let providers = self.values.get(&key("providers")).cloned().unwrap_or(Json::Null);
         let settings = self.values.get(&key("settings")).cloned().unwrap_or(Json::Null);
         let agents = self.values.get(&key("agents")).cloned().unwrap_or(Json::Null);
+        let upgrade = self.values.get(&key("upgrade")).cloned().unwrap_or(Json::Null);
         let defaults = self.effective_defaults();
         self.set_or_clear("conversation", conversation);
         self.set_field("models", models);
@@ -5869,6 +5870,7 @@ impl RemoteDurable {
         self.set_field("providers", providers);
         self.set_field("settings", settings);
         self.set_field("agents", agents);
+        self.set_field("upgrade", upgrade);
         self.set_field("defaults", defaults);
         self.set_field("submissions", self.submissions_json());
         Ok(())
@@ -5910,6 +5912,7 @@ impl RemoteDurable {
         set(&mut state, "providers", Json::Null);
         set(&mut state, "settings", Json::Null);
         set(&mut state, "agents", Json::Null);
+        set(&mut state, "upgrade", Json::Null);
         set(&mut state, "host", self.host_info());
         self.state = Some(state);
         if let Err(error) = self.refresh() {

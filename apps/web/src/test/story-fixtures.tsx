@@ -550,6 +550,7 @@ export function fakeView(overrides: Partial<DurableView> = {}): DurableView {
       ],
       problems: [{ file: "Broken.md", reason: "name must be lowercase kebab-case" }],
     },
+    upgrade: null,
     host: { version: "0.9.0", protocol: PROTOCOL },
     ...overrides,
   };
@@ -623,6 +624,9 @@ export function fakeRemote(view: DurableView = fakeView(), overrides: Partial<Du
     removeCustomProvider: fn(async () => {}),
     listEndpointModels: fn(async () => ["llama-4-maverick-17b-128e-instruct", "gpt-oss-120b", "qwen3-235b-a22b-instruct-2507"]),
     updateSettings: fn(async () => {}),
+    startUpgrade: fn(async () => {}),
+    cancelUpgrade: fn(async () => {}),
+    checkUpgrade: fn(async () => {}),
     createAgent: fn(async () => {}),
     updateAgent: fn(async () => {}),
     deleteAgent: fn(async () => {}),

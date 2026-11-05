@@ -31,7 +31,7 @@ const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /** A token connection with a deadline; a late winner is closed so it can't hold the event loop open. */
-function connectToHost(url: string, token: string, timeoutMs = 3000): Promise<RemoteDurable> {
+export function connectToHost(url: string, token: string, timeoutMs = 3000): Promise<RemoteDurable> {
   const connecting = connectRemoteDurable({ url, token, reconnectDelayMs: { min: 200, max: 2000 } });
   const timedOut = Symbol("timedOut");
   return Promise.race([
@@ -259,6 +259,22 @@ export async function restartService({
     console.log("restart requested (host address unknown; not polling)");
     return 0;
   }
+  return awaitRestarted(address, { connect, pollTimeoutMs, pollDelayMs });
+}
+
+/** Polls until the restarted host answers; returns the exit code. */
+export async function awaitRestarted(
+  address: { readonly url: string; readonly token: string },
+  {
+    connect = connectToHost,
+    pollTimeoutMs = 30_000,
+    pollDelayMs = 500,
+  }: {
+    connect?: (url: string, token: string, timeoutMs?: number) => Promise<RemoteDurable>;
+    pollTimeoutMs?: number;
+    pollDelayMs?: number;
+  } = {},
+): Promise<number> {
   const deadline = Date.now() + pollTimeoutMs;
   // The directory lock a crashed host left can take ~12s to be retried away.
   for (;;) {

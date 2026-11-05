@@ -74,6 +74,7 @@ import { RTC_DEFAULT_STUN, type RtcHello } from "@pinomad/protocol/rtc.ts";
 import { webSocketCarrier, type RecordCarrier } from "./secure-carrier.ts";
 import { startRtcHost, type RtcHost, type RtcOptions } from "./rtc.ts";
 import { startTerminals, type StartTerminalsOptions, type Terminals, type TerminalSize } from "./terminals.ts";
+import { HOST_UPGRADING_ERROR, type HostUpgrade, type UpgradeWhen } from "@pinomad/protocol/upgrade.ts";
 import type { ExtensionDoc } from "./builtin-extension.ts";
 import { branchOf, changesOf, checkoutAt, gitBase, worktreeExists, worktreeSettled } from "./checkout.ts";
 import { packagedVersion } from "./distribution.ts";
@@ -321,7 +322,38 @@ export interface GatewayOptions {
    * the host without hello.terminals; everything else keeps working.
    */
   readonly terminals?: StartTerminalsOptions;
+  /**
+   * Upgrades started from clients (ADR-0043). Absent (a source checkout,
+   * tests) → the `upgrade` stream reports `blocked: "source"` and the calls fail.
+   */
+  readonly upgrade?: UpgradeService;
 }
+
+/** The gateway's view of the host upgrader (`HostUpgrader`). */
+export interface UpgradeService extends HostValue<HostUpgrade> {
+  /** Calls that start agent work are refused while set. */
+  readonly installing: boolean;
+  start(when: UpgradeWhen): Promise<void>;
+  cancel(): void;
+  check(): Promise<void>;
+  /** A submission or terminal output, which auto mode counts as activity. */
+  touch(): void;
+}
+
+/** Calls refused with `HOST_UPGRADING_ERROR` while an upgrade installs (ADR-0043 §3). */
+const AGENT_WORK_CALLS: ReadonlySet<CallMethod> = new Set(["submit", "createConversation", "runCommand", "compact", "answer"]);
+
+const NO_UPGRADES: HostValue<HostUpgrade> = constantValue<HostUpgrade>({
+  current: packagedVersion ?? null,
+  available: null,
+  blocked: "source",
+  phase: "idle",
+  target: null,
+  checking: false,
+  checkedAt: null,
+  checkError: null,
+  failure: null,
+});
 
 export interface Gateway {
   readonly url: string;
@@ -392,7 +424,13 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   let rtc: RtcHost | undefined;
   const rtcHello = (): RtcHello | undefined => rtc?.hello();
   // Loaded before any socket registers, so the first hello already knows.
-  const terminals = await startTerminals(options.terminals);
+  const terminals = await startTerminals({
+    ...options.terminals,
+    onOutput: () => {
+      options.terminals?.onOutput?.();
+      options.upgrade?.touch();
+    },
+  });
   const broadcast = (level: Notice["level"], message: string): void => {
     for (const client of clients) client.send({ type: "notice", level, message });
   };
@@ -1901,6 +1939,12 @@ class GatewayClient {
     return modelAuth;
   }
 
+  #upgrades(): UpgradeService {
+    const upgrade = this.#options.upgrade;
+    if (upgrade === undefined) throw new Error("This host can't upgrade itself (source)");
+    return upgrade;
+  }
+
   readonly #hostValues: { [K in HostStreamName]?: HostValue<HostStreamValues[K]> };
   readonly #subscriptions = new Map<StreamName, SubscriptionState>();
   /** This connection's last reported size per terminal: its input brings the pty to it. */
@@ -1921,6 +1965,7 @@ class GatewayClient {
       providers: options.modelAuth?.providers ?? constantValue<HostProviders>({ providers: [], logins: [] }),
       settings: options.settings,
       agents: options.agents ?? constantValue<AgentRoles>({ roles: [], problems: [] }),
+      upgrade: options.upgrade ?? NO_UPGRADES,
     };
     this.#hooks = hooks;
     this.devicePublicKey = hooks.devicePublicKey;
@@ -2260,6 +2305,10 @@ class GatewayClient {
   }
 
   async #call(method: CallMethod, args: CallMethods[CallMethod]["args"]): Promise<unknown> {
+    if (AGENT_WORK_CALLS.has(method)) {
+      if (this.#options.upgrade?.installing === true) throw new Error(HOST_UPGRADING_ERROR);
+      this.#options.upgrade?.touch();
+    }
     switch (method) {
       // No await before the pty sees the input: calls are handled
       // concurrently, and keystrokes must reach it in the order they came.
@@ -2477,6 +2526,15 @@ class GatewayClient {
         await this.#options.settings.update((args as CallMethods["updateSettings"]["args"]).patch);
         return null;
       }
+      case "startUpgrade":
+        await this.#upgrades().start((args as CallMethods["startUpgrade"]["args"]).when);
+        return null;
+      case "cancelUpgrade":
+        this.#upgrades().cancel();
+        return null;
+      case "checkUpgrade":
+        await this.#upgrades().check();
+        return null;
       case "createAgent": {
         const store = this.#options.agents;
         if (store === undefined) throw new Error("Named agents are not available on this host");

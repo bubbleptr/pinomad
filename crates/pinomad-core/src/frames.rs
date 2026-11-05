@@ -19,7 +19,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 29 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 30 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -55,6 +55,7 @@ pub const HOST_STREAMS: &[(&str, u32)] = &[
     ("settings", 2),
     ("agents", 6),
     ("providers", 21),
+    ("upgrade", 30),
 ];
 
 /// The host streams a host of the given minor version knows, in declaration
@@ -125,6 +126,9 @@ pub enum CallMethod {
     RenameTerminal,
     RestartTerminal,
     CloseTerminal,
+    StartUpgrade,
+    CancelUpgrade,
+    CheckUpgrade,
 }
 
 impl CallMethod {
@@ -181,6 +185,9 @@ impl CallMethod {
             "renameTerminal" => Self::RenameTerminal,
             "restartTerminal" => Self::RestartTerminal,
             "closeTerminal" => Self::CloseTerminal,
+            "startUpgrade" => Self::StartUpgrade,
+            "cancelUpgrade" => Self::CancelUpgrade,
+            "checkUpgrade" => Self::CheckUpgrade,
             _ => return None,
         })
     }
@@ -232,6 +239,7 @@ impl CallMethod {
             | Self::CloseTerminal => 27,
             Self::EarlierEntries => 28,
             Self::ReorderQueued => 29,
+            Self::StartUpgrade | Self::CancelUpgrade | Self::CheckUpgrade => 30,
         }
     }
 }
@@ -265,6 +273,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
         HostFeature::SubmitEntry => 25,
         HostFeature::Terminals => 27,
         HostFeature::TranscriptPaging => 28,
+        HostFeature::AutoUpgrade => 30,
     };
     host_minor >= since
 }
@@ -311,6 +320,9 @@ pub enum HostFeature {
     /// A conversation subscribe's `window` and the `earlierEntries` call
     /// (28): the first snapshot holds only the newest turns.
     TranscriptPaging,
+    /// `updateSettings`'s `autoUpgrade` key next to the `upgrade` stream and
+    /// its calls (30, ADR-0043) — an older host 4400s the key.
+    AutoUpgrade,
 }
 
 

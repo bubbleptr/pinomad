@@ -128,6 +128,7 @@ fn feature_of(name: &str) -> HostFeature {
         "submitEntry" => HostFeature::SubmitEntry,
         "terminals" => HostFeature::Terminals,
         "transcriptPaging" => HostFeature::TranscriptPaging,
+        "autoUpgrade" => HostFeature::AutoUpgrade,
         other => panic!("unknown feature {other}"),
     }
 }

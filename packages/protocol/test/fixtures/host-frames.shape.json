@@ -467,6 +467,7 @@
     "settings": {
       "value": {
         "acceptAccountDevices": "boolean",
+        "autoUpgrade": "string",
         "custom": [],
         "defaultModel": {
           "modelId": "string",
@@ -536,6 +537,20 @@
         "=d",
         "=s"
       ]
+    },
+    "upgrade": {
+      "value": {
+        "available": "null",
+        "blocked": "string",
+        "checkedAt": "null",
+        "checkError": "null",
+        "checking": "boolean",
+        "current": "null",
+        "failure": "null",
+        "phase": "string",
+        "target": "null"
+      },
+      "ops": []
     }
   }
 }

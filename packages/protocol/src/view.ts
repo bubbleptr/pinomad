@@ -15,6 +15,7 @@ import type { PresentationType, QuestionAnswer } from "./presentation.ts";
 import type { HostSettings, HostSettingsPatch } from "./settings.ts";
 import type { ImageResult, ImageVariant, OutgoingImage, ViewImage } from "./images.ts";
 import type { UserAttachment } from "./attachments.ts";
+import type { HostUpgrade, UpgradeWhen } from "./upgrade.ts";
 
 /** A model's thinking level, "off" included. pi-ai's `ModelThinkingLevel`, re-exported for browser clients. */
 export type ThinkingLevel = ModelThinkingLevel;
@@ -201,6 +202,8 @@ export interface DurableView {
   readonly settings: HostSettings | null;
   /** Named agents on the host (ADR-0023); `null` before its snapshot or when the host predates the `agents` stream (5.6). */
   readonly agents: AgentRoles | null;
+  /** Release checks and the upgrade in progress (ADR-0043); `null` before its snapshot or when the host predates the `upgrade` stream (5.30). */
+  readonly upgrade: HostUpgrade | null;
   /** What the host announced in its hello; `version` is absent when the host runs from a source checkout. */
   readonly host?: { readonly version?: string; readonly protocol: ProtocolVersion };
 }
@@ -441,6 +444,16 @@ export interface DurableController {
   }): Promise<readonly string[]>;
   /** Patch the host's settings; each `null` resets that key to the pi/built-in fallback. Needs a 5.2 host. */
   updateSettings(patch: HostSettingsPatch): Promise<void>;
+  /**
+   * Start upgrading the host (ADR-0043): `idle` waits for running tasks,
+   * `now` stops taking work at once. Resolves once it started — progress is
+   * `upgrade` — and rejects with the host's reason. Needs a 5.30 host.
+   */
+  startUpgrade(when: UpgradeWhen): Promise<void>;
+  /** End a `waiting` upgrade. Needs a 5.30 host. */
+  cancelUpgrade(): Promise<void>;
+  /** Ask the host to check npm now; rejects while `autoUpgrade` is `off`. Needs a 5.30 host. */
+  checkUpgrade(): Promise<void>;
   /** Create a named agent on the host; rejects when `<name>.md` already exists. Needs a 5.6 host. */
   createAgent(role: AgentRole): Promise<void>;
   /** Overwrite an existing named agent — also the way a broken file gets fixed. Renaming is create + delete. Needs a 5.6 host. */

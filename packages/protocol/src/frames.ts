@@ -8,6 +8,7 @@ import type { HostDevices } from "./devices.ts";
 import type { McpStatus } from "./mcp.ts";
 import type { RtcAnswer, RtcHello, RtcOfferArgs } from "./rtc.ts";
 import type { TerminalId, TerminalsHello } from "./terminals.ts";
+import { isAutoUpgradeMode, type HostUpgrade, type UpgradeWhen } from "./upgrade.ts";
 import type { TranscriptPage, TranscriptWindow } from "./transcript.ts";
 import type { CommandListing } from "./commands.ts";
 import type { FileListing, FileScope, FolderListing, Home, HostIndex, Project, SkillListing, SkillScope } from "./organization.ts";
@@ -43,12 +44,14 @@ export interface HostStreamValues {
   settings: HostSettings;
   /** Named agents (ADR-0023): `roles` and the `problems` of files that didn't parse. */
   agents: AgentRoles;
+  /** Release checks and the upgrade in progress (5.30, ADR-0043). */
+  upgrade: HostUpgrade;
 }
 
 export type HostStreamName = keyof HostStreamValues;
 
 /** Minor version that introduced each host stream (ADR-0018 §2); every client subscribes to the ones its host's minor covers. */
-export const HOST_STREAMS = { conversations: 0, index: 0, devices: 0, mcp: 0, models: 1, auth: 1, settings: 2, agents: 6, providers: 21 } satisfies Record<
+export const HOST_STREAMS = { conversations: 0, index: 0, devices: 0, mcp: 0, models: 1, auth: 1, settings: 2, agents: 6, providers: 21, upgrade: 30 } satisfies Record<
   HostStreamName,
   number
 >;
@@ -101,7 +104,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 29 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 30 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -403,6 +406,16 @@ export interface CallMethods {
   restartTerminal: { args: { terminalId: TerminalId; cols: number; rows: number }; result: null };
   /** Ends the process and removes the tab. */
   closeTerminal: { args: { terminalId: TerminalId }; result: null };
+  /**
+   * Host upgrades (5.30, ADR-0043). Refused while the `upgrade` stream's
+   * `blocked` is set; progress arrives on that stream, and on success the
+   * host exits and its service manager starts the new release.
+   */
+  startUpgrade: { args: { when: UpgradeWhen }; result: null };
+  /** Ends a `waiting` upgrade; installing cannot be cancelled. */
+  cancelUpgrade: { args: Record<string, never>; result: null };
+  /** Checks npm now; refused while `autoUpgrade` is `off`. */
+  checkUpgrade: { args: Record<string, never>; result: null };
 }
 
 /** APNs device-token registration (ADR-0025 §7, protocol 5.9). */
@@ -477,6 +490,9 @@ export const CALL_SINCE: Record<CallMethod, number> = {
   renameTerminal: 27,
   restartTerminal: 27,
   closeTerminal: 27,
+  startUpgrade: 30,
+  cancelUpgrade: 30,
+  checkUpgrade: 30,
 };
 
 /** Whether a host of the given minor version knows `method`. */
@@ -513,6 +529,8 @@ export const FEATURE_SINCE = {
   terminals: 27,
   /** A conversation subscribe's `window` and the `earlierEntries` call (28). */
   transcriptPaging: 28,
+  /** The `autoUpgrade` setting next to the `upgrade` stream and its calls (30, ADR-0043); an older host 4400s the key. */
+  autoUpgrade: 30,
 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
@@ -699,6 +717,7 @@ const SETTING_VALIDATORS: Record<HostSettingKey, (value: unknown) => boolean> = 
   rtcStun: (value) => value === null || (Array.isArray(value) && value.every(nonempty)),
   // Shape only — the host re-checks content anyway (cleanHostName).
   hostName: (value) => value === null || typeof value === "string",
+  autoUpgrade: (value) => value === null || isAutoUpgradeMode(value),
 };
 
 function validCallArgs(method: CallMethod, args: Record<string, unknown>): boolean {
@@ -860,7 +879,11 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
     case "renameConversation":
       return conversationId() && typeof args.title === "string";
     case "createPairing":
+    case "cancelUpgrade":
+    case "checkUpgrade":
       return Object.keys(args).length === 0;
+    case "startUpgrade":
+      return args.when === "idle" || args.when === "now";
     case "rtcOffer":
       // Shape only — SDP validity and candidate filtering are the host's
       // answerer (ADR-0033 §4), and an unusable offer is an `ok:false`.

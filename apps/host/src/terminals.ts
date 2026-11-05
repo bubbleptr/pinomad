@@ -58,6 +58,8 @@ export interface TerminalsOptions {
   readonly flushMs?: number;
   /** The largest piece of output one frame carries. */
   readonly maxChunk?: number;
+  /** Any pty printed something; auto-upgrade counts it as activity (ADR-0043 §6). */
+  readonly onOutput?: () => void;
 }
 
 export const TERMINAL_LIMIT = 8;
@@ -269,6 +271,7 @@ export class Terminals {
     terminal.pty = pty;
     pty.onData((data) => {
       if (terminal.generation !== generation) return;
+      this.#options.onOutput?.();
       terminal.pending += data;
       if (terminal.pending.length >= (this.#options.maxChunk ?? MAX_CHUNK)) this.#flush(terminal);
       else terminal.flushTimer ??= setTimeout(() => this.#flush(terminal), this.#options.flushMs ?? FLUSH_MS);

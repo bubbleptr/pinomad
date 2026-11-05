@@ -15,6 +15,7 @@ const SNAPSHOTS: Record<string, unknown> = {
   providers: { providers: [], logins: [] },
   settings: { defaultModel: null, defaultThinkingLevel: null, steeringMode: "one-at-a-time", followUpMode: "one-at-a-time", custom: [] },
   agents: { roles: [], problems: [] },
+  upgrade: { current: null, available: null, blocked: "source", phase: "idle", target: null, checking: false, checkedAt: null, checkError: null, failure: null },
 };
 
 interface Fake {

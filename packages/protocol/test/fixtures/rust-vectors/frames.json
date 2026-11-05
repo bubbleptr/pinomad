@@ -1,12 +1,12 @@
 {
   "protocol": {
     "major": 5,
-    "minor": 29
+    "minor": 30
   },
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":29},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":30},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -16,17 +16,17 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":29},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":30},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
       "expect": "hello"
     },
     {
       "name": "signalHello",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":29},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":30},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
       "expect": "signalHello"
     },
     {
       "name": "signalHello-no-rtc",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":29}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":30}}",
       "expect": "signalHello"
     },
     {
@@ -296,8 +296,16 @@
         "since": 21
       },
       {
+        "name": "cancelUpgrade",
+        "since": 30
+      },
+      {
         "name": "changes",
         "since": 0
+      },
+      {
+        "name": "checkUpgrade",
+        "since": 30
       },
       {
         "name": "closeTerminal",
@@ -428,6 +436,10 @@
         "since": 0
       },
       {
+        "name": "startUpgrade",
+        "since": 30
+      },
+      {
         "name": "steerQueued",
         "since": 14
       },
@@ -492,6 +504,10 @@
       {
         "name": "settings",
         "since": 2
+      },
+      {
+        "name": "upgrade",
+        "since": 30
       }
     ],
     "feature": [
@@ -510,6 +526,10 @@
       {
         "name": "attachments",
         "since": 19
+      },
+      {
+        "name": "autoUpgrade",
+        "since": 30
       },
       {
         "name": "boundSkills",
@@ -639,10 +659,34 @@
       "expect": false
     },
     {
+      "name": "cancelUpgrade@30",
+      "minor": 30,
+      "call": "cancelUpgrade",
+      "expect": true
+    },
+    {
+      "name": "cancelUpgrade@29",
+      "minor": 29,
+      "call": "cancelUpgrade",
+      "expect": false
+    },
+    {
       "name": "changes@0",
       "minor": 0,
       "call": "changes",
       "expect": true
+    },
+    {
+      "name": "checkUpgrade@30",
+      "minor": 30,
+      "call": "checkUpgrade",
+      "expect": true
+    },
+    {
+      "name": "checkUpgrade@29",
+      "minor": 29,
+      "call": "checkUpgrade",
+      "expect": false
     },
     {
       "name": "closeTerminal@27",
@@ -981,6 +1025,18 @@
       "expect": true
     },
     {
+      "name": "startUpgrade@30",
+      "minor": 30,
+      "call": "startUpgrade",
+      "expect": true
+    },
+    {
+      "name": "startUpgrade@29",
+      "minor": 29,
+      "call": "startUpgrade",
+      "expect": false
+    },
+    {
       "name": "steerQueued@14",
       "minor": 14,
       "call": "steerQueued",
@@ -1104,6 +1160,18 @@
       "name": "attachments@18",
       "minor": 18,
       "feature": "attachments",
+      "expect": false
+    },
+    {
+      "name": "autoUpgrade@30",
+      "minor": 30,
+      "feature": "autoUpgrade",
+      "expect": true
+    },
+    {
+      "name": "autoUpgrade@29",
+      "minor": 29,
+      "feature": "autoUpgrade",
       "expect": false
     },
     {

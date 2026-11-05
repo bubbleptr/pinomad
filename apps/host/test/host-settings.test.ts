@@ -45,6 +45,7 @@ describe("openHostSettings", () => {
       acceptAccountDevices: true,
       rtcStun: RTC_DEFAULT_STUN,
       hostName: normalizeHostName(hostname()),
+      autoUpgrade: "notify",
       custom: [],
     });
     await expect(readFile(path, "utf8")).rejects.toThrow();
