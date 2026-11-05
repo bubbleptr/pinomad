@@ -911,6 +911,8 @@ it("renders todo and a pending question card on every page and shares one answer
   // Both pages converge on the stored answer; the turn continues.
   await expect.poll(() => b.getByTestId("pending-questions").count()).toBe(0);
   await a.getByText("all answered", { exact: true }).waitFor();
+  // The run is over, so the list it left unfinished leaves with it.
+  await expect.poll(() => a.locator('[data-slot="todo-card"]').count()).toBe(0);
 });
 
 it("renders a document that fails its presentation schema as key-value fallback", async () => {
