@@ -270,6 +270,55 @@ export async function openModelAuth(
     return next;
   };
 
+  // Hosts before #444 saved custom models as bare ids, which pi reads as a
+  // 128k window and so compacts long before the model has to. Fill in the
+  // limits the endpoint reports, in the background; an unreachable endpoint
+  // keeps its entries as they are. Reasoning and image input stay for an
+  // explicit re-save: turning reasoning on starts sending the thinking level
+  // on every turn, which changes how the model runs, not just when it compacts.
+  // The requests run outside `serial`, so a slow endpoint never holds up a
+  // save or removal; only the merge queues, against the file as it is then.
+  const opened = await readModelsFile(options.modelsPath);
+  void Promise.all(
+    [...custom].flatMap(([id, endpoint]) => {
+      const entries = opened.providers[id]?.models;
+      if (!Array.isArray(entries) || !entries.some(lacksLimits)) return [];
+      return [
+        (async () => {
+          const key = (await runtime.getAuth(id))?.auth.apiKey;
+          const listed = await fetchEndpointModels(endpoint.api, endpoint.baseUrl, key).catch(() => []);
+          return { id, endpoint, listed: new Map(listed.map((model) => [model.id, model])) };
+        })(),
+      ];
+    }),
+  ).then((answers) =>
+    serial(async () => {
+      if (closed) return;
+      const filled = new Set<string>();
+      const fill = (target: ModelsFile): void => {
+        for (const { id, endpoint, listed } of answers) {
+          const entry = target.providers[id];
+          // Removed or pointed elsewhere while we asked: the answer is stale.
+          if (entry?.api !== endpoint.api || entry.baseUrl !== endpoint.baseUrl || !Array.isArray(entry.models)) continue;
+          for (const model of entry.models as Record<string, unknown>[]) {
+            const limits = listed.get(model.id as string);
+            // A limit already in the file, by hand or by an earlier save, stays.
+            for (const field of LIMITS) {
+              if (field in model || limits?.[field] === undefined) continue;
+              model[field] = limits[field];
+              filled.add(id);
+            }
+          }
+        }
+      };
+      fill(await readModelsFile(options.modelsPath));
+      if (filled.size === 0) return;
+      await updateModelsFile(fill);
+      await runtime.refresh({ providers: [...filled], allowNetwork: false });
+      await republish();
+    }),
+  );
+
   return {
     models,
     auth,
@@ -520,6 +569,12 @@ type Listed = Record<string, unknown> & { readonly modalities?: { readonly input
 
 /** A `models.json` model entry: the id, plus what the endpoint reported where pi would otherwise default. */
 type EndpointModel = { readonly id: string } & Record<string, unknown>;
+
+/** The limits a bare model id leaves to pi's defaults. */
+const LIMITS = ["contextWindow", "maxTokens"] as const;
+
+const lacksLimits = (model: unknown): boolean =>
+  typeof model === "object" && model !== null && LIMITS.some((field) => !(field in model));
 
 /** pi rejects a non-positive `contextWindow` or `maxTokens`, and a rejected entry fails the whole save. */
 const positive = (value: unknown): number | undefined =>
