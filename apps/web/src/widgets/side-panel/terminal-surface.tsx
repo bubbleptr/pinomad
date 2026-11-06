@@ -6,7 +6,6 @@
 // remembers each owner's last tab in memory.
 import { Button } from "@astryxdesign/core/Button";
 import { ContextMenu, type ContextMenuOption } from "@astryxdesign/core/ContextMenu";
-import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { VStack } from "@astryxdesign/core/Layout";
 import { Tab, TabList, TabMenu } from "@astryxdesign/core/TabList";
@@ -227,12 +226,10 @@ export function TerminalSurface({
           <Message>{state.reason}</Message>
         ) : selected === undefined ? (
           <div className="flex flex-1 items-center justify-center p-6">
-            <EmptyState
-              icon={<TerminalIllustration />}
-              title="No terminals yet"
-              description="Run commands in this conversation's folder."
-              actions={<Button label="New terminal" variant="secondary" isDisabled={!live} onClick={openTerminal} />}
-            />
+            <VStack gap={5} hAlign="center">
+              <TerminalIllustration />
+              <Button label="New terminal" variant="secondary" isDisabled={!live} onClick={openTerminal} />
+            </VStack>
           </div>
         ) : (
           <>
