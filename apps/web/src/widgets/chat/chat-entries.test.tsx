@@ -309,7 +309,7 @@ describe("a run in the transcript", () => {
     const rows = [...container.querySelectorAll('[data-slot="chat-trace-trigger"]')];
     expect(rows.map((row) => row.getAttribute("aria-expanded"))).toEqual(["false", "false"]);
     expect(rows[0]).toHaveTextContent(/^Ran 2 commands$/);
-    expect(rows[1]).toHaveTextContent(/^Running bash… · 5\.\ds$/);
+    expect(rows[1]).toHaveTextContent(/^Running bash… · 5s$/);
     expect(container.querySelector('[role="status"]')).toBeNull();
 
     // Opened and shut again mid-run; settling must not unfold it.
@@ -325,7 +325,7 @@ describe("a run in the transcript", () => {
 
     const rows = container.querySelectorAll('[data-slot="chat-trace"]');
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toHaveTextContent(/^Thinking… · 1\.\ds$/);
+    expect(rows[0]).toHaveTextContent(/^Thinking… · 1s$/);
   });
 
   // Prose is never the live end of a run: a bare row follows it and takes
@@ -336,7 +336,7 @@ describe("a run in the transcript", () => {
     );
 
     const rows = [...container.querySelectorAll('[data-slot="chat-trace"] > :first-child')];
-    expect(rows.map((row) => row.textContent?.replace(/\d+\.\ds/, "Ns"))).toEqual(["Ran 2 commands", "Thinking… · Ns"]);
+    expect(rows.map((row) => row.textContent?.replace(/\d+s/, "Ns"))).toEqual(["Ran 2 commands", "Thinking… · Ns"]);
     expect(container.querySelectorAll('[data-slot="chat-trace-clock"]')).toHaveLength(1);
   });
 

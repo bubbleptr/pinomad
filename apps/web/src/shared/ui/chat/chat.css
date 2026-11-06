@@ -3,28 +3,33 @@
 
 /* —— TextShimmer —— */
 
+/* One unhurried sweep, then a rest: 1.4s across the text and 1.6s still,
+   every 3s. A back-to-back sweep under a second kept the row in constant
+   motion. The 150% → -50% travel starts and ends the highlight just off the
+   text's edges, so the sweep is all visible and the rest is all still. */
 .text-shimmer {
   display: inline-block;
   background: linear-gradient(
     100deg,
-    var(--color-text-secondary) 40%,
+    var(--color-text-secondary) 44%,
     var(--color-text-primary) 50%,
-    var(--color-text-secondary) 60%
+    var(--color-text-secondary) 56%
   );
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   color: transparent;
-  animation: chat-text-shimmer var(--duration-slow-max) linear infinite;
+  animation: chat-text-shimmer 3s cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
 
 @keyframes chat-text-shimmer {
-  from {
-    background-position: 200% 0;
+  0% {
+    background-position: 150% 0;
   }
-  to {
-    background-position: -200% 0;
+  46.67%,
+  100% {
+    background-position: -50% 0;
   }
 }
 
@@ -471,6 +476,59 @@ mark.chat-skill-mention {
 /* The live clock: tabular figures so the row does not jitter as it ticks. */
 .chat-trace [data-slot="chat-trace-clock"] {
   font-variant-numeric: tabular-nums;
+}
+
+/* Each figure that changes rolls up into its slot as the old one leaves
+   upward, at the page-turn pace (ADR-0030 §8). The slot clips both. */
+.chat-clock__slot {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+}
+
+.chat-clock-digit {
+  display: block;
+}
+
+/* Gone once it has rolled out, but still in the DOM until the next tick:
+   keep it out of a copied selection. */
+.chat-clock-digit[data-out] {
+  position: absolute;
+  inset: 0;
+  user-select: none;
+}
+
+.chat-clock-digit[data-in] {
+  animation: chat-clock-in var(--cot-flip-duration, 300ms) var(--ease-standard) both;
+}
+
+.chat-clock-digit[data-out] {
+  animation: chat-clock-out var(--cot-flip-duration, 300ms) var(--ease-standard) both;
+}
+
+@keyframes chat-clock-in {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+@keyframes chat-clock-out {
+  to {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-clock-digit[data-in] {
+    animation: none;
+  }
+
+  .chat-clock-digit[data-out] {
+    display: none;
+  }
 }
 
 /* Every row is one line, so spacing-3 between them would read as unrelated
