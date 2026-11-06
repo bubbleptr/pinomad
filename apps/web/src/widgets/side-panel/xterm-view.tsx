@@ -71,10 +71,10 @@ function themeFor(element: HTMLElement): ITheme {
   const foreground = resolveColor(element, "var(--foreground)");
   return {
     ...(matchMedia(DARK).matches ? ANSI_DARK : ANSI_LIGHT),
-    background: resolveColor(element, "var(--background)"),
+    background: resolveColor(element, "var(--surface)"),
     foreground,
     cursor: foreground,
-    cursorAccent: resolveColor(element, "var(--background)"),
+    cursorAccent: resolveColor(element, "var(--surface)"),
     selectionBackground: resolveColor(element, "var(--color-overlay-pressed)"),
   };
 }
