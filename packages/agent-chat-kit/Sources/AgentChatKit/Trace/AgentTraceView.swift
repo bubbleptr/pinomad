@@ -49,18 +49,16 @@ public struct AgentTraceView: View {
                                 .font(.subheadline.weight(.medium))
                                 .lineLimit(1)
                                 .truncationMode(.tail)
-                                .shimmering(label.isLive)
+                                .shimmering(label.isLive, relativeTo: .subheadline)
                         }
                     }
                     // The clock and counts stay outside the pager: they
                     // change every second, the label only with the work.
-                    if let detail = TraceText.detail(capsule.summary, isWorking: isWorking) {
-                        Text(detail)
-                            .font(.subheadline)
-                            .monospacedDigit()
-                            .foregroundStyle(.tertiary)
-                            .fixedSize()
-                    }
+                    TraceDetail(summary: capsule.summary, isWorking: isWorking)
+                        .font(.subheadline)
+                        .monospacedDigit()
+                        .foregroundStyle(.tertiary)
+                        .fixedSize()
                     Image(Icon.chevronRight)
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.tertiary)
@@ -80,6 +78,41 @@ public struct AgentTraceView: View {
         case .running(let running): TraceText.running(running)
         case .thinking: String(localized: "Thinking", bundle: .module)
         case .finished(let headline): TraceText.headline(headline)
+        }
+    }
+}
+
+/// The clock, and once done the number of tools. Each of the clock's
+/// fields rolls on its own: a changed digit comes up from below as the old
+/// one leaves upward, and the rest hold still, units included, so 1m 9s to
+/// 1m 10s moves only the seconds. A once-a-second tick reads calmer as a
+/// 480ms roll than as a snap. VoiceOver reads the plain text.
+private struct TraceDetail: View {
+    let summary: TraceSummary
+    let isWorking: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        if let detail = TraceText.detail(summary, isWorking: isWorking) {
+            HStack(spacing: 0) {
+                if let elapsed = summary.elapsed {
+                    let fields = TraceSummary.clockFields(elapsed)
+                    // Keyed by place from the right, so the seconds stay the
+                    // seconds when a minutes field appears in front of them.
+                    ForEach((0..<fields.count).reversed(), id: \.self) { place in
+                        let field = fields[fields.count - 1 - place]
+                        Text(field)
+                            .contentTransition(reduceMotion ? .identity : .numericText(countsDown: false))
+                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.48), value: field)
+                    }
+                }
+                if let tools = TraceText.toolCount(summary, isWorking: isWorking) {
+                    Text(summary.elapsed == nil ? tools : " · " + tools)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(detail)
         }
     }
 }
@@ -198,13 +231,11 @@ private struct TraceSheetHeader: View {
                     // A concrete colour, not `.primary`: a hierarchical style
                     // resolves against the shimmer's gradient and would take it on.
                     .foregroundStyle(summary.headline == .failed ? AnyShapeStyle(.red) : AnyShapeStyle(Color.primary))
-                    .shimmering(isWorking)
-                if let detail = TraceText.detail(summary, isWorking: isWorking) {
-                    Text(detail)
-                        .font(.subheadline)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                }
+                    .shimmering(isWorking, relativeTo: .headline)
+                TraceDetail(summary: summary, isWorking: isWorking)
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -238,14 +269,14 @@ enum TraceText {
 
     /// The clock, and once done the number of tools.
     static func detail(_ summary: TraceSummary, isWorking: Bool) -> String? {
-        var parts: [String] = []
-        if let elapsed = summary.elapsed {
-            parts.append(elapsed.formatted(.units(allowed: [.hours, .minutes, .seconds], width: .narrow)))
-        }
-        if !isWorking, summary.toolCount > 0 {
-            parts.append(String(localized: "\(summary.toolCount) tools", bundle: .module))
-        }
+        let parts = [summary.elapsed.map { TraceSummary.clockText($0) }, toolCount(summary, isWorking: isWorking)]
+            .compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    static func toolCount(_ summary: TraceSummary, isWorking: Bool) -> String? {
+        guard !isWorking, summary.toolCount > 0 else { return nil }
+        return String(localized: "\(summary.toolCount) tools", bundle: .module)
     }
 
     static func running(_ running: ToolSummary.Running) -> String {
@@ -479,7 +510,7 @@ private struct ToolBatchRow: View {
         case .running(let running):
             Text(TraceText.running(running))
                 .font(.callout)
-                .shimmering(true)
+                .shimmering(true, relativeTo: .callout)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
