@@ -39,15 +39,76 @@ export function formatElapsed(ms: number | undefined) {
   return `${hours}h ${minutes}m ${seconds}s`;
 }
 
-/** The running clock: tenths while it moves, so it visibly ticks. */
+/**
+ * The running clock in whole seconds, rounded down like a stopwatch so a
+ * second turns over only once it has fully passed. Tenths kept the row in
+ * constant motion beside the shimmer.
+ */
 export function formatLiveElapsed(ms: number) {
-  const total = Math.max(0, ms) / 1000;
+  const total = Math.floor(Math.max(0, ms) / 1000);
 
   if (total < 60) {
-    return `${total.toFixed(1)}s`;
+    return `${total}s`;
   }
 
-  return `${Math.floor(total / 60)}m ${(total % 60).toFixed(1)}s`;
+  return `${Math.floor(total / 60)}m ${total % 60}s`;
+}
+
+/** "1m 9s" as its fields, each keyed by its unit: [["m", "1"], ["s", "9"]]. */
+function clockFields(text: string) {
+  return [...text.matchAll(/(\d+)([a-z]+)/g)].map(([, digits, unit]) => [unit!, digits!] as const);
+}
+
+/**
+ * The clock's figures, each changed one rolling up from below as the old one
+ * leaves upward. Minutes and seconds line up as separate fields, each by its
+ * digits from the right, so 9s → 10s rolls the ones and brings the tens in
+ * fresh while the minutes and the unit letters hold still. The leaving glyphs
+ * are decoration: the name is the label, and they stay only until the next
+ * change (jsdom never fires animationend, and the roll's fill keeps them out
+ * of sight meanwhile).
+ */
+function RollingFigures({ text }: { text: string }) {
+  const [shown, setShown] = useState<{ text: string; prev?: string }>({ text });
+
+  if (shown.text !== text) {
+    setShown({ text, prev: shown.text });
+  }
+
+  const prev = shown.prev === undefined ? undefined : new Map(clockFields(shown.prev));
+
+  return (
+    <span aria-label={text} role="img" className="chat-clock">
+      {clockFields(text).map(([unit, digits], field) => {
+        const before = prev?.get(unit) ?? "";
+
+        return (
+          <span key={unit} aria-hidden="true">
+            {field > 0 ? " " : null}
+            {[...digits].map((digit, index) => {
+              const place = digits.length - index;
+              const old = before[before.length - place];
+              const changed = prev !== undefined && old !== digit;
+
+              return (
+                <span key={place} className="chat-clock__slot">
+                  {changed && old !== undefined ? (
+                    <span key={`out:${text}`} className="chat-clock-digit" data-out="">
+                      {old}
+                    </span>
+                  ) : null}
+                  <span key={changed ? `in:${text}` : "still"} className="chat-clock-digit" data-in={changed ? "" : undefined}>
+                    {digit}
+                  </span>
+                </span>
+              );
+            })}
+            {unit}
+          </span>
+        );
+      })}
+    </span>
+  );
 }
 
 /**
@@ -127,7 +188,7 @@ function TraceClock({ startedAtMs, running }: RunClock) {
     <>
       {" "}
       <span className="chat-step__meta" data-slot="chat-trace-clock">
-        · {formatLiveElapsed(now - startedAtMs)}
+        · <RollingFigures text={formatLiveElapsed(now - startedAtMs)} />
       </span>
     </>
   );

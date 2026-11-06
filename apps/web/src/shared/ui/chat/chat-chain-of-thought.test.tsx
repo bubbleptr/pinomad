@@ -52,12 +52,14 @@ describe("formatElapsed", () => {
 });
 
 describe("formatLiveElapsed", () => {
-  it("keeps sub-minute times to one decimal", () => {
-    expect(formatLiveElapsed(2500)).toBe("2.5s");
+  // A stopwatch: the second changes when it has fully elapsed, not halfway.
+  it("counts whole seconds, rounding down", () => {
+    expect(formatLiveElapsed(2_999)).toBe("2s");
+    expect(formatLiveElapsed(59_999)).toBe("59s");
   });
 
   it("splits minutes after 60 seconds", () => {
-    expect(formatLiveElapsed(61_200)).toBe("1m 1.2s");
+    expect(formatLiveElapsed(61_200)).toBe("1m 1s");
   });
 });
 
@@ -103,13 +105,65 @@ describe("ChatTraceRow clock", () => {
 
     render(<ChatTraceRow steps={[bash("input-available")]} counted={[]} live clock={{ startedAtMs: Date.now() - 2000, running: true }} />);
 
-    expect(screen.getByRole("button", { name: "Running bash… · 2.0s" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Running bash… · 2s" })).toBeInTheDocument();
 
     act(() => {
       vi.advanceTimersByTime(1200);
     });
 
-    expect(screen.getByRole("button", { name: "Running bash… · 3.2s" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Running bash… · 3s" })).toBeInTheDocument();
+  });
+
+  // Each changed digit rolls up while the old one leaves; the leaving digit
+  // is decoration and must never reach the row's name.
+  it("rolls only the digits that changed and keeps the name to the current time", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-04T04:00:00.000Z"));
+
+    const { container } = render(
+      <ChatTraceRow steps={[bash("input-available")]} counted={[]} live clock={{ startedAtMs: Date.now() - 19_000, running: true }} />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    const clock = container.querySelector('[data-slot="chat-trace-clock"]');
+    expect(screen.getByRole("button", { name: "Running bash… · 20s" })).toBeInTheDocument();
+    expect([...clock!.querySelectorAll("[data-in]")].map((digit) => digit.textContent)).toEqual(["2", "0"]);
+    expect([...clock!.querySelectorAll("[data-out]")].map((digit) => digit.textContent)).toEqual(["1", "9"]);
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    expect(screen.getByRole("button", { name: "Running bash… · 21s" })).toBeInTheDocument();
+    expect([...clock!.querySelectorAll("[data-in]")].map((digit) => digit.textContent)).toEqual(["1"]);
+    expect([...clock!.querySelectorAll("[data-out]")].map((digit) => digit.textContent)).toEqual(["0"]);
+  });
+
+  // Minutes and seconds line up as fields, not as one string: a field that
+  // grows a digit must not shift the units or the other field into a roll.
+  it.each([
+    { fromMs: 59_000, name: "1m 0s", rolledIn: ["1", "0"], rolledOut: ["9"] },
+    { fromMs: 69_000, name: "1m 10s", rolledIn: ["1", "0"], rolledOut: ["9"] },
+    { fromMs: 119_000, name: "2m 0s", rolledIn: ["2", "0"], rolledOut: ["1", "9"] },
+  ])("rolls only changed digits into $name", ({ fromMs, name, rolledIn, rolledOut }) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-04T04:00:00.000Z"));
+
+    const { container } = render(
+      <ChatTraceRow steps={[bash("input-available")]} counted={[]} live clock={{ startedAtMs: Date.now() - fromMs, running: true }} />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    const clock = container.querySelector('[data-slot="chat-trace-clock"]');
+    expect(screen.getByRole("button", { name: `Running bash… · ${name}` })).toBeInTheDocument();
+    expect([...clock!.querySelectorAll("[data-in]")].map((digit) => digit.textContent)).toEqual(rolledIn);
+    expect([...clock!.querySelectorAll("[data-out]")].map((digit) => digit.textContent)).toEqual(rolledOut);
   });
 
   // The answer's first token ends the wait: the clock stops there while the
@@ -128,7 +182,7 @@ describe("ChatTraceRow clock", () => {
       vi.advanceTimersByTime(5000);
     });
 
-    expect(screen.getByRole("button", { name: /· 3\.0s$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /· 3s$/ })).toBeInTheDocument();
   });
 
   // Opened mid-answer, the page never saw the first token arrive; counting
@@ -136,12 +190,12 @@ describe("ChatTraceRow clock", () => {
   it("claims no number when it first sees the run already answering", () => {
     render(<ChatTraceRow steps={[bash("output-available")]} counted={[]} clock={{ startedAtMs: Date.now() - 2000, running: false }} />);
 
-    expect(screen.getByRole("button")).not.toHaveTextContent(/\d\.\ds/);
+    expect(screen.getByRole("button")).not.toHaveTextContent(/\ds/);
   });
 
   // Replay fixtures and retry gaps carry no anchor; a clock started at mount
   // would pass the time since the page opened off as the run's wait, and a
-  // frozen "0.0s" would claim the run just started (ADR-0030 §6).
+  // frozen "0s" would claim the run just started (ADR-0030 §6).
   it("shows no clock at all when the anchor is missing", () => {
     vi.useFakeTimers();
 
@@ -155,10 +209,12 @@ describe("ChatTraceRow clock", () => {
   });
 
   it("stands alone, with nothing to open, before the run has a step", () => {
-    render(<ChatTraceRow steps={[]} counted={[]} live waiting="Thinking…" clock={{ startedAtMs: Date.now() - 1000, running: true }} />);
+    const { container } = render(
+      <ChatTraceRow steps={[]} counted={[]} live waiting="Thinking…" clock={{ startedAtMs: Date.now() - 1000, running: true }} />,
+    );
 
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
-    expect(screen.getByText(/^· 1\.\ds$/)).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="chat-trace-clock"]')).toHaveTextContent(/^· 1s$/);
     expect(screen.getByText("Thinking…")).toBeInTheDocument();
   });
 
