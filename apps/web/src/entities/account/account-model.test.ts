@@ -1279,11 +1279,18 @@ describe("removing a host from the account (#512)", () => {
     const calls: { url: string; init: AccountFetchInit | undefined }[] = [];
     let accountHosts = listed.map((hostId) => accountHost("A".repeat(43), hostId));
     let listFails = false;
+    let holdNext: ((release: () => void) => void) | undefined;
     const impl: AccountFetch = (url, init) => {
       calls.push({ url, init });
       if (url.endsWith("/api/me")) return Promise.resolve(answer(200, USER));
       if (url.endsWith("/api/hosts")) {
-        return listFails ? Promise.reject(new Error("offline")) : Promise.resolve(answer(200, accountHosts));
+        if (listFails) return Promise.reject(new Error("offline"));
+        // The list as it was when the request reached the server.
+        const rows = accountHosts;
+        const hold = holdNext;
+        holdNext = undefined;
+        if (hold === undefined) return Promise.resolve(answer(200, rows));
+        return new Promise((resolve) => hold(() => resolve(answer(200, rows))));
       }
       const [, hostId, action] = /\/api\/hosts\/([^/]+)\/(pairing|remove)$/.exec(url) ?? [];
       if (action === "pairing") {
@@ -1322,7 +1329,9 @@ describe("removing a host from the account (#512)", () => {
     const failList = () => {
       listFails = true;
     };
-    return { ...setup, removed, hostLists, listedIds, relist, delist, failList };
+    /** Holds the next host list's answer until the returned release runs. */
+    const holdList = (): Promise<() => void> => new Promise((held) => (holdNext = held));
+    return { ...setup, removed, hostLists, listedIds, relist, delist, failList, holdList };
   };
 
   const vouched = (hostId: string) => storedHost({ account: { serverOrigin: ORIGIN, hostId, vouched: true } });
@@ -1575,6 +1584,21 @@ describe("removing a host from the account (#512)", () => {
       expect((await setup.model.refreshHosts()).ok).toBe(false);
       expect(setup.removed).toEqual([]);
       expect(setup.store.stored).toEqual([mine]);
+    });
+
+    it("a slow refresh answered before the host joined doesn't forget its new pairing", async () => {
+      const setup = await signedInWith([], () => answer(204), [], { autoRegister: true });
+      const held = setup.holdList();
+      const slow = setup.model.refreshHosts();
+      const release = await held;
+      setup.relist();
+      expect((await setup.model.refreshHosts()).ok).toBe(true);
+      await vi.waitFor(() => expect(setup.store.stored).toHaveLength(1));
+
+      release();
+      expect((await slow).ok).toBe(true);
+      expect(setup.removed).toEqual([]);
+      expect(setup.store.stored).toHaveLength(1);
     });
 
     it("discards a pairing that finishes after the refresh saw the host gone", async () => {

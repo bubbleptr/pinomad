@@ -275,6 +275,8 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
    * back, since the removal's forget may have run first.
    */
   const removals = new Map<string, number>();
+  /** Counts refresh() calls, so a slower, older list can tell it was overtaken. */
+  let refreshes = 0;
   const removedSince = (slot: string, seen: number | undefined): boolean => removals.get(slot) !== seen;
   /** watchForHost's live watch per hostId, with its pending refresh between ticks. */
   const hostWatches = new Map<string, { readonly watch: object; readonly timer?: ReturnType<typeof setTimeout> }>();
@@ -562,6 +564,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   };
 
   const refresh = async (active: AccountClient, user: string): Promise<AccountResult<readonly AccountHostMatch[]>> => {
+    const started = (refreshes += 1);
     const rows = await active.listHosts();
     // A slow response may land after logout or a newer login swapped the
     // client — publishing it would resurrect a dead session.
@@ -620,7 +623,11 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     setState(signedInState(active, user, matches));
     watchVisibility();
     void autoRegisterRound(active, user, matches, storedRead);
-    for (const hostId of delisted) await forgetRemovedHost(active.origin, hostId);
+    // Only the newest refresh may forget: an older list answered before a host
+    // joined would drop the pairing a newer refresh just saved.
+    if (started === refreshes) {
+      for (const hostId of delisted) await forgetRemovedHost(active.origin, hostId);
+    }
     return { ok: true, value: matches };
   };
 
