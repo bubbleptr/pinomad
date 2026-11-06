@@ -1,0 +1,62 @@
+---
+title: 升级宿主
+description: 从任一客户端或用 pinomad upgrade 升级、自动升级，以及退回旧版本。
+---
+
+宿主自己升级自己，可以从客户端发起，也可以在宿主的终端里发起。两种方式都是宿主装好新版本后退出，几秒后由服务重新拉起，各台设备自动重连。
+
+## 从客户端升级
+
+打开设置，选中宿主，进入 **Upgrade**。Web、Mac 和 iPhone 上都有。页面上显示宿主正在跑的版本，以及有没有更新的版本。点 **Upgrade…**，然后：
+
+- **Upgrade when idle**：等正在跑的任务结束再升级，等待期间可以取消。
+- **Upgrade now**：打断正在跑的任务，重启后它们会接着跑。
+
+开始安装后，宿主在回来之前不接收新消息（提示"The host is upgrading"）；重启时打开着的终端会关掉。安装失败时宿主继续跑旧版本，页面上显示 npm 的报错。
+
+只有宿主是从 npm 装的（安装脚本就是这样装的）、并且作为服务在运行时，才能从客户端升级。其他情况页面上会改成显示要在宿主上执行的命令：
+
+| 页面上的提示 | 在宿主上执行 |
+|---|---|
+| This host runs from a source checkout | `bun run upgrade` |
+| This host isn't running as a service | `pinomad upgrade` |
+| This host's service is stopped | `pinomad upgrade`；服务保持关闭，直到 `pinomad service start` |
+
+## 自动升级
+
+同一页的 **Automatic upgrades** 有三档：
+
+| 档位 | 宿主做什么 |
+|---|---|
+| Off | 从不检查新版本 |
+| Notify（默认） | 启动时和之后每 6 小时检查一次，在客户端上提示新版本 |
+| When idle | 还会自己装新版本 |
+
+选 **When idle** 时，下面几条都满足宿主才会自己装：
+
+- 新版本发布满 3 天；
+- 还没更新的 App 仍然连得上它（页面上会注明哪个版本会改变这一点，这种版本要手动升级）；
+- 最近 15 分钟里没有任务在跑、没有发消息，也没有终端在输出；
+- 这个版本之前没有装失败过。
+
+旧 App 连不上的版本也会显示为可用。先用手上的 App 把宿主升上去，再更新 App，就不会被关在外面。
+
+## 在宿主的终端里升级
+
+```sh
+pinomad upgrade           # 等正在跑的任务结束，安装，重启
+pinomad upgrade --force   # 不等
+```
+
+服务在运行时，`pinomad upgrade` 让宿主自己升级并打印进度，等待期间按 Ctrl-C 取消。宿主没在运行或者不响应时，`pinomad upgrade` 自己装 `pinomad@latest` 并重启服务。这样升级不会更新安装脚本带的 Node，要更新 Node 就再跑一次脚本。服务的细节见[常驻运行](/zh/docs/service/)。
+
+## 退回旧版本
+
+新版本起不来时，在宿主上装回原来的版本，再重启服务。用安装脚本装的：
+
+```sh
+curl -fsSL https://pinomad.si/install.sh | PINOMAD_VERSION=0.13.0 sh   # 原来的版本
+pinomad service restart
+```
+
+用 npm 装的，用同一个 Node 跑 `npm i -g pinomad@0.13.0`，再 `pinomad service restart`。所有版本见 [GitHub](https://github.com/bubbleptr/pinomad/releases)。自动升级是 When idle 时，宿主之后还会再装上那个新版本；修好的版本出来之前，先改成 Notify 或 Off。

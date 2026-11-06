@@ -56,10 +56,10 @@ Mac App 里登录后，**Set up this Mac**（在添加第一台宿主的页面�
 
 ```sh
 pinomad status      # 加入的账号、局域网端口、服务状态、宿主是否在线
-pinomad upgrade     # 装上 pinomad@latest，等正在跑的任务结束后重启
+pinomad upgrade     # 等正在跑的任务结束，装上新版本，重启
 ```
 
-`pinomad upgrade` 只升级 pinomad；再跑一次安装脚本会连它自带的 Node 一起更新。服务参数、日志和各平台的注意事项见[常驻运行](/zh/docs/service/)。
+也可以在任一客户端的设置 → 宿主 → Upgrade 里升级，或者让宿主空闲时自己升级，见[升级宿主](/zh/docs/upgrade/)。`pinomad upgrade` 只升级 pinomad；再跑一次安装脚本会连它自带的 Node 一起更新。服务参数、日志和各平台的注意事项见[常驻运行](/zh/docs/service/)。
 
 卸载：先 `pinomad service uninstall`，再删掉 `~/.pinomad/runtime`、`~/.local/bin/pinomad`，以及 shell 配置文件里以 `# added by https://pinomad.si/install.sh` 结尾的那一行。`~/.pinomad` 里其余的数据会留着，要删自己删。
 

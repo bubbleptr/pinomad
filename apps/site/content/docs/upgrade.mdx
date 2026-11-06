@@ -1,0 +1,62 @@
+---
+title: Upgrading the host
+description: Upgrade from any client or with pinomad upgrade, automatic upgrades, and going back to an older release.
+---
+
+The host upgrades itself. You can start it from a client or from the host's terminal. Either way the host installs the new release, quits, and the service starts it again a few seconds later. Every device reconnects on its own.
+
+## From a client
+
+Open Settings, pick the host, then **Upgrade**. This works on the web, Mac and iPhone apps. The page shows the release the host runs and whether a newer one is out. Choose **Upgrade…**, then:
+
+- **Upgrade when idle** waits for running tasks to finish. While it waits you can cancel.
+- **Upgrade now** interrupts running tasks; they continue after the restart.
+
+Once the install starts, the host turns away new messages until it's back ("The host is upgrading"). Open terminals close when it restarts. If the install fails, the host keeps running the old release and the page shows npm's error.
+
+A client can only start an upgrade when the host was installed from npm (the install script does that) and runs as a service. Otherwise the page shows the command to run on the host instead:
+
+| The page says | Run on the host |
+|---|---|
+| This host runs from a source checkout | `bun run upgrade` |
+| This host isn't running as a service | `pinomad upgrade` |
+| This host's service is stopped | `pinomad upgrade`; the service stays off until `pinomad service start` |
+
+## Automatic upgrades
+
+**Automatic upgrades** on the same page has three settings:
+
+| Setting | What the host does |
+|---|---|
+| Off | Never checks for new releases |
+| Notify (default) | Checks on start and every 6 hours, and shows new releases in the clients |
+| When idle | Also installs a new release on its own |
+
+With **When idle**, the host installs a release only when all of these hold:
+
+- the release is at least 3 days old;
+- apps that haven't updated yet can still connect to it (the page says when a release changes this; those you upgrade by hand);
+- for the last 15 minutes nothing ran, nothing was sent, and no terminal printed anything;
+- installing that release hasn't failed before.
+
+A release older apps can't connect to still shows as available. Upgrade the host from the app you have before you update the app, so you aren't locked out of it.
+
+## From the host's terminal
+
+```sh
+pinomad upgrade           # wait for running tasks, install, restart
+pinomad upgrade --force   # don't wait
+```
+
+When the service is running, `pinomad upgrade` asks the host to upgrade itself and prints its progress; Ctrl-C while it waits cancels. When the host isn't running or doesn't answer, `pinomad upgrade` installs `pinomad@latest` itself and restarts the service. Upgrading this way never updates the Node the install script brought; run the script again for that. Service details: [Running as a service](/zh/docs/service/) (Chinese).
+
+## Going back to an older release
+
+If the new release won't start, install the one you had on the host and restart the service. Installed with the install script:
+
+```sh
+curl -fsSL https://pinomad.si/install.sh | PINOMAD_VERSION=0.13.0 sh   # the release you were on
+pinomad service restart
+```
+
+Installed with npm, run `npm i -g pinomad@0.13.0` with the same Node, then `pinomad service restart`. Releases are listed on [GitHub](https://github.com/bubbleptr/pinomad/releases). With Automatic upgrades on When idle, the host would install the newer release again later; set it to Notify or Off until a fixed release is out.

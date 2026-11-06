@@ -56,10 +56,10 @@ The iPhone app can notify you when a conversation is waiting for your answer, fi
 
 ```sh
 pinomad status      # the account, LAN port, service, and whether the host answers
-pinomad upgrade     # install pinomad@latest, wait for running tasks, restart
+pinomad upgrade     # wait for running tasks, install the new release, restart
 ```
 
-`pinomad upgrade` updates pinomad only; running the install script again updates its Node too. Service flags, logs and platform caveats: [Running as a service](/zh/docs/service/) (Chinese).
+You can also upgrade from any client, under Settings → the host → Upgrade, and let the host upgrade itself when idle: [Upgrading the host](/docs/upgrade/). `pinomad upgrade` updates pinomad only; running the install script again updates its Node too. Service flags, logs and platform caveats: [Running as a service](/zh/docs/service/) (Chinese).
 
 To uninstall, run `pinomad service uninstall`, then delete `~/.pinomad/runtime`, `~/.local/bin/pinomad`, and the line in your shell profile that ends in `# added by https://pinomad.si/install.sh`. Your data in the rest of `~/.pinomad` stays until you delete it.
 
