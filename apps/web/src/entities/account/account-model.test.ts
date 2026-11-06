@@ -391,7 +391,7 @@ describe("account model", () => {
       { status: 200, body: { user: { username: "admin" } } },
       { status: 200, body: [accountHost("other-key", "h1")] },
       { status: 200, body: offer }, // POST /api/hosts/h1/pairing
-      { status: 200, body: [] }, // refresh after pairing
+      { status: 200, body: [accountHost("other-key", "h1")] }, // refresh after pairing
     ), store });
     await vi.waitFor(() => expect(setup.model.state.status).toBe("signed-in"));
     const result = await setup.model.pairHost("h1");
@@ -1125,7 +1125,8 @@ describe("signing out of a shared computer (#494)", () => {
       calls.push({ url, init });
       if (url.endsWith("/api/me")) return Promise.resolve((probed += 1) <= 2 ? answer(401) : answer(200, USER));
       if (url.endsWith("/api/login")) return Promise.resolve(answer(200, USER));
-      if (url.endsWith("/api/hosts")) return Promise.resolve(answer(200, []));
+      // The account still has the host its vouched pairings came from.
+      if (url.endsWith("/api/hosts")) return Promise.resolve(answer(200, [accountHost("A".repeat(43), "h1")]));
       if (url.endsWith("/api/hosts/h1/pairing")) return Promise.resolve(answer(200, pairingOffer));
       if (url.endsWith("/api/logout")) return logout();
       return Promise.resolve(answer(404, { error: "not_found" }));
@@ -1278,11 +1279,18 @@ describe("removing a host from the account (#512)", () => {
     const calls: { url: string; init: AccountFetchInit | undefined }[] = [];
     let accountHosts = listed.map((hostId) => accountHost("A".repeat(43), hostId));
     let listFails = false;
+    let holdNext: ((release: () => void) => void) | undefined;
     const impl: AccountFetch = (url, init) => {
       calls.push({ url, init });
       if (url.endsWith("/api/me")) return Promise.resolve(answer(200, USER));
       if (url.endsWith("/api/hosts")) {
-        return listFails ? Promise.reject(new Error("offline")) : Promise.resolve(answer(200, accountHosts));
+        if (listFails) return Promise.reject(new Error("offline"));
+        // The list as it was when the request reached the server.
+        const rows = accountHosts;
+        const hold = holdNext;
+        holdNext = undefined;
+        if (hold === undefined) return Promise.resolve(answer(200, rows));
+        return new Promise((resolve) => hold(() => resolve(answer(200, rows))));
       }
       const [, hostId, action] = /\/api\/hosts\/([^/]+)\/(pairing|remove)$/.exec(url) ?? [];
       if (action === "pairing") {
@@ -1314,7 +1322,16 @@ describe("removing a host from the account (#512)", () => {
     const relist = () => {
       accountHosts = [accountHost("A".repeat(43), "h1")];
     };
-    return { ...setup, removed, hostLists, listedIds, relist };
+    /** Another device removes `hostId`: the server just stops listing it. */
+    const delist = (hostId: string) => {
+      accountHosts = accountHosts.filter((row) => row.hostId !== hostId);
+    };
+    const failList = () => {
+      listFails = true;
+    };
+    /** Holds the next host list's answer until the returned release runs. */
+    const holdList = (): Promise<() => void> => new Promise((held) => (holdNext = held));
+    return { ...setup, removed, hostLists, listedIds, relist, delist, failList, holdList };
   };
 
   const vouched = (hostId: string) => storedHost({ account: { serverOrigin: ORIGIN, hostId, vouched: true } });
@@ -1542,6 +1559,67 @@ describe("removing a host from the account (#512)", () => {
 
       expect((await setup.model.pairHost("h1")).ok).toBe(true);
       expect(setup.paired).toHaveLength(1);
+    });
+  });
+
+  describe("a host removed from another device", () => {
+    it("forgets the account's key for it on the next refresh; QR pairings and other hosts stay", async () => {
+      const mine = vouched("h1");
+      const qr = adopted("h1");
+      const other = vouched("h2");
+      const setup = await signedInWith([mine, qr, other], () => answer(204), ["h1", "h2"]);
+      setup.delist("h1");
+
+      expect((await setup.model.refreshHosts()).ok).toBe(true);
+      await vi.waitFor(() => expect(setup.removed).toEqual([mine.hostKey]));
+      expect(setup.store.stored).toEqual([qr, other]);
+      expect(setup.listedIds()).toEqual(["h2"]);
+    });
+
+    it("forgets nothing when the list can't be read", async () => {
+      const mine = vouched("h1");
+      const setup = await signedInWith([mine], () => answer(204));
+      setup.failList();
+
+      expect((await setup.model.refreshHosts()).ok).toBe(false);
+      expect(setup.removed).toEqual([]);
+      expect(setup.store.stored).toEqual([mine]);
+    });
+
+    it("a slow refresh answered before the host joined doesn't forget its new pairing", async () => {
+      const setup = await signedInWith([], () => answer(204), [], { autoRegister: true });
+      const held = setup.holdList();
+      const slow = setup.model.refreshHosts();
+      const release = await held;
+      setup.relist();
+      expect((await setup.model.refreshHosts()).ok).toBe(true);
+      await vi.waitFor(() => expect(setup.store.stored).toHaveLength(1));
+
+      release();
+      expect((await slow).ok).toBe(true);
+      expect(setup.removed).toEqual([]);
+      expect(setup.store.stored).toHaveLength(1);
+    });
+
+    it("discards a pairing that finishes after the refresh saw the host gone", async () => {
+      let finish!: () => void;
+      let markStarted!: () => void;
+      const started = new Promise<void>((resolve) => (markStarted = resolve));
+      const handshake = new Promise<void>((resolve) => (finish = resolve));
+      const setup = await signedInWith([], () => answer(204), ["h1"], {
+        connect: () => {
+          markStarted();
+          return handshake;
+        },
+      });
+      const pairing = setup.model.pairHost("h1");
+      await started;
+      setup.delist("h1");
+      expect((await setup.model.refreshHosts()).ok).toBe(true);
+
+      finish();
+      expect(await pairing).toEqual({ ok: false, error: { code: "host_removed" } });
+      expect(setup.store.stored).toEqual([]);
     });
   });
 
