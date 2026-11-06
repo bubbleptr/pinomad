@@ -4378,3 +4378,52 @@ it("restores a queued message's bound skill on Edit", async () => {
   await expect.poll(() => paintedSkills(composer)).toEqual(["6:$review"]);
   gate.resolve();
 });
+
+it("upgrades the host from Settings: waits for a run, cancels, then restarts (ADR-0043)", async () => {
+  const webOrigin = await startWeb(defer);
+  const gate = deferred();
+  defer(gate.resolve);
+  let opened: OpenedHost | undefined;
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    answers: [gatedAnswer(gate.promise), "done"],
+    upgrade: {
+      current: "0.13.0",
+      blocked: async () => null,
+      latest: async () => ({ version: "0.14.0", publishedAt: Date.now() - 4 * 86_400_000, protocolMajor: 5 }),
+      install: async () => ({ ok: true }),
+      // The faux host can't exit for a service manager: closing it is the restart.
+      restart: () => void opened?.close(),
+      every: () => () => {},
+    },
+  });
+  opened = host;
+  const observer = await connectTo(defer, host);
+  const page = await openPage(host, 1280, webOrigin);
+  const composer = prompt(page);
+  await composer.fill("go");
+  await composer.press("Enter");
+  await followFirst(observer);
+  await page.getByRole("button", { name: /stop/i, exact: true }).waitFor();
+
+  const dialog = await openSettings(page, "Upgrade");
+  await dialog.getByText("pinomad 0.14.0 is available", { exact: false }).waitFor();
+  await dialog.getByRole("button", { name: "Upgrade…" }).click();
+  await shot(page, "host-upgrade-confirm");
+  await dialog.getByRole("button", { name: "Upgrade when idle" }).click();
+  await dialog.getByText("once running tasks finish", { exact: false }).waitFor();
+  await dialog.getByRole("button", { name: "Cancel upgrade" }).click();
+  await dialog.getByRole("button", { name: "Upgrade…" }).waitFor();
+
+  // Started again, the wait ends with the run; the install closes the host.
+  await dialog.getByRole("button", { name: "Upgrade…" }).click();
+  await dialog.getByRole("button", { name: "Upgrade when idle" }).click();
+  await dialog.getByText("once running tasks finish", { exact: false }).waitFor();
+  gate.resolve();
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await page.getByText("Host is restarting").waitFor();
+  // The client's connection-failure notice is the expected restart: no error toast.
+  await page.waitForTimeout(1500);
+  expect(await page.getByText("Could not connect to the host", { exact: false }).count()).toBe(0);
+  await shot(page, "host-upgrade-restarting");
+});

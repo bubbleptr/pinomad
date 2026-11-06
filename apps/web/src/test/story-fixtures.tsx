@@ -15,6 +15,7 @@ import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { organize, type ConversationNode, type HostIndex, type Project } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable, RemoteTerminals, TerminalOutputSink, TerminalsState } from "@pinomad/protocol/remote-durable.ts";
 import type { TerminalInfo, TerminalList } from "@pinomad/protocol/terminals.ts";
+import type { HostUpgrade } from "@pinomad/protocol/upgrade.ts";
 import type { ConversationSummary, DurableController, DurableView, ModelSummary } from "@pinomad/protocol/view.ts";
 import { AccountContext } from "../entities/account/account-context.tsx";
 import type { AccountModel, AccountState } from "../entities/account/account-model.ts";
@@ -480,6 +481,23 @@ const SELF_PUBLIC = toBase64Url(SELF.publicKey);
  * feature gate is open; pass `host: { protocol: { major: 5, minor: n } }` to
  * see an older host's fallback.
  */
+/** The `upgrade` stream of a packaged service host with nothing in progress (ADR-0043). */
+export function fakeUpgrade(overrides: Partial<HostUpgrade> = {}): HostUpgrade {
+  return {
+    current: "0.13.0",
+    available: { version: "0.14.0", publishedAt: now - 4 * 24 * 60 * 60 * 1000, crossesMajor: false },
+    blocked: null,
+    phase: "idle",
+    target: null,
+    attempt: 0,
+    checking: false,
+    checkedAt: now - 20 * 60 * 1000,
+    checkError: null,
+    failure: null,
+    ...overrides,
+  };
+}
+
 export function fakeView(overrides: Partial<DurableView> = {}): DurableView {
   const conversation = settledConversation();
   return {
@@ -541,6 +559,7 @@ export function fakeView(overrides: Partial<DurableView> = {}): DurableView {
       acceptAccountDevices: true,
       rtcStun: ["stun:stun.cloudflare.com:3478"],
       hostName: "kieran-mbp",
+      autoUpgrade: "notify",
       custom: ["defaultModel", "hostName"],
     },
     agents: {

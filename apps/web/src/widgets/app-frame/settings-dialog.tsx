@@ -26,10 +26,11 @@ import { familyUpdatedAt, relativeTime } from "@pinomad/client/family.ts";
 import { summaryOf, thinkingLevelLabels } from "@pinomad/client/model.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useNow } from "../../shared/use-now.ts";
-import { Archive, ArchiveRestore, ArrowLeft, Bot, Cancel, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, Laptop, MoreHorizontal, Puzzle, RefreshCw, Sparkles } from "../../shared/ui/icons.tsx";
+import { Archive, ArchiveRestore, ArrowBigUpDash, ArrowLeft, Bot, Cancel, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, Laptop, MoreHorizontal, Puzzle, RefreshCw, Sparkles } from "../../shared/ui/icons.tsx";
 import { AgentEditorDialog } from "./agent-editor-dialog.tsx";
 import type { FrameMachine } from "./app-frame.tsx";
 import { DevicesSection } from "./devices-section.tsx";
+import { HostUpgradeSection } from "./host-upgrade-section.tsx";
 import { HostsSection } from "./hosts.tsx";
 import { LocalHostSection } from "./local-host-section.tsx";
 import { ProvidersSection } from "./providers-section.tsx";
@@ -46,6 +47,7 @@ const SECTIONS = [
   { id: "chats", title: "Chats", icon: ChatBubble, group: "host" },
   { id: "devices", title: "Devices", icon: Devices, group: "host" },
   { id: "archived", title: "Archived", icon: Archive, group: "host" },
+  { id: "upgrade", title: "Upgrade", icon: ArrowBigUpDash, group: "host" },
   { id: "about", title: "About", icon: Info, group: "host" },
 ] as const;
 
@@ -385,6 +387,8 @@ function sectionBody(
         ),
         body: <ArchivedSection view={view} remote={remote} connected={connected} />,
       };
+    case "upgrade":
+      return { title: "Upgrade", body: <HostUpgradeSection view={view} remote={remote} /> };
     case "about":
       return { title: "About", body: <AboutSection view={view} remote={remote} connected={connected} /> };
   }

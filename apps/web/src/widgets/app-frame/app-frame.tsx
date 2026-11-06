@@ -222,6 +222,7 @@ export function AppFrame({
               machineKey={machine.key}
               source={machines.length > 1 ? machine.label : undefined}
               notices={machine.view.notices}
+              restarting={machine.view.connection === "reconnecting" && machine.view.upgrade?.phase === "installing"}
             />
           ),
         )}
@@ -335,11 +336,18 @@ function NoticeToasts({
   machineKey,
   source,
   notices,
+  restarting,
 }: {
   machineKey: string;
   /** Named in the toast when several machines could have sent it. */
   source: string | undefined;
   notices: readonly Notice[];
+  /**
+   * The host exited to finish an upgrade (ADR-0043): the client's "could not
+   * connect" notice is the expected restart, which the connection banner
+   * already explains, so it stays out of the toasts.
+   */
+  restarting: boolean;
 }) {
   const toast = useToast();
   // Notices already present at mount are history the dock shows; only toast
@@ -353,6 +361,7 @@ function NoticeToasts({
     }
     for (const notice of notices) {
       if (notice.id <= seenRef.current) continue;
+      if (restarting && notice.level === "error") continue;
       toast({
         body: source === undefined ? notice.message : `${source}: ${notice.message}`,
         type: notice.level === "error" ? "error" : "info",
@@ -361,6 +370,6 @@ function NoticeToasts({
       });
     }
     if (latest !== undefined) seenRef.current = latest;
-  }, [machineKey, notices, source, toast]);
+  }, [machineKey, notices, source, toast, restarting]);
   return null;
 }

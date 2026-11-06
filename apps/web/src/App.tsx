@@ -1544,6 +1544,17 @@ function ConnectionBanner({
       <VersionMismatch wsUrl={wsUrl} mismatch={view.protocolMismatch} {...(hostKey === undefined ? {} : { hostKey })} />
     );
   }
+  // The host exits once an upgrade installs (ADR-0043): this drop is the restart.
+  if (view.connection === "reconnecting" && view.upgrade?.phase === "installing") {
+    return (
+      <Banner
+        status="info"
+        container="section"
+        title="Host is restarting"
+        description={`Upgrading to pinomad ${view.upgrade.target ?? ""}. Reconnecting when it's back…`}
+      />
+    );
+  }
   if (view.connection === "reconnecting") {
     return (
       <Banner
