@@ -110,7 +110,11 @@ import Testing
         }
         #expect(clock(2.999) == "2s")
         #expect(clock(59.999) == "59s")
+        #expect(clock(60) == "1m 0s")
         #expect(clock(61.2) == "1m 1s")
+        #expect(clock(3_600) == "1h 0m 0s")
+        #expect(TraceSummary.clockFields(.seconds(70), locale: english) == ["1m ", "10s"])
+        #expect(TraceSummary.clockFields(.seconds(70), locale: Locale(identifier: "zh_Hans")) == ["1分钟", "10秒"])
         #expect(clock(70) == "1m 10s")
     }
 }

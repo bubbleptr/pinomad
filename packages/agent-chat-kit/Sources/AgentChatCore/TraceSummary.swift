@@ -60,10 +60,33 @@ extension AgentTrace {
 }
 
 extension TraceSummary {
-    /// The clock as it reads after a label: "2s", "1m 3s", "1h 2m 3s" in
-    /// English. Units the duration doesn't reach are left out, so the fields
-    /// line up from the right as it grows.
+    /// The clock as it reads after a label: "2s", "1m 0s", "1h 2m 3s" in
+    /// English. It starts at the largest unit the duration reaches and shows
+    /// every smaller one, zeros included, so the fields keep their places
+    /// as it ticks.
     public static func clockText(_ elapsed: Duration, locale: Locale = .autoupdatingCurrent) -> String {
-        elapsed.formatted(.units(allowed: [.hours, .minutes, .seconds], width: .narrow).locale(locale))
+        clockFields(elapsed, locale: locale).joined()
+    }
+
+    /// The clock's fields, largest unit first, each carrying the separator
+    /// that follows it: ["1m ", "0s"] in English, ["1分钟", "0秒"] in Chinese.
+    /// A live clock rolls each field on its own, so a unit appearing at 60s
+    /// doesn't shift the seconds' letters into the roll.
+    public static func clockFields(_ elapsed: Duration, locale: Locale = .autoupdatingCurrent) -> [String] {
+        let total = max(0, elapsed.components.seconds)
+        // Each field's own seconds, so formatting it in its one unit reads whole.
+        let parts: [(Int64, Duration.UnitsFormatStyle.Unit)] = total >= 3_600
+            ? [(total / 3_600 * 3_600, .hours), (total % 3_600 / 60 * 60, .minutes), (total % 60, .seconds)]
+            : total >= 60 ? [(total / 60 * 60, .minutes), (total % 60, .seconds)] : [(total, .seconds)]
+        let style = { (unit: Duration.UnitsFormatStyle.Unit) in
+            Duration.UnitsFormatStyle(allowedUnits: [unit], width: .narrow, zeroValueUnits: .show(length: 1)).locale(locale)
+        }
+        let fields = parts.map { Duration.seconds($0.0).formatted(style($0.1)) }
+        // Whether the locale spaces its fields ("1m 0s") or runs them together ("1分钟0秒").
+        let whole = Duration.seconds(total).formatted(
+            Duration.UnitsFormatStyle(allowedUnits: Set(parts.map(\.1)), width: .narrow, zeroValueUnits: .show(length: 1)).locale(locale)
+        )
+        let separator = whole == fields.joined() ? "" : " "
+        return fields.enumerated().map { $0.offset < fields.count - 1 ? $0.element + separator : $0.element }
     }
 }

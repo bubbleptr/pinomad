@@ -54,14 +54,11 @@ public struct AgentTraceView: View {
                     }
                     // The clock and counts stay outside the pager: they
                     // change every second, the label only with the work.
-                    if let detail = TraceText.detail(capsule.summary, isWorking: isWorking) {
-                        Text(detail)
-                            .font(.subheadline)
-                            .monospacedDigit()
-                            .foregroundStyle(.tertiary)
-                            .fixedSize()
-                            .rollingDigits(detail)
-                    }
+                    TraceDetail(summary: capsule.summary, isWorking: isWorking)
+                        .font(.subheadline)
+                        .monospacedDigit()
+                        .foregroundStyle(.tertiary)
+                        .fixedSize()
                     Image(Icon.chevronRight)
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.tertiary)
@@ -85,23 +82,38 @@ public struct AgentTraceView: View {
     }
 }
 
-extension View {
-    /// Each digit of `text` that changes rolls up from below as the old one
-    /// leaves upward; the digits that stay hold still. A once-a-second tick
-    /// reads calmer as a 480ms roll than as a snap. Reduced motion swaps them.
-    func rollingDigits(_ text: String) -> some View {
-        modifier(RollingDigits(text: text))
-    }
-}
+/// The clock, and once done the number of tools. Each of the clock's
+/// fields rolls on its own: a changed digit comes up from below as the old
+/// one leaves upward, and the rest hold still, units included, so 1m 9s to
+/// 1m 10s moves only the seconds. A once-a-second tick reads calmer as a
+/// 480ms roll than as a snap. VoiceOver reads the plain text.
+private struct TraceDetail: View {
+    let summary: TraceSummary
+    let isWorking: Bool
 
-private struct RollingDigits: ViewModifier {
-    let text: String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    func body(content: Content) -> some View {
-        content
-            .contentTransition(reduceMotion ? .identity : .numericText(countsDown: false))
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.48), value: text)
+    var body: some View {
+        if let detail = TraceText.detail(summary, isWorking: isWorking) {
+            HStack(spacing: 0) {
+                if let elapsed = summary.elapsed {
+                    let fields = TraceSummary.clockFields(elapsed)
+                    // Keyed by place from the right, so the seconds stay the
+                    // seconds when a minutes field appears in front of them.
+                    ForEach((0..<fields.count).reversed(), id: \.self) { place in
+                        let field = fields[fields.count - 1 - place]
+                        Text(field)
+                            .contentTransition(reduceMotion ? .identity : .numericText(countsDown: false))
+                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.48), value: field)
+                    }
+                }
+                if let tools = TraceText.toolCount(summary, isWorking: isWorking) {
+                    Text(summary.elapsed == nil ? tools : " · " + tools)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(detail)
+        }
     }
 }
 
@@ -220,13 +232,10 @@ private struct TraceSheetHeader: View {
                     // resolves against the shimmer's gradient and would take it on.
                     .foregroundStyle(summary.headline == .failed ? AnyShapeStyle(.red) : AnyShapeStyle(Color.primary))
                     .shimmering(isWorking, relativeTo: .headline)
-                if let detail = TraceText.detail(summary, isWorking: isWorking) {
-                    Text(detail)
-                        .font(.subheadline)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                        .rollingDigits(detail)
-                }
+                TraceDetail(summary: summary, isWorking: isWorking)
+                    .font(.subheadline)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -260,14 +269,14 @@ enum TraceText {
 
     /// The clock, and once done the number of tools.
     static func detail(_ summary: TraceSummary, isWorking: Bool) -> String? {
-        var parts: [String] = []
-        if let elapsed = summary.elapsed {
-            parts.append(TraceSummary.clockText(elapsed))
-        }
-        if !isWorking, summary.toolCount > 0 {
-            parts.append(String(localized: "\(summary.toolCount) tools", bundle: .module))
-        }
+        let parts = [summary.elapsed.map { TraceSummary.clockText($0) }, toolCount(summary, isWorking: isWorking)]
+            .compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    static func toolCount(_ summary: TraceSummary, isWorking: Bool) -> String? {
+        guard !isWorking, summary.toolCount > 0 else { return nil }
+        return String(localized: "\(summary.toolCount) tools", bundle: .module)
     }
 
     static func running(_ running: ToolSummary.Running) -> String {
