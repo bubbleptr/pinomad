@@ -99,4 +99,18 @@ import Testing
         #expect(trace.summary(at: start).headline == .failed)
         #expect(trace.summary(at: start).elapsed == nil)
     }
+    // A stopwatch: the second turns over once it has fully passed, and past
+    // a minute the clock splits into fields so only the changed digits roll.
+    @Test func theLiveClockReadsWholeSecondsAndSplitsMinutes() {
+        let trace = AgentTrace(phase: .acting, steps: [], startedAt: start)
+        let english = Locale(identifier: "en_US")
+        func clock(_ seconds: TimeInterval) -> String? {
+            trace.summary(at: start.addingTimeInterval(seconds)).elapsed
+                .map { TraceSummary.clockText($0, locale: english) }
+        }
+        #expect(clock(2.999) == "2s")
+        #expect(clock(59.999) == "59s")
+        #expect(clock(61.2) == "1m 1s")
+        #expect(clock(70) == "1m 10s")
+    }
 }

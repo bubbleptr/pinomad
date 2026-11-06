@@ -58,3 +58,12 @@ extension AgentTrace {
         )
     }
 }
+
+extension TraceSummary {
+    /// The clock as it reads after a label: "2s", "1m 3s", "1h 2m 3s" in
+    /// English. Units the duration doesn't reach are left out, so the fields
+    /// line up from the right as it grows.
+    public static func clockText(_ elapsed: Duration, locale: Locale = .autoupdatingCurrent) -> String {
+        elapsed.formatted(.units(allowed: [.hours, .minutes, .seconds], width: .narrow).locale(locale))
+    }
+}

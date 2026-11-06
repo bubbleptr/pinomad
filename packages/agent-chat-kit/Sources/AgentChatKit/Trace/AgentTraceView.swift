@@ -49,7 +49,7 @@ public struct AgentTraceView: View {
                                 .font(.subheadline.weight(.medium))
                                 .lineLimit(1)
                                 .truncationMode(.tail)
-                                .shimmering(label.isLive)
+                                .shimmering(label.isLive, relativeTo: .subheadline)
                         }
                     }
                     // The clock and counts stay outside the pager: they
@@ -60,6 +60,7 @@ public struct AgentTraceView: View {
                             .monospacedDigit()
                             .foregroundStyle(.tertiary)
                             .fixedSize()
+                            .rollingDigits(detail)
                     }
                     Image(Icon.chevronRight)
                         .font(.caption2.weight(.semibold))
@@ -81,6 +82,26 @@ public struct AgentTraceView: View {
         case .thinking: String(localized: "Thinking", bundle: .module)
         case .finished(let headline): TraceText.headline(headline)
         }
+    }
+}
+
+extension View {
+    /// Each digit of `text` that changes rolls up from below as the old one
+    /// leaves upward; the digits that stay hold still. A once-a-second tick
+    /// reads calmer as a 480ms roll than as a snap. Reduced motion swaps them.
+    func rollingDigits(_ text: String) -> some View {
+        modifier(RollingDigits(text: text))
+    }
+}
+
+private struct RollingDigits: ViewModifier {
+    let text: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .contentTransition(reduceMotion ? .identity : .numericText(countsDown: false))
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.48), value: text)
     }
 }
 
@@ -198,12 +219,13 @@ private struct TraceSheetHeader: View {
                     // A concrete colour, not `.primary`: a hierarchical style
                     // resolves against the shimmer's gradient and would take it on.
                     .foregroundStyle(summary.headline == .failed ? AnyShapeStyle(.red) : AnyShapeStyle(Color.primary))
-                    .shimmering(isWorking)
+                    .shimmering(isWorking, relativeTo: .headline)
                 if let detail = TraceText.detail(summary, isWorking: isWorking) {
                     Text(detail)
                         .font(.subheadline)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
+                        .rollingDigits(detail)
                 }
             }
         }
@@ -240,7 +262,7 @@ enum TraceText {
     static func detail(_ summary: TraceSummary, isWorking: Bool) -> String? {
         var parts: [String] = []
         if let elapsed = summary.elapsed {
-            parts.append(elapsed.formatted(.units(allowed: [.hours, .minutes, .seconds], width: .narrow)))
+            parts.append(TraceSummary.clockText(elapsed))
         }
         if !isWorking, summary.toolCount > 0 {
             parts.append(String(localized: "\(summary.toolCount) tools", bundle: .module))
@@ -479,7 +501,7 @@ private struct ToolBatchRow: View {
         case .running(let running):
             Text(TraceText.running(running))
                 .font(.callout)
-                .shimmering(true)
+                .shimmering(true, relativeTo: .callout)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
