@@ -29,6 +29,7 @@ import { SkillMentionText } from "../../entities/agent/skill-mentions.tsx";
 import { messageTime } from "./chat-time.ts";
 import { SubagentCards } from "./subagent-card.tsx";
 import { fillToolDetails } from "./tool-detail.tsx";
+import { HOST_UPGRADING_ERROR } from "@pinomad/protocol/upgrade.ts";
 
 /** The conversation's todo list and when any run last wrote it (`lastTodoWriteMs`). */
 type RunTodo = { state: TodoState; updatedAtMs?: number };
@@ -210,7 +211,7 @@ function UserEntry({
           )}
           {local?.error === undefined ? null : (
             <span className="chat-message__local-error" title={local.error}>
-              {local.error}
+              {local.error === HOST_UPGRADING_ERROR ? "The host is upgrading. Retry once it's back." : local.error}
             </span>
           )}
           {local === undefined || !canRetry || onRetrySubmission === undefined ? null : (
