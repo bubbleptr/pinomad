@@ -103,7 +103,7 @@ public enum Transcript {
                 skills: submission.skills,
                 attachments: attachmentDetails[submission.requestId] ?? [],
                 status: MessageStatus(submission.status),
-                error: submission.error
+                error: submission.error.map(hostRefusalText)
             ))
         }
         return rows

@@ -195,7 +195,7 @@ extension AppModel {
     /// The host's own words for a request-class rejection.
     func describe(_ error: Error) -> String {
         switch error {
-        case SessionError.operationFailed(let message): message
+        case SessionError.operationFailed(let message): hostRefusalText(message)
         case SessionError.connectionLost: "Connection lost"
         case SessionError.sessionClosed: "Connection closed"
         default: error.localizedDescription

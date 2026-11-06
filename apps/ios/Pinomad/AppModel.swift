@@ -115,7 +115,14 @@ final class AppModel {
     /// "Connecting…" in the bar of one machine's pages.
     func showsReconnecting(_ hostKey: String?) -> Bool {
         guard let hostKey, let runtime = runtimes[hostKey] else { return false }
-        return runtime.phase == .connected && runtime.showsReconnecting
+        return runtime.phase == .connected && (runtime.showsReconnecting || runtime.isRestarting)
+    }
+
+    /// The reconnect is the host restarting into an upgrade, which the user
+    /// asked for: the title says so at once instead of after the grace window.
+    func showsRestarting(_ hostKey: String?) -> Bool {
+        guard let hostKey, let runtime = runtimes[hostKey] else { return false }
+        return runtime.phase == .connected && runtime.isRestarting
     }
     /// NavigationStack path. The focus moves with it synchronously, so a
     /// page pushed for another machine never renders, or runs its onAppear,

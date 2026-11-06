@@ -246,6 +246,7 @@ struct MachineSettingsView: View {
                     hostNameSection(snapshot)
                 }
                 providersSection(snapshot.providers)
+                upgradeSection(snapshot.upgrade)
                 devicesSection(snapshot.devices)
                 if let settings = snapshot.settings, model.hostSupports(.acceptAccountDevices) {
                     accountDevicesSection(settings)
@@ -376,6 +377,27 @@ struct MachineSettingsView: View {
             }
         } footer: {
             Text("Subscriptions, API keys and custom endpoints this host reaches models through.")
+        }
+    }
+
+    /// The host's release and upgrading it from here (ADR-0043).
+    private func upgradeSection(_ upgrade: HostUpgradeState?) -> some View {
+        Section {
+            NavigationLink(value: Route.upgrade(hostKey)) {
+                LabeledContent {
+                    if let upgrade {
+                        if let available = upgrade.available, upgrade.phase == .idle {
+                            Text("\(available.version) available")
+                        } else if upgrade.phase != .idle {
+                            Text("Upgrading")
+                        } else {
+                            Text(upgrade.current ?? "Source")
+                        }
+                    }
+                } label: {
+                    Label("Upgrade", image: .arrowBigUpDash)
+                }
+            }
         }
     }
 

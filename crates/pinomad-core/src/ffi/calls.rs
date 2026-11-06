@@ -10,6 +10,7 @@ use crate::ffi::types::{ApnsPushToken, ImageVariant, MessageImage, ModelRef, Que
 use crate::ffi::providers::{ApiKeyChange, CustomProviderApi, CustomProviderInput, LoginMethod};
 use crate::ffi::ResultKind;
 use crate::json::{Json, JsonObject};
+use crate::ffi::upgrade::AutoUpgradeMode;
 use crate::remote_durable::{Call, UpgradeWhen};
 use crate::u16str::U16String;
 
@@ -305,6 +306,9 @@ pub enum FfiCall {
     /// Whether the joined server may vouch for new devices (ADR-0022 §6).
     /// Needs a 5.8 host — an older one lands a notice.
     SetAcceptAccountDevices { accept: bool },
+    /// Release checks and idle upgrades (ADR-0043 §6). Needs a 5.30 host —
+    /// an older one lands a notice.
+    SetAutoUpgrade { mode: AutoUpgradeMode },
     /// File candidates under `scope`'s root for `@./path` completion.
     /// Request-class, but sent outside the command queue — a slow scan
     /// must not stall submits or switches. Resolves `CallResult::Files`.
@@ -501,6 +505,9 @@ impl FfiCall {
             },
             FfiCall::SetAcceptAccountDevices { accept } => Call::UpdateSettings {
                 patch: settings_patch("acceptAccountDevices", Json::Bool(accept)),
+            },
+            FfiCall::SetAutoUpgrade { mode } => Call::UpdateSettings {
+                patch: settings_patch("autoUpgrade", Json::from(mode.as_str())),
             },
             FfiCall::ListFiles { scope, query } => Call::ListFiles {
                 scope: scope.to_json(),

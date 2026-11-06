@@ -14,7 +14,8 @@ import PinomadCore
 /// never leave the app); `signed-out` only the remembered account a sign-out
 /// leaves behind, with no session. The addresses are
 /// `.invalid` and the injected hosts block switching and forgetting, so
-/// nothing reaches the keychain or the network.
+/// nothing reaches the keychain or the network. `upgrade-…` opens the first
+/// machine's Upgrade page in one of `applyUpgradeDemo`'s states.
 extension AppModel {
     func startSettingsDemo(_ mode: String) {
         if mode == "pairing" {
@@ -91,6 +92,7 @@ extension AppModel {
             notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
             agents: nil, conversation: nil
         )
+        if mode.hasPrefix("upgrade") { applyUpgradeDemo(mode, to: &snapshot, now: now) }
         let rejected = mode.hasPrefix("rejected")
         if rejected {
             // Revoked mid-session: the view keeps its last snapshot.
@@ -98,6 +100,7 @@ extension AppModel {
             snapshot.unauthorized = true
         }
         publishDevSnapshot(snapshot)
+        if mode.hasPrefix("upgrade") { navPath = [.machine("demo-mbp"), .upgrade("demo-mbp")] }
         if rejected {
             failDevHost("demo-mbp", .revoked)
             if mode == "rejected-page" { navPath = [.machineUnavailable("demo-mbp")] }

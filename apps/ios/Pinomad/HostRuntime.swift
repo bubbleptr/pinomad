@@ -123,6 +123,12 @@ final class HostRuntime {
 
     var hostMinor: UInt32 { snapshot?.host?.protocol.minor ?? 0 }
 
+    /// The host went away to start the release it just installed (ADR-0043).
+    var isRestarting: Bool {
+        guard let snapshot else { return false }
+        return HostRestart.isRestarting(upgrade: snapshot.upgrade, connection: snapshot.connection)
+    }
+
     var name: String? { host?.name }
 
     /// Take over a freshly built session. `sameHost` is a retry/reconnect for
@@ -267,7 +273,11 @@ final class HostRuntime {
             // A failure page explains itself; the core's notice for the same
             // thing (e.g. the 4401) would only repeat it.
             if phase == .connected {
-                for notice in noticeFeed.fresh(snapshot.notices) { show(notice) }
+                // A restart's connection errors are expected; the title says it instead.
+                let restarting = isRestarting
+                for notice in noticeFeed.fresh(snapshot.notices) where HostRestart.shows(notice, restarting: restarting) {
+                    show(notice)
+                }
             } else {
                 _ = noticeFeed.fresh(snapshot.notices)
             }
