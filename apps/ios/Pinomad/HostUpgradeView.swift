@@ -10,7 +10,7 @@ struct HostUpgradeView: View {
     let model: AppModel
     let hostKey: String
 
-    private enum Pending: Equatable { case start(UpgradeWhen), cancel, check }
+    private enum Pending: Equatable { case start(UpgradeWhen), cancel, check, setting(AutoUpgradeMode) }
 
     @State private var confirming = false
     /// The call sent and not yet answered; one at a time.
@@ -108,23 +108,35 @@ struct HostUpgradeView: View {
             }
             if let mode, model.hostSupports(.autoUpgrade) {
                 Section {
+                    // The choice shows while the host saves it; a refusal or
+                    // timeout falls back to the host's value.
                     Picker("Automatic upgrades", selection: Binding(
-                        get: { mode },
-                        set: { model.setAutoUpgrade($0, on: hostKey) }
+                        get: { shownMode(mode) },
+                        set: { next in
+                            guard next != mode else { return }
+                            act(.setting(next)) { try await model.setAutoUpgrade(next, on: hostKey) }
+                        }
                     )) {
                         Text("Off").tag(AutoUpgradeMode.off)
                         Text("Notify").tag(AutoUpgradeMode.notify)
                         Text("When idle").tag(AutoUpgradeMode.auto)
                     }
                     .pickerStyle(.segmented)
-                    .disabled(!model.connected)
+                    .disabled(!model.connected || pending != nil)
                 } header: {
-                    Text("Automatic upgrades")
+                    HStack {
+                        Text("Automatic upgrades")
+                        if case .setting? = pending { ProgressView().controlSize(.small) }
+                    }
                 } footer: {
-                    Text(UpgradeSummary.autoDescription(mode))
+                    Text(UpgradeSummary.autoDescription(shownMode(mode)))
                 }
             }
         }
+    }
+
+    private func shownMode(_ host: AutoUpgradeMode) -> AutoUpgradeMode {
+        if case .setting(let chosen)? = pending { chosen } else { host }
     }
 
     private func confirmMessage(crossesMajor: Bool) -> String {

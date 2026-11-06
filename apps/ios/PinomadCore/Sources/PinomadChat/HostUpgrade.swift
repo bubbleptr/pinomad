@@ -89,3 +89,22 @@ public enum HostRestart {
         !(restarting && notice.level == "error")
     }
 }
+
+/// `operation`'s result, or `timeout` thrown once `limit` passes without one,
+/// so a host that stays connected but never answers can't leave a page
+/// waiting. The operation is cancelled then; the host may still act on it.
+public func answered<T: Sendable>(
+    within limit: Duration,
+    orThrow timeout: some Error & Sendable,
+    _ operation: @escaping @Sendable () async throws -> T
+) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask { try await operation() }
+        group.addTask {
+            try await Task.sleep(for: limit)
+            throw timeout
+        }
+        defer { group.cancelAll() }
+        return try await group.next()!
+    }
+}

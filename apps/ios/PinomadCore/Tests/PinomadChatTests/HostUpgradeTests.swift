@@ -102,3 +102,28 @@ private let release = AvailableUpgrade(version: "0.14.0", publishedAt: now - 5 *
         #expect(hostRefusalText("Model not found") == "Model not found")
     }
 }
+
+@Suite struct AnsweredWithinTests {
+    private struct Late: Error, Equatable {}
+
+    @Test func anAnswerInTimeComesBack() async throws {
+        let value = try await answered(within: .seconds(5), orThrow: Late()) { 42 }
+        #expect(value == 42)
+    }
+
+    /// A host that never answers still ends the wait, with the timeout's error.
+    @Test func noAnswerThrowsTheTimeout() async {
+        await #expect(throws: Late()) {
+            try await answered(within: .milliseconds(20), orThrow: Late()) {
+                try await Task.sleep(for: .seconds(3600))
+            }
+        }
+    }
+
+    @Test func aRefusalInTimeIsRethrown() async {
+        struct Refused: Error, Equatable {}
+        await #expect(throws: Refused()) {
+            try await answered(within: .seconds(5), orThrow: Late()) { throw Refused() }
+        }
+    }
+}
