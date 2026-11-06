@@ -479,7 +479,8 @@ mark.chat-skill-mention {
 }
 
 /* Each figure that changes rolls up into its slot as the old one leaves
-   upward, at the page-turn pace (ADR-0030 §8). The slot clips both. */
+   upward; the slot clips both. 480ms rather than the 300ms page turn: a
+   once-a-second tick reads calmer as a roll than as a snap. */
 .chat-clock__slot {
   position: relative;
   display: inline-block;
@@ -500,11 +501,11 @@ mark.chat-skill-mention {
 }
 
 .chat-clock-digit[data-in] {
-  animation: chat-clock-in var(--cot-flip-duration, 300ms) var(--ease-standard) both;
+  animation: chat-clock-in 480ms var(--ease-standard) both;
 }
 
 .chat-clock-digit[data-out] {
-  animation: chat-clock-out var(--cot-flip-duration, 300ms) var(--ease-standard) both;
+  animation: chat-clock-out 480ms var(--ease-standard) both;
 }
 
 @keyframes chat-clock-in {
