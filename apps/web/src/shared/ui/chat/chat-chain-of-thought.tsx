@@ -54,12 +54,19 @@ export function formatLiveElapsed(ms: number) {
   return `${Math.floor(total / 60)}m ${total % 60}s`;
 }
 
+/** "1m 9s" as its fields, each keyed by its unit: [["m", "1"], ["s", "9"]]. */
+function clockFields(text: string) {
+  return [...text.matchAll(/(\d+)([a-z]+)/g)].map(([, digits, unit]) => [unit!, digits!] as const);
+}
+
 /**
  * The clock's figures, each changed one rolling up from below as the old one
- * leaves upward. Positions line up from the right, so 9s → 10s rolls the ones
- * and brings the tens in fresh. The leaving glyphs are decoration: the name is
- * the label, and they stay only until the next change (jsdom never fires
- * animationend, and the roll's fill keeps them out of sight meanwhile).
+ * leaves upward. Minutes and seconds line up as separate fields, each by its
+ * digits from the right, so 9s → 10s rolls the ones and brings the tens in
+ * fresh while the minutes and the unit letters hold still. The leaving glyphs
+ * are decoration: the name is the label, and they stay only until the next
+ * change (jsdom never fires animationend, and the roll's fill keeps them out
+ * of sight meanwhile).
  */
 function RollingFigures({ text }: { text: string }) {
   const [shown, setShown] = useState<{ text: string; prev?: string }>({ text });
@@ -68,30 +75,35 @@ function RollingFigures({ text }: { text: string }) {
     setShown({ text, prev: shown.text });
   }
 
-  const prev = shown.prev?.padStart(text.length, " ");
+  const prev = shown.prev === undefined ? undefined : new Map(clockFields(shown.prev));
 
   return (
     <span aria-label={text} role="img" className="chat-clock">
-      {[...text].map((char, index) => {
-        const slot = text.length - index;
-
-        if (char === " ") {
-          return <span key={slot}> </span>;
-        }
-
-        const old = prev?.[index];
-        const changed = old !== undefined && old !== char;
+      {clockFields(text).map(([unit, digits], field) => {
+        const before = prev?.get(unit) ?? "";
 
         return (
-          <span key={slot} aria-hidden="true" className="chat-clock__slot">
-            {changed && old !== " " ? (
-              <span key={`out:${text}`} className="chat-clock-digit" data-out="">
-                {old}
-              </span>
-            ) : null}
-            <span key={changed ? `in:${text}` : "still"} className="chat-clock-digit" data-in={changed ? "" : undefined}>
-              {char}
-            </span>
+          <span key={unit} aria-hidden="true">
+            {field > 0 ? " " : null}
+            {[...digits].map((digit, index) => {
+              const place = digits.length - index;
+              const old = before[before.length - place];
+              const changed = prev !== undefined && old !== digit;
+
+              return (
+                <span key={place} className="chat-clock__slot">
+                  {changed && old !== undefined ? (
+                    <span key={`out:${text}`} className="chat-clock-digit" data-out="">
+                      {old}
+                    </span>
+                  ) : null}
+                  <span key={changed ? `in:${text}` : "still"} className="chat-clock-digit" data-in={changed ? "" : undefined}>
+                    {digit}
+                  </span>
+                </span>
+              );
+            })}
+            {unit}
           </span>
         );
       })}

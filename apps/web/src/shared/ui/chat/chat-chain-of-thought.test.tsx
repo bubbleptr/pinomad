@@ -142,6 +142,30 @@ describe("ChatTraceRow clock", () => {
     expect([...clock!.querySelectorAll("[data-out]")].map((digit) => digit.textContent)).toEqual(["0"]);
   });
 
+  // Minutes and seconds line up as fields, not as one string: a field that
+  // grows a digit must not shift the units or the other field into a roll.
+  it.each([
+    { fromMs: 59_000, name: "1m 0s", rolledIn: ["1", "0"], rolledOut: ["9"] },
+    { fromMs: 69_000, name: "1m 10s", rolledIn: ["1", "0"], rolledOut: ["9"] },
+    { fromMs: 119_000, name: "2m 0s", rolledIn: ["2", "0"], rolledOut: ["1", "9"] },
+  ])("rolls only changed digits into $name", ({ fromMs, name, rolledIn, rolledOut }) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-04T04:00:00.000Z"));
+
+    const { container } = render(
+      <ChatTraceRow steps={[bash("input-available")]} counted={[]} live clock={{ startedAtMs: Date.now() - fromMs, running: true }} />,
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    const clock = container.querySelector('[data-slot="chat-trace-clock"]');
+    expect(screen.getByRole("button", { name: `Running bash… · ${name}` })).toBeInTheDocument();
+    expect([...clock!.querySelectorAll("[data-in]")].map((digit) => digit.textContent)).toEqual(rolledIn);
+    expect([...clock!.querySelectorAll("[data-out]")].map((digit) => digit.textContent)).toEqual(rolledOut);
+  });
+
   // The answer's first token ends the wait: the clock stops there while the
   // answer keeps streaming below.
   it("stops when the answer starts", () => {
