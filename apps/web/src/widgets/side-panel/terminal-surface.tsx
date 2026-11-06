@@ -5,7 +5,7 @@
 // owner's conversations keeps the selection and the screen. The client
 // remembers each owner's last tab in memory.
 import { Button } from "@astryxdesign/core/Button";
-import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
+import { ContextMenu, type ContextMenuOption } from "@astryxdesign/core/ContextMenu";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { VStack } from "@astryxdesign/core/Layout";
 import { Tab, TabList, TabMenu } from "@astryxdesign/core/TabList";
@@ -15,7 +15,7 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import type { RemoteTerminals, TerminalsState } from "@pinomad/protocol/remote-durable.ts";
 import type { TerminalId, TerminalInfo, TerminalList } from "@pinomad/protocol/terminals.ts";
 import { exitLabel, partitionTabs, resolveSelection, type SelectionMemory } from "../../entities/terminal/terminal-tabs.ts";
-import { MoreHorizontal, Pencil, Plus, RefreshCw, Trash2 } from "../../shared/ui/icons.tsx";
+import { Cancel, Pencil, Plus, RefreshCw, Trash2 } from "../../shared/ui/icons.tsx";
 import { RenameTerminalDialog } from "./rename-terminal-dialog.tsx";
 import { SurfaceBar } from "./surface-bar.tsx";
 
@@ -151,14 +151,25 @@ export function TerminalSurface({
     );
   };
 
-  const tabs = list === undefined || list.terminals.length === 0 ? null : (
-    <TerminalTabs list={list} selectedId={selectedId} onSelect={(id) => select(id)} />
-  );
+  const restart = (terminal: TerminalInfo): void =>
+    run(terminals.restart(terminal.id, { cols: terminal.cols, rows: terminal.rows }));
+  const close = (terminal: TerminalInfo): void => run(terminals.close(terminal.id));
   const full = list !== undefined && list.terminals.length >= list.limit;
+  const tabs = list === undefined || list.terminals.length === 0 ? null : (
+    <TerminalTabs
+      list={list}
+      selectedId={selectedId}
+      live={live}
+      onSelect={(id) => select(id)}
+      onRename={setRenaming}
+      onRestart={restart}
+      onClose={close}
+      onNew={full ? undefined : openTerminal}
+    />
+  );
   // With no terminal yet, the body's New terminal button is the one way in.
   const actions =
     list === undefined || list.terminals.length === 0 ? null : (
-      <>
         <IconButton
           icon={<Plus className="size-4" aria-hidden="true" />}
           label="New terminal"
@@ -168,33 +179,10 @@ export function TerminalSurface({
           isDisabled={!live || full}
           onClick={openTerminal}
         />
-        {selected === undefined ? null : (
-          <DropdownMenu
-            hasChevron={false}
-            button={{
-              icon: <MoreHorizontal aria-hidden="true" />,
-              isIconOnly: true,
-              label: "Terminal actions",
-              size: "sm",
-              variant: "ghost",
-              isDisabled: !live,
-            }}
-            items={[
-              { label: "Rename…", icon: <Pencil aria-hidden="true" size={16} />, onClick: () => setRenaming(selected) },
-              {
-                label: "Restart",
-                icon: <RefreshCw aria-hidden="true" size={16} />,
-                onClick: () => run(terminals.restart(selected.id, { cols: selected.cols, rows: selected.rows })),
-              },
-              { label: "Close", icon: <Trash2 aria-hidden="true" size={16} />, onClick: () => run(terminals.close(selected.id)) },
-            ]}
-          />
-        )}
-      </>
     );
 
   return (
-    <VStack className="h-full min-h-0" gap={0}>
+    <VStack className="h-full min-h-0 bg-surface" gap={0}>
       {stacked ? (
         <>
           <SurfaceBar start={barStart} end={barEnd}>
@@ -261,7 +249,7 @@ export function TerminalSurface({
                   variant="secondary"
                   size="sm"
                   isDisabled={!live}
-                  onClick={() => run(terminals.restart(selected.id, { cols: selected.cols, rows: selected.rows }))}
+                  onClick={() => restart(selected)}
                 />
               </div>
             )}
@@ -288,47 +276,101 @@ function Message({ children }: { children: ReactNode }) {
   );
 }
 
-/** Tabs in creation order; those that don't fit go to the menu, never the selected one. */
+/**
+ * Tabs in creation order; those that don't fit go to the menu, never the
+ * selected one. Each tab has its own close button beside it (not inside: the
+ * tab is a button too) and a context menu with the rest of its actions.
+ */
 function TerminalTabs({
   list,
   selectedId,
+  live,
   onSelect,
+  onRename,
+  onRestart,
+  onClose,
+  onNew,
 }: {
   list: TerminalList;
   selectedId: TerminalId | undefined;
+  /** Off while the list may still be another owner's: no actions. */
+  live: boolean;
   onSelect: (id: TerminalId) => void;
+  onRename: (terminal: TerminalInfo) => void;
+  onRestart: (terminal: TerminalInfo) => void;
+  onClose: (terminal: TerminalInfo) => void;
+  /** Undefined at the host's limit. */
+  onNew: (() => void) | undefined;
 }) {
   const row = useRef<HTMLDivElement>(null);
+  // The tab the context menu acts on: the one under the pointer when it went
+  // down (right click, long press), or the focused one for the menu key.
+  const [target, setTarget] = useState<TerminalInfo>();
   const fit = useFittingTabs(
     row,
     list.terminals.length,
     list.terminals.map((terminal) => `${terminal.name}\u0000${terminal.exit === undefined ? "" : exitLabel(terminal.exit)}`).join("\u0001"),
   );
   const { inline, overflow } = partitionTabs(list.terminals, selectedId, fit);
+  const aim = (event: { target: EventTarget }): void => {
+    const value = event.target instanceof Element ? event.target.closest("[data-tab-value]")?.getAttribute("data-tab-value") : null;
+    setTarget(list.terminals.find((terminal) => terminal.id === value));
+  };
+  const items: ContextMenuOption[] =
+    target === undefined
+      ? [{ label: "New terminal", icon: <Plus aria-hidden="true" size={16} />, isDisabled: onNew === undefined, onClick: () => onNew?.() }]
+      : [
+          { label: "Rename…", icon: <Pencil aria-hidden="true" size={16} />, onClick: () => onRename(target) },
+          { label: "Restart", icon: <RefreshCw aria-hidden="true" size={16} />, onClick: () => onRestart(target) },
+          { type: "divider" },
+          { label: "Close", icon: <Trash2 aria-hidden="true" size={16} />, onClick: () => onClose(target) },
+        ];
   return (
-    <div ref={row} className="min-w-0 flex-1 overflow-hidden">
-      <TabList size="sm" value={selectedId ?? ""} onChange={onSelect}>
-        {inline.map((terminal) => (
-          <Tab
-            key={terminal.id}
-            value={terminal.id}
-            label={terminal.name}
-            className={terminal.exit === undefined ? "pinomad-terminal-tab" : "pinomad-terminal-tab text-muted"}
-            endContent={
-              terminal.exit === undefined ? undefined : <span className="text-xs text-muted">{exitLabel(terminal.exit)}</span>
-            }
-          />
-        ))}
-        {overflow.length === 0 ? null : (
-          <TabMenu
-            label={`${overflow.length} more`}
-            options={overflow.map((terminal) => ({
-              value: terminal.id,
-              label: terminal.exit === undefined ? terminal.name : `${terminal.name} (${exitLabel(terminal.exit)})`,
-            }))}
-          />
-        )}
-      </TabList>
+    <div className="min-w-0 flex-1" onPointerDownCapture={aim} onContextMenuCapture={aim}>
+      <ContextMenu label="Terminal actions" size="sm" items={items} isDisabled={!live}>
+        <div ref={row} className="overflow-hidden">
+          <TabList size="sm" value={selectedId ?? ""} onChange={onSelect}>
+            {inline.map((terminal) => (
+              <span key={terminal.id} className="pinomad-terminal-tab-slot group">
+                <Tab
+                  value={terminal.id}
+                  label={terminal.name}
+                  className={terminal.exit === undefined ? "pinomad-terminal-tab" : "pinomad-terminal-tab text-muted"}
+                  onAuxClick={(event) => {
+                    if (event.button === 1 && live) onClose(terminal);
+                  }}
+                  endContent={
+                    terminal.exit === undefined ? undefined : <span className="text-xs text-muted">{exitLabel(terminal.exit)}</span>
+                  }
+                />
+                <IconButton
+                  icon={<Cancel className="size-3.5" aria-hidden="true" />}
+                  label={`Close ${terminal.name}`}
+                  size="sm"
+                  variant="ghost"
+                  tabIndex={-1}
+                  isDisabled={!live}
+                  className={
+                    terminal.id === selectedId
+                      ? "pinomad-terminal-tab-close"
+                      : "pinomad-terminal-tab-close opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                  }
+                  onClick={() => onClose(terminal)}
+                />
+              </span>
+            ))}
+            {overflow.length === 0 ? null : (
+              <TabMenu
+                label={`${overflow.length} more`}
+                options={overflow.map((terminal) => ({
+                  value: terminal.id,
+                  label: terminal.exit === undefined ? terminal.name : `${terminal.name} (${exitLabel(terminal.exit)})`,
+                }))}
+              />
+            )}
+          </TabList>
+        </div>
+      </ContextMenu>
     </div>
   );
 }

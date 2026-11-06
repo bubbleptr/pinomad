@@ -67,7 +67,7 @@ describe("TerminalSurface", () => {
     expect(screen.getByTestId("screen")).toHaveTextContent("t-dev");
     expect(screen.getByTestId("screen")).toHaveAttribute("data-enabled", "false");
     expect(screen.getByRole("button", { name: "New terminal" })).toHaveAttribute("aria-disabled", "true");
-    expect(screen.getByRole("button", { name: "Terminal actions" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Close dev server" })).toBeDisabled();
 
     await act(async () => land!());
     await waitFor(() => expect(screen.getByTestId("screen")).toHaveTextContent("t-other"));
@@ -108,5 +108,28 @@ describe("TerminalSurface", () => {
     fireEvent.click(screen.getByRole("button", { name: "Restart" }));
     expect(terminals.restart).toHaveBeenCalledWith("t-tests", { cols: 80, rows: 24 });
     await waitFor(() => expect(screen.queryByText("exit 1")).toBeNull());
+  });
+
+  it("closes a terminal from its tab's close button or a middle click", async () => {
+    const terminals = fakeTerminals({ lists: { 1: [dev, shell] } });
+    renderSurface(terminals, id(1));
+    fireEvent.click(await screen.findByRole("button", { name: "Close Terminal 2" }));
+    expect(terminals.close).toHaveBeenCalledWith("t-shell");
+    // Closing a tab doesn't select it first.
+    expect(selectedTab()).toBe("t-dev");
+    fireEvent(screen.getByRole("button", { name: "dev server" }), new MouseEvent("auxclick", { bubbles: true, button: 1 }));
+    expect(terminals.close).toHaveBeenCalledWith("t-dev");
+  });
+
+  it("renames and restarts the right-clicked tab from its context menu", async () => {
+    const terminals = fakeTerminals({ lists: { 1: [dev, shell] } });
+    renderSurface(terminals, id(1));
+    const tab = await screen.findByRole("button", { name: "Terminal 2" });
+    fireEvent.contextMenu(tab);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Restart" }));
+    expect(terminals.restart).toHaveBeenCalledWith("t-shell", { cols: 80, rows: 24 });
+    fireEvent.contextMenu(screen.getByRole("button", { name: "dev server" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Rename…" }));
+    expect(await screen.findByRole("dialog", { name: "Rename terminal" })).toBeInTheDocument();
   });
 });
