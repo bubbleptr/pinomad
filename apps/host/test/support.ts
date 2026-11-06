@@ -115,6 +115,7 @@ export async function startFauxHost(
     agentsHome,
     rtc,
     terminals,
+    upgrade,
   }: {
     /** Script of faux responses: plain strings become assistant text, messages and factories pass through. */
     answers?: readonly (string | FauxResponseStep)[];
@@ -172,6 +173,8 @@ export async function startFauxHost(
     rtc?: OpenHostOptions["rtc"];
     /** Terminal seams (ADR-0041); absent runs a plain /bin/sh, never the user's login shell. */
     terminals?: OpenHostOptions["terminals"];
+    /** Upgrade seams (ADR-0043); absent → the host reports `blocked: "source"`. */
+    upgrade?: OpenHostOptions["upgrade"];
   } = {},
 ): Promise<OpenedHost> {
   const dir = dataDir === undefined ? await tempDir() : { path: dataDir, remove: () => {} };
@@ -228,6 +231,7 @@ export async function startFauxHost(
     ...(push === undefined ? {} : { push }),
     ...(images === undefined ? {} : { images }),
     ...(rtc === undefined ? {} : { rtc }),
+    ...(upgrade === undefined ? {} : { upgrade }),
     terminals: terminals ?? {
       shell: { file: "/bin/sh", args: [] },
       env: { PATH: process.env.PATH ?? "/usr/bin:/bin", PS1: "$ ", HOME: dir.path },

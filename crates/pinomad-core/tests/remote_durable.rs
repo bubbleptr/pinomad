@@ -9,7 +9,7 @@ use pinomad_core::frames::{ApnsEnvironment, ApnsPushToken, ImageVariant, PROTOCO
 use pinomad_core::json::{Json, JsonObject};
 use pinomad_core::remote_durable::{
     ApiKeyChange, Call, CandidateFailure, CandidateTimeouts, Command, CustomProviderApi, Event, ForkShow,
-    LoginMethod, ReadyOutcome, RemoteDurable, RemoteDurableOptions,
+    LoginMethod, ReadyOutcome, RemoteDurable, RemoteDurableOptions, UpgradeWhen,
 };
 use pinomad_core::transport::{PlaintextTransport, Transport};
 use pinomad_core::u16str::U16String;
@@ -3641,4 +3641,29 @@ fn a_load_earlier_lost_with_its_connection_does_not_block_the_next() {
 
     h.invoke(4, Call::LoadEarlier { conversation_id: 1 });
     assert_eq!(h.host.method("earlierEntries").len(), 2);
+}
+
+/// ADR-0043: the upgrade calls are direct, need a 5.30 host, and the
+/// `autoUpgrade` settings key is refused locally on an older one (it would
+/// 4400 there, like `hostName` before 5.12).
+#[test]
+fn upgrade_calls_and_auto_upgrade_need_a_5_30_host() {
+    let old = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(29.0))]);
+    let mut h = Harness::new(old);
+    h.invoke(1, Call::StartUpgrade { when: UpgradeWhen::Idle });
+    h.invoke(2, Call::CheckUpgrade);
+    let too_old = "The host is too old for this (needs protocol 5.30); run `pinomad upgrade` on the host".to_string();
+    assert_eq!(h.ops.get(&1), Some(&Err(too_old.clone())));
+    assert_eq!(h.ops.get(&2), Some(&Err(too_old)));
+    h.invoke(3, Call::UpdateSettings { patch: obj(&[("autoUpgrade", Json::from("auto"))]) });
+    assert!(h.host.method("updateSettings").is_empty());
+    assert!(h.host.method("startUpgrade").is_empty());
+
+    let mut h = setup();
+    h.invoke(1, Call::StartUpgrade { when: UpgradeWhen::Now });
+    h.invoke(2, Call::CancelUpgrade);
+    h.invoke(3, Call::UpdateSettings { patch: obj(&[("autoUpgrade", Json::from("off"))]) });
+    assert_eq!(h.host.method("startUpgrade")[0].get("args").cloned(), Some(obj(&[("when", Json::from("now"))])));
+    assert_eq!(h.host.method("cancelUpgrade")[0].get("args").cloned(), Some(obj(&[])));
+    assert_eq!(h.host.method("updateSettings").len(), 1);
 }

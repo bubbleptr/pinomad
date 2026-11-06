@@ -15,6 +15,7 @@
       "version": "0.0.0",
       "devDependencies": {
         "@pinomad/host": "workspace:*",
+        "@pinomad/protocol": "workspace:*",
         "@pinomad/server": "workspace:*",
       },
     },

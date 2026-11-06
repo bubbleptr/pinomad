@@ -1,21 +1,25 @@
 #!/usr/bin/env node
 // `pinomad upgrade` / `bun run upgrade` [--force] [--data-dir D] [--url U] —
-// update and restart the service (ADR-0009 §6, amended by ADR-0016); one
-// that `service stop` turned off only updates (#501). Packaged
-// installs pull `pinomad@latest` from npm; a source checkout pulls git +
+// update and restart the service (ADR-0009 §6, amended by ADR-0016 and
+// ADR-0043); one that `service stop` turned off only updates (#501). A
+// packaged install whose service runs and answers asks the host to upgrade
+// itself and follows it (`--force` → now); otherwise packaged installs pull
+// `pinomad@latest` from npm here, and a source checkout pulls git +
 // reinstalls deps + rebuilds. Any failed step stops before the restart, so
 // the service keeps running the old code.
 import { execFile, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs, promisify } from "node:util";
-import { commandHint, globalPrefixOf, packageDir, packagedVersion } from "../distribution.ts";
+import { commandHint, packageDir, packagedVersion } from "../distribution.ts";
 import { serviceManager } from "../service/manager.ts";
 import type { ServiceState } from "../service/manager.ts";
+import { installCommand, npmBeside, packagePrefix } from "../upgrade/npm.ts";
 import { isParseArgsError, reportParseArgsError } from "./args.ts";
-import { hostAddressOptions } from "./host-address.ts";
-import { restartService } from "./service.ts";
+import { hostAddress, hostAddressOptions } from "./host-address.ts";
+import { awaitRestarted, connectToHost, restartService } from "./service.ts";
+import { upgradeWithHost } from "./upgrade-via-host.ts";
+
+export { npmBeside } from "../upgrade/npm.ts";
 
 const exec = promisify(execFile);
 const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -25,18 +29,6 @@ const step = (command: string, args: readonly string[], binDir?: string): Promis
     const env = binDir === undefined ? process.env : { ...process.env, PATH: `${binDir}:${process.env.PATH ?? ""}` };
     spawn(command, [...args], { cwd: repoRoot, env, stdio: "inherit" }).once("exit", (code) => resolve(code ?? 1));
   });
-
-/**
- * The npm that ships with the node running pinomad, which is the node the
- * service runs too. An install-script runtime (#499) has no other npm, and a
- * different one on PATH could pick native prebuilds for another node. Falls
- * back to `npm` on PATH when there is none beside it.
- */
-export function npmBeside(execPath: string): { command: string; args: readonly string[]; binDir?: string } {
-  const binDir = dirname(execPath);
-  const cli = join(binDir, "..", "lib", "node_modules", "npm", "bin", "npm-cli.js");
-  return existsSync(cli) ? { command: execPath, args: [cli], binDir } : { command: "npm", args: [] };
-}
 
 type UpgradeServiceState = Pick<ServiceState, "installed" | "stopped">;
 
@@ -59,6 +51,55 @@ export interface UpgradeDeps {
   readonly restart?: (options: { force: boolean; argv: readonly string[] }) => Promise<number>;
   /** The exit after a restart ran; defaults to `process.exit`, injected by tests. */
   readonly exit?: (code: number) => void;
+  /**
+   * The upgrade through the running host (ADR-0043 §8): its exit code, or
+   * undefined to upgrade here instead. Defaults to `upgradeThroughHost`.
+   */
+  readonly viaHost?: (argv: readonly string[], force: boolean) => Promise<number | undefined>;
+}
+
+/**
+ * Asks the running packaged service to upgrade itself. Undefined — upgrade
+ * locally — when no service runs, the host doesn't answer, or
+ * `upgradeWithHost` hands the upgrade back.
+ */
+export async function upgradeThroughHost(argv: readonly string[], force: boolean): Promise<number | undefined> {
+  const service = await serviceState();
+  if (!service.installed || service.stopped) return undefined;
+  // `--force` is upgrade's own flag; the address parser rejects it.
+  const address = await hostAddress(argv.filter((arg) => arg !== "--force")).catch(() => undefined);
+  if (address === undefined) return undefined;
+  const remote = await connectToHost(address.url, address.token).catch(() => undefined);
+  if (remote === undefined) return undefined;
+  try {
+    let cancel: (() => Promise<void>) | undefined;
+    const interrupt = (): void => {
+      if (cancel === undefined) process.exit(130);
+      void cancel().finally(() => {
+        console.log("upgrade cancelled");
+        process.exit(130);
+      });
+    };
+    process.on("SIGINT", interrupt);
+    const outcome = await upgradeWithHost(remote, force ? "now" : "idle", (line) => console.log(line), (c) => (cancel = c))
+      .finally(() => process.off("SIGINT", interrupt));
+    if (outcome === undefined) return undefined;
+    switch (outcome.kind) {
+      case "current":
+        console.log(`already on the latest release (${outcome.version ?? "unknown"})`);
+        return 0;
+      case "failed":
+        console.error(`upgrade failed; the host keeps running the old version:\n${outcome.message}`);
+        return 1;
+      case "cancelled":
+        console.log("the upgrade was cancelled on another device");
+        return 1;
+      case "restarting":
+        return awaitRestarted(address);
+    }
+  } finally {
+    remote.close();
+  }
 }
 
 export async function main(argv: readonly string[], deps: UpgradeDeps = {}): Promise<void> {
@@ -91,19 +132,24 @@ export async function main(argv: readonly string[], deps: UpgradeDeps = {}): Pro
       }
     }
   } else {
+    const viaHost = await (deps.viaHost ?? upgradeThroughHost)(argv, values.force);
+    if (viaHost !== undefined) {
+      (deps.exit ?? process.exit)(viaHost);
+      return;
+    }
     // npm replaces the package in place (same path the service points at) and
     // installs its exact third-party versions; nothing else to rebuild. Aim
     // the install at the prefix that owns this package — the ambient npm
     // prefix may be another one, and the service would keep restarting the
     // old version.
-    const prefix = globalPrefixOf(packageDir);
+    const prefix = packagePrefix();
     if (prefix === undefined) {
       console.error(`upgrade: pinomad isn't a global npm install (${packageDir}); upgrade it the way it was installed`);
       process.exitCode = 1;
       return;
     }
-    const npm = npmBeside(process.execPath);
-    const code = await runStep(npm.command, [...npm.args, "install", "-g", "--prefix", prefix, "pinomad@latest"], npm.binDir);
+    const npm = installCommand(npmBeside(process.execPath), prefix, "pinomad@latest");
+    const code = await runStep(npm.command, npm.args, npm.binDir);
     if (code !== 0) {
       process.exitCode = code;
       return;

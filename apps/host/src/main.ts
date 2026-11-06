@@ -16,6 +16,7 @@ import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import type { AgentRoleStore } from "./agent-roles.ts";
 import { DEFAULT_DATA_DIR } from "./cli/host-address.ts";
 import { packagedVersion, webRoot } from "./distribution.ts";
+import { UPGRADE_EXIT_CODE } from "./upgrade/host-upgrader.ts";
 import type { BuiltinExtension } from "./builtin-extension.ts";
 import { question } from "./extensions/question.ts";
 import { createCoding } from "./extensions/coding.ts";
@@ -190,7 +191,13 @@ export async function main(argv: readonly string[]): Promise<void> {
   }
 
   const options = values.faux !== undefined ? fauxOptions(() => () => fauxAssistantMessage(values.faux!)) : await piOptions();
-  const host = await openHost(options);
+  // Assigned once the host is up; an upgrade can only finish after that.
+  let stop: (code: number) => void = () => {};
+  const host = await openHost({
+    ...options,
+    // A packaged host upgrades itself and exits for the service manager (ADR-0043).
+    ...(packagedVersion === undefined ? {} : { upgrade: { current: packagedVersion, restart: () => stop(UPGRADE_EXIT_CODE) } }),
+  });
   // Only the host that won the data-dir lock may rotate the shared log; a
   // second host has already exited above, so its timer never runs.
   // launchd appends both streams to <dataDir>/logs/host.log; Linux uses
@@ -217,14 +224,20 @@ export async function main(argv: readonly string[]): Promise<void> {
   );
 
   let stopping = false;
-  const stop = (): void => {
+  stop = (code: number): void => {
     if (stopping) return;
     stopping = true;
     stopLogRotation();
-    void host.close().finally(() => process.exit(0));
+    if (code === UPGRADE_EXIT_CODE) {
+      console.log(JSON.stringify({ event: "upgraded", exitCode: code }));
+      // The new release is on disk and new work is refused: a close that
+      // hangs (a shell that won't die) must not keep the old host up.
+      setTimeout(() => process.exit(code), 15_000).unref();
+    }
+    void host.close().finally(() => process.exit(code));
   };
-  process.on("SIGINT", stop);
-  process.on("SIGTERM", stop);
+  process.on("SIGINT", () => stop(0));
+  process.on("SIGTERM", () => stop(0));
   // A failed Storage call closes the session; exit nonzero so the service
   // manager restarts a working host instead of leaving a zombie (ADR-0009).
   void host.closed.then((end) => {

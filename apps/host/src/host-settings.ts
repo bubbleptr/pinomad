@@ -20,6 +20,7 @@ import {
   type QueueMode,
 } from "@pinomad/protocol/settings.ts";
 import { RTC_DEFAULT_STUN } from "@pinomad/protocol/rtc.ts";
+import { isAutoUpgradeMode, type AutoUpgradeMode } from "@pinomad/protocol/upgrade.ts";
 import type { ConversationDefaults, ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";
 import { Published, sameList, type HostValue } from "./host-value.ts";
 
@@ -82,6 +83,8 @@ const fileValueError = (
     // Any string survives — cleaning happens on read, like the server (5.12).
     case "hostName":
       return typeof value === "string" ? undefined : "malformed";
+    case "autoUpgrade":
+      return isAutoUpgradeMode(value) ? undefined : "malformed";
   }
 };
 
@@ -98,6 +101,7 @@ const sameSettings = (a: HostSettings, b: HostSettings): boolean =>
     ? a.rtcStun === b.rtcStun
     : sameList(a.rtcStun, b.rtcStun, (x, y) => x === y))
   && a.hostName === b.hostName
+  && a.autoUpgrade === b.autoUpgrade
   && sameList(a.custom, b.custom, (x, y) => x === y);
 
 const parse = (path: string, text: string): Record<string, unknown> => {
@@ -163,6 +167,7 @@ export async function openHostSettings(options: {
       // The override or the machine name — both pass through the same cleaning
       // so `.local` suffixes, stray controls and oversize names never display.
       hostName: normalizeHostName((fileValues.hostName as string | undefined) ?? hostname()),
+      autoUpgrade: (fileValues.autoUpgrade as AutoUpgradeMode | undefined) ?? "notify",
       custom,
     };
   };

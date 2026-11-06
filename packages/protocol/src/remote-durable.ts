@@ -1016,6 +1016,7 @@ class RemoteClient {
         providers: null,
         settings: null,
         agents: null,
+        upgrade: null,
         host: this.#hostInfo(),
       };
       this.#refresh();
@@ -3191,6 +3192,7 @@ class RemoteClient {
       providers: this.#host("providers") ?? null,
       settings: this.#host("settings") ?? null,
       agents: this.#host("agents") ?? null,
+      upgrade: this.#host("upgrade") ?? null,
       defaults: this.#effectiveDefaults(this.#helloDefaults),
     });
   }
@@ -3280,6 +3282,12 @@ class RemoteClient {
   }
 
   /** Serialized like the in-process controller, so toggles and switches apply in order; failures become notices. */
+  #requireUpgrade(): void {
+    if (!hostSupportsCall(this.#hostMinor, "startUpgrade")) {
+      throw new Error("The host is too old for this (needs protocol 5.30); run `pinomad upgrade` on the host");
+    }
+  }
+
   #command(operation: () => Promise<unknown>): Promise<void> {
     this.#commands = this.#commands
       .then(operation)
@@ -3640,8 +3648,26 @@ class RemoteClient {
               "The host is too old for this (needs protocol 5.12); run `pinomad upgrade` on the host",
             );
           }
+          if (patch.autoUpgrade !== undefined && !hostSupportsFeature(this.#hostMinor, "autoUpgrade")) {
+            throw new Error(
+              "The host is too old for this (needs protocol 5.30); run `pinomad upgrade` on the host",
+            );
+          }
           return this.#call("updateSettings", { patch });
         }),
+      // Unqueued: a wait or an install must not hold the command queue.
+      startUpgrade: async (when) => {
+        this.#requireUpgrade();
+        await this.#call("startUpgrade", { when });
+      },
+      cancelUpgrade: async () => {
+        this.#requireUpgrade();
+        await this.#call("cancelUpgrade", {});
+      },
+      checkUpgrade: async () => {
+        this.#requireUpgrade();
+        await this.#call("checkUpgrade", {});
+      },
       createAgent: (role) =>
         this.#request(async () => {
           if (!hostSupportsCall(this.#hostMinor, "createAgent")) {
