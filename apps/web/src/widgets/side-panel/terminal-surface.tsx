@@ -6,6 +6,7 @@
 // remembers each owner's last tab in memory.
 import { Button } from "@astryxdesign/core/Button";
 import { ContextMenu, type ContextMenuOption } from "@astryxdesign/core/ContextMenu";
+import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { VStack } from "@astryxdesign/core/Layout";
 import { Tab, TabList, TabMenu } from "@astryxdesign/core/TabList";
@@ -18,6 +19,7 @@ import { exitLabel, partitionTabs, resolveSelection, type SelectionMemory } from
 import { Cancel, Pencil, Plus, RefreshCw, Trash2 } from "../../shared/ui/icons.tsx";
 import { RenameTerminalDialog } from "./rename-terminal-dialog.tsx";
 import { SurfaceBar } from "./surface-bar.tsx";
+import { TerminalIllustration } from "./terminal-illustration.tsx";
 
 // xterm measures its cell once, when the screen opens, so the code face (the
 // --font-family-code token in styles.css) must have loaded by then; if it
@@ -224,8 +226,13 @@ export function TerminalSurface({
         ) : state.kind === "unavailable" ? (
           <Message>{state.reason}</Message>
         ) : selected === undefined ? (
-          <div className="flex flex-1 items-center justify-center">
-            <Button label="New terminal" variant="secondary" isDisabled={!live} onClick={openTerminal} />
+          <div className="flex flex-1 items-center justify-center p-6">
+            <EmptyState
+              icon={<TerminalIllustration />}
+              title="No terminals yet"
+              description="Run commands in this conversation's folder."
+              actions={<Button label="New terminal" variant="secondary" isDisabled={!live} onClick={openTerminal} />}
+            />
           </div>
         ) : (
           <>

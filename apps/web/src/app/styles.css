@@ -835,3 +835,16 @@ html[data-pinomad-vibrancy] .pigui-app-layout .astryx-layout-panel:has(.astryx-s
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* The Terminal empty state's cursor (terminal-illustration.tsx). */
+@media (prefers-reduced-motion: no-preference) {
+  .pinomad-terminal-cursor {
+    animation: pinomad-terminal-blink 1.1s steps(1) infinite;
+  }
+}
+
+@keyframes pinomad-terminal-blink {
+  50% {
+    opacity: 0;
+  }
+}
