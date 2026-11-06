@@ -446,7 +446,9 @@ export function SidePanel({
         direction="horizontal"
         position="overlay"
         // Overlay defaults to the end edge; isReversed only changes drag direction.
-        className="start-0! end-auto!"
+        // Pulled back by half its width (and half the 1px border) so the grip
+        // sits on the divider, half over the chat column.
+        className="start-[calc(-0.5rem-0.5px)]! end-auto!"
         // Centering keeps Astryx's grab zone full-height instead of shifted up by 50%.
         pillPlacement="center"
         isReversed
