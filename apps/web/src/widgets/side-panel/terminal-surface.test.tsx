@@ -121,15 +121,24 @@ describe("TerminalSurface", () => {
     expect(terminals.close).toHaveBeenCalledWith("t-dev");
   });
 
-  it("renames and restarts the right-clicked tab from its context menu", async () => {
+  it("renames, restarts and closes the right-clicked tab from its context menu", async () => {
     const terminals = fakeTerminals({ lists: { 1: [dev, shell] } });
     renderSurface(terminals, id(1));
-    const tab = await screen.findByRole("button", { name: "Terminal 2" });
-    fireEvent.contextMenu(tab);
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Restart" }));
+    // A real click presses down first, and the menu's events reach the row
+    // through the portal: that must not change which tab the menu is for.
+    const choose = async (tab: string, item: string) => {
+      fireEvent.pointerDown(screen.getByRole("button", { name: tab }));
+      fireEvent.contextMenu(screen.getByRole("button", { name: tab }));
+      const menuItem = await screen.findByRole("menuitem", { name: item });
+      fireEvent.pointerDown(menuItem);
+      fireEvent.click(screen.getByRole("menuitem", { name: item }));
+    };
+    await screen.findByRole("button", { name: "Terminal 2" });
+    await choose("Terminal 2", "Restart");
     expect(terminals.restart).toHaveBeenCalledWith("t-shell", { cols: 80, rows: 24 });
-    fireEvent.contextMenu(screen.getByRole("button", { name: "dev server" }));
-    fireEvent.click(await screen.findByRole("menuitem", { name: "Rename…" }));
+    await choose("Terminal 2", "Close");
+    expect(terminals.close).toHaveBeenCalledWith("t-shell");
+    await choose("dev server", "Rename…");
     expect(await screen.findByRole("dialog", { name: "Rename terminal" })).toBeInTheDocument();
   });
 });

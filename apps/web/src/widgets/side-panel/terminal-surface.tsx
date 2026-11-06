@@ -317,7 +317,10 @@ function TerminalTabs({
   );
   const { inline, overflow } = partitionTabs(list.terminals, selectedId, fit);
   const aim = (event: { target: EventTarget }): void => {
-    const value = event.target instanceof Element ? event.target.closest("[data-tab-value]")?.getAttribute("data-tab-value") : null;
+    // The open menu sits inside the same trigger; pressing one of its items
+    // chooses an action for the current target, it doesn't aim at a new one.
+    if (!(event.target instanceof Element) || row.current?.contains(event.target) !== true) return;
+    const value = event.target.closest("[data-tab-value]")?.getAttribute("data-tab-value");
     setTarget(list.terminals.find((terminal) => terminal.id === value));
   };
   const items: ContextMenuOption[] =
