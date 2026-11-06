@@ -257,6 +257,23 @@ struct TodoTests {
         ]
         #expect(ChatAdapter.todoWrites(in: chat) == [Date(timeIntervalSince1970: 2), nil])
     }
+
+    /// The line follows the newest run, not whatever entry comes last: it
+    /// shows while that run is going and leaves once it settles, even with
+    /// items the model never ticked off.
+    @Test func todoLineLeavesOnceTheNewestRunSettles() {
+        let plan = [TodoItem(text: "Fix", status: .inProgress), TodoItem(text: "Ship", status: .pending)]
+        func chat(_ phase: CotPhase) -> [ChatEntry] {
+            [
+                .run(id: "run-1", cot: cot(todoWrittenAtMs: 2_000), forkEntryId: nil, interrupted: false, failure: nil),
+                .user(id: "u2", text: "go on", images: []),
+                .run(id: "run-2", cot: cot(phase: phase), forkEntryId: nil, interrupted: false, failure: nil),
+                .user(id: "u3", text: "queued", images: []),
+            ]
+        }
+        #expect(ChatAdapter.todoLine(plan, chat: chat(.acting))?.list.items.count == 2)
+        #expect(ChatAdapter.todoLine(plan, chat: chat(.settled)) == nil)
+    }
 }
 
 private func answeredRun(_ id: String, text: String, streaming: Bool = false) -> ChatEntry {

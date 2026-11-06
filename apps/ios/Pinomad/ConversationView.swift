@@ -311,10 +311,7 @@ struct ConversationView: View {
     }
 
     private static func todoLine(_ conversation: ConversationSnapshot) -> TodoLine? {
-        TodoLine(
-            list: ChatAdapter.todo(conversation.todo),
-            runWrites: ChatAdapter.todoWrites(in: conversation.chat)
-        )
+        ChatAdapter.todoLine(conversation.todo, chat: conversation.chat)
     }
 
     @ViewBuilder
@@ -601,8 +598,8 @@ private struct RunRow: View, Equatable {
     let openSubagent: (UInt64) -> Void
     /// Opens the trace sheet; like `openSubagent`, not part of equality.
     let openTrace: () -> Void
-    /// The conversation's todo line, handed to the newest run only — no
-    /// other run shows it, and leaving it off them keeps a todo change from
+    /// The conversation's todo line, handed to the newest run only and only
+    /// while it is going — no other run shows it, and leaving it off them keeps a todo change from
     /// re-rendering every row.
     let todo: TodoLine?
     let interrupted: Bool

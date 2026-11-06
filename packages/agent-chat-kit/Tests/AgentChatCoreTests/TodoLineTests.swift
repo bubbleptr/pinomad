@@ -19,7 +19,7 @@ import Testing
     ])
 
     @Test func theNewestRunHavingWrittenTheListShowsIt() {
-        let line = TodoLine(list: done, runWrites: [nil, later])
+        let line = TodoLine(list: done, runWrites: [nil, later], newestRunSettled: false)
         #expect(line?.writtenAt == later)
         #expect(line?.list.isFinished == true)
     }
@@ -28,7 +28,7 @@ import Testing
     /// says when an earlier run last wrote it — that is when it most likely
     /// went stale.
     @Test func openItemsKeepTheLineAndDateItFromTheLastWriteAnywhere() {
-        let line = TodoLine(list: open, runWrites: [earlier, later, nil])
+        let line = TodoLine(list: open, runWrites: [earlier, later, nil], newestRunSettled: false)
         #expect(line?.writtenAt == later)
         #expect(line?.list.completedCount == 2)
         #expect(line?.list.current?.text == "Rename into place")
@@ -36,22 +36,29 @@ import Testing
 
     @Test func runsAreNotAssumedToWriteInTimeOrder() {
         // A clock step between runs must not hide the newest write.
-        let line = TodoLine(list: open, runWrites: [later, earlier])
+        let line = TodoLine(list: open, runWrites: [later, earlier], newestRunSettled: false)
         #expect(line?.writtenAt == later)
     }
 
     @Test func aFinishedListDropsOffARunThatDidNotWriteIt() {
-        #expect(TodoLine(list: done, runWrites: [later, nil]) == nil)
+        #expect(TodoLine(list: done, runWrites: [later, nil], newestRunSettled: false) == nil)
+    }
+
+    /// Models often write a plan and never tick it off; once the newest run
+    /// is over, the list would only hang under the answer.
+    @Test func aSettledRunDropsTheLineFinishedOrNot() {
+        #expect(TodoLine(list: open, runWrites: [earlier, later], newestRunSettled: true) == nil)
+        #expect(TodoLine(list: done, runWrites: [nil, later], newestRunSettled: true) == nil)
     }
 
     @Test func aListNoRunWroteHasNoDate() {
-        #expect(TodoLine(list: open, runWrites: [nil, nil])?.writtenAt == nil)
+        #expect(TodoLine(list: open, runWrites: [nil, nil], newestRunSettled: false)?.writtenAt == nil)
     }
 
     @Test func noRunNoListOrAnEmptyListShowsNothing() {
-        #expect(TodoLine(list: open, runWrites: []) == nil)
-        #expect(TodoLine(list: nil, runWrites: [later]) == nil)
-        #expect(TodoLine(list: TodoList(items: []), runWrites: [later]) == nil)
+        #expect(TodoLine(list: open, runWrites: [], newestRunSettled: false) == nil)
+        #expect(TodoLine(list: nil, runWrites: [later], newestRunSettled: false) == nil)
+        #expect(TodoLine(list: TodoList(items: []), runWrites: [later], newestRunSettled: false) == nil)
     }
 
     @Test func thePendingItemIsCurrentWhenNothingIsInProgress() {

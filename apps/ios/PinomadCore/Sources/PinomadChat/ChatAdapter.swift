@@ -46,6 +46,19 @@ public enum ChatAdapter {
         }
     }
 
+    /// The todo line under the newest run, or nil when it should not show
+    /// (`TodoLine` holds the rule). The newest run is the last `.run`
+    /// entry — a queued message can follow it.
+    public static func todoLine(_ items: [TodoItem]?, chat: [ChatEntry]) -> TodoLine? {
+        let newest = chat.last { if case .run = $0 { true } else { false } }
+        guard case let .run(_, cot, _, _, _, _)? = newest else { return nil }
+        return TodoLine(
+            list: todo(items),
+            runWrites: todoWrites(in: chat),
+            newestRunSettled: cot.phase == .settled
+        )
+    }
+
     /// The conversation's todo document (`ConversationSnapshot.todo`); nil
     /// while it has none. Which run shows it is `TodoLine`'s call.
     public static func todo(_ items: [TodoItem]?) -> TodoList? {

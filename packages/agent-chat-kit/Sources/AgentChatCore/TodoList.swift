@@ -41,9 +41,11 @@ public struct TodoList: Sendable, Equatable {
 }
 
 /// The todo list as a line at the end of the newest run. It shows only
-/// while it means something there: that run wrote the list, or the list
-/// still has work left. A finished list the newest run never touched has
-/// nothing left to say.
+/// while that run is going and the list means something there: the run
+/// wrote it, or it still has work left. A finished list the newest run
+/// never touched has nothing left to say, and once the run settles the
+/// list goes too — models often write a plan and never tick it off, and a
+/// stale 0/4 would hang under the answer (ADR-0026 §4).
 public struct TodoLine: Sendable, Equatable {
     public var list: TodoList
     /// When any run last wrote the list. The list may be stale, and this is
@@ -51,9 +53,10 @@ public struct TodoLine: Sendable, Equatable {
     public var writtenAt: Date?
 
     /// `runWrites` holds each run's last write of the list, oldest run
-    /// first; the line belongs to the last of them.
-    public init?(list: TodoList?, runWrites: [Date?]) {
-        guard let list, !list.items.isEmpty, let newest = runWrites.last,
+    /// first; the line belongs to the last of them. `newestRunSettled` says
+    /// that run is over.
+    public init?(list: TodoList?, runWrites: [Date?], newestRunSettled: Bool) {
+        guard !newestRunSettled, let list, !list.items.isEmpty, let newest = runWrites.last,
               newest != nil || !list.isFinished
         else { return nil }
         self.list = list
