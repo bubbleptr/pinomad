@@ -1,6 +1,6 @@
 // The todo list under the newest run (ADR-0026 §4): always that run's last
-// element, shown while the run wrote the list or something on it is still
-// unfinished.
+// element, shown while the run is going and either wrote the list or has
+// something on it still unfinished. A settled run drops it.
 import { Collapsible } from "@base-ui-components/react/collapsible";
 import { useState } from "react";
 import type { ChatEntry } from "@pinomad/client/cot-view.ts";
@@ -49,6 +49,7 @@ export function TodoCard({
   todo,
   writtenThisRun,
   updatedAtMs,
+  settled = false,
 }: {
   /** The conversation's `pinomad.todo` document, when it has a valid one. */
   todo: TodoState | undefined;
@@ -56,6 +57,8 @@ export function TodoCard({
   writtenThisRun: boolean;
   /** When any run last wrote the list (`lastTodoWriteMs`); absent when none did. */
   updatedAtMs?: number;
+  /** The run is over: a list it never ticked off would otherwise linger. */
+  settled?: boolean;
 }) {
   const items = todo?.items ?? [];
   const total = items.length;
@@ -65,7 +68,7 @@ export function TodoCard({
   // explicit choice is never overridden.
   const [userOpen, setUserOpen] = useState<boolean>();
 
-  if (total === 0 || (!writtenThisRun && allDone)) {
+  if (settled || total === 0 || (!writtenThisRun && allDone)) {
     return null;
   }
 

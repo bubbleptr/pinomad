@@ -360,6 +360,7 @@ function RunEntry({
         <TodoCard
           todo={todo?.state}
           writtenThisRun={cot.todoWrittenAtMs !== undefined}
+          settled={cot.phase === "settled"}
           {...(todo?.updatedAtMs === undefined ? {} : { updatedAtMs: todo.updatedAtMs })}
         />
       </ChatMessage.Body>

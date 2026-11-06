@@ -349,7 +349,7 @@ describe("a run in the transcript", () => {
 
   it("puts the todo card after everything else in the run", () => {
     const { container } = renderRun(
-      run({ elapsedMs: 9_000, todoWrittenAtMs: Date.now(), steps: narrated, answer: { text: "All fixed.", streaming: false } }),
+      run({ phase: "answering", elapsedMs: 9_000, todoWrittenAtMs: Date.now(), steps: narrated, answer: { text: "All fixed.", streaming: true } }),
       { state: plan, updatedAtMs: Date.now() },
     );
 
@@ -361,7 +361,7 @@ describe("a run in the transcript", () => {
   // A run that left the list alone still shows when it last changed: that
   // is when it is most likely to be out of date.
   it("dates the card from an earlier run's write", () => {
-    renderRun(run({ elapsedMs: 9_000, steps: narrated, answer: { text: "Next.", streaming: false } }), {
+    renderRun(run({ phase: "answering", elapsedMs: 9_000, steps: narrated, answer: { text: "Next.", streaming: true } }), {
       state: plan,
       updatedAtMs: Date.now() - 6 * 60_000,
     });

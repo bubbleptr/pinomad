@@ -31,11 +31,19 @@ describe("TodoCard", () => {
   // The model may write the plan once and never again: unfinished items keep
   // the card under the next run, and the age of that write is exactly what
   // says the plan may be stale.
-  it("stays under a run that did not write it while items are unfinished, dated by the last write", () => {
+  it("stays under a live run that did not write it while items are unfinished, dated by the last write", () => {
     render(<TodoCard todo={{ items: plan }} writtenThisRun={false} updatedAtMs={Date.now() - 6 * 60_000} />);
 
     expect(screen.getByRole("button", { name: /Todo 2\/4/ })).toBeInTheDocument();
     expect(screen.getByText("Updated 6m ago")).toBeInTheDocument();
+  });
+
+  // A list the model never ticked off would otherwise sit under the answer
+  // forever; once the run is over the card has nothing left to track.
+  it("goes away once the run has settled, finished or not", () => {
+    const { container } = render(<TodoCard todo={{ items: plan }} writtenThisRun settled updatedAtMs={Date.now()} />);
+
+    expect(container).toBeEmptyDOMElement();
   });
 
   it("does not appear when the run left it alone and nothing is unfinished", () => {
