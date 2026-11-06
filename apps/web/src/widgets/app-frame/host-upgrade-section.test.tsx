@@ -2,14 +2,21 @@
 // and which calls they make. The fake remote's spies stand in for the host.
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { act } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HostUpgrade } from "@pinomad/protocol/upgrade.ts";
 import { fakeRemote, fakeUpgrade, fakeView } from "../../test/story-fixtures.tsx";
-import { HostUpgradeSection } from "./host-upgrade-section.tsx";
+import { CALL_TIMEOUT_MS, HostUpgradeSection } from "./host-upgrade-section.tsx";
 
-function renderSection(upgrade: Partial<HostUpgrade> = {}, overrides: Parameters<typeof fakeView>[0] = {}) {
+afterEach(() => vi.useRealTimers());
+
+function renderSection(
+  upgrade: Partial<HostUpgrade> = {},
+  overrides: Parameters<typeof fakeView>[0] = {},
+  controller: Parameters<typeof fakeRemote>[1] = {},
+) {
   const view = fakeView({ upgrade: fakeUpgrade(upgrade), ...overrides });
-  const remote = fakeRemote(view);
+  const remote = fakeRemote(view, controller);
   render(<HostUpgradeSection view={view} remote={remote} />);
   return { remote, user: userEvent.setup() };
 }
@@ -41,6 +48,32 @@ describe("HostUpgradeSection", () => {
     renderSection({ phase: "installing", target: "0.14.0" });
     expect(screen.getByText(/Installing pinomad 0.14.0/)).toBeInTheDocument();
     expect(screen.queryAllByRole("button")).toHaveLength(0);
+  });
+
+  it("keeps the confirmation until the host answers, and says so when it doesn't", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { user } = renderSection({}, {}, { startUpgrade: () => new Promise(() => {}) });
+    await user.click(screen.getByRole("button", { name: "Upgrade…" }));
+    await user.click(screen.getByRole("button", { name: "Upgrade when idle" }));
+    expect(screen.getByRole("group", { name: /Upgrade the host/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await act(async () => {
+      vi.advanceTimersByTime(CALL_TIMEOUT_MS);
+    });
+    expect(await screen.findByText(/The host didn't answer/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+  });
+
+  it("doesn't call a failed check up to date", () => {
+    renderSection({ available: null, checkError: "getaddrinfo ENOTFOUND registry.npmjs.org" });
+    expect(screen.queryByText(/Up to date/)).toBeNull();
+    expect(screen.getByText("Couldn't check for releases")).toBeInTheDocument();
+  });
+
+  it("tells a source checkout how to upgrade, without a check it can't run", () => {
+    renderSection({ current: null, blocked: "source", available: null, checkedAt: null });
+    expect(screen.getByText(/bun run upgrade/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Check now" })).toBeNull();
   });
 
   it("shows the command instead of the button when the host can't upgrade itself", () => {
