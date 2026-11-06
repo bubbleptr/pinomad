@@ -364,7 +364,7 @@ extension View {
                 ToolbarItem(placement: .principal) {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.small)
-                        Text("Connecting…")
+                        Text(model.showsRestarting(hostKey) ? "Host is restarting…" : "Connecting…")
                     }
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)

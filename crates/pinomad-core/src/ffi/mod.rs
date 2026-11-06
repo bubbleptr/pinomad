@@ -10,6 +10,7 @@ mod providers;
 mod rtc;
 mod snapshot;
 mod types;
+mod upgrade;
 
 pub use account::*;
 pub use calls::*;
@@ -19,6 +20,7 @@ pub use providers::*;
 pub use rtc::*;
 pub use snapshot::*;
 pub use types::*;
+pub use upgrade::*;
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

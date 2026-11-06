@@ -13,9 +13,10 @@ use pinomad_core::ffi::{
     DeviceEntry, DeviceSource, FetchedImage, FfiCall, FfiCommand, FfiEvent, FileScope, HostSettingsState, ImageVariant, MessageImage, ModelRef,
     NewConversationHome, PatchLineKind, PinomadClient, ReadyOutcome, SkillEntry, SkillScope, SkillSource,
     ReorderOutcome, SteerOutcome, StoredHost, SubmissionDraft, SubmissionStatus, SubmitMode, ThinkingLevel,
-    WithdrawOutcome,
+    WithdrawOutcome, AutoUpgradeMode, AvailableUpgrade, UpgradeBlocker, UpgradeFailure, UpgradePhase,
 };
 use pinomad_core::json::{Json, JsonObject};
+use pinomad_core::remote_durable::UpgradeWhen;
 use pinomad_core::remote_durable::RemoteDurableOptions;
 use pinomad_core::transport::PlaintextTransport;
 use pinomad_core::u16str::U16String;
@@ -1850,7 +1851,7 @@ fn snapshot_settings_carry_the_account_switch_and_whether_the_name_is_custom() {
     let h = Harness::boot(host, "req-1");
     assert_eq!(
         h.client.snapshot().unwrap().settings,
-        Some(HostSettingsState { accept_account_devices: false, host_name_custom: true })
+        Some(HostSettingsState { accept_account_devices: false, host_name_custom: true, auto_upgrade: None })
     );
 
     // The machine's own name: nothing to reset to.
@@ -1862,7 +1863,7 @@ fn snapshot_settings_carry_the_account_switch_and_whether_the_name_is_custom() {
     let h = Harness::boot(host, "req-1");
     assert_eq!(
         h.client.snapshot().unwrap().settings,
-        Some(HostSettingsState { accept_account_devices: true, host_name_custom: false })
+        Some(HostSettingsState { accept_account_devices: true, host_name_custom: false, auto_upgrade: None })
     );
 }
 
@@ -2856,4 +2857,74 @@ fn load_earlier_pages_in_and_clears_has_earlier() {
     let shown = h.client.snapshot().unwrap().conversation.expect("conversation");
     assert!(!shown.has_earlier);
     assert!(shown.chat.len() > rows, "the earlier entry shows");
+}
+
+/// ADR-0043: the `upgrade` stream and `autoUpgrade` setting, typed; the
+/// three upgrade calls and the setting lower to the reference frames.
+#[test]
+fn snapshot_decodes_the_upgrade_stream_and_setting() {
+    let mut host = ScriptedHost::new();
+    host.snapshots.insert("settings".to_string(), obj(&[("autoUpgrade", Json::from("auto"))]));
+    host.snapshots.insert(
+        "upgrade".to_string(),
+        obj(&[
+            ("current", Json::from("0.13.0")),
+            (
+                "available",
+                obj(&[
+                    ("version", Json::from("1.0.0")),
+                    ("publishedAt", Json::from(1_000.0)),
+                    ("crossesMajor", Json::Bool(true)),
+                ]),
+            ),
+            ("blocked", Json::from("no-service")),
+            ("phase", Json::from("waiting")),
+            ("target", Json::from("1.0.0")),
+            ("attempt", Json::from(2.0)),
+            ("checking", Json::Bool(false)),
+            ("checkedAt", Json::from(2_000.0)),
+            ("checkError", Json::Null),
+            (
+                "failure",
+                obj(&[("version", Json::from("0.14.0")), ("message", Json::from("npm ERR!")), ("attempt", Json::from(1.0))]),
+            ),
+        ]),
+    );
+    let h = Harness::boot(host, "req-1");
+    let snapshot = h.client.snapshot().unwrap();
+    assert_eq!(snapshot.settings.unwrap().auto_upgrade, Some(AutoUpgradeMode::Auto));
+    let upgrade = snapshot.upgrade.unwrap();
+    assert_eq!(upgrade.current.as_deref(), Some("0.13.0"));
+    assert_eq!(
+        upgrade.available,
+        Some(AvailableUpgrade { version: "1.0.0".to_string(), published_at: 1_000.0, crosses_major: true })
+    );
+    assert_eq!(upgrade.blocked, Some(UpgradeBlocker::NoService));
+    assert_eq!(upgrade.phase, UpgradePhase::Waiting);
+    assert_eq!(upgrade.attempt, 2);
+    assert_eq!(upgrade.checked_at, Some(2_000.0));
+    assert_eq!(upgrade.check_error, None);
+    assert_eq!(
+        upgrade.failure,
+        Some(UpgradeFailure { version: "0.14.0".to_string(), message: "npm ERR!".to_string(), attempt: 1 })
+    );
+}
+
+#[test]
+fn snapshot_upgrade_is_none_until_the_stream_lands() {
+    let h = Harness::boot(ScriptedHost::new(), "req-1");
+    assert_eq!(h.client.snapshot().unwrap().upgrade, None);
+}
+
+#[test]
+fn upgrade_calls_encode_the_reference_frames() {
+    let mut h = Harness::new();
+    h.invoke(1, FfiCall::StartUpgrade { when: UpgradeWhen::Idle });
+    h.invoke(2, FfiCall::CancelUpgrade);
+    h.invoke(3, FfiCall::CheckUpgrade);
+    h.invoke(4, FfiCall::SetAutoUpgrade { mode: AutoUpgradeMode::Off });
+    assert_eq!(call_args(&h, "startUpgrade"), vec![obj(&[("when", Json::from("idle"))])]);
+    assert_eq!(call_args(&h, "cancelUpgrade"), vec![obj(&[])]);
+    assert_eq!(call_args(&h, "checkUpgrade"), vec![obj(&[])]);
+    assert_eq!(call_args(&h, "updateSettings"), vec![obj(&[("patch", obj(&[("autoUpgrade", Json::from("off"))]))])]);
 }

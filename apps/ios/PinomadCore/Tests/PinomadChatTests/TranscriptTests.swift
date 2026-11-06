@@ -97,6 +97,16 @@ private func local(
         #expect(MessageStatus(.sending) == .sending)
         #expect(MessageStatus(.failed) == .failed)
     }
+
+    /// A send refused while the host installs an upgrade says what to do.
+    @Test func upgradingRefusalOnALocalRowSaysToRetry() {
+        let rows = Transcript.rows(chat: [], local: [local("a", error: "Host is upgrading")])
+        guard case let .local(row) = rows[0] else {
+            Issue.record("expected a local row")
+            return
+        }
+        #expect(row.error == "The host is upgrading. Retry once it's back.")
+    }
 }
 
 @Suite struct QueuedRowsTests {

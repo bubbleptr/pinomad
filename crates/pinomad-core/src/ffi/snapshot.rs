@@ -5,6 +5,7 @@
 use crate::chat::{agent_of, queue_items, status_text};
 use crate::cot_view::ChatEntry;
 use crate::ffi::providers::{providers_of, HostProviders};
+use crate::ffi::upgrade::{auto_upgrade_of, upgrade_of, AutoUpgradeMode, HostUpgradeState};
 use crate::ffi::types::*;
 use crate::json::{Json, JsonObject};
 use crate::u16str::U16String;
@@ -57,6 +58,11 @@ pub struct ClientSnapshot {
     /// the `providers` stream's snapshot or when the host predates it (5.21).
     #[uniffi(default = None)]
     pub providers: Option<HostProviders>,
+    /// Release checks and the upgrade in progress (ADR-0043) — `None` before
+    /// the `upgrade` stream's snapshot or when the host predates it (5.30).
+    /// Kept while reconnecting, so an `Installing` phase explains the drop.
+    #[uniffi(default = None)]
+    pub upgrade: Option<HostUpgradeState>,
 }
 
 /// The part of `HostSettings` (settings.ts) the settings page edits.
@@ -67,6 +73,9 @@ pub struct HostSettingsState {
     /// The host name comes from PiNomad's settings.json rather than the
     /// machine — `SetHostName { name: None }` has something to reset.
     pub host_name_custom: bool,
+    /// Release checks and idle upgrades (ADR-0043 §6); `None` before 5.30.
+    #[uniffi(default = None)]
+    pub auto_upgrade: Option<AutoUpgradeMode>,
 }
 
 /// One paired device (devices.ts `DeviceEntry`).
@@ -285,6 +294,7 @@ fn settings_of(view: &Json) -> Option<HostSettingsState> {
         // Defaults on (settings.ts); a host older than the switch omits it.
         accept_account_devices: !matches!(settings.get("acceptAccountDevices"), Some(Json::Bool(false))),
         host_name_custom,
+        auto_upgrade: auto_upgrade_of(settings),
     })
 }
 
@@ -444,5 +454,6 @@ pub(crate) fn build(remote: &RemoteDurable) -> Option<ClientSnapshot> {
         agents: agents_of(&view),
         conversation: conversation_of(&view, fresh, fresh_epoch),
         providers: providers_of(&view),
+        upgrade: upgrade_of(&view),
     })
 }

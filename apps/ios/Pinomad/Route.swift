@@ -25,6 +25,8 @@ enum Route: Hashable {
     case host(String)
     /// That machine's providers: what's connected, and ways to add one.
     case providers(String)
+    /// That machine's release and upgrading it (ADR-0043).
+    case upgrade(String)
     // The pages under Providers carry the host they were opened for and act
     // on it only while it is the connected one (`providersPage`).
     /// Providers to sign in to with a subscription or account.
@@ -56,6 +58,7 @@ struct RouteDestination: View {
         case .machine(let hostKey): MachineSettingsView(model: model, hostKey: hostKey)
         case .host(let hostKey): HostDetailView(model: model, hostKey: hostKey)
         case .providers(let hostKey): ProvidersView(model: model, hostKey: hostKey)
+        case .upgrade(let hostKey): HostUpgradeView(model: model, hostKey: hostKey)
         case .providerSubscriptions(let hostKey):
             ProvidersGate(model: model, hostKey: hostKey) { providers in
                 ProviderGridView(model: model, hostKey: hostKey, all: providers.providers, kind: .subscription)
@@ -84,7 +87,7 @@ extension Route {
         case .conversation(let ref): HostFocus(hostKey: ref.hostKey, conversationId: ref.conversationId)
         case .conversations(let hostKey, _): hostKey.map { HostFocus(hostKey: $0) }
         case .newConversation(let hostKey), .addProject(let hostKey), .machineUnavailable(let hostKey),
-             .machine(let hostKey), .host(let hostKey), .providers(let hostKey),
+             .machine(let hostKey), .host(let hostKey), .providers(let hostKey), .upgrade(let hostKey),
              .providerSubscriptions(let hostKey), .providerKeys(let hostKey),
              .provider(let hostKey, _, _), .customEndpoint(let hostKey, _):
             HostFocus(hostKey: hostKey)
