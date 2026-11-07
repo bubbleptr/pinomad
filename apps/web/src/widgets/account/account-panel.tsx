@@ -7,7 +7,6 @@ import { List, ListItem } from "@astryxdesign/core/List";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
-import { TextInput } from "@astryxdesign/core/TextInput";
 import { Token } from "@astryxdesign/core/Token";
 import { useEffect, useState } from "react";
 import type {
@@ -22,10 +21,16 @@ import { relativeTime } from "@pinomad/client/family.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import type { AccountModel, AccountState } from "../../entities/account/account-model.ts";
 import { useHosts } from "../../entities/host/host-store.ts";
+import { clearOAuthReturn, oauthReturn } from "../../entities/account/oauth-return.ts";
+import { signInProviderName } from "../../entities/provider/sign-in-provider.tsx";
 import { OFFICIAL_SERVER_ORIGIN } from "../../shared/official-server.ts";
 import { useNow } from "../../shared/use-now.ts";
 import { accountErrorMessage } from "./account-error.ts";
+import { AccountEmail } from "./account-email.tsx";
 import { AddHostSteps } from "./add-host.tsx";
+import { useConfirmIdentity } from "./confirm-identity.tsx";
+import { SignInMethods } from "./sign-in-methods.tsx";
+import { SignInScreen } from "./sign-in.tsx";
 import { RemoveHost } from "./remove-host.tsx";
 
 /**
@@ -77,58 +82,12 @@ function SignedOut({ account, state }: { account: AccountModel; state: Extract<A
   // the official one; a cookie page is the server.
   const [origin, setOrigin] = useState(state.serverOrigin ?? OFFICIAL_SERVER_ORIGIN);
   const server = state.mode === "bearer" ? { origin, setOrigin } : undefined;
-  return <SignInForm account={account} server={server} />;
-}
-
-/** The Server field's value and setter; absent on a cookie page, which is the server. */
-interface ServerField {
-  readonly origin: string;
-  readonly setOrigin: (origin: string) => void;
-}
-
-function SignInForm({ account, server }: { account: AccountModel; server: ServerField | undefined }) {
-  const asksOrigin = server !== undefined;
-  const origin = server?.origin ?? "";
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<AccountError>();
-  const ready = username.trim() !== "" && password !== "" && (!asksOrigin || origin.trim() !== "");
-  const submit = (): void => {
-    if (!ready || busy) return;
-    setBusy(true);
-    setError(undefined);
-    void account
-      .login({ username: username.trim(), password, ...(asksOrigin ? { serverOrigin: origin.trim() } : {}) })
-      .then((result) => {
-        setBusy(false);
-        if (!result.ok) setError(result.error);
-      });
-  };
-  return (
-    <VStack gap={3} style={{ width: "100%" }}>
-      <VStack gap={1}>
-        <Heading level={3}>Sign in</Heading>
-        <Text type="supporting">See the hosts on your account and connect without a QR code.</Text>
-      </VStack>
-      {server === undefined ? null : (
-        <TextInput
-          label="Server"
-          placeholder="https://nomad.example.com"
-          value={server.origin}
-          onChange={server.setOrigin}
-          onEnter={submit}
-          width="100%"
-        />
-      )}
-      <TextInput label="Username" value={username} onChange={setUsername} onEnter={submit} width="100%" />
-      <TextInput label="Password" type="password" value={password} onChange={setPassword} onEnter={submit} width="100%" />
-      {error === undefined ? null : <Banner status="error" title="Couldn't sign in" description={accountErrorMessage(error)} />}
-      <HStack gap={2} vAlign="center">
-        <Button label="Sign in" variant="primary" isLoading={busy} isDisabled={!ready} onClick={submit} />
-      </HStack>
-    </VStack>
-  );
+  // A provider sign-in that came back refused says so once, here.
+  const [returned] = useState(() => oauthReturn().error);
+  useEffect(() => {
+    if (returned !== undefined) clearOAuthReturn("error");
+  }, [returned]);
+  return <SignInScreen account={account} server={server} initialError={returned} />;
 }
 
 function SignedIn({
@@ -151,12 +110,31 @@ function SignedIn({
       else setActionError(result.error);
     });
   };
+  // How a provider link from this page came back (ADR-0044 §5), said once.
+  const [returned] = useState(() => {
+    const { linked, error } = oauthReturn();
+    return linked !== undefined || error !== undefined ? { linked, error } : undefined;
+  });
+  useEffect(() => {
+    if (returned === undefined) return;
+    clearOAuthReturn("linked");
+    clearOAuthReturn("error");
+  }, [returned]);
   return (
     <VStack gap={4} style={{ width: "100%" }}>
       <VStack gap={1}>
         <Heading level={3}>{state.user}</Heading>
         <Text type="supporting">Signed in to {server}</Text>
       </VStack>
+      {returned?.linked !== undefined ? (
+        <Banner
+          status="success"
+          title={`${signInProviderName(returned.linked)} linked`}
+          description={`You can sign in with ${signInProviderName(returned.linked)} now.`}
+        />
+      ) : returned?.error !== undefined ? (
+        <Banner status="error" title="Couldn't link the account" description={accountErrorMessage({ code: returned.error })} />
+      ) : null}
       {state.unsavedHosts.map((host) => (
         <Banner
           key={host.hostKey}
@@ -172,7 +150,8 @@ function SignedIn({
       )}
       <AddHost account={account} serverOrigin={state.serverOrigin} />
       <Devices account={account} hosts={state.hosts} />
-      <ChangePassword account={account} />
+      <AccountEmail account={account} email={state.email} />
+      <SignInMethods account={account} />
       <SignOut account={account} onNotice={onNotice} />
       <DeleteAccount account={account} server={server} onNotice={onNotice} />
     </VStack>
@@ -463,7 +442,7 @@ const listNames = (names: readonly string[]): string =>
   names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 
 /**
- * The password again, as for deleting the account (ADR-0037 §3): a session
+ * Confirmed again, as for deleting the account (ADR-0037 §3, ADR-0044 §6): a session
  * left on a lost phone mustn't be able to remove the owner's other devices.
  */
 function RemoveDevice({
@@ -477,7 +456,6 @@ function RemoveDevice({
   hosts: readonly AccountHostMatch[];
   onClose: (removed: boolean) => void;
 }) {
-  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<AccountError>();
   const name = device.name ?? "this device";
@@ -485,16 +463,22 @@ function RemoveDevice({
   // there's no telling whether this device joined it: name them all.
   const unreachable = hosts.filter((match) => match.host.deviceReports === false).map((match) => match.host.name);
   const submit = (): void => {
-    if (password === "" || busy) return;
+    if (!identity.ready || busy) return;
     setBusy(true);
     setError(undefined);
-    void account.kickDevice({ id: device.id, password }).then((result) => {
+    void (async () => {
+      const confirmation = await identity.confirm();
+      const result = confirmation.ok ? await account.kickDevice({ id: device.id, confirmation: confirmation.value }) : confirmation;
       setBusy(false);
       // Already gone (removed from another device): the reload shows it.
       if (result.ok || result.error.code === "not_found") onClose(true);
-      else setError(result.error);
-    });
+      else {
+        if (result.error.code === "invalid_reauth") identity.reset();
+        setError(result.error);
+      }
+    })();
   };
+  const identity = useConfirmIdentity(account, submit);
   return (
     <VStack gap={2}>
       <Text weight="semibold">Remove {name}</Text>
@@ -507,86 +491,13 @@ function RemoveDevice({
             ? ` The host ${unreachable[0]} can't be asked. If ${name} joined it, revoke it in that host's Devices.`
             : ` The hosts ${listNames(unreachable)} can't be asked. If ${name} joined them, revoke it in each one's Devices.`}
       </Text>
-      <TextInput label="Password" type="password" value={password} onChange={setPassword} onEnter={submit} width="100%" />
+      {identity.field}
       {error === undefined ? null : (
         <Banner status="error" title="Couldn't remove the device" description={accountErrorMessage(error)} />
       )}
       <HStack gap={2}>
-        <Button label="Remove device" variant="destructive" isLoading={busy} isDisabled={password === ""} onClick={submit} />
+        <Button label="Remove device" variant="destructive" isLoading={busy} isDisabled={!identity.ready} onClick={submit} />
         <Button label="Cancel" variant="secondary" onClick={() => onClose(false)} />
-      </HStack>
-    </VStack>
-  );
-}
-
-/**
- * "Change password" (#450): this session stays, the account's others end. A
- * forgotten password has no form here.
- */
-function ChangePassword({ account }: { account: AccountModel }) {
-  const [open, setOpen] = useState(false);
-  const [current, setCurrent] = useState("");
-  const [next, setNext] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<AccountError>();
-  const [changed, setChanged] = useState(false);
-  const ready = current !== "" && next !== "";
-  const close = (): void => {
-    setOpen(false);
-    setCurrent("");
-    setNext("");
-    setError(undefined);
-  };
-  const submit = (): void => {
-    if (!ready || busy) return;
-    setBusy(true);
-    setError(undefined);
-    void account.changePassword({ currentPassword: current, newPassword: next }).then((result) => {
-      setBusy(false);
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
-      close();
-      setChanged(true);
-    });
-  };
-  if (!open) {
-    return (
-      <VStack gap={1}>
-        <HStack gap={2}>
-          <Button
-            label="Change password"
-            variant="secondary"
-            onClick={() => {
-              setChanged(false);
-              setOpen(true);
-            }}
-          />
-        </HStack>
-        {changed ? <Text type="supporting">Password changed. Your other devices were signed out.</Text> : null}
-      </VStack>
-    );
-  }
-  return (
-    <VStack gap={2}>
-      <Text weight="semibold">Change password</Text>
-      <TextInput label="Current password" type="password" value={current} onChange={setCurrent} onEnter={submit} width="100%" />
-      <TextInput
-        label="New password"
-        description="At least 12 characters. Your other devices will be signed out."
-        type="password"
-        value={next}
-        onChange={setNext}
-        onEnter={submit}
-        width="100%"
-      />
-      {error === undefined ? null : (
-        <Banner status="error" title="Couldn't change the password" description={accountErrorMessage(error)} />
-      )}
-      <HStack gap={2}>
-        <Button label="Change password" variant="primary" isLoading={busy} isDisabled={!ready} onClick={submit} />
-        <Button label="Cancel" variant="secondary" onClick={close} />
       </HStack>
     </VStack>
   );
@@ -684,7 +595,7 @@ function SignOut({ account, onNotice }: { account: AccountModel; onNotice: (noti
 }
 
 /**
- * "Delete account" (#451): the password again, then the server deletes the
+ * "Delete account" (#451): confirmed again, then the server deletes the
  * account and every session. Devices stay registered on the hosts (ADR-0022
  * §6: revocation lives on the host), so this device keeps its pairings.
  */
@@ -698,19 +609,37 @@ function DeleteAccount({
   onNotice: (notice: Notice | undefined) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [password, setPassword] = useState("");
+  if (!open) {
+    return (
+      <HStack gap={2}>
+        <Button label="Delete account" variant="secondary" onClick={() => setOpen(true)} />
+      </HStack>
+    );
+  }
+  return <DeleteAccountForm account={account} server={server} onNotice={onNotice} onClose={() => setOpen(false)} />;
+}
+
+function DeleteAccountForm({
+  account,
+  server,
+  onNotice,
+  onClose,
+}: {
+  account: AccountModel;
+  server: string;
+  onNotice: (notice: Notice | undefined) => void;
+  onClose: () => void;
+}) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<AccountError>();
-  const close = (): void => {
-    setOpen(false);
-    setPassword("");
-    setError(undefined);
-  };
   const submit = (): void => {
-    if (password === "" || busy) return;
+    if (!identity.ready || busy) return;
     setBusy(true);
     setError(undefined);
-    void account.deleteAccount({ password }).then((result) => {
+    void (async () => {
+      const confirmation = await identity.confirm();
+      return confirmation.ok ? account.deleteAccount({ confirmation: confirmation.value }) : confirmation;
+    })().then((result) => {
       // On success the model is already signed-out and this form unmounted. If
       // another account signed in meanwhile, the notice would be about the wrong one.
       if (result.ok) {
@@ -723,16 +652,11 @@ function DeleteAccount({
         return;
       }
       setBusy(false);
+      if (result.error.code === "invalid_reauth") identity.reset();
       setError(result.error);
     });
   };
-  if (!open) {
-    return (
-      <HStack gap={2}>
-        <Button label="Delete account" variant="secondary" onClick={() => setOpen(true)} />
-      </HStack>
-    );
-  }
+  const identity = useConfirmIdentity(account, submit);
   return (
     <VStack gap={2}>
       <Text weight="semibold">Delete account</Text>
@@ -741,13 +665,13 @@ function DeleteAccount({
         server; run pinomad join on each to connect it again. This device and your others stay registered on their hosts.
         To remove them, revoke them in each host's Devices.
       </Text>
-      <TextInput label="Password" type="password" value={password} onChange={setPassword} onEnter={submit} width="100%" />
+      {identity.field}
       {error === undefined ? null : (
         <Banner status="error" title="Couldn't delete the account" description={accountErrorMessage(error)} />
       )}
       <HStack gap={2}>
-        <Button label="Delete account" variant="destructive" isLoading={busy} isDisabled={password === ""} onClick={submit} />
-        <Button label="Cancel" variant="secondary" onClick={close} />
+        <Button label="Delete account" variant="destructive" isLoading={busy} isDisabled={!identity.ready} onClick={submit} />
+        <Button label="Cancel" variant="secondary" onClick={onClose} />
       </HStack>
     </VStack>
   );

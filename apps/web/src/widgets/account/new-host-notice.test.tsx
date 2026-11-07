@@ -106,7 +106,7 @@ describe("NewHostNotices", () => {
 
   it("announces a host that joined while this device was away", async () => {
     const knownHosts = createKnownHostsStore(localStorage);
-    knownHosts.arrivals({ serverOrigin: "https://pinomad.si", user: "kieran" }, [studio.host.hostId]);
+    knownHosts.arrivals({ serverOrigin: "https://pinomad.si", user: "kieran@example.com" }, [studio.host.hostId]);
     renderNotices(liveAccount(signedIn({ hosts: [studio, omarchy] })), knownHosts);
     await nextFrames();
     expect(toasts(/New host omarchy joined your account/)).toHaveLength(1);
@@ -114,7 +114,7 @@ describe("NewHostNotices", () => {
 
   it("goes straight to removing the new host, with the password again (#512)", async () => {
     const knownHosts = createKnownHostsStore(localStorage);
-    knownHosts.arrivals({ serverOrigin: "https://pinomad.si", user: "kieran" }, [studio.host.hostId]);
+    knownHosts.arrivals({ serverOrigin: "https://pinomad.si", user: "kieran@example.com" }, [studio.host.hostId]);
     const account = liveAccount(signedIn({ hosts: [studio, omarchy] }));
     const removeHost = vi.fn(async () => ({ ok: true as const, value: undefined }));
     renderNotices({ ...account, removeHost }, knownHosts);
@@ -124,7 +124,7 @@ describe("NewHostNotices", () => {
     // count as hidden to role queries.
     await userEvent.click(screen.getByRole("button", { name: "Remove", hidden: true }));
     await userEvent.type(await screen.findByLabelText("Password"), "my password{Enter}");
-    expect(removeHost).toHaveBeenCalledWith({ hostId: omarchy.host.hostId, password: "my password" });
+    expect(removeHost).toHaveBeenCalledWith({ hostId: omarchy.host.hostId, confirmation: "my password" });
     await vi.waitFor(() => expect(screen.queryByLabelText("Password")).toBeNull());
   });
 });

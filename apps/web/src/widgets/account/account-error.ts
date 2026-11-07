@@ -4,7 +4,7 @@ import type { AccountError } from "@pinomad/client/account.ts";
 export function accountErrorMessage(error: AccountError): string {
   switch (error.code) {
     case "invalid_credentials":
-      return "Wrong username or password.";
+      return "Wrong email or password.";
     case "rate_limited":
       return "Too many attempts. Wait a few minutes and try again.";
     case "network":
@@ -43,7 +43,42 @@ export function accountErrorMessage(error: AccountError): string {
     case "weak_password":
       return "Use a password of at least 12 characters.";
     case "wrong_password":
-      return "The current password is wrong.";
+      return "The password is wrong.";
+    case "invalid_code":
+      return "That code is wrong or has expired. Check the latest email, or send a new code.";
+    case "invalid_email":
+      return "Enter a valid email address.";
+    case "registration_closed":
+      return "This server isn't taking new accounts.";
+    case "email_unavailable":
+      return "This server can't send email right now. Try again later.";
+    case "email_taken":
+      return "Another account already uses that email.";
+    case "password_required":
+      return "Choose a password for the account.";
+    case "invalid_reauth":
+      return "The confirmation expired. Confirm again.";
+    case "last_method":
+      return "This is the only way to sign in to your account. Add another before removing it.";
+    case "identity_taken":
+      return "That account is already linked to another PiNomad account.";
+    case "session_ended":
+      return "You were signed out before linking finished. Sign in and try again.";
+    case "no_email":
+      return "Your account has no email to send a code to.";
+    case "no_verified_email":
+      return "The provider didn't give a verified email. Sign in another way, or verify your email there first.";
+    case "superseded":
+      return "You signed in another way while this sign-in was waiting.";
+    case "access_denied":
+      return "Sign-in was cancelled.";
+    case "invalid_state":
+      return "This sign-in expired or was started in another browser. Start again.";
+    case "exchange_failed":
+    case "invalid_token":
+      return "The provider's answer couldn't be checked. Try again.";
+    case "not_found":
+      return "This sign-in expired. Start again.";
     case "host_removed":
       return "The host was removed from the account.";
     case "remove_unsupported":

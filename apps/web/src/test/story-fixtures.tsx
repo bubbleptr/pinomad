@@ -6,7 +6,15 @@ import type { Decorator } from "@storybook/react-vite";
 import { useEffect, useState, type ReactNode } from "react";
 import { fn } from "storybook/test";
 import type { ConversationId, ConversationView, EntryRecord } from "@earendil-works/pi-durable";
-import type { AccountDevice, AccountHost, AccountHostMatch, HostLinkRequest } from "@pinomad/client/account.ts";
+import type {
+  AccountDevice,
+  AccountHost,
+  AccountHostMatch,
+  AccountIdentities,
+  AuthMethods,
+  HostLinkRequest,
+  PendingSignIn,
+} from "@pinomad/client/account.ts";
 import type { StoredHost } from "@pinomad/client/stored-host.ts";
 import type { HostProviders, LoginFlow, LoginMethod, ProviderInfo } from "@pinomad/protocol/auth.ts";
 import { PROTOCOL } from "@pinomad/protocol/frames.ts";
@@ -898,10 +906,23 @@ export const HOST_LINK_REQUEST: HostLinkRequest = {
   expiresAt: now + 9 * MINUTE,
 };
 
+/** A server with open sign-up, mailed codes and every provider (ADR-0044). */
+export const AUTH_METHODS: AuthMethods = { registration: true, email: true, providers: ["google", "github", "apple"] };
+
+/** An account with a password and one linked provider. */
+export const ACCOUNT_IDENTITIES: AccountIdentities = {
+  hasPassword: true,
+  identities: [{ provider: "github", email: "kieran@users.noreply.github.com", createdAt: now - 20 * 24 * 60 * MINUTE }],
+};
+
+/** A Google sign-in that found no account yet. */
+export const PENDING_SIGN_IN: PendingSignIn = { provider: "google", email: "kieran@gmail.com", name: "Kieran Zhang" };
+
 export const signedIn = (overrides: Partial<Extract<AccountState, { status: "signed-in" }>> = {}): AccountState => ({
   status: "signed-in",
   mode: "cookie",
-  user: "kieran",
+  user: "kieran@example.com",
+  email: "kieran@example.com",
   serverOrigin: "https://pinomad.si",
   hosts: ACCOUNT_HOSTS,
   rejectedHostKeys: [],
@@ -938,6 +959,25 @@ export function fakeAccount(state: AccountState): AccountModel {
     pairHost: fn(() => new Promise<never>(() => {})),
     retryUnsavedHost: fn(() => new Promise<never>(() => {})),
     hostRejected: fn(),
+    providerFlow: "redirect",
+    authMethods: fn(async () => ({ ok: true as const, value: AUTH_METHODS })),
+    requestSignupCode: fn(async () => ({ ok: true as const, value: undefined })),
+    register: fn(async () => ({ ok: true as const, value: undefined })),
+    requestPasswordReset: fn(async () => ({ ok: true as const, value: undefined })),
+    resetPassword: fn(async () => ({ ok: true as const, value: undefined })),
+    // A redirect leaves the page; a story stays on the busy button instead.
+    providerSignIn: fn(() => new Promise<never>(() => {})),
+    requestEmailCode: fn(async () => ({ ok: true as const, value: undefined })),
+    setEmail: fn(async () => ({ ok: true as const, value: undefined })),
+    identities: fn(async () => ({ ok: true as const, value: ACCOUNT_IDENTITIES })),
+    requestReauthCode: fn(async () => ({ ok: true as const, value: undefined })),
+    reauth: fn(async () => ({ ok: true as const, value: { reauth: "grant", expiresAt: Date.now() + 5 * MINUTE } })),
+    linkProvider: fn(() => new Promise<never>(() => {})),
+    unlinkProvider: fn(async () => ({ ok: true as const, value: undefined })),
+    pendingSignIn: fn(async () => ({ ok: true as const, value: PENDING_SIGN_IN })),
+    createFromPending: fn(async () => ({ ok: true as const, value: {} })),
+    linkPending: fn(async () => ({ ok: true as const, value: {} })),
+    signInAndLinkPending: fn(async () => ({ ok: true as const, value: {} })),
   };
 }
 

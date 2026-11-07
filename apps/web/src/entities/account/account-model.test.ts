@@ -254,9 +254,9 @@ describe("account model", () => {
     });
     await vi.waitFor(() => expect(model.state.status).toBe("signed-in"));
     expect(await model.listDevices()).toEqual({ ok: true, value: devices });
-    expect(await model.kickDevice({ id: 3, password: "nope" })).toEqual({ ok: false, error: { code: "wrong_password", status: 403 } });
+    expect(await model.kickDevice({ id: 3, confirmation: "nope" })).toEqual({ ok: false, error: { code: "wrong_password", status: 403 } });
     expect(model.state.status).toBe("signed-in");
-    expect((await model.kickDevice({ id: 3, password: "pw" })).ok).toBe(true);
+    expect((await model.kickDevice({ id: 3, confirmation: "pw" })).ok).toBe(true);
     expect(calls[5]!.url).toBe(`${ORIGIN}/api/devices/3/kick`);
     expect(JSON.parse(calls[5]!.init!.body!)).toEqual({ password: "pw" });
     // The session itself was kicked from elsewhere meanwhile.
@@ -529,10 +529,10 @@ describe("account model", () => {
       { status: 204 },
     ) });
     await vi.waitFor(() => expect(model.state.status).toBe("signed-in"));
-    const wrong = await model.changePassword({ currentPassword: "nope", newPassword: "a long new password" });
+    const wrong = await model.changePassword({ confirmation: "nope", newPassword: "a long new password" });
     expect(wrong).toEqual({ ok: false, error: { code: "wrong_password", status: 403 } });
     expect(model.state.status).toBe("signed-in");
-    const changed = await model.changePassword({ currentPassword: "pw", newPassword: "a long new password" });
+    const changed = await model.changePassword({ confirmation: "pw", newPassword: "a long new password" });
     expect(changed.ok).toBe(true);
     expect(model.state.status).toBe("signed-in");
     expect(calls[4]!.url).toBe(`${ORIGIN}/api/password`);
@@ -552,11 +552,11 @@ describe("account model", () => {
       store: hosts([storedHost({ account: { serverOrigin: ORIGIN, hostId: "h1" } })]),
     });
     await vi.waitFor(() => expect(model.state.status).toBe("signed-in"));
-    expect(await model.deleteAccount({ password: "nope" })).toEqual({ ok: false, error: { code: "wrong_password", status: 403 } });
+    expect(await model.deleteAccount({ confirmation: "nope" })).toEqual({ ok: false, error: { code: "wrong_password", status: 403 } });
     expect(model.state.status).toBe("signed-in");
-    expect(await model.deleteAccount({ password: "pw" })).toEqual({ ok: false, error: { code: "network" } });
+    expect(await model.deleteAccount({ confirmation: "pw" })).toEqual({ ok: false, error: { code: "network" } });
     expect(model.state.status).toBe("signed-in");
-    expect((await model.deleteAccount({ password: "pw" })).ok).toBe(true);
+    expect((await model.deleteAccount({ confirmation: "pw" })).ok).toBe(true);
     expect(calls[5]!.url).toBe(`${ORIGIN}/api/me/delete`);
     expect(JSON.parse(calls[5]!.init!.body as string)).toEqual({ password: "pw" });
     expect(model.state).toEqual({ status: "signed-out", mode: "cookie", serverOrigin: ORIGIN });
@@ -581,7 +581,7 @@ describe("account model", () => {
       { status: 204 },
     ), bridge });
     await vi.waitFor(() => expect(model.state.status).toBe("signed-in"));
-    expect((await model.deleteAccount({ password: "pw" })).ok).toBe(true);
+    expect((await model.deleteAccount({ confirmation: "pw" })).ok).toBe(true);
     expect(model.state).toMatchObject({ status: "signed-out", mode: "bearer", serverOrigin: ORIGIN });
     expect(cleared).toBe(1);
   });
@@ -633,7 +633,7 @@ describe("account model", () => {
     it("a delete's success doesn't sign the new account out or clear its token (#451)", async () => {
       const { model, answer, token } = setup("/api/me/delete");
       await vi.waitFor(() => expect(model.state).toMatchObject({ status: "signed-in", user: "alice" }));
-      const deleting = model.deleteAccount({ password: "pw" });
+      const deleting = model.deleteAccount({ confirmation: "pw" });
       await switchToBob(model);
       answer({ status: 204 });
       expect((await deleting).ok).toBe(true);
@@ -644,7 +644,7 @@ describe("account model", () => {
     it("a kick's 401 doesn't sign the new account out (#452)", async () => {
       const { model, answer, token } = setup("/api/devices/3/kick");
       await vi.waitFor(() => expect(model.state).toMatchObject({ status: "signed-in", user: "alice" }));
-      const kicking = model.kickDevice({ id: 3, password: "pw" });
+      const kicking = model.kickDevice({ id: 3, confirmation: "pw" });
       await switchToBob(model);
       answer({ status: 401, body: { error: "unauthenticated" } });
       expect((await kicking).ok).toBe(false);
@@ -655,7 +655,7 @@ describe("account model", () => {
     it("a password change's 401 doesn't sign the new account out (#450)", async () => {
       const { model, answer, token } = setup("/api/password");
       await vi.waitFor(() => expect(model.state).toMatchObject({ status: "signed-in", user: "alice" }));
-      const changing = model.changePassword({ currentPassword: "pw", newPassword: "a long new password" });
+      const changing = model.changePassword({ confirmation: "pw", newPassword: "a long new password" });
       await switchToBob(model);
       answer({ status: 401, body: { error: "unauthenticated" } });
       expect((await changing).ok).toBe(false);
@@ -1330,7 +1330,7 @@ describe("removing a host from the account (#512)", () => {
     const other = vouched("h2");
     const setup = await signedInWith([mine, qr, other], () => answer(204), ["h1", "h2"]);
 
-    expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
+    expect(await setup.model.removeHost({ hostId: "h1", confirmation: "pw" })).toEqual({ ok: true, value: undefined });
     const call = setup.calls.find((each) => each.url.endsWith("/api/hosts/h1/remove"))!;
     expect(JSON.parse(call.init!.body!)).toEqual({ password: "pw" });
     expect(setup.removed).toEqual([mine.hostKey]);
@@ -1341,7 +1341,7 @@ describe("removing a host from the account (#512)", () => {
   it("keeps the session and every stored host when the password is wrong", async () => {
     const mine = vouched("h1");
     const setup = await signedInWith([mine], () => answer(403, { error: "wrong_password" }));
-    expect(await setup.model.removeHost({ hostId: "h1", password: "nope" })).toEqual({
+    expect(await setup.model.removeHost({ hostId: "h1", confirmation: "nope" })).toEqual({
       ok: false,
       error: { code: "wrong_password", status: 403 },
     });
@@ -1354,7 +1354,7 @@ describe("removing a host from the account (#512)", () => {
     const mine = vouched("h1");
     const setup = await signedInWith([mine], () => answer(404, { error: "not_found" }));
     const before = setup.hostLists();
-    expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({
+    expect(await setup.model.removeHost({ hostId: "h1", confirmation: "pw" })).toEqual({
       ok: false,
       error: { code: "remove_unsupported" },
     });
@@ -1368,7 +1368,7 @@ describe("removing a host from the account (#512)", () => {
     const mine = vouched("h1");
     const qr = adopted("h1");
     const setup = await signedInWith([mine, qr], () => answer(404, { error: "not_found" }), []);
-    expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
+    expect(await setup.model.removeHost({ hostId: "h1", confirmation: "pw" })).toEqual({ ok: true, value: undefined });
     expect(setup.removed).toEqual([mine.hostKey]);
     expect(setup.store.stored).toEqual([qr]);
   });
@@ -1381,7 +1381,7 @@ describe("removing a host from the account (#512)", () => {
       failListAfterRemove: true,
     });
     const before = setup.hostLists();
-    expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({
+    expect(await setup.model.removeHost({ hostId: "h1", confirmation: "pw" })).toEqual({
       ok: false,
       error: { code: "network" },
     });
@@ -1397,7 +1397,7 @@ describe("removing a host from the account (#512)", () => {
     const { store, next } = holdingStore();
     const setup = await signedInWith([], () => answer(204), ["h1"], { autoRegister: true, store });
     const save = await next();
-    expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
+    expect(await setup.model.removeHost({ hostId: "h1", confirmation: "pw" })).toEqual({ ok: true, value: undefined });
 
     save.fail();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -1422,7 +1422,7 @@ describe("removing a host from the account (#512)", () => {
     expect((await setup.model.refreshHosts()).ok).toBe(true);
     const first = await next();
     const other = first.host.account!.hostId === "h1" ? "h2" : "h1";
-    expect(await setup.model.removeHost({ hostId: other, password: "pw" })).toEqual({ ok: true, value: undefined });
+    expect(await setup.model.removeHost({ hostId: other, confirmation: "pw" })).toEqual({ ok: true, value: undefined });
 
     first.succeed();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -1441,7 +1441,7 @@ describe("removing a host from the account (#512)", () => {
       const save = await next();
       const qr = adopted("h1");
       store.stored.push(qr);
-      expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
+      expect(await setup.model.removeHost({ hostId: "h1", confirmation: "pw" })).toEqual({ ok: true, value: undefined });
 
       save.succeed();
       await vi.waitFor(() => expect(store.stored).toEqual([qr]));
@@ -1459,7 +1459,7 @@ describe("removing a host from the account (#512)", () => {
       const retry = await next();
       const qr = adopted("h1");
       store.stored.push(qr);
-      expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
+      expect(await setup.model.removeHost({ hostId: "h1", confirmation: "pw" })).toEqual({ ok: true, value: undefined });
 
       retry.succeed();
       await vi.waitFor(() => expect(store.stored).toEqual([qr]));
@@ -1472,7 +1472,7 @@ describe("removing a host from the account (#512)", () => {
       const save = await next();
       const qr = adopted("h1");
       store.stored.push(qr);
-      expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
+      expect(await setup.model.removeHost({ hostId: "h1", confirmation: "pw" })).toEqual({ ok: true, value: undefined });
 
       save.succeed();
       expect(await pairing).toEqual({ ok: false, error: { code: "host_removed" } });
@@ -1501,7 +1501,7 @@ describe("removing a host from the account (#512)", () => {
       const setup = await signedInWith([], () => answer(204), ["h1"], { connect: handshake.connect });
       const pairing = setup.model.pairHost("h1");
       await handshake.started;
-      expect(await setup.model.removeHost({ hostId: "h1", password: "pw" })).toEqual({ ok: true, value: undefined });
+      expect(await setup.model.removeHost({ hostId: "h1", confirmation: "pw" })).toEqual({ ok: true, value: undefined });
 
       handshake.finish();
       expect(await pairing).toEqual({ ok: false, error: { code: "host_removed" } });
@@ -1511,7 +1511,7 @@ describe("removing a host from the account (#512)", () => {
 
     it("started after the host rejoined the account lands as usual", async () => {
       const setup = await signedInWith([], () => answer(204));
-      expect((await setup.model.removeHost({ hostId: "h1", password: "pw" })).ok).toBe(true);
+      expect((await setup.model.removeHost({ hostId: "h1", confirmation: "pw" })).ok).toBe(true);
       setup.relist();
       expect((await setup.model.refreshHosts()).ok).toBe(true);
 
@@ -1583,7 +1583,7 @@ describe("removing a host from the account (#512)", () => {
 
   it("signs out when the session is gone", async () => {
     const setup = await signedInWith([vouched("h1")], () => answer(401, { error: "unauthenticated" }));
-    expect((await setup.model.removeHost({ hostId: "h1", password: "pw" })).ok).toBe(false);
+    expect((await setup.model.removeHost({ hostId: "h1", confirmation: "pw" })).ok).toBe(false);
     expect(setup.model.state.status).toBe("signed-out");
     expect(setup.store.stored).toHaveLength(1);
   });

@@ -19,12 +19,14 @@ export const SignedOut: Story = { decorators: [withAccount({ status: "signed-out
 
 /** Clients that pick their server (the desktop app) start from the official one. */
 export const SignedOutPickServer: Story = {
-  decorators: [withAccount({ status: "signed-out", mode: "bearer" })],
+  decorators: [withAccount({ status: "signed-out", mode: "bearer" }, { providerFlow: "loopback" })],
 };
 
 /** After signing out of a self-hosted server, the field keeps that server. */
 export const SignedOutSelfHosted: Story = {
-  decorators: [withAccount({ status: "signed-out", mode: "bearer", serverOrigin: "https://nomad.example.com" })],
+  decorators: [
+    withAccount({ status: "signed-out", mode: "bearer", serverOrigin: "https://nomad.example.com" }, { providerFlow: "loopback" }),
+  ],
 };
 
 /** Add a host (#496): the command without a token, the code field, and the token command under Advanced. */
@@ -35,11 +37,28 @@ export const AddingHost: Story = {
   },
 };
 
-/** Changing the password (#450): the form opens in place of its button. */
+/** Changing the password (#450): the form opens under Sign-in methods. */
 export const ChangingPassword: Story = {
   decorators: [withAccount(signedIn())],
   play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "Change password" }));
+    await userEvent.click(await within(canvasElement).findByRole("button", { name: "Change password" }));
+  },
+};
+
+/** An account without a password confirms by a mailed code (ADR-0044 §6). */
+export const DeletingAccountByCode: Story = {
+  decorators: [
+    withAccount(signedIn(), {
+      identities: fn(async () => ({
+        ok: true as const,
+        value: { hasPassword: false, identities: [{ provider: "google", email: "kieran@gmail.com", createdAt: 0 }] },
+      })),
+    }),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole("button", { name: "Delete account" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Send code" }));
   },
 };
 
@@ -79,7 +98,7 @@ export const DeleteAccountWrongPassword: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "Delete account" }));
-    await userEvent.type(canvas.getByLabelText("Password"), "not my password{Enter}");
+    await userEvent.type(await canvas.findByLabelText("Password"), "not my password{Enter}");
   },
 };
 
@@ -113,7 +132,7 @@ export const RemoveDeviceWrongPassword: Story = {
     const canvas = within(canvasElement);
     const row = (await canvas.findByText("Mac Desktop")).closest("li")!;
     await userEvent.click(within(row).getByRole("button", { name: "Remove" }));
-    await userEvent.type(canvas.getByLabelText("Password"), "not my password{Enter}");
+    await userEvent.type(await canvas.findByLabelText("Password"), "not my password{Enter}");
   },
 };
 
@@ -137,7 +156,7 @@ export const RemoveHostWrongPassword: Story = {
     const canvas = within(canvasElement);
     const row = canvas.getByText("omarchy").closest("li")!;
     await userEvent.click(within(row).getByRole("button", { name: "Remove" }));
-    await userEvent.type(canvas.getByLabelText("Password"), "not my password{Enter}");
+    await userEvent.type(await canvas.findByLabelText("Password"), "not my password{Enter}");
   },
 };
 
