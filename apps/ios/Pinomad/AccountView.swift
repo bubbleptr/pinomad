@@ -152,18 +152,15 @@ struct AccountView: View {
                     Text(AccountCopy.signOutExplanation)
                 }
 
-                // The server refuses to delete its admin account.
-                if model.accountRecord?.admin != true {
-                    Section {
-                        NavigationLink {
-                            DeleteAccountView(model: model, server: hostOf(session.serverOrigin))
-                        } label: {
-                            Text("Delete Account")
-                                .foregroundStyle(model.accountBusy ? Color.secondary : Color.red)
-                        }
-                        .disabled(model.accountBusy)
-                        .id("delete-account")
+                Section {
+                    NavigationLink {
+                        DeleteAccountView(model: model, server: hostOf(session.serverOrigin))
+                    } label: {
+                        Text("Delete Account")
+                            .foregroundStyle(model.accountBusy ? Color.secondary : Color.red)
                     }
+                    .disabled(model.accountBusy)
+                    .id("delete-account")
                 }
 
                 LegalLinksSection()

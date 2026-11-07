@@ -159,9 +159,11 @@ export const RESPONSE_CASES: ResponseCase[] = [
   { name: "login-ok-token", kind: "login", status: 200, body: '{"user":{"username":"admin"},"expiresAt":1700000000000,"token":"the-token"}' },
   // A cookie-style answer (no token) is still a valid login for the parser.
   { name: "login-ok-no-token", kind: "login", status: 200, body: '{"user":{"username":"admin"},"expiresAt":1}' },
-  // `admin` counts only as `true` (#449); anything else is a regular account.
-  { name: "login-admin", kind: "login", status: 200, body: '{"user":{"username":"admin"},"admin":true,"expiresAt":1,"token":"t"}' },
-  { name: "login-admin-not-true", kind: "login", status: 200, body: '{"user":{"username":"a"},"admin":"yes","expiresAt":1,"token":"t"}' },
+  // An email account (ADR-0044): the email rides beside the shown name.
+  { name: "login-email", kind: "login", status: 200, body: '{"user":{"username":"a@b.co","email":"a@b.co"},"expiresAt":1,"token":"t"}' },
+  // `needsEmail` counts only as `true`, and a non-string email is dropped (ADR-0044 §8).
+  { name: "login-needs-email", kind: "login", status: 200, body: '{"user":{"username":"kieran"},"needsEmail":true,"expiresAt":1,"token":"t"}' },
+  { name: "login-loose-email-fields", kind: "login", status: 200, body: '{"user":{"username":"a","email":7},"needsEmail":"yes","expiresAt":1,"token":"t"}' },
   { name: "login-201", kind: "login", status: 201, body: '{"user":{"username":"a"},"expiresAt":2,"token":"t"}' },
   { name: "login-user-not-object", kind: "login", status: 200, body: '{"user":"x","expiresAt":1}' },
   { name: "login-missing-expiry", kind: "login", status: 200, body: '{"user":{"username":"a"}}' },
@@ -169,7 +171,8 @@ export const RESPONSE_CASES: ResponseCase[] = [
   { name: "login-invalid-credentials", kind: "login", status: 401, body: '{"error":"invalid_credentials"}' },
   { name: "login-401-no-body", kind: "login", status: 401, body: null },
   { name: "me-ok", kind: "me", status: 200, body: '{"user":{"username":"admin"}}' },
-  { name: "me-admin", kind: "me", status: 200, body: '{"user":{"username":"admin"},"admin":true}' },
+  { name: "me-email", kind: "me", status: 200, body: '{"user":{"username":"a@b.co","email":"a@b.co"}}' },
+  { name: "me-needs-email", kind: "me", status: 200, body: '{"user":{"username":"kieran"},"needsEmail":true}' },
   { name: "me-user-null", kind: "me", status: 200, body: '{"user":null}' },
   // A fully-read body that isn't JSON is still a 2xx transport-wise — the
   // endpoint's shape check turns it into invalid_response.
@@ -223,10 +226,9 @@ export const RESPONSE_CASES: ResponseCase[] = [
   // 403, not 401: a mistyped current password must not read as signed out.
   { name: "change-password-wrong", kind: "changePassword", status: 403, body: '{"error":"wrong_password"}' },
   { name: "change-password-weak", kind: "changePassword", status: 400, body: '{"error":"weak_password"}' },
-  // Deleting the account: the 403s are refusals, not sign-outs (#451).
+  // Deleting the account: the 403 is a refusal, not a sign-out (#451).
   { name: "delete-account-204", kind: "deleteAccount", status: 204, body: null },
   { name: "delete-account-wrong", kind: "deleteAccount", status: 403, body: '{"error":"wrong_password"}' },
-  { name: "delete-account-admin", kind: "deleteAccount", status: 403, body: '{"error":"admin_account"}' },
   { name: "delete-account-rate-limited", kind: "deleteAccount", status: 429, body: '{"error":"rate_limited"}' },
   { name: "delete-account-401", kind: "deleteAccount", status: 401, body: '{"error":"unauthenticated"}' },
   // The device list (#452): every host state, a nameless and a removed row.

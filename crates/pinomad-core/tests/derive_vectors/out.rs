@@ -549,22 +549,22 @@ pub fn account_request_json(request: &AccountHttpRequest) -> Json {
 }
 
 fn account_user_json(user: &pinomad_core::account::AccountUser) -> Json {
-    obj(&[("username", Some(s(&user.username)))])
+    obj(&[("username", Some(s(&user.username))), ("email", user.email.as_deref().map(s))])
 }
 
 /// The per-op success payload, in the reference's key order.
 fn account_value_json(value: &AccountValue) -> Json {
     match value {
-        // `admin` only when true, spread right after `user`.
-        AccountValue::Login(LoginSuccess { user, admin, expires_at, token }) => obj(&[
+        // `needsEmail` only when true, spread right after `user`.
+        AccountValue::Login(LoginSuccess { user, needs_email, expires_at, token }) => obj(&[
             ("user", Some(account_user_json(user))),
-            ("admin", admin.then_some(Json::Bool(true))),
+            ("needsEmail", needs_email.then_some(Json::Bool(true))),
             ("expiresAt", Some(num(*expires_at))),
             ("token", token.as_deref().map(s)),
         ]),
-        AccountValue::Me(AccountMe { user, admin }) => obj(&[
+        AccountValue::Me(AccountMe { user, needs_email }) => obj(&[
             ("user", Some(account_user_json(user))),
-            ("admin", admin.then_some(Json::Bool(true))),
+            ("needsEmail", needs_email.then_some(Json::Bool(true))),
         ]),
         // Handled by `account_result_json` — `value` is absent, not null.
         AccountValue::Unit => Json::Null,

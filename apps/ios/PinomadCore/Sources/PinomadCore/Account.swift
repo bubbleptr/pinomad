@@ -41,27 +41,20 @@ public struct AccountRecord: Codable, Equatable, Sendable {
     public var username: String
     public var token: String?
     public var expiresAt: Double?
-    /// The server's admin account, as of the sign-in (#449). Records saved
-    /// before #451 have none and read as a regular account.
-    public var admin: Bool?
 
-    public init(
-        serverOrigin: String, username: String, token: String? = nil, expiresAt: Double? = nil, admin: Bool? = nil
-    ) {
+    public init(serverOrigin: String, username: String, token: String? = nil, expiresAt: Double? = nil) {
         self.serverOrigin = serverOrigin
         self.username = username
         self.token = token
         self.expiresAt = expiresAt
-        self.admin = admin
     }
 
-    public init(session: AccountSession, admin: Bool = false) {
+    public init(session: AccountSession) {
         self.init(
             serverOrigin: session.serverOrigin,
             username: session.username,
             token: session.token,
-            expiresAt: session.expiresAt,
-            admin: admin ? true : nil)
+            expiresAt: session.expiresAt)
     }
 
     public var session: AccountSession? {
@@ -497,7 +490,7 @@ public struct AccountAPI: Sendable {
     }
 
     /// Deletes the signed-in account and ends this session (#451). 403
-    /// `wrong_password` and `admin_account` are refusals, not sign-outs.
+    /// `wrong_password` is a refusal, not a sign-out.
     public func deleteAccount(password: String) async -> Result<Void, AccountFailure> {
         switch await request(.deleteAccount(password: password), kind: .deleteAccount) {
         case .success(.unit): return .success(())
@@ -873,7 +866,6 @@ public enum AccountCopy {
         case "wrong_password": "The current password is wrong."
         case "weak_password": "Use a password of at least 12 characters."
         case "current_device": "That's the device you're using. Sign out instead."
-        case "admin_account": "The server's admin account can't be deleted."
         // Set by the app: a 404 for a host the list fetched after it still has.
         case "remove_host_unsupported": "This server can't remove hosts. Run pinomad leave on the host, or update the server."
         // Set by the app: a 404 with no list fetched after it to tell why.
