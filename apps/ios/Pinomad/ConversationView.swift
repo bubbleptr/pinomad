@@ -328,10 +328,7 @@ struct ConversationView: View {
                 cot: ChatAdapter.splitRun(cot, summaries: subagentSummaries).trace,
                 interrupted: interrupted
             )
-            AgentTraceSheet(
-                trace,
-                todo: runId == Self.latestRunId(conversation.chat) ? Self.todoLine(conversation) : nil
-            )
+            AgentTraceSheet(trace)
         }
     }
 
@@ -644,7 +641,7 @@ private struct RunRow: View, Equatable {
             }
             // The run's last element (ADR-0026 §4), under the answer.
             if let todo {
-                TodoLineView(todo, onOpen: openTrace)
+                TodoLineView(todo)
             }
         }
     }
