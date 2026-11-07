@@ -15,6 +15,7 @@ import { createHostStore, type StoredAccount, type StoredHost } from "./host-sto
 import { createLocalHost, type LocalHost } from "./local-host.ts";
 import { LAUNCHER_EXECUTABLE } from "../../host/src/service/definition.ts";
 import { navigateAwayAction, windowOpenAction } from "./navigation-policy.ts";
+import { loopbackSignIn, type LoopbackSignInInput } from "./oauth-loopback.ts";
 import { APP_HOST, APP_SCHEME, contentTypeFor, rendererFilePath, RENDERER_CSP } from "./renderer-files.ts";
 import { createAppUpdater, type AppUpdater, type AutoUpdaterLike } from "./updater.ts";
 import { desktopUserDataDir } from "./user-data.ts";
@@ -197,6 +198,26 @@ function installDeviceNameIpc(): void {
 }
 
 /**
+ * Provider sign-in (ADR-0044 §5): main owns the 127.0.0.1 listener and the
+ * system browser; the renderer keeps the PKCE verifier and trades the code
+ * itself. Same caller check, no safeStorage. A finished sign-in brings the
+ * window back in front of the browser.
+ */
+function installOAuthIpc(): void {
+  ipcMain.handle("pinomad:oauth:signIn", async (event: IpcMainInvokeEvent, input: LoopbackSignInInput) => {
+    if (!isOurRendererFrame(event)) throw new Error("sign-in is only reachable from the bundled renderer");
+    const result = await loopbackSignIn(input, { openExternal: (url) => shell.openExternal(url) });
+    if ("code" in result && mainWindow !== null) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      if (process.platform === "darwin") app.focus({ steal: true });
+    }
+    return result;
+  });
+}
+
+/**
  * The "This Mac" host switch (#501), macOS only: main runs the installed
  * host's own service CLI (local-host.ts), never a host of its own. Same caller
  * check, no safeStorage. Nothing here runs until the renderer asks, so a
@@ -326,6 +347,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     installHostStoreIpc();
     installDeviceNameIpc();
+    installOAuthIpc();
     if (process.platform === "darwin") {
       const localHost = createLocalHost({
         home: homedir(),
