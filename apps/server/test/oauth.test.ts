@@ -7,7 +7,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { request as httpRequest } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { openAccounts, type LoginLimits } from "../src/accounts.ts";
-import { createOAuth } from "../src/oauth.ts";
+import { createOAuth, loadOAuthConfig } from "../src/oauth.ts";
 import { startRelay, type Relay } from "../src/relay.ts";
 import { startFakeIdp, type FakeIdentity, type FakeIdp, type FakeProvider, type TokenTweaks } from "./oauth-fake.ts";
 import { downgradeToSchema9, fakeMailer, removeTempDir, tempDir } from "./support.ts";
@@ -181,6 +181,26 @@ const IDENTITY: Record<FakeProvider, FakeIdentity> = {
   github: { sub: "583231", email: "ada@example.com", name: "Ada" },
   apple: { sub: "001234.apple", email: "ada@example.com" },
 };
+
+describe("provider configuration", () => {
+  it("turns a provider on only when all its variables are set", () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const config = loadOAuthConfig({
+      PINOMAD_SERVER_GOOGLE_CLIENT_ID: "id",
+      PINOMAD_SERVER_GOOGLE_CLIENT_SECRET: "secret",
+      PINOMAD_SERVER_GITHUB_CLIENT_ID: "id",
+      PINOMAD_SERVER_APPLE_SERVICES_ID: "si.example",
+      PINOMAD_SERVER_APPLE_TEAM_ID: "TEAM",
+      PINOMAD_SERVER_APPLE_KEY_ID: "KEY",
+      PINOMAD_SERVER_APPLE_PRIVATE_KEY: "-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----",
+    });
+    expect(Object.keys(config)).toEqual(["google", "apple"]);
+    expect(config.apple?.privateKey).toBe("-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----");
+    expect(config.apple?.bundleId).toBeUndefined();
+    expect(errors).toHaveBeenCalledTimes(1);
+    errors.mockRestore();
+  });
+});
 
 describe("sign-in methods", () => {
   it("lists the configured providers; registration no longer depends on mail", async () => {
