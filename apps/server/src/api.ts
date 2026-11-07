@@ -618,8 +618,11 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     }
     // The "no account yet" page is the web client's, for native flows too:
     // the person is still in the browser the client opened.
+    // A web flow's binding cookie is renewed for the pending record's ten
+    // minutes, however long the provider's pages took.
     if (resolved.status === "pending") {
-      toWebClient("oauth_pending", resolved.id);
+      const binding = flow.native === undefined ? cookie(request, BINDING_COOKIE) : undefined;
+      toWebClient("oauth_pending", resolved.id, binding === undefined ? [] : [setBindingCookie(binding)]);
       return;
     }
     if (flow.native !== undefined) {

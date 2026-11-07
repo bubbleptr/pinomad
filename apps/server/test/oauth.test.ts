@@ -245,9 +245,13 @@ describe.each(["google", "github", "apple"] as const)("%s sign-in", (provider) =
 
   it("does not merge on an unverified provider email", async () => {
     const started = await startServer();
-    const { response } = await webSignIn(started, provider, { ...IDENTITY[provider], email: OWNER, emailVerified: provider === "apple" ? "false" : false });
-    expect(webLanding(response).get("oauth_pending")).toBeTruthy();
+    const { response, binding } = await webSignIn(started, provider, { ...IDENTITY[provider], email: OWNER, emailVerified: provider === "apple" ? "false" : false });
+    const pending = webLanding(response).get("oauth_pending");
+    expect(pending).toBeTruthy();
     expect(setCookie(response, SESSION_COOKIE)).toBeUndefined();
+    // Nor does it make an account of its own under that address.
+    const created = await post(started.relay, `/api/oauth/pending/${pending!}/create`, {}, { origin: ORIGIN, cookie: `pinomad_oauth=${binding}` });
+    expect([created.status, created.json.error]).toEqual([400, "no_verified_email"]);
   });
 
   it("refuses a new account while registration is closed", async () => {
