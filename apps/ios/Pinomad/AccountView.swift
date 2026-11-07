@@ -14,9 +14,12 @@ struct AccountView: View {
     @State private var confirmingSignOutEverywhere = false
     /// Sign out also takes this iPhone off the account's hosts (#494).
     @State private var leavingHosts = false
-    @State private var passwordChanged = false
+    /// What the last sign-in methods change said ("Password set.").
+    @State private var methodsNotice: String?
+    @State private var emailSaved = false
     @State private var removingDevice: AccountDevice?
     @State private var removingHost: PendingAccountHost?
+    @State private var unlinking: String?
     #if DEBUG
     /// `PINOMAD_DEMO_ACCOUNT=delete` opens on the Delete Account form.
     @State private var devDeleting = false
@@ -35,10 +38,25 @@ struct AccountView: View {
     var body: some View {
         NavigationStack {
             if let session = model.accountSession {
-                signedIn(session)
+                if model.accountNeedsEmail {
+                    AddEmailView(model: model)
+                } else {
+                    signedIn(session)
+                }
             } else {
                 AccountLoginView(model: model)
             }
+        }
+        // A fresh stack when the session starts or ends: a sign-up step
+        // pushed over the form must not outlive the form.
+        .id(model.accountSession == nil)
+        // Over the sign-in form and whatever replaces it: "I already have an
+        // account" signs in on the way and must stay up until it links.
+        .sheet(item: Binding(
+            get: { model.accountApplePending },
+            set: { model.accountApplePending = $0 }
+        )) { pending in
+            AppleNoAccountView(model: model, pending: pending)
         }
         // Any session change (Sign out everywhere, a dead token, a new
         // sign-in) starts the shared-device choice off again.
@@ -56,7 +74,7 @@ struct AccountView: View {
             List {
                 Section {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(session.username)
+                        Text(session.displayName)
                         Text(hostOf(session.serverOrigin))
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -105,16 +123,9 @@ struct AccountView: View {
                     devicesSection
                 }
 
-                Section {
-                    NavigationLink("Change Password") {
-                        ChangePasswordView(model: model) { passwordChanged = true }
-                    }
-                    .disabled(model.accountBusy)
-                } footer: {
-                    if passwordChanged {
-                        Text("Password changed. Your other devices were signed out.")
-                    }
-                }
+                emailSection(session)
+
+                signInMethodsSection
 
                 Section {
                     if let warning = model.accountSignOutWarning {
@@ -182,9 +193,13 @@ struct AccountView: View {
         .navigationDestination(item: $removingHost) { host in
             RemoveHostView(model: model, host: host, server: hostOf(session.serverOrigin))
         }
+        .navigationDestination(item: $unlinking) { provider in
+            UnlinkProviderView(model: model, provider: provider) { methodsNotice = $0 }
+        }
         .refreshable {
             await model.refreshHostsAndAccount()
             await model.accountRefreshDevices()
+            await model.accountRefreshIdentities()
         }
         .task {
             // The new-host notice's Remove, from outside this sheet.
@@ -207,7 +222,9 @@ struct AccountView: View {
             // Side by side: a slow host list mustn't hold the devices back.
             async let hosts: Void = model.accountRefreshHosts()
             async let devices: Void = model.accountRefreshDevices()
-            _ = await (hosts, devices)
+            async let identities: Void = model.accountRefreshIdentities()
+            async let profile: Void = model.accountRefreshProfile()
+            _ = await (hosts, devices, identities, profile)
         }
         #if DEBUG
         .navigationDestination(isPresented: $devDeleting) {
@@ -260,6 +277,92 @@ struct AccountView: View {
             }
         } message: {
             Text((model.newHostNotice ?? "") + "\n\n" + HostLinkCopy.newHostsHint)
+        }
+    }
+
+    private func emailSection(_ session: AccountSession) -> some View {
+        Section {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Email")
+                    Text(session.email ?? "None yet")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                NavigationLink {
+                    ChangeEmailView(model: model) { emailSaved = true }
+                } label: {
+                    Text(session.email == nil ? "Add email" : "Change email")
+                        .foregroundStyle(.tint)
+                }
+                .fixedSize()
+                .disabled(model.accountBusy)
+            }
+        } footer: {
+            if emailSaved { Text("Email saved.") }
+        }
+    }
+
+    /// The password and each linked provider (ADR-0044 §4). Linking another
+    /// provider happens on the web for now: the server has no native link
+    /// flow yet. A server from before sign-in methods keeps Change Password.
+    @ViewBuilder
+    private var signInMethodsSection: some View {
+        Section {
+            if model.accountIdentitiesUnsupported {
+                NavigationLink("Change Password") {
+                    ChangePasswordView(model: model, hasPassword: true) { methodsNotice = $0 }
+                }
+                .disabled(model.accountBusy)
+            } else if let identities = model.accountIdentities {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Password")
+                        Text(identities.hasPassword ? "Set" : "Not set")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    NavigationLink {
+                        ChangePasswordView(model: model, hasPassword: identities.hasPassword) { methodsNotice = $0 }
+                    } label: {
+                        Text(identities.hasPassword ? "Change password" : "Set password")
+                            .foregroundStyle(.tint)
+                    }
+                    .fixedSize()
+                    .disabled(model.accountBusy)
+                }
+                ForEach(identities.identities, id: \.provider) { identity in
+                    HStack(spacing: 12) {
+                        SignInProviderMark(provider: identity.provider, size: 20)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(SignInProviders.name(identity.provider))
+                            if let email = identity.email {
+                                Text(email)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Spacer()
+                        Button("Remove") { unlinking = identity.provider }
+                            .buttonStyle(.tactile(.glass))
+                            .controlSize(.small)
+                            .disabled(model.accountBusy)
+                    }
+                }
+            } else {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading sign-in methods…")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } header: {
+            Text("Sign-in Methods")
+        } footer: {
+            if let methodsNotice { Text(methodsNotice) }
         }
     }
 

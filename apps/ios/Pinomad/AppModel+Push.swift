@@ -114,7 +114,7 @@ extension AppModel {
             guard let self else { return }
             self.serverPushInFlight = false
             self.serverPushTask = nil
-            if self.accountSession == session {
+            if session.isSameSignIn(as: self.accountSession) {
                 switch result {
                 case .success:
                     if case .remove(let token) = action {

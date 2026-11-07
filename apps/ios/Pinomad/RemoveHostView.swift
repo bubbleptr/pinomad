@@ -2,7 +2,7 @@ import PinomadCore
 import SwiftUI
 
 /// Take a host off the account (#512), pushed from its row or from the
-/// new-host notice. The password again, as for removing a device: a session
+/// new-host notice. Confirmed again, as for removing a device: a session
 /// left on a lost phone mustn't be able to cut the owner's hosts loose, and
 /// only that machine's terminal brings one back.
 struct RemoveHostView: View {
@@ -11,50 +11,22 @@ struct RemoveHostView: View {
     let server: String
 
     @Environment(\.dismiss) private var dismiss
-    @State private var password = ""
+    @State private var step = IdentityConfirmation()
     @State private var error: String?
     @State private var busy = false
 
     var body: some View {
         Form {
-            Section {
-                SecureField("Password", text: $password)
-                    .textContentType(.password)
-                    .submitLabel(.go)
-                    .onSubmit(submit)
-            } footer: {
-                Text(AccountCopy.removeHostExplanation(
-                    name: host.name, server: server, pairedHere: model.removedHostPairing(host.hostId)))
-            }
+            ConfirmIdentitySection(
+                model: model, step: step,
+                footer: AccountCopy.removeHostExplanation(
+                    name: host.name, server: server, pairedHere: model.removedHostPairing(host.hostId)),
+                onSubmit: submit)
 
-            Section {
-                Button(role: .destructive) {
-                    submit()
-                } label: {
-                    HStack {
-                        Spacer()
-                        if busy {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Text("Remove Host")
-                        }
-                        Spacer()
-                    }
-                }
-                .buttonStyle(.tactile(.glassProminent))
-                .tint(.red)
-                .disabled(busy || password.isEmpty)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
-            }
+            FormActionButton(title: "Remove Host", busy: busy, destructive: true, action: submit)
+                .disabled(busy || !step.ready)
 
-            if let error {
-                Section {
-                    Text(error)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                }
-            }
+            FormErrorSection(message: error)
         }
         .navigationTitle("Remove \(host.name)")
         .navigationBarTitleDisplayMode(.inline)
@@ -62,11 +34,11 @@ struct RemoveHostView: View {
     }
 
     private func submit() {
-        guard !busy, !password.isEmpty else { return }
+        guard !busy, step.ready else { return }
         busy = true
         error = nil
         Task {
-            let failure = await model.accountRemoveHost(host, password: password)
+            let failure = await step.run(model: model) { await model.accountRemoveHost(host, confirmation: $0) }
             busy = false
             if let failure {
                 error = AccountCopy.message(failure)

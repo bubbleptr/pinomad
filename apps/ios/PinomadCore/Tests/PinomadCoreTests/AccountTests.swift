@@ -420,14 +420,14 @@ struct AccountTests {
         let transport = StubAccountTransport()
         transport.outcome = .response(AccountHTTPResponse(status: 403, body: Data(#"{"error":"wrong_password"}"#.utf8)))
         let api = AccountAPI(origin: "https://relay.example.com", token: "tok", transport: transport)
-        let result = await api.changePassword(current: "old", new: "a long new password")
+        let result = await api.changePassword(current: .password("old"), new: "a long new password")
         guard case .failure(let failure) = result else {
             Issue.record("expected wrong_password, got \(result)")
             return
         }
         #expect(failure == AccountFailure(code: "wrong_password", status: 403))
         #expect(!failure.clearsSession)
-        #expect(AccountCopy.message(failure) == "The current password is wrong.")
+        #expect(AccountCopy.message(failure) == "The password is wrong.")
         #expect(transport.requests[0].url == "https://relay.example.com/api/password")
     }
 
@@ -437,7 +437,7 @@ struct AccountTests {
         let transport = StubAccountTransport()
         transport.outcome = .response(AccountHTTPResponse(status: 204, body: Data()))
         let api = AccountAPI(origin: "https://relay.example.com", token: "tok", transport: transport)
-        let result = await api.deleteAccount(password: "pw")
+        let result = await api.deleteAccount(confirmation: .password("pw"))
         guard case .success = result else {
             Issue.record("expected success, got \(result)")
             return
@@ -453,10 +453,10 @@ struct AccountTests {
         let transport = StubAccountTransport()
         let api = AccountAPI(origin: "https://relay.example.com", token: "tok", transport: transport)
         for (code, copy) in [
-            ("wrong_password", "The current password is wrong."),
+            ("wrong_password", "The password is wrong."),
         ] {
             transport.outcome = .response(AccountHTTPResponse(status: 403, body: Data(#"{"error":"\#(code)"}"#.utf8)))
-            guard case .failure(let failure) = await api.deleteAccount(password: "pw") else {
+            guard case .failure(let failure) = await api.deleteAccount(confirmation: .password("pw")) else {
                 Issue.record("expected \(code)")
                 continue
             }
@@ -492,7 +492,7 @@ struct AccountTests {
         let transport = StubAccountTransport()
         transport.outcome = .response(AccountHTTPResponse(status: 204, body: Data()))
         let api = AccountAPI(origin: "https://relay.example.com", token: "tok", transport: transport)
-        guard case .success = await api.kickDevice(id: 12, password: "pw") else {
+        guard case .success = await api.kickDevice(id: 12, confirmation: .password("pw")) else {
             Issue.record("expected success")
             return
         }
@@ -500,7 +500,7 @@ struct AccountTests {
         #expect(transport.requests[0].body == #"{"password":"pw"}"#)
 
         transport.outcome = .response(AccountHTTPResponse(status: 409, body: Data(#"{"error":"current_device"}"#.utf8)))
-        guard case .failure(let failure) = await api.kickDevice(id: 3, password: "pw") else {
+        guard case .failure(let failure) = await api.kickDevice(id: 3, confirmation: .password("pw")) else {
             Issue.record("expected current_device")
             return
         }
@@ -515,7 +515,7 @@ struct AccountTests {
         transport.outcome = .response(AccountHTTPResponse(status: 204, body: Data()))
         let api = AccountAPI(origin: "https://relay.example.com", token: "tok", transport: transport)
         let hostId = "Kx3f9Q2aZ8mN1pLr5tVw7yB0cD4eF6gH8iJ0kL2mN4o"
-        guard case .success = await api.removeHost(hostId: hostId, password: "pw") else {
+        guard case .success = await api.removeHost(hostId: hostId, confirmation: .password("pw")) else {
             Issue.record("expected success")
             return
         }
@@ -524,7 +524,7 @@ struct AccountTests {
         #expect(transport.requests[0].body == #"{"password":"pw"}"#)
 
         transport.outcome = .response(AccountHTTPResponse(status: 403, body: Data(#"{"error":"wrong_password"}"#.utf8)))
-        guard case .failure(let failure) = await api.removeHost(hostId: hostId, password: "nope") else {
+        guard case .failure(let failure) = await api.removeHost(hostId: hostId, confirmation: .password("nope")) else {
             Issue.record("expected wrong_password")
             return
         }
@@ -642,7 +642,7 @@ struct AccountTests {
 
     @Test func errorCopyKeepsUnknownCodesVisible() {
         #expect(AccountCopy.message(AccountFailure.network) == "Can't reach the server. Check the address and your connection.")
-        #expect(AccountCopy.message(AccountFailure(code: "invalid_credentials")) == "Wrong username or password.")
+        #expect(AccountCopy.message(AccountFailure(code: "invalid_credentials")) == "Wrong email or password.")
         #expect(AccountCopy.message(AccountFailure(code: "surprise")).contains("surprise"))
     }
 
@@ -692,12 +692,12 @@ private final class MemoryDeviceIdStore: AccountDeviceIdStore, @unchecked Sendab
     }
 }
 
-private enum StubOutcome {
+enum StubOutcome {
     case response(AccountHTTPResponse)
     case error
 }
 
-private final class StubAccountTransport: AccountTransport, @unchecked Sendable {
+final class StubAccountTransport: AccountTransport, @unchecked Sendable {
     private struct State {
         var outcome = StubOutcome.error
         var requests: [AccountHttpRequest] = []

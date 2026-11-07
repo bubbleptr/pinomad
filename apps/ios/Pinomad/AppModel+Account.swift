@@ -38,6 +38,8 @@ extension AppModel {
                 if let session = record.session {
                     newHostNotices = knownAccountHosts.pending(
                         serverOrigin: session.serverOrigin, username: session.username)
+                    // Whether a legacy account still owes an email (ADR-0044 §8).
+                    Task { [weak self] in await self?.accountRefreshProfile() }
                 }
             }
         } catch {
@@ -58,6 +60,12 @@ extension AppModel {
             transport: accountTransport)
     }
 
+    /// The API as `session` holds it, for calls whose answer is checked
+    /// against the session still being active (`AccountScope`).
+    func accountAPI(for session: AccountSession) -> AccountAPI {
+        AccountAPI(origin: session.serverOrigin, token: session.token, transport: accountTransport)
+    }
+
     func probeAccountServer(_ origin: String) async -> AccountsProbe {
         await AccountProbe(transport: accountTransport).probe(origin: origin)
     }
@@ -66,65 +74,109 @@ extension AppModel {
     /// any request leaves the device (TLS-only, loopback http excepted).
     @discardableResult
     func accountLogin(origin: String, username: String, password: String) async -> AccountFailure? {
-        let server = origin.trimmingCharacters(in: .whitespacesAndNewlines)
         let user = username.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !server.isEmpty else {
-            accountError = AccountCopy.message(AccountFailure(code: "origin_required"))
-            return AccountFailure(code: "origin_required")
+        return await accountSignIn(origin: origin, remembering: user) { api, device in
+            await api.login(username: user, password: password, device: device)
         }
-        guard isSecureServerOrigin(origin: server) else {
-            let failure = AccountFailure(code: "insecure_origin")
-            accountError = AccountCopy.message(failure)
-            return failure
-        }
+    }
 
+    /// The origin a sign-in may go to, or why not — said in `accountError` too.
+    func checkedAccountOrigin(_ origin: String) -> Result<String, AccountFailure> {
+        let server = origin.trimmingCharacters(in: .whitespacesAndNewlines)
+        let failure: AccountFailure
+        if server.isEmpty {
+            failure = AccountFailure(code: "origin_required")
+        } else if !isSecureServerOrigin(origin: server) {
+            failure = AccountFailure(code: "insecure_origin")
+        } else {
+            return .success(server)
+        }
+        accountError = AccountCopy.message(failure)
+        return .failure(failure)
+    }
+
+    /// This install's claim at sign-in. The model, not UIDevice.name: that
+    /// one is the owner's own label ("Kieran's iPhone") and would be
+    /// personal data on the server.
+    func accountDeviceClaim() -> AccountDeviceClaim {
+        AccountDeviceClaim(id: accountDeviceIds.id(), name: UIDevice.current.model)
+    }
+
+    /// Every way to mint a session from a form — password, sign-up — goes
+    /// through here: one attempt on the sign-in gate, dropped if another
+    /// sign-in or a sign-out happened while it waited. `remembering`
+    /// prefills the next form after a failure.
+    func accountSignIn(
+        origin: String,
+        remembering: String?,
+        _ call: (AccountAPI, AccountDeviceClaim) async -> Result<LoginSuccess, AccountFailure>
+    ) async -> AccountFailure? {
+        let server: String
+        switch checkedAccountOrigin(origin) {
+        case .success(let value): server = value
+        case .failure(let failure): return failure
+        }
+        let ticket = signInGate.begin(active: accountSession)
         accountBusy = true
         defer { accountBusy = false }
-        let api = AccountAPI(origin: server, transport: accountTransport)
-        // The model, not UIDevice.name: that one is the owner's own label
-        // ("Kieran's iPhone") and would be personal data on the server.
-        let device = AccountDeviceClaim(id: accountDeviceIds.id(), name: UIDevice.current.model)
-        switch await api.login(username: user, password: password, device: device) {
+        let result = await call(AccountAPI(origin: server, transport: accountTransport), accountDeviceClaim())
+        guard signInGate.isCurrent(ticket, active: accountSession) else {
+            return AccountFailure(code: "superseded")
+        }
+        switch result {
         case .failure(let failure):
-            rememberSignedOut(serverOrigin: server, username: user)
+            if let remembering { rememberSignedOut(serverOrigin: server, username: remembering) }
             accountError = AccountCopy.message(failure)
             return failure
         case .success(let value):
-            guard let token = value.token else {
-                let failure = AccountFailure.invalidResponse
-                accountError = AccountCopy.message(failure)
-                return failure
-            }
-            let session = AccountSession(
-                serverOrigin: normalizeServerOrigin(origin: server),
-                username: value.user.username,
-                token: token,
-                expiresAt: value.expiresAt)
-            let record = AccountRecord(session: session)
-            // A new account starts a new registration epoch; work started
-            // for the previous session must not land on this one.
-            invalidateAccountPairing()
-            accountRecord = record
-            accountNotice = nil
-            accountSignOutWarning = nil
-            accountError = nil
-            accountHostsError = nil
-            accountHostsLoaded = false
-            clearAccountDevices()
-            // The first list of this sign-in is the baseline: hosts already
-            // on the account aren't news (#497).
-            knownAccountHosts.reset(serverOrigin: session.serverOrigin, username: session.username)
-            var saveError: String?
-            do {
-                try accountStore.save(record)
-            } catch {
-                saveError = "Signed in, but the account couldn't be saved to the keychain: \(describe(error))"
-            }
-            syncServerPushToken()
-            await accountRefreshHosts()
-            if let saveError { accountError = saveError }
-            return nil
+            return await adoptAccountSession(origin: server, login: value)
         }
+    }
+
+    /// Make a fresh session this device's: stored in the keychain, the
+    /// previous session's work dropped, the hosts loaded.
+    func adoptAccountSession(origin: String, login value: LoginSuccess) async -> AccountFailure? {
+        guard let token = value.token else {
+            let failure = AccountFailure.invalidResponse
+            accountError = AccountCopy.message(failure)
+            return failure
+        }
+        let session = AccountSession(
+            serverOrigin: normalizeServerOrigin(origin: origin),
+            username: value.user.username,
+            token: token,
+            expiresAt: value.expiresAt,
+            email: value.user.email)
+        let record = AccountRecord(session: session)
+        // A sign-in over a live session (a pending sign-in's new account)
+        // replaces it: its sign-in attempts are stale.
+        if accountSession != nil { signInGate.invalidate() }
+        // A new account starts a new registration epoch; work started
+        // for the previous session must not land on this one.
+        invalidateAccountPairing()
+        accountRecord = record
+        accountNeedsEmail = value.needsEmail
+        accountIdentities = nil
+        accountIdentitiesUnsupported = false
+        accountNotice = nil
+        accountSignOutWarning = nil
+        accountError = nil
+        accountHostsError = nil
+        accountHostsLoaded = false
+        clearAccountDevices()
+        // The first list of this sign-in is the baseline: hosts already
+        // on the account aren't news (#497).
+        knownAccountHosts.reset(serverOrigin: session.serverOrigin, username: session.username)
+        var saveError: String?
+        do {
+            try accountStore.save(record)
+        } catch {
+            saveError = "Signed in, but the account couldn't be saved to the keychain: \(describe(error))"
+        }
+        syncServerPushToken()
+        await accountRefreshHosts()
+        if let saveError { accountError = saveError }
+        return nil
     }
 
     /// Load the account's hosts and reconcile them with the stored pairings.
@@ -156,14 +208,14 @@ extension AppModel {
 
         switch await api.listHosts() {
         case .failure(let failure):
-            guard accountSession == session else { return }
+            guard session.isSameSignIn(as: accountSession) else { return }
             if failure.clearsSession {
                 accountSignOutWarning = endAccountSession(notice: "You were signed out. Sign in again.")
             } else {
                 accountHostsError = AccountCopy.message(failure)
             }
         case .success(let hosts):
-            guard accountSession == session else { return }
+            guard session.isSameSignIn(as: accountSession) else { return }
             var stored: StoredHosts
             let storedRead: Bool
             do {
@@ -271,7 +323,7 @@ extension AppModel {
     }
 
     private func automaticRegister(_ hostId: String, session: AccountSession) async {
-        guard accountSession == session, let api = accountAPI() else {
+        guard session.isSameSignIn(as: accountSession), let api = accountAPI() else {
             accountRegistrationInFlight.remove(hostId)
             return
         }
@@ -294,7 +346,7 @@ extension AppModel {
         let ticket = accountPairingEpochs.ticket(hostId: hostId)
         switch await api.requestPairing(hostId: hostId) {
         case .failure(let failure):
-            guard accountSession == session, accountPairingEpochs.isCurrent(ticket) else {
+            guard session.isSameSignIn(as: accountSession), accountPairingEpochs.isCurrent(ticket) else {
                 accountRegistrationInFlight.remove(hostId)
                 return
             }
@@ -308,7 +360,7 @@ extension AppModel {
                     serverOrigin: session.serverOrigin, hostId: hostId)
             }
         case .success(let offer):
-            guard accountSession == session, accountPairingEpochs.isCurrent(ticket),
+            guard session.isSameSignIn(as: accountSession), accountPairingEpochs.isCurrent(ticket),
                   !declinedAccountHosts.contains(
                     serverOrigin: session.serverOrigin, hostId: hostId)
             else {
@@ -387,7 +439,7 @@ extension AppModel {
         // that must not swallow a failed "everywhere" request.
         let keptIdentity = accountRecord?.serverOrigin == session.serverOrigin
             && accountRecord?.username == session.username
-        guard accountSession == session || (accountSession == nil && keptIdentity) else { return }
+        guard session.isSameSignIn(as: accountSession) || (accountSession == nil && keptIdentity) else { return }
         let warning = endAccountSession(notice: nil)
         // After the session ended, so no account refresh can register a
         // host again while it is being forgotten.
@@ -426,20 +478,22 @@ extension AppModel {
     /// Change the account password (#450). This session stays; the server
     /// signs out the others and drops every push registration of the account,
     /// this device's included, so a success registers it again right away.
-    func accountChangePassword(current: String, new: String) async -> AccountFailure? {
+    func accountChangePassword(current: AccountConfirmation, new: String) async -> AccountFailure? {
         guard let session = accountSession, let api = accountAPI() else {
             return AccountFailure(code: "unauthenticated")
         }
         switch await api.changePassword(current: current, new: new) {
         case .success:
-            guard accountSession == session else { return nil }
+            guard session.isSameSignIn(as: accountSession) else { return nil }
+            // Setting a first password changes the sign-in methods.
+            Task { [weak self] in await self?.accountRefreshIdentities() }
             push.setServerRegistration(serverRegistration(
                 afterServerDropped: ServerPushAccount(serverOrigin: session.serverOrigin, username: session.username),
                 recorded: push.serverRegistration))
             syncServerPushToken()
             return nil
         case .failure(let failure):
-            if failure.clearsSession, accountSession == session {
+            if failure.clearsSession, session.isSameSignIn(as: accountSession) {
                 accountSignOutWarning = endAccountSession(notice: AccountCopy.message(failure))
             }
             return failure
@@ -453,7 +507,7 @@ extension AppModel {
         accountDevicesGeneration &+= 1
         let generation = accountDevicesGeneration
         let result = await api.listDevices()
-        guard accountSession == session, generation == accountDevicesGeneration else { return }
+        guard session.isSameSignIn(as: accountSession), generation == accountDevicesGeneration else { return }
         switch result {
         case .success(let devices):
             accountDevices = devices
@@ -471,12 +525,12 @@ extension AppModel {
 
     /// Remove another device from the account and ask its hosts to revoke it
     /// (ADR-0037 §3), then reload the list to show where that stands.
-    func accountKickDevice(_ device: AccountDevice, password: String) async -> AccountFailure? {
+    func accountKickDevice(_ device: AccountDevice, confirmation: AccountConfirmation) async -> AccountFailure? {
         guard let session = accountSession, let api = accountAPI() else {
             return AccountFailure(code: "unauthenticated")
         }
-        let result = await api.kickDevice(id: device.id, password: password)
-        guard accountSession == session else { return nil }
+        let result = await api.kickDevice(id: device.id, confirmation: confirmation)
+        guard session.isSameSignIn(as: accountSession) else { return nil }
         switch result {
         case .success:
             await accountRefreshDevices()
@@ -497,7 +551,7 @@ extension AppModel {
     /// pairing the account issued for it, without declining it: a rejoin is
     /// the reader's own act again and should pair on its own. A QR pairing
     /// with it stays.
-    func accountRemoveHost(_ host: PendingAccountHost, password: String) async -> AccountFailure? {
+    func accountRemoveHost(_ host: PendingAccountHost, confirmation: AccountConfirmation) async -> AccountFailure? {
         #if DEBUG
         if devHostsInjected, accountSession != nil {
             // A demo account has no server, and its hosts aren't forgotten.
@@ -510,8 +564,8 @@ extension AppModel {
         guard let session = accountSession, let api = accountAPI() else {
             return AccountFailure(code: "unauthenticated")
         }
-        let result = await api.removeHost(hostId: host.hostId, password: password)
-        guard accountSession == session else { return nil }
+        let result = await api.removeHost(hostId: host.hostId, confirmation: confirmation)
+        guard session.isSameSignIn(as: accountSession) else { return nil }
         switch result {
         case .success:
             forgetRemovedHost(host.hostId, session: session)
@@ -523,7 +577,7 @@ extension AppModel {
             // only a list asked for after the answer tells which.
             let fresh = !accountRefreshing
             await accountRefreshHosts()
-            let answered = fresh && accountSession == session && accountHostsError == nil
+            let answered = fresh && session.isSameSignIn(as: accountSession) && accountHostsError == nil
             let failure = AccountHosts.removeHostNotFound(
                 hostId: host.hostId, listedAfter: answered ? accountRows.map(\.hostId) : nil)
             if failure == nil { forgetRemovedHost(host.hostId, session: session) }
@@ -565,7 +619,7 @@ extension AppModel {
     /// record goes too and nothing registers again: the session is gone.
     /// Paired hosts stay paired (ADR-0022 §6). A late success must not end a
     /// newer session.
-    func accountDeleteAccount(password: String) async -> AccountFailure? {
+    func accountDeleteAccount(confirmation: AccountConfirmation) async -> AccountFailure? {
         guard let session = accountSession, let api = accountAPI() else {
             return AccountFailure(code: "unauthenticated")
         }
@@ -582,12 +636,12 @@ extension AppModel {
             syncServerPushToken()
         }
         while let task = serverPushTask { await task.value }
-        switch await api.deleteAccount(password: password) {
+        switch await api.deleteAccount(confirmation: confirmation) {
         case .success:
             push.setServerRegistration(serverRegistration(
                 afterServerDropped: ServerPushAccount(serverOrigin: session.serverOrigin, username: session.username),
                 recorded: push.serverRegistration))
-            guard accountSession == session else { return nil }
+            guard session.isSameSignIn(as: accountSession) else { return nil }
             let warning = endAccountSession(notice: AccountCopy.accountDeletedNotice)
             // The username went with the account; the next sign-in keeps
             // only the server.
@@ -595,7 +649,7 @@ extension AppModel {
             accountSignOutWarning = warning
             return nil
         case .failure(let failure):
-            if failure.clearsSession, accountSession == session {
+            if failure.clearsSession, session.isSameSignIn(as: accountSession) {
                 accountSignOutWarning = endAccountSession(notice: AccountCopy.message(failure))
             }
             return failure
@@ -661,7 +715,7 @@ extension AppModel {
 
         switch await api.requestPairing(hostId: hostId) {
         case .failure(let failure):
-            guard accountSession == session, accountPairingEpochs.isCurrent(ticket) else { return false }
+            guard session.isSameSignIn(as: accountSession), accountPairingEpochs.isCurrent(ticket) else { return false }
             if failure.clearsSession {
                 accountSignOutWarning = endAccountSession(notice: "You were signed out. Sign in again.")
             } else {
@@ -673,7 +727,7 @@ extension AppModel {
             }
             return false
         case .success(let offer):
-            guard accountSession == session, accountPairingEpochs.isCurrent(ticket) else { return false }
+            guard session.isSameSignIn(as: accountSession), accountPairingEpochs.isCurrent(ticket) else { return false }
             guard let link = accountPairingLink(offer: offer) else {
                 accountError = AccountCopy.message(AccountFailure(code: "invalid_offer"))
                 return false
@@ -799,7 +853,7 @@ extension AppModel {
             return .failure(AccountFailure(code: "unauthenticated"))
         }
         let result = await api.createJoinToken()
-        if case .failure(let failure) = result, failure.clearsSession, accountSession == session {
+        if case .failure(let failure) = result, failure.clearsSession, session.isSameSignIn(as: accountSession) {
             accountSignOutWarning = endAccountSession(notice: AccountCopy.message(failure))
         }
         return result
@@ -839,7 +893,7 @@ extension AppModel {
         }
         #endif
         let result = await hostLinkCall { api in await api.confirmHostLink(userCode: code) }
-        if case .success = result, accountSession == session {
+        if case .success = result, session.isSameSignIn(as: accountSession) {
             knownAccountHosts.add(serverOrigin: session.serverOrigin, username: session.username, hostId: hostId)
             newHostNotices.removeAll { $0.hostId == hostId }
             watchHostJoin(hostId, session: session)
@@ -858,9 +912,9 @@ extension AppModel {
             _ = await HostJoinWatch.run(
                 sleep: { try await Task.sleep(for: $0) },
                 poll: { [weak self] in
-                    guard let self, self.accountSession == session else { return .signedOut }
+                    guard let self, session.isSameSignIn(as: self.accountSession) else { return .signedOut }
                     await self.accountRefreshHosts()
-                    guard self.accountSession == session else { return .signedOut }
+                    guard session.isSameSignIn(as: self.accountSession) else { return .signedOut }
                     let paired = self.accountRows.contains { $0.hostId == hostId && $0.status == .paired }
                     return paired ? .paired : .waiting
                 })
@@ -890,7 +944,7 @@ extension AppModel {
             return .failure(AccountFailure(code: "unauthenticated"))
         }
         let result = await call(api)
-        if case .failure(let failure) = result, failure.clearsSession, accountSession == session {
+        if case .failure(let failure) = result, failure.clearsSession, session.isSameSignIn(as: accountSession) {
             accountSignOutWarning = endAccountSession(notice: AccountCopy.message(failure))
         }
         return result
@@ -929,6 +983,11 @@ extension AppModel {
         guard let record = accountRecord else { return nil }
         let cleared = record.clearingToken()
         accountRecord = cleared
+        // Sign-ins still waiting (a browser sheet, Apple) belong to before.
+        signInGate.invalidate()
+        accountNeedsEmail = false
+        accountIdentities = nil
+        accountIdentitiesUnsupported = false
         accountRows = []
         accountHostsLoaded = false
         clearAccountDevices()

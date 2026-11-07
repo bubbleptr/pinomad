@@ -51,7 +51,12 @@ struct RootView: View {
         }
         .sensoryFeedback(.success, trigger: model.pairings)
         // `pinomad://pair#…` — the confirm page decides what to do with it.
-        .onOpenURL { url in model.offerPairing(url.absoluteString) }
+        // `pinomad://auth` is a provider sign-in coming back: it belongs to
+        // the browser session that started it, never to pairing.
+        .onOpenURL { url in
+            guard !NativeOAuth.isCallback(url) else { return }
+            model.offerPairing(url.absoluteString)
+        }
         // Forgetting could not clear the host-side registration; the only
         // remaining path is revoking this device from the host.
         .alert("Push registration not cleared", isPresented: Binding(

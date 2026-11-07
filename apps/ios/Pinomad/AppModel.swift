@@ -306,6 +306,19 @@ final class AppModel {
     /// The server predates the device list (404): the section stays hidden.
     var accountDevicesUnsupported = false
     var accountDevicesGeneration: UInt64 = 0
+    /// Moves on with every sign-in attempt and every session end, so a
+    /// sign-in that waited (a browser sheet, Apple) can tell it was
+    /// overtaken (ADR-0044).
+    let signInGate = SignInGate()
+    /// A legacy account the server wants an email for before going on
+    /// (ADR-0044 §8): the account sheet holds everything else back.
+    var accountNeedsEmail = false
+    /// The account's sign-in methods; nil until they answered.
+    var accountIdentities: AccountIdentities?
+    /// The server predates sign-in methods (404): only the password, as before.
+    var accountIdentitiesUnsupported = false
+    /// Sign in with Apple found no account: the native "no account yet" step.
+    var accountApplePending: ApplePendingSignIn?
     /// Push switches, permission, APNs token, and the system callbacks.
     let push = PushCenter.shared
     var pushError: String?
@@ -342,6 +355,8 @@ final class AppModel {
     var pendingPromptFile: String?
     var openHostDetailAfterReady = false
     var devShowsModelSheet = false
+    /// `PINOMAD_DEMO_SIGN_IN`: the signed-out page a demo opens on.
+    var devSignInPage: String?
     /// `PINOMAD_DEMO_ACCOUNT`: the account page a demo opens on.
     var devAccountPage: String?
     /// `PINOMAD_DEMO_SETTINGS=first-host-…`: the code the first-host home

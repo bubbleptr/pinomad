@@ -140,7 +140,7 @@ extension AppModel {
         case "first-host-notice":
             Task { [weak self] in
                 try? await Task.sleep(for: .seconds(2))
-                guard let self, self.accountSession == session else { return }
+                guard let self, session.isSameSignIn(as: self.accountSession) else { return }
                 let rows = [AccountHostRow(
                     hostId: "demo-studio", name: "studio", online: true, pairing: .available,
                     status: .unpaired, action: .pair, storedHostKey: nil)]
