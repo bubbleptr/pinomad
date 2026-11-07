@@ -933,7 +933,17 @@ mark.chat-skill-mention {
 }
 
 .todo-card__item[data-status="in_progress"] .todo-card__status {
-  color: var(--foreground);
+  color: var(--color-icon-accent);
+}
+
+.todo-card__status--running {
+  animation: todo-card-turn 8s linear infinite;
+}
+
+@keyframes todo-card-turn {
+  to {
+    transform: rotate(1turn);
+  }
 }
 
 .todo-card__item[data-status="completed"] {
@@ -943,6 +953,10 @@ mark.chat-skill-mention {
 @media (prefers-reduced-motion: reduce) {
   .todo-card__panel {
     transition: none;
+  }
+
+  .todo-card__status--running {
+    animation: none;
   }
 }
 

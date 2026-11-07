@@ -5,7 +5,7 @@ import { Collapsible } from "@base-ui-components/react/collapsible";
 import { useState } from "react";
 import type { ChatEntry } from "@pinomad/client/cot-view.ts";
 import type { TodoItem, TodoState } from "@pinomad/protocol/presentation.ts";
-import { CheckCircle, ChevronRight, Circle, InProgress } from "@/shared/ui/icons";
+import { CheckCircle, ChevronRight, Circle } from "@/shared/ui/icons";
 import { useNow } from "@/shared/use-now";
 
 /** Coarse on purpose: the label only says whether the plan is fresh. */
@@ -26,9 +26,25 @@ function UpdatedAgo({ atMs }: { atMs: number }) {
 
 const STATUS_LABEL = { pending: "Not started", in_progress: "In progress", completed: "Done" } as const;
 
+// The ring of the pending Circle (r 10 on 24) cut into eight dashes that turn
+// slowly: shape alone tells it from a pending ring, so it still reads with
+// motion reduced, and the slow turn says "being worked on" without looking
+// like a loading spinner. Round caps eat a stroke width out of each gap.
+const RING = 2 * Math.PI * 10;
+const DASH = RING / 8 - 4.4;
+
+function RunningRing(props: { "aria-label": string; role: "img"; className: string }) {
+  return (
+    <svg {...props} viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeLinecap="round" strokeDasharray={`${DASH} ${RING / 8 - DASH}`} />
+    </svg>
+  );
+}
+
 function StatusIcon({ status }: { status: TodoItem["status"] }) {
   const props = { "aria-label": STATUS_LABEL[status], role: "img", className: "todo-card__status" } as const;
-  return status === "completed" ? <CheckCircle {...props} /> : status === "in_progress" ? <InProgress {...props} /> : <Circle {...props} />;
+  if (status === "in_progress") return <RunningRing {...props} className="todo-card__status todo-card__status--running" />;
+  return status === "completed" ? <CheckCircle {...props} /> : <Circle {...props} />;
 }
 
 /**

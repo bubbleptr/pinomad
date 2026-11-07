@@ -53,7 +53,6 @@ import {
   MoreHorizontalIcon,
   PaintBoardIcon,
   PencilEdit01Icon,
-  Progress02Icon,
   PuzzleIcon,
   RefreshIcon,
   RobotIcon,
@@ -135,8 +134,6 @@ export const Info = iconComponent(InformationCircleIcon);
 export const KeyRound = iconComponent(KeyRoundIcon);
 export const Devices = iconComponent(LaptopPhoneSyncIcon);
 export const Laptop = iconComponent(LaptopIcon);
-// A quarter-filled circle: started, not finished (todo items).
-export const InProgress = iconComponent(Progress02Icon);
 export const LinkExternal = iconComponent(LinkSquare02Icon);
 export const LayoutAlignLeft = iconComponent(LayoutAlignLeftIcon);
 export const LoaderCircle = iconComponent(Loading03Icon);
