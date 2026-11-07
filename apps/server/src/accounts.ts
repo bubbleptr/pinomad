@@ -1,11 +1,15 @@
 // Server accounts (ADR-0022 §2): the server persists users with their
 // verified emails (ADR-0044), sessions, join tokens, host-link requests
 // (#495), host bindings, the APNs tokens each account's devices registered
-// (ADR-0036), mailed codes, and account devices with the keys hosts admitted
-// them under (ADR-0037) in <dataDir>/server.sqlite, guarded by the same
-// one-process-per-directory lock the host uses. Secrets never reach the DB in
-// the clear — passwords are scrypt hashes; session and join tokens, host-link
-// device and user codes, and mailed codes are SHA-256.
+// (ADR-0036), mailed codes, account devices with the keys hosts admitted
+// them under (ADR-0037), and sign-in providers with the flows, pending
+// choices, one-time codes and re-auth grants around them (ADR-0044) in
+// <dataDir>/server.sqlite, guarded by the same one-process-per-directory lock
+// the host uses. Secrets never reach the DB in the clear — passwords are
+// scrypt hashes; session and join tokens, host-link device and user codes,
+// mailed codes, provider-flow states, pending ids, one-time codes and re-auth
+// grants are SHA-256. Apple's refresh tokens are kept as they are: revoking
+// one sends it.
 //
 // `node:sqlite` needs Node: the server runs on Node like the host, not Bun.
 
@@ -741,7 +745,7 @@ export interface Accounts {
   /** Drops a host's account binding; false when the hostId was never bound. */
   leaveHost(hostId: string): boolean;
   /**
-   * The account removes one of its hosts after checking the password (#512),
+   * The account removes one of its hosts after the confirmation (#512),
    * as for kicking a device: a stolen session must not be able to throw the
    * owner's machines out. The binding goes as with `leaveHost`, and the
    * hostId is remembered until it joins again, so `wasRemoved` can say so.
@@ -782,7 +786,7 @@ export interface Accounts {
   /** A host's `device-revoked`: the pending revocation is done. */
   confirmRevocation(hostId: string, publicKey: string): void;
   /**
-   * Kicks one of the caller's devices after checking the password (ADR-0037
+   * Kicks one of the caller's devices after the confirmation (ADR-0037
    * §3): its sessions and push registrations end, it is marked kicked, and
    * every host that reported admitting it owes a revocation. The caller's own
    * device is refused: that is `logout` with `revoke`.
