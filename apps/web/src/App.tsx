@@ -68,6 +68,9 @@ import { PairingLinkForm } from "./entities/host/pairing-link-form.tsx";
 import { DeviceRejected } from "./widgets/app-frame/device-rejected.tsx";
 import { NoHostLink } from "./widgets/account/no-host-link.tsx";
 import { HostLinkRoute } from "./widgets/account/host-link-route.tsx";
+import { AddEmailGate } from "./widgets/account/add-email-gate.tsx";
+import { OAuthReturnDialog } from "./widgets/account/account-dialog.tsx";
+import { PendingSignInRoute } from "./widgets/account/pending-sign-in.tsx";
 import { NewHostNotices } from "./widgets/account/new-host-notice.tsx";
 import { useDurableView, useRemoteDurable } from "./use-remote.ts";
 import { createBrowserRtcPlatform } from "./entities/host/browser-rtc.ts";
@@ -427,53 +430,57 @@ export function App() {
     <HostsContext.Provider value={state}>
       <HostRuntimesContext.Provider value={registry}>
         <AccountProvider>
-          {address?.kind === "token" ? (
-            <RemoteWorkbench
-              options={address}
-              connectionKey={`${address.url} ${address.token}`}
-              label={address.url}
-            />
-          ) : address?.kind === "pair" ? (
-            <PairConfirm address={address} onPairedHost={pairedHost} />
-          ) : hosts.length === 0 ? (
-            <Centered>
-              <NoHostLink />
-            </Centered>
-          ) : (
-            <HostFrame>
-              <HostRuntimes
-                hosts={hosts}
-                focus={focus}
-                renderWorkbench={({
-                  host,
-                  remote,
-                  device,
-                  rejected,
-                  retry,
-                  opening,
-                  cancelOpening,
-                  openConversation,
-                }) => (
-                  <Workbench
-                    remote={remote}
-                    wsUrl={host.url}
-                    rejected={rejected}
-                    device={device}
-                    hostKey={host.hostKey}
-                    onReconnect={retry}
-                    notify={false}
-                    framed={false}
-                    hostOpening={opening}
-                    hostOpen={openConversation}
-                    hostCancelOpening={cancelOpening}
-                  />
-                )}
+          <AddEmailGate>
+            {address?.kind === "token" ? (
+              <RemoteWorkbench
+                options={address}
+                connectionKey={`${address.url} ${address.token}`}
+                label={address.url}
               />
-            </HostFrame>
-          )}
+            ) : address?.kind === "pair" ? (
+              <PairConfirm address={address} onPairedHost={pairedHost} />
+            ) : hosts.length === 0 ? (
+              <Centered>
+                <NoHostLink />
+              </Centered>
+            ) : (
+              <HostFrame>
+                <HostRuntimes
+                  hosts={hosts}
+                  focus={focus}
+                  renderWorkbench={({
+                    host,
+                    remote,
+                    device,
+                    rejected,
+                    retry,
+                    opening,
+                    cancelOpening,
+                    openConversation,
+                  }) => (
+                    <Workbench
+                      remote={remote}
+                      wsUrl={host.url}
+                      rejected={rejected}
+                      device={device}
+                      hostKey={host.hostKey}
+                      onReconnect={retry}
+                      notify={false}
+                      framed={false}
+                      hostOpening={opening}
+                      hostOpen={openConversation}
+                      hostCancelOpening={cancelOpening}
+                    />
+                  )}
+                />
+              </HostFrame>
+            )}
+          </AddEmailGate>
           {/* Above whichever screen is showing, so a first host pairing (which swaps
               the no-host screen for the workbench) doesn't close or lose them. */}
           <HostLinkRoute />
+          <PendingSignInRoute />
+          <OAuthReturnDialog hasPanel={address === undefined && hosts.length === 0} />
           <ToastViewport position="topEnd" inset={{ top: 48 }} isTopLayer>
             <NewHostNotices />
           </ToastViewport>
