@@ -111,6 +111,7 @@ function setCookie(response: ApiResponse, name: string): string | undefined {
 }
 
 const SESSION_COOKIE = "__Host-pinomad-session";
+const BINDING_COOKIE = "__Host-pinomad-oauth";
 const location = (response: ApiResponse): string => response.headers.location as string;
 
 /** Where the server sent the browser on the web client, as its query. */
@@ -123,7 +124,7 @@ function webLanding(response: ApiResponse): URLSearchParams {
 
 /** The provider's answer back to the server: a GET for Google and GitHub, Apple's form_post. */
 function callback(started: Started, provider: FakeProvider, query: Record<string, string>, cookie?: string): Promise<ApiResponse> {
-  const headers: Record<string, string> = cookie === undefined ? {} : { cookie: `pinomad_oauth=${cookie}` };
+  const headers: Record<string, string> = cookie === undefined ? {} : { cookie: `${BINDING_COOKIE}=${cookie}` };
   if (provider !== "apple") {
     return api(started.relay, { path: `/api/oauth/${provider}/callback?${new URLSearchParams(query)}`, headers });
   }
@@ -144,8 +145,10 @@ async function webSignIn(
 ): Promise<{ readonly response: ApiResponse; readonly binding: string }> {
   const start = await api(started.relay, { path: `/api/oauth/${provider}/start?client=web` });
   expect(start.status).toBe(302);
-  const binding = setCookie(start, "pinomad_oauth");
+  const binding = setCookie(start, BINDING_COOKIE);
   expect(binding).toBeDefined();
+  // A __Host- cookie: no sibling subdomain can plant one for this host.
+  expect(String(start.headers["set-cookie"])).toMatch(/__Host-pinomad-oauth=[^;]+; Path=\/; Secure; HttpOnly; SameSite=None/);
   const { code, state } = started.idp.authorize(provider, location(start), identity, options?.tweaks);
   const response = await callback(started, provider, { code, state, ...(options?.user === undefined ? {} : { user: options.user }) }, binding);
   return { response, binding: binding! };
@@ -167,7 +170,7 @@ async function createViaPending(started: Started, provider: FakeProvider, identi
   expect(pending).toBeTruthy();
   const created = await post(started.relay, `/api/oauth/pending/${pending!}/create`, {}, {
     origin: ORIGIN,
-    cookie: `pinomad_oauth=${binding}`,
+    cookie: `${BINDING_COOKIE}=${binding}`,
   });
   expect(created.status).toBe(200);
   return setCookie(created, SESSION_COOKIE)!;
@@ -222,10 +225,10 @@ describe.each(["google", "github", "apple"] as const)("%s sign-in", (provider) =
     const pending = webLanding(response).get("oauth_pending")!;
     expect(setCookie(response, SESSION_COOKIE)).toBeUndefined();
 
-    const shown = await api(started.relay, { path: `/api/oauth/pending/${pending}`, headers: { cookie: `pinomad_oauth=${binding}` } });
+    const shown = await api(started.relay, { path: `/api/oauth/pending/${pending}`, headers: { cookie: `${BINDING_COOKIE}=${binding}` } });
     expect(shown.json).toMatchObject({ provider, email: "ada@example.com" });
 
-    const created = await post(started.relay, `/api/oauth/pending/${pending}/create`, {}, { origin: ORIGIN, cookie: `pinomad_oauth=${binding}` });
+    const created = await post(started.relay, `/api/oauth/pending/${pending}/create`, {}, { origin: ORIGIN, cookie: `${BINDING_COOKIE}=${binding}` });
     expect(created.status).toBe(200);
     expect((await sessionOf(started, created)).email).toBe("ada@example.com");
 
@@ -250,7 +253,7 @@ describe.each(["google", "github", "apple"] as const)("%s sign-in", (provider) =
     expect(pending).toBeTruthy();
     expect(setCookie(response, SESSION_COOKIE)).toBeUndefined();
     // Nor does it make an account of its own under that address.
-    const created = await post(started.relay, `/api/oauth/pending/${pending!}/create`, {}, { origin: ORIGIN, cookie: `pinomad_oauth=${binding}` });
+    const created = await post(started.relay, `/api/oauth/pending/${pending!}/create`, {}, { origin: ORIGIN, cookie: `${BINDING_COOKIE}=${binding}` });
     expect([created.status, created.json.error]).toEqual([400, "no_verified_email"]);
   });
 
@@ -267,7 +270,7 @@ describe("Apple specifics", () => {
     const user = JSON.stringify({ name: { firstName: "Ada", lastName: "Lovelace" }, email: "ada@example.com" });
     const { response, binding } = await webSignIn(started, "apple", IDENTITY.apple, { user });
     const pending = webLanding(response).get("oauth_pending")!;
-    const shown = await api(started.relay, { path: `/api/oauth/pending/${pending}`, headers: { cookie: `pinomad_oauth=${binding}` } });
+    const shown = await api(started.relay, { path: `/api/oauth/pending/${pending}`, headers: { cookie: `${BINDING_COOKIE}=${binding}` } });
     expect(shown.json).toEqual({ provider: "apple", email: "ada@example.com", name: "Ada Lovelace" });
   });
 
@@ -317,7 +320,7 @@ describe("the web flow is bound to the browser that started it", () => {
   it("uses a state once", async () => {
     const started = await startServer({ registration: "closed" });
     const start = await api(started.relay, { path: "/api/oauth/google/start?client=web" });
-    const binding = setCookie(start, "pinomad_oauth");
+    const binding = setCookie(start, BINDING_COOKIE);
     const { code, state } = started.idp.authorize("google", location(start), { ...IDENTITY.google, email: OWNER });
     const first = await callback(started, "google", { code, state }, binding);
     expect(setCookie(first, SESSION_COOKIE)).toBeDefined();
@@ -329,7 +332,7 @@ describe("the web flow is bound to the browser that started it", () => {
   it("expires a flow after ten minutes", async () => {
     const started = await startServer({ registration: "closed" });
     const start = await api(started.relay, { path: "/api/oauth/google/start?client=web" });
-    const binding = setCookie(start, "pinomad_oauth");
+    const binding = setCookie(start, BINDING_COOKIE);
     const { code, state } = started.idp.authorize("google", location(start), { ...IDENTITY.google, email: OWNER });
     started.advance(11 * MINUTE);
     expect(webLanding(await callback(started, "google", { code, state }, binding)).get("oauth_error")).toBe("invalid_state");
@@ -353,7 +356,7 @@ describe("native clients trade a one-time code with their PKCE verifier", () => 
     const query = new URLSearchParams({ client: "native", redirect_uri: redirectUri, code_challenge: challenge, state: "client-state" });
     const start = await api(started.relay, { path: `/api/oauth/google/start?${query}` });
     expect(start.status).toBe(302);
-    const binding = setCookie(start, "pinomad_oauth");
+    const binding = setCookie(start, BINDING_COOKIE);
     expect(binding).toBeDefined();
     const { code, state } = started.idp.authorize("google", location(start), { ...IDENTITY.google, email: OWNER });
     // Another browser can't finish it; the app's own can, once.
@@ -361,7 +364,7 @@ describe("native clients trade a one-time code with their PKCE verifier", () => 
     expect(new URL(location(elsewhere)).searchParams.get("error")).toBe("invalid_state");
     const restart = await api(started.relay, { path: `/api/oauth/google/start?${query}` });
     const again = started.idp.authorize("google", location(restart), { ...IDENTITY.google, email: OWNER });
-    const back = await callback(started, "google", { code: again.code, state: again.state }, setCookie(restart, "pinomad_oauth"));
+    const back = await callback(started, "google", { code: again.code, state: again.state }, setCookie(restart, BINDING_COOKIE));
     expect(back.status).toBe(302);
     return new URL(location(back));
   }
@@ -416,7 +419,7 @@ describe("a pending sign-in can't be finished by someone it was sent to", () => 
   async function nativePending(started: Started): Promise<{ readonly id: string; readonly binding: string | undefined }> {
     const query = new URLSearchParams({ client: "native", redirect_uri: "pinomad://auth", code_challenge: challenge, state: "s" });
     const start = await api(started.relay, { path: `/api/oauth/google/start?${query}` });
-    const binding = setCookie(start, "pinomad_oauth");
+    const binding = setCookie(start, BINDING_COOKIE);
     const { code, state } = started.idp.authorize("google", location(start), STRANGER);
     const back = await callback(started, "google", { code, state }, binding);
     return { id: webLanding(back).get("oauth_pending")!, binding };
@@ -445,7 +448,7 @@ describe("a pending sign-in can't be finished by someone it was sent to", () => 
     const started = await startServer();
     const { id, binding } = await nativePending(started);
     expect(binding).toBeDefined();
-    const created = await post(started.relay, `/api/oauth/pending/${id}/create`, {}, { origin: ORIGIN, cookie: `pinomad_oauth=${binding!}` });
+    const created = await post(started.relay, `/api/oauth/pending/${id}/create`, {}, { origin: ORIGIN, cookie: `${BINDING_COOKIE}=${binding!}` });
     expect(created.status).toBe(200);
     const back = new URL(created.json.redirect as string);
     expect(back.protocol).toBe("pinomad:");
@@ -499,7 +502,7 @@ describe("sign-in methods in settings", () => {
     const reauth = await reauthWithPassword(started, token);
     const started_ = await post(started.relay, `/api/oauth/${provider}/link`, { reauth }, bearer(token));
     expect(started_.status).toBe(200);
-    const binding = setCookie(started_, "pinomad_oauth");
+    const binding = setCookie(started_, BINDING_COOKIE);
     const { code, state } = started.idp.authorize(provider, started_.json.url as string, identity);
     return callback(started, provider, { code, state }, binding);
   }
@@ -545,7 +548,7 @@ describe("sign-in methods in settings", () => {
 
     // With GitHub linked too, Apple can go, and Apple is told to forget the grant.
     const github = await post(started.relay, "/api/oauth/github/link", { reauth }, headers);
-    const binding = setCookie(github, "pinomad_oauth");
+    const binding = setCookie(github, BINDING_COOKIE);
     const { code, state } = started.idp.authorize("github", github.json.url as string, { sub: "99", email: "ada@example.com" });
     expect(webLanding(await callback(started, "github", { code, state }, binding)).get("oauth_linked")).toBe("github");
     reauth = await reauthCode();

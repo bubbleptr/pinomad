@@ -336,14 +336,14 @@ const setSessionCookie = (token: string): string => `${SESSION_COOKIE}=${token};
 const clearSessionCookie = `${SESSION_COOKIE}=; ${cookieAttributes}; Max-Age=0`;
 
 /**
- * Binds a web provider sign-in to the browser that started it (ADR-0044
- * §5): the flow stores this cookie's hash and the callback must bring it,
- * so nobody can finish their own sign-in in someone else's browser. Apple's
- * callback is a cross-site POST, hence SameSite=None; the path keeps it off
- * every other route.
+ * Binds a provider sign-in to the browser that started it (ADR-0044 §5):
+ * the flow stores this cookie's hash and the callback must bring it, so
+ * nobody can finish their own sign-in in someone else's browser. Apple's
+ * callback is a cross-site POST, hence SameSite=None. `__Host-` with Path=/
+ * and no Domain: a sibling subdomain can't plant its own flow's value.
  */
-const BINDING_COOKIE = "pinomad_oauth";
-const bindingAttributes = "Path=/api/oauth; Secure; HttpOnly; SameSite=None";
+const BINDING_COOKIE = "__Host-pinomad-oauth";
+const bindingAttributes = "Path=/; Secure; HttpOnly; SameSite=None";
 const setBindingCookie = (value: string): string => `${BINDING_COOKIE}=${value}; ${bindingAttributes}; Max-Age=600`;
 const clearBindingCookie = `${BINDING_COOKIE}=; ${bindingAttributes}; Max-Age=0`;
 
