@@ -15,7 +15,8 @@ import PinomadCore
 /// leaves behind, with no session. The addresses are
 /// `.invalid` and the injected hosts block switching and forgetting, so
 /// nothing reaches the keychain or the network. `upgrade-…` opens the first
-/// machine's Upgrade page in one of `applyUpgradeDemo`'s states.
+/// machine's Upgrade page in one of `applyUpgradeDemo`'s states; `hosts`
+/// opens Settings, where both machines list their routes (#502).
 extension AppModel {
     func startSettingsDemo(_ mode: String) {
         if mode == "pairing" {
@@ -39,8 +40,23 @@ extension AppModel {
         let privateKey = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE"
         useDevHosts(StoredHosts(
             hosts: [
-                HostRecord(url: "ws://mbp.invalid:7777", hostKey: "demo-mbp", privateKey: privateKey, name: "mbp"),
-                HostRecord(url: "ws://omarchy.invalid:7777", hostKey: "demo-omarchy", privateKey: "", name: "omarchy"),
+                // Three routes, the account relay among them (#502).
+                HostRecord(
+                    url: "ws://mbp.invalid:7777", hostKey: "demo-mbp", privateKey: privateKey, name: "mbp",
+                    account: AccountLink(serverOrigin: "https://accounts.invalid", hostId: "demo-mbp"),
+                    endpointSet: StoredEndpointSet(endpoints: [
+                        StoredEndpoint(role: .relay, url: "wss://accounts.invalid/relay/demo-mbp"),
+                        StoredEndpoint(role: .direct, url: "wss://mbp.tail0000.ts.net:7422"),
+                        StoredEndpoint(role: .direct, url: "ws://192.168.1.42:7422"),
+                    ])),
+                // A route its Relay only mode leaves out.
+                HostRecord(
+                    url: "ws://omarchy.invalid:7777", hostKey: "demo-omarchy", privateKey: "", name: "omarchy",
+                    endpointSet: StoredEndpointSet(endpoints: [
+                        StoredEndpoint(role: .relay, url: "wss://relay.invalid/relay/demo-omarchy"),
+                        StoredEndpoint(role: .direct, url: "ws://100.100.1.2:7422"),
+                    ]),
+                    connectionMode: .relayOnly),
             ],
             activeHostKey: "demo-mbp"
         ))
@@ -101,6 +117,7 @@ extension AppModel {
         }
         publishDevSnapshot(snapshot)
         if mode.hasPrefix("upgrade") { navPath = [.machine("demo-mbp"), .upgrade("demo-mbp")] }
+        if mode == "hosts" { navPath = [.settings] }
         if rejected {
             failDevHost("demo-mbp", .revoked)
             if mode == "rejected-page" { navPath = [.machineUnavailable("demo-mbp")] }

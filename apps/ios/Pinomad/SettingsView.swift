@@ -78,11 +78,13 @@ struct SettingsView: View {
     }
 
     /// Opens the machine's own settings; every machine is live, so there is
-    /// nothing to switch (#429).
+    /// nothing to switch (#429). Under it, each route that reaches it (#502).
     private func pairedRow(_ host: HostRecord) -> some View {
         NavigationLink(value: Route.machine(host.hostKey)) {
-            HStack(spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                // Level with the name, not the middle of the route list.
                 MachineDot(live: model.isConnected(host.hostKey))
+                    .padding(.top, 7)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label(host))
                         .foregroundStyle(.primary)
@@ -90,6 +92,8 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                    HostRouteList(routes: hostRoutes(host), mode: host.connectionMode ?? .auto)
+                        .padding(.top, 4)
                 }
             }
         }
@@ -507,5 +511,43 @@ private struct MachineDot: View {
             .fill(live ? Color.green : Color.secondary.opacity(0.5))
             .frame(width: 8, height: 8)
             .accessibilityLabel(live ? "Connected" : "Not connected")
+    }
+}
+
+/// One machine's routes: each network or server this device can reach it
+/// over (#502). Which one carries the connection is the status line's job —
+/// the stored set can change under a live socket.
+private struct HostRouteList: View {
+    let routes: [HostRoute]
+    let mode: HostConnectionMode
+
+    var body: some View {
+        if routes.isEmpty {
+            Text("No published address")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(routes) { route in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(route.label)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 92, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(route.address)
+                                .monospaced()
+                                .foregroundStyle(.secondary)
+                            if !route.isOn {
+                                Text("Off in \(mode.label)")
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                    .font(.caption)
+                    .opacity(route.isOn ? 1 : 0.6)
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
     }
 }
