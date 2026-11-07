@@ -61,6 +61,24 @@ function fakeModel(initial: AccountState): AccountModel & { setState(next: Accou
     pairHost: vi.fn(() => Promise.resolve({ ok: false as const, error: { code: "host_timeout" } })),
     retryUnsavedHost: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     hostRejected: vi.fn(),
+    providerFlow: "redirect",
+    authMethods: vi.fn(() => Promise.resolve({ ok: true as const, value: { registration: true, email: true, providers: [] } })),
+    requestSignupCode: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
+    register: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
+    requestPasswordReset: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
+    resetPassword: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
+    providerSignIn: vi.fn(() => new Promise<never>(() => {})),
+    requestEmailCode: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
+    setEmail: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
+    identities: vi.fn(() => Promise.resolve({ ok: true as const, value: { hasPassword: true, identities: [] } })),
+    requestReauthCode: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
+    reauth: vi.fn(() => Promise.resolve({ ok: true as const, value: { reauth: "grant", expiresAt: Date.now() + 300_000 } })),
+    linkProvider: vi.fn(() => new Promise<never>(() => {})),
+    unlinkProvider: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
+    pendingSignIn: vi.fn(() => Promise.reject(new Error("unused"))),
+    createFromPending: vi.fn(() => Promise.reject(new Error("unused"))),
+    linkPending: vi.fn(() => Promise.reject(new Error("unused"))),
+    signInAndLinkPending: vi.fn(() => Promise.reject(new Error("unused"))),
   };
 }
 
@@ -95,8 +113,8 @@ describe("AccountPanel", () => {
   it("signs a fresh desktop in to the official server without asking for an address", async () => {
     const model = fakeModel({ status: "signed-out", mode: "bearer" });
     renderPanel(model);
-    await userEvent.type(screen.getByLabelText("Username"), "kieran");
-    await userEvent.type(screen.getByLabelText("Password"), "pw{Enter}");
+    await userEvent.type(screen.getByLabelText("Email"), "kieran");
+    await userEvent.type(await screen.findByLabelText("Password"), "pw{Enter}");
     expect(model.login).toHaveBeenCalledWith({ username: "kieran", password: "pw", serverOrigin: "https://app.pinomad.si" });
   });
 
@@ -105,8 +123,8 @@ describe("AccountPanel", () => {
     renderPanel(model);
     await userEvent.clear(screen.getByLabelText("Server"));
     await userEvent.type(screen.getByLabelText("Server"), "https://nomad.example");
-    await userEvent.type(screen.getByLabelText("Username"), "kieran");
-    await userEvent.type(screen.getByLabelText("Password"), "pw{Enter}");
+    await userEvent.type(screen.getByLabelText("Email"), "kieran");
+    await userEvent.type(await screen.findByLabelText("Password"), "pw{Enter}");
     expect(model.login).toHaveBeenCalledWith({ username: "kieran", password: "pw", serverOrigin: "https://nomad.example" });
   });
 
@@ -114,8 +132,8 @@ describe("AccountPanel", () => {
     const model = fakeModel({ status: "signed-out", mode: "bearer", serverOrigin: "https://nomad.example" });
     renderPanel(model);
     expect(screen.getByLabelText("Server")).toHaveValue("https://nomad.example");
-    await userEvent.type(screen.getByLabelText("Username"), "kieran");
-    await userEvent.type(screen.getByLabelText("Password"), "pw{Enter}");
+    await userEvent.type(screen.getByLabelText("Email"), "kieran");
+    await userEvent.type(await screen.findByLabelText("Password"), "pw{Enter}");
     expect(model.login).toHaveBeenCalledWith({ username: "kieran", password: "pw", serverOrigin: "https://nomad.example" });
   });
 
@@ -231,23 +249,23 @@ describe("account settings", () => {
   it("changes the password from the signed-in panel (#450)", async () => {
     const model = fakeModel(signedIn([]));
     renderPanel(model);
-    await userEvent.click(screen.getByRole("button", { name: "Change password" }));
-    await userEvent.type(screen.getByLabelText("Current password"), "old password here");
+    await userEvent.click(await screen.findByRole("button", { name: "Change password" }));
+    await userEvent.type(await screen.findByLabelText("Password"), "old password here");
     await userEvent.type(screen.getByLabelText("New password"), "new password here{Enter}");
-    expect(model.changePassword).toHaveBeenCalledWith({ currentPassword: "old password here", newPassword: "new password here" });
+    expect(model.changePassword).toHaveBeenCalledWith({ confirmation: "old password here", newPassword: "new password here" });
     expect(await screen.findByText("Password changed. Your other devices were signed out.")).toBeTruthy();
-    expect(screen.queryByLabelText("Current password")).toBeNull();
+    expect(screen.queryByLabelText("Password")).toBeNull();
   });
 
   it("keeps the form and says so when the current password is wrong", async () => {
     const model = fakeModel(signedIn([]));
     vi.mocked(model.changePassword).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
     renderPanel(model);
-    await userEvent.click(screen.getByRole("button", { name: "Change password" }));
-    await userEvent.type(screen.getByLabelText("Current password"), "wrong one");
+    await userEvent.click(await screen.findByRole("button", { name: "Change password" }));
+    await userEvent.type(screen.getByLabelText("Password"), "wrong one");
     await userEvent.type(screen.getByLabelText("New password"), "new password here{Enter}");
-    expect(await screen.findByText("The current password is wrong.")).toBeTruthy();
-    expect(screen.getByLabelText("Current password")).toBeTruthy();
+    expect(await screen.findByText("The password is wrong.")).toBeTruthy();
+    expect(screen.getByLabelText("Password")).toBeTruthy();
   });
 
   it("deletes the account after the password and says the pairings stay (#451)", async () => {
@@ -260,11 +278,11 @@ describe("account settings", () => {
     renderPanel(model);
     await userEvent.click(screen.getByRole("button", { name: "Delete account" }));
     expect(screen.getByText(/run pinomad join on each/)).toBeTruthy();
-    await userEvent.type(screen.getByLabelText("Password"), "my password{Enter}");
-    expect(model.deleteAccount).toHaveBeenCalledWith({ password: "my password" });
+    await userEvent.type(await screen.findByLabelText("Password"), "my password{Enter}");
+    expect(model.deleteAccount).toHaveBeenCalledWith({ confirmation: "my password" });
     expect(await screen.findByText("Account deleted")).toBeTruthy();
     expect(screen.getByText(/still registered on your hosts/)).toBeTruthy();
-    expect(screen.getByLabelText("Username")).toBeTruthy();
+    expect(screen.getByLabelText("Email")).toBeTruthy();
   });
 
   it("keeps the session and the form when the password is wrong", async () => {
@@ -272,8 +290,8 @@ describe("account settings", () => {
     vi.mocked(model.deleteAccount).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
     renderPanel(model);
     await userEvent.click(screen.getByRole("button", { name: "Delete account" }));
-    await userEvent.type(screen.getByLabelText("Password"), "wrong one{Enter}");
-    expect(await screen.findByText("The current password is wrong.")).toBeTruthy();
+    await userEvent.type(await screen.findByLabelText("Password"), "wrong one{Enter}");
+    expect(await screen.findByText("The password is wrong.")).toBeTruthy();
     expect(screen.getByLabelText("Password")).toBeTruthy();
     expect(screen.getByText("kieran")).toBeTruthy();
   });
@@ -286,7 +304,7 @@ describe("account settings", () => {
     });
     renderPanel(model);
     await userEvent.click(screen.getByRole("button", { name: "Delete account" }));
-    await userEvent.type(screen.getByLabelText("Password"), "my password{Enter}");
+    await userEvent.type(await screen.findByLabelText("Password"), "my password{Enter}");
     expect(await screen.findByText("Account deleted")).toBeTruthy();
     act(() => model.setState({ ...signedIn([]), user: "bob" }));
     act(() => model.setState({ status: "signed-out", mode: "cookie" }));
@@ -301,7 +319,7 @@ describe("account settings", () => {
     );
     renderPanel(model);
     await userEvent.click(screen.getByRole("button", { name: "Delete account" }));
-    await userEvent.type(screen.getByLabelText("Password"), "my password{Enter}");
+    await userEvent.type(await screen.findByLabelText("Password"), "my password{Enter}");
     act(() => model.setState({ status: "signed-out", mode: "cookie" }));
     act(() => model.setState({ ...signedIn([]), user: "bob" }));
     await act(async () => answer());
@@ -364,9 +382,9 @@ describe("account devices (#452)", () => {
     // Hosts that don't report devices can't be asked; the form names them.
     expect(screen.getByText(/attic can't be asked/)).toBeTruthy();
     await act(async () => {
-      await userEvent.type(screen.getByLabelText("Password"), "my password{Enter}");
+      await userEvent.type(await screen.findByLabelText("Password"), "my password{Enter}");
     });
-    expect(model.kickDevice).toHaveBeenCalledWith({ id: 2, password: "my password" });
+    expect(model.kickDevice).toHaveBeenCalledWith({ id: 2, confirmation: "my password" });
     expect(model.listDevices).toHaveBeenCalledTimes(2);
     expect(screen.queryByLabelText("Password")).toBeNull();
   });
@@ -376,8 +394,8 @@ describe("account devices (#452)", () => {
     vi.mocked(model.kickDevice).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
     renderPanel(model);
     await userEvent.click(within(await deviceRow("iPhone")).getByRole("button", { name: "Remove" }));
-    await userEvent.type(screen.getByLabelText("Password"), "wrong{Enter}");
-    expect(await screen.findByText("The current password is wrong.")).toBeTruthy();
+    await userEvent.type(await screen.findByLabelText("Password"), "wrong{Enter}");
+    expect(await screen.findByText("The password is wrong.")).toBeTruthy();
     expect(screen.getByLabelText("Password")).toBeTruthy();
     expect(model.listDevices).toHaveBeenCalledTimes(1);
   });
@@ -403,9 +421,9 @@ describe("removing a host (#512)", () => {
     expect(screen.getByText(/stops connecting through nomad\.example/)).toBeTruthy();
     expect(screen.getByText(/pinomad up/)).toBeTruthy();
     await act(async () => {
-      await userEvent.type(screen.getByLabelText("Password"), "my password{Enter}");
+      await userEvent.type(await screen.findByLabelText("Password"), "my password{Enter}");
     });
-    expect(model.removeHost).toHaveBeenCalledWith({ hostId: boxId, password: "my password" });
+    expect(model.removeHost).toHaveBeenCalledWith({ hostId: boxId, confirmation: "my password" });
     expect(screen.queryByLabelText("Password")).toBeNull();
   });
 
@@ -414,8 +432,8 @@ describe("removing a host (#512)", () => {
     vi.mocked(model.removeHost).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
     renderPanel(model);
     await userEvent.click(within(row("box")).getByRole("button", { name: "Remove" }));
-    await userEvent.type(screen.getByLabelText("Password"), "wrong{Enter}");
-    expect(await screen.findByText("The current password is wrong.")).toBeTruthy();
+    await userEvent.type(await screen.findByLabelText("Password"), "wrong{Enter}");
+    expect(await screen.findByText("The password is wrong.")).toBeTruthy();
     expect(screen.getByLabelText("Password")).toBeTruthy();
   });
 
@@ -424,7 +442,7 @@ describe("removing a host (#512)", () => {
     vi.mocked(model.removeHost).mockResolvedValueOnce({ ok: false, error: { code: "remove_unsupported" } });
     renderPanel(model);
     await userEvent.click(within(row("box")).getByRole("button", { name: "Remove" }));
-    await userEvent.type(screen.getByLabelText("Password"), "pw{Enter}");
+    await userEvent.type(await screen.findByLabelText("Password"), "pw{Enter}");
     expect(await screen.findByText(/pinomad leave/)).toBeTruthy();
   });
 });
@@ -435,5 +453,62 @@ describe("accountErrorMessage pairing paths", () => {
     expect(accountErrorMessage({ code: "pair_unreachable" })).toContain("Couldn't reach the host");
     expect(accountErrorMessage({ code: "pair_timeout" })).toContain("didn't answer");
     expect(accountErrorMessage({ code: "pair_unsupported" })).toContain("can't connect to any address");
+  });
+});
+
+describe("sign-in methods (ADR-0044 §4)", () => {
+  const withMethods = (hasPassword: boolean, providers: readonly string[] = ["google", "github"]) => {
+    const model = fakeModel({ ...signedIn([]), email: "kieran@example.com" });
+    vi.mocked(model.identities).mockResolvedValue({
+      ok: true,
+      value: { hasPassword, identities: [{ provider: "github", email: "k@users.noreply.github.com", createdAt: 1 }] },
+    });
+    vi.mocked(model.authMethods).mockResolvedValue({ ok: true, value: { registration: true, email: true, providers } });
+    return model;
+  };
+
+  it("lists the password and linked providers, and offers to link the rest", async () => {
+    renderPanel(withMethods(true));
+    const github = (await screen.findByText("GitHub")).closest("li")!;
+    expect(within(github).getByText("k@users.noreply.github.com")).toBeTruthy();
+    expect(within(row("Password")).getByRole("button", { name: "Change password" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Link Google" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Link GitHub" })).toBeNull();
+  });
+
+  it("offers no linking where the page can't go to the provider and back", async () => {
+    renderPanel({ ...withMethods(true), providerFlow: "loopback" });
+    await screen.findByText("GitHub");
+    await act(async () => {});
+    expect(screen.queryByRole("button", { name: /^Link / })).toBeNull();
+  });
+
+  it("says so when removing the last way in", async () => {
+    const model = withMethods(false);
+    vi.mocked(model.unlinkProvider).mockResolvedValueOnce({ ok: false, error: { code: "last_method", status: 409 } });
+    renderPanel(model);
+    expect(within((await screen.findByText("Password")).closest("li")!).getByText("Not set")).toBeTruthy();
+    await userEvent.click(within((await screen.findByText("GitHub")).closest("li")!).getByRole("button", { name: "Remove" }));
+    // No password: the confirmation is a mailed code.
+    await userEvent.click(await screen.findByRole("button", { name: "Send code" }));
+    await userEvent.type(await screen.findByLabelText("Code"), "123456");
+    await userEvent.click(screen.getByRole("button", { name: "Remove GitHub" }));
+    expect(model.reauth).toHaveBeenCalledWith({ code: "123456" });
+    expect(model.unlinkProvider).toHaveBeenCalledWith("github", { reauth: "grant" });
+    expect(await screen.findByText(accountErrorMessage({ code: "last_method" }))).toBeTruthy();
+  });
+
+  it("kicks a device on an account without a password with a mailed code", async () => {
+    const model = withMethods(false);
+    vi.mocked(model.listDevices).mockResolvedValue({
+      ok: true,
+      value: [{ id: 2, name: "iPhone", createdAt: 0, lastSeenAt: Date.now(), current: false, hosts: [] }],
+    });
+    renderPanel(model);
+    await userEvent.click(within((await screen.findByText("iPhone")).closest("li")!).getByRole("button", { name: "Remove" }));
+    expect(await screen.findByText("We'll email a code to kieran@example.com.")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Send code" }));
+    await userEvent.type(await screen.findByLabelText("Code"), "123456{Enter}");
+    await vi.waitFor(() => expect(model.kickDevice).toHaveBeenCalledWith({ id: 2, confirmation: { reauth: "grant" } }));
   });
 });

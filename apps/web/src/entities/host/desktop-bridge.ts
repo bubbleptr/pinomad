@@ -38,6 +38,19 @@ export interface DesktopBridge {
     clear(): Promise<void>;
   };
   /**
+   * Provider sign-in through the system browser (ADR-0044 §5): main listens
+   * on 127.0.0.1, opens `serverOrigin`'s start route with the renderer's PKCE
+   * challenge and state, and answers with the one-time code the server sent
+   * back, or the error it named. Optional: older bridges can't, and the
+   * sign-in screen then offers no provider buttons.
+   */
+  readonly oauthSignIn?: (input: {
+    serverOrigin: string;
+    provider: string;
+    codeChallenge: string;
+    state: string;
+  }) => Promise<{ code: string } | { error: string }>;
+  /**
    * The label pairing registers on the host's device list ("Mac Desktop
    * (kieran-mbp)"). Optional like `updates`: the browser has no bridge, and a
    * missing one just falls back to the UA-derived name.

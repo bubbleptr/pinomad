@@ -1,6 +1,6 @@
 # LobeHub Icons 的来源与许可证
 
-Web 客户端设置里 Providers 一节的服务商图标、模型选择器里的模型厂商图标（都在 `apps/web/src/entities/provider/logos/`）取自 [LobeHub Icons](https://github.com/lobehub/lobe-icons) 的静态 SVG，未作修改；单色图标用 `currentColor` 填充，随明暗主题变色。服务商 id 到图标文件的对应在 `apps/web/src/entities/provider/provider-logo.tsx`，模型 id 到厂商图标的对应在 `apps/web/src/entities/model/model-logo.tsx`。
+Web 客户端设置里 Providers 一节的服务商图标、模型选择器里的模型厂商图标、账号登录按钮上的 Google、GitHub、Apple 标志（都在 `apps/web/src/entities/provider/logos/`，登录用的对应表在 `sign-in-provider.tsx`）取自 [LobeHub Icons](https://github.com/lobehub/lobe-icons) 的静态 SVG，未作修改；单色图标用 `currentColor` 填充，随明暗主题变色。服务商 id 到图标文件的对应在 `apps/web/src/entities/provider/provider-logo.tsx`，模型 id 到厂商图标的对应在 `apps/web/src/entities/model/model-logo.tsx`。
 
 官网首页「用你已经付费的订阅」一节也引用同一批文件中的几个（`apps/site/src/landing/page.css` 里的 `.sub-logo`），只当作 CSS mask 用，统一成单色显示，文件本身不复制、不修改。
 

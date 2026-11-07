@@ -12,17 +12,26 @@ import {
   pairViaAccount,
   probeAccounts,
   type AccountClient,
+  type AccountConfirmation,
   type AccountDevice,
   type AccountDeviceClaim,
   type AccountError,
   type AccountFetch,
   type AccountHostMatch,
+  type AccountIdentities,
+  type AccountProfile,
   type AccountResult,
+  type AuthMethods,
+  type EmailConfirmation,
   type HostLinkRequest,
   type JoinToken,
   type LoginSuccess,
   type PairConnectArgs,
+  type PendingOutcome,
+  type PendingSignIn,
+  type ReauthGrant,
 } from "@pinomad/client/account.ts";
+import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { accountDeviceName, clientDeviceName } from "../../address.ts";
 import type { DesktopBridge } from "../host/desktop-bridge.ts";
 import { useHosts, type StoredHost } from "../host/host-store.ts";
@@ -70,7 +79,15 @@ export type AccountState =
   | {
       readonly status: "signed-in";
       readonly mode: AccountMode;
+      /** What to show for the account: its email, or a legacy username. */
       readonly user: string;
+      /** The account's verified email; absent on legacy accounts that have none yet. */
+      readonly email?: string;
+      /**
+       * A legacy account the server wants an email for before anything else
+       * (ADR-0044 §8): the app shows the add-email card instead of itself.
+       */
+      readonly needsEmail?: true;
       readonly serverOrigin: string;
       /** The account's hosts matched against stored pairings (packages/client matchAccountHosts). */
       readonly hosts: readonly AccountHostMatch[];
@@ -105,14 +122,60 @@ export interface AccountModel {
   logout(options?: { readonly revoke?: boolean }): Promise<AccountResult<void>>;
   /** Revokes every session of the account including this one — always lands signed-out. */
   revokeAll(): Promise<AccountResult<void>>;
-  /** Signs out the account's other sessions; this one stays (#450). */
-  changePassword(input: { currentPassword: string; newPassword: string }): Promise<AccountResult<void>>;
+  /**
+   * Signs out the account's other sessions; this one stays (#450). A re-auth
+   * grant sets a first password on an account that has none (ADR-0044 §6).
+   */
+  changePassword(input: { confirmation: AccountConfirmation; newPassword: string }): Promise<AccountResult<void>>;
   /**
    * Deletes the account and lands signed-out (#451); a refusal or a failed
    * request keeps the session. Pairings stay: the device's registration on
    * each host is the host's to revoke.
    */
-  deleteAccount(input: { password: string }): Promise<AccountResult<void>>;
+  deleteAccount(input: { confirmation: AccountConfirmation }): Promise<AccountResult<void>>;
+  /**
+   * How provider sign-in works here (ADR-0044 §5): "redirect" on the page
+   * the server serves (the whole page goes to the provider), "loopback" in
+   * the desktop app (the system browser, back to a 127.0.0.1 listener), and
+   * none where neither can.
+   */
+  readonly providerFlow: "redirect" | "loopback" | undefined;
+  /** What the server offers: sign-up, mailed codes, providers. Bearer mode asks `serverOrigin`. */
+  authMethods(serverOrigin?: string): Promise<AccountResult<AuthMethods>>;
+  requestSignupCode(input: { email: string; serverOrigin?: string }): Promise<AccountResult<void>>;
+  /** Creates the account from the mailed code and signs it in, like login. */
+  register(input: { email: string; code: string; password: string; serverOrigin?: string }): Promise<AccountResult<void>>;
+  requestPasswordReset(input: { email: string; serverOrigin?: string }): Promise<AccountResult<void>>;
+  /** Sets the new password; the account is signed out everywhere and signs in again. */
+  resetPassword(input: { email: string; code: string; password: string; serverOrigin?: string }): Promise<AccountResult<void>>;
+  /**
+   * Signs in with a provider: a "redirect" page leaves for the server's start
+   * route and the promise never settles; "loopback" opens the system browser
+   * and signs in with the code it brings back.
+   */
+  providerSignIn(input: { provider: string; serverOrigin?: string }): Promise<AccountResult<void>>;
+  /** Mails a code to the email the signed-in account wants to use. */
+  requestEmailCode(input: { email: string } & EmailConfirmation): Promise<AccountResult<void>>;
+  /** Makes it the account's email; ends the needsEmail hold. */
+  setEmail(input: { email: string; code: string } & EmailConfirmation): Promise<AccountResult<void>>;
+  identities(): Promise<AccountResult<AccountIdentities>>;
+  requestReauthCode(): Promise<AccountResult<void>>;
+  reauth(proof: { password: string } | { code: string }): Promise<AccountResult<ReauthGrant>>;
+  /** The provider page to send this browser to; it comes back with `?oauth_linked=` or `?oauth_error=`. */
+  linkProvider(provider: string, confirmation: AccountConfirmation): Promise<AccountResult<string>>;
+  unlinkProvider(provider: string, confirmation: AccountConfirmation): Promise<AccountResult<void>>;
+  /** The provider sign-in behind `?oauth_pending=`, read on this page's own server. */
+  pendingSignIn(id: string): Promise<AccountResult<PendingSignIn>>;
+  /**
+   * Creates the account a pending sign-in asked for. This page is then signed
+   * in to it, unless a native app started the sign-in: then `redirect` is
+   * where the browser goes next, and this page stays as it was.
+   */
+  createFromPending(id: string, options?: { password?: string }): Promise<AccountResult<{ redirect?: string }>>;
+  /** Adds a pending sign-in's provider to the signed-in account. */
+  linkPending(id: string, confirmation: AccountConfirmation): Promise<AccountResult<{ redirect?: string }>>;
+  /** Signs in with the password, then links with that same password as the confirmation. */
+  signInAndLinkPending(id: string, input: { username: string; password: string }): Promise<AccountResult<{ redirect?: string }>>;
   refreshHosts(): Promise<AccountResult<readonly AccountHostMatch[]>>;
   /** The account's devices (#452). */
   listDevices(): Promise<AccountResult<readonly AccountDevice[]>>;
@@ -120,7 +183,7 @@ export interface AccountModel {
    * Signs a device out of the account and asks its hosts to revoke it
    * (ADR-0037 §3). A refusal keeps this session; the caller reloads the list.
    */
-  kickDevice(input: { id: number; password: string }): Promise<AccountResult<void>>;
+  kickDevice(input: { id: number; confirmation: AccountConfirmation }): Promise<AccountResult<void>>;
   /**
    * Takes a host off the account (#512), with the password as for a kick: it
    * stops connecting through the server until `pinomad up` runs on it again.
@@ -129,7 +192,7 @@ export interface AccountModel {
    * server that can't remove hosts (`remove_unsupported`), otherwise it was
    * already gone and this device forgets it just the same.
    */
-  removeHost(input: { hostId: string; password: string }): Promise<AccountResult<void>>;
+  removeHost(input: { hostId: string; confirmation: AccountConfirmation }): Promise<AccountResult<void>>;
   createJoinToken(): Promise<AccountResult<JoinToken>>;
   /**
    * The host waiting behind a code typed from its terminal (#496); the code
@@ -198,6 +261,8 @@ export interface AccountModelDeps {
   readonly visibility?: AccountVisibility;
   /** Test seam: turn automatic registration off for account-only cases. */
   readonly autoRegister?: boolean;
+  /** Where a "redirect" provider sign-in sends the page; defaults to location.assign. */
+  readonly navigate?: (url: string) => void;
 }
 
 const fail = (code: string): AccountResult<never> => ({ ok: false, error: { code } });
@@ -230,7 +295,17 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   // The live client exists iff state is signed-in (or a login is in flight).
   let client: AccountClient | undefined;
   let mode: AccountMode = deps.bridge === undefined ? "cookie" : "bearer";
+  const providerFlow =
+    mode === "cookie" ? ("redirect" as const) : deps.bridge?.oauthSignIn !== undefined ? ("loopback" as const) : undefined;
   let lastOrigin: string | undefined;
+  /** The signed-in account's email and needsEmail flag, as its last profile said. */
+  let profile: Pick<Extract<AccountState, { status: "signed-in" }>, "email" | "needsEmail"> = {};
+  const takeProfile = (value: AccountProfile): void => {
+    profile = {
+      ...(value.user.email === undefined ? {} : { email: value.user.email }),
+      ...(value.needsEmail === true ? { needsEmail: true as const } : {}),
+    };
+  };
   const rejected = new Set<string>();
   const declined = deps.declined ?? browserDeclined;
   const autoRegisterEnabled = deps.autoRegister !== false;
@@ -299,6 +374,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   /** Ends the session's work: no client, every flight and pending save dropped. */
   const endSession = (): void => {
     client = undefined;
+    profile = {};
     epoch += 1;
     for (const flight of flights.values()) flight.cancelled = true;
     flights.clear();
@@ -329,6 +405,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     status: "signed-in",
     mode,
     user,
+    ...profile,
     serverOrigin: active.origin,
     hosts,
     rejectedHostKeys: [...rejected],
@@ -635,6 +712,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
         return;
       }
       client = candidate;
+      takeProfile(me.value);
       await refresh(candidate, me.value.user.username);
       return;
     }
@@ -654,6 +732,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     }
     client = candidate;
     lastOrigin = deps.origin;
+    takeProfile(me.value);
     await refresh(candidate, me.value.user.username);
   };
   void init();
@@ -766,12 +845,18 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     await forgetAccountHosts(origin, hostId);
   };
 
-  const removeHost = async ({ hostId, password }: { hostId: string; password: string }): Promise<AccountResult<void>> => {
+  const removeHost = async ({
+    hostId,
+    confirmation,
+  }: {
+    hostId: string;
+    confirmation: AccountConfirmation;
+  }): Promise<AccountResult<void>> => {
     if (client === undefined || state.status !== "signed-in") return fail("unauthenticated");
     const active = client;
     const started = epoch;
     const user = state.user;
-    const result = await active.removeHost(hostId, password);
+    const result = await active.removeHost(hostId, confirmation);
     if (!live(active, started)) return result;
     if (!result.ok) {
       if (isUnauthenticated(result.error)) signedOut();
@@ -794,40 +879,100 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     return { ok: true, value: undefined };
   };
 
-  /** Login and sign-up share everything but the call that mints the session. */
+  /**
+   * A client with no session yet, for the calls before one: this page's own
+   * server in cookie mode, the typed (or last) server in bearer mode, which
+   * must be TLS.
+   */
+  const anonymous = (serverOrigin: string | undefined): AccountResult<AccountClient> => {
+    if (mode === "cookie") {
+      return { ok: true, value: createAccountClient({ origin: deps.origin, credentials: { mode: "cookie" }, fetch: deps.fetch }) };
+    }
+    const origin = serverOrigin ?? lastOrigin;
+    if (origin === undefined) return fail("origin_required");
+    if (!isSecureServerOrigin(origin)) return fail("insecure_origin");
+    return { ok: true, value: createAccountClient({ origin, credentials: { mode: "bearer" }, fetch: deps.fetch }) };
+  };
+
+  const beforeSession = async <T,>(
+    serverOrigin: string | undefined,
+    call: (candidate: AccountClient) => Promise<AccountResult<T>>,
+  ): Promise<AccountResult<T>> => {
+    const candidate = anonymous(serverOrigin);
+    return candidate.ok ? call(candidate.value) : candidate;
+  };
+
+  /** Login, sign-up and provider sign-in share everything but the call that mints the session. */
   const signIn = async (
     serverOrigin: string | undefined,
     call: (candidate: AccountClient) => Promise<AccountResult<LoginSuccess>>,
   ): Promise<AccountResult<void>> => {
-    let candidate: AccountClient;
-    if (mode === "cookie") {
-      await pendingLogout;
-      candidate = createAccountClient({ origin: deps.origin, credentials: { mode: "cookie" }, fetch: deps.fetch });
-    } else {
-      const origin = serverOrigin ?? lastOrigin;
-      if (origin === undefined) return fail("origin_required");
-      if (!isSecureServerOrigin(origin)) return fail("insecure_origin");
-      candidate = createAccountClient({ origin, credentials: { mode: "bearer" }, fetch: deps.fetch });
-    }
-    const result = await call(candidate);
+    if (mode === "cookie") await pendingLogout;
+    const built = anonymous(serverOrigin);
+    if (!built.ok) return built;
+    const result = await call(built.value);
     if (!result.ok) return result;
+    return adopt(built.value, result.value);
+  };
+
+  /** Makes a fresh session this model's: stored in bearer mode, hosts refreshed. */
+  const adopt = async (anonymousClient: AccountClient, login: LoginSuccess): Promise<AccountResult<void>> => {
+    let candidate = anonymousClient;
     if (mode === "bearer") {
-      if (result.value.token === undefined) return fail("invalid_response");
+      if (login.token === undefined) return fail("invalid_response");
       candidate = createAccountClient({
         origin: candidate.origin,
-        credentials: { mode: "bearer", token: result.value.token },
+        credentials: { mode: "bearer", token: login.token },
         fetch: deps.fetch,
       });
       lastOrigin = candidate.origin;
       // Persist after login succeeds; a bridge without account storage just
       // keeps this session in memory.
       void deps.bridge?.account
-        ?.save({ serverOrigin: candidate.origin, token: result.value.token })
+        ?.save({ serverOrigin: candidate.origin, token: login.token })
         .catch((error: unknown) => console.error("Could not persist the account session", error));
     }
+    // A sign-in over a live session (a pending sign-in's new account) replaces it.
+    if (client !== undefined) endSession();
     client = candidate;
-    await refresh(candidate, result.value.user.username);
+    takeProfile(login);
+    await refresh(candidate, login.user.username);
     return { ok: true, value: undefined };
+  };
+
+  /**
+   * The desktop's provider sign-in (ADR-0044 §5): PKCE S256 and a state of
+   * its own, the system browser via main's loopback listener, then the
+   * one-time code traded for a bearer session.
+   */
+  const loopbackSignIn = async (provider: string, serverOrigin: string | undefined): Promise<AccountResult<void>> => {
+    const oauthSignIn = deps.bridge?.oauthSignIn;
+    if (oauthSignIn === undefined) return fail("unsupported");
+    const built = anonymous(serverOrigin);
+    if (!built.ok) return built;
+    const random = (bytes: number): string => toBase64Url(crypto.getRandomValues(new Uint8Array(bytes)));
+    const verifier = random(32);
+    const state = random(16);
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+    const answer = await oauthSignIn({
+      serverOrigin: built.value.origin,
+      provider,
+      codeChallenge: toBase64Url(new Uint8Array(digest)),
+      state,
+    }).catch(() => ({ error: "loopback_failed" }));
+    if ("error" in answer) return fail(answer.error);
+    return signIn(built.value.origin, (candidate) => candidate.exchangeOAuthCode(answer.code, verifier, deps.device?.()));
+  };
+
+  /** A pending sign-in finished: signed in here, or a native app's redirect to follow. */
+  const pendingOutcome = async (
+    result: AccountResult<PendingOutcome>,
+    candidate: AccountClient,
+  ): Promise<AccountResult<{ redirect?: string }>> => {
+    if (!result.ok) return result;
+    if (result.value.kind === "redirect") return { ok: true, value: { redirect: result.value.url } };
+    const adopted = await adopt(candidate, result.value.session);
+    return adopted.ok ? { ok: true, value: {} } : adopted;
   };
 
   /**
@@ -863,6 +1008,66 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
 
     login: ({ username, password, serverOrigin }) =>
       signIn(serverOrigin, (candidate) => candidate.login(username, password, deps.device?.())),
+
+    providerFlow,
+    authMethods: (serverOrigin) => beforeSession(serverOrigin, (candidate) => candidate.authMethods()),
+    requestSignupCode: ({ email, serverOrigin }) => beforeSession(serverOrigin, (candidate) => candidate.requestSignupCode(email)),
+    register: ({ email, code, password, serverOrigin }) =>
+      signIn(serverOrigin, (candidate) => candidate.register({ email, code, password, device: deps.device?.() })),
+    requestPasswordReset: ({ email, serverOrigin }) =>
+      beforeSession(serverOrigin, (candidate) => candidate.requestPasswordReset(email)),
+    resetPassword: ({ email, code, password, serverOrigin }) =>
+      beforeSession(serverOrigin, (candidate) => candidate.resetPassword({ email, code, password })),
+    providerSignIn: async ({ provider, serverOrigin }) => {
+      if (providerFlow === "loopback") return loopbackSignIn(provider, serverOrigin);
+      if (providerFlow === undefined) return fail("unsupported");
+      (deps.navigate ?? ((url) => window.location.assign(url)))(
+        `${normalizeServerOrigin(deps.origin)}/api/oauth/${encodeURIComponent(provider)}/start?client=web`,
+      );
+      // The page is leaving; nothing to settle on.
+      return new Promise<never>(() => {});
+    },
+    requestEmailCode: (input) => authed((active) => active.requestEmailCode(input)),
+    setEmail: async (input) => {
+      const result = await authed((active) => active.setEmail(input));
+      if (!result.ok) return result;
+      takeProfile(result.value);
+      if (state.status === "signed-in") {
+        const { needsEmail: _held, ...rest } = state;
+        setState({ ...rest, user: result.value.user.username, ...profile });
+      }
+      return { ok: true, value: undefined };
+    },
+    identities: () => authed((active) => active.identities()),
+    requestReauthCode: () => authed((active) => active.requestReauthCode()),
+    reauth: (proof) => authed((active) => active.reauth(proof)),
+    linkProvider: (provider, confirmation) => authed((active) => active.linkProvider(provider, confirmation)),
+    unlinkProvider: (provider, confirmation) => authed((active) => active.unlinkProvider(provider, confirmation)),
+    pendingSignIn: (id) => beforeSession(undefined, (candidate) => candidate.pendingSignIn(id)),
+    createFromPending: async (id, options) => {
+      if (mode === "cookie") await pendingLogout;
+      const built = anonymous(undefined);
+      if (!built.ok) return built;
+      return pendingOutcome(
+        await built.value.createFromPending(id, {
+          ...(options?.password === undefined ? {} : { password: options.password }),
+          device: deps.device?.(),
+        }),
+        built.value,
+      );
+    },
+    linkPending: async (id, confirmation) => {
+      const result = await authed((active) => active.linkPending(id, confirmation));
+      if (!result.ok) return result;
+      return { ok: true, value: result.value === undefined ? {} : { redirect: result.value } };
+    },
+    signInAndLinkPending: async (id, { username, password }) => {
+      const signedIn = await signIn(undefined, (candidate) => candidate.login(username, password, deps.device?.()));
+      if (!signedIn.ok) return signedIn;
+      const result = await authed((active) => active.linkPending(id, password));
+      if (!result.ok) return result;
+      return { ok: true, value: result.value === undefined ? {} : { redirect: result.value } };
+    },
 
     logout: async (options) => {
       if (client === undefined) return fail("unauthenticated");
@@ -912,19 +1117,19 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       return refresh(client, state.user);
     },
 
-    changePassword: ({ currentPassword, newPassword }) =>
-      authed((active) => active.changePassword(currentPassword, newPassword)),
+    changePassword: ({ confirmation, newPassword }) =>
+      authed((active) => active.changePassword(confirmation, newPassword)),
     // Unlike revokeAll, a failure keeps the session: the account may still exist.
-    deleteAccount: ({ password }) =>
+    deleteAccount: ({ confirmation }) =>
       authed(
-        (active) => active.deleteAccount(password),
+        (active) => active.deleteAccount(confirmation),
         () => {
           if (mode === "bearer") void deps.bridge?.account?.clear().catch(() => undefined);
           signedOut();
         },
       ),
     listDevices: () => authed((active) => active.listDevices()),
-    kickDevice: ({ id, password }) => authed((active) => active.kickDevice(id, password)),
+    kickDevice: ({ id, confirmation }) => authed((active) => active.kickDevice(id, confirmation)),
     removeHost,
     createJoinToken: () => authed((active) => active.createJoinToken()),
     lookupHostLink: (userCode) => authed((active) => active.lookupHostLink(userCode)),

@@ -26,9 +26,25 @@ function freePort(): Promise<number> {
   });
 }
 
-/** Serve apps/web from a Vite dev server for one test; returns its origin. */
-export async function startWeb(defer: (cleanup: () => Promise<void> | void) => void): Promise<string> {
-  const vite = await createServer({ configFile: webConfig, cacheDir, server: { port: await freePort() }, logLevel: "error" });
+/**
+ * Serve apps/web from a Vite dev server for one test; returns its origin.
+ * `apiTarget` proxies `/api` to an account server, so the page is that
+ * server's own origin (cookie mode, ADR-0022 §2); `port` pins the origin the
+ * server was started with.
+ */
+export async function startWeb(
+  defer: (cleanup: () => Promise<void> | void) => void,
+  options?: { readonly port?: number; readonly apiTarget?: string },
+): Promise<string> {
+  const vite = await createServer({
+    configFile: webConfig,
+    cacheDir,
+    server: {
+      port: options?.port ?? (await freePort()),
+      ...(options?.apiTarget === undefined ? {} : { proxy: { "/api": { target: options.apiTarget } } }),
+    },
+    logLevel: "error",
+  });
   await vite.listen();
   defer(() => vite.close());
   return new URL(vite.resolvedUrls!.local[0]!).origin;

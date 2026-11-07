@@ -114,7 +114,7 @@ describe("HostLinkEntry", () => {
 
   it("confirms, has the model watch for the host until it pairs, and remembers it so this device doesn't announce it", async () => {
     const knownHosts = createKnownHostsStore(localStorage);
-    const account = { serverOrigin: "https://pinomad.si", user: "kieran" };
+    const account = { serverOrigin: "https://pinomad.si", user: "kieran@example.com" };
     knownHosts.arrivals(account, []);
     const model_ = model();
     const onSettled = vi.fn();
