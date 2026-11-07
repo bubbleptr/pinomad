@@ -9,9 +9,10 @@ use crate::account as core;
 use crate::ffi::hosts::{EndpointSet, StoredHost, StoredHostAccount};
 
 pub use crate::account::{
-    AccountDevice, AccountDeviceHost, AccountDeviceHostState, AccountError, AccountHost, AccountHostPairing,
-    AccountHostRef, AccountHostStatus, AccountHttpHeader, AccountHttpRequest, AccountMe, AccountOp,
-    AccountOpKind, AccountUser, AccountsProbe, HostLinkRequest, JoinToken, LoginSuccess,
+    AccountConfirmation, AccountDevice, AccountDeviceHost, AccountDeviceHostState, AccountError, AccountHost,
+    AccountHostPairing, AccountHostRef, AccountHostStatus, AccountHttpHeader, AccountHttpRequest, AccountIdentities,
+    AccountIdentity, AccountMe, AccountOp, AccountOpKind, AccountUser, AccountsProbe, AppleNativeOutcome, AuthMethods,
+    HostLinkRequest, JoinToken, LoginSuccess, PendingOutcome, PendingSignIn, ReauthGrant, ReauthProof,
 };
 
 /// The pairing answer at the boundary: the core's typed value plus the
@@ -61,6 +62,12 @@ pub enum AccountValue {
     Hosts(Vec<AccountHost>),
     Devices(Vec<AccountDevice>),
     PairingOffer(PairingOffer),
+    AuthMethods(AuthMethods),
+    Identities(AccountIdentities),
+    ReauthGrant(ReauthGrant),
+    PendingSignIn(PendingSignIn),
+    PendingOutcome(PendingOutcome),
+    AppleNative(AppleNativeOutcome),
 }
 
 fn value_from_core(value: core::AccountValue) -> AccountValue {
@@ -76,6 +83,12 @@ fn value_from_core(value: core::AccountValue) -> AccountValue {
         core::AccountValue::PairingOffer(value) => {
             AccountValue::PairingOffer(PairingOffer::from_core(&value))
         }
+        core::AccountValue::AuthMethods(value) => AccountValue::AuthMethods(value),
+        core::AccountValue::Identities(value) => AccountValue::Identities(value),
+        core::AccountValue::ReauthGrant(value) => AccountValue::ReauthGrant(value),
+        core::AccountValue::PendingSignIn(value) => AccountValue::PendingSignIn(value),
+        core::AccountValue::PendingOutcome(value) => AccountValue::PendingOutcome(value),
+        core::AccountValue::AppleNative(value) => AccountValue::AppleNative(value),
     }
 }
 

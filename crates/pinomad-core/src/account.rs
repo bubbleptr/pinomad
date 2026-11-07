@@ -3,6 +3,8 @@
 // out (ADR-0024 §3): `account_request` builds the HTTP the platform sends
 // verbatim, `account_response` turns the status+body it gets back into typed
 // values. Only bearer mode exists here — the cookie mode is browser-only.
+// That includes the email ops, provider sign-in, sign-in methods and
+// re-auth (ADR-0044), which iOS offers like web and desktop.
 //
 // A request that never gets an answer (DNS failure, timeout, aborted socket)
 // never reaches `account_response` — the platform reports `code: "network"`
@@ -33,16 +35,52 @@ pub struct AccountDeviceClaim {
     pub name: Option<String>,
 }
 
+/// The second check before an action on the account (ADR-0044 §6): the
+/// password, or a grant from `Reauth`, which only counts for the session
+/// that got it and lapses after five minutes. Never cached by a client: the
+/// password goes to the server each time it is typed.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
+pub enum AccountConfirmation {
+    Password(String),
+    Reauth(String),
+}
+
+impl AccountConfirmation {
+    /// `{password}` or `{reauth}` — `password_key` names the password's
+    /// member (`currentPassword` for a password change).
+    fn write(&self, object: &mut JsonObject, password_key: &str) {
+        match self {
+            AccountConfirmation::Password(password) => {
+                object.set(U16String::from_str(password_key), Json::from(password.as_str()))
+            }
+            AccountConfirmation::Reauth(reauth) => {
+                object.set(U16String::from_str("reauth"), Json::from(reauth.as_str()))
+            }
+        }
+    }
+}
+
+/// What `Reauth` trades for a grant: the password, or a mailed code.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
+pub enum ReauthProof {
+    Password(String),
+    Code(String),
+}
+
 /// One account call. `Login` carries the submitted credentials and, when
 /// the platform has one, its device claim (ADR-0037 §1);
 /// `RequestPairing` carries the account-bound hostId; the push-token pair
-/// carries this device's APNs token (ADR-0036); `ChangePassword` carries
-/// both passwords (#450); `DeleteAccount` and `KickDevice` carry the
-/// password again (#451, ADR-0037 §3), `KickDevice` also the server's id
-/// from `ListDevices`; `RemoveHost` carries the hostId and the password
-/// again (#512); the host-link trio carries the code typed from a host's
+/// carries this device's APNs token (ADR-0036); `ChangePassword`,
+/// `DeleteAccount`, `KickDevice`, `RemoveHost`, the email pair,
+/// `UnlinkProvider` and `LinkPending` carry a confirmation (#450, #451,
+/// ADR-0037 §3, #512, ADR-0044 §6) — a grant on `ChangePassword` also sets a
+/// first password; the host-link trio carries the code typed from a host's
 /// terminal, verbatim (#495), and the loopback trio the request id from a
-/// confirm URL (#513).
+/// confirm URL (#513). The rest are ADR-0044's: email sign-up and reset,
+/// sign-in methods, re-auth, the pending "no account yet" sign-in, a native
+/// provider sign-in's code exchange and iOS's own Sign in with Apple.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum AccountOp {
@@ -65,17 +103,59 @@ pub enum AccountOp {
     RequestPairing { host_id: String },
     RegisterPushToken { token: ApnsPushToken },
     RemovePushToken { token: ApnsPushToken },
-    ChangePassword { current_password: String, new_password: String },
-    DeleteAccount { password: String },
+    ChangePassword { current: AccountConfirmation, new_password: String },
+    DeleteAccount { confirmation: AccountConfirmation },
     ListDevices,
-    KickDevice { id: f64, password: String },
-    RemoveHost { host_id: String, password: String },
+    KickDevice { id: f64, confirmation: AccountConfirmation },
+    RemoveHost { host_id: String, confirmation: AccountConfirmation },
     LookupHostLink { user_code: String },
     ConfirmHostLink { user_code: String },
     DenyHostLink { user_code: String },
     LookupHostLinkRequest { request_id: String },
     ConfirmHostLinkRequest { request_id: String },
     DenyHostLinkRequest { request_id: String },
+    AuthMethods,
+    RequestSignupCode { email: String },
+    Register {
+        email: String,
+        code: String,
+        password: String,
+        #[cfg_attr(feature = "ffi", uniffi(default = None))]
+        device: Option<AccountDeviceClaim>,
+    },
+    RequestPasswordReset { email: String },
+    ResetPassword { email: String, code: String, password: String },
+    RequestEmailCode { email: String, confirmation: AccountConfirmation },
+    SetEmail { email: String, code: String, confirmation: AccountConfirmation },
+    Identities,
+    UnlinkProvider { provider: String, confirmation: AccountConfirmation },
+    RequestReauthCode,
+    Reauth { proof: ReauthProof },
+    PendingSignIn { id: String },
+    CreateFromPending {
+        id: String,
+        #[cfg_attr(feature = "ffi", uniffi(default = None))]
+        password: Option<String>,
+        #[cfg_attr(feature = "ffi", uniffi(default = None))]
+        device: Option<AccountDeviceClaim>,
+    },
+    LinkPending { id: String, confirmation: AccountConfirmation },
+    ExchangeOAuthCode {
+        code: String,
+        code_verifier: String,
+        #[cfg_attr(feature = "ffi", uniffi(default = None))]
+        device: Option<AccountDeviceClaim>,
+    },
+    AppleNative {
+        identity_token: String,
+        authorization_code: String,
+        #[cfg_attr(feature = "ffi", uniffi(default = None))]
+        nonce: Option<String>,
+        #[cfg_attr(feature = "ffi", uniffi(default = None))]
+        name: Option<String>,
+        #[cfg_attr(feature = "ffi", uniffi(default = None))]
+        device: Option<AccountDeviceClaim>,
+    },
 }
 
 /// Which endpoint an answer belongs to — `account_response` picks its shape
@@ -103,6 +183,22 @@ pub enum AccountOpKind {
     LookupHostLinkRequest,
     ConfirmHostLinkRequest,
     DenyHostLinkRequest,
+    AuthMethods,
+    RequestSignupCode,
+    Register,
+    RequestPasswordReset,
+    ResetPassword,
+    RequestEmailCode,
+    SetEmail,
+    Identities,
+    UnlinkProvider,
+    RequestReauthCode,
+    Reauth,
+    PendingSignIn,
+    CreateFromPending,
+    LinkPending,
+    ExchangeOAuthCode,
+    AppleNative,
 }
 
 /// One header on the request the platform sends, in the reference's order.
@@ -148,12 +244,33 @@ impl AccountOp {
             AccountOp::LookupHostLinkRequest { .. } => AccountOpKind::LookupHostLinkRequest,
             AccountOp::ConfirmHostLinkRequest { .. } => AccountOpKind::ConfirmHostLinkRequest,
             AccountOp::DenyHostLinkRequest { .. } => AccountOpKind::DenyHostLinkRequest,
+            AccountOp::AuthMethods => AccountOpKind::AuthMethods,
+            AccountOp::RequestSignupCode { .. } => AccountOpKind::RequestSignupCode,
+            AccountOp::Register { .. } => AccountOpKind::Register,
+            AccountOp::RequestPasswordReset { .. } => AccountOpKind::RequestPasswordReset,
+            AccountOp::ResetPassword { .. } => AccountOpKind::ResetPassword,
+            AccountOp::RequestEmailCode { .. } => AccountOpKind::RequestEmailCode,
+            AccountOp::SetEmail { .. } => AccountOpKind::SetEmail,
+            AccountOp::Identities => AccountOpKind::Identities,
+            AccountOp::UnlinkProvider { .. } => AccountOpKind::UnlinkProvider,
+            AccountOp::RequestReauthCode => AccountOpKind::RequestReauthCode,
+            AccountOp::Reauth { .. } => AccountOpKind::Reauth,
+            AccountOp::PendingSignIn { .. } => AccountOpKind::PendingSignIn,
+            AccountOp::CreateFromPending { .. } => AccountOpKind::CreateFromPending,
+            AccountOp::LinkPending { .. } => AccountOpKind::LinkPending,
+            AccountOp::ExchangeOAuthCode { .. } => AccountOpKind::ExchangeOAuthCode,
+            AccountOp::AppleNative { .. } => AccountOpKind::AppleNative,
         }
     }
 
     fn method(&self) -> &'static str {
         match self {
-            AccountOp::Me | AccountOp::ListHosts | AccountOp::ListDevices => "GET",
+            AccountOp::Me
+            | AccountOp::ListHosts
+            | AccountOp::ListDevices
+            | AccountOp::AuthMethods
+            | AccountOp::Identities
+            | AccountOp::PendingSignIn { .. } => "GET",
             _ => "POST",
         }
     }
@@ -188,72 +305,144 @@ impl AccountOp {
             AccountOp::DenyHostLink { .. } | AccountOp::DenyHostLinkRequest { .. } => {
                 "/api/host-link/deny".to_string()
             }
+            AccountOp::AuthMethods => "/api/auth/methods".to_string(),
+            AccountOp::RequestSignupCode { .. } => "/api/register/code".to_string(),
+            AccountOp::Register { .. } => "/api/register".to_string(),
+            AccountOp::RequestPasswordReset { .. } => "/api/password/reset/code".to_string(),
+            AccountOp::ResetPassword { .. } => "/api/password/reset".to_string(),
+            AccountOp::RequestEmailCode { .. } => "/api/me/email/code".to_string(),
+            AccountOp::SetEmail { .. } => "/api/me/email".to_string(),
+            AccountOp::Identities => "/api/me/identities".to_string(),
+            AccountOp::UnlinkProvider { provider, .. } => {
+                format!("/api/me/identities/{}/remove", encode_uri_component(provider))
+            }
+            AccountOp::RequestReauthCode => "/api/reauth/code".to_string(),
+            AccountOp::Reauth { .. } => "/api/reauth".to_string(),
+            AccountOp::PendingSignIn { id } => format!("/api/oauth/pending/{}", encode_uri_component(id)),
+            AccountOp::CreateFromPending { id, .. } => {
+                format!("/api/oauth/pending/{}/create", encode_uri_component(id))
+            }
+            AccountOp::LinkPending { id, .. } => format!("/api/oauth/pending/{}/link", encode_uri_component(id)),
+            AccountOp::ExchangeOAuthCode { .. } => "/api/oauth/token".to_string(),
+            AccountOp::AppleNative { .. } => "/api/oauth/apple/native".to_string(),
         }
     }
 
     /// `JSON.stringify(body)`, byte-identical to the reference's literal
     /// order: `{username, password, device?: {id, name?}}` for login, `{apns, environment}` for the
     /// push-token pair — the token stays out of the URL —
-    /// `{currentPassword, newPassword}` for a password change, and
-    /// `{password}` for deleting the account, kicking a device or removing a host,
+    /// `{currentPassword | reauth, newPassword}` for a password change,
+    /// `{password | reauth}` for the other confirmed actions,
     /// `{revoke: true}` for a revoking sign-out, `{userCode}` for the
-    /// host-link trio and `{requestId}` for the loopback trio.
+    /// host-link trio and `{requestId}` for the loopback trio; ADR-0044's
+    /// ops send their fields in the reference client's order, `{}` when a
+    /// POST has nothing to say.
     fn body(&self) -> Option<String> {
+        let mut object = JsonObject::new();
+        let o = &mut object;
         match self {
             AccountOp::Login { username, password, device } => {
-                let mut object = JsonObject::new();
-                object.set(U16String::from_str("username"), Json::from(username.as_str()));
-                object.set(U16String::from_str("password"), Json::from(password.as_str()));
-                if let Some(device) = device {
-                    let mut claim = JsonObject::new();
-                    claim.set(U16String::from_str("id"), Json::from(device.id.as_str()));
-                    if let Some(name) = &device.name {
-                        claim.set(U16String::from_str("name"), Json::from(name.as_str()));
-                    }
-                    object.set(U16String::from_str("device"), Json::Object(Arc::new(claim)));
-                }
-                Some(Json::Object(Arc::new(object)).to_json())
+                set_text(o, "username", username);
+                set_text(o, "password", password);
+                set_device(o, device);
             }
             AccountOp::RegisterPushToken { token } | AccountOp::RemovePushToken { token } => {
-                let mut object = JsonObject::new();
-                object.set(U16String::from_str("apns"), Json::from(token.apns.as_str()));
-                object.set(U16String::from_str("environment"), Json::from(token.environment.as_str()));
-                Some(Json::Object(Arc::new(object)).to_json())
+                set_text(o, "apns", &token.apns);
+                set_text(o, "environment", token.environment.as_str());
             }
-            AccountOp::ChangePassword { current_password, new_password } => {
-                let mut object = JsonObject::new();
-                object.set(U16String::from_str("currentPassword"), Json::from(current_password.as_str()));
-                object.set(U16String::from_str("newPassword"), Json::from(new_password.as_str()));
-                Some(Json::Object(Arc::new(object)).to_json())
+            AccountOp::ChangePassword { current, new_password } => {
+                current.write(o, "currentPassword");
+                o.set(U16String::from_str("newPassword"), Json::from(new_password.as_str()));
             }
-            AccountOp::DeleteAccount { password }
-            | AccountOp::KickDevice { password, .. }
-            | AccountOp::RemoveHost { password, .. } => {
-                let mut object = JsonObject::new();
-                object.set(U16String::from_str("password"), Json::from(password.as_str()));
-                Some(Json::Object(Arc::new(object)).to_json())
-            }
+            AccountOp::DeleteAccount { confirmation }
+            | AccountOp::KickDevice { confirmation, .. }
+            | AccountOp::RemoveHost { confirmation, .. }
+            | AccountOp::UnlinkProvider { confirmation, .. }
+            | AccountOp::LinkPending { confirmation, .. } => confirmation.write(o, "password"),
             AccountOp::LookupHostLink { user_code }
             | AccountOp::ConfirmHostLink { user_code }
-            | AccountOp::DenyHostLink { user_code } => {
-                let mut object = JsonObject::new();
-                object.set(U16String::from_str("userCode"), Json::from(user_code.as_str()));
-                Some(Json::Object(Arc::new(object)).to_json())
-            }
+            | AccountOp::DenyHostLink { user_code } => set_text(o, "userCode", user_code),
             AccountOp::LookupHostLinkRequest { request_id }
             | AccountOp::ConfirmHostLinkRequest { request_id }
-            | AccountOp::DenyHostLinkRequest { request_id } => {
-                let mut object = JsonObject::new();
-                object.set(U16String::from_str("requestId"), Json::from(request_id.as_str()));
-                Some(Json::Object(Arc::new(object)).to_json())
+            | AccountOp::DenyHostLinkRequest { request_id } => set_text(o, "requestId", request_id),
+            AccountOp::Logout { revoke: true } => o.set(U16String::from_str("revoke"), Json::Bool(true)),
+            AccountOp::RequestSignupCode { email } | AccountOp::RequestPasswordReset { email } => set_text(o, "email", email),
+            AccountOp::Register { email, code, password, device } => {
+                set_text(o, "email", email);
+                set_text(o, "code", code);
+                set_text(o, "password", password);
+                set_device(o, device);
             }
-            AccountOp::Logout { revoke: true } => {
-                let mut object = JsonObject::new();
-                object.set(U16String::from_str("revoke"), Json::Bool(true));
-                Some(Json::Object(Arc::new(object)).to_json())
+            AccountOp::ResetPassword { email, code, password } => {
+                set_text(o, "email", email);
+                set_text(o, "code", code);
+                set_text(o, "password", password);
             }
-            _ => None,
+            AccountOp::RequestEmailCode { email, confirmation } => {
+                set_text(o, "email", email);
+                confirmation.write(o, "password");
+            }
+            AccountOp::SetEmail { email, code, confirmation } => {
+                set_text(o, "email", email);
+                set_text(o, "code", code);
+                confirmation.write(o, "password");
+            }
+            AccountOp::RequestReauthCode => {}
+            AccountOp::Reauth { proof } => match proof {
+                ReauthProof::Password(password) => set_text(o, "password", password),
+                ReauthProof::Code(code) => set_text(o, "code", code),
+            },
+            AccountOp::CreateFromPending { password, device, .. } => {
+                if let Some(password) = password {
+                    set_text(o, "password", password);
+                }
+                set_device(o, device);
+            }
+            AccountOp::ExchangeOAuthCode { code, code_verifier, device } => {
+                set_text(o, "code", code);
+                set_text(o, "code_verifier", code_verifier);
+                set_device(o, device);
+            }
+            AccountOp::AppleNative { identity_token, authorization_code, nonce, name, device } => {
+                set_text(o, "identityToken", identity_token);
+                set_text(o, "authorizationCode", authorization_code);
+                if let Some(nonce) = nonce {
+                    set_text(o, "nonce", nonce);
+                }
+                if let Some(name) = name {
+                    set_text(o, "name", name);
+                }
+                set_device(o, device);
+            }
+            AccountOp::Me
+            | AccountOp::Logout { revoke: false }
+            | AccountOp::RevokeAllSessions
+            | AccountOp::CreateJoinToken
+            | AccountOp::ListHosts
+            | AccountOp::RequestPairing { .. }
+            | AccountOp::ListDevices
+            | AccountOp::AuthMethods
+            | AccountOp::Identities
+            | AccountOp::PendingSignIn { .. } => return None,
         }
+        Some(Json::Object(Arc::new(object)).to_json())
+    }
+}
+
+fn set_text(object: &mut JsonObject, key: &str, value: &str) {
+    object.set(U16String::from_str(key), Json::from(value));
+}
+
+/// `deviceBody`: the claim as the body carries it, id first, name only when
+/// there is one; nothing at all without a claim.
+fn set_device(object: &mut JsonObject, device: &Option<AccountDeviceClaim>) {
+    if let Some(device) = device {
+        let mut claim = JsonObject::new();
+        claim.set(U16String::from_str("id"), Json::from(device.id.as_str()));
+        if let Some(name) = &device.name {
+            claim.set(U16String::from_str("name"), Json::from(name.as_str()));
+        }
+        object.set(U16String::from_str("device"), Json::Object(Arc::new(claim)));
     }
 }
 
@@ -462,23 +651,109 @@ pub struct PairingOffer {
     pub endpoint_set: Option<EndpointSet>,
 }
 
+/// How a server lets people in (`GET /api/auth/methods`, ADR-0044).
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct AuthMethods {
+    /// New accounts can be created here.
+    pub registration: bool,
+    /// The server can mail codes: email sign-up and password reset work.
+    pub email: bool,
+    /// Third-party sign-in providers the server has configured.
+    pub providers: Vec<String>,
+}
+
+/// A sign-in provider bound to the account (`GET /api/me/identities`).
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct AccountIdentity {
+    /// "google", "github" or "apple".
+    pub provider: String,
+    /// The email the provider gave, which may differ from the account's.
+    #[cfg_attr(feature = "ffi", uniffi(default = None))]
+    pub email: Option<String>,
+    pub created_at: f64,
+}
+
+/// The account's ways in: its providers, and whether it has a password.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct AccountIdentities {
+    pub identities: Vec<AccountIdentity>,
+    pub has_password: bool,
+}
+
+/// A re-auth grant (ADR-0044 §6): good for the session that got it, until
+/// `expires_at` (epoch ms).
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct ReauthGrant {
+    pub reauth: String,
+    pub expires_at: f64,
+}
+
+/// A provider sign-in that found no account yet (ADR-0044 §4).
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct PendingSignIn {
+    pub provider: String,
+    #[cfg_attr(feature = "ffi", uniffi(default = None))]
+    pub email: Option<String>,
+    #[cfg_attr(feature = "ffi", uniffi(default = None))]
+    pub name: Option<String>,
+}
+
+/// Where finishing a pending sign-in leaves the caller: signed in, or — when
+/// a native app's browser flow started it — the app's redirect with a
+/// one-time code.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
+pub enum PendingOutcome {
+    SignedIn(LoginSuccess),
+    Redirect(String),
+}
+
+/// iOS's own Sign in with Apple: signed in, or no account yet with the
+/// pending id to create or link it (a 409 `no_account` on the wire).
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
+pub enum AppleNativeOutcome {
+    SignedIn(LoginSuccess),
+    NoAccount {
+        pending: String,
+        #[cfg_attr(feature = "ffi", uniffi(default = None))]
+        email: Option<String>,
+    },
+}
+
 /// The decoded success payload — which variant answers which op is fixed.
 #[derive(Clone, Debug, PartialEq)]
 pub enum AccountValue {
+    /// `login`, `register` and `exchangeOAuthCode`.
     Login(LoginSuccess),
+    /// `me` and `setEmail`.
     Me(AccountMe),
     /// `logout`, `revokeAllSessions`, the push-token pair, `changePassword`,
-    /// `deleteAccount`, `kickDevice`, `removeHost`, `confirmHostLink` and `denyHostLink`
-    /// answer nothing.
+    /// `deleteAccount`, `kickDevice`, `removeHost`, `confirmHostLink`,
+    /// `denyHostLink`, the email-code and reset ops, `unlinkProvider`,
+    /// `requestReauthCode`, and a `linkPending` with no redirect answer
+    /// nothing.
     Unit,
     JoinToken(JoinToken),
     HostLink(HostLinkRequest),
     /// Where a settled loopback host link sends the browser (#513): the
-    /// host's own `http://127.0.0.1:<port>` listener.
+    /// host's own `http://127.0.0.1:<port>` listener. Also a `linkPending`
+    /// a native app's browser flow started: its redirect.
     Redirect(String),
     Hosts(Vec<AccountHost>),
     Devices(Vec<AccountDevice>),
     PairingOffer(PairingOffer),
+    AuthMethods(AuthMethods),
+    Identities(AccountIdentities),
+    ReauthGrant(ReauthGrant),
+    PendingSignIn(PendingSignIn),
+    PendingOutcome(PendingOutcome),
+    AppleNative(AppleNativeOutcome),
 }
 
 /// An API failure the UI maps straight to copy. `code` is the server's
@@ -600,18 +875,55 @@ fn loopback_redirect(value: &Json) -> Option<String> {
     (url.scheme() == "http" && url.host_str() == Some("127.0.0.1") && url.port().is_some()).then_some(redirect)
 }
 
+/// A native app's redirect after a provider sign-in, only to where the
+/// server allows one at start (ADR-0044 §5): `pinomad://auth`, or this
+/// machine's 127.0.0.1 over plain http.
+fn native_redirect(value: &Json) -> Option<String> {
+    let redirect = str_field(value, "redirect")?;
+    let url = Url::parse(&redirect).ok()?;
+    // `url.host === "auth"` in the reference: a port would show in it.
+    let app = url.scheme() == "pinomad"
+        && url.host_str() == Some("auth")
+        && url.port().is_none()
+        && (url.path().is_empty() || url.path() == "/");
+    (app || loopback_redirect(value).is_some()).then_some(redirect)
+}
+
+/// `session()`: a login-shaped answer.
+fn login_body(value: &Json) -> Result<LoginSuccess, AccountError> {
+    Ok(LoginSuccess {
+        user: user_body(value).ok_or_else(AccountError::invalid)?,
+        needs_email: needs_email_flag(value),
+        expires_at: num_field(value, "expiresAt").ok_or_else(AccountError::invalid)?,
+        token: str_field(value, "token"),
+    })
+}
+
+/// An optional string member: absent is `None`, present but not a string is malformed.
+fn optional_str(value: &Json, key: &str) -> Result<Option<String>, AccountError> {
+    match value.get(key) {
+        None => Ok(None),
+        Some(Json::String(text)) => Ok(Some(text.to_string_lossy())),
+        Some(_) => Err(AccountError::invalid()),
+    }
+}
+
+fn bool_field(value: &Json, key: &str) -> Result<bool, AccountError> {
+    match value.get(key) {
+        Some(Json::Bool(flag)) => Ok(*flag),
+        _ => Err(AccountError::invalid()),
+    }
+}
+
 /// The endpoint's own shape check on a parsed 2xx body (`None` = a body that
 /// didn't parse or never arrived).
-fn decode_value(kind: AccountOpKind, value: Option<&Json>) -> Result<AccountValue, AccountError> {
-    let value = value.unwrap_or(&Json::Null);
+fn decode_value(kind: AccountOpKind, parsed: Option<&Json>) -> Result<AccountValue, AccountError> {
+    let value = parsed.unwrap_or(&Json::Null);
     match kind {
-        AccountOpKind::Login => Ok(AccountValue::Login(LoginSuccess {
-            user: user_body(value).ok_or_else(AccountError::invalid)?,
-            needs_email: needs_email_flag(value),
-            expires_at: num_field(value, "expiresAt").ok_or_else(AccountError::invalid)?,
-            token: str_field(value, "token"),
-        })),
-        AccountOpKind::Me => Ok(AccountValue::Me(AccountMe {
+        AccountOpKind::Login | AccountOpKind::Register | AccountOpKind::ExchangeOAuthCode => {
+            Ok(AccountValue::Login(login_body(value)?))
+        }
+        AccountOpKind::Me | AccountOpKind::SetEmail => Ok(AccountValue::Me(AccountMe {
             user: user_body(value).ok_or_else(AccountError::invalid)?,
             needs_email: needs_email_flag(value),
         })),
@@ -625,7 +937,59 @@ fn decode_value(kind: AccountOpKind, value: Option<&Json>) -> Result<AccountValu
         | AccountOpKind::KickDevice
         | AccountOpKind::RemoveHost
         | AccountOpKind::ConfirmHostLink
-        | AccountOpKind::DenyHostLink => Ok(AccountValue::Unit),
+        | AccountOpKind::DenyHostLink
+        | AccountOpKind::RequestSignupCode
+        | AccountOpKind::RequestPasswordReset
+        | AccountOpKind::ResetPassword
+        | AccountOpKind::RequestEmailCode
+        | AccountOpKind::UnlinkProvider
+        | AccountOpKind::RequestReauthCode => Ok(AccountValue::Unit),
+        AccountOpKind::AuthMethods => {
+            let providers = value.get("providers").and_then(Json::as_array).ok_or_else(AccountError::invalid)?;
+            Ok(AccountValue::AuthMethods(AuthMethods {
+                registration: bool_field(value, "registration")?,
+                email: bool_field(value, "email")?,
+                providers: providers
+                    .iter()
+                    .map(|provider| provider.as_str().map(|s| s.to_string_lossy()).ok_or_else(AccountError::invalid))
+                    .collect::<Result<_, _>>()?,
+            }))
+        }
+        AccountOpKind::Identities => {
+            let has_password = bool_field(value, "hasPassword")?;
+            let entries = value.get("identities").and_then(Json::as_array).ok_or_else(AccountError::invalid)?;
+            let mut identities = Vec::with_capacity(entries.len());
+            for entry in entries.iter() {
+                identities.push(AccountIdentity {
+                    provider: str_field(entry, "provider").ok_or_else(AccountError::invalid)?,
+                    email: optional_str(entry, "email")?,
+                    created_at: num_field(entry, "createdAt").ok_or_else(AccountError::invalid)?,
+                });
+            }
+            Ok(AccountValue::Identities(AccountIdentities { identities, has_password }))
+        }
+        AccountOpKind::Reauth => Ok(AccountValue::ReauthGrant(ReauthGrant {
+            reauth: str_field(value, "reauth").ok_or_else(AccountError::invalid)?,
+            expires_at: num_field(value, "expiresAt").ok_or_else(AccountError::invalid)?,
+        })),
+        AccountOpKind::PendingSignIn => Ok(AccountValue::PendingSignIn(PendingSignIn {
+            provider: str_field(value, "provider").ok_or_else(AccountError::invalid)?,
+            email: optional_str(value, "email")?,
+            name: optional_str(value, "name")?,
+        })),
+        // `isRecord(value) && "redirect" in value` picks the redirect shape;
+        // anything else must be a session.
+        AccountOpKind::CreateFromPending => Ok(AccountValue::PendingOutcome(if value.get("redirect").is_some() {
+            PendingOutcome::Redirect(native_redirect(value).ok_or_else(AccountError::invalid)?)
+        } else {
+            PendingOutcome::SignedIn(login_body(value)?)
+        })),
+        // No body (a 204, or one that didn't parse) is the plain link.
+        AccountOpKind::LinkPending => match parsed {
+            None => Ok(AccountValue::Unit),
+            Some(value) => native_redirect(value).map(AccountValue::Redirect).ok_or_else(AccountError::invalid),
+        },
+        AccountOpKind::AppleNative => Ok(AccountValue::AppleNative(AppleNativeOutcome::SignedIn(login_body(value)?))),
         AccountOpKind::ConfirmHostLinkRequest | AccountOpKind::DenyHostLinkRequest => {
             loopback_redirect(value).map(AccountValue::Redirect).ok_or_else(AccountError::invalid)
         }
@@ -718,6 +1082,14 @@ pub fn account_response(kind: AccountOpKind, status: u16, body: &str) -> Result<
         .and_then(Json::as_str)
         .map(|s| s.to_string_lossy())
         .unwrap_or_else(|| (if status == 401 { "unauthenticated" } else { "unknown" }).to_string());
+    // iOS's own Apple sign-in with no account yet: the refusal carries the
+    // pending id the app finishes it with.
+    if kind == AccountOpKind::AppleNative && code == "no_account" {
+        if let Some(pending) = json.as_ref().and_then(|value| str_field(value, "pending")) {
+            let email = json.as_ref().and_then(|value| str_field(value, "email"));
+            return Ok(AccountValue::AppleNative(AppleNativeOutcome::NoAccount { pending, email }));
+        }
+    }
     Err(AccountError::Api {
         code,
         status: Some(status),

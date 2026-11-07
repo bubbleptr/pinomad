@@ -524,8 +524,9 @@ pub fn patch_files_json(files: &[pinomad_core::patch::PatchFile]) -> Json {
 // ─── Account client ─────────────────────────────────────────────────────────
 
 use pinomad_core::account::{
-    AccountDevice, AccountError, AccountHost, AccountHostMatch, AccountHttpRequest, AccountMe, AccountValue,
-    HostLinkRequest, JoinToken, LoginSuccess, PairingOffer,
+    AccountDevice, AccountError, AccountHost, AccountHostMatch, AccountHttpRequest, AccountIdentities, AccountMe,
+    AccountValue, AppleNativeOutcome, AuthMethods, HostLinkRequest, JoinToken, LoginSuccess, PairingOffer,
+    PendingOutcome, PendingSignIn, ReauthGrant,
 };
 
 /// The `{url, init}` the capture fetch recorded — `init` keys in the
@@ -552,16 +553,20 @@ fn account_user_json(user: &pinomad_core::account::AccountUser) -> Json {
     obj(&[("username", Some(s(&user.username))), ("email", user.email.as_deref().map(s))])
 }
 
+/// `session()`'s value: `needsEmail` only when true, spread right after `user`.
+fn login_json(LoginSuccess { user, needs_email, expires_at, token }: &LoginSuccess) -> Json {
+    obj(&[
+        ("user", Some(account_user_json(user))),
+        ("needsEmail", needs_email.then_some(Json::Bool(true))),
+        ("expiresAt", Some(num(*expires_at))),
+        ("token", token.as_deref().map(s)),
+    ])
+}
+
 /// The per-op success payload, in the reference's key order.
 fn account_value_json(value: &AccountValue) -> Json {
     match value {
-        // `needsEmail` only when true, spread right after `user`.
-        AccountValue::Login(LoginSuccess { user, needs_email, expires_at, token }) => obj(&[
-            ("user", Some(account_user_json(user))),
-            ("needsEmail", needs_email.then_some(Json::Bool(true))),
-            ("expiresAt", Some(num(*expires_at))),
-            ("token", token.as_deref().map(s)),
-        ]),
+        AccountValue::Login(login) => login_json(login),
         AccountValue::Me(AccountMe { user, needs_email }) => obj(&[
             ("user", Some(account_user_json(user))),
             ("needsEmail", needs_email.then_some(Json::Bool(true))),
@@ -584,6 +589,49 @@ fn account_value_json(value: &AccountValue) -> Json {
         AccountValue::Redirect(redirect) => s(redirect),
         AccountValue::Hosts(hosts) => Json::array(hosts.iter().map(account_host_json).collect()),
         AccountValue::Devices(devices) => Json::array(devices.iter().map(account_device_json).collect()),
+        AccountValue::AuthMethods(AuthMethods { registration, email, providers }) => obj(&[
+            ("registration", Some(Json::Bool(*registration))),
+            ("email", Some(Json::Bool(*email))),
+            ("providers", Some(Json::array(providers.iter().map(|p| s(p)).collect()))),
+        ]),
+        AccountValue::Identities(AccountIdentities { identities, has_password }) => obj(&[
+            ("hasPassword", Some(Json::Bool(*has_password))),
+            (
+                "identities",
+                Some(Json::array(
+                    identities
+                        .iter()
+                        .map(|identity| {
+                            obj(&[
+                                ("provider", Some(s(&identity.provider))),
+                                ("email", identity.email.as_deref().map(s)),
+                                ("createdAt", Some(num(identity.created_at))),
+                            ])
+                        })
+                        .collect(),
+                )),
+            ),
+        ]),
+        AccountValue::ReauthGrant(ReauthGrant { reauth, expires_at }) => {
+            obj(&[("reauth", Some(s(reauth))), ("expiresAt", Some(num(*expires_at)))])
+        }
+        AccountValue::PendingSignIn(PendingSignIn { provider, email, name }) => obj(&[
+            ("provider", Some(s(provider))),
+            ("email", email.as_deref().map(s)),
+            ("name", name.as_deref().map(s)),
+        ]),
+        AccountValue::PendingOutcome(PendingOutcome::SignedIn(login))
+        | AccountValue::AppleNative(AppleNativeOutcome::SignedIn(login)) => {
+            obj(&[("kind", Some(s("signedIn"))), ("session", Some(login_json(login)))])
+        }
+        AccountValue::PendingOutcome(PendingOutcome::Redirect(url)) => {
+            obj(&[("kind", Some(s("redirect"))), ("url", Some(s(url)))])
+        }
+        AccountValue::AppleNative(AppleNativeOutcome::NoAccount { pending, email }) => obj(&[
+            ("kind", Some(s("noAccount"))),
+            ("pending", Some(s(pending))),
+            ("email", email.as_deref().map(s)),
+        ]),
         AccountValue::PairingOffer(PairingOffer { url, host_key, secret, expires_at, endpoint_set }) => {
             let mut fields = vec![
                 ("url", Some(s(url))),

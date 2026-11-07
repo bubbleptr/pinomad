@@ -4,10 +4,9 @@
 // takes fetch as an injected minimal surface — DOM and undici both
 // satisfy it — and never touches a DOM-only API.
 //
-// crates/pinomad-core replays this client for iOS, except the email ops
-// (ADR-0044: sign-up, password reset, adding an email) and the provider
-// sign-in, sign-in method and re-auth ops (#620): only web and desktop offer
-// those so far.
+// crates/pinomad-core replays this client's requests and answers for iOS,
+// the ADR-0044 email, provider sign-in, sign-in method and re-auth ops
+// included (`linkProvider` aside: no native client links a provider yet).
 
 import { encodeEndpointSetParam, parseEndpointSet, type EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { UNAUTHORIZED_CLOSE_CODE, type ApnsPushToken } from "@pinomad/protocol/frames.ts";
