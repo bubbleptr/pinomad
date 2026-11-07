@@ -97,17 +97,18 @@ struct AddEmailView: View {
 
     var body: some View {
         Form {
+            // A row, not a section header: headers draw their text in the
+            // secondary header color whatever the style asks for.
             Section {
-            } header: {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Add an email to your account")
                         .font(.title3.weight(.semibold))
-                        .foregroundStyle(.primary)
                     Text("You'll sign in with it from now on, and sign-in codes go there.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
-                .textCase(nil)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
             }
             EmailFormSections(model: model, submitLabel: "Save") {}
             Section {

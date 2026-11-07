@@ -334,7 +334,7 @@ struct AccountLoginView: View {
         } header: {
             Text("Server")
         } footer: {
-            Text("To use your own server, change the address. Accounts need https://; for local testing, http://127.0.0.1 also works.")
+            Text("To use your own server, change the address. Accounts need https://; for local testing, http://127.0.0.1 works for email sign-in.")
         }
     }
 
