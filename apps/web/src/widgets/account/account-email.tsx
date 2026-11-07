@@ -34,6 +34,8 @@ export function EmailForm({
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<AccountError>();
+  // The grant lapsed after the new address got its code: confirm again on this step.
+  const [reconfirm, setReconfirm] = useState(false);
   const run = (call: (confirmation: EmailConfirmation) => Promise<{ ok: true } | { ok: false; error: AccountError }>, then: () => void): void => {
     setBusy(true);
     setError(undefined);
@@ -43,7 +45,10 @@ export function EmailForm({
       setBusy(false);
       if (result.ok) then();
       else {
-        if (result.error.code === "invalid_reauth") identity.reset();
+        if (result.error.code === "invalid_reauth") {
+          identity.reset();
+          setReconfirm(true);
+        }
         setError(result.error);
       }
     })();
@@ -57,7 +62,7 @@ export function EmailForm({
     );
   };
   const save = (): void => {
-    if (sentTo === undefined || code.trim() === "" || busy) return;
+    if (sentTo === undefined || code.trim() === "" || !identity.ready || busy) return;
     run((confirmation) => account.setEmail({ email: sentTo, code: code.trim(), ...confirmation }), onSaved);
   };
   const identity = useConfirmIdentity(account, sentTo === undefined ? send : save);
@@ -69,7 +74,7 @@ export function EmailForm({
         {identity.field}
         {error === undefined ? null : <Banner status="error" title="Couldn't send the code" description={accountErrorMessage(error)} />}
         <HStack gap={2}>
-          <Button label="Send code" variant="primary" isLoading={busy} isDisabled={email.trim() === "" || !identity.ready} onClick={send} />
+          <Button label="Send code to new email" variant="primary" isLoading={busy} isDisabled={email.trim() === "" || !identity.ready} onClick={send} />
           {cancel}
         </HStack>
       </VStack>
@@ -79,9 +84,10 @@ export function EmailForm({
     <VStack gap={2}>
       <Text>Enter the 6-digit code we sent to {sentTo}.</Text>
       <TextInput label="Code" value={code} onChange={setCode} onEnter={save} width="100%" {...CODE_INPUT} />
+      {reconfirm ? identity.field : null}
       {error === undefined ? null : <Banner status="error" title="Couldn't save the email" description={accountErrorMessage(error)} />}
       <HStack gap={2}>
-        <Button label={submitLabel} variant="primary" isLoading={busy} isDisabled={code.trim() === ""} onClick={save} />
+        <Button label={submitLabel} variant="primary" isLoading={busy} isDisabled={code.trim() === "" || !identity.ready} onClick={save} />
         <Button
           label="Use a different email"
           variant="ghost"
@@ -89,6 +95,7 @@ export function EmailForm({
             setSentTo(undefined);
             setCode("");
             setError(undefined);
+            setReconfirm(false);
           }}
         />
       </HStack>

@@ -51,7 +51,7 @@ describe("useConfirmIdentity", () => {
     expect((screen.getByRole("button", { name: "Go" }) as HTMLButtonElement).disabled).toBe(true);
     await userEvent.click(screen.getByRole("button", { name: "Send code" }));
     expect(model.requestReauthCode).toHaveBeenCalledOnce();
-    await userEvent.type(await screen.findByLabelText("Code"), "123456");
+    await userEvent.type(await screen.findByLabelText("Confirmation code"), "123456");
     await userEvent.click(screen.getByRole("button", { name: "Go" }));
     await vi.waitFor(() => expect(confirmed).toHaveBeenCalledWith({ reauth: "grant-1" }));
     expect(model.reauth).toHaveBeenCalledWith({ code: "123456" });

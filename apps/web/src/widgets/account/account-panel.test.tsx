@@ -491,7 +491,7 @@ describe("sign-in methods (ADR-0044 §4)", () => {
     await userEvent.click(within((await screen.findByText("GitHub")).closest("li")!).getByRole("button", { name: "Remove" }));
     // No password: the confirmation is a mailed code.
     await userEvent.click(await screen.findByRole("button", { name: "Send code" }));
-    await userEvent.type(await screen.findByLabelText("Code"), "123456");
+    await userEvent.type(await screen.findByLabelText("Confirmation code"), "123456");
     await userEvent.click(screen.getByRole("button", { name: "Remove GitHub" }));
     expect(model.reauth).toHaveBeenCalledWith({ code: "123456" });
     expect(model.unlinkProvider).toHaveBeenCalledWith("github", { reauth: "grant" });
@@ -508,7 +508,7 @@ describe("sign-in methods (ADR-0044 §4)", () => {
     await userEvent.click(within((await screen.findByText("iPhone")).closest("li")!).getByRole("button", { name: "Remove" }));
     expect(await screen.findByText("We'll email a code to kieran@example.com.")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Send code" }));
-    await userEvent.type(await screen.findByLabelText("Code"), "123456{Enter}");
+    await userEvent.type(await screen.findByLabelText("Confirmation code"), "123456{Enter}");
     await vi.waitFor(() => expect(model.kickDevice).toHaveBeenCalledWith({ id: 2, confirmation: { reauth: "grant" } }));
   });
 });

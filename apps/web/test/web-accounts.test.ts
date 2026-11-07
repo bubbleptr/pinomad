@@ -124,10 +124,10 @@ it("signs up with Google through the no-account-yet page, then confirms by maile
   await dialog.getByRole("button", { name: "Set password" }).click();
   await dialog.getByText("We'll email a code to ada@gmail.com.").waitFor();
   await dialog.getByRole("button", { name: "Send code" }).click();
-  await dialog.getByLabel("Code", { exact: true }).waitFor();
+  await dialog.getByLabel("Confirmation code").waitFor();
   const code = mail.codeFor("ada@gmail.com");
   expect(code).toMatch(/^\d{6}$/);
-  await dialog.getByLabel("Code", { exact: true }).fill(code!);
+  await dialog.getByLabel("Confirmation code").fill(code!);
   await dialog.getByLabel("New password").fill("a brand new password");
   await shoot(page, "confirm-by-code");
   // The row's button opened the form; the form's own is the last.

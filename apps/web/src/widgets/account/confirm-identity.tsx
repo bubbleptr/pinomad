@@ -18,7 +18,8 @@ export interface IdentityConfirmation {
   readonly ready: boolean;
   /**
    * The password, or a re-auth grant traded for the mailed code. A grant is
-   * kept for the next try; `reset` drops it after the action refused it.
+   * kept for the next try; `reset` drops it after the action refused it,
+   * with the spent code, so a passwordless account sends a new one.
    */
   confirm(): Promise<AccountResult<AccountConfirmation>>;
   reset(): void;
@@ -92,6 +93,8 @@ export function useConfirmIdentity(account: AccountModel, onEnter?: () => void):
     },
     reset: () => {
       grant.current = undefined;
+      setCode("");
+      setSent(false);
     },
   };
 }
@@ -140,7 +143,7 @@ export function ConfirmIdentity({
     <VStack gap={2}>
       <Text type="supporting">We'll email a code to {email ?? "your account's email"}.</Text>
       {sent ? (
-        <TextInput label="Code" value={code} onChange={onCode} onEnter={onEnter} width="100%" {...CODE_INPUT} />
+        <TextInput label="Confirmation code" value={code} onChange={onCode} onEnter={onEnter} width="100%" {...CODE_INPUT} />
       ) : null}
       {sendError === undefined ? null : (
         <Banner status="error" title="Couldn't send the code" description={accountErrorMessage(sendError)} />

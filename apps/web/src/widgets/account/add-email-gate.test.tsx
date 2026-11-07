@@ -57,7 +57,7 @@ describe("AddEmailGate", () => {
     expect(screen.getByText("Add an email to your account")).toBeTruthy();
     await userEvent.type(screen.getByLabelText("Email"), "kieran@example.com");
     await userEvent.type(await screen.findByLabelText("Password"), "my password");
-    await userEvent.click(screen.getByRole("button", { name: "Send code" }));
+    await userEvent.click(screen.getByRole("button", { name: "Send code to new email" }));
     expect(account.requestEmailCode).toHaveBeenCalledWith({ email: "kieran@example.com", password: "my password" });
     expect(await screen.findByText("Enter the 6-digit code we sent to kieran@example.com.")).toBeTruthy();
     await userEvent.type(screen.getByLabelText("Code"), "123456");
