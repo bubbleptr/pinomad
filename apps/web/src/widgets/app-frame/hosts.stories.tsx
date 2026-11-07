@@ -6,6 +6,7 @@ import type { Decorator, Meta, StoryObj } from "@storybook/react-vite";
 import { userEvent, within } from "storybook/test";
 import type { RtcDiagnostics } from "@pinomad/protocol/remote-durable.ts";
 import type { RtcSelectedPair } from "@pinomad/protocol/rtc.ts";
+import type { StoredHost } from "@pinomad/client/stored-host.ts";
 import { DEVBOX_HOST, fakeHosts, fakeRemote, fakeView, HOME_HOST, signedIn, withAccount, withHosts } from "../../test/story-fixtures.tsx";
 import { HostComposerStore } from "../../entities/composer/composer-store.ts";
 import {
@@ -16,6 +17,21 @@ import {
 import { HostsFallback, HostsMenu, HostsSection } from "./hosts.tsx";
 
 const STUDIO_HOST = { ...HOME_HOST, name: "Studio" };
+
+/** A machine that joined the account and also listens on its tailnet and LAN. */
+const ROUTED_HOST: StoredHost = {
+  ...HOME_HOST,
+  url: "wss://app.pinomad.si/relay/h",
+  account: { serverOrigin: "https://app.pinomad.si", hostId: HOME_HOST.hostKey },
+  endpointSet: {
+    schemaVersion: 1,
+    endpoints: [
+      { transport: "webSocket", role: "relay", url: "wss://app.pinomad.si/relay/h" },
+      { transport: "webSocket", role: "direct", url: "wss://kieran-mbp.tailf76614.ts.net:7422" },
+      { transport: "webSocket", role: "direct", url: "wss://kieran-mbp.local:7422" },
+    ],
+  },
+};
 const studioHosts = () => fakeHosts([STUDIO_HOST], STUDIO_HOST.hostKey);
 
 const view = (connection: "connected" | "reconnecting" = "connected", minor = 23) =>
@@ -48,7 +64,7 @@ const connecting: HostRuntimeInfo = {
 const withRuntime = (info?: HostRuntimeInfo): Decorator => (Story) => {
   const registry = createHostRuntimeRegistry();
   if (info !== undefined) {
-    for (const host of [HOME_HOST, DEVBOX_HOST, STUDIO_HOST]) registry.publish(host.hostKey, info);
+    for (const host of [HOME_HOST, DEVBOX_HOST, STUDIO_HOST, ROUTED_HOST]) registry.publish(host.hostKey, info);
   }
   return (
     <HostRuntimesContext.Provider value={registry}>
@@ -91,6 +107,19 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const Section: Story = {};
+
+/** Each machine lists the routes that reach it; the live relay is marked in use. */
+export const SectionRoutes: Story = {
+  decorators: [withHosts(fakeHosts([ROUTED_HOST, DEVBOX_HOST], ROUTED_HOST.hostKey)), withRuntime(relay)],
+};
+
+/** Direct only leaves the relay route out. */
+export const SectionRoutesDirectOnly: Story = {
+  decorators: [
+    withHosts(fakeHosts([{ ...ROUTED_HOST, connectionMode: "directOnly" }], ROUTED_HOST.hostKey)),
+    withRuntime(ready({ path: "direct", phase: "idle", cooldownRemainingMs: 0 })),
+  ],
+};
 
 export const SectionReconnecting: Story = {
   decorators: [withHosts(), withRuntime(ready({ path: "relay", phase: "idle", cooldownRemainingMs: 0 }, "reconnecting"))],

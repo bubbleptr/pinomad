@@ -29,6 +29,8 @@ Mac App 在还没连上宿主时，首页就是登录表单；之后点侧栏底
 
 连接方式是每台宿主单独设置的，在 Settings → Hosts → Connection… 里选：Auto（默认）、Direct only（对话数据不经过 PiNomad 服务端，中继只用来建立链路）或 Relay only（只走中继，不尝试 P2P）。同一个面板显示当前路径：P2P（以及两端是局域网、tailnet 还是公网地址，完整地址点 Show addresses 展开）还是中继，以及最近一次失败的原因。
 
+Settings → Hosts 里每台宿主下面列出能到达它的路：账号中继、tailnet 或局域网地址、本机。正在用的那条标 In use，连接方式排除的标 Off。
+
 宿主从 `<数据目录>/settings.json` 的 `rtcStun` 读 STUN 服务器，并在 `hello.rtc` 里下发同一份列表：
 
 ```json

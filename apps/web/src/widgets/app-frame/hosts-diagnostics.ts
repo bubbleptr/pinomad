@@ -10,7 +10,7 @@ export const PATH_LABEL: Record<ConnectionPath, string> = {
   loopback: "Local",
 };
 
-const SCOPE_LABEL: Record<RtcAddressScope, string> = {
+export const SCOPE_LABEL: Record<RtcAddressScope, string> = {
   loopback: "Local",
   lan: "LAN",
   tailnet: "Tailnet",

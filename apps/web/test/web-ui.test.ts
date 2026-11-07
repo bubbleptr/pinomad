@@ -3220,14 +3220,15 @@ it("switches between paired hosts on the desktop bridge", async () => {
   expect(sockets.a).toBe(socketsABeforeSwitch);
 
   // A host that drops keeps its last view and reconnects in the background;
-  // focusing it shows the disconnect banner, and A's group still opens A's
-  // conversation without touching A's connection.
+  // the focused one shows the disconnect banner, and A's group still opens A's
+  // conversation without touching A's connection. Focus moves from the
+  // sidebar's machine groups (#502), so focus B before it drops.
+  const groupB = page.getByRole("group", { name: labelB, exact: true });
+  await groupB.getByRole("button", { name: "hello B", exact: true }).click();
+  await page.getByText("host B answer", { exact: true }).waitFor();
   await hostB.close();
   await openHostsMenu(page);
   await page.getByRole("menuitem", { name: `${labelB} (offline)`, exact: true }).waitFor();
-  await page.keyboard.press("Escape");
-  const hosts = await openSettings(page, "Hosts");
-  await hosts.getByRole("button", { name: `Switch to ${labelB}`, exact: true }).click();
   await page.keyboard.press("Escape");
   await page.getByText("Host connection lost", { exact: true }).waitFor();
   await groupA.getByRole("button", { name: "hello A", exact: true }).click();
@@ -3281,7 +3282,7 @@ it("unpairs a host from Settings → Hosts only after confirmation, at both ends
   await confirm.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect.poll(() => confirm.count()).toBe(0);
   expect(await storedHostCount(page)).toBe(2);
-  await settings.getByRole("button", { name: `Switch to ${labelA}`, exact: true }).waitFor();
+  await settings.getByRole("button", { name: `Unpair ${labelA}…`, exact: true }).waitFor();
 
   // Confirming unpairs B: B drops this device, and focus falls back to A, the
   // only host left — without B's refusal of this device flashing up first.
