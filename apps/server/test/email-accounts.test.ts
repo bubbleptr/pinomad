@@ -238,8 +238,25 @@ describe("email sign-up", () => {
 
   it("refuses malformed emails", async () => {
     const started = await startServer();
-    for (const email of ["", "no-at-sign", "two@@example.com", "a b@example.com", `${"x".repeat(250)}@example.com`, 7]) {
-      expect((await post(started.relay, "/api/register/code", { email })).status).toBe(400);
+    for (const email of [
+      "",
+      "no-at-sign",
+      "two@@example.com",
+      "a b@example.com",
+      `${"x".repeat(250)}@example.com`,
+      7,
+      // Header address syntax names another mailbox than the string it is,
+      // so it would dodge the per-email limit.
+      "a<victim@example.com>",
+      "<victim@example.com>",
+      "Name <victim@example.com>",
+      "a@example.com,victim@example.com",
+      '"a b"@example.com',
+      "a@example.com\r\nBcc: victim@example.com",
+      "a@exa mple.com",
+    ]) {
+      const response = await post(started.relay, "/api/register/code", { email });
+      expect([response.status, response.json.error], String(email)).toEqual([400, "invalid_email"]);
     }
     expect(started.mail.sent).toEqual([]);
   });
@@ -318,11 +335,11 @@ describe("legacy username accounts", () => {
     const started = await startServer();
     const { relay, mail } = started;
     const token = (await login(relay, "admin")).json.token;
-    expect((await post(relay, "/api/me/email/code", { email: "Kieran@Example.com" }, bearer(token))).status).toBe(202);
+    expect((await post(relay, "/api/me/email/code", { email: "Kieran@Example.com", password: PASSWORD }, bearer(token))).status).toBe(202);
     const code = mail.codeFor("kieran@example.com")!;
-    const wrong = await post(relay, "/api/me/email", { email: "kieran@example.com", code: wrongCode(code) }, bearer(token));
+    const wrong = await post(relay, "/api/me/email", { email: "kieran@example.com", code: wrongCode(code), password: PASSWORD }, bearer(token));
     expect([wrong.status, wrong.json.error]).toEqual([400, "invalid_code"]);
-    const set = await post(relay, "/api/me/email", { email: "kieran@example.com", code }, bearer(token));
+    const set = await post(relay, "/api/me/email", { email: "kieran@example.com", code, password: PASSWORD }, bearer(token));
     expect(set.status).toBe(200);
     expect(set.json).toEqual({ user: { username: "kieran@example.com", email: "kieran@example.com" } });
 
@@ -338,8 +355,43 @@ describe("legacy username accounts", () => {
     const started = await startServer();
     await signUp(started, "bob@example.com");
     const token = (await login(started.relay, "admin")).json.token;
-    const response = await post(started.relay, "/api/me/email/code", { email: "bob@example.com" }, bearer(token));
+    const response = await post(started.relay, "/api/me/email/code", { email: "bob@example.com", password: PASSWORD }, bearer(token));
     expect([response.status, response.json.error]).toEqual([409, "email_taken"]);
+  });
+
+  it("need the current password to ask for or confirm a new email, under the login lockout", async () => {
+    const started = await startServer({ limits: { userMaxFailures: 2, ipMaxAttempts: 100 } });
+    const { relay, mail } = started;
+    const token = (await login(relay, "admin")).json.token;
+    // A stolen session alone can't even get a code sent.
+    expect((await post(relay, "/api/me/email/code", { email: "thief@example.com" }, bearer(token))).status).toBe(400);
+    const wrong = await post(relay, "/api/me/email/code", { email: "thief@example.com", password: "not the password" }, bearer(token));
+    expect([wrong.status, wrong.json.error]).toEqual([403, "wrong_password"]);
+    expect(mail.sent).toEqual([]);
+
+    // A code alone doesn't confirm it either.
+    expect((await post(relay, "/api/me/email/code", { email: "me@example.com", password: PASSWORD }, bearer(token))).status).toBe(202);
+    const code = mail.codeFor("me@example.com")!;
+    const noPassword = await post(relay, "/api/me/email", { email: "me@example.com", code }, bearer(token));
+    expect(noPassword.status).toBe(400);
+    const wrongConfirm = await post(relay, "/api/me/email", { email: "me@example.com", code, password: "not the password" }, bearer(token));
+    expect([wrongConfirm.status, wrongConfirm.json.error]).toEqual([403, "wrong_password"]);
+    expect((await post(relay, "/api/me/email", { email: "me@example.com", code, password: "still not it" }, bearer(token))).status).toBe(403);
+    // Two wrong passwords in a row lock the account, as for login.
+    expect((await post(relay, "/api/me/email", { email: "me@example.com", code, password: PASSWORD }, bearer(token))).status).toBe(429);
+    expect((await login(relay, "admin")).status).toBe(429);
+  });
+
+  it("tell the old address when an email is replaced", async () => {
+    const started = await startServer({ bootstrapUser: "old@example.com" });
+    const { relay, mail } = started;
+    const token = (await login(relay, "old@example.com")).json.token;
+    await post(relay, "/api/me/email/code", { email: "new@example.com", password: PASSWORD }, bearer(token));
+    const code = mail.codeFor("new@example.com")!;
+    expect((await post(relay, "/api/me/email", { email: "new@example.com", code, password: PASSWORD }, bearer(token))).status).toBe(200);
+    const notice = mail.sent.findLast((message) => message.to === "old@example.com");
+    expect(notice?.text).toContain("new@example.com");
+    expect((await login(relay, "new@example.com")).status).toBe(200);
   });
 
   it("get an email from the operator's CLI, which signs in by it at once", async () => {
@@ -431,5 +483,41 @@ describe("server CLI user commands", () => {
     const started = await startServer({ dataDir });
     expect((await login(started.relay, "bob@example.com", NEW_PASSWORD)).status).toBe(200);
     expect((await login(started.relay, "admin@example.com")).status).toBe(200);
+  });
+});
+
+describe("credentials around mailed codes", () => {
+  it("never logs a code when a mail fails to send", async () => {
+    const errors: string[] = [];
+    const original = console.error;
+    console.error = (...args: unknown[]) => errors.push(args.map(String).join(" "));
+    try {
+      const sent: string[] = [];
+      const failing: Mailer = {
+        send(_to, subject, text) {
+          sent.push(subject, text);
+          return Promise.reject(new Error(`rejected: ${subject}`));
+        },
+      };
+      const started = await startServer({ mailer: failing });
+      expect((await post(started.relay, "/api/register/code", { email: "a@example.com" })).status).toBe(202);
+      await new Promise((resolve) => setImmediate(resolve));
+      const code = /\b(\d{6})\b/.exec(sent.join(" "))![1]!;
+      expect(errors.length).toBeGreaterThan(0);
+      expect(errors.join("\n")).not.toContain(code);
+    } finally {
+      console.error = original;
+    }
+  });
+
+  it("drops a reset code once the password changes", async () => {
+    const started = await startServer({ bootstrapUser: "admin@example.com" });
+    const { relay, mail } = started;
+    const token = (await login(relay, "admin@example.com")).json.token;
+    await post(relay, "/api/password/reset/code", { email: "admin@example.com" });
+    const code = mail.codeFor("admin@example.com")!;
+    expect((await post(relay, "/api/password", { currentPassword: PASSWORD, newPassword: NEW_PASSWORD }, bearer(token))).status).toBe(204);
+    const reset = await post(relay, "/api/password/reset", { email: "admin@example.com", code, password: "yet another long password" });
+    expect([reset.status, reset.json.error]).toEqual([400, "invalid_code"]);
   });
 });

@@ -66,15 +66,26 @@ const EMAIL_CODE_MAX_ATTEMPTS = 5;
 /** What a mailed code is for; a code only ever answers its own purpose. `reauth` is used by #620. */
 type EmailCodePurpose = "signup" | "reset" | "add_email";
 
-// RFC 5321 caps a path at 256 octets, so an address at 254. Beyond the shape
-// below, the mailed code is what proves an address works.
+// RFC 5321 caps a path at 256 octets, so an address at 254, and a local
+// part at 64. Only a bare addr-spec with an unquoted dot-atom local part and
+// a dotted hostname passes: header syntax like `a<victim@x>` or a display
+// name would be one string here but another mailbox to the SMTP library,
+// slipping past the per-email limit. Beyond that shape, the mailed code is
+// what proves an address works.
 const MAX_EMAIL_LENGTH = 254;
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_LOCAL_PART_LENGTH = 64;
+const EMAIL_PATTERN =
+  /^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
 
-/** The stored form of an email: trimmed and lowercased; undefined when it can't be one. */
+/**
+ * The one form of an email used for limits, storage and delivery alike:
+ * trimmed and lowercased; undefined when it isn't a bare address.
+ */
 export function normalizeEmail(raw: string): string | undefined {
   const email = raw.trim().toLowerCase();
-  return email.length <= MAX_EMAIL_LENGTH && EMAIL_PATTERN.test(email) ? email : undefined;
+  return email.length <= MAX_EMAIL_LENGTH && EMAIL_PATTERN.test(email) && email.indexOf("@") <= MAX_LOCAL_PART_LENGTH
+    ? email
+    : undefined;
 }
 
 /**
@@ -247,10 +258,11 @@ export type LoginResult = ({ readonly status: "ok" } & SignedIn) | { readonly st
 
 /**
  * Asking for a mailed code. `sent` is all an anonymous caller learns, whether
- * or not a mail went out; `closed` means sign-up or mail is off, `taken` that
- * another account has the email (only for a signed-in caller).
+ * or not a mail went out; `closed` means sign-up or mail is off. A signed-in
+ * caller can also hear `wrong_password`, or `taken` when another account has
+ * the email.
  */
-export type SendCodeResult = "sent" | "limited" | "closed" | "taken";
+export type SendCodeResult = "sent" | "limited" | "closed" | "taken" | "wrong_password";
 
 export type ChangePasswordResult =
   | { readonly status: "ok" }
@@ -275,7 +287,7 @@ export type ResetPasswordResult =
 
 export type SetEmailResult =
   | { readonly status: "ok"; readonly user: AccountUser }
-  | { readonly status: "refused"; readonly reason: "email_unavailable" | "invalid_code" | "email_taken" }
+  | { readonly status: "refused"; readonly reason: "email_unavailable" | "wrong_password" | "invalid_code" | "email_taken" }
   | { readonly status: "limited" };
 
 export type StartHostLinkResult =
@@ -431,9 +443,28 @@ export interface Accounts {
     readonly ip: string;
   }): Promise<ResetPasswordResult>;
   /** Mails a code to an email the signed-in account wants as its own (ADR-0044 §8). */
-  requestEmailCode(args: { readonly userId: number; readonly email: string; readonly ip: string }): SendCodeResult;
-  /** Spends that code: the email becomes the account's, verified. A wrong code counts toward the account's lockout. */
-  setEmail(args: { readonly userId: number; readonly email: string; readonly code: string }): SetEmailResult;
+  /**
+   * Checks the current password like a password change, since the new
+   * address could then reset it: a stolen session alone can't take the
+   * account over.
+   */
+  requestEmailCode(args: {
+    readonly userId: number;
+    readonly password: string;
+    readonly email: string;
+    readonly ip: string;
+  }): Promise<SendCodeResult>;
+  /**
+   * Spends that code after checking the password again: the email becomes
+   * the account's, verified, and an address it replaces is told. A wrong
+   * code or password counts toward the account's lockout.
+   */
+  setEmail(args: {
+    readonly userId: number;
+    readonly password: string;
+    readonly email: string;
+    readonly code: string;
+  }): Promise<SetEmailResult>;
   /**
    * Resolves a session token to its user and account device, or undefined
    * when unknown/expired. `deviceId` is absent only for sessions written
@@ -1188,9 +1219,11 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
    * Hands a mail to the mailer without waiting: whether a mail went out, and
    * how long sending took, must not show in the answer (ADR-0044 §2).
    */
-  const deliver = (to: string, subject: string, text: string): void => {
-    mailer?.send(to, subject, text).catch((error: unknown) => {
-      console.error(JSON.stringify({ event: "mail_failed", subject, error: error instanceof Error ? error.message : String(error) }));
+  const deliver = (purpose: string, to: string, subject: string, text: string): void => {
+    // The purpose only: subjects and bodies carry codes, and so may the
+    // error, which some transports build from the message.
+    mailer?.send(to, subject, text).catch(() => {
+      console.error(JSON.stringify({ event: "mail_failed", purpose }));
     });
   };
 
@@ -1543,6 +1576,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       if (!codeAllowed(ip, email)) return "limited";
       if (emailOwner(email) !== undefined) {
         deliver(
+          "signup_existing",
           email,
           "Your PiNomad account",
           "Someone asked to create a PiNomad account with this email, but you already have an account.\n\n" +
@@ -1552,6 +1586,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       }
       const code = issueCode("signup", email, null);
       deliver(
+        "signup",
         email,
         `${code} is your PiNomad sign-up code`,
         `Your PiNomad sign-up code is ${code}. It expires in 10 minutes.\n\nIf you didn't ask for it, ignore this email.\n`,
@@ -1601,6 +1636,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       if (userId === undefined) return "sent";
       const code = issueCode("reset", email, userId);
       deliver(
+        "reset",
         email,
         `${code} is your PiNomad password reset code`,
         `Your PiNomad password reset code is ${code}. It expires in 10 minutes.\n\n` +
@@ -1639,13 +1675,16 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       }
     },
 
-    requestEmailCode({ userId, email, ip }) {
+    async requestEmailCode({ userId, password, email, ip }) {
       if (mailer === undefined) return "closed";
+      const checked = await checkPassword(userId, password);
+      if (checked === "limited" || checked === "wrong_password") return checked;
       const owner = emailOwner(email);
       if (owner !== undefined && owner !== userId) return "taken";
       if (!codeAllowed(ip, email)) return "limited";
       const code = issueCode("add_email", email, userId);
       deliver(
+        "add_email",
         email,
         `${code} is your PiNomad confirmation code`,
         `Your code to use this email for your PiNomad account is ${code}. It expires in 10 minutes.\n\n` +
@@ -1654,12 +1693,22 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       return "sent";
     },
 
-    setEmail({ userId, email, code }) {
+    async setEmail({ userId, password, email, code }) {
       if (mailer === undefined) return { status: "refused", reason: "email_unavailable" };
+      const checked = await checkPassword(userId, password);
+      if (checked === "limited") return { status: "limited" };
+      if (checked === "wrong_password") return { status: "refused", reason: "wrong_password" };
       const lockKey = accountLockKey(userId);
-      if (userFailures.isOver(lockKey, limits.userMaxFailures)) return { status: "limited" };
+      let previous: string | null | undefined;
       db.exec("BEGIN IMMEDIATE");
       try {
+        // As for a password change: a reset while scrypt ran voids the
+        // password typed here.
+        const user = userById(userId);
+        if (user === undefined || user.passwordHash !== checked.verifiedHash) {
+          db.exec("ROLLBACK");
+          return { status: "refused", reason: "wrong_password" };
+        }
         const owner = emailOwner(email);
         if (owner !== undefined && owner !== userId) {
           db.exec("COMMIT");
@@ -1670,12 +1719,24 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
           return { status: "refused", reason: "invalid_code" };
         }
         db.prepare("UPDATE users SET email = ?, email_verified_at = ? WHERE id = ?").run(email, now(), userId);
+        previous = user.email;
         db.exec("COMMIT");
-        return { status: "ok", user: { username: email, email } };
       } catch (error) {
         db.exec("ROLLBACK");
         throw error;
       }
+      // The address that could reset the password until now hears of it.
+      if (previous !== null && previous !== undefined && previous !== email) {
+        deliver(
+          "email_changed",
+          previous,
+          "Your PiNomad email was changed",
+          `The email of your PiNomad account was changed to ${email}.\n\n` +
+            "If this wasn't you, someone else has your password and now controls the account's email. " +
+            "Contact your server's operator.\n",
+        );
+      }
+      return { status: "ok", user: { username: email, email } };
     },
 
     authenticate(token) {
@@ -2297,9 +2358,9 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
 /**
  * Everything a password change must not leave live (#450): sessions (all but
  * `keepTokenHash`), unused join tokens and the host links that would mint
- * one (#495), and push registrations, which a
- * signed-out device would otherwise keep receiving (ADR-0036 §5). Runs inside
- * the caller's transaction.
+ * one (#495), push registrations, which a signed-out device would otherwise
+ * keep receiving (ADR-0036 §5), and unspent mailed codes (ADR-0044). Runs
+ * inside the caller's transaction.
  */
 function dropCredentials(db: DatabaseSync, userId: number, keepTokenHash?: string): void {
   if (keepTokenHash === undefined) db.prepare("DELETE FROM sessions WHERE user_id = ?").run(userId);
@@ -2308,6 +2369,8 @@ function dropCredentials(db: DatabaseSync, userId: number, keepTokenHash?: strin
   // A confirmed host link is a join token the host hasn't collected yet.
   db.prepare("DELETE FROM host_link_requests WHERE user_id = ?").run(userId);
   db.prepare("DELETE FROM push_tokens WHERE user_id = ?").run(userId);
+  // A reset code mailed before the change would undo it.
+  db.prepare("DELETE FROM email_codes WHERE user_id = ?").run(userId);
 }
 
 /**

@@ -340,10 +340,14 @@ describe("email accounts (ADR-0044)", () => {
   it("adds an email to a signed-in account and reads back the user", async () => {
     const fetch = fakeFetch({ status: 202 }, { status: 200, body: { user: { username: "a@b.co", email: "a@b.co" } } });
     const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer", token: "t" }, fetch: fetch.impl });
-    expect(await client.requestEmailCode("a@b.co")).toEqual({ ok: true, value: undefined });
-    expect(await client.setEmail("a@b.co", "123456")).toEqual({ ok: true, value: { user: { username: "a@b.co", email: "a@b.co" } } });
+    expect(await client.requestEmailCode({ email: "a@b.co", password: "pw" })).toEqual({ ok: true, value: undefined });
+    expect(await client.setEmail({ email: "a@b.co", code: "123456", password: "pw" })).toEqual({
+      ok: true,
+      value: { user: { username: "a@b.co", email: "a@b.co" } },
+    });
+    expect(JSON.parse(fetch.calls[0]!.init!.body!)).toEqual({ email: "a@b.co", password: "pw" });
     expect(fetch.calls.map((call) => call.url)).toEqual([`${ORIGIN}/api/me/email/code`, `${ORIGIN}/api/me/email`]);
-    expect(JSON.parse(fetch.calls[1]!.init!.body!)).toEqual({ email: "a@b.co", code: "123456" });
+    expect(JSON.parse(fetch.calls[1]!.init!.body!)).toEqual({ email: "a@b.co", code: "123456", password: "pw" });
   });
 
   it("carries needsEmail and the email from login and /api/me only when the server says so", async () => {

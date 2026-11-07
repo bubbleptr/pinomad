@@ -338,10 +338,14 @@ export interface AccountClient {
   requestPasswordReset(email: string): Promise<AccountResult<void>>;
   /** Sets a new password and signs the account out everywhere; log in afterwards. */
   resetPassword(input: { readonly email: string; readonly code: string; readonly password: string }): Promise<AccountResult<void>>;
-  /** Mails a code to an email the signed-in account wants to use; 409 `email_taken` when another account has it. */
-  requestEmailCode(email: string): Promise<AccountResult<void>>;
-  /** Makes the mailed-to email the account's verified email. */
-  setEmail(email: string, code: string): Promise<AccountResult<AccountProfile>>;
+  /**
+   * Mails a code to an email the signed-in account wants to use, after the
+   * current password: 403 `wrong_password` is a refusal, not a sign-out;
+   * 409 `email_taken` when another account has the email.
+   */
+  requestEmailCode(input: { readonly email: string; readonly password: string }): Promise<AccountResult<void>>;
+  /** Makes the mailed-to email the account's verified email; the password again, as for the code. */
+  setEmail(input: { readonly email: string; readonly code: string; readonly password: string }): Promise<AccountResult<AccountProfile>>;
   me(): Promise<AccountResult<AccountProfile>>;
   /**
    * Ends this session. `revoke` also has the server ask every host this
@@ -575,12 +579,12 @@ export function createAccountClient(options: {
       const result = await request("/api/password/reset", "POST", { email, code, password });
       return result.ok ? ok(undefined) : result;
     },
-    requestEmailCode: async (email) => {
-      const result = await request("/api/me/email/code", "POST", { email });
+    requestEmailCode: async ({ email, password }) => {
+      const result = await request("/api/me/email/code", "POST", { email, password });
       return result.ok ? ok(undefined) : result;
     },
-    setEmail: async (email, code) => {
-      const result = await request("/api/me/email", "POST", { email, code });
+    setEmail: async ({ email, code, password }) => {
+      const result = await request("/api/me/email", "POST", { email, code, password });
       if (!result.ok) return result;
       const value = userBody(result.value);
       return value === undefined ? fail("invalid_response") : ok(value);

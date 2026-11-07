@@ -315,6 +315,8 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     if (result === "limited") deny(429, "rate_limited");
     else if (result === "closed") deny(403, closed);
     else if (result === "taken") deny(409, "email_taken");
+    // 403, not 401: a mistyped password must not read as signed out.
+    else if (result === "wrong_password") deny(403, "wrong_password");
     else send(202);
   };
 
@@ -851,6 +853,13 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
         deny(body.status, body.error);
         return;
       }
+      // The password again, as for changing it: the new address could reset
+      // it, so a stolen session alone must not be able to set one.
+      const password = (body.value as { password?: unknown } | null)?.password;
+      if (typeof password !== "string" || [...password].length > MAX_PASSWORD_CODEPOINTS) {
+        deny(400, "invalid_request");
+        return;
+      }
       const email = bodyEmail(body.value);
       if (email === undefined) {
         deny(400, "invalid_email");
@@ -859,7 +868,10 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       const current = body.session;
       if (pathname === "/api/me/email/code") {
         // Signed in, so saying the email is taken tells nobody anonymous anything.
-        codeSent(accounts.requestEmailCode({ userId: current.userId, email, ip: clientIp(request, ctx.trustProxy) }), "email_unavailable");
+        codeSent(
+          await accounts.requestEmailCode({ userId: current.userId, password, email, ip: clientIp(request, ctx.trustProxy) }),
+          "email_unavailable",
+        );
         return;
       }
       const code = bodyCode(body.value);
@@ -867,10 +879,11 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
         deny(400, "invalid_request");
         return;
       }
-      const result = accounts.setEmail({ userId: current.userId, email, code });
+      const result = await accounts.setEmail({ userId: current.userId, password, email, code });
       if (result.status === "limited") deny(429, "rate_limited");
       else if (result.status === "refused") {
-        deny(result.reason === "email_taken" ? 409 : result.reason === "email_unavailable" ? 403 : 400, result.reason);
+        const status = { email_taken: 409, email_unavailable: 403, wrong_password: 403, invalid_code: 400 }[result.reason];
+        deny(status, result.reason);
       } else send(200, profile(result.user));
       return;
     }

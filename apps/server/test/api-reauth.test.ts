@@ -125,8 +125,8 @@ describe("signed-in routes re-authenticate after reading the body", () => {
   it.each([
     ["/api/push-tokens", { apns: APNS, environment: "production" }],
     ["/api/push-tokens/remove", { apns: APNS, environment: "production" }],
-    ["/api/me/email/code", { email: "a@example.com" }],
-    ["/api/me/email", { email: "a@example.com", code: "123456" }],
+    ["/api/me/email/code", { email: "a@example.com", password: GOOD_PASSWORD }],
+    ["/api/me/email", { email: "a@example.com", code: "123456", password: GOOD_PASSWORD }],
     [`/api/hosts/${HOST_ID}/remove`, { password: GOOD_PASSWORD }],
     ["/api/devices/1/kick", { password: GOOD_PASSWORD }],
     ["/api/host-link/lookup", { userCode: "ABCD-EFGH" }],
