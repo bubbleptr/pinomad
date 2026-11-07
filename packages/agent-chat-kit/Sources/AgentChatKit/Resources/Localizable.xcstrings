@@ -213,6 +213,16 @@
         }
       }
     },
+    "Hides the steps": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收起步骤"
+          }
+        }
+      }
+    },
     "Hides the thinking": {
       "localizations": {
         "zh-Hans": {

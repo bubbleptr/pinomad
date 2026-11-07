@@ -149,23 +149,21 @@ private extension TraceCapsule.Label {
 }
 
 /// A run's steps in the order they happened — what the agent said between
-/// them included — under the todo list when the run carries one. Meant as
+/// them included. Meant as
 /// sheet content: it brings its own detents. While the run is live it
 /// follows the newest step, until the reader scrolls up; scrolling back to
 /// the end follows again.
 public struct AgentTraceSheet: View {
     let trace: AgentTrace
-    let todo: TodoLine?
 
     @State private var position: ScrollPosition
     /// Whether new steps scroll into view: the reader is at the end.
     @State private var following: Bool
 
-    public init(_ trace: AgentTrace, todo: TodoLine? = nil) {
+    public init(_ trace: AgentTrace) {
         self.trace = trace
-        self.todo = todo
-        // A live run opens on its newest step; a finished one from the
-        // start, where the todo list and the first step are.
+        // A live run opens on its newest step; a finished one from its
+        // first step.
         _position = State(initialValue: ScrollPosition(edge: trace.isWorking ? .bottom : .top))
         _following = State(initialValue: trace.isWorking)
     }
@@ -174,9 +172,6 @@ public struct AgentTraceSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 TraceSheetHeader(trace: trace)
-                if let todo {
-                    TodoListView(line: todo)
-                }
                 TraceSteps(steps: trace.steps)
             }
             .padding(.horizontal, 20)

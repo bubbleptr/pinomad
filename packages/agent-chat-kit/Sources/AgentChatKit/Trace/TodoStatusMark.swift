@@ -1,9 +1,10 @@
 import AgentChatCore
 import SwiftUI
 
-/// A todo item's status as one ring: hollow while it waits, a turning arc
-/// while it is worked on, a filled disc whose check draws in once it is
-/// done. Drawn rather than a symbol so one state can animate into the
+/// A todo item's status as one ring: hollow while it waits, cut into
+/// slowly turning dashes while it is worked on, a filled disc whose check
+/// draws in once it is done. The dashes tell it from the waiting ring by
+/// shape alone, so it still reads with motion reduced. Drawn rather than a symbol so one state can animate into the
 /// next; a hidden `circle` icon gives it a symbol's size and baseline, so
 /// it scales with the font and lines up with the item's text.
 struct TodoStatusMark: View {
@@ -31,20 +32,16 @@ struct TodoStatusMark: View {
         ZStack {
             Circle()
                 .inset(by: lineWidth / 2)
-                .stroke(track, lineWidth: lineWidth)
-                .opacity(status == .completed ? 0 : 1)
+                .stroke(.tertiary, lineWidth: lineWidth)
+                .opacity(status == .pending ? 1 : 0)
             if status == .inProgress {
-                TurningArc(lineWidth: lineWidth, turning: !reduceMotion)
+                TurningDashes(lineWidth: lineWidth, turning: !reduceMotion)
                     .transition(.opacity)
             }
             Disc(lineWidth: lineWidth, checked: status == .completed)
                 .opacity(status == .completed ? 1 : 0)
                 .scaleEffect(status == .completed ? 1 : 0.6)
         }
-    }
-
-    private var track: AnyShapeStyle {
-        status == .inProgress ? AnyShapeStyle(.tint.opacity(0.25)) : AnyShapeStyle(.tertiary)
     }
 
     private var label: String {
@@ -56,26 +53,33 @@ struct TodoStatusMark: View {
     }
 }
 
-/// A third of the ring in the tint, going round once every 1.6 seconds.
-private struct TurningArc: View {
+/// The ring cut into eight dashes in the tint, going round once every 8
+/// seconds — slow enough to say "being worked on" rather than "loading".
+/// Round caps reach half a line width past each dash's ends, so the gaps
+/// are cut wider by that much.
+private struct TurningDashes: View {
     let lineWidth: CGFloat
     let turning: Bool
 
     var body: some View {
         TimelineView(.animation(paused: !turning)) { context in
-            let turns = turning ? context.date.timeIntervalSinceReferenceDate / 1.6 : 0
-            Circle()
-                .inset(by: lineWidth / 2)
-                .trim(from: 0, to: 0.3)
-                .stroke(.tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                .rotationEffect(.degrees(turns.truncatingRemainder(dividingBy: 1) * 360 - 90))
+            let turns = turning ? context.date.timeIntervalSinceReferenceDate / 8 : 0
+            GeometryReader { proxy in
+                let diameter = min(proxy.size.width, proxy.size.height) - lineWidth
+                let segment = .pi * diameter / 8
+                let gap = lineWidth * 2.2
+                Circle()
+                    .inset(by: lineWidth / 2)
+                    .stroke(.tint, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, dash: [segment - gap, gap]))
+            }
+            .rotationEffect(.degrees(turns.truncatingRemainder(dividingBy: 1) * 360))
         }
     }
 }
 
 /// The done disc. The check takes the background's color, not white, so
 /// it reads on the light grey disc of dark mode as well. Concrete colors:
-/// on the trace sheet's glass, hierarchical styles get vibrancy and wash
+/// on glass, hierarchical styles get vibrancy and wash
 /// the check into the disc (and a cut-out shows the vibrancy, not the
 /// background). It draws in only on the change to done; a list opened with
 /// items already done shows their checks whole.
