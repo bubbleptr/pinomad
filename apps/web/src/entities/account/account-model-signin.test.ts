@@ -222,3 +222,104 @@ describe("account model: pending provider sign-in (ADR-0044 §4)", () => {
     expect(body(fake.calls[4]!)).toEqual({ password: "pw" });
   });
 });
+
+describe("account model: sign-ins that were overtaken (PR #630 review)", () => {
+  /** A fetch that answers by path, recording each call. */
+  const routed = (routes: Record<string, () => { status: number; body?: unknown } | Promise<{ status: number; body?: unknown }>>) => {
+    const calls: string[] = [];
+    const impl: AccountFetch = async (url) => {
+      const path = new URL(url).pathname;
+      calls.push(path);
+      const route = routes[path];
+      if (route === undefined) return Promise.reject(new Error(`unrouted ${path}`));
+      const answer = await route();
+      return {
+        status: answer.status,
+        json: () => (answer.body === undefined ? Promise.reject(new Error("empty")) : Promise.resolve(answer.body)),
+        text: () => Promise.resolve(JSON.stringify(answer.body)),
+      };
+    };
+    return { impl, calls };
+  };
+
+  const bearerBridge = () => {
+    const saved: unknown[] = [];
+    let answer: ((result: { code: string }) => void) | undefined;
+    const bridge = {
+      hosts: store(),
+      account: {
+        get: () => Promise.resolve(undefined),
+        save: (account: unknown) => {
+          saved.push(account);
+          return Promise.resolve();
+        },
+        clear: () => Promise.resolve(),
+      },
+      oauthSignIn: () => new Promise<{ code: string }>((resolve) => (answer = resolve)),
+    } as unknown as DesktopBridge;
+    return { bridge, saved, asked: () => answer !== undefined, answer: (code: string) => answer!({ code }) };
+  };
+
+  const bob = { status: 200, body: { user: { username: "bob@example.com", email: "bob@example.com" }, expiresAt: 1, token: "bob-token" } };
+  const alice = { status: 200, body: { user: { username: "alice@example.com", email: "alice@example.com" }, expiresAt: 1, token: "alice-token" } };
+
+  it("drops a loopback that comes back after another sign-in", async () => {
+    const { bridge, saved, asked, answer } = bearerBridge();
+    const fake = routed({ "/api/login": () => bob, "/api/hosts": () => ({ status: 200, body: [] }), "/api/oauth/token": () => alice });
+    const model = makeModel({ impl: fake.impl, calls: [] }, { bridge });
+    await settled(model);
+    const google = model.providerSignIn({ provider: "google", serverOrigin: ORIGIN });
+    await vi.waitFor(() => expect(asked()).toBe(true));
+    await model.login({ username: "bob@example.com", password: "pw", serverOrigin: ORIGIN });
+    answer("late");
+    expect((await google).ok).toBe(false);
+    expect(fake.calls).not.toContain("/api/oauth/token");
+    expect(model.state).toMatchObject({ status: "signed-in", user: "bob@example.com" });
+    expect(saved).toEqual([{ serverOrigin: ORIGIN, token: "bob-token" }]);
+  });
+
+  it("drops a code exchange that answers after another sign-in", async () => {
+    const { bridge, saved, asked, answer } = bearerBridge();
+    let exchanged!: () => void;
+    const fake = routed({
+      "/api/login": () => bob,
+      "/api/hosts": () => ({ status: 200, body: [] }),
+      "/api/oauth/token": () => new Promise((resolve) => (exchanged = () => resolve(alice))),
+    });
+    const model = makeModel({ impl: fake.impl, calls: [] }, { bridge });
+    await settled(model);
+    const google = model.providerSignIn({ provider: "google", serverOrigin: ORIGIN });
+    await vi.waitFor(() => expect(asked()).toBe(true));
+    answer("code");
+    await vi.waitFor(() => expect(fake.calls).toContain("/api/oauth/token"));
+    await model.login({ username: "bob@example.com", password: "pw", serverOrigin: ORIGIN });
+    exchanged();
+    expect((await google).ok).toBe(false);
+    expect(model.state).toMatchObject({ status: "signed-in", user: "bob@example.com" });
+    expect(saved).toEqual([{ serverOrigin: ORIGIN, token: "bob-token" }]);
+  });
+
+  it("keeps the next account's profile when an earlier account's email change lands late", async () => {
+    let saveAlice!: () => void;
+    const fake = routed({
+      "/api/me": () => ({ status: 401, body: { error: "unauthenticated" } }),
+      "/api/login": () => ({ status: 200, body: { user: { username: "bob" }, needsEmail: true, expiresAt: 1 } }),
+      "/api/hosts": () => ({ status: 200, body: [] }),
+      "/api/logout": () => ({ status: 204 }),
+      "/api/me/email": () =>
+        new Promise((resolve) =>
+          (saveAlice = () => resolve({ status: 200, body: { user: { username: "alice@example.com", email: "alice@example.com" } } }))),
+    });
+    const model = makeModel({ impl: fake.impl, calls: [] });
+    await settled(model);
+    await model.login({ username: "alice", password: "pw" });
+    const saving = model.setEmail({ email: "alice@example.com", code: "123456", password: "pw" });
+    await vi.waitFor(() => expect(fake.calls).toContain("/api/me/email"));
+    await model.logout();
+    await model.login({ username: "bob", password: "pw" });
+    saveAlice();
+    await saving;
+    expect(model.state).toMatchObject({ status: "signed-in", user: "bob", needsEmail: true });
+    expect(model.state).not.toHaveProperty("email");
+  });
+});

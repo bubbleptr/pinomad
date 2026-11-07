@@ -317,6 +317,12 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
    */
   let epoch = 0;
   /**
+   * Bumped by every sign-in attempt and every session end. A sign-in whose
+   * number moved on while it waited (a slow system-browser flow overtaken by
+   * a password login, a sign-out) drops its result instead of adopting it.
+   */
+  let attempt = 0;
+  /**
    * A cookie-mode sign-out still waiting on the server. Its answer clears
    * the session cookie, so a sign-in waits for it rather than lose its own.
    */
@@ -374,6 +380,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   /** Ends the session's work: no client, every flight and pending save dropped. */
   const endSession = (): void => {
     client = undefined;
+    attempt += 1;
     profile = {};
     epoch += 1;
     for (const flight of flights.values()) flight.cancelled = true;
@@ -906,14 +913,21 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   const signIn = async (
     serverOrigin: string | undefined,
     call: (candidate: AccountClient) => Promise<AccountResult<LoginSuccess>>,
+    /** The attempt this call continues; a fresh one when absent. */
+    started: number = ++attempt,
   ): Promise<AccountResult<void>> => {
+    const before = client;
     if (mode === "cookie") await pendingLogout;
     const built = anonymous(serverOrigin);
     if (!built.ok) return built;
     const result = await call(built.value);
     if (!result.ok) return result;
+    if (superseded(started, before)) return fail("superseded");
     return adopt(built.value, result.value);
   };
+
+  /** Another sign-in or a sign-out happened since `started`, or a session this attempt didn't make is up. */
+  const superseded = (started: number, before: AccountClient | undefined): boolean => attempt !== started || client !== before;
 
   /** Makes a fresh session this model's: stored in bearer mode, hosts refreshed. */
   const adopt = async (anonymousClient: AccountClient, login: LoginSuccess): Promise<AccountResult<void>> => {
@@ -948,6 +962,9 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   const loopbackSignIn = async (provider: string, serverOrigin: string | undefined): Promise<AccountResult<void>> => {
     const oauthSignIn = deps.bridge?.oauthSignIn;
     if (oauthSignIn === undefined) return fail("unsupported");
+    // The browser may take minutes; whatever signs in meanwhile wins.
+    const started = ++attempt;
+    const before = client;
     const built = anonymous(serverOrigin);
     if (!built.ok) return built;
     const random = (bytes: number): string => toBase64Url(crypto.getRandomValues(new Uint8Array(bytes)));
@@ -961,7 +978,8 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       state,
     }).catch(() => ({ error: "loopback_failed" }));
     if ("error" in answer) return fail(answer.error);
-    return signIn(built.value.origin, (candidate) => candidate.exchangeOAuthCode(answer.code, verifier, deps.device?.()));
+    if (superseded(started, before)) return fail("superseded");
+    return signIn(built.value.origin, (candidate) => candidate.exchangeOAuthCode(answer.code, verifier, deps.device?.()), started);
   };
 
   /** A pending sign-in finished: signed in here, or a native app's redirect to follow. */
@@ -981,7 +999,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
    */
   const authed = async <T,>(
     call: (active: AccountClient) => Promise<AccountResult<T>>,
-    onSuccess?: () => void,
+    onSuccess?: (value: T) => void,
   ): Promise<AccountResult<T>> => {
     if (client === undefined) return fail("unauthenticated");
     const active = client;
@@ -990,7 +1008,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     // Signed out (and maybe into another account) while this ran: the answer
     // belongs to the old session and must not touch the new one.
     if (!live(active, started)) return result;
-    if (result.ok) onSuccess?.();
+    if (result.ok) onSuccess?.(result.value);
     else if (isUnauthenticated(result.error)) signedOut();
     return result;
   };
@@ -1029,14 +1047,17 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     },
     requestEmailCode: (input) => authed((active) => active.requestEmailCode(input)),
     setEmail: async (input) => {
-      const result = await authed((active) => active.setEmail(input));
-      if (!result.ok) return result;
-      takeProfile(result.value);
-      if (state.status === "signed-in") {
-        const { needsEmail: _held, ...rest } = state;
-        setState({ ...rest, user: result.value.user.username, ...profile });
-      }
-      return { ok: true, value: undefined };
+      // Only while the session that asked is still the one signed in.
+      const result = await authed(
+        (active) => active.setEmail(input),
+        (value) => {
+          takeProfile(value);
+          if (state.status !== "signed-in") return;
+          const { needsEmail: _held, ...rest } = state;
+          setState({ ...rest, user: value.user.username, ...profile });
+        },
+      );
+      return result.ok ? { ok: true, value: undefined } : result;
     },
     identities: () => authed((active) => active.identities()),
     requestReauthCode: () => authed((active) => active.requestReauthCode()),
@@ -1045,6 +1066,8 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     unlinkProvider: (provider, confirmation) => authed((active) => active.unlinkProvider(provider, confirmation)),
     pendingSignIn: (id) => beforeSession(undefined, (candidate) => candidate.pendingSignIn(id)),
     createFromPending: async (id, options) => {
+      // A sign-in like any other: an older one still waiting must not land after it.
+      attempt += 1;
       if (mode === "cookie") await pendingLogout;
       const built = anonymous(undefined);
       if (!built.ok) return built;

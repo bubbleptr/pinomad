@@ -68,6 +68,8 @@ export function accountErrorMessage(error: AccountError): string {
       return "Your account has no email to send a code to.";
     case "no_verified_email":
       return "The provider didn't give a verified email. Sign in another way, or verify your email there first.";
+    case "superseded":
+      return "You signed in another way while this sign-in was waiting.";
     case "access_denied":
       return "Sign-in was cancelled.";
     case "invalid_state":
