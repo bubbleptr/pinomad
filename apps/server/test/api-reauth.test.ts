@@ -136,7 +136,7 @@ describe("signed-in routes re-authenticate after reading the body", () => {
     ["/api/reauth/code", {}],
     ["/api/reauth", { password: GOOD_PASSWORD }],
     ["/api/oauth/google/link", { password: GOOD_PASSWORD }],
-    ["/api/oauth/pending/" + "p".repeat(43) + "/link", {}],
+    ["/api/oauth/pending/" + "p".repeat(43) + "/link", { password: GOOD_PASSWORD }],
     ["/api/me/identities/google/remove", { password: GOOD_PASSWORD }],
   ])("%s answers 401 to a session revoked while the body arrived", async (path, body) => {
     const started = await startServer();

@@ -783,8 +783,26 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       deny(body.status, body.error);
       return;
     }
+    // Confirmed like linking from settings: a session alone is not proof
+    // that its owner just signed in, and a stolen one must not be able to
+    // add a way back in that outlives it.
+    const confirmation = bodyConfirmation(body.value, token);
+    if (confirmation === undefined) {
+      deny(400, "invalid_request");
+      return;
+    }
     if (visible() === undefined) {
       deny(404, "not_found");
+      return;
+    }
+    const confirmed = await accounts.confirm(body.session.userId, confirmation);
+    if (confirmed !== "ok") {
+      deny(confirmed === "limited" ? 429 : 403, confirmed === "limited" ? "rate_limited" : confirmed);
+      return;
+    }
+    // The session may have ended while the password was checked.
+    if (accounts.authenticate(token)?.userId !== body.session.userId) {
+      deny(401, "unauthenticated");
       return;
     }
     const result = accounts.linkPending(id, body.session.userId);

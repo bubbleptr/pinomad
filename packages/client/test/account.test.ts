@@ -443,8 +443,11 @@ describe("provider sign-in and re-auth (#620)", () => {
     const app = "pinomad://auth?code=c&state=s";
     expect(await bearer([{ status: 200, body: { redirect: app } }]).createFromPending("p")).toEqual({ ok: true, value: { kind: "redirect", url: app } });
     const desktop = "http://127.0.0.1:53682/callback?code=c&state=s";
-    expect(await bearer([{ status: 200, body: { redirect: desktop } }]).linkPending("p")).toEqual({ ok: true, value: desktop });
-    expect(await bearer([{ status: 204 }]).linkPending("p")).toEqual({ ok: true, value: undefined });
+    expect(await bearer([{ status: 200, body: { redirect: desktop } }]).linkPending("p", "pw")).toEqual({ ok: true, value: desktop });
+    const fetch = fakeFetch({ status: 204 });
+    const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer", token: "t" }, fetch: fetch.impl });
+    expect(await client.linkPending("p", { reauth: "g" })).toEqual({ ok: true, value: undefined });
+    expect(JSON.parse(fetch.calls[0]!.init!.body!)).toEqual({ reauth: "g" });
     for (const elsewhere of ["https://evil.example/?code=c", "pinomad://other?code=c", "http://localhost:1/"]) {
       expect((await bearer([{ status: 200, body: { redirect: elsewhere } }]).createFromPending("p")).ok).toBe(false);
     }

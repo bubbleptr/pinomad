@@ -436,7 +436,7 @@ describe("a pending sign-in can't be finished by someone it was sent to", () => 
     const { id } = await nativePending(started);
     const victim = await ownerOnWeb(started);
     expect((await api(started.relay, { path: `/api/oauth/pending/${id}`, headers: victim })).status).toBe(404);
-    expect((await post(started.relay, `/api/oauth/pending/${id}/link`, {}, victim)).status).toBe(404);
+    expect((await post(started.relay, `/api/oauth/pending/${id}/link`, { password: PASSWORD }, victim)).status).toBe(404);
     expect((await post(started.relay, `/api/oauth/pending/${id}/create`, {}, { origin: ORIGIN })).status).toBe(404);
     expect((await post(started.relay, `/api/oauth/pending/${id}/create`, {})).status).toBe(404);
     // The stranger's identity reached no account.
@@ -463,15 +463,35 @@ describe("a pending sign-in can't be finished by someone it was sent to", () => 
         .pending as string;
     const victim = await ownerOnWeb(started);
     const id = await pendingId();
-    expect((await post(started.relay, `/api/oauth/pending/${id}/link`, {}, victim)).status).toBe(404);
+    expect((await post(started.relay, `/api/oauth/pending/${id}/link`, { password: PASSWORD }, victim)).status).toBe(404);
     expect((await post(started.relay, `/api/oauth/pending/${id}/create`, {}, { origin: ORIGIN })).status).toBe(404);
     expect((await api(started.relay, { path: "/api/me/identities", headers: victim })).json.identities).toEqual([]);
 
     // The app's own calls: linking with its bearer session, or creating in token mode.
-    const linked = await post(started.relay, `/api/oauth/pending/${id}/link`, {}, bearer(await passwordToken(started)));
+    const linked = await post(started.relay, `/api/oauth/pending/${id}/link`, { password: PASSWORD }, bearer(await passwordToken(started)));
     expect(linked.status).toBe(204);
     const fresh = await post(started.relay, "/api/oauth/apple/native", started.idp.appleNative({ sub: "001.new", email: "new@example.net" }));
     expect((await post(started.relay, `/api/oauth/pending/${fresh.json.pending as string}/create`, {})).status).toBe(200);
+  });
+});
+
+describe("linking a pending sign-in to the signed-in account", () => {
+  it("needs the password or a grant, not just the session", async () => {
+    const started = await startServer();
+    const { response, binding } = await webSignIn(started, "github", { sub: "4242", email: "elsewhere@example.net" });
+    const id = webLanding(response).get("oauth_pending")!;
+    const login = await post(started.relay, "/api/login", { username: OWNER, password: PASSWORD }, { origin: ORIGIN });
+    const headers = { cookie: `${SESSION_COOKIE}=${setCookie(login, SESSION_COOKIE)!}; ${BINDING_COOKIE}=${binding}`, origin: ORIGIN };
+    const path = `/api/oauth/pending/${id}/link`;
+
+    expect((await post(started.relay, path, {}, headers)).status).toBe(400);
+    const wrong = await post(started.relay, path, { password: "not the password at all" }, headers);
+    expect([wrong.status, wrong.json.error]).toEqual([403, "wrong_password"]);
+    expect((await post(started.relay, path, { reauth: "made-up" }, headers)).json.error).toBe("invalid_reauth");
+    expect((await api(started.relay, { path: "/api/me/identities", headers })).json.identities).toEqual([]);
+
+    expect((await post(started.relay, path, { password: PASSWORD }, headers)).status).toBe(204);
+    expect((await api(started.relay, { path: "/api/me/identities", headers })).json.identities).toMatchObject([{ provider: "github" }]);
   });
 });
 

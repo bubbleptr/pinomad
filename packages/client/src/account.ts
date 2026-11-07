@@ -445,10 +445,11 @@ export interface AccountClient {
   /** Creates the account a pending sign-in asked for and finishes the sign-in. */
   createFromPending(id: string, device?: AccountDeviceClaim): Promise<AccountResult<PendingOutcome>>;
   /**
-   * Adds a pending sign-in's provider to the signed-in account. Answers the
-   * native app's redirect when an app started it, else nothing.
+   * Adds a pending sign-in's provider to the signed-in account, confirmed
+   * like `linkProvider`. Answers the native app's redirect when an app
+   * started it, else nothing.
    */
-  linkPending(id: string): Promise<AccountResult<string | undefined>>;
+  linkPending(id: string, confirmation: AccountConfirmation): Promise<AccountResult<string | undefined>>;
   /** A native app's one-time code and its PKCE verifier, traded for a session like a login. */
   exchangeOAuthCode(code: string, codeVerifier: string, device?: AccountDeviceClaim): Promise<AccountResult<LoginSuccess>>;
   /** iOS's own Sign in with Apple; `nonce` is the raw value whose SHA-256 the app gave Apple. */
@@ -801,8 +802,8 @@ export function createAccountClient(options: {
       const signedIn = session(result);
       return signedIn.ok ? ok({ kind: "signedIn", session: signedIn.value }) : signedIn;
     },
-    linkPending: async (id) => {
-      const result = await request(`/api/oauth/pending/${encodeURIComponent(id)}/link`, "POST", {});
+    linkPending: async (id, confirmation) => {
+      const result = await request(`/api/oauth/pending/${encodeURIComponent(id)}/link`, "POST", confirmationBody(confirmation));
       if (!result.ok) return result;
       if (result.value === undefined) return ok(undefined);
       const url = nativeRedirectBody(result.value);
