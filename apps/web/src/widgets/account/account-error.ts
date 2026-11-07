@@ -40,12 +40,6 @@ export function accountErrorMessage(error: AccountError): string {
       return "This app can't connect to any address the host offered. The page may block an insecure ws:// path; try the desktop app or a secure address.";
     case "pairing_not_saved":
       return "Paired, but this device couldn't save the pairing.";
-    case "invalid_invite":
-      return "This invite code isn't valid. It may have been used or revoked.";
-    case "invite_expired":
-      return "This invite code has expired. Ask for a new one.";
-    case "invalid_username":
-      return "Use 2–32 lowercase letters, digits, dots, dashes or underscores, starting with a letter or digit.";
     case "weak_password":
       return "Use a password of at least 12 characters.";
     case "wrong_password":
@@ -56,12 +50,6 @@ export function accountErrorMessage(error: AccountError): string {
       return "This server can't remove hosts yet. Run pinomad leave on the host instead.";
     case "current_device":
       return "That's the device you're using. Sign out instead.";
-    case "admin_account":
-      return "The server's admin account can't be deleted.";
-    case "username_taken":
-      return "That username is taken.";
-    case "forbidden":
-      return "Only the server's admin can do this.";
     default:
       return `Something went wrong (${error.code}).`;
   }
