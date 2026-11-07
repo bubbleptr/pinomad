@@ -24,14 +24,14 @@ export function AccountDialog({ onClose }: { onClose: () => void }) {
 
 /**
  * The account panel, opened on its own when a provider link or sign-in came
- * back to this page (`?oauth_linked=`, `?oauth_error=`) and the screen App
- * shows has no panel of its own: the panel is where that's said. Decided on
- * the first render; `hasPanel` changing later doesn't open it.
+ * back to this page (`?oauth_linked=`, `?oauth_error=`): the panel is where
+ * that's said. `stayClosed` when the screen App shows has a panel of its own,
+ * or shouldn't be covered. Decided on the first render only.
  */
-export function OAuthReturnDialog({ hasPanel }: { hasPanel: boolean }) {
+export function OAuthReturnDialog({ stayClosed }: { stayClosed: boolean }) {
   const [open, setOpen] = useState(() => {
     const { linked, error } = oauthReturn();
-    return !hasPanel && (linked !== undefined || error !== undefined);
+    return !stayClosed && (linked !== undefined || error !== undefined);
   });
   return open ? <AccountDialog onClose={() => setOpen(false)} /> : null;
 }

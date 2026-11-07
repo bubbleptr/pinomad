@@ -480,7 +480,8 @@ export function App() {
               the no-host screen for the workbench) doesn't close or lose them. */}
           <HostLinkRoute />
           <PendingSignInRoute />
-          <OAuthReturnDialog hasPanel={address === undefined && hosts.length === 0} />
+          {/* The no-host screen has the panel already; a one-shot token or pair screen is left alone. */}
+          <OAuthReturnDialog stayClosed={address !== undefined || hosts.length === 0} />
           <ToastViewport position="topEnd" inset={{ top: 48 }} isTopLayer>
             <NewHostNotices />
           </ToastViewport>
