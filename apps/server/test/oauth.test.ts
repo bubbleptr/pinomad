@@ -40,6 +40,8 @@ async function startServer(options?: {
   readonly limits?: LoginLimits;
   readonly dataDir?: string;
   readonly idp?: FakeIdp;
+  /** Run without a mailer. */
+  readonly noMail?: boolean;
 }): Promise<Started> {
   let offset = 0;
   const now = (): number => Date.now() + offset;
@@ -52,7 +54,7 @@ async function startServer(options?: {
     bootstrapUser: OWNER,
     bootstrapPassword: PASSWORD,
     registration: options?.registration ?? "open",
-    mailer: mail,
+    ...(options?.noMail === true ? {} : { mailer: mail }),
     now,
     ...(options?.limits === undefined ? {} : { limits: options.limits }),
   });
@@ -492,6 +494,29 @@ describe("linking a pending sign-in to the signed-in account", () => {
 
     expect((await post(started.relay, path, { password: PASSWORD }, headers)).status).toBe(204);
     expect((await api(started.relay, { path: "/api/me/identities", headers })).json.identities).toMatchObject([{ provider: "github" }]);
+  });
+});
+
+describe("a server that can't send mail", () => {
+  it("asks a new provider account for a password, its only way to confirm later", async () => {
+    const started = await startServer({ noMail: true });
+    const { response, binding } = await webSignIn(started, "google", IDENTITY.google);
+    const path = `/api/oauth/pending/${webLanding(response).get("oauth_pending")!}/create`;
+    const headers = { origin: ORIGIN, cookie: `${BINDING_COOKIE}=${binding}` };
+    const bare = await post(started.relay, path, {}, headers);
+    expect([bare.status, bare.json.error]).toEqual([400, "password_required"]);
+    expect((await post(started.relay, path, { password: "short" }, headers)).json.error).toBe("weak_password");
+    expect((await post(started.relay, path, { password: "a long enough password" }, headers)).status).toBe(200);
+    expect((await post(started.relay, "/api/login", { username: "ada@example.com", password: "a long enough password" })).status).toBe(200);
+  });
+
+  it("asks the same of iOS's own Apple sign-in", async () => {
+    const started = await startServer({ noMail: true });
+    const pending = (await post(started.relay, "/api/oauth/apple/native", started.idp.appleNative(IDENTITY.apple))).json.pending as string;
+    expect((await post(started.relay, `/api/oauth/pending/${pending}/create`, {})).json.error).toBe("password_required");
+    const created = await post(started.relay, `/api/oauth/pending/${pending}/create`, { password: "a long enough password" });
+    expect(created.status).toBe(200);
+    expect(typeof created.json.token).toBe("string");
   });
 });
 

@@ -442,8 +442,16 @@ export interface AccountClient {
   unlinkProvider(provider: string, confirmation: AccountConfirmation): Promise<AccountResult<void>>;
   /** The provider sign-in behind `/?oauth_pending=<id>`; 404 `not_found` once spent, expired, or another browser's. */
   pendingSignIn(id: string): Promise<AccountResult<PendingSignIn>>;
-  /** Creates the account a pending sign-in asked for and finishes the sign-in. */
-  createFromPending(id: string, device?: AccountDeviceClaim): Promise<AccountResult<PendingOutcome>>;
+  /**
+   * Creates the account a pending sign-in asked for and finishes the sign-in.
+   * A server that can't mail (`authMethods().email` false) needs a
+   * `password`, the account's only way to confirm changes later: 400
+   * `password_required` without one, `weak_password` under 12 characters.
+   */
+  createFromPending(
+    id: string,
+    options?: { readonly password?: string; readonly device?: AccountDeviceClaim },
+  ): Promise<AccountResult<PendingOutcome>>;
   /**
    * Adds a pending sign-in's provider to the signed-in account, confirmed
    * like `linkProvider`. Answers the native app's redirect when an app
@@ -792,8 +800,11 @@ export function createAccountClient(options: {
         ...(value.name === undefined ? {} : { name: value.name as string }),
       });
     },
-    createFromPending: async (id, device) => {
-      const result = await request(`/api/oauth/pending/${encodeURIComponent(id)}/create`, "POST", deviceBody(device));
+    createFromPending: async (id, options) => {
+      const result = await request(`/api/oauth/pending/${encodeURIComponent(id)}/create`, "POST", {
+        ...(options?.password === undefined ? {} : { password: options.password }),
+        ...deviceBody(options?.device),
+      });
       if (!result.ok) return result;
       if (isRecord(result.value) && "redirect" in result.value) {
         const url = nativeRedirectBody(result.value);

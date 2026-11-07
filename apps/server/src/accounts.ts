@@ -377,8 +377,16 @@ export type PendingResult =
   | { readonly status: "ok"; readonly userId: number; readonly completion: PendingCompletion }
   | {
       readonly status: "refused";
-      readonly reason: "not_found" | "registration_closed" | "no_verified_email" | "email_taken" | "identity_taken";
-    };
+      readonly reason:
+        | "not_found"
+        | "registration_closed"
+        | "no_verified_email"
+        | "email_taken"
+        | "identity_taken"
+        | "password_required"
+        | "weak_password";
+    }
+  | { readonly status: "limited" };
 
 /** A sign-in method as account settings list it. */
 export interface IdentityRow {
@@ -658,8 +666,13 @@ export interface Accounts {
   linkIdentity(flow: { readonly linkUserId: number; readonly linkSessionHash: string }, identity: ProviderIdentity): "linked" | "identity_taken" | "session_ended";
   /** A live pending sign-in by its id. */
   pendingSignIn(id: string): PendingSignIn | undefined;
-  /** Spends a pending sign-in on a new account with its verified email, no password, and the identity bound. */
-  createFromPending(id: string): PendingResult;
+  /**
+   * Spends a pending sign-in on a new account with its verified email and
+   * the identity bound. The password is optional while the server can mail
+   * re-auth codes; without a mailer it is required (`password_required`),
+   * since it would be the account's only way to confirm anything later.
+   */
+  createFromPending(id: string, password?: string): Promise<PendingResult>;
   /** Spends a pending sign-in by binding its identity to the signed-in `userId`. */
   linkPending(id: string, userId: number): PendingResult;
   /** A session for an account a provider sign-in resolved to, tied to an account device as login does. */
@@ -2426,7 +2439,11 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       };
     },
 
-    createFromPending(id) {
+    async createFromPending(id, password) {
+      if (password === undefined && mailer === undefined) return { status: "refused", reason: "password_required" };
+      if (password !== undefined && weakPassword(password)) return { status: "refused", reason: "weak_password" };
+      const hash = password === undefined ? null : await gate.run(() => hashPassword(password));
+      if (hash === undefined) return { status: "limited" };
       return transaction((): PendingResult => {
         const row = pendingRow(id);
         if (row === undefined) return { status: "refused", reason: "not_found" };
@@ -2437,7 +2454,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
         if (identityOwner(row.provider, row.subject) !== undefined) return { status: "refused", reason: "identity_taken" };
         const at = now();
         const userId = Number(
-          db.prepare("INSERT INTO users (email, email_verified_at, password_hash, created_at) VALUES (?, ?, NULL, ?)").run(row.email, at, at)
+          db.prepare("INSERT INTO users (email, email_verified_at, password_hash, created_at) VALUES (?, ?, ?, ?)").run(row.email, at, hash, at)
             .lastInsertRowid,
         );
         bindIdentity(userId, identityOf(row));

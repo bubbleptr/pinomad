@@ -526,8 +526,20 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
   const nativeCode = (userId: number, native: NativeRedirect): string =>
     withParams(native.redirectUri, { code: accounts.issueOAuthCode(userId, native.codeChallenge), state: native.state });
   /** A finished pending sign-in or link refused: the reason, with the status its kind of refusal takes. */
-  const pendingRefused = (result: Extract<PendingResult, { status: "refused" }>): void => {
-    const status = { not_found: 404, registration_closed: 403, no_verified_email: 400, email_taken: 409, identity_taken: 409 }[result.reason];
+  const pendingRefused = (result: Exclude<PendingResult, { status: "ok" }>): void => {
+    if (result.status === "limited") {
+      deny(429, "rate_limited");
+      return;
+    }
+    const status = {
+      not_found: 404,
+      registration_closed: 403,
+      no_verified_email: 400,
+      email_taken: 409,
+      identity_taken: 409,
+      password_required: 400,
+      weak_password: 400,
+    }[result.reason];
     deny(status, result.reason);
   };
 
@@ -755,8 +767,11 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
         deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
         return;
       }
-      const device = parseDeviceClaim((body.value as { device?: unknown } | undefined)?.device);
-      if (device === "invalid") {
+      const value = body.value as { device?: unknown; password?: unknown } | undefined;
+      const device = parseDeviceClaim(value?.device);
+      // A server that can't mail re-auth codes needs one (ADR-0044 §6).
+      const password = value?.password;
+      if (device === "invalid" || (password !== undefined && (typeof password !== "string" || [...password].length > MAX_PASSWORD_CODEPOINTS))) {
         deny(400, "invalid_request");
         return;
       }
@@ -764,8 +779,8 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
         deny(404, "not_found");
         return;
       }
-      const result = accounts.createFromPending(id);
-      if (result.status === "refused") {
+      const result = await accounts.createFromPending(id, password);
+      if (result.status !== "ok") {
         pendingRefused(result);
         return;
       }
@@ -813,7 +828,7 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       return;
     }
     const result = accounts.linkPending(id, body.session.userId);
-    if (result.status === "refused") pendingRefused(result);
+    if (result.status !== "ok") pendingRefused(result);
     // A native client still waits at its redirect, for a session of the
     // account it was linked to.
     else if (result.completion.kind === "native") send(200, { redirect: nativeCode(result.userId, result.completion.native) });

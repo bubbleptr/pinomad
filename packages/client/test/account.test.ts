@@ -453,6 +453,13 @@ describe("provider sign-in and re-auth (#620)", () => {
     }
   });
 
+  it("sends a password with a new provider account when asked to", async () => {
+    const fetch = fakeFetch({ status: 200, body: SESSION });
+    const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer" }, fetch: fetch.impl });
+    await client.createFromPending("p", { password: "a long enough password", device: { id: "Qm3xV8rT2kLp9wYz4nHc1A" } });
+    expect(JSON.parse(fetch.calls[0]!.init!.body!)).toEqual({ password: "a long enough password", device: { id: "Qm3xV8rT2kLp9wYz4nHc1A" } });
+  });
+
   it("trades a native code with its verifier like a login", async () => {
     const fetch = fakeFetch({ status: 200, body: SESSION });
     const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer" }, fetch: fetch.impl });
