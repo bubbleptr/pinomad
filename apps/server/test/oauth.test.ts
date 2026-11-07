@@ -539,6 +539,29 @@ describe("sign-in methods in settings", () => {
     expect((await sessionOf(started, response)).email).toBe(OWNER);
   });
 
+  it.each([
+    ["signs out everywhere", async (started: Started, token: string) => {
+      expect((await post(started.relay, "/api/sessions/revoke-all", {}, bearer(token))).status).toBe(204);
+    }],
+    ["resets the password", async (started: Started) => {
+      expect((await post(started.relay, "/api/password/reset/code", { email: OWNER })).status).toBe(202);
+      const code = started.mail.codeFor(OWNER);
+      expect((await post(started.relay, "/api/password/reset", { email: OWNER, code, password: "a brand new long password" })).status).toBe(204);
+    }],
+  ])("drops a link begun by a session that ended before the provider answered: the owner %s", async (_, endSession) => {
+    const started = await startServer();
+    const token = await passwordToken(started);
+    const reauth = await reauthWithPassword(started, token);
+    const begun = await post(started.relay, "/api/oauth/github/link", { reauth }, bearer(token));
+    const { code, state } = started.idp.authorize("github", begun.json.url as string, { sub: "666", email: "mallory@example.net" });
+    await endSession(started, token);
+
+    const back = await callback(started, "github", { code, state }, setCookie(begun, BINDING_COOKIE));
+    expect(webLanding(back).get("oauth_error")).toBe("session_ended");
+    const { response } = await webSignIn(started, "github", { sub: "666", email: "mallory@example.net" });
+    expect(webLanding(response).get("oauth_pending")).toBeTruthy();
+  });
+
   it("refuses to link an identity another account has", async () => {
     const started = await startServer();
     await createViaPending(started, "google", IDENTITY.google);

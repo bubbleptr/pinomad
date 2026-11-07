@@ -343,6 +343,8 @@ export interface OAuthFlow {
   readonly bindingHash?: string;
   readonly native?: NativeRedirect;
   readonly linkUserId?: number;
+  /** link: the SHA-256 of the session token that started it. */
+  readonly linkSessionHash?: string;
 }
 
 /**
@@ -635,6 +637,8 @@ export interface Accounts {
     readonly bindingHash?: string;
     readonly native?: NativeRedirect;
     readonly linkUserId?: number;
+    /** link: the session starting it, which must outlive the provider's answer. */
+    readonly linkSessionToken?: string;
   }): { readonly status: "ok"; readonly state: string; readonly verifier: string; readonly nonce: string } | { readonly status: "limited" } | { readonly status: "busy" };
   /** Spends the flow `state` names; undefined when unknown, expired or another provider's. */
   takeOAuthFlow(provider: OAuthProvider, state: string): OAuthFlow | undefined;
@@ -645,8 +649,13 @@ export interface Accounts {
    * pending record for the person to choose what to do with.
    */
   resolveIdentity(identity: ProviderIdentity, completion: PendingCompletion): ResolveIdentityResult;
-  /** Binds an identity to a signed-in account; a no-op when it is already that account's. */
-  linkIdentity(userId: number, identity: ProviderIdentity): "linked" | "identity_taken";
+  /**
+   * Binds an identity to the account a link flow started from; a no-op when
+   * it is already that account's. `session_ended` when the session that
+   * started the flow is gone by now (signed out everywhere, password reset):
+   * the owner's lockout must cover links already on their way.
+   */
+  linkIdentity(flow: { readonly linkUserId: number; readonly linkSessionHash: string }, identity: ProviderIdentity): "linked" | "identity_taken" | "session_ended";
   /** A live pending sign-in by its id. */
   pendingSignIn(id: string): PendingSignIn | undefined;
   /** Spends a pending sign-in on a new account with its verified email, no password, and the identity bound. */
@@ -1039,6 +1048,9 @@ function migrate(db: DatabaseSync): void {
         code_challenge TEXT,
         client_state TEXT,
         link_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        -- link: the session that started it, which must still be live when
+        -- the identity is written.
+        link_session_hash TEXT,
         created_at INTEGER NOT NULL,
         expires_at INTEGER NOT NULL
       );
@@ -2269,7 +2281,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       return Number(granted) === 1 ? { status: "ok", reauth, expiresAt } : { status: "refused", reason: "unauthenticated" };
     },
 
-    startOAuthFlow({ provider, kind, ip, bindingHash, native, linkUserId }) {
+    startOAuthFlow({ provider, kind, ip, bindingHash, native, linkUserId, linkSessionToken }) {
       if (oauthStarts.hit(ip, oauthLimits.startMaxPerIp, oauthLimits.startWindowMs)) return { status: "limited" };
       const at = now();
       db.prepare("DELETE FROM oauth_flows WHERE expires_at <= ?").run(at);
@@ -2280,8 +2292,8 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       const nonce = randomBytes(16).toString("base64url");
       db.prepare(
         `INSERT INTO oauth_flows (state_hash, provider, kind, verifier, nonce, binding_hash, redirect_uri, code_challenge, client_state,
-                                  link_user_id, created_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                                  link_user_id, link_session_hash, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         sha256Hex(state),
         provider,
@@ -2293,6 +2305,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
         native?.codeChallenge ?? null,
         native?.state ?? null,
         linkUserId ?? null,
+        linkSessionToken === undefined ? null : sha256Hex(linkSessionToken),
         at,
         at + OAUTH_FLOW_TTL_MS,
       );
@@ -2304,7 +2317,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       const row = db
         .prepare(
           `SELECT provider, kind, verifier, nonce, binding_hash AS bindingHash, redirect_uri AS redirectUri, code_challenge AS codeChallenge,
-                  client_state AS clientState, link_user_id AS linkUserId, expires_at AS expiresAt
+                  client_state AS clientState, link_user_id AS linkUserId, link_session_hash AS linkSessionHash, expires_at AS expiresAt
            FROM oauth_flows WHERE state_hash = ?`,
         )
         .get(hash) as
@@ -2318,6 +2331,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
             codeChallenge: string | null;
             clientState: string | null;
             linkUserId: number | null;
+            linkSessionHash: string | null;
             expiresAt: number;
           }
         | undefined;
@@ -2334,6 +2348,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
           ? {}
           : { native: { redirectUri: row.redirectUri, codeChallenge: row.codeChallenge, state: row.clientState ?? "" } }),
         ...(row.linkUserId === null ? {} : { linkUserId: row.linkUserId }),
+        ...(row.linkSessionHash === null ? {} : { linkSessionHash: row.linkSessionHash }),
       };
     },
 
@@ -2387,8 +2402,12 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       return answer;
     },
 
-    linkIdentity(userId, identity) {
+    linkIdentity({ linkUserId: userId, linkSessionHash }, identity) {
       return transaction(() => {
+        const live = db
+          .prepare("SELECT 1 AS x FROM sessions WHERE token_hash = ? AND user_id = ? AND expires_at > ?")
+          .get(linkSessionHash, userId, now());
+        if (live === undefined) return "session_ended";
         const bound = identityOwner(identity.provider, identity.subject);
         if (bound !== undefined && bound !== userId) return "identity_taken";
         bindIdentity(userId, identity);

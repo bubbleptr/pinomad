@@ -607,7 +607,14 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       return;
     }
     if (flow.kind === "link") {
-      if (accounts.linkIdentity(flow.linkUserId!, identity) === "identity_taken") fail("identity_taken");
+      // Re-checked with the write: the session that started the link may
+      // have been signed out, or the password reset, while the provider's
+      // pages were open.
+      const linked =
+        flow.linkUserId === undefined || flow.linkSessionHash === undefined
+          ? "session_ended"
+          : accounts.linkIdentity({ linkUserId: flow.linkUserId, linkSessionHash: flow.linkSessionHash }, identity);
+      if (linked !== "linked") fail(linked);
       else toWebClient("oauth_linked", provider, [clearBindingCookie]);
       return;
     }
@@ -902,6 +909,7 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       ip: clientIp(request, ctx.trustProxy),
       bindingHash: sha256Hex(binding),
       linkUserId: current.userId,
+      linkSessionToken: token!,
     });
     if (flow.status === "limited") deny(429, "rate_limited");
     else if (flow.status === "busy") deny(503, "busy");
