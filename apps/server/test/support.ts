@@ -43,6 +43,26 @@ export function fakeMailer(): Mailer & { readonly sent: SentMail[]; codeFor(to: 
 }
 
 /**
+ * Rewrites a current database back to schema 9: no sign-in flows, pending
+ * provider sign-ins, one-time codes or re-auth grants, and identities without
+ * a name or Apple refresh token (#620).
+ */
+export function downgradeToSchema9(dataDir: string): void {
+  const db = new DatabaseSync(join(dataDir, "server.sqlite"), { enableForeignKeyConstraints: false });
+  db.exec(`
+    DROP TABLE reauth_grants;
+    DROP TABLE oauth_codes;
+    DROP TABLE oauth_pending;
+    DROP TABLE oauth_flows;
+    ALTER TABLE user_identities DROP COLUMN name;
+    ALTER TABLE user_identities DROP COLUMN refresh_token;
+    ALTER TABLE user_identities DROP COLUMN refresh_client_id;
+    PRAGMA user_version = 9;
+  `);
+  db.close();
+}
+
+/**
  * Rewrites a current database back to schema 8: usernames only, every
  * account with a password, invites and the admin flag (ADR-0044). The users
  * table is rebuilt (SQLite can't drop a UNIQUE column) with foreign keys
@@ -50,6 +70,7 @@ export function fakeMailer(): Mailer & { readonly sent: SentMail[]; codeFor(to: 
  * have a username.
  */
 export function downgradeToSchema8(dataDir: string): void {
+  downgradeToSchema9(dataDir);
   const db = new DatabaseSync(join(dataDir, "server.sqlite"), { enableForeignKeyConstraints: false });
   db.exec(`
     DROP TABLE email_codes;

@@ -5,8 +5,9 @@
 // satisfy it — and never touches a DOM-only API.
 //
 // crates/pinomad-core replays this client for iOS, except the email ops
-// (ADR-0044: sign-up, password reset, adding an email): only web and desktop
-// offer those so far.
+// (ADR-0044: sign-up, password reset, adding an email) and the provider
+// sign-in, sign-in method and re-auth ops (#620): only web and desktop offer
+// those so far.
 
 import { encodeEndpointSetParam, parseEndpointSet, type EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { UNAUTHORIZED_CLOSE_CODE, type ApnsPushToken } from "@pinomad/protocol/frames.ts";
@@ -239,6 +240,65 @@ export interface AuthMethods {
   readonly providers: readonly string[];
 }
 
+/**
+ * The second check before an action on the account (ADR-0044 §6): the
+ * password as a string, or a grant from `reauth`, which only counts for the
+ * session that got it and lapses after five minutes.
+ */
+export type AccountConfirmation = string | { readonly reauth: string };
+
+/** A confirmation as request bodies carry it. */
+const confirmationBody = (confirmation: AccountConfirmation): { password: string } | { reauth: string } =>
+  typeof confirmation === "string" ? { password: confirmation } : { reauth: confirmation.reauth };
+
+/** The password or a re-auth grant, as the email routes take them by name. */
+export type EmailConfirmation = { readonly password: string } | { readonly reauth: string };
+
+const emailConfirmationBody = (input: EmailConfirmation): { password: string } | { reauth: string } =>
+  "reauth" in input ? { reauth: input.reauth } : { password: input.password };
+
+/** A sign-in provider bound to the account (GET /api/me/identities). */
+export interface AccountIdentity {
+  /** "google", "github" or "apple". */
+  readonly provider: string;
+  /** The email the provider gave, which may differ from the account's. */
+  readonly email?: string;
+  readonly createdAt: number;
+}
+
+/** The account's ways in: its providers, and whether it has a password. */
+export interface AccountIdentities {
+  readonly identities: readonly AccountIdentity[];
+  readonly hasPassword: boolean;
+}
+
+/** A re-auth grant (ADR-0044 §6). */
+export interface ReauthGrant {
+  readonly reauth: string;
+  readonly expiresAt: number;
+}
+
+/** A provider sign-in that found no account yet (ADR-0044 §4), as its page shows it. */
+export interface PendingSignIn {
+  readonly provider: string;
+  readonly email?: string;
+  readonly name?: string;
+}
+
+/**
+ * Where finishing a pending sign-in leaves the caller: signed in, or — when a
+ * native app started it — the app's redirect with a one-time code, to send
+ * the browser to.
+ */
+export type PendingOutcome =
+  | { readonly kind: "signedIn"; readonly session: LoginSuccess }
+  | { readonly kind: "redirect"; readonly url: string };
+
+/** Native Sign in with Apple: signed in, or no account yet with the pending id to create or link it. */
+export type AppleNativeOutcome =
+  | { readonly kind: "signedIn"; readonly session: LoginSuccess }
+  | { readonly kind: "noAccount"; readonly pending: string; readonly email?: string };
+
 /** One account-bound host row as GET /api/hosts reports it. */
 export interface AccountHost {
   readonly hostId: string;
@@ -340,12 +400,13 @@ export interface AccountClient {
   resetPassword(input: { readonly email: string; readonly code: string; readonly password: string }): Promise<AccountResult<void>>;
   /**
    * Mails a code to an email the signed-in account wants to use, after the
-   * current password: 403 `wrong_password` is a refusal, not a sign-out;
-   * 409 `email_taken` when another account has the email.
+   * current password or, for an account without one, a re-auth grant: 403
+   * `wrong_password` or `invalid_reauth` is a refusal, not a sign-out; 409
+   * `email_taken` when another account has the email.
    */
-  requestEmailCode(input: { readonly email: string; readonly password: string }): Promise<AccountResult<void>>;
-  /** Makes the mailed-to email the account's verified email; the password again, as for the code. */
-  setEmail(input: { readonly email: string; readonly code: string; readonly password: string }): Promise<AccountResult<AccountProfile>>;
+  requestEmailCode(input: { readonly email: string } & EmailConfirmation): Promise<AccountResult<void>>;
+  /** Makes the mailed-to email the account's verified email; confirmed again, as for the code. */
+  setEmail(input: { readonly email: string; readonly code: string } & EmailConfirmation): Promise<AccountResult<AccountProfile>>;
   me(): Promise<AccountResult<AccountProfile>>;
   /**
    * Ends this session. `revoke` also has the server ask every host this
@@ -354,13 +415,59 @@ export interface AccountClient {
    */
   logout(options?: { readonly revoke?: boolean }): Promise<AccountResult<void>>;
   revokeAllSessions(): Promise<AccountResult<void>>;
-  /** Keeps this session and signs out the account's others; 403 `wrong_password` doesn't sign out (#450). */
-  changePassword(currentPassword: string, newPassword: string): Promise<AccountResult<void>>;
+  /**
+   * Keeps this session and signs out the account's others; 403
+   * `wrong_password` or `invalid_reauth` doesn't sign out (#450). A grant
+   * also sets a first password on an account that has none.
+   */
+  changePassword(current: AccountConfirmation, newPassword: string): Promise<AccountResult<void>>;
   /**
    * Deletes the signed-in account and ends this session (#451). 403
-   * `wrong_password` is a refusal, not a sign-out.
+   * `wrong_password` or `invalid_reauth` is a refusal, not a sign-out.
    */
-  deleteAccount(password: string): Promise<AccountResult<void>>;
+  deleteAccount(confirmation: AccountConfirmation): Promise<AccountResult<void>>;
+  /** Mails a re-auth code to the account's email; 409 `no_email` for an account without one. */
+  requestReauthCode(): Promise<AccountResult<void>>;
+  /** Trades the password or a mailed code for a grant; wrong ones count toward the sign-in lockout (429 `rate_limited`). */
+  reauth(proof: { readonly password: string } | { readonly code: string }): Promise<AccountResult<ReauthGrant>>;
+  /** The account's sign-in providers and whether it has a password. */
+  identities(): Promise<AccountResult<AccountIdentities>>;
+  /**
+   * Starts adding a provider to the account: the URL to open in this
+   * browser, which comes back to `/?oauth_linked=<provider>` or
+   * `/?oauth_error=<reason>`.
+   */
+  linkProvider(provider: string, confirmation: AccountConfirmation): Promise<AccountResult<string>>;
+  /** Removes a provider; 409 `last_method` when nothing else would sign the account in. */
+  unlinkProvider(provider: string, confirmation: AccountConfirmation): Promise<AccountResult<void>>;
+  /** The provider sign-in behind `/?oauth_pending=<id>`; 404 `not_found` once spent, expired, or another browser's. */
+  pendingSignIn(id: string): Promise<AccountResult<PendingSignIn>>;
+  /**
+   * Creates the account a pending sign-in asked for and finishes the sign-in.
+   * A server that can't mail (`authMethods().email` false) needs a
+   * `password`, the account's only way to confirm changes later: 400
+   * `password_required` without one, `weak_password` under 12 characters.
+   */
+  createFromPending(
+    id: string,
+    options?: { readonly password?: string; readonly device?: AccountDeviceClaim },
+  ): Promise<AccountResult<PendingOutcome>>;
+  /**
+   * Adds a pending sign-in's provider to the signed-in account, confirmed
+   * like `linkProvider`. Answers the native app's redirect when an app
+   * started it, else nothing.
+   */
+  linkPending(id: string, confirmation: AccountConfirmation): Promise<AccountResult<string | undefined>>;
+  /** A native app's one-time code and its PKCE verifier, traded for a session like a login. */
+  exchangeOAuthCode(code: string, codeVerifier: string, device?: AccountDeviceClaim): Promise<AccountResult<LoginSuccess>>;
+  /** iOS's own Sign in with Apple; `nonce` is the raw value whose SHA-256 the app gave Apple. */
+  appleNative(input: {
+    readonly identityToken: string;
+    readonly authorizationCode: string;
+    readonly nonce?: string;
+    readonly name?: string;
+    readonly device?: AccountDeviceClaim;
+  }): Promise<AccountResult<AppleNativeOutcome>>;
   createJoinToken(): Promise<AccountResult<JoinToken>>;
   /**
    * The host waiting behind a code typed from its terminal (#495). The code
@@ -393,7 +500,7 @@ export interface AccountClient {
    * it back. 403 `wrong_password` is a refusal, not a sign-out; 404
    * `not_found` covers servers that predate it.
    */
-  removeHost(hostId: string, password: string): Promise<AccountResult<void>>;
+  removeHost(hostId: string, confirmation: AccountConfirmation): Promise<AccountResult<void>>;
   /** The account's devices (#452); 404 on servers that predate them. */
   listDevices(): Promise<AccountResult<readonly AccountDevice[]>>;
   /**
@@ -401,7 +508,7 @@ export interface AccountClient {
    * the account to revoke it (ADR-0037 §3). 403 `wrong_password` is a
    * refusal, not a sign-out; 409 `current_device` means sign out instead.
    */
-  kickDevice(id: number, password: string): Promise<AccountResult<void>>;
+  kickDevice(id: number, confirmation: AccountConfirmation): Promise<AccountResult<void>>;
   requestPairing(hostId: string): Promise<AccountResult<PairingOffer>>;
   /** Record this device's APNs token under the signed-in account (ADR-0036). */
   registerPushToken(token: ApnsPushToken): Promise<AccountResult<void>>;
@@ -439,6 +546,22 @@ const loopbackRedirectBody = (value: unknown): string | undefined => {
   try {
     const url = new URL(value.redirect);
     return url.protocol === "http:" && url.hostname === "127.0.0.1" && url.port !== "" ? value.redirect : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * A native app's redirect after a provider sign-in, only to where the server
+ * allows one at start (ADR-0044 §5): `pinomad://auth`, or this machine's
+ * 127.0.0.1 over plain http.
+ */
+const nativeRedirectBody = (value: unknown): string | undefined => {
+  if (!isRecord(value) || typeof value.redirect !== "string") return undefined;
+  try {
+    const url = new URL(value.redirect);
+    const app = url.protocol === "pinomad:" && url.host === "auth" && (url.pathname === "" || url.pathname === "/");
+    return app || loopbackRedirectBody(value) !== undefined ? value.redirect : undefined;
   } catch {
     return undefined;
   }
@@ -503,11 +626,12 @@ export function createAccountClient(options: {
     ...(options.credentials.mode === "cookie" ? { credentials: "same-origin" as const } : {}),
   };
 
-  const request = async (
+  /** Like `request`, but a refusal keeps its body: some carry more than the code. */
+  const exchange = async (
     path: string,
     method: "GET" | "POST",
     body?: unknown,
-  ): Promise<AccountResult<unknown>> => {
+  ): Promise<AccountResult<unknown> | { readonly ok: false; readonly error: AccountError; readonly body: unknown }> => {
     let response: AccountFetchResponse;
     try {
       response = await fetchImpl(`${origin}${path}`, {
@@ -529,8 +653,15 @@ export function createAccountClient(options: {
     const json = await response.json().catch(() => undefined);
     if (response.status >= 200 && response.status < 300) return ok(json);
     const code = isRecord(json) && typeof json.error === "string" ? json.error : response.status === 401 ? "unauthenticated" : "unknown";
-    return fail(code, response.status);
+    return { ...fail(code, response.status), body: json };
   };
+
+  const request = async (path: string, method: "GET" | "POST", body?: unknown): Promise<AccountResult<unknown>> => {
+    const result = await exchange(path, method, body);
+    return result.ok ? result : { ok: false, error: result.error };
+  };
+
+  const done = (result: AccountResult<unknown>): AccountResult<void> => (result.ok ? ok(undefined) : result);
 
   const session = (result: AccountResult<unknown>): AccountResult<LoginSuccess> => {
     if (!result.ok) return result;
@@ -579,12 +710,12 @@ export function createAccountClient(options: {
       const result = await request("/api/password/reset", "POST", { email, code, password });
       return result.ok ? ok(undefined) : result;
     },
-    requestEmailCode: async ({ email, password }) => {
-      const result = await request("/api/me/email/code", "POST", { email, password });
+    requestEmailCode: async (input) => {
+      const result = await request("/api/me/email/code", "POST", { email: input.email, ...emailConfirmationBody(input) });
       return result.ok ? ok(undefined) : result;
     },
-    setEmail: async ({ email, code, password }) => {
-      const result = await request("/api/me/email", "POST", { email, code, password });
+    setEmail: async (input) => {
+      const result = await request("/api/me/email", "POST", { email: input.email, code: input.code, ...emailConfirmationBody(input) });
       if (!result.ok) return result;
       const value = userBody(result.value);
       return value === undefined ? fail("invalid_response") : ok(value);
@@ -603,13 +734,111 @@ export function createAccountClient(options: {
       const result = await request("/api/sessions/revoke-all", "POST");
       return result.ok ? ok(undefined) : result;
     },
-    changePassword: async (currentPassword, newPassword) => {
-      const result = await request("/api/password", "POST", { currentPassword, newPassword });
-      return result.ok ? ok(undefined) : result;
+    changePassword: async (current, newPassword) => {
+      const proof = typeof current === "string" ? { currentPassword: current } : { reauth: current.reauth };
+      return done(await request("/api/password", "POST", { ...proof, newPassword }));
     },
-    deleteAccount: async (password) => {
-      const result = await request("/api/me/delete", "POST", { password });
-      return result.ok ? ok(undefined) : result;
+    deleteAccount: async (confirmation) => done(await request("/api/me/delete", "POST", confirmationBody(confirmation))),
+    requestReauthCode: async () => done(await request("/api/reauth/code", "POST", {})),
+    reauth: async (proof) => {
+      const result = await request("/api/reauth", "POST", proof);
+      if (!result.ok) return result;
+      const value = result.value;
+      return isRecord(value) && typeof value.reauth === "string" && typeof value.expiresAt === "number"
+        ? ok({ reauth: value.reauth, expiresAt: value.expiresAt })
+        : fail("invalid_response");
+    },
+    identities: async () => {
+      const result = await request("/api/me/identities", "GET");
+      if (!result.ok) return result;
+      const value = result.value;
+      const valid =
+        isRecord(value) &&
+        typeof value.hasPassword === "boolean" &&
+        Array.isArray(value.identities) &&
+        value.identities.every(
+          (entry) =>
+            isRecord(entry) &&
+            typeof entry.provider === "string" &&
+            (entry.email === undefined || typeof entry.email === "string") &&
+            typeof entry.createdAt === "number",
+        );
+      if (!valid) return fail("invalid_response");
+      return ok({
+        hasPassword: value.hasPassword as boolean,
+        identities: (value.identities as AccountIdentity[]).map((entry) => ({
+          provider: entry.provider,
+          ...(entry.email === undefined ? {} : { email: entry.email }),
+          createdAt: entry.createdAt,
+        })),
+      });
+    },
+    linkProvider: async (provider, confirmation) => {
+      const result = await request(`/api/oauth/${encodeURIComponent(provider)}/link`, "POST", confirmationBody(confirmation));
+      if (!result.ok) return result;
+      // Only a web page: the browser is sent there on the server's word.
+      const url = isRecord(result.value) ? result.value.url : undefined;
+      return typeof url === "string" && /^https?:\/\//.test(url) ? ok(url) : fail("invalid_response");
+    },
+    unlinkProvider: async (provider, confirmation) =>
+      done(await request(`/api/me/identities/${encodeURIComponent(provider)}/remove`, "POST", confirmationBody(confirmation))),
+    pendingSignIn: async (id) => {
+      const result = await request(`/api/oauth/pending/${encodeURIComponent(id)}`, "GET");
+      if (!result.ok) return result;
+      const value = result.value;
+      if (
+        !isRecord(value) ||
+        typeof value.provider !== "string" ||
+        (value.email !== undefined && typeof value.email !== "string") ||
+        (value.name !== undefined && typeof value.name !== "string")
+      ) {
+        return fail("invalid_response");
+      }
+      return ok({
+        provider: value.provider,
+        ...(value.email === undefined ? {} : { email: value.email as string }),
+        ...(value.name === undefined ? {} : { name: value.name as string }),
+      });
+    },
+    createFromPending: async (id, options) => {
+      const result = await request(`/api/oauth/pending/${encodeURIComponent(id)}/create`, "POST", {
+        ...(options?.password === undefined ? {} : { password: options.password }),
+        ...deviceBody(options?.device),
+      });
+      if (!result.ok) return result;
+      if (isRecord(result.value) && "redirect" in result.value) {
+        const url = nativeRedirectBody(result.value);
+        return url === undefined ? fail("invalid_response") : ok({ kind: "redirect", url });
+      }
+      const signedIn = session(result);
+      return signedIn.ok ? ok({ kind: "signedIn", session: signedIn.value }) : signedIn;
+    },
+    linkPending: async (id, confirmation) => {
+      const result = await request(`/api/oauth/pending/${encodeURIComponent(id)}/link`, "POST", confirmationBody(confirmation));
+      if (!result.ok) return result;
+      if (result.value === undefined) return ok(undefined);
+      const url = nativeRedirectBody(result.value);
+      return url === undefined ? fail("invalid_response") : ok(url);
+    },
+    exchangeOAuthCode: async (code, codeVerifier, device) =>
+      session(await request("/api/oauth/token", "POST", { code, code_verifier: codeVerifier, ...deviceBody(device) })),
+    appleNative: async ({ identityToken, authorizationCode, nonce, name, device }) => {
+      const result = await exchange("/api/oauth/apple/native", "POST", {
+        identityToken,
+        authorizationCode,
+        ...(nonce === undefined ? {} : { nonce }),
+        ...(name === undefined ? {} : { name }),
+        ...deviceBody(device),
+      });
+      if (!result.ok) {
+        const body = "body" in result ? result.body : undefined;
+        if (result.error.code === "no_account" && isRecord(body) && typeof body.pending === "string") {
+          return ok({ kind: "noAccount", pending: body.pending, ...(typeof body.email === "string" ? { email: body.email } : {}) });
+        }
+        return { ok: false, error: result.error };
+      }
+      const signedIn = session(result);
+      return signedIn.ok ? ok({ kind: "signedIn", session: signedIn.value }) : signedIn;
     },
     createJoinToken: async () => {
       const result = await request("/api/join-tokens", "POST");
@@ -703,14 +932,9 @@ export function createAccountClient(options: {
         })),
       );
     },
-    removeHost: async (hostId, password) => {
-      const result = await request(`/api/hosts/${encodeURIComponent(hostId)}/remove`, "POST", { password });
-      return result.ok ? ok(undefined) : result;
-    },
-    kickDevice: async (id, password) => {
-      const result = await request(`/api/devices/${id}/kick`, "POST", { password });
-      return result.ok ? ok(undefined) : result;
-    },
+    removeHost: async (hostId, confirmation) =>
+      done(await request(`/api/hosts/${encodeURIComponent(hostId)}/remove`, "POST", confirmationBody(confirmation))),
+    kickDevice: async (id, confirmation) => done(await request(`/api/devices/${id}/kick`, "POST", confirmationBody(confirmation))),
     requestPairing: async (hostId) => {
       const result = await request(`/api/hosts/${encodeURIComponent(hostId)}/pairing`, "POST");
       if (!result.ok) return result;

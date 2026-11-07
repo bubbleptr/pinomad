@@ -133,6 +133,11 @@ describe("signed-in routes re-authenticate after reading the body", () => {
     ["/api/host-link/confirm", { userCode: "ABCD-EFGH" }],
     ["/api/host-link/deny", { userCode: "ABCD-EFGH" }],
     ["/api/logout", { revoke: true }],
+    ["/api/reauth/code", {}],
+    ["/api/reauth", { password: GOOD_PASSWORD }],
+    ["/api/oauth/google/link", { password: GOOD_PASSWORD }],
+    ["/api/oauth/pending/" + "p".repeat(43) + "/link", { password: GOOD_PASSWORD }],
+    ["/api/me/identities/google/remove", { password: GOOD_PASSWORD }],
   ])("%s answers 401 to a session revoked while the body arrived", async (path, body) => {
     const started = await startServer();
     const admin = ((await (await login(started.relay, "admin")).json()) as { token: string }).token;

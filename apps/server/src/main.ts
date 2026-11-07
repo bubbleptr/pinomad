@@ -13,6 +13,12 @@
 // turn on email sign-up, password reset and adding an email; without them
 // accounts sign in with their passwords as before. PINOMAD_SERVER_REGISTRATION
 // is `open` or `closed` (default): closed, only `user add` creates accounts.
+//
+// Sign-in providers (ADR-0044 §3), each on only when all its variables are
+// set: PINOMAD_SERVER_GOOGLE_CLIENT_ID/_SECRET, PINOMAD_SERVER_GITHUB_CLIENT_ID/
+// _SECRET, and PINOMAD_SERVER_APPLE_SERVICES_ID, _TEAM_ID, _KEY_ID and
+// _PRIVATE_KEY (the .p8 PEM), plus PINOMAD_SERVER_APPLE_BUNDLE_ID for the iOS
+// app's native Sign in with Apple.
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -20,6 +26,7 @@ import { commandHint, webRoot } from "@pinomad/host/src/distribution.ts";
 import { addUser, openAccounts, resetPassword, setUserEmail } from "./accounts.ts";
 import { loadApnsConfig, openApns } from "./apns.ts";
 import { loadMailer } from "./mail.ts";
+import { createOAuth, loadOAuthConfig, type OAuthProviders } from "./oauth.ts";
 import { startRelay } from "./relay.ts";
 import { DEFAULT_RELAY_LIMITS, readRelayLimits, RELAY_LIMIT_OPTIONS, type RelayLimits } from "./relay-limits.ts";
 
@@ -114,7 +121,9 @@ export async function main(argv: readonly string[]): Promise<void> {
         `       ${commandHint("server")} user add EMAIL [--data-dir DIR]   (add an account; its password on stdin)\n` +
         `       ${commandHint("server")} user set-email NAME EMAIL [--data-dir DIR]   (give an account its email, taken as verified)\n` +
         "       env: PINOMAD_SERVER_USER, PINOMAD_SERVER_PASSWORD, PINOMAD_SERVER_DATA_DIR,\n" +
-        "            PINOMAD_SERVER_REGISTRATION (open|closed), PINOMAD_SERVER_SMTP_URL, PINOMAD_SERVER_MAIL_FROM\n" +
+        "            PINOMAD_SERVER_REGISTRATION (open|closed), PINOMAD_SERVER_SMTP_URL, PINOMAD_SERVER_MAIL_FROM,\n" +
+        "            PINOMAD_SERVER_GOOGLE_CLIENT_ID/_SECRET, PINOMAD_SERVER_GITHUB_CLIENT_ID/_SECRET,\n" +
+        "            PINOMAD_SERVER_APPLE_SERVICES_ID/_TEAM_ID/_KEY_ID/_PRIVATE_KEY [/_BUNDLE_ID]\n" +
         "       relay limits (flag or env, 0 = off): " +
         RELAY_LIMIT_OPTIONS.map((option) => `--${option.flag} / ${option.env}`).join(", "),
     );
@@ -135,11 +144,14 @@ export async function main(argv: readonly string[]): Promise<void> {
   // start, not quietly close sign-up or drop mail.
   const registration = process.env.PINOMAD_SERVER_REGISTRATION ?? "closed";
   let mailer: ReturnType<typeof loadMailer>;
+  let oauth: OAuthProviders;
   try {
     if (registration !== "open" && registration !== "closed") {
       throw new Error(`PINOMAD_SERVER_REGISTRATION must be open or closed, not ${registration}`);
     }
     mailer = loadMailer();
+    // An Apple key that doesn't parse fails here, before anyone tries it.
+    oauth = createOAuth(loadOAuthConfig());
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
@@ -174,6 +186,7 @@ export async function main(argv: readonly string[]): Promise<void> {
     accounts,
     trustProxy: values["trust-proxy"],
     ...(apns === undefined ? {} : { push: apns }),
+    oauth,
     limits,
   });
   console.log(
@@ -184,6 +197,7 @@ export async function main(argv: readonly string[]): Promise<void> {
       push: apns?.environments ?? [],
       registration: accounts.registrationOpen ? "open" : "closed",
       mail: accounts.emailEnabled,
+      providers: oauth.enabled,
       relayLimits: { ...DEFAULT_RELAY_LIMITS, ...limits },
     }),
   );

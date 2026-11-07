@@ -118,13 +118,15 @@ async function signUp(started: Started, email: string, headers?: Record<string, 
 const wrongCode = (code: string): string => String((Number(code) + 1) % 1_000_000).padStart(6, "0");
 
 describe("sign-in methods", () => {
-  it("offers email sign-up only when registration is open and mail can be sent", async () => {
+  it("says separately whether registration is open and whether mail can be sent", async () => {
     const open = await startServer();
     expect((await api(open.relay, { path: "/api/auth/methods" })).json).toEqual({ registration: true, email: true, providers: [] });
     const closed = await startServer({ registration: "closed" });
     expect((await api(closed.relay, { path: "/api/auth/methods" })).json).toEqual({ registration: false, email: true, providers: [] });
+    // Open without mail: provider sign-ups work, email sign-up doesn't.
     const mailless = await startServer({ mailer: null });
-    expect((await api(mailless.relay, { path: "/api/auth/methods" })).json).toEqual({ registration: false, email: false, providers: [] });
+    expect((await api(mailless.relay, { path: "/api/auth/methods" })).json).toEqual({ registration: true, email: false, providers: [] });
+    expect((await post(mailless.relay, "/api/register/code", { email: "new@example.com" })).status).toBe(403);
   });
 });
 

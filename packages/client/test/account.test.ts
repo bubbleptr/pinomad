@@ -350,6 +350,17 @@ describe("email accounts (ADR-0044)", () => {
     expect(JSON.parse(fetch.calls[1]!.init!.body!)).toEqual({ email: "a@b.co", code: "123456", password: "pw" });
   });
 
+  it("changes the email with a re-auth grant instead of a password", async () => {
+    const fetch = fakeFetch({ status: 202 }, { status: 200, body: { user: { username: "a@b.co", email: "a@b.co" } } });
+    const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer", token: "t" }, fetch: fetch.impl });
+    await client.requestEmailCode({ email: "a@b.co", reauth: "g" });
+    await client.setEmail({ email: "a@b.co", code: "123456", reauth: "g" });
+    expect(fetch.calls.map((call) => JSON.parse(call.init!.body!))).toEqual([
+      { email: "a@b.co", reauth: "g" },
+      { email: "a@b.co", code: "123456", reauth: "g" },
+    ]);
+  });
+
   it("carries needsEmail and the email from login and /api/me only when the server says so", async () => {
     const legacy = await bearer([{ status: 200, body: { user: { username: "kieran" }, needsEmail: true, expiresAt: 1, token: "t" } }]).login(
       "kieran",
@@ -365,6 +376,107 @@ describe("email accounts (ADR-0044)", () => {
     expect(await bearer([{ status: 200, body: { user: { username: "k" }, needsEmail: true } }]).me()).toEqual({
       ok: true,
       value: { user: { username: "k" }, needsEmail: true },
+    });
+  });
+});
+
+describe("provider sign-in and re-auth (#620)", () => {
+  const SESSION = { user: { username: "a@b.co", email: "a@b.co" }, expiresAt: 9, token: "t" };
+
+  it("confirms sensitive actions with the password or a grant", async () => {
+    const fetch = fakeFetch({ status: 204 });
+    const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer", token: "t" }, fetch: fetch.impl });
+    await client.kickDevice(3, "pw");
+    await client.kickDevice(3, { reauth: "g" });
+    await client.deleteAccount({ reauth: "g" });
+    await client.removeHost("h", { reauth: "g" });
+    await client.changePassword({ reauth: "g" }, "a new long password");
+    await client.changePassword("old", "a new long password");
+    expect(fetch.calls.map((call) => JSON.parse(call.init!.body!))).toEqual([
+      { password: "pw" },
+      { reauth: "g" },
+      { reauth: "g" },
+      { reauth: "g" },
+      { reauth: "g", newPassword: "a new long password" },
+      { currentPassword: "old", newPassword: "a new long password" },
+    ]);
+  });
+
+  it("gets a grant from a mailed code and refuses a malformed one", async () => {
+    const fetch = fakeFetch({ status: 202 }, { status: 200, body: { reauth: "g", expiresAt: 5 } });
+    const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer", token: "t" }, fetch: fetch.impl });
+    expect(await client.requestReauthCode()).toEqual({ ok: true, value: undefined });
+    expect(await client.reauth({ code: "123456" })).toEqual({ ok: true, value: { reauth: "g", expiresAt: 5 } });
+    expect(JSON.parse(fetch.calls[1]!.init!.body!)).toEqual({ code: "123456" });
+    expect((await bearer([{ status: 200, body: { reauth: 1 } }]).reauth({ password: "p" })).ok).toBe(false);
+    expect(await bearer([{ status: 429, body: { error: "rate_limited" } }]).reauth({ code: "1" })).toEqual({
+      ok: false,
+      error: { code: "rate_limited", status: 429 },
+    });
+  });
+
+  it("lists, links and unlinks sign-in methods", async () => {
+    const listed = await bearer([
+      { status: 200, body: { hasPassword: false, identities: [{ provider: "google", email: "a@b.co", createdAt: 1 }, { provider: "apple", createdAt: 2 }] } },
+    ]).identities();
+    expect(listed).toEqual({
+      ok: true,
+      value: { hasPassword: false, identities: [{ provider: "google", email: "a@b.co", createdAt: 1 }, { provider: "apple", createdAt: 2 }] },
+    });
+    expect((await bearer([{ status: 200, body: { identities: [] } }]).identities()).ok).toBe(false);
+
+    const url = "https://accounts.google.com/o/oauth2/v2/auth?state=s";
+    expect(await bearer([{ status: 200, body: { url } }]).linkProvider("google", { reauth: "g" })).toEqual({ ok: true, value: url });
+    expect((await bearer([{ status: 200, body: { url: "javascript:alert(1)" } }]).linkProvider("google", "pw")).ok).toBe(false);
+    expect(await bearer([{ status: 409, body: { error: "last_method" } }]).unlinkProvider("apple", { reauth: "g" })).toEqual({
+      ok: false,
+      error: { code: "last_method", status: 409 },
+    });
+  });
+
+  it("finishes a pending sign-in signed in, or at a native app's redirect only", async () => {
+    expect(await bearer([{ status: 200, body: { provider: "apple", email: "x@privaterelay.appleid.com", name: "Ada" } }]).pendingSignIn("p")).toEqual({
+      ok: true,
+      value: { provider: "apple", email: "x@privaterelay.appleid.com", name: "Ada" },
+    });
+    expect(await bearer([{ status: 200, body: SESSION }]).createFromPending("p")).toEqual({ ok: true, value: { kind: "signedIn", session: SESSION } });
+    const app = "pinomad://auth?code=c&state=s";
+    expect(await bearer([{ status: 200, body: { redirect: app } }]).createFromPending("p")).toEqual({ ok: true, value: { kind: "redirect", url: app } });
+    const desktop = "http://127.0.0.1:53682/callback?code=c&state=s";
+    expect(await bearer([{ status: 200, body: { redirect: desktop } }]).linkPending("p", "pw")).toEqual({ ok: true, value: desktop });
+    const fetch = fakeFetch({ status: 204 });
+    const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer", token: "t" }, fetch: fetch.impl });
+    expect(await client.linkPending("p", { reauth: "g" })).toEqual({ ok: true, value: undefined });
+    expect(JSON.parse(fetch.calls[0]!.init!.body!)).toEqual({ reauth: "g" });
+    for (const elsewhere of ["https://evil.example/?code=c", "pinomad://other?code=c", "http://localhost:1/"]) {
+      expect((await bearer([{ status: 200, body: { redirect: elsewhere } }]).createFromPending("p")).ok).toBe(false);
+    }
+  });
+
+  it("sends a password with a new provider account when asked to", async () => {
+    const fetch = fakeFetch({ status: 200, body: SESSION });
+    const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer" }, fetch: fetch.impl });
+    await client.createFromPending("p", { password: "a long enough password", device: { id: "Qm3xV8rT2kLp9wYz4nHc1A" } });
+    expect(JSON.parse(fetch.calls[0]!.init!.body!)).toEqual({ password: "a long enough password", device: { id: "Qm3xV8rT2kLp9wYz4nHc1A" } });
+  });
+
+  it("trades a native code with its verifier like a login", async () => {
+    const fetch = fakeFetch({ status: 200, body: SESSION });
+    const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer" }, fetch: fetch.impl });
+    expect(await client.exchangeOAuthCode("c", "v".repeat(43), { id: "Qm3xV8rT2kLp9wYz4nHc1A" })).toEqual({ ok: true, value: SESSION });
+    expect(JSON.parse(fetch.calls[0]!.init!.body!)).toEqual({ code: "c", code_verifier: "v".repeat(43), device: { id: "Qm3xV8rT2kLp9wYz4nHc1A" } });
+  });
+
+  it("reads native Apple's no-account answer with its pending id", async () => {
+    const input = { identityToken: "t", authorizationCode: "c", nonce: "n" };
+    expect(await bearer([{ status: 409, body: { error: "no_account", reason: "no_account", pending: "p", email: "a@b.co" } }]).appleNative(input)).toEqual({
+      ok: true,
+      value: { kind: "noAccount", pending: "p", email: "a@b.co" },
+    });
+    expect(await bearer([{ status: 200, body: SESSION }]).appleNative(input)).toEqual({ ok: true, value: { kind: "signedIn", session: SESSION } });
+    expect(await bearer([{ status: 401, body: { error: "invalid_token" } }]).appleNative(input)).toEqual({
+      ok: false,
+      error: { code: "invalid_token", status: 401 },
     });
   });
 });
