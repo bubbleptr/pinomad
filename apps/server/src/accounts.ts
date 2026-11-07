@@ -290,7 +290,7 @@ export type LoginResult = ({ readonly status: "ok" } & SignedIn) | { readonly st
  * caller can also hear `wrong_password`, or `taken` when another account has
  * the email.
  */
-export type SendCodeResult = "sent" | "limited" | "closed" | "taken" | "wrong_password";
+export type SendCodeResult = "sent" | "limited" | "closed" | "taken" | "wrong_password" | "invalid_reauth";
 
 /**
  * The second check before an action on the account (ADR-0044 §6): the
@@ -408,7 +408,7 @@ export type ResetPasswordResult =
 
 export type SetEmailResult =
   | { readonly status: "ok"; readonly user: AccountUser }
-  | { readonly status: "refused"; readonly reason: "email_unavailable" | "wrong_password" | "invalid_code" | "email_taken" }
+  | { readonly status: "refused"; readonly reason: "email_unavailable" | ConfirmationFailure | "invalid_code" | "email_taken" }
   | { readonly status: "limited" };
 
 export type StartHostLinkResult =
@@ -563,29 +563,19 @@ export interface Accounts {
     readonly password: string;
     readonly ip: string;
   }): Promise<ResetPasswordResult>;
-  /** Mails a code to an email the signed-in account wants as its own (ADR-0044 §8). */
   /**
-   * Checks the current password like a password change, since the new
-   * address could then reset it: a stolen session alone can't take the
-   * account over.
+   * Mails a code to an email the signed-in account wants as its own (ADR-0044
+   * §8), after the confirmation — the password like a password change, or a
+   * re-auth grant for an account without one — since the new address could
+   * then reset the password: a stolen session alone can't take the account over.
    */
-  requestEmailCode(args: {
-    readonly userId: number;
-    readonly password: string;
-    readonly email: string;
-    readonly ip: string;
-  }): Promise<SendCodeResult>;
+  requestEmailCode(args: { readonly userId: number; readonly email: string; readonly ip: string } & Confirmation): Promise<SendCodeResult>;
   /**
-   * Spends that code after checking the password again: the email becomes
-   * the account's, verified, and an address it replaces is told. A wrong
-   * code or password counts toward the account's lockout.
+   * Spends that code after the confirmation again: the email becomes the
+   * account's, verified, and an address it replaces is told. A wrong code or
+   * password counts toward the account's lockout.
    */
-  setEmail(args: {
-    readonly userId: number;
-    readonly password: string;
-    readonly email: string;
-    readonly code: string;
-  }): Promise<SetEmailResult>;
+  setEmail(args: { readonly userId: number; readonly email: string; readonly code: string } & Confirmation): Promise<SetEmailResult>;
   /**
    * Resolves a session token to its user and account device, or undefined
    * when unknown/expired. `deviceId` is absent only for sessions written
@@ -1839,6 +1829,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
   const noticeNewMethod = (email: string, provider: OAuthProvider): void => {
     const name = PROVIDER_NAMES[provider];
     deliver(
+      "new_sign_in_method",
       email,
       `A new sign-in method was added: ${name}`,
       `${name} can now sign in to your PiNomad account, because it confirmed this email address.\n\n` +
@@ -2054,10 +2045,11 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       }
     },
 
-    async requestEmailCode({ userId, password, email, ip }) {
+    async requestEmailCode(args) {
+      const { userId, email, ip } = args;
       if (mailer === undefined) return "closed";
-      const checked = await checkPassword(userId, password);
-      if (checked === "limited" || checked === "wrong_password") return checked;
+      const checked = await confirmAccount(userId, args);
+      if (typeof checked === "string") return checked;
       const owner = emailOwner(email);
       if (owner !== undefined && owner !== userId) return "taken";
       if (!codeAllowed(ip, email)) return "limited";
@@ -2072,21 +2064,23 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       return "sent";
     },
 
-    async setEmail({ userId, password, email, code }) {
+    async setEmail(args) {
+      const { userId, email, code } = args;
       if (mailer === undefined) return { status: "refused", reason: "email_unavailable" };
-      const checked = await checkPassword(userId, password);
+      const checked = await confirmAccount(userId, args);
       if (checked === "limited") return { status: "limited" };
-      if (checked === "wrong_password") return { status: "refused", reason: "wrong_password" };
+      if (typeof checked === "string") return { status: "refused", reason: checked };
       const lockKey = accountLockKey(userId);
       let previous: string | null | undefined;
       db.exec("BEGIN IMMEDIATE");
       try {
         // As for a password change: a reset while scrypt ran voids the
-        // password typed here.
+        // password typed here, and a grant dies with its session.
         const user = userById(userId);
-        if (user === undefined || user.passwordHash !== checked.verifiedHash) {
+        const stale = user === undefined ? "wrong_password" : stillConfirmed(userId, checked);
+        if (user === undefined || stale !== undefined) {
           db.exec("ROLLBACK");
-          return { status: "refused", reason: "wrong_password" };
+          return { status: "refused", reason: stale ?? "wrong_password" };
         }
         const owner = emailOwner(email);
         if (owner !== undefined && owner !== userId) {
@@ -2233,6 +2227,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       if (!codeAllowed(ip, email)) return "limited";
       const code = issueCode("reauth", email, userId);
       deliver(
+        "reauth",
         email,
         `${code} is your PiNomad confirmation code`,
         `Your code to confirm a change to your PiNomad account is ${code}. It expires in 10 minutes.\n\n` +

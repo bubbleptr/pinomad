@@ -350,6 +350,17 @@ describe("email accounts (ADR-0044)", () => {
     expect(JSON.parse(fetch.calls[1]!.init!.body!)).toEqual({ email: "a@b.co", code: "123456", password: "pw" });
   });
 
+  it("changes the email with a re-auth grant instead of a password", async () => {
+    const fetch = fakeFetch({ status: 202 }, { status: 200, body: { user: { username: "a@b.co", email: "a@b.co" } } });
+    const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer", token: "t" }, fetch: fetch.impl });
+    await client.requestEmailCode({ email: "a@b.co", reauth: "g" });
+    await client.setEmail({ email: "a@b.co", code: "123456", reauth: "g" });
+    expect(fetch.calls.map((call) => JSON.parse(call.init!.body!))).toEqual([
+      { email: "a@b.co", reauth: "g" },
+      { email: "a@b.co", code: "123456", reauth: "g" },
+    ]);
+  });
+
   it("carries needsEmail and the email from login and /api/me only when the server says so", async () => {
     const legacy = await bearer([{ status: 200, body: { user: { username: "kieran" }, needsEmail: true, expiresAt: 1, token: "t" } }]).login(
       "kieran",

@@ -251,6 +251,12 @@ export type AccountConfirmation = string | { readonly reauth: string };
 const confirmationBody = (confirmation: AccountConfirmation): { password: string } | { reauth: string } =>
   typeof confirmation === "string" ? { password: confirmation } : { reauth: confirmation.reauth };
 
+/** The password or a re-auth grant, as the email routes take them by name. */
+export type EmailConfirmation = { readonly password: string } | { readonly reauth: string };
+
+const emailConfirmationBody = (input: EmailConfirmation): { password: string } | { reauth: string } =>
+  "reauth" in input ? { reauth: input.reauth } : { password: input.password };
+
 /** A sign-in provider bound to the account (GET /api/me/identities). */
 export interface AccountIdentity {
   /** "google", "github" or "apple". */
@@ -394,12 +400,13 @@ export interface AccountClient {
   resetPassword(input: { readonly email: string; readonly code: string; readonly password: string }): Promise<AccountResult<void>>;
   /**
    * Mails a code to an email the signed-in account wants to use, after the
-   * current password: 403 `wrong_password` is a refusal, not a sign-out;
-   * 409 `email_taken` when another account has the email.
+   * current password or, for an account without one, a re-auth grant: 403
+   * `wrong_password` or `invalid_reauth` is a refusal, not a sign-out; 409
+   * `email_taken` when another account has the email.
    */
-  requestEmailCode(input: { readonly email: string; readonly password: string }): Promise<AccountResult<void>>;
-  /** Makes the mailed-to email the account's verified email; the password again, as for the code. */
-  setEmail(input: { readonly email: string; readonly code: string; readonly password: string }): Promise<AccountResult<AccountProfile>>;
+  requestEmailCode(input: { readonly email: string } & EmailConfirmation): Promise<AccountResult<void>>;
+  /** Makes the mailed-to email the account's verified email; confirmed again, as for the code. */
+  setEmail(input: { readonly email: string; readonly code: string } & EmailConfirmation): Promise<AccountResult<AccountProfile>>;
   me(): Promise<AccountResult<AccountProfile>>;
   /**
    * Ends this session. `revoke` also has the server ask every host this
@@ -694,12 +701,12 @@ export function createAccountClient(options: {
       const result = await request("/api/password/reset", "POST", { email, code, password });
       return result.ok ? ok(undefined) : result;
     },
-    requestEmailCode: async ({ email, password }) => {
-      const result = await request("/api/me/email/code", "POST", { email, password });
+    requestEmailCode: async (input) => {
+      const result = await request("/api/me/email/code", "POST", { email: input.email, ...emailConfirmationBody(input) });
       return result.ok ? ok(undefined) : result;
     },
-    setEmail: async ({ email, code, password }) => {
-      const result = await request("/api/me/email", "POST", { email, code, password });
+    setEmail: async (input) => {
+      const result = await request("/api/me/email", "POST", { email: input.email, code: input.code, ...emailConfirmationBody(input) });
       if (!result.ok) return result;
       const value = userBody(result.value);
       return value === undefined ? fail("invalid_response") : ok(value);

@@ -593,6 +593,27 @@ describe("re-auth without a password", () => {
     expect((await post(started.relay, "/api/login", { username: "ada@example.com", password: "a fresh long password" })).status).toBe(200);
   });
 
+  it("changes the email of an account without a password with a grant", async () => {
+    const started = await startServer();
+    const { a, b } = await twoDevices(started);
+    const reauth = (await grantByCode(started, a)).json.reauth as string;
+    const next = "ada.next@example.net";
+
+    // A grant from another session buys neither the code nor the change.
+    for (const path of ["/api/me/email/code", "/api/me/email"]) {
+      const refused = await post(started.relay, path, { email: next, code: "000000", reauth }, b);
+      expect([refused.status, refused.json.error]).toEqual([403, "invalid_reauth"]);
+    }
+    expect(started.mail.sent.some((mail) => mail.to === next)).toBe(false);
+
+    expect((await post(started.relay, "/api/me/email/code", { email: next, reauth }, a)).status).toBe(202);
+    const changed = await post(started.relay, "/api/me/email", { email: next, code: started.mail.codeFor(next), reauth }, a);
+    expect(changed.status).toBe(200);
+    expect((await api(started.relay, { path: "/api/me", headers: a })).json.user).toEqual({ username: next, email: next });
+    // Neither works with no confirmation at all.
+    expect((await post(started.relay, "/api/me/email/code", { email: "x@example.net" }, a)).status).toBe(400);
+  });
+
   it("ties a grant to the session that got it", async () => {
     const started = await startServer();
     const { a, b } = await twoDevices(started);
