@@ -528,7 +528,7 @@ private struct HostRouteList: View {
                 .foregroundStyle(.secondary)
         } else {
             VStack(alignment: .leading, spacing: 2) {
-                ForEach(routes, id: \.url) { route in
+                ForEach(routes) { route in
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(route.label)
                             .foregroundStyle(.secondary)

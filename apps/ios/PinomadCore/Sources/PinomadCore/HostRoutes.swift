@@ -4,8 +4,11 @@ import Foundation
 /// One way this device can reach a paired machine (#502): one of the ordered
 /// candidates a connection round dials (ADR-0032), described for
 /// Settings → Hosts. Mirrors the Web's `host-routes.ts`.
-public struct HostRoute: Equatable, Sendable {
+public struct HostRoute: Equatable, Sendable, Identifiable {
     public let url: String
+    /// The url's exact UTF-16 code units: canonically equivalent urls are
+    /// distinct routes, as in the stored set and the core's planner.
+    public var id: [UInt16] { ExactURL(url).units }
     /// Which network or server carries it: "Account relay", "Tailnet", "LAN"…
     public let label: String
     /// `host[:port]`, without the scheme or path.
@@ -22,9 +25,9 @@ private enum CandidateRole { case loopback, relay, direct, legacy }
 /// legacy url is the only remote candidate.
 private func candidatePlan(_ host: HostRecord) -> [(url: String, role: CandidateRole)] {
     var candidates: [(url: String, role: CandidateRole)] = []
-    var seen = Set<String>()
+    var seen = Set<ExactURL>()
     func add(_ url: String, _ role: CandidateRole) {
-        guard seen.insert(url).inserted else { return }
+        guard seen.insert(ExactURL(url)).inserted else { return }
         candidates.append((url, role))
     }
     let legacyIsLoopback = hostnameOf(host.url).map(isLoopbackHostname) ?? false
@@ -73,10 +76,47 @@ private func label(_ url: String, _ role: CandidateRole, accountHostname: String
     }
 }
 
-/// The lowercased hostname without IPv6 brackets.
+/// The lowercased hostname without IPv6 brackets, an IPv4 host in the
+/// dotted quad the WHATWG parser gives it (`127.1` is `127.0.0.1`), as the
+/// core's `url` crate and the Web's `URL` read it.
 private func hostnameOf(_ url: String) -> String? {
     guard let host = URLComponents(string: url)?.host, !host.isEmpty else { return nil }
-    return host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+    let hostname = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+    return whatwgIPv4(hostname) ?? hostname
+}
+
+/// The WHATWG IPv4 parser: one to four dot-separated parts in decimal, octal
+/// (leading 0) or hex (0x), the last filling the remaining bytes. Nil when
+/// the host is not an IPv4 address.
+func whatwgIPv4(_ host: String) -> String? {
+    var parts = host.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
+    if parts.count > 1, parts.last == "" { parts.removeLast() }
+    guard (1...4).contains(parts.count) else { return nil }
+    var numbers: [UInt64] = []
+    for part in parts {
+        var digits = Substring(part)
+        var radix = 10
+        if digits.count >= 2, digits.hasPrefix("0x") || digits.hasPrefix("0X") {
+            digits = digits.dropFirst(2)
+            radix = 16
+        } else if digits.count >= 2, digits.hasPrefix("0") {
+            digits = digits.dropFirst()
+            radix = 8
+        }
+        if digits.isEmpty {
+            // "0x" alone is zero; an empty part is not a number.
+            guard radix == 16 else { return nil }
+            numbers.append(0)
+            continue
+        }
+        guard digits.count <= 20, let value = UInt64(digits, radix: radix) else { return nil }
+        numbers.append(value)
+    }
+    let last = numbers.removeLast()
+    guard numbers.allSatisfy({ $0 <= 255 }), last < UInt64(1) << (8 * (4 - numbers.count)) else { return nil }
+    var address = last
+    for (index, number) in numbers.enumerated() { address += number << (8 * (3 - index)) }
+    return (0..<4).map { String((address >> (8 * (3 - $0))) & 0xff) }.joined(separator: ".")
 }
 
 /// `host[:port]` as the Web's `URL.host` prints it: IPv6 in brackets, the
@@ -93,11 +133,17 @@ private func addressOf(_ url: String) -> String {
     return "\(host):\(port)"
 }
 
-/// `isLoopbackHostname` in `endpoints.ts`.
+/// `is_loopback_hostname` in the core's `remote_candidates.rs`, over a
+/// hostname `hostnameOf` has already normalised.
 func isLoopbackHostname(_ hostname: String) -> Bool {
     var host = hostname.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
     if host.hasSuffix(".") { host.removeLast() }
-    if host == "localhost" || host.hasSuffix(".localhost") || host == "::1" { return true }
+    if host == "localhost" || host.hasSuffix(".localhost") { return true }
+    var v6 = in6_addr()
+    if inet_pton(AF_INET6, host, &v6) == 1 {
+        let bytes = withUnsafeBytes(of: &v6) { Array($0) }
+        return bytes.prefix(15).allSatisfy { $0 == 0 } && bytes[15] == 1
+    }
     let parts = host.split(separator: ".", omittingEmptySubsequences: false)
     return parts.count == 4 && parts[0] == "127"
         && parts.dropFirst().allSatisfy { (1...3).contains($0.count) && $0.allSatisfy(\.isASCIIDigit) }

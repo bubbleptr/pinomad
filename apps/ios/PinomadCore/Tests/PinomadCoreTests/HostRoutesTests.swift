@@ -86,4 +86,35 @@ import Testing
         #expect(hostRoutes(host(mode: .directOnly)).map(\.isOn) == [false])
         #expect(hostRoutes(host(mode: .relayOnly)).map(\.isOn) == [true])
     }
+
+    /// Route identity is exact UTF-16, as the stored set and the core's
+    /// planner keep it: canonically equivalent urls are two routes.
+    @Test func keepsCanonicallyEquivalentUrlsApart() {
+        let composed = "wss://relay.example.com/caf\u{00E9}"
+        let decomposed = "wss://relay.example.com/cafe\u{0301}"
+        let routes = hostRoutes(host([
+            StoredEndpoint(role: .relay, url: composed),
+            StoredEndpoint(role: .direct, url: decomposed),
+        ]))
+        #expect(routes.count == 2)
+        #expect(Set(routes.map(\.id)).count == 2)
+        #expect(routes.map { Array($0.url.utf16) } == [Array(composed.utf16), Array(decomposed.utf16)])
+    }
+
+    /// Loopback follows the WHATWG host parser the core uses: `127.1` is
+    /// 127.0.0.1, so it stays on in Direct only.
+    @Test func readsShorthandIpv4AsLoopback() {
+        let withSet = hostRoutes(host(url: "ws://127.1:7431", [Self.relay], mode: .directOnly))
+        #expect(withSet.map(\.label) == ["Local", "Relay"])
+        #expect(withSet.map(\.isOn) == [true, false])
+        #expect(withSet.first?.address == "127.0.0.1:7431")
+
+        let legacy = hostRoutes(host(url: "ws://127.1:7431", mode: .directOnly))
+        #expect(pairs(legacy) == [["Local", "127.0.0.1:7431"]])
+        #expect(legacy.map(\.isOn) == [true])
+
+        #expect(hostRoutes(host(url: "ws://0x7f.0.0.1:7431")).map(\.label) == ["Local"])
+        #expect(hostRoutes(host(url: "ws://2130706433:7431")).map(\.label) == ["Local"])
+        #expect(hostRoutes(host(url: "ws://[0:0::1]:7431")).map(\.label) == ["Local"])
+    }
 }

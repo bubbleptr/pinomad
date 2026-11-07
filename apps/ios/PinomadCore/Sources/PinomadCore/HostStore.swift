@@ -93,6 +93,16 @@ public struct StoredEndpoint: Codable, Sendable, Equatable {
 /// The host's remote candidates as the keychain keeps them. Kept separate
 /// from the generated FFI record so a malformed/future set can fail on its
 /// own without taking the host or the rest of `StoredHosts` with it.
+/// Protocol identity is exact UTF-16 code units, not Swift's canonical
+/// String equivalence (composed and decomposed URLs are distinct).
+struct ExactURL: Hashable {
+    let units: [UInt16]
+
+    init(_ url: String) {
+        units = Array(url.utf16)
+    }
+}
+
 public struct StoredEndpointSet: Codable, Sendable, Equatable {
     public var schemaVersion: Int
     public var endpoints: [StoredEndpoint]
@@ -103,16 +113,6 @@ public struct StoredEndpointSet: Codable, Sendable, Equatable {
 
     private enum EndpointKeys: String, CodingKey {
         case transport, role, url
-    }
-
-    /// Protocol identity is exact UTF-16 code units, not Swift's canonical
-    /// String equivalence (composed and decomposed URLs are distinct).
-    private struct ExactURL: Hashable {
-        let units: [UInt16]
-
-        init(_ url: String) {
-            units = Array(url.utf16)
-        }
     }
 
     public init(schemaVersion: Int = 1, endpoints: [StoredEndpoint] = []) {
