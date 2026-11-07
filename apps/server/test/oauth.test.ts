@@ -353,9 +353,15 @@ describe("native clients trade a one-time code with their PKCE verifier", () => 
     const query = new URLSearchParams({ client: "native", redirect_uri: redirectUri, code_challenge: challenge, state: "client-state" });
     const start = await api(started.relay, { path: `/api/oauth/google/start?${query}` });
     expect(start.status).toBe(302);
-    expect(setCookie(start, "pinomad_oauth")).toBeUndefined();
+    const binding = setCookie(start, "pinomad_oauth");
+    expect(binding).toBeDefined();
     const { code, state } = started.idp.authorize("google", location(start), { ...IDENTITY.google, email: OWNER });
-    const back = await callback(started, "google", { code, state });
+    // Another browser can't finish it; the app's own can, once.
+    const elsewhere = await callback(started, "google", { code, state });
+    expect(new URL(location(elsewhere)).searchParams.get("error")).toBe("invalid_state");
+    const restart = await api(started.relay, { path: `/api/oauth/google/start?${query}` });
+    const again = started.idp.authorize("google", location(restart), { ...IDENTITY.google, email: OWNER });
+    const back = await callback(started, "google", { code: again.code, state: again.state }, setCookie(restart, "pinomad_oauth"));
     expect(back.status).toBe(302);
     return new URL(location(back));
   }
@@ -398,6 +404,71 @@ describe("native clients trade a one-time code with their PKCE verifier", () => 
     const started = await startServer();
     const query = new URLSearchParams({ client: "native", redirect_uri: redirectUri, code_challenge: challenge, state: "s" });
     expect((await api(started.relay, { path: `/api/oauth/google/start?${query}` })).status).toBe(400);
+  });
+});
+
+describe("a pending sign-in can't be finished by someone it was sent to", () => {
+  const verifier = "v".repeat(43);
+  const challenge = createHash("sha256").update(verifier).digest("base64url");
+  const STRANGER = { sub: "g-attacker", email: "mallory@example.net" };
+
+  /** A native app's sign-in that found no account, run in the app's browser; the pending id and that browser's binding. */
+  async function nativePending(started: Started): Promise<{ readonly id: string; readonly binding: string | undefined }> {
+    const query = new URLSearchParams({ client: "native", redirect_uri: "pinomad://auth", code_challenge: challenge, state: "s" });
+    const start = await api(started.relay, { path: `/api/oauth/google/start?${query}` });
+    const binding = setCookie(start, "pinomad_oauth");
+    const { code, state } = started.idp.authorize("google", location(start), STRANGER);
+    const back = await callback(started, "google", { code, state }, binding);
+    return { id: webLanding(back).get("oauth_pending")!, binding };
+  }
+
+  /** The owner, signed in on the web with a cookie. */
+  const ownerOnWeb = async (started: Started): Promise<Record<string, string>> => {
+    const login = await post(started.relay, "/api/login", { username: OWNER, password: PASSWORD }, { origin: ORIGIN });
+    return { cookie: `${SESSION_COOKIE}=${setCookie(login, SESSION_COOKIE)!}`, origin: ORIGIN };
+  };
+
+  it("keeps a native app's pending sign-in to the browser it ran in", async () => {
+    const started = await startServer();
+    const { id } = await nativePending(started);
+    const victim = await ownerOnWeb(started);
+    expect((await api(started.relay, { path: `/api/oauth/pending/${id}`, headers: victim })).status).toBe(404);
+    expect((await post(started.relay, `/api/oauth/pending/${id}/link`, {}, victim)).status).toBe(404);
+    expect((await post(started.relay, `/api/oauth/pending/${id}/create`, {}, { origin: ORIGIN })).status).toBe(404);
+    expect((await post(started.relay, `/api/oauth/pending/${id}/create`, {})).status).toBe(404);
+    // The stranger's identity reached no account.
+    const identities = await api(started.relay, { path: "/api/me/identities", headers: victim });
+    expect(identities.json.identities).toEqual([]);
+  });
+
+  it("finishes a native app's pending sign-in in its own browser, at the app's redirect", async () => {
+    const started = await startServer();
+    const { id, binding } = await nativePending(started);
+    expect(binding).toBeDefined();
+    const created = await post(started.relay, `/api/oauth/pending/${id}/create`, {}, { origin: ORIGIN, cookie: `pinomad_oauth=${binding!}` });
+    expect(created.status).toBe(200);
+    const back = new URL(created.json.redirect as string);
+    expect(back.protocol).toBe("pinomad:");
+    const session = await post(started.relay, "/api/oauth/token", { code: back.searchParams.get("code"), code_verifier: verifier });
+    expect(session.json.user).toEqual({ username: STRANGER.email, email: STRANGER.email });
+  });
+
+  it("lets only iOS itself finish a native Apple pending sign-in", async () => {
+    const started = await startServer();
+    const pendingId = async (): Promise<string> =>
+      (await post(started.relay, "/api/oauth/apple/native", started.idp.appleNative({ sub: "001.mallory", email: "mallory@example.net" }))).json
+        .pending as string;
+    const victim = await ownerOnWeb(started);
+    const id = await pendingId();
+    expect((await post(started.relay, `/api/oauth/pending/${id}/link`, {}, victim)).status).toBe(404);
+    expect((await post(started.relay, `/api/oauth/pending/${id}/create`, {}, { origin: ORIGIN })).status).toBe(404);
+    expect((await api(started.relay, { path: "/api/me/identities", headers: victim })).json.identities).toEqual([]);
+
+    // The app's own calls: linking with its bearer session, or creating in token mode.
+    const linked = await post(started.relay, `/api/oauth/pending/${id}/link`, {}, bearer(await passwordToken(started)));
+    expect(linked.status).toBe(204);
+    const fresh = await post(started.relay, "/api/oauth/apple/native", started.idp.appleNative({ sub: "001.new", email: "new@example.net" }));
+    expect((await post(started.relay, `/api/oauth/pending/${fresh.json.pending as string}/create`, {})).status).toBe(200);
   });
 });
 

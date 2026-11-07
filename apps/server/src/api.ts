@@ -551,12 +551,14 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
         deny(400, "invalid_request");
         return;
       }
-      const binding = native === undefined ? randomBytes(32).toString("base64url") : undefined;
+      // A native app's flow runs in a browser too (the system browser,
+      // ASWebAuthenticationSession), and is bound to it like a web one.
+      const binding = randomBytes(32).toString("base64url");
       const flow = accounts.startOAuthFlow({
         provider,
         kind: native === undefined ? "web" : "native",
         ip: clientIp(request, ctx.trustProxy),
-        ...(binding === undefined ? {} : { bindingHash: sha256Hex(binding) }),
+        bindingHash: sha256Hex(binding),
         ...(native === undefined ? {} : { native }),
       });
       if (flow.status === "limited") deny(429, "rate_limited");
@@ -568,7 +570,7 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
           codeChallenge: pkceChallenge(flow.verifier),
           redirectUri: callbackUri(provider),
         });
-        redirect(to, binding === undefined ? [] : [setBindingCookie(binding)]);
+        redirect(to, [setBindingCookie(binding)]);
       }
       return;
     }
@@ -583,8 +585,8 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       if (flow.native === undefined) toWebClient("oauth_error", reason);
       else redirect(withParams(flow.native.redirectUri, { error: reason, state: flow.native.state }));
     };
-    // Login CSRF: a web flow only finishes in the browser that started it.
-    if (flow.kind !== "native" && !bound(request, flow.bindingHash)) {
+    // Login CSRF: a flow only finishes in the browser that started it.
+    if (!bound(request, flow.bindingHash)) {
       fail("invalid_state");
       return;
     }
@@ -610,7 +612,9 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       return;
     }
     const completion: PendingCompletion =
-      flow.native === undefined ? { kind: "web", bindingHash: flow.bindingHash! } : { kind: "native", native: flow.native };
+      flow.native === undefined
+        ? { kind: "web", bindingHash: flow.bindingHash! }
+        : { kind: "native", bindingHash: flow.bindingHash!, native: flow.native };
     const resolved = accounts.resolveIdentity(identity, completion);
     if (resolved.status === "refused") {
       fail(resolved.reason);
@@ -618,11 +622,10 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     }
     // The "no account yet" page is the web client's, for native flows too:
     // the person is still in the browser the client opened.
-    // A web flow's binding cookie is renewed for the pending record's ten
-    // minutes, however long the provider's pages took.
+    // The binding cookie is renewed for the pending record's ten minutes,
+    // however long the provider's pages took.
     if (resolved.status === "pending") {
-      const binding = flow.native === undefined ? cookie(request, BINDING_COOKIE) : undefined;
-      toWebClient("oauth_pending", resolved.id, binding === undefined ? [] : [setBindingCookie(binding)]);
+      toWebClient("oauth_pending", resolved.id, [setBindingCookie(cookie(request, BINDING_COOKIE)!)]);
       return;
     }
     if (flow.native !== undefined) {
@@ -711,10 +714,21 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       deny(405, "method_not_allowed", { allow: expected });
       return;
     }
-    /** The pending sign-in, when this caller may see it: a web one only in its own browser. */
+    /**
+     * The pending sign-in, when this caller may act on it. One from a browser
+     * flow only in that browser. One from iOS's own Apple sign-in has no
+     * browser, so its id is the app's bearer secret: only the app's own
+     * calls may use it — token mode to read or create, a Bearer session to
+     * link — never a cookie session or the web origin, which a link someone
+     * was sent could drive (the stranger's identity on their account).
+     */
     const visible = () => {
       const pending = accounts.pendingSignIn(id);
-      return pending === undefined || (pending.completion.kind === "web" && !bound(request, pending.completion.bindingHash)) ? undefined : pending;
+      if (pending === undefined) return undefined;
+      const { completion } = pending;
+      if (completion.kind !== "direct") return bound(request, completion.bindingHash) ? pending : undefined;
+      const tokenMode = (origin === undefined || origin === DESKTOP_ORIGIN) && cookie(request, SESSION_COOKIE) === undefined;
+      return (action === "link" ? bearer : tokenMode) ? pending : undefined;
     };
     if (action === undefined) {
       const pending = visible();

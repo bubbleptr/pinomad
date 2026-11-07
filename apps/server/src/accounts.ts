@@ -329,9 +329,10 @@ export interface NativeRedirect {
 }
 
 /**
- * A provider sign-in in flight. `web` is bound to the browser that started
- * it by a cookie whose hash is `bindingHash`, `native` by the client's PKCE,
- * and `link` adds the identity to a signed-in account, bound like `web`.
+ * A provider sign-in in flight, bound to the browser that started it by a
+ * cookie whose hash is `bindingHash`. `native` runs in a browser the app
+ * opened and ends in the app's PKCE exchange; `link` adds the identity to a
+ * signed-in account.
  */
 export interface OAuthFlow {
   readonly provider: OAuthProvider;
@@ -348,11 +349,13 @@ export interface OAuthFlow {
  * How a provider sign-in that found no account finishes once the person
  * chooses: in the browser that started it (`web`), by a code sent to a
  * native client's redirect (`native`), or in the answer to iOS's own call
- * (`direct`, native Sign in with Apple).
+ * (`direct`, native Sign in with Apple). Both browser kinds stay bound to
+ * that browser's cookie: a pending id alone must never let someone else
+ * finish the sign-in, or link the identity to their own account.
  */
 export type PendingCompletion =
   | { readonly kind: "web"; readonly bindingHash: string }
-  | { readonly kind: "native"; readonly native: NativeRedirect }
+  | { readonly kind: "native"; readonly bindingHash: string; readonly native: NativeRedirect }
   | { readonly kind: "direct" };
 
 /** A provider sign-in that found no account (ADR-0044 §4, step 3). */
@@ -1872,7 +1875,11 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
     row.kind === "web"
       ? { kind: "web", bindingHash: row.bindingHash ?? "" }
       : row.kind === "native"
-        ? { kind: "native", native: { redirectUri: row.redirectUri ?? "", codeChallenge: row.codeChallenge ?? "", state: row.clientState ?? "" } }
+        ? {
+            kind: "native",
+            bindingHash: row.bindingHash ?? "",
+            native: { redirectUri: row.redirectUri ?? "", codeChallenge: row.codeChallenge ?? "", state: row.clientState ?? "" },
+          }
         : { kind: "direct" };
 
   const identityOf = (row: PendingRow): ProviderIdentity => ({
@@ -2371,7 +2378,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
           identity.refreshToken ?? null,
           identity.refreshClientId ?? null,
           completion.kind,
-          completion.kind === "web" ? completion.bindingHash : null,
+          completion.kind === "direct" ? null : completion.bindingHash,
           completion.kind === "native" ? completion.native.redirectUri : null,
           completion.kind === "native" ? completion.native.codeChallenge : null,
           completion.kind === "native" ? completion.native.state : null,
