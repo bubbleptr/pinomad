@@ -18,7 +18,7 @@ import {
   type HostToRelay,
   type RelayToHost,
 } from "@pinomad/protocol/relay.ts";
-import { openAccounts, type Accounts, type LoginLimits } from "../src/accounts.ts";
+import { addUser, openAccounts, type Accounts, type LoginLimits } from "../src/accounts.ts";
 import { startRelay, type Relay } from "../src/relay.ts";
 import { downgradeToSchema3, downgradeToSchema4, removeTempDir, tempDir } from "./support.ts";
 
@@ -113,17 +113,12 @@ async function login(
   return (response.json as { token: string }).token;
 }
 
-/** Signs "bob" up through an admin invite; resolves to bob's bearer token. */
-async function signUpBob(relay: Relay, device?: { readonly id: string; readonly name?: string }): Promise<string> {
-  const admin = await login(relay);
-  const invite = ((await api(relay, { method: "POST", path: "/api/invites", headers: bearer(admin) })).json as { code: string }).code;
-  const response = await api(relay, {
-    method: "POST",
-    path: "/api/register",
-    body: { invite, username: "bob", password: GOOD_PASSWORD, ...(device === undefined ? {} : { device }) },
-  });
-  if (response.status !== 200) throw new Error(`sign-up failed: ${response.status}`);
-  return (response.json as { token: string }).token;
+const BOB = "bob@example.com";
+
+/** Adds bob's account as the operator would and signs it in on `device`; resolves to bob's bearer token. */
+async function signUpBob(started: Started, device?: { readonly id: string; readonly name?: string }): Promise<string> {
+  await addUser({ dataDir: started.dataDir, email: BOB, password: GOOD_PASSWORD });
+  return login(started.relay, device, BOB);
 }
 
 interface DeviceView {
@@ -288,9 +283,10 @@ describe("account devices at sign-in", () => {
     expect(await devices(relay, kept)).toHaveLength(2);
   });
 
-  it("records the device a sign-up arrives on", async () => {
-    const { relay } = await startServer();
-    const bob = await signUpBob(relay, { id: PHONE, name: "Bob's phone" });
+  it("records the device a new account first signs in on", async () => {
+    const started = await startServer();
+    const { relay } = started;
+    const bob = await signUpBob(started, { id: PHONE, name: "Bob's phone" });
     const list = await devices(relay, bob);
     expect(list).toHaveLength(1);
     expect(list[0]).toMatchObject({ name: "Bob's phone", current: true });
@@ -321,9 +317,10 @@ describe("account devices at sign-in", () => {
   });
 
   it("lists only the caller's account", async () => {
-    const { relay } = await startServer();
+    const started = await startServer();
+    const { relay } = started;
     await login(relay, { id: PHONE, name: "Admin phone" });
-    const bob = await signUpBob(relay, { id: PHONE, name: "Bob's phone" });
+    const bob = await signUpBob(started, { id: PHONE, name: "Bob's phone" });
     expect((await devices(relay, bob)).map((device) => device.name)).toEqual(["Bob's phone"]);
     expect((await api(relay, { path: "/api/devices" })).status).toBe(401);
     expect((await api(relay, { method: "POST", path: "/api/devices", headers: bearer(bob) })).status).toBe(405);
@@ -563,7 +560,7 @@ describe("kicking a device (ADR-0037 §3)", () => {
     expect(response.status).toBe(409);
     expect(response.json).toEqual({ error: "current_device" });
 
-    const bob = await signUpBob(started.relay, { id: PHONE, name: "Bob's phone" });
+    const bob = await signUpBob(started, { id: PHONE, name: "Bob's phone" });
     const bobsPhone = (await devices(started.relay, bob))[0]!.id;
     expect((await kick(started.relay, laptop, bobsPhone)).status).toBe(404);
     expect((await kick(started.relay, laptop, 99_999)).status).toBe(404);
@@ -766,10 +763,11 @@ describe("account device records follow their account and hosts", () => {
 
   it("deletes devices, vouchings and pending revocations with the account", async () => {
     const started = await startServer();
-    const bob = await signUpBob(started.relay, { id: LAPTOP, name: "Laptop" });
+    await login(started.relay);
+    const bob = await signUpBob(started, { id: LAPTOP, name: "Laptop" });
     const keys = bindHost(started.accounts, 2);
     const socket = await control(started.relay, keys);
-    const phone = await login(started.relay, { id: PHONE }, "bob");
+    const phone = await login(started.relay, { id: PHONE }, BOB);
     const requestId = await vouch(started.relay, { keys, socket }, phone);
     send(socket, { t: "device-admitted", requestId, publicKey: DEVICE_KEY });
     const phoneId = (await devices(started.relay, bob)).find((device) => !device.current)!.id;
@@ -781,7 +779,7 @@ describe("account device records follow their account and hosts", () => {
 
     expect((await api(started.relay, { method: "POST", path: "/api/me/delete", headers: bearer(bob), body: { password: GOOD_PASSWORD } })).status).toBe(204);
     for (const table of ["vouchings", "pending_revocations"]) expect(count(started.accounts, table), table).toBe(0);
-    // Only the admin's own device (from minting bob's invite) remains.
+    // Only the admin's own device remains.
     expect(count(started.accounts, "account_devices")).toBe(1);
   });
 
@@ -800,7 +798,7 @@ describe("account device records follow their account and hosts", () => {
     expect(started.accounts.joinHost({ token: started.accounts.createJoinToken(1).token, hostId, noisePublicKey: NOISE_KEY }).status).toBe("joined");
     expect(await hostState(started.relay, laptop, phoneId)).toBe("revoking");
     // Joining another account drops them.
-    await signUpBob(started.relay);
+    await signUpBob(started);
     expect(started.accounts.joinHost({ token: started.accounts.createJoinToken(2).token, hostId, noisePublicKey: NOISE_KEY }).status).toBe("joined");
     expect(count(started.accounts, "vouchings")).toBe(0);
     expect(count(started.accounts, "pending_revocations")).toBe(0);

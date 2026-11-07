@@ -16,7 +16,7 @@ import {
   signRelayChallenge,
   type RegisterFrame,
 } from "@pinomad/protocol/relay.ts";
-import { openAccounts, resetPassword, type Accounts, type LoginLimits } from "../src/accounts.ts";
+import { addUser, openAccounts, resetPassword, type Accounts, type LoginLimits } from "../src/accounts.ts";
 import { startRelay, type Relay, type RelayOptions } from "../src/relay.ts";
 import { lockDataDir } from "../src/lock.ts";
 import { downgradeToSchema3, removeTempDir, tempDir } from "./support.ts";
@@ -26,6 +26,7 @@ const GOOD_PASSWORD = "correct horse battery";
 const NEW_PASSWORD = "a different long password";
 const DAY = 24 * 60 * 60 * 1000;
 const WRONG = "wrong password here";
+const BOB = "bob@example.com";
 
 const dirs: string[] = [];
 const relays: Relay[] = [];
@@ -636,7 +637,6 @@ describe("changing the password (#450)", () => {
     const token = (await login(relay)).json.token as string;
     const pending = accounts.changePassword({
       userId: 1,
-      username: "admin",
       keepToken: token,
       currentPassword: GOOD_PASSWORD,
       newPassword: NEW_PASSWORD,
@@ -872,228 +872,15 @@ describe("push token registration (ADR-0036)", () => {
   });
 });
 
-describe("invite sign-up (#449)", () => {
-  const bearer = (token: unknown): Record<string, string> => ({ authorization: `Bearer ${token as string}` });
-  const adminToken = async (relay: Relay): Promise<string> => (await login(relay)).json.token as string;
-  const mint = async (relay: Relay, token: string): Promise<string> => {
-    const response = await api(relay, { method: "POST", path: "/api/invites", headers: bearer(token) });
-    expect(response.status).toBe(200);
-    return response.json.code as string;
-  };
-  const signUp = (relay: Relay, body: unknown, headers?: Record<string, string>) =>
-    api(relay, { method: "POST", path: "/api/register", headers, body });
-
-  it("makes the bootstrap account the admin, and only it", async () => {
-    const { relay } = await startServer();
-    const signedIn = await login(relay);
-    expect(signedIn.json.admin).toBe(true);
-    const token = signedIn.json.token as string;
-    expect((await api(relay, { path: "/api/me", headers: bearer(token) })).json).toEqual({
-      user: { username: "admin" },
-      admin: true,
-    });
-    const code = await mint(relay, token);
-    const bob = await signUp(relay, { invite: code, username: "bob", password: GOOD_PASSWORD });
-    expect(bob.json.admin).toBeUndefined();
-    expect((await api(relay, { path: "/api/me", headers: bearer(bob.json.token) })).json).toEqual({ user: { username: "bob" } });
-    expect((await login(relay, "bob")).json.admin).toBeUndefined();
-    // A regular account can neither mint nor see invites.
-    expect((await api(relay, { method: "POST", path: "/api/invites", headers: bearer(bob.json.token) })).status).toBe(403);
-    expect((await api(relay, { path: "/api/invites", headers: bearer(bob.json.token) })).status).toBe(403);
-    expect((await api(relay, { path: "/api/invites" })).status).toBe(401);
-  });
-
-  it("signs a new user up with an invite and signs them in", async () => {
-    const { relay } = await startServer();
-    const code = await mint(relay, await adminToken(relay));
-
-    // Same response styles as login: a same-origin page gets the cookie only…
-    const page = await signUp(relay, { invite: code, username: "bob", password: GOOD_PASSWORD }, { origin: ORIGIN });
-    expect(page.status).toBe(200);
-    expect(page.json).toMatchObject({ user: { username: "bob" } });
-    expect(page.json.token).toBeUndefined();
-    expect((await api(relay, { path: "/api/me", headers: { cookie: sessionCookie(page), origin: ORIGIN } })).status).toBe(200);
-    expect((await login(relay, "bob")).status).toBe(200);
-
-    // …and the desktop renderer gets a bare token.
-    const second = await mint(relay, await adminToken(relay));
-    const desktop = await signUp(relay, { invite: second, username: "carol", password: GOOD_PASSWORD }, { origin: "app://pinomad" });
-    expect(desktop.status).toBe(200);
-    expect(typeof desktop.json.token).toBe("string");
-    expect(desktop.headers["set-cookie"]).toBeUndefined();
-  });
-
-  it("refuses used, unknown, revoked and expired invites", async () => {
-    let clock = 1_000;
-    const { relay } = await startServer({ now: () => clock });
-    const token = await adminToken(relay);
-    const code = await mint(relay, token);
-    expect((await signUp(relay, { invite: code, username: "bob", password: GOOD_PASSWORD })).status).toBe(200);
-    const reused = await signUp(relay, { invite: code, username: "carol", password: GOOD_PASSWORD });
-    expect(reused.status).toBe(403);
-    expect(reused.json.error).toBe("invalid_invite");
-    expect((await signUp(relay, { invite: "made-up", username: "carol", password: GOOD_PASSWORD })).json.error).toBe("invalid_invite");
-
-    const revoked = await mint(relay, token);
-    const listed = (await api(relay, { path: "/api/invites", headers: bearer(token) })).json as unknown as { id: number; usedAt?: number }[];
-    const unused = listed.find((invite) => invite.usedAt === undefined)!;
-    expect((await api(relay, { method: "POST", path: "/api/invites/revoke", headers: bearer(token), body: { id: unused.id } })).status).toBe(204);
-    expect((await signUp(relay, { invite: revoked, username: "carol", password: GOOD_PASSWORD })).json.error).toBe("invalid_invite");
-
-    const late = await mint(relay, token);
-    clock += 7 * DAY;
-    const expired = await signUp(relay, { invite: late, username: "carol", password: GOOD_PASSWORD });
-    expect(expired.status).toBe(403);
-    expect(expired.json.error).toBe("invite_expired");
-  });
-
-  it("lists invites with who used them, and keeps used ones when revoked", async () => {
-    const { relay } = await startServer();
-    const token = await adminToken(relay);
-    const code = await mint(relay, token);
-    await mint(relay, token);
-    await signUp(relay, { invite: code, username: "bob", password: GOOD_PASSWORD });
-    const listed = (await api(relay, { path: "/api/invites", headers: bearer(token) })).json as unknown as Record<string, unknown>[];
-    expect(listed).toHaveLength(2);
-    const used = listed.find((invite) => invite.usedBy === "bob")!;
-    expect(typeof used.usedAt).toBe("number");
-    // The list never carries the code itself — only its hash is stored.
-    expect(JSON.stringify(listed)).not.toContain(code);
-    expect((await api(relay, { method: "POST", path: "/api/invites/revoke", headers: bearer(token), body: { id: used.id } })).status).toBe(404);
-  });
-
-  it("validates the username and password, and leaves the invite unspent on refusal", async () => {
-    const { relay } = await startServer();
-    const code = await mint(relay, await adminToken(relay));
-    for (const [body, error] of [
-      [{ invite: code, username: "Bob", password: GOOD_PASSWORD }, "invalid_username"],
-      [{ invite: code, username: "b", password: GOOD_PASSWORD }, "invalid_username"],
-      [{ invite: code, username: "bob smith", password: GOOD_PASSWORD }, "invalid_username"],
-      [{ invite: code, username: "bob", password: "short" }, "weak_password"],
-      [{ invite: code, username: "admin", password: GOOD_PASSWORD }, "username_taken"],
-      [{ invite: code, username: "bob" }, "invalid_request"],
-    ] as const) {
-      const response = await signUp(relay, body);
-      expect(response.json.error).toBe(error);
-    }
-    expect((await signUp(relay, { invite: code, username: "bob", password: GOOD_PASSWORD })).status).toBe(200);
-  });
-
-  it("treats usernames that differ only in case as taken", async () => {
-    const { relay } = await startServer({ bootstrap: { user: "Kieran", password: GOOD_PASSWORD } });
-    const token = (await login(relay, "Kieran")).json.token as string;
-    const code = await mint(relay, token);
-    const response = await signUp(relay, { invite: code, username: "kieran", password: GOOD_PASSWORD });
-    expect(response.status).toBe(409);
-    expect(response.json.error).toBe("username_taken");
-  });
-
-  it("spends an invite once when two sign-ups race for it", async () => {
-    const { relay } = await startServer();
-    const code = await mint(relay, await adminToken(relay));
-    const results = await Promise.all([
-      signUp(relay, { invite: code, username: "bob", password: GOOD_PASSWORD }),
-      signUp(relay, { invite: code, username: "carol", password: GOOD_PASSWORD }),
-    ]);
-    expect(results.map((result) => result.status).sort()).toEqual([200, 403]);
-  });
-
-  it("shares the per-address limit with login", async () => {
-    const { relay } = await startServer({ limits: { ipMaxAttempts: 2 } });
-    await login(relay, "admin", WRONG);
-    await signUp(relay, { invite: "made-up", username: "bob", password: GOOD_PASSWORD });
-    const limited = await signUp(relay, { invite: "made-up", username: "bob", password: GOOD_PASSWORD });
-    expect(limited.status).toBe(429);
-  });
-
-  it("keeps accounts apart: a new user sees none of another account's hosts", async () => {
-    const { relay, accounts } = await startServer();
-    const hostId = relayHostId(ed25519.keygen().publicKey);
-    const db = new DatabaseSync(accounts.dbPath);
-    db.prepare("INSERT INTO hosts (host_id, user_id, noise_public_key, name, joined_at, last_seen_at) VALUES (?, 1, 'k', 'admin-host', 1, 1)").run(hostId);
-    db.close();
-    const code = await mint(relay, await adminToken(relay));
-    const bob = (await signUp(relay, { invite: code, username: "bob", password: GOOD_PASSWORD })).json.token;
-
-    expect((await api(relay, { path: "/api/hosts", headers: bearer(bob) })).json).toEqual([]);
-    const pairing = await api(relay, { method: "POST", path: `/api/hosts/${hostId}/pairing`, headers: bearer(bob) });
-    expect(pairing.status).toBe(404);
-    expect((await api(relay, { path: "/api/hosts", headers: bearer(await adminToken(relay)) })).json).toHaveLength(1);
-  });
-
-  it("never hands a swept invite's id to a new one, so a stale revoke can't hit it", async () => {
-    let clock = 1_000;
-    const { relay } = await startServer({ now: () => clock });
-    const token = await adminToken(relay);
-    await mint(relay, token);
-    const [old] = (await api(relay, { path: "/api/invites", headers: bearer(token) })).json as unknown as { id: number }[];
-    clock += 8 * DAY;
-    // Minting sweeps the expired invite; the new one must not reuse its id.
-    const fresh = await mint(relay, token);
-    const revoked = await api(relay, { method: "POST", path: "/api/invites/revoke", headers: bearer(token), body: { id: old!.id } });
-    expect(revoked.status).toBe(404);
-    expect((await signUp(relay, { invite: fresh, username: "bob", password: GOOD_PASSWORD })).status).toBe(200);
-  });
-
-  it("does not revoke an invite for a session revoked while its body was still arriving", async () => {
-    const { relay } = await startServer();
-    const token = await adminToken(relay);
-    const code = await mint(relay, token);
-    const [invite] = (await api(relay, { path: "/api/invites", headers: bearer(token) })).json as unknown as { id: number }[];
-    const body = JSON.stringify({ id: invite!.id });
-
-    let resolveStatus: (status: number) => void = () => {};
-    const status = new Promise<number>((resolve) => (resolveStatus = resolve));
-    const slow = httpRequest(
-      {
-        host: "127.0.0.1",
-        port: relay.port,
-        path: "/api/invites/revoke",
-        method: "POST",
-        headers: { authorization: `Bearer ${token}`, "content-length": String(Buffer.byteLength(body)) },
-      },
-      (response) => {
-        response.resume();
-        resolveStatus(response.statusCode ?? 0);
-      },
-    );
-    await new Promise<void>((resolve) => slow.write(body.slice(0, 2), () => resolve()));
-    expect((await api(relay, { method: "POST", path: "/api/sessions/revoke-all", headers: bearer(token) })).status).toBe(204);
-    slow.end(body.slice(2));
-    expect(await status).toBe(401);
-    expect((await signUp(relay, { invite: code, username: "bob", password: GOOD_PASSWORD })).status).toBe(200);
-  });
-
-  it("marks the first user admin when upgrading a schema-2 database", async () => {
-    const first = await startServer();
-    await stop(first);
-    downgradeToSchema3(first.dataDir);
-    const db = new DatabaseSync(join(first.dataDir, "server.sqlite"));
-    db.exec("DROP TABLE invites; ALTER TABLE users DROP COLUMN admin; PRAGMA user_version = 2;");
-    db.close();
-
-    const second = await startServer({ dataDir: first.dataDir, bootstrap: {} });
-    const token = await adminToken(second.relay);
-    expect((await api(second.relay, { path: "/api/me", headers: bearer(token) })).json.admin).toBe(true);
-    await mint(second.relay, token);
-  });
-});
-
 describe("deleting an account (#451)", () => {
   const bearer = (token: unknown): Record<string, string> => ({ authorization: `Bearer ${token as string}` });
   const remove = (relay: Relay, headers: Record<string, string>, body: unknown) =>
     api(relay, { method: "POST", path: "/api/me/delete", headers, body });
 
-  /** Signs up `username` (bob by default) through an admin invite; resolves to its bearer token and the invite code. */
-  async function signUpBob(relay: Relay, username = "bob"): Promise<{ readonly token: string; readonly invite: string }> {
-    const admin = (await login(relay)).json.token as string;
-    const invite = (await api(relay, { method: "POST", path: "/api/invites", headers: bearer(admin) })).json.code as string;
-    const response = await api(relay, {
-      method: "POST",
-      path: "/api/register",
-      body: { invite, username, password: GOOD_PASSWORD },
-    });
-    return { token: response.json.token as string, invite };
+  /** Adds `email` (bob's by default) as the operator would and signs it in; resolves to its bearer token. */
+  async function signUpBob(started: Started, email = BOB): Promise<{ readonly token: string }> {
+    await addUser({ dataDir: started.dataDir, email, password: GOOD_PASSWORD });
+    return { token: (await login(started.relay, email)).json.token as string };
   }
 
   /** A host bound to `userId` whose control connection stays open; `closed` resolves to its close code. */
@@ -1146,8 +933,9 @@ describe("deleting an account (#451)", () => {
   const closeCode = (socket: WebSocket): Promise<number> => once(socket, "close").then(([code]) => code as number);
 
   it("closes the account's splices and forgets its traffic budget, so a new account reusing its id starts fresh", async () => {
-    const { relay, accounts } = await startServer({ relay: { limits: { accountBytesPerSecond: 1, accountBurstBytes: 1000 }, now: () => 0 } });
-    const bob = await signUpBob(relay);
+    const started = await startServer({ relay: { limits: { accountBytesPerSecond: 1, accountBurstBytes: 1000 }, now: () => 0 } });
+    const { relay, accounts } = started;
+    const bob = await signUpBob(started);
     const host = await liveHost(relay, accounts, 2);
     const drained = await splicedDevice(relay, host);
     const survivor = await splicedDevice(relay, host);
@@ -1160,7 +948,7 @@ describe("deleting an account (#451)", () => {
     expect(await survivorClosed).toBe(RELAY_CLOSE.hostNotAllowed);
 
     // users.id has no AUTOINCREMENT: carol gets bob's id back, but not his debt.
-    const carol = await signUpBob(relay, "carol");
+    const carol = await signUpBob(started, "carol@example.com");
     expect(accounts.authenticate(carol.token)?.userId).toBe(2);
     const fresh = await splicedDevice(relay, await liveHost(relay, accounts, 2));
     const forwarded = once(fresh.accept, "message");
@@ -1169,8 +957,9 @@ describe("deleting an account (#451)", () => {
   });
 
   it("deletes the account and everything under it, and disconnects its hosts at once", async () => {
-    const { relay, accounts } = await startServer();
-    const bob = await signUpBob(relay);
+    const started = await startServer();
+    const { relay, accounts } = started;
+    const bob = await signUpBob(started);
     const host = await liveHost(relay, accounts, 2);
     accounts.registerPushToken(2, "aa".repeat(32), "production");
 
@@ -1180,30 +969,24 @@ describe("deleting an account (#451)", () => {
     expect(await host.closed).toBe(RELAY_CLOSE.hostNotAllowed);
     expect(await tryRegister(relay, host.keys)).toBe(RELAY_CLOSE.hostNotAllowed);
     expect((await api(relay, { path: "/api/me", headers: bearer(bob.token) })).status).toBe(401);
-    expect((await login(relay, "bob")).status).toBe(401);
+    expect((await login(relay, BOB)).status).toBe(401);
     expect(accounts.pushTokenOwner("aa".repeat(32), "production")).toBeUndefined();
-    // The invite stays used, with nobody behind it; the name is free again.
-    const invites = (await api(relay, { path: "/api/invites", headers: bearer((await login(relay)).json.token) })).json as unknown as {
-      usedAt?: number;
-      usedBy?: string;
-    }[];
-    expect(invites).toHaveLength(1);
-    expect(invites[0]!.usedAt).toBeTypeOf("number");
-    expect(invites[0]!.usedBy).toBeUndefined();
   });
 
   it("clears the same-origin page's cookie", async () => {
-    const { relay } = await startServer();
-    await signUpBob(relay);
-    const cookie = sessionCookie(await login(relay, "bob", GOOD_PASSWORD, { origin: ORIGIN }));
+    const started = await startServer();
+    const { relay } = started;
+    await signUpBob(started);
+    const cookie = sessionCookie(await login(relay, BOB, GOOD_PASSWORD, { origin: ORIGIN }));
     const response = await remove(relay, { cookie, origin: ORIGIN }, { password: GOOD_PASSWORD });
     expect(response.status).toBe(204);
     expect(String(response.headers["set-cookie"])).toContain("Max-Age=0");
   });
 
   it("refuses a wrong password without deleting anything, under the login lockout", async () => {
-    const { relay } = await startServer({ limits: { userMaxFailures: 2, ipMaxAttempts: 100 } });
-    const bob = await signUpBob(relay);
+    const started = await startServer({ limits: { userMaxFailures: 2, ipMaxAttempts: 100 } });
+    const { relay } = started;
+    const bob = await signUpBob(started);
     for (let i = 0; i < 2; i += 1) {
       const response = await remove(relay, bearer(bob.token), { password: WRONG });
       expect(response.status).toBe(403);
@@ -1214,9 +997,10 @@ describe("deleting an account (#451)", () => {
   });
 
   it("does not delete an account whose password changed while it was being checked", async () => {
-    const { relay, accounts } = await startServer();
-    const bob = await signUpBob(relay);
-    const pending = accounts.deleteAccount({ userId: 2, username: "bob", password: GOOD_PASSWORD });
+    const started = await startServer();
+    const { accounts } = started;
+    const bob = await signUpBob(started);
+    const pending = accounts.deleteAccount({ userId: 2, password: GOOD_PASSWORD });
     const db = new DatabaseSync(accounts.dbPath);
     db.prepare("UPDATE users SET password_hash = 'scrypt$reset-meanwhile' WHERE id = 2").run();
     db.close();
@@ -1224,18 +1008,10 @@ describe("deleting an account (#451)", () => {
     expect(accounts.authenticate(bob.token)).toBeDefined();
   });
 
-  it("keeps the server's admin account, which alone mints invites", async () => {
-    const { relay } = await startServer();
-    const admin = (await login(relay)).json.token as string;
-    const response = await remove(relay, bearer(admin), { password: GOOD_PASSWORD });
-    expect(response.status).toBe(403);
-    expect(response.json.error).toBe("admin_account");
-    expect((await api(relay, { path: "/api/me", headers: bearer(admin) })).status).toBe(200);
-  });
-
   it("refuses malformed bodies and anonymous callers", async () => {
-    const { relay } = await startServer();
-    const bob = await signUpBob(relay);
+    const started = await startServer();
+    const { relay } = started;
+    const bob = await signUpBob(started);
     expect((await remove(relay, bearer(bob.token), {})).status).toBe(400);
     expect((await remove(relay, bearer(bob.token), { password: "x".repeat(2000) })).status).toBe(400);
     expect((await remove(relay, bearer("nope"), { password: GOOD_PASSWORD })).status).toBe(401);

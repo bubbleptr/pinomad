@@ -1,10 +1,11 @@
-// Server accounts (ADR-0022 §2): the server persists users, sessions, join
-// tokens, host-link requests (#495), host bindings, the APNs tokens each account's devices registered
-// (ADR-0036), sign-up invites (#449), and account devices with the keys hosts
-// admitted them under (ADR-0037) in <dataDir>/server.sqlite, guarded
-// by the same one-process-per-directory lock the host uses. Secrets never
-// reach the DB in the clear — passwords are scrypt hashes, session, join and
-// invite tokens are SHA-256, and so are host-link device and user codes.
+// Server accounts (ADR-0022 §2): the server persists users with their
+// verified emails (ADR-0044), sessions, join tokens, host-link requests
+// (#495), host bindings, the APNs tokens each account's devices registered
+// (ADR-0036), mailed codes, and account devices with the keys hosts admitted
+// them under (ADR-0037) in <dataDir>/server.sqlite, guarded by the same
+// one-process-per-directory lock the host uses. Secrets never reach the DB in
+// the clear — passwords are scrypt hashes; session and join tokens, host-link
+// device and user codes, and mailed codes are SHA-256.
 //
 // `node:sqlite` needs Node: the server runs on Node like the host, not Bun.
 
@@ -18,7 +19,7 @@ import { normalizeHostName } from "@pinomad/protocol/settings.ts";
 import { isDataDirInUse, lockDataDir } from "./lock.ts";
 
 const DB_FILE = "server.sqlite";
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 
 // Sessions die 30 days after issue and are never renewed — a stolen token has a
 // hard ceiling, and re-logging-in is the only way forward.
@@ -57,13 +58,32 @@ export function normalizeUserCode(input: string): string | undefined {
 /** How a code is shown: XXXX-XXXX. */
 export const formatUserCode = (code: string): string => `${code.slice(0, 4)}-${code.slice(4)}`;
 
-// Invites go out over chat or mail and wait for the recipient, so they live a
-// week; each one creates at most one account (#449).
-const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+// Mailed codes (ADR-0044 §2): six digits, alive ten minutes, dead after five
+// wrong guesses. Wrong guesses also count toward the login lockout.
+const EMAIL_CODE_TTL_MS = 10 * 60_000;
+const EMAIL_CODE_MAX_ATTEMPTS = 5;
 
-// Signed-up names are lowercase so two accounts can't differ only in case.
-// The bootstrap account predates this rule and keeps whatever it was given.
-const SIGN_UP_USERNAME = /^[a-z0-9][a-z0-9._-]{1,31}$/;
+/** What a mailed code is for; a code only ever answers its own purpose. `reauth` is used by #620. */
+type EmailCodePurpose = "signup" | "reset" | "add_email";
+
+// RFC 5321 caps a path at 256 octets, so an address at 254. Beyond the shape
+// below, the mailed code is what proves an address works.
+const MAX_EMAIL_LENGTH = 254;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** The stored form of an email: trimmed and lowercased; undefined when it can't be one. */
+export function normalizeEmail(raw: string): string | undefined {
+  const email = raw.trim().toLowerCase();
+  return email.length <= MAX_EMAIL_LENGTH && EMAIL_PATTERN.test(email) ? email : undefined;
+}
+
+/**
+ * How the server sends mail (ADR-0044 §2): SMTP in production (mail.ts),
+ * a capturing fake in tests. Plain text only.
+ */
+export interface Mailer {
+  send(to: string, subject: string, text: string): Promise<void>;
+}
 
 // Push registrations (ADR-0036 §2, §5): the app refreshes its token on every
 // connect and foreground, so one untouched for 90 days belongs to a device
@@ -151,7 +171,7 @@ export interface LoginLimits {
   /** Login attempts per source IP per window; default 30 per 5 min. */
   readonly ipMaxAttempts?: number;
   readonly ipWindowMs?: number;
-  /** Failed logins per username before lockout; default 5 per 15 min. */
+  /** Failed logins (and wrong mailed codes) per account before lockout; default 5 per 15 min. */
   readonly userMaxFailures?: number;
   readonly userWindowMs?: number;
   /** Cap on both counter maps — a sprayed key space can't grow them without bound. */
@@ -173,21 +193,64 @@ export interface HostLinkLimits {
   readonly counterMaxEntries?: number;
 }
 
+/** Abuse bounds for mailing codes (ADR-0044 §2); each has a default. */
+export interface CodeLimits {
+  /** Codes one source IP may ask for per window; default 10 per hour. */
+  readonly ipMax?: number;
+  readonly ipWindowMs?: number;
+  /** Codes one email may be sent per window; default 5 per hour. */
+  readonly emailMax?: number;
+  readonly emailWindowMs?: number;
+  /** Codes the whole server sends per day; default 1000. */
+  readonly dailyMax?: number;
+  /** Cap on each counter map. */
+  readonly counterMaxEntries?: number;
+}
+
 export interface AccountsOptions {
   readonly dataDir: string;
-  /** Bootstrap credentials (PINOMAD_SERVER_USER/PASSWORD); required only while the users table is empty. */
+  /**
+   * Bootstrap credentials (PINOMAD_SERVER_USER/PASSWORD); required only while
+   * the users table is empty. A user with an `@` is an email, taken as
+   * verified; anything else is a legacy username (ADR-0044 §8).
+   */
   readonly bootstrapUser?: string;
   readonly bootstrapPassword?: string;
   readonly now?: () => number;
   readonly lockStaleMs?: number;
   readonly limits?: LoginLimits;
   readonly hostLinkLimits?: HostLinkLimits;
+  /** Without one, email sign-up, password reset and adding an email are off (ADR-0044 §2). */
+  readonly mailer?: Mailer;
+  /** PINOMAD_SERVER_REGISTRATION; default "closed" (ADR-0044 §7). */
+  readonly registration?: "open" | "closed";
+  readonly codeLimits?: CodeLimits;
 }
 
-export type LoginResult =
-  | { readonly status: "ok"; readonly token: string; readonly expiresAt: number; readonly admin: boolean }
-  | { readonly status: "invalid" }
-  | { readonly status: "limited" };
+/**
+ * The account as responses show it: `username` is the email, or the legacy
+ * username of an account that has none yet (ADR-0044 §8).
+ */
+export interface AccountUser {
+  readonly username: string;
+  readonly email?: string;
+}
+
+/** A session the account was just signed in with. */
+export interface SignedIn {
+  readonly token: string;
+  readonly expiresAt: number;
+  readonly user: AccountUser;
+}
+
+export type LoginResult = ({ readonly status: "ok" } & SignedIn) | { readonly status: "invalid" } | { readonly status: "limited" };
+
+/**
+ * Asking for a mailed code. `sent` is all an anonymous caller learns, whether
+ * or not a mail went out; `closed` means sign-up or mail is off, `taken` that
+ * another account has the email (only for a signed-in caller).
+ */
+export type SendCodeResult = "sent" | "limited" | "closed" | "taken";
 
 export type ChangePasswordResult =
   | { readonly status: "ok" }
@@ -197,25 +260,23 @@ export type ChangePasswordResult =
 export type DeleteAccountResult =
   /** The account's hosts, whose control connections lost their authorization. */
   | { readonly status: "ok"; readonly hostIds: readonly string[] }
-  | { readonly status: "refused"; readonly reason: "wrong_password" | "admin_account" }
+  | { readonly status: "refused"; readonly reason: "wrong_password" }
   | { readonly status: "limited" };
 
 export type RegisterResult =
-  | { readonly status: "ok"; readonly token: string; readonly expiresAt: number }
-  | {
-      readonly status: "refused";
-      readonly reason: "invalid_invite" | "invite_expired" | "invalid_username" | "weak_password" | "username_taken";
-    }
+  | ({ readonly status: "ok" } & SignedIn)
+  | { readonly status: "refused"; readonly reason: "registration_closed" | "weak_password" | "invalid_code" }
   | { readonly status: "limited" };
 
-/** An invite as the admin lists it; the code itself is never stored. */
-export interface InviteRow {
-  readonly id: number;
-  readonly createdAt: number;
-  readonly expiresAt: number;
-  readonly usedAt?: number;
-  readonly usedBy?: string;
-}
+export type ResetPasswordResult =
+  | { readonly status: "ok" }
+  | { readonly status: "refused"; readonly reason: "email_unavailable" | "weak_password" | "invalid_code" }
+  | { readonly status: "limited" };
+
+export type SetEmailResult =
+  | { readonly status: "ok"; readonly user: AccountUser }
+  | { readonly status: "refused"; readonly reason: "email_unavailable" | "invalid_code" | "email_taken" }
+  | { readonly status: "limited" };
 
 export type StartHostLinkResult =
   | {
@@ -333,23 +394,46 @@ export type AdmissionReportResult = "recorded" | "revoke" | "ignored";
 export interface Accounts {
   /** Server database path — tests write join_tokens rows directly. */
   readonly dbPath: string;
+  /** A mailer is configured: codes can be sent (ADR-0044 §2). */
+  readonly emailEnabled: boolean;
+  /** Email sign-up works: registration is open and codes can be sent. */
+  readonly registrationOpen: boolean;
   /**
-   * Signs in and ties the session to an account device (ADR-0037 §1): the
-   * one `device` names, created or refreshed and un-kicked, or without a
-   * claim a new unnamed one.
+   * Signs in by email (any case) or legacy username and ties the session to
+   * an account device (ADR-0037 §1): the one `device` names, created or
+   * refreshed and un-kicked, or without a claim a new unnamed one.
    */
-  login(username: string, password: string, ip: string, device?: DeviceClaim): Promise<LoginResult>;
+  login(identifier: string, password: string, ip: string, device?: DeviceClaim): Promise<LoginResult>;
   /**
-   * Creates an account from an unspent invite and signs it in (#449). Counts
-   * against the same per-address limit as login.
+   * Mails a sign-up code (ADR-0044 §2), or, when the email already has an
+   * account, a note saying so and no code. The caller can't tell which.
+   */
+  requestSignupCode(args: { readonly email: string; readonly ip: string }): SendCodeResult;
+  /**
+   * Spends a sign-up code to create an account with that verified email and
+   * signs it in. Counts against the same per-address limit as login, and a
+   * wrong code against the same lockout.
    */
   register(args: {
-    readonly invite: string;
-    readonly username: string;
+    readonly email: string;
+    readonly code: string;
     readonly password: string;
     readonly ip: string;
     readonly device?: DeviceClaim;
   }): Promise<RegisterResult>;
+  /** Mails a reset code when the email has an account; the caller can't tell whether it does. */
+  requestPasswordReset(args: { readonly email: string; readonly ip: string }): SendCodeResult;
+  /** Spends a reset code: the new password, and every session and credential of the account ends, as with `passwd`. */
+  resetPasswordWithCode(args: {
+    readonly email: string;
+    readonly code: string;
+    readonly password: string;
+    readonly ip: string;
+  }): Promise<ResetPasswordResult>;
+  /** Mails a code to an email the signed-in account wants as its own (ADR-0044 §8). */
+  requestEmailCode(args: { readonly userId: number; readonly email: string; readonly ip: string }): SendCodeResult;
+  /** Spends that code: the email becomes the account's, verified. A wrong code counts toward the account's lockout. */
+  setEmail(args: { readonly userId: number; readonly email: string; readonly code: string }): SetEmailResult;
   /**
    * Resolves a session token to its user and account device, or undefined
    * when unknown/expired. `deviceId` is absent only for sessions written
@@ -357,12 +441,7 @@ export interface Accounts {
    */
   authenticate(
     token: string,
-  ): { readonly userId: number; readonly username: string; readonly admin: boolean; readonly deviceId?: number } | undefined;
-  /** Mints a single-use sign-up invite; only its SHA-256 is stored. Callers check admin. */
-  createInvite(userId: number): { readonly code: string; readonly expiresAt: number };
-  listInvites(): InviteRow[];
-  /** Deletes an unspent invite; false when it doesn't exist or was already used. */
-  revokeInvite(id: number): boolean;
+  ): { readonly userId: number; readonly user: AccountUser; readonly deviceId?: number } | undefined;
   /**
    * Ends this session. With `revoke` (#494) the session's account device
    * also leaves every host, as a kick would (ADR-0037 §3): no password,
@@ -373,13 +452,12 @@ export interface Accounts {
   revokeAllSessions(userId: number): void;
   /**
    * Self-service password change (#450): checks the current password under
-   * the same username lockout as login, then swaps the hash and signs out
+   * the same account lockout as login, then swaps the hash and signs out
    * every other session, so a leaked password leaves no live credential
    * behind except the caller's.
    */
   changePassword(args: {
     readonly userId: number;
-    readonly username: string;
     /** The caller's session token, which survives the change. */
     readonly keepToken: string;
     readonly currentPassword: string;
@@ -387,12 +465,11 @@ export interface Accounts {
   }): Promise<ChangePasswordResult>;
   /**
    * Deletes the account after checking its password (#451). Sessions, join
-   * tokens, host bindings and push registrations go with it; invites it used
-   * stay used. Devices the hosts registered stay registered: revoking them
-   * is the host's call (ADR-0022 §6). The admin account is kept, since it
-   * alone mints invites.
+   * tokens, host bindings, push registrations and mailed codes go with it.
+   * Devices the hosts registered stay registered: revoking them is the
+   * host's call (ADR-0022 §6).
    */
-  deleteAccount(args: { readonly userId: number; readonly username: string; readonly password: string }): Promise<DeleteAccountResult>;
+  deleteAccount(args: { readonly userId: number; readonly password: string }): Promise<DeleteAccountResult>;
   /** True when hostId is bound to an account — the only way a host registers. */
   hasHost(hostId: string): boolean;
   /** Mints a single-use join token for a logged-in user; only its SHA-256 is stored. */
@@ -475,7 +552,6 @@ export interface Accounts {
    */
   removeHost(args: {
     readonly userId: number;
-    readonly username: string;
     readonly password: string;
     readonly hostId: string;
   }): Promise<RemoveHostResult>;
@@ -521,7 +597,6 @@ export interface Accounts {
    */
   kickDevice(args: {
     readonly userId: number;
-    readonly username: string;
     readonly password: string;
     readonly deviceId: number;
     readonly currentDeviceId?: number;
@@ -536,6 +611,34 @@ export interface Accounts {
 }
 
 const sha256Hex = (input: string): string => createHash("sha256").update(input, "utf8").digest("hex");
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** A mailed code's stored hash, bound to its purpose and email so one never stands in for another. */
+const codeHash = (purpose: EmailCodePurpose, email: string, code: string): string => sha256Hex(`${purpose}:${email}:${code}`);
+
+/** A users row as sign-in and the session read it. */
+interface UserRow {
+  readonly id: number;
+  readonly username: string | null;
+  readonly email: string | null;
+  readonly passwordHash: string | null;
+}
+
+const USER_SELECT = "SELECT id, username, email, password_hash AS passwordHash FROM users";
+
+/** What responses show for an account (ADR-0044 §8). */
+const accountUser = (row: { readonly username: string | null; readonly email: string | null }): AccountUser =>
+  row.email === null ? { username: row.username ?? "" } : { username: row.email, email: row.email };
+
+/** The login lockout's key for an existing account. */
+const accountLockKey = (userId: number): string => `user:${userId}`;
+
+function requireEmail(raw: string): string {
+  const email = normalizeEmail(raw);
+  if (email === undefined) throw new Error(`not a valid email: ${raw}`);
+  return email;
+}
 
 const safeEqual = (a: string, b: string): boolean => {
   const left = Buffer.from(a);
@@ -722,6 +825,76 @@ function migrate(db: DatabaseSync): void {
       PRAGMA user_version = 8;
       COMMIT;
     `);
+  }
+  if (version < 9) migrateTo9(db);
+}
+
+/**
+ * Email accounts (ADR-0044 §1, §7): users gain a verified email, keep a
+ * username only as legacy accounts, and may have no password (sign-in by a
+ * provider, #620); invites and the admin flag go. SQLite can't loosen NOT
+ * NULL in place, so users is rebuilt, ids copied as they are. Foreign keys
+ * must be off for that or dropping the old table would cascade into every
+ * table that references it, and the pragma is a no-op inside a transaction.
+ */
+function migrateTo9(db: DatabaseSync): void {
+  db.exec("PRAGMA foreign_keys = OFF");
+  try {
+    db.exec("BEGIN");
+    try {
+      db.exec(`
+        DROP TABLE invites;
+        CREATE TABLE users_v9 (
+          id INTEGER PRIMARY KEY,
+          -- Legacy accounts only (ADR-0044 §8); NULL for email accounts.
+          username TEXT UNIQUE,
+          -- Lowercased; set only once verified, so email_verified_at goes with it.
+          email TEXT UNIQUE,
+          email_verified_at INTEGER,
+          -- NULL for an account that only signs in through a provider (#620).
+          password_hash TEXT,
+          created_at INTEGER NOT NULL,
+          CHECK (username IS NOT NULL OR email IS NOT NULL)
+        );
+        INSERT INTO users_v9 (id, username, password_hash, created_at) SELECT id, username, password_hash, created_at FROM users;
+        DROP TABLE users;
+        ALTER TABLE users_v9 RENAME TO users;
+        -- Sign-in providers bound to an account (#620): subject is the
+        -- provider's stable id for the person, never an email.
+        CREATE TABLE user_identities (
+          provider TEXT NOT NULL,
+          subject TEXT NOT NULL,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          email TEXT,
+          created_at INTEGER NOT NULL,
+          PRIMARY KEY (provider, subject)
+        );
+        CREATE INDEX user_identities_user ON user_identities (user_id);
+        -- Mailed codes: only the hash. A sign-up code has no account yet.
+        -- AUTOINCREMENT, like every id here that could be reused.
+        CREATE TABLE email_codes (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          purpose TEXT NOT NULL CHECK (purpose IN ('signup', 'reset', 'add_email', 'reauth')),
+          email TEXT NOT NULL,
+          user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+          code_hash TEXT NOT NULL,
+          attempts INTEGER NOT NULL DEFAULT 0,
+          created_at INTEGER NOT NULL,
+          expires_at INTEGER NOT NULL
+        );
+        CREATE INDEX email_codes_email ON email_codes (purpose, email);
+        CREATE INDEX email_codes_user ON email_codes (user_id);
+        CREATE INDEX email_codes_expiry ON email_codes (expires_at);
+      `);
+      const dangling = db.prepare("PRAGMA foreign_key_check").all();
+      if (dangling.length > 0) throw new Error(`schema 9 migration left ${dangling.length} dangling references`);
+      db.exec("PRAGMA user_version = 9; COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON");
   }
 }
 
@@ -937,11 +1110,15 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       if (options.bootstrapUser === undefined || options.bootstrapPassword === undefined) {
         throw new Error("PINOMAD_SERVER_USER and PINOMAD_SERVER_PASSWORD are required to create the first account");
       }
-      assertUsernamePolicy(options.bootstrapUser);
+      // The operator typed it, so an email counts as verified (ADR-0044 §8).
+      const email = options.bootstrapUser.includes("@") ? requireEmail(options.bootstrapUser) : undefined;
+      if (email === undefined) assertUsernamePolicy(options.bootstrapUser);
       assertPasswordPolicy(options.bootstrapPassword);
       const hash = await hashPassword(options.bootstrapPassword);
-      db.prepare("INSERT INTO users (username, password_hash, created_at, admin) VALUES (?, ?, ?, 1)").run(
-        options.bootstrapUser,
+      db.prepare("INSERT INTO users (username, email, email_verified_at, password_hash, created_at) VALUES (?, ?, ?, ?, ?)").run(
+        email === undefined ? options.bootstrapUser : null,
+        email ?? null,
+        email === undefined ? null : now(),
         hash,
         now(),
       );
@@ -978,14 +1155,117 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
   const linkUserFailures = new WindowedCounter(linkLimits.counterMaxEntries, now);
   const linkIpFailures = new WindowedCounter(linkLimits.counterMaxEntries, now);
 
+  const codeLimits = {
+    ipMax: options.codeLimits?.ipMax ?? 10,
+    ipWindowMs: options.codeLimits?.ipWindowMs ?? 60 * 60_000,
+    emailMax: options.codeLimits?.emailMax ?? 5,
+    emailWindowMs: options.codeLimits?.emailWindowMs ?? 60 * 60_000,
+    dailyMax: options.codeLimits?.dailyMax ?? 1000,
+    counterMaxEntries: options.codeLimits?.counterMaxEntries ?? 4096,
+  };
+  const codeIps = new WindowedCounter(codeLimits.counterMaxEntries, now);
+  const codeEmails = new WindowedCounter(codeLimits.counterMaxEntries, now);
+  const codesToday = new WindowedCounter(1, now);
+
+  const mailer = options.mailer;
+  const registrationOpen = options.registration === "open" && mailer !== undefined;
+
+  /**
+   * Whether one more code may go out: every ask counts against its address,
+   * and one that passes against its email and the server's day. Asks for
+   * every purpose share the bounds, whether or not a mail goes out, so the
+   * limits say nothing about which emails have accounts.
+   */
+  const codeAllowed = (ip: string, email: string): boolean => {
+    if (codeIps.hit(ip, codeLimits.ipMax, codeLimits.ipWindowMs)) return false;
+    if (codeEmails.isOver(email, codeLimits.emailMax) || codesToday.isOver("all", codeLimits.dailyMax)) return false;
+    codeEmails.bump(email, codeLimits.emailWindowMs);
+    codesToday.bump("all", DAY_MS);
+    return true;
+  };
+
+  /**
+   * Hands a mail to the mailer without waiting: whether a mail went out, and
+   * how long sending took, must not show in the answer (ADR-0044 §2).
+   */
+  const deliver = (to: string, subject: string, text: string): void => {
+    mailer?.send(to, subject, text).catch((error: unknown) => {
+      console.error(JSON.stringify({ event: "mail_failed", subject, error: error instanceof Error ? error.message : String(error) }));
+    });
+  };
+
+  /** A fresh code for `purpose`, replacing any earlier one for the same email (or, adding an email, the same account). */
+  const issueCode = (purpose: EmailCodePurpose, email: string, userId: number | null): string => {
+    const at = now();
+    db.prepare("DELETE FROM email_codes WHERE expires_at <= ?").run(at);
+    if (purpose === "add_email") db.prepare("DELETE FROM email_codes WHERE purpose = ? AND user_id = ?").run(purpose, userId);
+    else db.prepare("DELETE FROM email_codes WHERE purpose = ? AND email = ?").run(purpose, email);
+    const code = String(randomInt(1_000_000)).padStart(6, "0");
+    db.prepare(
+      "INSERT INTO email_codes (purpose, email, user_id, code_hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run(purpose, email, userId, codeHash(purpose, email, code), at, at + EMAIL_CODE_TTL_MS);
+    return code;
+  };
+
+  /**
+   * Spends the live code for `purpose` and `email` (and `userId`, when the
+   * code is tied to an account) inside the caller's transaction. A wrong
+   * guess counts against the code, which dies at the fifth, and against
+   * `lockKey`, the same lockout as login.
+   */
+  const spendCode = (
+    purpose: EmailCodePurpose,
+    email: string,
+    code: string,
+    lockKey: string,
+    userId?: number,
+  ): boolean => {
+    // One live code per purpose and email (per account, adding an email):
+    // issuing a code replaces the earlier one.
+    const row = db
+      .prepare(
+        `SELECT id, code_hash AS codeHash, attempts FROM email_codes
+         WHERE purpose = ? AND email = ? AND user_id IS ? AND expires_at > ?`,
+      )
+      .get(purpose, email, userId ?? null, now()) as { id: number; codeHash: string; attempts: number } | undefined;
+    if (row !== undefined && safeEqual(codeHash(purpose, email, code.replace(/\s/g, "")), row.codeHash)) {
+      db.prepare("DELETE FROM email_codes WHERE id = ?").run(row.id);
+      return true;
+    }
+    userFailures.bump(lockKey, limits.userWindowMs);
+    if (row !== undefined) {
+      if (row.attempts + 1 >= EMAIL_CODE_MAX_ATTEMPTS) db.prepare("DELETE FROM email_codes WHERE id = ?").run(row.id);
+      else db.prepare("UPDATE email_codes SET attempts = attempts + 1 WHERE id = ?").run(row.id);
+    }
+    return false;
+  };
+
+  /** The account a sign-in names: an email in any case, else a legacy username as typed. */
+  const findUser = (identifier: string): UserRow | undefined => {
+    const email = normalizeEmail(identifier);
+    return db
+      .prepare(`${USER_SELECT} WHERE email = ? OR username = ? ORDER BY email IS ? DESC LIMIT 1`)
+      .get(email ?? null, identifier, email ?? null) as UserRow | undefined;
+  };
+
+  const userById = (userId: number): UserRow | undefined => db.prepare(`${USER_SELECT} WHERE id = ?`).get(userId) as UserRow | undefined;
+
+  /**
+   * The login lockout's key: the account, however it was named, or for a
+   * name no account has, the name itself, so both lock out alike.
+   */
+  const lockKeyFor = (identifier: string, user: UserRow | undefined): string =>
+    user === undefined ? `name:${normalizeEmail(identifier) ?? identifier}` : accountLockKey(user.id);
+
   const PENDING_SELECT = `SELECT host_id AS hostId, host_name AS name, host_os AS os, source_ip AS sourceIp, expires_at AS expiresAt,
       redirect_uri AS redirectUri, client_state AS clientState FROM host_link_requests`;
 
-  /** Expired one-use credentials: join tokens, and host-link requests with the host's personal data. */
+  /** Expired one-use credentials: join tokens, mailed codes, and host-link requests with the host's personal data. */
   const sweepExpired = (): void => {
     const at = now();
     db.prepare("DELETE FROM join_tokens WHERE expires_at <= ?").run(at);
     db.prepare("DELETE FROM host_link_requests WHERE expires_at <= ?").run(at);
+    db.prepare("DELETE FROM email_codes WHERE expires_at <= ?").run(at);
   };
 
   const mintJoinToken = (userId: number, hostId: string | null): { readonly token: string; readonly expiresAt: number } => {
@@ -1173,69 +1453,66 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
     return hostIds;
   };
 
-  const currentHash = (userId: number): string | undefined =>
-    (db.prepare("SELECT password_hash AS passwordHash FROM users WHERE id = ?").get(userId) as { passwordHash: string } | undefined)
-      ?.passwordHash;
+  const currentHash = (userId: number): string | null | undefined => userById(userId)?.passwordHash;
 
   /**
    * Re-authentication for account changes: the password must match under the
-   * same username lockout as login, with the same in-task re-check and bump
+   * same account lockout as login, with the same in-task re-check and bump
    * so queued guesses see each other. Hands back the hash it verified, which
    * the caller's write must still find.
    */
   const checkPassword = async (
     userId: number,
-    username: string,
     password: string,
   ): Promise<"limited" | "wrong_password" | { readonly verifiedHash: string }> => {
-    if (userFailures.isOver(username, limits.userMaxFailures)) return "limited";
-    const stored = currentHash(userId);
+    const lockKey = accountLockKey(userId);
+    if (userFailures.isOver(lockKey, limits.userMaxFailures)) return "limited";
+    const stored = currentHash(userId) ?? undefined;
     const outcome = await gate.run(async (): Promise<"limited" | "wrong_password" | "ok"> => {
-      if (userFailures.isOver(username, limits.userMaxFailures)) return "limited";
+      if (userFailures.isOver(lockKey, limits.userMaxFailures)) return "limited";
       if (!(await verifyPassword(password, stored ?? DUMMY_HASH)) || stored === undefined) {
-        userFailures.bump(username, limits.userWindowMs);
+        userFailures.bump(lockKey, limits.userWindowMs);
         return "wrong_password";
       }
       return "ok";
     });
     if (outcome === undefined || outcome === "limited") return "limited";
     if (outcome === "wrong_password") return "wrong_password";
-    userFailures.reset(username);
+    userFailures.reset(lockKey);
     return { verifiedHash: stored! };
   };
 
-  const inviteState = (codeHash: string): "ok" | "invalid_invite" | "invite_expired" => {
-    const row = db.prepare("SELECT expires_at AS expiresAt, used_at AS usedAt FROM invites WHERE code_hash = ?").get(codeHash) as
-      | { expiresAt: number; usedAt: number | null }
-      | undefined;
-    if (row === undefined || row.usedAt !== null) return "invalid_invite";
-    return row.expiresAt <= now() ? "invite_expired" : "ok";
-  };
+  const emailOwner = (email: string): number | undefined =>
+    (db.prepare("SELECT id FROM users WHERE email = ?").get(email) as { id: number } | undefined)?.id;
 
-  const usernameTaken = (username: string): boolean =>
-    db.prepare("SELECT 1 AS x FROM users WHERE lower(username) = ?").get(username) !== undefined;
+  const weakPassword = (password: string): boolean => {
+    const length = [...password].length;
+    return length < MIN_PASSWORD_CODEPOINTS || length > MAX_PASSWORD_CODEPOINTS;
+  };
 
   return {
     dbPath: join(options.dataDir, DB_FILE),
 
-    async login(username, password, ip, device) {
+    emailEnabled: mailer !== undefined,
+    registrationOpen,
+
+    async login(identifier, password, ip, device) {
       if (ipAttempts.hit(ip, limits.ipMaxAttempts, limits.ipWindowMs)) return { status: "limited" };
-      // Username lockout applies to existing and non-existing names alike —
-      // checking existence first would leak which usernames are real.
-      if (userFailures.isOver(username, limits.userMaxFailures)) return { status: "limited" };
-      const user = db
-        .prepare("SELECT id, username, password_hash AS passwordHash, admin FROM users WHERE username = ?")
-        .get(username) as { id: number; username: string; passwordHash: string; admin: number } | undefined;
+      const user = findUser(identifier);
+      // The lockout applies to existing and non-existing names alike —
+      // answering differently would leak which ones are real.
+      const lockKey = lockKeyFor(identifier, user);
+      if (userFailures.isOver(lockKey, limits.userMaxFailures)) return { status: "limited" };
       // Re-check inside the task: a burst queues requests that all pass the
       // first check; once earlier failures lock the name, queued work must
       // refuse instead of still verifying (and possibly issuing a session).
       // The failure count is bumped in the task too, so the next queued task's
       // re-check sees it — recording after the await would lag one behind.
       const outcome = await gate.run(async (): Promise<"limited" | "invalid" | number> => {
-        if (userFailures.isOver(username, limits.userMaxFailures)) return "limited";
+        if (userFailures.isOver(lockKey, limits.userMaxFailures)) return "limited";
         const ok = await verifyPassword(password, user?.passwordHash ?? DUMMY_HASH);
-        if (!ok || user === undefined) {
-          userFailures.bump(username, limits.userWindowMs);
+        if (!ok || user === undefined || user.passwordHash === null) {
+          userFailures.bump(lockKey, limits.userWindowMs);
           return "invalid";
         }
         return user.id;
@@ -1247,118 +1524,173 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       // the old password.
       db.exec("BEGIN IMMEDIATE");
       let session: { readonly token: string; readonly expiresAt: number } | undefined;
+      let current: UserRow | undefined;
       try {
-        if (currentHash(outcome) === user?.passwordHash) session = issueSession(outcome, device);
+        current = userById(outcome);
+        if (current !== undefined && current.passwordHash === user?.passwordHash) session = issueSession(outcome, device);
         db.exec("COMMIT");
       } catch (error) {
         db.exec("ROLLBACK");
         throw error;
       }
-      if (session === undefined) return { status: "invalid" };
-      userFailures.reset(username);
-      return { status: "ok", ...session, admin: user?.admin === 1 };
+      if (session === undefined || current === undefined) return { status: "invalid" };
+      userFailures.reset(lockKey);
+      return { status: "ok", ...session, user: accountUser(current) };
     },
 
-    async register({ invite, username, password, ip, device }) {
-      if (ipAttempts.hit(ip, limits.ipMaxAttempts, limits.ipWindowMs)) return { status: "limited" };
-      const codeHash = sha256Hex(invite);
-      // The invite goes first: only someone holding one learns whether a
-      // username is taken.
-      const invited = inviteState(codeHash);
-      if (invited !== "ok") return { status: "refused", reason: invited };
-      if (!SIGN_UP_USERNAME.test(username)) return { status: "refused", reason: "invalid_username" };
-      const length = [...password].length;
-      if (length < MIN_PASSWORD_CODEPOINTS || length > MAX_PASSWORD_CODEPOINTS) {
-        return { status: "refused", reason: "weak_password" };
+    requestSignupCode({ email, ip }) {
+      if (!registrationOpen) return "closed";
+      if (!codeAllowed(ip, email)) return "limited";
+      if (emailOwner(email) !== undefined) {
+        deliver(
+          email,
+          "Your PiNomad account",
+          "Someone asked to create a PiNomad account with this email, but you already have an account.\n\n" +
+            "Sign in, or reset your password if you forgot it. If this wasn't you, ignore this email.\n",
+        );
+        return "sent";
       }
-      if (usernameTaken(username)) return { status: "refused", reason: "username_taken" };
+      const code = issueCode("signup", email, null);
+      deliver(
+        email,
+        `${code} is your PiNomad sign-up code`,
+        `Your PiNomad sign-up code is ${code}. It expires in 10 minutes.\n\nIf you didn't ask for it, ignore this email.\n`,
+      );
+      return "sent";
+    },
+
+    async register({ email, code, password, ip, device }) {
+      if (!registrationOpen) return { status: "refused", reason: "registration_closed" };
+      // Before the code, so a typo in the password doesn't cost the code.
+      if (weakPassword(password)) return { status: "refused", reason: "weak_password" };
+      if (ipAttempts.hit(ip, limits.ipMaxAttempts, limits.ipWindowMs)) return { status: "limited" };
+      const lockKey = lockKeyFor(email, findUser(email));
+      if (userFailures.isOver(lockKey, limits.userMaxFailures)) return { status: "limited" };
       const hash = await gate.run(() => hashPassword(password));
       if (hash === undefined) return { status: "limited" };
-      // Hashing yielded, so another sign-up may have spent the invite or taken
-      // the name meanwhile: check both again and claim them in one transaction.
-      db.exec("BEGIN");
+      // Code and account land in one transaction: a code is spent only by the
+      // sign-up that creates the account.
+      db.exec("BEGIN IMMEDIATE");
       try {
-        const again = inviteState(codeHash);
-        const failure = again !== "ok" ? again : usernameTaken(username) ? "username_taken" : undefined;
-        if (failure !== undefined) {
-          db.exec("ROLLBACK");
-          return { status: "refused", reason: failure };
+        // Taken meanwhile (a CLI add): only the holder of the code sees it,
+        // and the code is no good any more.
+        if (!spendCode("signup", email, code, lockKey) || emailOwner(email) !== undefined) {
+          db.exec("COMMIT");
+          return { status: "refused", reason: "invalid_code" };
         }
+        const at = now();
         const userId = Number(
-          db.prepare("INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)").run(username, hash, now())
-            .lastInsertRowid,
+          db
+            .prepare("INSERT INTO users (email, email_verified_at, password_hash, created_at) VALUES (?, ?, ?, ?)")
+            .run(email, at, hash, at).lastInsertRowid,
         );
-        // Conditional like joinHost's claim, so both single-use paths read the same.
-        const claimed = db
-          .prepare("UPDATE invites SET used_at = ?, used_by = ? WHERE code_hash = ? AND used_at IS NULL")
-          .run(now(), userId, codeHash);
-        if (Number(claimed.changes) !== 1) {
-          db.exec("ROLLBACK");
-          return { status: "refused", reason: "invalid_invite" };
-        }
         const session = issueSession(userId, device);
         db.exec("COMMIT");
-        return { status: "ok", ...session };
+        userFailures.reset(lockKey);
+        return { status: "ok", ...session, user: { username: email, email } };
       } catch (error) {
         db.exec("ROLLBACK");
         throw error;
       }
     },
 
-    createInvite(userId) {
-      // Expired invites nobody used are dead weight in the admin's list.
-      db.prepare("DELETE FROM invites WHERE used_at IS NULL AND expires_at <= ?").run(now());
-      const code = randomBytes(16).toString("base64url");
-      const expiresAt = now() + INVITE_TTL_MS;
-      db.prepare("INSERT INTO invites (code_hash, created_by, created_at, expires_at) VALUES (?, ?, ?, ?)").run(
-        sha256Hex(code),
-        userId,
-        now(),
-        expiresAt,
+    requestPasswordReset({ email, ip }) {
+      if (mailer === undefined) return "closed";
+      if (!codeAllowed(ip, email)) return "limited";
+      const userId = emailOwner(email);
+      if (userId === undefined) return "sent";
+      const code = issueCode("reset", email, userId);
+      deliver(
+        email,
+        `${code} is your PiNomad password reset code`,
+        `Your PiNomad password reset code is ${code}. It expires in 10 minutes.\n\n` +
+          "If you didn't ask to reset your password, ignore this email; your password stays as it is.\n",
       );
-      return { code, expiresAt };
+      return "sent";
     },
 
-    listInvites() {
-      const rows = db
-        .prepare(
-          `SELECT i.id AS id, i.created_at AS createdAt, i.expires_at AS expiresAt, i.used_at AS usedAt, u.username AS usedBy
-           FROM invites i LEFT JOIN users u ON u.id = i.used_by ORDER BY i.created_at DESC, i.id DESC`,
-        )
-        .all() as unknown as {
-        id: number;
-        createdAt: number;
-        expiresAt: number;
-        usedAt: number | null;
-        usedBy: string | null;
-      }[];
-      return rows.map((row) => ({
-        id: row.id,
-        createdAt: row.createdAt,
-        expiresAt: row.expiresAt,
-        ...(row.usedAt === null ? {} : { usedAt: row.usedAt }),
-        ...(row.usedBy === null ? {} : { usedBy: row.usedBy }),
-      }));
+    async resetPasswordWithCode({ email, code, password, ip }) {
+      if (mailer === undefined) return { status: "refused", reason: "email_unavailable" };
+      if (weakPassword(password)) return { status: "refused", reason: "weak_password" };
+      if (ipAttempts.hit(ip, limits.ipMaxAttempts, limits.ipWindowMs)) return { status: "limited" };
+      const lockKey = lockKeyFor(email, findUser(email));
+      if (userFailures.isOver(lockKey, limits.userMaxFailures)) return { status: "limited" };
+      const hash = await gate.run(() => hashPassword(password));
+      if (hash === undefined) return { status: "limited" };
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        // The account is read inside the write: the code is tied to it, so a
+        // deleted account's code went with it.
+        const userId = emailOwner(email);
+        if (userId === undefined || !spendCode("reset", email, code, lockKey, userId)) {
+          if (userId === undefined) userFailures.bump(lockKey, limits.userWindowMs);
+          db.exec("COMMIT");
+          return { status: "refused", reason: "invalid_code" };
+        }
+        db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hash, userId);
+        // As with `passwd`: whoever knew the old password keeps nothing.
+        dropCredentials(db, userId);
+        db.exec("COMMIT");
+        userFailures.reset(lockKey);
+        return { status: "ok" };
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
     },
 
-    revokeInvite(id) {
-      return Number(db.prepare("DELETE FROM invites WHERE id = ? AND used_at IS NULL").run(id).changes) > 0;
+    requestEmailCode({ userId, email, ip }) {
+      if (mailer === undefined) return "closed";
+      const owner = emailOwner(email);
+      if (owner !== undefined && owner !== userId) return "taken";
+      if (!codeAllowed(ip, email)) return "limited";
+      const code = issueCode("add_email", email, userId);
+      deliver(
+        email,
+        `${code} is your PiNomad confirmation code`,
+        `Your code to use this email for your PiNomad account is ${code}. It expires in 10 minutes.\n\n` +
+          "If you didn't ask for it, ignore this email.\n",
+      );
+      return "sent";
+    },
+
+    setEmail({ userId, email, code }) {
+      if (mailer === undefined) return { status: "refused", reason: "email_unavailable" };
+      const lockKey = accountLockKey(userId);
+      if (userFailures.isOver(lockKey, limits.userMaxFailures)) return { status: "limited" };
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const owner = emailOwner(email);
+        if (owner !== undefined && owner !== userId) {
+          db.exec("COMMIT");
+          return { status: "refused", reason: "email_taken" };
+        }
+        if (!spendCode("add_email", email, code, lockKey, userId)) {
+          db.exec("COMMIT");
+          return { status: "refused", reason: "invalid_code" };
+        }
+        db.prepare("UPDATE users SET email = ?, email_verified_at = ? WHERE id = ?").run(email, now(), userId);
+        db.exec("COMMIT");
+        return { status: "ok", user: { username: email, email } };
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
     },
 
     authenticate(token) {
       const row = db
         .prepare(
-          `SELECT s.user_id AS userId, u.username AS username, u.admin AS admin, s.expires_at AS expiresAt, s.device_id AS deviceId
+          `SELECT s.user_id AS userId, u.username AS username, u.email AS email, s.expires_at AS expiresAt, s.device_id AS deviceId
            FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?`,
         )
         .get(sha256Hex(token)) as
-        | { userId: number; username: string; admin: number; expiresAt: number; deviceId: number | null }
+        | { userId: number; username: string | null; email: string | null; expiresAt: number; deviceId: number | null }
         | undefined;
       if (row === undefined || row.expiresAt <= now()) return undefined;
       return {
         userId: row.userId,
-        username: row.username,
-        admin: row.admin === 1,
+        user: accountUser(row),
         ...(row.deviceId === null ? {} : { deviceId: row.deviceId }),
       };
     },
@@ -1386,12 +1718,9 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       }
     },
 
-    async changePassword({ userId, username, keepToken, currentPassword, newPassword }) {
-      const length = [...newPassword].length;
-      if (length < MIN_PASSWORD_CODEPOINTS || length > MAX_PASSWORD_CODEPOINTS) {
-        return { status: "refused", reason: "weak_password" };
-      }
-      const checked = await checkPassword(userId, username, currentPassword);
+    async changePassword({ userId, keepToken, currentPassword, newPassword }) {
+      if (weakPassword(newPassword)) return { status: "refused", reason: "weak_password" };
+      const checked = await checkPassword(userId, currentPassword);
       if (checked === "limited") return { status: "limited" };
       if (checked === "wrong_password") return { status: "refused", reason: "wrong_password" };
       const hash = await gate.run(() => hashPassword(newPassword));
@@ -1416,10 +1745,8 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       return { status: "ok" };
     },
 
-    async deleteAccount({ userId, username, password }) {
-      const user = db.prepare("SELECT admin FROM users WHERE id = ?").get(userId) as { admin: number } | undefined;
-      if (user?.admin === 1) return { status: "refused", reason: "admin_account" };
-      const checked = await checkPassword(userId, username, password);
+    async deleteAccount({ userId, password }) {
+      const checked = await checkPassword(userId, password);
       if (checked === "limited") return { status: "limited" };
       if (checked === "wrong_password") return { status: "refused", reason: "wrong_password" };
       // Same compare-and-swap as a password change: a reset that committed
@@ -1430,9 +1757,8 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
           (row) => row.hostId,
         );
         // ON DELETE CASCADE takes sessions, join tokens, hosts, push
-        // registrations, account devices with their vouchings, and the
-        // hosts' pending revocations; invites it used keep their row with
-        // used_by NULL.
+        // registrations, account devices with their vouchings, the hosts'
+        // pending revocations, mailed codes and provider identities.
         const deleted = db.prepare("DELETE FROM users WHERE id = ? AND password_hash = ?").run(userId, checked.verifiedHash);
         if (Number(deleted.changes) !== 1) {
           db.exec("ROLLBACK");
@@ -1742,11 +2068,9 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
              last_seen_at = excluded.last_seen_at`,
         ).run(hostId, row!.userId, noisePublicKey, hostName, at, at);
         db.prepare("DELETE FROM removed_hosts WHERE host_id = ?").run(hostId);
-        const user = db.prepare("SELECT username FROM users WHERE id = ?").get(row!.userId) as
-          | { username: string }
-          | undefined;
+        const user = userById(row!.userId);
         db.exec("COMMIT");
-        return { status: "joined", username: user?.username ?? "unknown" };
+        return { status: "joined", username: user === undefined ? "unknown" : accountUser(user).username };
       } catch (error) {
         db.exec("ROLLBACK");
         throw error;
@@ -1758,11 +2082,11 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       return Number(db.prepare("DELETE FROM hosts WHERE host_id = ?").run(hostId).changes) > 0;
     },
 
-    async removeHost({ userId, username, password, hostId }) {
+    async removeHost({ userId, password, hostId }) {
       const owned = (): boolean =>
         db.prepare("SELECT 1 AS x FROM hosts WHERE host_id = ? AND user_id = ?").get(hostId, userId) !== undefined;
       if (!owned()) return { status: "refused", reason: "not_found" };
-      const checked = await checkPassword(userId, username, password);
+      const checked = await checkPassword(userId, password);
       if (checked === "limited") return { status: "limited" };
       if (checked === "wrong_password") return { status: "refused", reason: "wrong_password" };
       db.exec("BEGIN IMMEDIATE");
@@ -1929,13 +2253,13 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       db.prepare("DELETE FROM pending_revocations WHERE host_id = ? AND public_key = ?").run(hostId, publicKey);
     },
 
-    async kickDevice({ userId, username, password, deviceId, currentDeviceId }) {
+    async kickDevice({ userId, password, deviceId, currentDeviceId }) {
       const owned = (): boolean =>
         db.prepare("SELECT 1 AS x FROM account_devices WHERE id = ? AND user_id = ?").get(deviceId, userId) !== undefined;
       // Cheap refusals first: neither costs a scrypt run or a lockout strike.
       if (!owned()) return { status: "refused", reason: "not_found" };
       if (deviceId === currentDeviceId) return { status: "refused", reason: "current_device" };
-      const checked = await checkPassword(userId, username, password);
+      const checked = await checkPassword(userId, password);
       if (checked === "limited") return { status: "limited" };
       if (checked === "wrong_password") return { status: "refused", reason: "wrong_password" };
       db.exec("BEGIN IMMEDIATE");
@@ -1987,30 +2311,23 @@ function dropCredentials(db: DatabaseSync, userId: number, keepTokenHash?: strin
 }
 
 /**
- * `pinomad server passwd`: the operator resets an account's password, the
- * way a user who forgot theirs gets back in (#450). Works whether or not the
- * server is running: a stopped server's directory is locked and migrated as
- * usual; beside a running one it writes through SQLite's own locking, and
- * only when the database is on this build's schema, so an upgraded package
- * never migrates the tables under an older running server. One transaction
- * swaps the hash and drops the account's credentials, and the running server
- * reads sessions from the database on every request, so the account is
- * signed out at once.
+ * The operator's commands (`pinomad server passwd`, `user add`, `user
+ * set-email`) work whether or not the server is running: a stopped server's
+ * directory is locked and migrated as usual; beside a running one they write
+ * through SQLite's own locking, and only when the database is on this
+ * build's schema, so an upgraded package never migrates the tables under an
+ * older running server. The running server reads accounts and sessions from
+ * the database on every request, so a change takes effect at once.
  */
-export async function resetPassword(options: {
-  readonly dataDir: string;
-  readonly user?: string;
-  readonly password: string;
-}): Promise<void> {
-  assertPasswordPolicy(options.password);
-  await mkdir(options.dataDir, { recursive: true });
+async function withOperatorDatabase<T>(dataDir: string, write: (db: DatabaseSync) => Promise<T> | T): Promise<T> {
+  await mkdir(dataDir, { recursive: true });
   // retries: 0 answers "is a server running" at once; the default stale value
   // must match what servers use or a live lock looks abandoned.
-  const release = await lockDataDir(options.dataDir, { retries: 0 }).catch((error: unknown) => {
+  const release = await lockDataDir(dataDir, { retries: 0 }).catch((error: unknown) => {
     if (isDataDirInUse(error)) return undefined;
     throw error;
   });
-  const db = openDatabase(options.dataDir);
+  const db = openDatabase(dataDir);
   try {
     if (release !== undefined) {
       migrate(db);
@@ -2019,29 +2336,96 @@ export async function resetPassword(options: {
         `the running server's database schema (${schemaVersion(db)}) differs from this build's (${SCHEMA_VERSION}); restart the server on this version first`,
       );
     }
-    // Hash first, then find the account inside the write: once accounts can
-    // be deleted (#451) a freed id goes to the next sign-up, so an id read
-    // before scrypt yields could name someone else by the time it's written.
-    const hash = await hashPassword(options.password);
-    db.exec("BEGIN IMMEDIATE");
-    try {
-      const users = (
-        options.user === undefined
-          ? db.prepare("SELECT id FROM users").all()
-          : db.prepare("SELECT id FROM users WHERE username = ?").all(options.user)
-      ) as { id: number }[];
-      if (users.length === 0) throw new Error(options.user === undefined ? "no account exists yet" : `no such account: ${options.user}`);
-      if (users.length > 1) throw new Error("more than one account exists — pass --user");
-      const userId = users[0]!.id;
-      db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hash, userId);
-      dropCredentials(db, userId);
-      db.exec("COMMIT");
-    } catch (error) {
-      db.exec("ROLLBACK");
-      throw error;
-    }
+    return await write(db);
   } finally {
     db.close();
     await release?.();
   }
+}
+
+/** Runs `write` in one immediate transaction. */
+function inTransaction<T>(db: DatabaseSync, write: () => T): T {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const result = write();
+    db.exec("COMMIT");
+    return result;
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+/** The one account `user` names, by email in any case or legacy username; every account when absent, which must be one. */
+function operatorTarget(db: DatabaseSync, user: string | undefined): number {
+  const users = (
+    user === undefined
+      ? db.prepare("SELECT id FROM users").all()
+      : db.prepare("SELECT id FROM users WHERE email = ? OR username = ?").all(normalizeEmail(user) ?? null, user)
+  ) as { id: number }[];
+  if (users.length === 0) throw new Error(user === undefined ? "no account exists yet" : `no such account: ${user}`);
+  if (users.length > 1) throw new Error(user === undefined ? "more than one account exists — pass --user" : `${user} names more than one account`);
+  return users[0]!.id;
+}
+
+/**
+ * `pinomad server passwd`: the operator resets an account's password, the
+ * way a user who forgot theirs gets back in (#450). One transaction swaps the
+ * hash and drops the account's credentials, so it is signed out at once.
+ */
+export async function resetPassword(options: {
+  readonly dataDir: string;
+  /** An email or legacy username; may be left out while there is one account. */
+  readonly user?: string;
+  readonly password: string;
+}): Promise<void> {
+  assertPasswordPolicy(options.password);
+  await withOperatorDatabase(options.dataDir, async (db) => {
+    // Hash first, then find the account inside the write: a freed id goes
+    // to the next sign-up, so an id read before scrypt yields could name
+    // someone else by the time it's written.
+    const hash = await hashPassword(options.password);
+    inTransaction(db, () => {
+      const userId = operatorTarget(db, options.user);
+      db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hash, userId);
+      dropCredentials(db, userId);
+    });
+  });
+}
+
+/**
+ * `pinomad server user add <email>`: the operator creates an account, the
+ * way people join a server whose registration is closed (ADR-0044 §7). The
+ * operator typed the email, so it counts as verified.
+ */
+export async function addUser(options: { readonly dataDir: string; readonly email: string; readonly password: string }): Promise<void> {
+  const email = requireEmail(options.email);
+  assertPasswordPolicy(options.password);
+  await withOperatorDatabase(options.dataDir, async (db) => {
+    const hash = await hashPassword(options.password);
+    inTransaction(db, () => {
+      if (db.prepare("SELECT 1 AS x FROM users WHERE email = ?").get(email) !== undefined) {
+        throw new Error(`an account with ${email} already exists`);
+      }
+      const at = Date.now();
+      db.prepare("INSERT INTO users (email, email_verified_at, password_hash, created_at) VALUES (?, ?, ?, ?)").run(email, at, hash, at);
+    });
+  });
+}
+
+/**
+ * `pinomad server user set-email <user> <email>`: the operator gives an
+ * account its email, verified, the way a legacy account on a server that
+ * can't send mail gets one (ADR-0044 §8).
+ */
+export async function setUserEmail(options: { readonly dataDir: string; readonly user: string; readonly email: string }): Promise<void> {
+  const email = requireEmail(options.email);
+  await withOperatorDatabase(options.dataDir, (db) =>
+    inTransaction(db, () => {
+      const userId = operatorTarget(db, options.user);
+      const owner = db.prepare("SELECT id FROM users WHERE email = ?").get(email) as { id: number } | undefined;
+      if (owner !== undefined && owner.id !== userId) throw new Error(`another account already has ${email}`);
+      db.prepare("UPDATE users SET email = ?, email_verified_at = ? WHERE id = ?").run(email, Date.now(), userId);
+    }),
+  );
 }
