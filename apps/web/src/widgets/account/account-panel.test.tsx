@@ -37,7 +37,6 @@ function fakeModel(initial: AccountState): AccountModel & { setState(next: Accou
       return () => listeners.delete(listener);
     },
     login: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
-    register: vi.fn(() => Promise.resolve({ ok: false as const, error: { code: "invalid_invite", status: 403 } })),
     logout: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     revokeAll: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     refreshHosts: vi.fn(() => Promise.resolve({ ok: true as const, value: [] })),
@@ -54,17 +53,6 @@ function fakeModel(initial: AccountState): AccountModel & { setState(next: Accou
     confirmHostLinkRequest: vi.fn(() => Promise.reject(new Error("unused"))),
     denyHostLinkRequest: vi.fn(() => Promise.reject(new Error("unused"))),
     watchForHost: vi.fn(),
-    listInvites: vi.fn(() =>
-      Promise.resolve({
-        ok: true as const,
-        value: [
-          { id: 2, createdAt: Date.now(), expiresAt: Date.now() + 86_400_000 },
-          { id: 1, createdAt: 0, expiresAt: Date.now() + 1000, usedAt: 1, usedBy: "bob" },
-        ],
-      }),
-    ),
-    createInvite: vi.fn(() => Promise.resolve({ ok: true as const, value: { code: "fresh-code", expiresAt: Date.now() + 86_400_000 } })),
-    revokeInvite: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     changePassword: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     deleteAccount: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     listDevices: vi.fn(() => Promise.resolve({ ok: true as const, value: [] as readonly AccountDevice[] })),
@@ -81,7 +69,6 @@ function signedIn(hosts: AccountHostMatch[], rejectedHostKeys: string[] = []): E
     status: "signed-in",
     mode: "cookie",
     user: "kieran",
-    admin: false,
     serverOrigin: "https://nomad.example",
     hosts,
     rejectedHostKeys,
@@ -240,43 +227,7 @@ describe("Add a host (#496)", () => {
   });
 });
 
-describe("invite sign-up (#449)", () => {
-  it("switches to sign-up and sends the invite, name and password", async () => {
-    const model = fakeModel({ status: "signed-out", mode: "cookie" });
-    renderPanel(model);
-    await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
-    await userEvent.type(screen.getByLabelText("Invite code"), " code-1 ");
-    await userEvent.type(screen.getByLabelText("Username"), "bob");
-    await userEvent.type(screen.getByLabelText("Password"), "long password here");
-    await act(async () => {
-      await userEvent.click(screen.getByRole("button", { name: "Create account" }));
-    });
-    expect(model.register).toHaveBeenCalledWith({ invite: "code-1", username: "bob", password: "long password here" });
-    expect(screen.getByText(/invite code isn't valid/)).toBeTruthy();
-
-    await userEvent.click(screen.getByRole("button", { name: "Sign in instead" }));
-    expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
-  });
-
-  it("keeps a typed server address when switching between sign-in and sign-up", async () => {
-    const model = fakeModel({ status: "signed-out", mode: "bearer" });
-    renderPanel(model);
-    const server = screen.getByLabelText("Server");
-    await userEvent.clear(server);
-    await userEvent.type(server, "https://nomad.example.com");
-    await userEvent.click(screen.getByRole("button", { name: "Create an account" }));
-    expect((screen.getByLabelText("Server") as HTMLInputElement).value).toBe("https://nomad.example.com");
-    await userEvent.type(screen.getByLabelText("Invite code"), "code-1");
-    await userEvent.type(screen.getByLabelText("Username"), "bob");
-    await userEvent.type(screen.getByLabelText("Password"), "long password here");
-    await act(async () => {
-      await userEvent.click(screen.getByRole("button", { name: "Create account" }));
-    });
-    expect(model.register).toHaveBeenCalledWith(expect.objectContaining({ serverOrigin: "https://nomad.example.com" }));
-    await userEvent.click(screen.getByRole("button", { name: "Sign in instead" }));
-    expect((screen.getByLabelText("Server") as HTMLInputElement).value).toBe("https://nomad.example.com");
-  });
-
+describe("account settings", () => {
   it("changes the password from the signed-in panel (#450)", async () => {
     const model = fakeModel(signedIn([]));
     renderPanel(model);
@@ -316,17 +267,13 @@ describe("invite sign-up (#449)", () => {
     expect(screen.getByLabelText("Username")).toBeTruthy();
   });
 
-  it("keeps the session and the form when the password is wrong or the account is the admin's", async () => {
+  it("keeps the session and the form when the password is wrong", async () => {
     const model = fakeModel(signedIn([]));
-    vi.mocked(model.deleteAccount)
-      .mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } })
-      .mockResolvedValueOnce({ ok: false, error: { code: "admin_account", status: 403 } });
+    vi.mocked(model.deleteAccount).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
     renderPanel(model);
     await userEvent.click(screen.getByRole("button", { name: "Delete account" }));
     await userEvent.type(screen.getByLabelText("Password"), "wrong one{Enter}");
     expect(await screen.findByText("The current password is wrong.")).toBeTruthy();
-    await userEvent.type(screen.getByLabelText("Password"), "{Enter}");
-    expect(await screen.findByText("The server's admin account can't be deleted.")).toBeTruthy();
     expect(screen.getByLabelText("Password")).toBeTruthy();
     expect(screen.getByText("kieran")).toBeTruthy();
   });
@@ -362,31 +309,6 @@ describe("invite sign-up (#449)", () => {
     expect(screen.queryByText("Account deleted")).toBeNull();
   });
 
-  it("offers no account deletion to the admin", () => {
-    renderPanel(fakeModel({ ...signedIn([]), admin: true }));
-    expect(screen.queryByRole("button", { name: "Delete account" })).toBeNull();
-  });
-
-  it("hides invites from accounts that aren't the admin", async () => {
-    const plain = fakeModel(signedIn([]));
-    renderPanel(plain);
-    expect(screen.queryByText("Invites")).toBeNull();
-    expect(plain.listInvites).not.toHaveBeenCalled();
-  });
-
-  it("lists invites, creates one, and revokes an unused one", async () => {
-    const model = fakeModel({ ...signedIn([]), admin: true });
-    renderPanel(model);
-    expect(await screen.findByText("Used by bob")).toBeTruthy();
-    await act(async () => {
-      await userEvent.click(screen.getByRole("button", { name: "Create invite" }));
-    });
-    expect(screen.getByText("fresh-code")).toBeTruthy();
-    await act(async () => {
-      await userEvent.click(screen.getByRole("button", { name: "Revoke" }));
-    });
-    expect(model.revokeInvite).toHaveBeenCalledWith(2);
-  });
 });
 
 describe("account devices (#452)", () => {

@@ -287,17 +287,24 @@
       "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"admin\"},\"expiresAt\":1}}"
     },
     {
-      "name": "login-admin",
+      "name": "login-email",
       "kind": "login",
       "status": 200,
-      "body": "{\"user\":{\"username\":\"admin\"},\"admin\":true,\"expiresAt\":1,\"token\":\"t\"}",
-      "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"admin\"},\"admin\":true,\"expiresAt\":1,\"token\":\"t\"}}"
+      "body": "{\"user\":{\"username\":\"a@b.co\",\"email\":\"a@b.co\"},\"expiresAt\":1,\"token\":\"t\"}",
+      "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"a@b.co\",\"email\":\"a@b.co\"},\"expiresAt\":1,\"token\":\"t\"}}"
     },
     {
-      "name": "login-admin-not-true",
+      "name": "login-needs-email",
       "kind": "login",
       "status": 200,
-      "body": "{\"user\":{\"username\":\"a\"},\"admin\":\"yes\",\"expiresAt\":1,\"token\":\"t\"}",
+      "body": "{\"user\":{\"username\":\"kieran\"},\"needsEmail\":true,\"expiresAt\":1,\"token\":\"t\"}",
+      "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"kieran\"},\"needsEmail\":true,\"expiresAt\":1,\"token\":\"t\"}}"
+    },
+    {
+      "name": "login-loose-email-fields",
+      "kind": "login",
+      "status": 200,
+      "body": "{\"user\":{\"username\":\"a\",\"email\":7},\"needsEmail\":\"yes\",\"expiresAt\":1,\"token\":\"t\"}",
       "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"a\"},\"expiresAt\":1,\"token\":\"t\"}}"
     },
     {
@@ -350,11 +357,18 @@
       "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"admin\"}}}"
     },
     {
-      "name": "me-admin",
+      "name": "me-email",
       "kind": "me",
       "status": 200,
-      "body": "{\"user\":{\"username\":\"admin\"},\"admin\":true}",
-      "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"admin\"},\"admin\":true}}"
+      "body": "{\"user\":{\"username\":\"a@b.co\",\"email\":\"a@b.co\"}}",
+      "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"a@b.co\",\"email\":\"a@b.co\"}}}"
+    },
+    {
+      "name": "me-needs-email",
+      "kind": "me",
+      "status": 200,
+      "body": "{\"user\":{\"username\":\"kieran\"},\"needsEmail\":true}",
+      "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"kieran\"},\"needsEmail\":true}}"
     },
     {
       "name": "me-user-null",
@@ -586,13 +600,6 @@
       "status": 403,
       "body": "{\"error\":\"wrong_password\"}",
       "expect": "{\"ok\":false,\"error\":{\"code\":\"wrong_password\",\"status\":403}}"
-    },
-    {
-      "name": "delete-account-admin",
-      "kind": "deleteAccount",
-      "status": 403,
-      "body": "{\"error\":\"admin_account\"}",
-      "expect": "{\"ok\":false,\"error\":{\"code\":\"admin_account\",\"status\":403}}"
     },
     {
       "name": "delete-account-rate-limited",

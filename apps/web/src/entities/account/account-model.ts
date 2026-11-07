@@ -17,9 +17,7 @@ import {
   type AccountError,
   type AccountFetch,
   type AccountHostMatch,
-  type AccountInvite,
   type AccountResult,
-  type CreatedInvite,
   type HostLinkRequest,
   type JoinToken,
   type LoginSuccess,
@@ -73,8 +71,6 @@ export type AccountState =
       readonly status: "signed-in";
       readonly mode: AccountMode;
       readonly user: string;
-      /** The server's admin account, which mints sign-up invites (#449). */
-      readonly admin: boolean;
       readonly serverOrigin: string;
       /** The account's hosts matched against stored pairings (packages/client matchAccountHosts). */
       readonly hosts: readonly AccountHostMatch[];
@@ -98,13 +94,6 @@ export interface AccountModel {
   subscribe(listener: () => void): () => void;
   /** Bearer mode needs `serverOrigin` unless a stored session already names one. */
   login(input: { username: string; password: string; serverOrigin?: string }): Promise<AccountResult<void>>;
-  /** Creates an account from an invite and signs in, same origin rules as login (#449). */
-  register(input: {
-    invite: string;
-    username: string;
-    password: string;
-    serverOrigin?: string;
-  }): Promise<AccountResult<void>>;
   /**
    * Signs out; always lands signed-out, before the server answers. With
    * `revoke` (a shared computer, #494) the server also asks every host this
@@ -167,10 +156,6 @@ export interface AccountModel {
   lookupHostLinkRequest(requestId: string): Promise<AccountResult<HostLinkRequest>>;
   confirmHostLinkRequest(requestId: string): Promise<AccountResult<string>>;
   denyHostLinkRequest(requestId: string): Promise<AccountResult<string>>;
-  /** Admin only (#449). */
-  listInvites(): Promise<AccountResult<readonly AccountInvite[]>>;
-  createInvite(): Promise<AccountResult<CreatedInvite>>;
-  revokeInvite(id: number): Promise<AccountResult<void>>;
   /**
    * The explicit "pair this account host" action: vouched offer → the usual
    * IK pairing → persisted with its account link. It removes the host from the
@@ -246,7 +231,6 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   let client: AccountClient | undefined;
   let mode: AccountMode = deps.bridge === undefined ? "cookie" : "bearer";
   let lastOrigin: string | undefined;
-  let admin = false;
   const rejected = new Set<string>();
   const declined = deps.declined ?? browserDeclined;
   const autoRegisterEnabled = deps.autoRegister !== false;
@@ -315,7 +299,6 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   /** Ends the session's work: no client, every flight and pending save dropped. */
   const endSession = (): void => {
     client = undefined;
-    admin = false;
     epoch += 1;
     for (const flight of flights.values()) flight.cancelled = true;
     flights.clear();
@@ -346,7 +329,6 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     status: "signed-in",
     mode,
     user,
-    admin,
     serverOrigin: active.origin,
     hosts,
     rejectedHostKeys: [...rejected],
@@ -653,7 +635,6 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
         return;
       }
       client = candidate;
-      admin = me.value.admin === true;
       await refresh(candidate, me.value.user.username);
       return;
     }
@@ -673,7 +654,6 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     }
     client = candidate;
     lastOrigin = deps.origin;
-    admin = me.value.admin === true;
     await refresh(candidate, me.value.user.username);
   };
   void init();
@@ -846,7 +826,6 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
         .catch((error: unknown) => console.error("Could not persist the account session", error));
     }
     client = candidate;
-    admin = result.value.admin === true;
     await refresh(candidate, result.value.user.username);
     return { ok: true, value: undefined };
   };
@@ -884,9 +863,6 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
 
     login: ({ username, password, serverOrigin }) =>
       signIn(serverOrigin, (candidate) => candidate.login(username, password, deps.device?.())),
-
-    register: ({ invite, username, password, serverOrigin }) =>
-      signIn(serverOrigin, (candidate) => candidate.register(invite, username, password, deps.device?.())),
 
     logout: async (options) => {
       if (client === undefined) return fail("unauthenticated");
@@ -958,9 +934,6 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     confirmHostLinkRequest: (requestId) => authed((active) => active.confirmHostLinkRequest(requestId)),
     denyHostLinkRequest: (requestId) => authed((active) => active.denyHostLinkRequest(requestId)),
     watchForHost,
-    listInvites: () => authed((active) => active.listInvites()),
-    createInvite: () => authed((active) => active.createInvite()),
-    revokeInvite: (id) => authed((active) => active.revokeInvite(id)),
 
     pairHost,
 

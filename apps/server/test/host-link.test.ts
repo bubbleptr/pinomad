@@ -7,6 +7,7 @@ import { request as httpRequest } from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  addUser,
   formatUserCode,
   normalizeUserCode,
   openAccounts,
@@ -228,7 +229,6 @@ describe("the request's life", () => {
     expect(
       (await accounts.changePassword({
         userId: 1,
-        username: "admin",
         keepToken: login.token,
         currentPassword: GOOD_PASSWORD,
         newPassword: "a different long password",
@@ -277,13 +277,11 @@ describe("personal data", () => {
   });
 
   it("goes with the account that confirmed it", async () => {
-    const { accounts } = await open();
-    const invite = accounts.createInvite(1);
-    const signedUp = await accounts.register({ invite: invite.code, username: "bob", password: GOOD_PASSWORD, ip: "127.0.0.1" });
-    expect(signedUp.status).toBe("ok");
+    const { accounts, dataDir } = await open();
+    await addUser({ dataDir, email: "bob@example.com", password: GOOD_PASSWORD });
     const result = await started(accounts);
     accounts.confirmHostLink({ userId: 2, userCode: result.userCode, ip: "127.0.0.1" });
-    expect((await accounts.deleteAccount({ userId: 2, username: "bob", password: GOOD_PASSWORD })).status).toBe("ok");
+    expect((await accounts.deleteAccount({ userId: 2, password: GOOD_PASSWORD })).status).toBe("ok");
     expect(rowCount(accounts)).toBe(0);
   });
 });

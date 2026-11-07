@@ -297,11 +297,15 @@ pub fn account_probe_request(origin: &str) -> AccountHttpRequest {
 
 // ─── Answers ────────────────────────────────────────────────────────────────
 
-/// The signed-in user as `me`/`login` report it.
+/// The signed-in user as `me`/`login` report it: `username` is what to show
+/// (the email, or a legacy username), `email` the verified email when the
+/// account has one (ADR-0044 §8).
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct AccountUser {
     pub username: String,
+    #[cfg_attr(feature = "ffi", uniffi(default = None))]
+    pub email: Option<String>,
 }
 
 /// A completed login: the session's expiry in epoch ms, plus the bearer
@@ -310,20 +314,21 @@ pub struct AccountUser {
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct LoginSuccess {
     pub user: AccountUser,
-    /// The server's admin account (#449) — only a literal `true` counts.
+    /// A legacy account the server wants an email for before going on
+    /// (ADR-0044 §8) — only a literal `true` counts.
     #[cfg_attr(feature = "ffi", uniffi(default = false))]
-    pub admin: bool,
+    pub needs_email: bool,
     pub expires_at: f64,
     pub token: Option<String>,
 }
 
-/// `GET /api/me` — the user, and whether it is the server's admin (#449).
+/// `GET /api/me` — the user, and whether the server wants an email for it (ADR-0044 §8).
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct AccountMe {
     pub user: AccountUser,
     #[cfg_attr(feature = "ffi", uniffi(default = false))]
-    pub admin: bool,
+    pub needs_email: bool,
 }
 
 /// One account device's standing on a host it joined through the account
@@ -521,20 +526,23 @@ fn num_field(value: &Json, key: &str) -> Option<f64> {
     value.get(key).and_then(Json::as_number)
 }
 
-/// `{user: {username}}` — everything else in the object is dropped, like the
-/// reference's fresh `{user: {username}}` result.
+/// `{user: {username, email?}}` — everything else in the object is dropped,
+/// like the reference's fresh `{user: {username, email?}}` result; an email
+/// that isn't a string is left out.
 fn user_body(value: &Json) -> Option<AccountUser> {
     // `isRecord(v)` lets arrays through in JS, but an array's `.user` reads
     // as undefined either way — `get` on a non-object misses identically.
-    let username = value.get("user")?.get("username").and_then(Json::as_str)?;
+    let user = value.get("user")?;
+    let username = user.get("username").and_then(Json::as_str)?;
     Some(AccountUser {
         username: username.to_string_lossy(),
+        email: str_field(user, "email"),
     })
 }
 
-/// `value.admin === true`.
-fn admin_flag(value: &Json) -> bool {
-    matches!(value.get("admin"), Some(Json::Bool(true)))
+/// `value.needsEmail === true`.
+fn needs_email_flag(value: &Json) -> bool {
+    matches!(value.get("needsEmail"), Some(Json::Bool(true)))
 }
 
 /// An optional member: absent is `None`, present but not a number is malformed.
@@ -599,13 +607,13 @@ fn decode_value(kind: AccountOpKind, value: Option<&Json>) -> Result<AccountValu
     match kind {
         AccountOpKind::Login => Ok(AccountValue::Login(LoginSuccess {
             user: user_body(value).ok_or_else(AccountError::invalid)?,
-            admin: admin_flag(value),
+            needs_email: needs_email_flag(value),
             expires_at: num_field(value, "expiresAt").ok_or_else(AccountError::invalid)?,
             token: str_field(value, "token"),
         })),
         AccountOpKind::Me => Ok(AccountValue::Me(AccountMe {
             user: user_body(value).ok_or_else(AccountError::invalid)?,
-            admin: admin_flag(value),
+            needs_email: needs_email_flag(value),
         })),
         // `result.ok ? ok(undefined)` — any 2xx answers the void ops.
         AccountOpKind::Logout

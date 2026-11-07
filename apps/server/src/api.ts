@@ -1,12 +1,15 @@
 // The server's HTTP account API (ADR-0022 §2), mounted on the same port as the
-// splice sockets and the static web client: POST /api/login, POST /api/register,
+// splice sockets and the static web client: GET /api/auth/methods, POST
+// /api/login (email or legacy username), email sign-up with POST
+// /api/register/code then POST /api/register, password reset with POST
+// /api/password/reset/code then POST /api/password/reset, and a signed-in
+// account's POST /api/me/email/code then POST /api/me/email (ADR-0044);
 // POST /api/logout (`{ revoke: true }` also takes this device off its hosts, #494),
 // POST /api/sessions/revoke-all, GET /api/me, POST /api/password (#450),
 // POST /api/me/delete (#451), GET /api/devices and POST /api/devices/:id/kick
 // (ADR-0037), POST /api/hosts/:hostId/remove (#512),
 // POST /api/join-tokens, POST /api/push-tokens and POST /api/push-tokens/remove
-// (ADR-0036), and for the admin GET/POST /api/invites and
-// POST /api/invites/revoke (#449). Host links (#495, RFC 8628) put a device
+// (ADR-0036). Host links (#495, RFC 8628) put a device
 // code in front of the join token: the host CLI calls POST /api/host-link/start
 // and /poll with no credential, a signed-in user POST /api/host-link/lookup,
 // /confirm and /deny. A host that can open a browser on its own screen asks
@@ -30,10 +33,13 @@ import {
   MAX_PASSWORD_CODEPOINTS,
   MAX_USERNAME_CODEPOINTS,
   normalizeApnsToken,
+  normalizeEmail,
   parseDeviceClaim,
+  type AccountUser,
   type Accounts,
   type HostLinkLoopback,
   type HostLinkRef,
+  type SendCodeResult,
 } from "./accounts.ts";
 
 /** Whether a bound host can serve a pairing ask right now (ADR-0022 §4). */
@@ -128,6 +134,33 @@ function parseLoopback(value: { redirectUri?: unknown; codeChallenge?: unknown; 
   return loopbackOnly ? { redirectUri, codeChallenge, state } : null;
 }
 const MAX_BODY = 8 * 1024;
+// A mailed code is six digits; anything much longer is not a typo of one.
+const MAX_CODE_LENGTH = 32;
+
+/**
+ * The anonymous routes that also answer desktop and Origin-less native
+ * callers (ADR-0044 §5): they carry no ambient credential, so there is
+ * nothing for a foreign page to forge beyond what it could send itself.
+ */
+const ANONYMOUS_ACCOUNT_ROUTES = new Set([
+  "/api/login",
+  "/api/register/code",
+  "/api/register",
+  "/api/password/reset/code",
+  "/api/password/reset",
+]);
+
+/** A body's `email`, normalized; undefined when missing or not an email. */
+const bodyEmail = (value: unknown): string | undefined => {
+  const email = (value as { email?: unknown } | null)?.email;
+  return typeof email === "string" && email.length <= 1024 ? normalizeEmail(email) : undefined;
+};
+
+/** A body's `code`, as typed; undefined when missing or far too long. */
+const bodyCode = (value: unknown): string | undefined => {
+  const code = (value as { code?: unknown } | null)?.code;
+  return typeof code === "string" && code.length <= MAX_CODE_LENGTH ? code : undefined;
+};
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 // The desktop renderer's origin — apps/desktop/electron/renderer-files.ts
 // defines APP_SCHEME/APP_HOST. Kept a literal on purpose: the relay must not
@@ -256,6 +289,36 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     respond(response, status, body, { ...cors, ...headers });
   const deny = (status: number, error: string, headers?: Record<string, string>): void =>
     send(status, { error }, headers);
+  /**
+   * The account as /api/me and sign-ins show it: `needsEmail` asks a legacy
+   * account for an email, only when the server can mail it a code (ADR-0044 §8).
+   */
+  const profile = (user: AccountUser): Record<string, unknown> => ({
+    user,
+    ...(user.email === undefined && accounts.emailEnabled ? { needsEmail: true } : {}),
+  });
+  /**
+   * A new session: same-origin browser sessions ride the HttpOnly cookie —
+   * the token never enters a body the page's JS could read. Desktop/native
+   * callers get the bare token for secure storage and no cookie.
+   */
+  const signedIn = (session: { readonly token: string; readonly expiresAt: number; readonly user: AccountUser }): void => {
+    const cookieMode = origin === ctx.publicOrigin;
+    send(
+      200,
+      { ...profile(session.user), expiresAt: session.expiresAt, ...(cookieMode ? {} : { token: session.token }) },
+      cookieMode ? { "set-cookie": setSessionCookie(session.token) } : undefined,
+    );
+  };
+  /** Asked for a mailed code: 202 with no body whether or not a mail went out. */
+  const codeSent = (result: SendCodeResult, closed: string): void => {
+    if (result === "limited") deny(429, "rate_limited");
+    else if (result === "closed") deny(403, closed);
+    else if (result === "taken") deny(409, "email_taken");
+    // 403, not 401: a mistyped password must not read as signed out.
+    else if (result === "wrong_password") deny(403, "wrong_password");
+    else send(202);
+  };
 
   if (!secureTransport(request, ctx.trustProxy)) {
     deny(403, "https_required");
@@ -274,12 +337,11 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
 
   // A Bearer request carries its own credential, so no Origin check. Anything
   // else that mutates (the ambient-cookie path, or an anonymous probe) must be
-  // same-origin — except login and register, which also answer desktop and
-  // Origin-less native callers in token mode (their branch picks the response
-  // style).
+  // same-origin — except login, sign-up and password reset, which also answer
+  // desktop and Origin-less native callers in token mode (their branch picks
+  // the response style).
   const bearer = (request.headers.authorization ?? "").startsWith("Bearer ");
-  const loginTokenMode =
-    (pathname === "/api/login" || pathname === "/api/register") && (origin === undefined || origin === DESKTOP_ORIGIN);
+  const loginTokenMode = ANONYMOUS_ACCOUNT_ROUTES.has(pathname) && (origin === undefined || origin === DESKTOP_ORIGIN);
   // The host CLI starts and polls a host link with no credential at all, so
   // there is nothing to forge; it sends no Origin, and only that is let past.
   const hostLinkHostMode =
@@ -335,24 +397,21 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       deny(401, "invalid_credentials");
       return;
     }
-    // Same-origin browser sessions ride the HttpOnly cookie — the token never
-    // enters a body the page's JS could read. Desktop/native callers get the
-    // bare token for secure storage and no cookie.
-    const cookieMode = origin === ctx.publicOrigin;
-    send(
-      200,
-      {
-        user: { username },
-        ...(result.admin ? { admin: true } : {}),
-        expiresAt: result.expiresAt,
-        ...(cookieMode ? {} : { token: result.token }),
-      },
-      cookieMode ? { "set-cookie": setSessionCookie(result.token) } : undefined,
-    );
+    signedIn(result);
     return;
   }
 
-  if (pathname === "/api/register") {
+  if (pathname === "/api/auth/methods") {
+    if (method !== "GET") {
+      deny(405, "method_not_allowed", { allow: "GET" });
+      return;
+    }
+    // Providers arrive with #620.
+    send(200, { registration: accounts.registrationOpen, email: accounts.emailEnabled, providers: [] });
+    return;
+  }
+
+  if (pathname === "/api/register/code" || pathname === "/api/password/reset/code") {
     if (method !== "POST") {
       deny(405, "method_not_allowed", { allow: "POST" });
       return;
@@ -362,46 +421,53 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
       return;
     }
-    const value = body.value as { invite?: unknown; username?: unknown; password?: unknown; device?: unknown } | null;
+    const email = bodyEmail(body.value);
+    if (email === undefined) {
+      deny(400, "invalid_email");
+      return;
+    }
+    const args = { email, ip: clientIp(request, ctx.trustProxy) };
+    const signup = pathname === "/api/register/code";
+    codeSent(
+      signup ? accounts.requestSignupCode(args) : accounts.requestPasswordReset(args),
+      signup ? "registration_closed" : "email_unavailable",
+    );
+    return;
+  }
+
+  if (pathname === "/api/register" || pathname === "/api/password/reset") {
+    if (method !== "POST") {
+      deny(405, "method_not_allowed", { allow: "POST" });
+      return;
+    }
+    const body = await readJson(request);
+    if (!body.ok) {
+      deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
+      return;
+    }
+    const value = body.value as { password?: unknown; device?: unknown } | null;
+    const email = bodyEmail(value);
+    const code = bodyCode(value);
     const device = parseDeviceClaim(value?.device);
-    if (
-      typeof value?.invite !== "string" ||
-      typeof value.username !== "string" ||
-      typeof value.password !== "string" ||
-      device === "invalid"
-    ) {
+    if (email === undefined || code === undefined || typeof value?.password !== "string" || device === "invalid") {
       deny(400, "invalid_request");
       return;
     }
-    const { invite, username } = value as { invite: string; username: string; password: string };
-    const result = await accounts.register({
-      invite,
-      username,
-      password: value.password,
-      ip: clientIp(request, ctx.trustProxy),
-      ...(device === undefined ? {} : { device }),
-    });
-    if (result.status === "limited") {
-      deny(429, "rate_limited");
+    const args = { email, code, password: value.password, ip: clientIp(request, ctx.trustProxy) };
+    if (pathname === "/api/password/reset") {
+      // Every session of the account ends, and this answer opens none: the
+      // client signs in with the new password like anyone else.
+      const result = await accounts.resetPasswordWithCode(args);
+      if (result.status === "limited") deny(429, "rate_limited");
+      else if (result.status === "refused") deny(result.reason === "email_unavailable" ? 403 : 400, result.reason);
+      else send(204);
       return;
     }
-    if (result.status === "refused") {
-      const status =
-        result.reason === "invalid_invite" || result.reason === "invite_expired"
-          ? 403
-          : result.reason === "username_taken"
-            ? 409
-            : 400;
-      deny(status, result.reason);
-      return;
-    }
+    const result = await accounts.register({ ...args, ...(device === undefined ? {} : { device }) });
+    if (result.status === "limited") deny(429, "rate_limited");
+    else if (result.status === "refused") deny(result.reason === "registration_closed" ? 403 : 400, result.reason);
     // Lands signed in, in the same credential style login would have used.
-    const cookieMode = origin === ctx.publicOrigin;
-    send(
-      200,
-      { user: { username }, expiresAt: result.expiresAt, ...(cookieMode ? {} : { token: result.token }) },
-      cookieMode ? { "set-cookie": setSessionCookie(result.token) } : undefined,
-    );
+    else signedIn(result);
     return;
   }
 
@@ -557,46 +623,6 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     return;
   }
 
-  if (pathname === "/api/invites" || pathname === "/api/invites/revoke") {
-    const allowed = pathname === "/api/invites" ? ["GET", "POST"] : ["POST"];
-    if (!allowed.includes(method)) {
-      deny(405, "method_not_allowed", { allow: allowed.join(", ") });
-      return;
-    }
-    const token = sessionToken(request);
-    const session = token === undefined ? undefined : accounts.authenticate(token);
-    if (session === undefined) {
-      deny(401, "unauthenticated");
-      return;
-    }
-    if (!session.admin) {
-      deny(403, "forbidden");
-      return;
-    }
-    if (pathname === "/api/invites") {
-      if (method === "GET") send(200, accounts.listInvites());
-      else send(200, accounts.createInvite(session.userId));
-      return;
-    }
-    const body = await authedJson(accounts, request, token!);
-    if (!body.ok) {
-      deny(body.status, body.error);
-      return;
-    }
-    if (!body.session.admin) {
-      deny(401, "unauthenticated");
-      return;
-    }
-    const id = (body.value as { id?: unknown } | null)?.id;
-    if (typeof id !== "number" || !Number.isSafeInteger(id)) {
-      deny(400, "invalid_request");
-      return;
-    }
-    if (accounts.revokeInvite(id)) send(204);
-    else deny(404, "not_found");
-    return;
-  }
-
   const hostRemove = /^\/api\/hosts\/([A-Za-z0-9_-]{43})\/remove$/.exec(pathname);
   if (hostRemove !== null) {
     if (method !== "POST") {
@@ -623,7 +649,6 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     const current = body.session;
     const result = await accounts.removeHost({
       userId: current.userId,
-      username: current.username,
       password: value.password,
       hostId: hostRemove[1]!,
     });
@@ -777,7 +802,6 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     const current = body.session;
     const result = await accounts.kickDevice({
       userId: current.userId,
-      username: current.username,
       password: value.password,
       deviceId: Number(deviceKick[1]),
       ...(current.deviceId === undefined ? {} : { currentDeviceId: current.deviceId }),
@@ -798,6 +822,8 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
 
   if (
     pathname === "/api/me" ||
+    pathname === "/api/me/email/code" ||
+    pathname === "/api/me/email" ||
     pathname === "/api/logout" ||
     pathname === "/api/sessions/revoke-all" ||
     pathname === "/api/password" ||
@@ -818,8 +844,47 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       return;
     }
     if (pathname === "/api/me") {
-      // `admin` only appears when true, so regular accounts see the old shape.
-      send(200, { user: { username: session.username }, ...(session.admin ? { admin: true } : {}) });
+      send(200, profile(session.user));
+      return;
+    }
+    if (pathname === "/api/me/email/code" || pathname === "/api/me/email") {
+      const body = await authedJson(accounts, request, token!);
+      if (!body.ok) {
+        deny(body.status, body.error);
+        return;
+      }
+      // The password again, as for changing it: the new address could reset
+      // it, so a stolen session alone must not be able to set one.
+      const password = (body.value as { password?: unknown } | null)?.password;
+      if (typeof password !== "string" || [...password].length > MAX_PASSWORD_CODEPOINTS) {
+        deny(400, "invalid_request");
+        return;
+      }
+      const email = bodyEmail(body.value);
+      if (email === undefined) {
+        deny(400, "invalid_email");
+        return;
+      }
+      const current = body.session;
+      if (pathname === "/api/me/email/code") {
+        // Signed in, so saying the email is taken tells nobody anonymous anything.
+        codeSent(
+          await accounts.requestEmailCode({ userId: current.userId, password, email, ip: clientIp(request, ctx.trustProxy) }),
+          "email_unavailable",
+        );
+        return;
+      }
+      const code = bodyCode(body.value);
+      if (code === undefined) {
+        deny(400, "invalid_request");
+        return;
+      }
+      const result = await accounts.setEmail({ userId: current.userId, password, email, code });
+      if (result.status === "limited") deny(429, "rate_limited");
+      else if (result.status === "refused") {
+        const status = { email_taken: 409, email_unavailable: 403, wrong_password: 403, invalid_code: 400 }[result.reason];
+        deny(status, result.reason);
+      } else send(200, profile(result.user));
       return;
     }
     if (pathname === "/api/push-tokens" || pathname === "/api/push-tokens/remove") {
@@ -855,7 +920,7 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
         deny(400, "invalid_request");
         return;
       }
-      const result = await accounts.deleteAccount({ userId: current.userId, username: current.username, password: value.password });
+      const result = await accounts.deleteAccount({ userId: current.userId, password: value.password });
       if (result.status === "limited") {
         deny(429, "rate_limited");
         return;
@@ -891,7 +956,6 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       }
       const result = await accounts.changePassword({
         userId: current.userId,
-        username: current.username,
         keepToken: token!,
         currentPassword: value.currentPassword,
         newPassword: value.newPassword,

@@ -100,7 +100,7 @@ extension AppModel {
                 username: value.user.username,
                 token: token,
                 expiresAt: value.expiresAt)
-            let record = AccountRecord(session: session, admin: value.admin)
+            let record = AccountRecord(session: session)
             // A new account starts a new registration epoch; work started
             // for the previous session must not land on this one.
             invalidateAccountPairing()

@@ -6,7 +6,7 @@ import type { Decorator } from "@storybook/react-vite";
 import { useEffect, useState, type ReactNode } from "react";
 import { fn } from "storybook/test";
 import type { ConversationId, ConversationView, EntryRecord } from "@earendil-works/pi-durable";
-import type { AccountDevice, AccountHost, AccountHostMatch, AccountInvite, HostLinkRequest } from "@pinomad/client/account.ts";
+import type { AccountDevice, AccountHost, AccountHostMatch, HostLinkRequest } from "@pinomad/client/account.ts";
 import type { StoredHost } from "@pinomad/client/stored-host.ts";
 import type { HostProviders, LoginFlow, LoginMethod, ProviderInfo } from "@pinomad/protocol/auth.ts";
 import { PROTOCOL } from "@pinomad/protocol/frames.ts";
@@ -888,12 +888,6 @@ export const ACCOUNT_DEVICES: readonly AccountDevice[] = [
   { id: 1, createdAt: now - 40 * 24 * 60 * MINUTE, lastSeenAt: now - 40 * 24 * 60 * MINUTE, current: false, hosts: [] },
 ];
 
-export const ACCOUNT_INVITES: readonly AccountInvite[] = [
-  { id: 3, createdAt: now - 5 * MINUTE, expiresAt: now + 7 * 24 * 60 * MINUTE - 5 * MINUTE },
-  { id: 2, createdAt: now - 3 * 24 * 60 * MINUTE, expiresAt: now + 4 * 24 * 60 * MINUTE, usedAt: now - 2 * 24 * 60 * MINUTE, usedBy: "alex" },
-  { id: 1, createdAt: now - 9 * 24 * 60 * MINUTE, expiresAt: now - 2 * 24 * 60 * MINUTE },
-];
-
 /** A host that ran `pinomad join` without a token, as the confirm page sees it (#496). */
 export const HOST_LINK_REQUEST: HostLinkRequest = {
   hostId: "Or-983sVxD715Pir-F61GmSkh4kPJVn1RvqZkt9MnSA",
@@ -908,7 +902,6 @@ export const signedIn = (overrides: Partial<Extract<AccountState, { status: "sig
   status: "signed-in",
   mode: "cookie",
   user: "kieran",
-  admin: false,
   serverOrigin: "https://pinomad.si",
   hosts: ACCOUNT_HOSTS,
   rejectedHostKeys: [],
@@ -922,7 +915,6 @@ export function fakeAccount(state: AccountState): AccountModel {
     state,
     subscribe: () => () => {},
     login: fn(async () => ({ ok: true as const, value: undefined })),
-    register: fn(async () => ({ ok: true as const, value: undefined })),
     logout: fn(async () => ({ ok: true as const, value: undefined })),
     revokeAll: fn(async () => ({ ok: true as const, value: undefined })),
     changePassword: fn(async () => ({ ok: true as const, value: undefined })),
@@ -942,9 +934,6 @@ export function fakeAccount(state: AccountState): AccountModel {
     confirmHostLinkRequest: fn(async () => ({ ok: true as const, value: "http://127.0.0.1:54321/callback?code=c&state=s" })),
     denyHostLinkRequest: fn(async () => ({ ok: true as const, value: "http://127.0.0.1:54321/callback?error=access_denied&state=s" })),
     watchForHost: fn(),
-    listInvites: fn(async () => ({ ok: true as const, value: ACCOUNT_INVITES })),
-    createInvite: fn(async () => ({ ok: true as const, value: { code: "Qm3xV8rT2kLp9wYz4nHc1A", expiresAt: Date.now() + 7 * 24 * 60 * MINUTE } })),
-    revokeInvite: fn(async () => ({ ok: true as const, value: undefined })),
     // A successful pair focuses the new host; keep the story on the busy state instead.
     pairHost: fn(() => new Promise<never>(() => {})),
     retryUnsavedHost: fn(() => new Promise<never>(() => {})),

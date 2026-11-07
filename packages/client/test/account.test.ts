@@ -241,21 +241,16 @@ describe("account client", () => {
     expect(calls.map((call) => call.init?.body)).toEqual([undefined, undefined, '{"revoke":true}']);
   });
 
-  it("deletes the account with its password; the 403 refusals aren't sign-outs (#451)", async () => {
-    const { impl, calls } = fakeFetch(
-      { status: 403, body: { error: "wrong_password" } },
-      { status: 403, body: { error: "admin_account" } },
-      { status: 204 },
-    );
+  it("deletes the account with its password; a 403 refusal isn't a sign-out (#451)", async () => {
+    const { impl, calls } = fakeFetch({ status: 403, body: { error: "wrong_password" } }, { status: 204 });
     const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer", token: "t" }, fetch: impl });
     const wrong = await client.deleteAccount("nope");
     expect(wrong).toEqual({ ok: false, error: { code: "wrong_password", status: 403 } });
     expect(isUnauthenticated((wrong as { error: { code: string } }).error)).toBe(false);
-    expect(await client.deleteAccount("pw")).toEqual({ ok: false, error: { code: "admin_account", status: 403 } });
     expect(await client.deleteAccount("pw")).toEqual({ ok: true, value: undefined });
-    expect(calls[2]!.url).toBe(`${ORIGIN}/api/me/delete`);
-    expect(calls[2]!.init?.method).toBe("POST");
-    expect(JSON.parse(calls[2]!.init!.body as string)).toEqual({ password: "pw" });
+    expect(calls[1]!.url).toBe(`${ORIGIN}/api/me/delete`);
+    expect(calls[1]!.init?.method).toBe("POST");
+    expect(JSON.parse(calls[1]!.init!.body as string)).toEqual({ password: "pw" });
   });
 
   it("parses the hosts list and join tokens", async () => {
@@ -300,50 +295,77 @@ const stored = (overrides?: Partial<StoredHost>): StoredHost => ({
   ...overrides,
 });
 
-describe("sign-up and invites (#449)", () => {
-  it("signs up with an invite and reads the session like a login", async () => {
-    const fetch = fakeFetch({ status: 200, body: { user: { username: "bob" }, expiresAt: 9, token: "t" } });
+describe("email accounts (ADR-0044)", () => {
+  it("signs up with an emailed code and reads the session like a login", async () => {
+    const fetch = fakeFetch(
+      { status: 202 },
+      { status: 200, body: { user: { username: "bob@example.com", email: "bob@example.com" }, expiresAt: 9, token: "t" } },
+    );
     const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer" }, fetch: fetch.impl });
-    const result = await client.register("code", "bob", "long password here");
-    expect(result).toEqual({ ok: true, value: { user: { username: "bob" }, expiresAt: 9, token: "t" } });
-    expect(fetch.calls[0]!.url).toBe(`${ORIGIN}/api/register`);
-    expect(JSON.parse(fetch.calls[0]!.init!.body!)).toEqual({ invite: "code", username: "bob", password: "long password here" });
+    expect(await client.requestSignupCode("bob@example.com")).toEqual({ ok: true, value: undefined });
+    const result = await client.register({ email: "bob@example.com", code: "123456", password: "long password here" });
+    expect(result).toEqual({
+      ok: true,
+      value: { user: { username: "bob@example.com", email: "bob@example.com" }, expiresAt: 9, token: "t" },
+    });
+    expect(fetch.calls.map((call) => call.url)).toEqual([`${ORIGIN}/api/register/code`, `${ORIGIN}/api/register`]);
+    expect(JSON.parse(fetch.calls[0]!.init!.body!)).toEqual({ email: "bob@example.com" });
+    expect(JSON.parse(fetch.calls[1]!.init!.body!)).toEqual({ email: "bob@example.com", code: "123456", password: "long password here" });
 
-    const refused = await bearer([{ status: 403, body: { error: "invite_expired" } }]).register("c", "bob", "x");
-    expect(refused).toEqual({ ok: false, error: { code: "invite_expired", status: 403 } });
+    const closed = await bearer([{ status: 403, body: { error: "registration_closed" } }]).requestSignupCode("a@b.co");
+    expect(closed).toEqual({ ok: false, error: { code: "registration_closed", status: 403 } });
   });
 
-  it("carries the admin flag from login and /api/me, absent for everyone else", async () => {
-    const admin = await bearer([{ status: 200, body: { user: { username: "a" }, admin: true, expiresAt: 1, token: "t" } }]).login("a", "p");
-    expect(admin.ok && admin.value.admin).toBe(true);
-    const plain = await bearer([{ status: 200, body: { user: { username: "b" }, expiresAt: 1, token: "t" } }]).login("b", "p");
-    expect(plain.ok && plain.value.admin).toBeUndefined();
-    expect(await bearer([{ status: 200, body: { user: { username: "a" }, admin: true } }]).me()).toEqual({
+  it("reads the sign-in methods, refusing a malformed answer", async () => {
+    expect(await bearer([{ status: 200, body: { registration: true, email: true, providers: [] } }]).authMethods()).toEqual({
       ok: true,
-      value: { user: { username: "a" }, admin: true },
+      value: { registration: true, email: true, providers: [] },
     });
-    expect(await bearer([{ status: 200, body: { user: { username: "b" } } }]).me()).toEqual({
-      ok: true,
-      value: { user: { username: "b" } },
-    });
+    expect((await bearer([{ status: 200, body: { registration: "yes", email: true, providers: [] } }]).authMethods()).ok).toBe(false);
+    expect((await bearer([{ status: 200, body: { registration: true, email: true } }]).authMethods()).ok).toBe(false);
   });
 
-  it("lists, creates and revokes invites, refusing malformed rows", async () => {
-    const rows = [
-      { id: 2, createdAt: 5, expiresAt: 10 },
-      { id: 1, createdAt: 1, expiresAt: 8, usedAt: 3, usedBy: "bob" },
-    ];
-    expect(await bearer([{ status: 200, body: rows }]).listInvites()).toEqual({ ok: true, value: rows });
-    expect((await bearer([{ status: 200, body: [{ id: "1", createdAt: 1, expiresAt: 2 }] }]).listInvites()).ok).toBe(false);
-    expect(await bearer([{ status: 200, body: { code: "c", expiresAt: 4 } }]).createInvite()).toEqual({
+  it("resets a password with an emailed code, without signing in", async () => {
+    const fetch = fakeFetch({ status: 202 }, { status: 204 });
+    const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer" }, fetch: fetch.impl });
+    expect(await client.requestPasswordReset("a@b.co")).toEqual({ ok: true, value: undefined });
+    expect(await client.resetPassword({ email: "a@b.co", code: "000111", password: "a new long password" })).toEqual({
       ok: true,
-      value: { code: "c", expiresAt: 4 },
+      value: undefined,
     });
-    const fetch = fakeFetch({ status: 204 });
+    expect(fetch.calls.map((call) => call.url)).toEqual([`${ORIGIN}/api/password/reset/code`, `${ORIGIN}/api/password/reset`]);
+    expect(JSON.parse(fetch.calls[1]!.init!.body!)).toEqual({ email: "a@b.co", code: "000111", password: "a new long password" });
+  });
+
+  it("adds an email to a signed-in account and reads back the user", async () => {
+    const fetch = fakeFetch({ status: 202 }, { status: 200, body: { user: { username: "a@b.co", email: "a@b.co" } } });
     const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer", token: "t" }, fetch: fetch.impl });
-    expect(await client.revokeInvite(7)).toEqual({ ok: true, value: undefined });
-    expect(fetch.calls[0]!.url).toBe(`${ORIGIN}/api/invites/revoke`);
-    expect(JSON.parse(fetch.calls[0]!.init!.body!)).toEqual({ id: 7 });
+    expect(await client.requestEmailCode({ email: "a@b.co", password: "pw" })).toEqual({ ok: true, value: undefined });
+    expect(await client.setEmail({ email: "a@b.co", code: "123456", password: "pw" })).toEqual({
+      ok: true,
+      value: { user: { username: "a@b.co", email: "a@b.co" } },
+    });
+    expect(JSON.parse(fetch.calls[0]!.init!.body!)).toEqual({ email: "a@b.co", password: "pw" });
+    expect(fetch.calls.map((call) => call.url)).toEqual([`${ORIGIN}/api/me/email/code`, `${ORIGIN}/api/me/email`]);
+    expect(JSON.parse(fetch.calls[1]!.init!.body!)).toEqual({ email: "a@b.co", code: "123456", password: "pw" });
+  });
+
+  it("carries needsEmail and the email from login and /api/me only when the server says so", async () => {
+    const legacy = await bearer([{ status: 200, body: { user: { username: "kieran" }, needsEmail: true, expiresAt: 1, token: "t" } }]).login(
+      "kieran",
+      "p",
+    );
+    expect(legacy).toEqual({ ok: true, value: { user: { username: "kieran" }, needsEmail: true, expiresAt: 1, token: "t" } });
+    const loose = await bearer([{ status: 200, body: { user: { username: "b", email: 3 }, needsEmail: "yes", expiresAt: 1 } }]).login("b", "p");
+    expect(loose).toEqual({ ok: true, value: { user: { username: "b" }, expiresAt: 1 } });
+    expect(await bearer([{ status: 200, body: { user: { username: "a@b.co", email: "a@b.co" } } }]).me()).toEqual({
+      ok: true,
+      value: { user: { username: "a@b.co", email: "a@b.co" } },
+    });
+    expect(await bearer([{ status: 200, body: { user: { username: "k" }, needsEmail: true } }]).me()).toEqual({
+      ok: true,
+      value: { user: { username: "k" }, needsEmail: true },
+    });
   });
 });
 
@@ -354,10 +376,10 @@ describe("account devices (#452)", () => {
     const { impl, calls } = fakeFetch({ status: 200, body: { user: { username: "a" }, expiresAt: 1, token: "t" } });
     const client = createAccountClient({ origin: ORIGIN, credentials: { mode: "bearer" }, fetch: impl });
     await client.login("a", "p", { id: DEVICE_ID, name: "Mac Chrome" });
-    await client.register("code", "a", "p", { id: DEVICE_ID });
+    await client.register({ email: "a@b.co", code: "123456", password: "p", device: { id: DEVICE_ID } });
     await client.login("a", "p");
     expect(calls[0]!.init!.body).toBe(`{"username":"a","password":"p","device":{"id":"${DEVICE_ID}","name":"Mac Chrome"}}`);
-    expect(JSON.parse(calls[1]!.init!.body!)).toEqual({ invite: "code", username: "a", password: "p", device: { id: DEVICE_ID } });
+    expect(JSON.parse(calls[1]!.init!.body!)).toEqual({ email: "a@b.co", code: "123456", password: "p", device: { id: DEVICE_ID } });
     expect(JSON.parse(calls[2]!.init!.body!)).toEqual({ username: "a", password: "p" });
   });
 

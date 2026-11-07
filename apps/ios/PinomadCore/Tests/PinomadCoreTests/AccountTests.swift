@@ -447,14 +447,13 @@ struct AccountTests {
         #expect(transport.requests[0].body == #"{"password":"pw"}"#)
     }
 
-    /// A wrong password and the admin's refusal are 403s: the session they
-    /// were typed into stays, and each says why.
+    /// A wrong password is a 403: the session it was typed into stays, and
+    /// the copy says why.
     @Test func refusedDeletionKeepsTheSession() async {
         let transport = StubAccountTransport()
         let api = AccountAPI(origin: "https://relay.example.com", token: "tok", transport: transport)
         for (code, copy) in [
             ("wrong_password", "The current password is wrong."),
-            ("admin_account", "The server's admin account can't be deleted."),
         ] {
             transport.outcome = .response(AccountHTTPResponse(status: 403, body: Data(#"{"error":"\#(code)"}"#.utf8)))
             guard case .failure(let failure) = await api.deleteAccount(password: "pw") else {
@@ -536,7 +535,7 @@ struct AccountTests {
     @Test func signInClaimsThisDevice() async {
         let transport = StubAccountTransport()
         transport.outcome = .response(AccountHTTPResponse(
-            status: 200, body: Data(#"{"user":{"username":"a"},"admin":true,"expiresAt":1,"token":"t"}"#.utf8)))
+            status: 200, body: Data(#"{"user":{"username":"a"},"needsEmail":true,"expiresAt":1,"token":"t"}"#.utf8)))
         let api = AccountAPI(origin: "https://relay.example.com", transport: transport)
         let result = await api.login(
             username: "a", password: "p", device: AccountDeviceClaim(id: "AAAAAAAAAAAAAAAAAAAAAA", name: "iPhone"))
@@ -544,7 +543,7 @@ struct AccountTests {
             Issue.record("expected a login, got \(result)")
             return
         }
-        #expect(value.admin)
+        #expect(value.needsEmail)
         #expect(transport.requests[0].body
             == #"{"username":"a","password":"p","device":{"id":"AAAAAAAAAAAAAAAAAAAAAA","name":"iPhone"}}"#)
     }
@@ -564,16 +563,6 @@ struct AccountTests {
         let two = AccountCopy.removeDeviceExplanation(
             name: "Mac", hosts: [row("a", false), row("b", false), row("c", false)])
         #expect(two.contains("a, b and c can't be asked."))
-    }
-
-    /// A record saved before the admin flag existed still decodes, as a
-    /// regular account.
-    @Test func recordFromBeforeTheAdminFlagDecodes() throws {
-        let data = Data(#"{"serverOrigin":"https://x.example","username":"k","token":"t","expiresAt":1}"#.utf8)
-        let record = try JSONDecoder().decode(AccountRecord.self, from: data)
-        #expect(record.admin == nil)
-        #expect(record.session != nil)
-        #expect(AccountRecord(session: record.session!, admin: true).admin == true)
     }
 
     // MARK: - Device id

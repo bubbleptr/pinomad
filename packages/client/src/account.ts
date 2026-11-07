@@ -4,8 +4,9 @@
 // takes fetch as an injected minimal surface — DOM and undici both
 // satisfy it — and never touches a DOM-only API.
 //
-// crates/pinomad-core replays this client for iOS, except sign-up and the
-// admin's invite ops (#449): only web and desktop offer those so far.
+// crates/pinomad-core replays this client for iOS, except the email ops
+// (ADR-0044: sign-up, password reset, adding an email): only web and desktop
+// offer those so far.
 
 import { encodeEndpointSetParam, parseEndpointSet, type EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { UNAUTHORIZED_CLOSE_CODE, type ApnsPushToken } from "@pinomad/protocol/frames.ts";
@@ -199,13 +200,23 @@ export function normalizeServerOrigin(origin: string): string {
 export type AccountCredentials = { readonly mode: "cookie" } | { readonly mode: "bearer"; readonly token?: string };
 
 export interface AccountUser {
+  /** What to show for the account: its email, or a legacy username (ADR-0044 §8). */
   readonly username: string;
+  /** The account's verified email; absent on legacy accounts that have none yet. */
+  readonly email?: string;
 }
 
-export interface LoginSuccess {
+/** The signed-in account as GET /api/me reports it. */
+export interface AccountProfile {
   readonly user: AccountUser;
-  /** The server's admin account, which mints invites (#449). Absent for everyone else. */
-  readonly admin?: true;
+  /**
+   * A legacy account without a verified email on a server that can mail
+   * codes: the client asks for one before going on (ADR-0044 §8).
+   */
+  readonly needsEmail?: true;
+}
+
+export interface LoginSuccess extends AccountProfile {
   readonly expiresAt: number;
   /** Present only in bearer mode — cookie-mode sessions never expose the token to JS. */
   readonly token?: string;
@@ -218,19 +229,14 @@ export interface JoinToken {
   readonly command: string;
 }
 
-/** A sign-up invite as the admin lists it; the code is only shown at creation. */
-export interface AccountInvite {
-  readonly id: number;
-  readonly createdAt: number;
-  readonly expiresAt: number;
-  readonly usedAt?: number;
-  /** Absent on a used invite whose account was since deleted. */
-  readonly usedBy?: string;
-}
-
-export interface CreatedInvite {
-  readonly code: string;
-  readonly expiresAt: number;
+/** How a server lets people in (GET /api/auth/methods, ADR-0044). */
+export interface AuthMethods {
+  /** New accounts can be created here. */
+  readonly registration: boolean;
+  /** The server can mail codes: email sign-up and password reset work. */
+  readonly email: boolean;
+  /** Third-party sign-in providers the server has configured. */
+  readonly providers: readonly string[];
 }
 
 /** One account-bound host row as GET /api/hosts reports it. */
@@ -314,14 +320,33 @@ export interface AccountClient {
   readonly origin: string;
   /** `device` ties the session to this install's account device (ADR-0037 §1); older servers ignore it. */
   login(username: string, password: string, device?: AccountDeviceClaim): Promise<AccountResult<LoginSuccess>>;
-  /** Creates an account from an invite and signs it in, like login (#449). */
-  register(
-    invite: string,
-    username: string,
-    password: string,
-    device?: AccountDeviceClaim,
-  ): Promise<AccountResult<LoginSuccess>>;
-  me(): Promise<AccountResult<{ readonly user: AccountUser; readonly admin?: true }>>;
+  authMethods(): Promise<AccountResult<AuthMethods>>;
+  /**
+   * Mails a sign-up code (ADR-0044 §2). The answer is the same whether or
+   * not the email already has an account; 403 `registration_closed` when
+   * the server takes no sign-ups.
+   */
+  requestSignupCode(email: string): Promise<AccountResult<void>>;
+  /** Creates an account from the mailed code and signs it in, like login. */
+  register(input: {
+    readonly email: string;
+    readonly code: string;
+    readonly password: string;
+    readonly device?: AccountDeviceClaim;
+  }): Promise<AccountResult<LoginSuccess>>;
+  /** Mails a reset code when the email has an account; the answer doesn't say. */
+  requestPasswordReset(email: string): Promise<AccountResult<void>>;
+  /** Sets a new password and signs the account out everywhere; log in afterwards. */
+  resetPassword(input: { readonly email: string; readonly code: string; readonly password: string }): Promise<AccountResult<void>>;
+  /**
+   * Mails a code to an email the signed-in account wants to use, after the
+   * current password: 403 `wrong_password` is a refusal, not a sign-out;
+   * 409 `email_taken` when another account has the email.
+   */
+  requestEmailCode(input: { readonly email: string; readonly password: string }): Promise<AccountResult<void>>;
+  /** Makes the mailed-to email the account's verified email; the password again, as for the code. */
+  setEmail(input: { readonly email: string; readonly code: string; readonly password: string }): Promise<AccountResult<AccountProfile>>;
+  me(): Promise<AccountResult<AccountProfile>>;
   /**
    * Ends this session. `revoke` also has the server ask every host this
    * device joined through the account to revoke it (#494); a server that
@@ -333,7 +358,7 @@ export interface AccountClient {
   changePassword(currentPassword: string, newPassword: string): Promise<AccountResult<void>>;
   /**
    * Deletes the signed-in account and ends this session (#451). 403
-   * `wrong_password` and `admin_account` are refusals, not sign-outs.
+   * `wrong_password` is a refusal, not a sign-out.
    */
   deleteAccount(password: string): Promise<AccountResult<void>>;
   createJoinToken(): Promise<AccountResult<JoinToken>>;
@@ -381,10 +406,6 @@ export interface AccountClient {
   /** Record this device's APNs token under the signed-in account (ADR-0036). */
   registerPushToken(token: ApnsPushToken): Promise<AccountResult<void>>;
   removePushToken(token: ApnsPushToken): Promise<AccountResult<void>>;
-  /** Admin only (403 `forbidden` otherwise). */
-  listInvites(): Promise<AccountResult<readonly AccountInvite[]>>;
-  createInvite(): Promise<AccountResult<CreatedInvite>>;
-  revokeInvite(id: number): Promise<AccountResult<void>>;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -423,9 +444,13 @@ const loopbackRedirectBody = (value: unknown): string | undefined => {
   }
 };
 
-const userBody = (value: unknown): { readonly user: AccountUser; readonly admin?: true } | undefined => {
+const userBody = (value: unknown): AccountProfile | undefined => {
   if (!isRecord(value) || !isRecord(value.user) || typeof value.user.username !== "string") return undefined;
-  return { user: { username: value.user.username }, ...(value.admin === true ? { admin: true as const } : {}) };
+  const { username, email } = value.user;
+  return {
+    user: { username, ...(typeof email === "string" ? { email } : {}) },
+    ...(value.needsEmail === true ? { needsEmail: true as const } : {}),
+  };
 };
 
 const DEVICE_HOST_STATES = new Set(["registered", "revoking", "revoked"]);
@@ -453,14 +478,6 @@ const deviceBody = (device: AccountDeviceClaim | undefined) =>
   device === undefined
     ? {}
     : { device: { id: device.id, ...(device.name === undefined ? {} : { name: device.name }) } };
-
-const isInvite = (value: unknown): value is AccountInvite =>
-  isRecord(value) &&
-  typeof value.id === "number" &&
-  typeof value.createdAt === "number" &&
-  typeof value.expiresAt === "number" &&
-  (value.usedAt === undefined || typeof value.usedAt === "number") &&
-  (value.usedBy === undefined || typeof value.usedBy === "string");
 
 /**
  * A client for one server's account API. `credentials` picks how requests
@@ -533,8 +550,45 @@ export function createAccountClient(options: {
     origin,
     login: async (username, password, device) =>
       session(await request("/api/login", "POST", { username, password, ...deviceBody(device) })),
-    register: async (invite, username, password, device) =>
-      session(await request("/api/register", "POST", { invite, username, password, ...deviceBody(device) })),
+    authMethods: async () => {
+      const result = await request("/api/auth/methods", "GET");
+      if (!result.ok) return result;
+      const value = result.value;
+      if (
+        !isRecord(value) ||
+        typeof value.registration !== "boolean" ||
+        typeof value.email !== "boolean" ||
+        !Array.isArray(value.providers) ||
+        !value.providers.every((provider) => typeof provider === "string")
+      ) {
+        return fail("invalid_response");
+      }
+      return ok({ registration: value.registration, email: value.email, providers: value.providers as string[] });
+    },
+    requestSignupCode: async (email) => {
+      const result = await request("/api/register/code", "POST", { email });
+      return result.ok ? ok(undefined) : result;
+    },
+    register: async ({ email, code, password, device }) =>
+      session(await request("/api/register", "POST", { email, code, password, ...deviceBody(device) })),
+    requestPasswordReset: async (email) => {
+      const result = await request("/api/password/reset/code", "POST", { email });
+      return result.ok ? ok(undefined) : result;
+    },
+    resetPassword: async ({ email, code, password }) => {
+      const result = await request("/api/password/reset", "POST", { email, code, password });
+      return result.ok ? ok(undefined) : result;
+    },
+    requestEmailCode: async ({ email, password }) => {
+      const result = await request("/api/me/email/code", "POST", { email, password });
+      return result.ok ? ok(undefined) : result;
+    },
+    setEmail: async ({ email, code, password }) => {
+      const result = await request("/api/me/email", "POST", { email, code, password });
+      if (!result.ok) return result;
+      const value = userBody(result.value);
+      return value === undefined ? fail("invalid_response") : ok(value);
+    },
     me: async () => {
       const result = await request("/api/me", "GET");
       if (!result.ok) return result;
@@ -696,33 +750,6 @@ export function createAccountClient(options: {
     },
     removePushToken: async (token) => {
       const result = await request("/api/push-tokens/remove", "POST", { apns: token.apns, environment: token.environment });
-      return result.ok ? ok(undefined) : result;
-    },
-    listInvites: async () => {
-      const result = await request("/api/invites", "GET");
-      if (!result.ok) return result;
-      if (!Array.isArray(result.value) || !result.value.every(isInvite)) return fail("invalid_response");
-      return ok(
-        result.value.map((invite) => ({
-          id: invite.id,
-          createdAt: invite.createdAt,
-          expiresAt: invite.expiresAt,
-          ...(invite.usedAt === undefined ? {} : { usedAt: invite.usedAt }),
-          ...(invite.usedBy === undefined ? {} : { usedBy: invite.usedBy }),
-        })),
-      );
-    },
-    createInvite: async () => {
-      const result = await request("/api/invites", "POST");
-      if (!result.ok) return result;
-      const value = result.value;
-      if (!isRecord(value) || typeof value.code !== "string" || typeof value.expiresAt !== "number") {
-        return fail("invalid_response");
-      }
-      return ok({ code: value.code, expiresAt: value.expiresAt });
-    },
-    revokeInvite: async (id) => {
-      const result = await request("/api/invites/revoke", "POST", { id });
       return result.ok ? ok(undefined) : result;
     },
   };

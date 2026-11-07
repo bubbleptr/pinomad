@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import * as ts from "typescript";
 import { afterEach, describe, expect, it } from "vitest";
-import { openAccounts, type Accounts } from "../src/accounts.ts";
+import { addUser, openAccounts, type Accounts } from "../src/accounts.ts";
 import { startRelay, type Relay } from "../src/relay.ts";
 import { removeTempDir, tempDir } from "./support.ts";
 
@@ -25,6 +25,7 @@ afterEach(async () => {
 interface Started {
   readonly relay: Relay;
   readonly accounts: Accounts;
+  readonly dataDir: string;
   /** Resolves once the API has authenticated `token`, i.e. the handler is now waiting on the body. */
   readonly authenticated: (token: string) => Promise<void>;
 }
@@ -47,6 +48,7 @@ async function startServer(): Promise<Started> {
   return {
     relay,
     accounts,
+    dataDir,
     authenticated: (token) => new Promise<void>((resolve) => waiting.set(token, resolve)),
   };
 }
@@ -61,10 +63,11 @@ const post = (relay: Relay, path: string, body: unknown, token?: string): Promis
 const login = async (relay: Relay, username: string, password = GOOD_PASSWORD): Promise<Response> =>
   post(relay, "/api/login", { username, password });
 
+const BOB = "bob@example.com";
+
 async function signUpBob(started: Started): Promise<string> {
-  const invite = started.accounts.createInvite(1).code;
-  const response = await post(started.relay, "/api/register", { invite, username: "bob", password: GOOD_PASSWORD });
-  return ((await response.json()) as { token: string }).token;
+  await addUser({ dataDir: started.dataDir, email: BOB, password: GOOD_PASSWORD });
+  return ((await (await login(started.relay, BOB)).json()) as { token: string }).token;
 }
 
 /**
@@ -101,7 +104,7 @@ describe("signed-in routes re-authenticate after reading the body", () => {
     const started = await startServer();
     const bob = await signUpBob(started);
     expect(await postRevokedMidBody(started, "/api/me/delete", { password: GOOD_PASSWORD }, bob)).toBe(401);
-    expect((await login(started.relay, "bob")).status).toBe(200);
+    expect((await login(started.relay, BOB)).status).toBe(200);
   });
 
   it("does not change the password of a session revoked while the body arrived", async () => {
@@ -122,7 +125,8 @@ describe("signed-in routes re-authenticate after reading the body", () => {
   it.each([
     ["/api/push-tokens", { apns: APNS, environment: "production" }],
     ["/api/push-tokens/remove", { apns: APNS, environment: "production" }],
-    ["/api/invites/revoke", { id: 1 }],
+    ["/api/me/email/code", { email: "a@example.com", password: GOOD_PASSWORD }],
+    ["/api/me/email", { email: "a@example.com", code: "123456", password: GOOD_PASSWORD }],
     [`/api/hosts/${HOST_ID}/remove`, { password: GOOD_PASSWORD }],
     ["/api/devices/1/kick", { password: GOOD_PASSWORD }],
     ["/api/host-link/lookup", { userCode: "ABCD-EFGH" }],
@@ -143,7 +147,8 @@ describe("signed-in routes re-authenticate after reading the body", () => {
  * `.authenticate` result. "After" is lexical: an earlier statement in an
  * enclosing block (or the condition of an enclosing `if`) calls
  * `sessionToken` or `.authenticate`. The unauthenticated routes (login,
- * register, the host CLI's host-link calls) read with no credential before.
+ * sign-up, password reset, the host CLI's host-link calls) read with no
+ * credential before.
  */
 function staleSessionUses(source: string): string[] {
   const file = ts.createSourceFile("api.ts", source, ts.ScriptTarget.Latest, true);

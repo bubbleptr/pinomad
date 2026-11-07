@@ -196,7 +196,7 @@ describe("account model", () => {
     expect(calls[2]!.init?.headers?.authorization).toBeUndefined();
   });
 
-  it("claims the same account device at every login and sign-up, across reloads (#452)", async () => {
+  it("claims the same account device at every login, across reloads (#452)", async () => {
     const items = new Map<string, string>();
     const storage = { getItem: (key: string) => items.get(key) ?? null, setItem: (key: string, value: string) => void items.set(key, value) };
     const page = () => {
@@ -210,7 +210,7 @@ describe("account model", () => {
         { status: 200, body: USER }, // login
         { status: 200, body: [] },
         { status: 204 }, // logout
-        { status: 200, body: { user: { username: "bob" }, expiresAt: 1 } }, // register
+        { status: 200, body: { user: { username: "bob" }, expiresAt: 1 } }, // login
         { status: 200, body: [] },
       ),
       device: page(),
@@ -218,7 +218,7 @@ describe("account model", () => {
     await settled(first.model);
     expect((await first.model.login({ username: "admin", password: "pw" })).ok).toBe(true);
     await first.model.logout();
-    expect((await first.model.register({ invite: "code", username: "bob", password: "pw" })).ok).toBe(true);
+    expect((await first.model.login({ username: "bob", password: "pw" })).ok).toBe(true);
     const claims = [first.calls[2]!, first.calls[5]!].map((call) => (JSON.parse(call.init!.body!) as { device: unknown }).device);
     const id = items.values().next().value as string;
     expect(claims).toEqual([
@@ -309,48 +309,6 @@ describe("account model", () => {
     expect(result.ok).toBe(true);
     expect(saved).toEqual([{ serverOrigin: ORIGIN, token: "fresh-token" }]);
     expect(model.state).toMatchObject({ status: "signed-in", mode: "bearer", serverOrigin: ORIGIN });
-  });
-
-  it("bearer sign-up with an invite saves the token and signs in like login (#449)", async () => {
-    const saved: { serverOrigin: string; token: string }[] = [];
-    const account = {
-      get: () => Promise.resolve(undefined),
-      save: (a: { serverOrigin: string; token: string }) => {
-        saved.push(a);
-        return Promise.resolve();
-      },
-      clear: () => Promise.resolve(),
-    };
-    const bridge = { hosts: { list: () => Promise.resolve([]), save: () => Promise.resolve(), remove: () => Promise.resolve() }, account } as unknown as DesktopBridge;
-    const { model, calls } = makeModel({ fake: fakeFetch(
-      { status: 200, body: { user: { username: "bob" }, expiresAt: 1, token: "fresh-token" } },
-      { status: 200, body: [] },
-    ), bridge });
-    await settled(model);
-    const result = await model.register({ invite: "code", username: "bob", password: "pw", serverOrigin: ORIGIN });
-    expect(result.ok).toBe(true);
-    expect(calls[0]!.url).toBe(`${ORIGIN}/api/register`);
-    expect(saved).toEqual([{ serverOrigin: ORIGIN, token: "fresh-token" }]);
-    expect(model.state).toMatchObject({ status: "signed-in", user: "bob", admin: false });
-  });
-
-  it("knows the admin from login and from a restored session", async () => {
-    const restored = makeModel({ fake: fakeFetch(
-      { status: 401 }, // probe
-      { status: 200, body: { user: { username: "admin" }, admin: true } }, // me
-      { status: 200, body: [] },
-    ) });
-    await vi.waitFor(() => expect(restored.model.state).toMatchObject({ status: "signed-in", admin: true }));
-
-    const fresh = makeModel({ fake: fakeFetch(
-      { status: 401 },
-      { status: 401, body: { error: "unauthenticated" } },
-      { status: 200, body: { ...USER, admin: true } },
-      { status: 200, body: [] },
-    ) });
-    await settled(fresh.model);
-    await fresh.model.login({ username: "admin", password: "pw" });
-    expect(fresh.model.state).toMatchObject({ status: "signed-in", admin: true });
   });
 
   it("a dead session drops back to signed-out and clears the stored token", async () => {

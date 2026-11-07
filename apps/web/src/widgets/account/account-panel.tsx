@@ -1,7 +1,6 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { CheckboxInput } from "@astryxdesign/core/CheckboxInput";
-import { CodeBlock } from "@astryxdesign/core/CodeBlock";
 import { Heading } from "@astryxdesign/core/Heading";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
@@ -16,9 +15,7 @@ import type {
   AccountDeviceHost,
   AccountError,
   AccountHostMatch,
-  AccountInvite,
   AccountResult,
-  CreatedInvite,
 } from "@pinomad/client/account.ts";
 import type { StoredHost } from "@pinomad/client/stored-host.ts";
 import { relativeTime } from "@pinomad/client/family.ts";
@@ -75,18 +72,12 @@ interface Notice {
   readonly description: string;
 }
 
-/** Sign-in or sign-up; both forms share the server address the user typed. */
 function SignedOut({ account, state }: { account: AccountModel; state: Extract<AccountState, { status: "signed-out" }> }) {
   // Bearer clients (desktop) pick their server, starting from the last one or
   // the official one; a cookie page is the server.
   const [origin, setOrigin] = useState(state.serverOrigin ?? OFFICIAL_SERVER_ORIGIN);
-  const [signingUp, setSigningUp] = useState(false);
   const server = state.mode === "bearer" ? { origin, setOrigin } : undefined;
-  return signingUp ? (
-    <SignUpForm account={account} server={server} onSignIn={() => setSigningUp(false)} />
-  ) : (
-    <SignInForm account={account} server={server} onSignUp={() => setSigningUp(true)} />
-  );
+  return <SignInForm account={account} server={server} />;
 }
 
 /** The Server field's value and setter; absent on a cookie page, which is the server. */
@@ -95,15 +86,7 @@ interface ServerField {
   readonly setOrigin: (origin: string) => void;
 }
 
-function SignInForm({
-  account,
-  server,
-  onSignUp,
-}: {
-  account: AccountModel;
-  server: ServerField | undefined;
-  onSignUp: () => void;
-}) {
+function SignInForm({ account, server }: { account: AccountModel; server: ServerField | undefined }) {
   const asksOrigin = server !== undefined;
   const origin = server?.origin ?? "";
   const [username, setUsername] = useState("");
@@ -141,89 +124,8 @@ function SignInForm({
       <TextInput label="Username" value={username} onChange={setUsername} onEnter={submit} width="100%" />
       <TextInput label="Password" type="password" value={password} onChange={setPassword} onEnter={submit} width="100%" />
       {error === undefined ? null : <Banner status="error" title="Couldn't sign in" description={accountErrorMessage(error)} />}
-      <HStack gap={2} vAlign="center" hAlign="between">
+      <HStack gap={2} vAlign="center">
         <Button label="Sign in" variant="primary" isLoading={busy} isDisabled={!ready} onClick={submit} />
-        <Button label="Create an account" variant="ghost" onClick={onSignUp} />
-      </HStack>
-    </VStack>
-  );
-}
-
-/** Sign-up with an invite from the server's admin (#449); lands signed in. */
-function SignUpForm({
-  account,
-  server,
-  onSignIn,
-}: {
-  account: AccountModel;
-  server: ServerField | undefined;
-  onSignIn: () => void;
-}) {
-  const asksOrigin = server !== undefined;
-  const origin = server?.origin ?? "";
-  const [invite, setInvite] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<AccountError>();
-  const ready =
-    invite.trim() !== "" && username.trim() !== "" && password !== "" && (!asksOrigin || origin.trim() !== "");
-  const submit = (): void => {
-    if (!ready || busy) return;
-    setBusy(true);
-    setError(undefined);
-    void account
-      .register({
-        invite: invite.trim(),
-        username: username.trim(),
-        password,
-        ...(asksOrigin ? { serverOrigin: origin.trim() } : {}),
-      })
-      .then((result) => {
-        setBusy(false);
-        if (!result.ok) setError(result.error);
-      });
-  };
-  return (
-    <VStack gap={3} style={{ width: "100%" }}>
-      <VStack gap={1}>
-        <Heading level={3}>Create an account</Heading>
-        <Text type="supporting">You need an invite code from the server's admin.</Text>
-      </VStack>
-      {server === undefined ? null : (
-        <TextInput
-          label="Server"
-          placeholder="https://nomad.example.com"
-          value={server.origin}
-          onChange={server.setOrigin}
-          onEnter={submit}
-          width="100%"
-        />
-      )}
-      <TextInput label="Invite code" value={invite} onChange={setInvite} onEnter={submit} width="100%" />
-      <TextInput
-        label="Username"
-        description="Lowercase letters, digits, dots, dashes or underscores"
-        value={username}
-        onChange={setUsername}
-        onEnter={submit}
-        width="100%"
-      />
-      <TextInput
-        label="Password"
-        description="At least 12 characters"
-        type="password"
-        value={password}
-        onChange={setPassword}
-        onEnter={submit}
-        width="100%"
-      />
-      {error === undefined ? null : (
-        <Banner status="error" title="Couldn't create the account" description={accountErrorMessage(error)} />
-      )}
-      <HStack gap={2} vAlign="center" hAlign="between">
-        <Button label="Create account" variant="primary" isLoading={busy} isDisabled={!ready} onClick={submit} />
-        <Button label="Sign in instead" variant="ghost" onClick={onSignIn} />
       </HStack>
     </VStack>
   );
@@ -270,10 +172,9 @@ function SignedIn({
       )}
       <AddHost account={account} serverOrigin={state.serverOrigin} />
       <Devices account={account} hosts={state.hosts} />
-      {state.admin ? <Invites account={account} /> : null}
       <ChangePassword account={account} />
       <SignOut account={account} onNotice={onNotice} />
-      {state.admin ? null : <DeleteAccount account={account} server={server} onNotice={onNotice} />}
+      <DeleteAccount account={account} server={server} onNotice={onNotice} />
     </VStack>
   );
 }
@@ -449,93 +350,6 @@ const ago = (at: number, now: number): string => {
   return span === "now" ? "just now" : `${span} ago`;
 };
 
-/** The admin's sign-up invites (#449): mint one, see who used which, revoke unused ones. */
-function Invites({ account }: { account: AccountModel }) {
-  const now = useNow(60_000);
-  const [invites, setInvites] = useState<readonly AccountInvite[]>();
-  const [created, setCreated] = useState<CreatedInvite>();
-  const [error, setError] = useState<AccountError>();
-  const [busy, setBusy] = useState(false);
-  const load = (): Promise<void> =>
-    account.listInvites().then((result) => {
-      if (result.ok) setInvites(result.value);
-      else setError(result.error);
-    });
-  // One load per mount; create and revoke reload explicitly.
-  useEffect(() => {
-    void load();
-  }, [account]);
-  const create = (): void => {
-    setBusy(true);
-    setError(undefined);
-    void account.createInvite().then(async (result) => {
-      setBusy(false);
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
-      setCreated(result.value);
-      await load();
-    });
-  };
-  const revoke = (id: number): void => {
-    setError(undefined);
-    void account.revokeInvite(id).then(async (result) => {
-      if (!result.ok) setError(result.error);
-      await load();
-    });
-  };
-  return (
-    <VStack gap={2}>
-      <HStack gap={2} vAlign="center" hAlign="between">
-        <Text weight="semibold">Invites</Text>
-        <Button label="Create invite" variant="secondary" size="sm" isLoading={busy} onClick={create} />
-      </HStack>
-      {created === undefined ? null : (
-        <VStack gap={2}>
-          <Text type="supporting">Send this code to the person you're inviting. It won't be shown again.</Text>
-          <CodeBlock code={created.code} hasCopyButton isWrapped />
-          <HStack gap={2} vAlign="center" hAlign="between">
-            <Text type="supporting">Works once · expires in {relativeTime(now, created.expiresAt)}</Text>
-            <Button label="Done" variant="secondary" size="sm" onClick={() => setCreated(undefined)} />
-          </HStack>
-        </VStack>
-      )}
-      {invites === undefined || invites.length === 0 ? (
-        invites === undefined ? null : <Text type="supporting">No invites yet. Each one lets one person create an account.</Text>
-      ) : (
-        <List density="compact">
-          {invites.map((invite) => (
-            <InviteRow key={invite.id} invite={invite} now={now} onRevoke={() => revoke(invite.id)} />
-          ))}
-        </List>
-      )}
-      {error === undefined ? null : <Banner status="error" title="Couldn't update invites" description={accountErrorMessage(error)} />}
-    </VStack>
-  );
-}
-
-function InviteRow({ invite, now, onRevoke }: { invite: AccountInvite; now: number; onRevoke: () => void }) {
-  if (invite.usedAt !== undefined) {
-    return (
-      <ListItem
-        label={invite.usedBy === undefined ? "Used" : `Used by ${invite.usedBy}`}
-        description={`Signed up ${ago(invite.usedAt, now)}`}
-      />
-    );
-  }
-  if (invite.expiresAt <= now) {
-    return <ListItem label="Expired" description={`Created ${ago(invite.createdAt, now)}`} />;
-  }
-  return (
-    <ListItem
-      label="Unused"
-      description={`Created ${ago(invite.createdAt, now)} · expires in ${relativeTime(now, invite.expiresAt)}`}
-      endContent={<Button label="Revoke" variant="secondary" size="sm" onClick={onRevoke} />}
-    />
-  );
-}
-
 /** A device's standing on one host, as the row says it (ADR-0037 §6). */
 const DEVICE_HOST_STATE: Record<AccountDeviceHost["state"], string> = {
   registered: "registered",
@@ -707,7 +521,7 @@ function RemoveDevice({
 
 /**
  * "Change password" (#450): this session stays, the account's others end. A
- * forgotten password has no form here — the server's admin resets it.
+ * forgotten password has no form here.
  */
 function ChangePassword({ account }: { account: AccountModel }) {
   const [open, setOpen] = useState(false);
@@ -872,8 +686,7 @@ function SignOut({ account, onNotice }: { account: AccountModel; onNotice: (noti
 /**
  * "Delete account" (#451): the password again, then the server deletes the
  * account and every session. Devices stay registered on the hosts (ADR-0022
- * §6: revocation lives on the host), so this device keeps its pairings. The
- * admin account can't be deleted; the panel hides this for it.
+ * §6: revocation lives on the host), so this device keeps its pairings.
  */
 function DeleteAccount({
   account,

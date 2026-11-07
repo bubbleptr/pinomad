@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import type { Mailer } from "../src/accounts.ts";
 
 /** Remove a test temp dir and the data-dir lock proper-lockfile puts beside it. */
 export async function removeTempDir(path: string): Promise<void> {
@@ -18,8 +19,69 @@ export async function tempDir(dirs: string[], prefix = "pinomad-server-"): Promi
   return dir;
 }
 
+/** A message the fake mailer was asked to send. */
+export interface SentMail {
+  readonly to: string;
+  readonly subject: string;
+  readonly text: string;
+}
+
+/** A mailer that keeps what it was asked to send; `codeFor` digs the 6-digit code out of the last mail to an address. */
+export function fakeMailer(): Mailer & { readonly sent: SentMail[]; codeFor(to: string): string | undefined } {
+  const sent: SentMail[] = [];
+  return {
+    sent,
+    send(to, subject, text) {
+      sent.push({ to, subject, text });
+      return Promise.resolve();
+    },
+    codeFor(to) {
+      const mail = sent.findLast((message) => message.to === to);
+      return mail === undefined ? undefined : /\b(\d{6})\b/.exec(mail.text)?.[1];
+    },
+  };
+}
+
+/**
+ * Rewrites a current database back to schema 8: usernames only, every
+ * account with a password, invites and the admin flag (ADR-0044). The users
+ * table is rebuilt (SQLite can't drop a UNIQUE column) with foreign keys
+ * off, so dropping the old one doesn't cascade. Every account must still
+ * have a username.
+ */
+export function downgradeToSchema8(dataDir: string): void {
+  const db = new DatabaseSync(join(dataDir, "server.sqlite"), { enableForeignKeyConstraints: false });
+  db.exec(`
+    DROP TABLE email_codes;
+    DROP TABLE user_identities;
+    CREATE TABLE users_v8 (
+      id INTEGER PRIMARY KEY,
+      username TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      admin INTEGER NOT NULL DEFAULT 0
+    );
+    INSERT INTO users_v8 (id, username, password_hash, created_at) SELECT id, username, password_hash, created_at FROM users;
+    UPDATE users_v8 SET admin = 1 WHERE id = (SELECT MIN(id) FROM users_v8);
+    DROP TABLE users;
+    ALTER TABLE users_v8 RENAME TO users;
+    CREATE TABLE invites (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code_hash TEXT NOT NULL UNIQUE,
+      created_by INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      used_at INTEGER,
+      used_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+    );
+    PRAGMA user_version = 8;
+  `);
+  db.close();
+}
+
 /** Rewrites a current database back to schema 7: host links without the loopback columns (#513). */
 export function downgradeToSchema7(dataDir: string): void {
+  downgradeToSchema8(dataDir);
   const db = new DatabaseSync(join(dataDir, "server.sqlite"));
   db.exec(`
     DROP INDEX host_link_requests_request_id;
