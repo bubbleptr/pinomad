@@ -2,6 +2,7 @@ import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
+import { Spinner } from "@astryxdesign/core/Spinner";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useEffect, useState, type ReactNode } from "react";
@@ -54,7 +55,14 @@ export function SignInMethods({
   }, [account]);
   // A server from before sign-in methods: only the password, as it always was.
   if (unsupported) return <ChangePasswordOnly account={account} />;
-  if (identities === undefined) return null;
+  if (identities === undefined) {
+    return (
+      <VStack gap={2}>
+        <Text weight="semibold">Sign-in methods</Text>
+        <Spinner size="sm" />
+      </VStack>
+    );
+  }
   const linked = new Set(identities.identities.map((identity) => identity.provider));
   const linkable = account.providerFlow === "redirect" ? knownSignInProviders(offered).filter((provider) => !linked.has(provider.id)) : [];
   const close = (message?: string): void => {
