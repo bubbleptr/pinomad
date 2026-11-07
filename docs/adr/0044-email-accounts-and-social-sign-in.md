@@ -48,7 +48,7 @@ iOS 要走 TestFlight 外部测试（#440），Beta App Review 同样按 App Sto
 
 7. **取消邀请码，注册由开关控制。** 删掉 `invites` 表（新的 schema 版本里 DROP）、`/api/invites` 和 `/api/invites/revoke`、Web 账号面板里的 Invites 和注册表单里的邀请码字段、文档里的邀请码说明、`GLOSSARY.md` 的"注册邀请码"。`PINOMAD_SERVER_REGISTRATION=open|closed`，默认 `closed`，官方实例设 `open`。关闭时邮箱注册不可用，快捷登录只拦 §4 的第 3 步（建新账号），第 1、2 步照常；自部署的人用服务端 CLI `pinomad server user add <邮箱>` 加用户。管理员只剩"能发邀请码"一个特权，随邀请码一起取消：`admin` 列删掉，首次启动建出的账号是普通账号，也可以删除。
 
-8. **老账号：下次登录时补邮箱。** 用户名加密码的登录在迁移期保留。登录成功后，没有已验证邮箱的账号收到 `needsEmail: true`，客户端在继续之前要求填邮箱、收验证码；补完后用邮箱登录，用户名不再显示。所有老账号补完后，下一个版本去掉用户名登录（单独的 issue）。`PINOMAD_SERVER_USER` 改为邮箱，首次启动建的账号视为邮箱已验证（是部署者自己填的）；写的不是邮箱时按老账号处理。
+8. **老账号：下次登录时补邮箱。** 用户名加密码的登录在迁移期保留。配了发信的服务端上，没有已验证邮箱的账号登录成功后收到 `needsEmail: true`，客户端在继续之前要求填邮箱、收验证码；补完后用邮箱登录，用户名不再显示。没配发信的服务端收不了验证码，不发 `needsEmail`，老账号照旧用用户名登录。部署者可以用服务端 CLI `pinomad server user set-email <用户名> <邮箱>` 直接给账号设邮箱，视为已验证，和首次启动建的账号同理（是部署者自己填的）。`PINOMAD_SERVER_USER` 改为邮箱，写的不是邮箱时按老账号处理。等一台服务端上所有账号都有邮箱（没配发信时只能经这条 CLI），之后的版本才在那里去掉用户名登录（#624）。
 
 9. **Apple 的撤销。** Apple 要求删除账号时撤销授权：服务端在登录时用 authorization code 换到 Apple 的 refresh token 并存下来，删除账号或解绑 Apple 时调 Apple 的 revoke 接口。撤销失败不阻塞删除，记日志。
 
