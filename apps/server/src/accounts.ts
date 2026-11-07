@@ -17,9 +17,10 @@ import { promisify } from "node:util";
 import type { ApnsEnvironment } from "@pinomad/protocol/relay.ts";
 import { normalizeHostName } from "@pinomad/protocol/settings.ts";
 import { isDataDirInUse, lockDataDir } from "./lock.ts";
+import type { OAuthProvider, ProviderIdentity } from "./oauth.ts";
 
 const DB_FILE = "server.sqlite";
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 
 // Sessions die 30 days after issue and are never renewed — a stolen token has a
 // hard ceiling, and re-logging-in is the only way forward.
@@ -63,8 +64,21 @@ export const formatUserCode = (code: string): string => `${code.slice(0, 4)}-${c
 const EMAIL_CODE_TTL_MS = 10 * 60_000;
 const EMAIL_CODE_MAX_ATTEMPTS = 5;
 
-/** What a mailed code is for; a code only ever answers its own purpose. `reauth` is used by #620. */
-type EmailCodePurpose = "signup" | "reset" | "add_email";
+/** What a mailed code is for; a code only ever answers its own purpose. */
+type EmailCodePurpose = "signup" | "reset" | "add_email" | "reauth";
+
+// Provider sign-in (ADR-0044 §4, §5): a flow lives as long as a person might
+// spend on the provider's pages, and so does the "no account yet" choice; a
+// native client trades its one-time code at once.
+const OAUTH_FLOW_TTL_MS = 10 * 60_000;
+const OAUTH_PENDING_TTL_MS = 10 * 60_000;
+const OAUTH_CODE_TTL_MS = 2 * 60_000;
+
+// A re-auth grant (ADR-0044 §6) covers a few confirmations in a row.
+const REAUTH_TTL_MS = 5 * 60_000;
+
+/** How notices name a provider. */
+const PROVIDER_NAMES: Record<OAuthProvider, string> = { google: "Google", github: "GitHub", apple: "Apple" };
 
 // RFC 5321 caps a path at 256 octets, so an address at 254, and a local
 // part at 64. Only a bare addr-spec with an unquoted dot-atom local part and
@@ -236,6 +250,16 @@ export interface AccountsOptions {
   /** PINOMAD_SERVER_REGISTRATION; default "closed" (ADR-0044 §7). */
   readonly registration?: "open" | "closed";
   readonly codeLimits?: CodeLimits;
+  readonly oauthLimits?: OAuthLimits;
+}
+
+/** Abuse bounds for starting provider sign-ins, which anyone may do; each has a default. */
+export interface OAuthLimits {
+  /** Flows one source IP may start per window; default 30 per 10 min. */
+  readonly startMaxPerIp?: number;
+  readonly startWindowMs?: number;
+  /** Unexpired flows at once, server-wide; default 10000. Full → 503. */
+  readonly maxPending?: number;
 }
 
 /**
@@ -264,15 +288,105 @@ export type LoginResult = ({ readonly status: "ok" } & SignedIn) | { readonly st
  */
 export type SendCodeResult = "sent" | "limited" | "closed" | "taken" | "wrong_password";
 
+/**
+ * The second check before an action on the account (ADR-0044 §6): the
+ * password, or a grant from POST /api/reauth, which only counts for the
+ * session `token` it was issued to.
+ */
+export type Confirmation = { readonly password: string } | { readonly reauth: string; readonly token: string };
+
+/** Why a confirmation failed: a wrong password, or a grant that is unknown, lapsed or another session's. */
+export type ConfirmationFailure = "wrong_password" | "invalid_reauth";
+
+/** An Apple refresh token to revoke, with the client_id it was issued to (ADR-0044 §9). */
+export interface AppleGrant {
+  readonly refreshToken: string;
+  readonly clientId: string;
+}
+
 export type ChangePasswordResult =
   | { readonly status: "ok" }
-  | { readonly status: "refused"; readonly reason: "wrong_password" | "weak_password" }
+  | { readonly status: "refused"; readonly reason: ConfirmationFailure | "weak_password" }
   | { readonly status: "limited" };
 
 export type DeleteAccountResult =
-  /** The account's hosts, whose control connections lost their authorization. */
-  | { readonly status: "ok"; readonly hostIds: readonly string[] }
-  | { readonly status: "refused"; readonly reason: "wrong_password" }
+  /** The account's hosts, whose control connections lost their authorization, and Apple's grants to revoke. */
+  | { readonly status: "ok"; readonly hostIds: readonly string[]; readonly appleGrants: readonly AppleGrant[] }
+  | { readonly status: "refused"; readonly reason: ConfirmationFailure }
+  | { readonly status: "limited" };
+
+/** Where a native client's browser goes back to, and how it proves it started the flow (ADR-0044 §5). */
+export interface NativeRedirect {
+  /** `pinomad://auth` or `http://127.0.0.1:<port>[/ or /callback]`. */
+  readonly redirectUri: string;
+  /** base64url(SHA-256(verifier)), RFC 7636 S256. */
+  readonly codeChallenge: string;
+  readonly state: string;
+}
+
+/**
+ * A provider sign-in in flight. `web` is bound to the browser that started
+ * it by a cookie whose hash is `bindingHash`, `native` by the client's PKCE,
+ * and `link` adds the identity to a signed-in account, bound like `web`.
+ */
+export interface OAuthFlow {
+  readonly provider: OAuthProvider;
+  readonly kind: "web" | "native" | "link";
+  /** The server's own PKCE verifier and OIDC nonce toward the provider. */
+  readonly verifier: string;
+  readonly nonce: string;
+  readonly bindingHash?: string;
+  readonly native?: NativeRedirect;
+  readonly linkUserId?: number;
+}
+
+/**
+ * How a provider sign-in that found no account finishes once the person
+ * chooses: in the browser that started it (`web`), by a code sent to a
+ * native client's redirect (`native`), or in the answer to iOS's own call
+ * (`direct`, native Sign in with Apple).
+ */
+export type PendingCompletion =
+  | { readonly kind: "web"; readonly bindingHash: string }
+  | { readonly kind: "native"; readonly native: NativeRedirect }
+  | { readonly kind: "direct" };
+
+/** A provider sign-in that found no account (ADR-0044 §4, step 3). */
+export interface PendingSignIn {
+  readonly provider: OAuthProvider;
+  readonly email?: string;
+  readonly name?: string;
+  readonly completion: PendingCompletion;
+}
+
+export type ResolveIdentityResult =
+  | { readonly status: "user"; readonly userId: number }
+  | { readonly status: "pending"; readonly id: string; readonly email?: string }
+  | { readonly status: "refused"; readonly reason: "registration_closed" };
+
+export type PendingResult =
+  | { readonly status: "ok"; readonly userId: number; readonly completion: PendingCompletion }
+  | {
+      readonly status: "refused";
+      readonly reason: "not_found" | "registration_closed" | "no_verified_email" | "email_taken" | "identity_taken";
+    };
+
+/** A sign-in method as account settings list it. */
+export interface IdentityRow {
+  readonly provider: OAuthProvider;
+  readonly email?: string;
+  readonly createdAt: number;
+}
+
+export type RemoveIdentityResult =
+  | { readonly status: "ok"; readonly appleGrants: readonly AppleGrant[] }
+  | { readonly status: "refused"; readonly reason: ConfirmationFailure | "not_found" | "last_method" }
+  | { readonly status: "limited" };
+
+export type ReauthResult =
+  | { readonly status: "ok"; readonly reauth: string; readonly expiresAt: number }
+  /** `unauthenticated`: the session ended while the password was checked. */
+  | { readonly status: "refused"; readonly reason: "wrong_password" | "invalid_code" | "unauthenticated" }
   | { readonly status: "limited" };
 
 export type RegisterResult =
@@ -387,13 +501,13 @@ export interface AccountDeviceRow {
 
 export type RemoveHostResult =
   | { readonly status: "ok" }
-  | { readonly status: "refused"; readonly reason: "not_found" | "wrong_password" }
+  | { readonly status: "refused"; readonly reason: "not_found" | ConfirmationFailure }
   | { readonly status: "limited" };
 
 export type KickDeviceResult =
   /** The hosts that now owe a revocation for this device. */
   | { readonly status: "ok"; readonly hostIds: readonly string[] }
-  | { readonly status: "refused"; readonly reason: "not_found" | "current_device" | "wrong_password" }
+  | { readonly status: "refused"; readonly reason: "not_found" | "current_device" | ConfirmationFailure }
   | { readonly status: "limited" };
 
 /**
@@ -408,7 +522,7 @@ export interface Accounts {
   readonly dbPath: string;
   /** A mailer is configured: codes can be sent (ADR-0044 §2). */
   readonly emailEnabled: boolean;
-  /** Email sign-up works: registration is open and codes can be sent. */
+  /** New accounts may be created (ADR-0044 §7); email sign-up also needs `emailEnabled`. */
   readonly registrationOpen: boolean;
   /**
    * Signs in by email (any case) or legacy username and ties the session to
@@ -487,20 +601,71 @@ export interface Accounts {
    * every other session, so a leaked password leaves no live credential
    * behind except the caller's.
    */
-  changePassword(args: {
-    readonly userId: number;
-    /** The caller's session token, which survives the change. */
-    readonly keepToken: string;
-    readonly currentPassword: string;
-    readonly newPassword: string;
-  }): Promise<ChangePasswordResult>;
+  changePassword(
+    args: {
+      readonly userId: number;
+      /** The caller's session token, which survives the change; a grant must be this session's. */
+      readonly keepToken: string;
+      readonly newPassword: string;
+    } & ({ readonly currentPassword: string } | { readonly reauth: string }),
+  ): Promise<ChangePasswordResult>;
   /**
-   * Deletes the account after checking its password (#451). Sessions, join
-   * tokens, host bindings, push registrations and mailed codes go with it.
-   * Devices the hosts registered stay registered: revoking them is the
-   * host's call (ADR-0022 §6).
+   * Deletes the account after the confirmation (#451, ADR-0044 §6).
+   * Sessions, join tokens, host bindings, push registrations, mailed codes
+   * and sign-in identities go with it. Devices the hosts registered stay
+   * registered: revoking them is the host's call (ADR-0022 §6).
    */
-  deleteAccount(args: { readonly userId: number; readonly password: string }): Promise<DeleteAccountResult>;
+  deleteAccount(args: { readonly userId: number } & Confirmation): Promise<DeleteAccountResult>;
+  /** Checks a confirmation for an action that changes nothing here yet, such as starting to link a provider. */
+  confirm(userId: number, confirmation: Confirmation): Promise<"ok" | "limited" | ConfirmationFailure>;
+  /** Mails a re-auth code to the account's own email (ADR-0044 §6); `no_email` for a legacy account without one. */
+  requestReauthCode(args: { readonly userId: number; readonly ip: string }): SendCodeResult | "no_email";
+  /**
+   * Trades the password or a mailed re-auth code for a grant tied to the
+   * session `token`, good for five minutes. Either one wrong counts toward
+   * the login lockout.
+   */
+  grantReauth(args: { readonly userId: number; readonly token: string } & ({ readonly password: string } | { readonly code: string })): Promise<ReauthResult>;
+  /**
+   * Starts a provider sign-in (ADR-0044 §5): anyone may, so bounded per
+   * source IP and server-wide. Returns the `state` the provider sends back,
+   * with the server's PKCE verifier and nonce toward the provider.
+   */
+  startOAuthFlow(args: {
+    readonly provider: OAuthProvider;
+    readonly kind: OAuthFlow["kind"];
+    readonly ip: string;
+    readonly bindingHash?: string;
+    readonly native?: NativeRedirect;
+    readonly linkUserId?: number;
+  }): { readonly status: "ok"; readonly state: string; readonly verifier: string; readonly nonce: string } | { readonly status: "limited" } | { readonly status: "busy" };
+  /** Spends the flow `state` names; undefined when unknown, expired or another provider's. */
+  takeOAuthFlow(provider: OAuthProvider, state: string): OAuthFlow | undefined;
+  /**
+   * Finds the account a provider identity signs in to (ADR-0044 §4): the one
+   * it is bound to; else the one whose verified email it verifies, binding
+   * it there and mailing that account; else, while registration is open, a
+   * pending record for the person to choose what to do with.
+   */
+  resolveIdentity(identity: ProviderIdentity, completion: PendingCompletion): ResolveIdentityResult;
+  /** Binds an identity to a signed-in account; a no-op when it is already that account's. */
+  linkIdentity(userId: number, identity: ProviderIdentity): "linked" | "identity_taken";
+  /** A live pending sign-in by its id. */
+  pendingSignIn(id: string): PendingSignIn | undefined;
+  /** Spends a pending sign-in on a new account with its verified email, no password, and the identity bound. */
+  createFromPending(id: string): PendingResult;
+  /** Spends a pending sign-in by binding its identity to the signed-in `userId`. */
+  linkPending(id: string, userId: number): PendingResult;
+  /** A session for an account a provider sign-in resolved to, tied to an account device as login does. */
+  signIn(userId: number, device?: DeviceClaim): SignedIn | undefined;
+  /** A one-time code for a native client's redirect, tied to its PKCE challenge; only its hash is stored. */
+  issueOAuthCode(userId: number, codeChallenge: string): string;
+  /** Trades that code with the verifier for a session; any attempt spends the code. */
+  exchangeOAuthCode(code: string, codeVerifier: string, device?: DeviceClaim): SignedIn | undefined;
+  /** The account's sign-in methods, for settings. */
+  listIdentities(userId: number): { readonly identities: readonly IdentityRow[]; readonly hasPassword: boolean };
+  /** Unbinds every identity of `provider` after the confirmation; refuses when nothing else would sign the account in. */
+  removeIdentity(args: { readonly userId: number; readonly provider: OAuthProvider } & Confirmation): Promise<RemoveIdentityResult>;
   /** True when hostId is bound to an account — the only way a host registers. */
   hasHost(hostId: string): boolean;
   /** Mints a single-use join token for a logged-in user; only its SHA-256 is stored. */
@@ -581,11 +746,7 @@ export interface Accounts {
    * owner's machines out. The binding goes as with `leaveHost`, and the
    * hostId is remembered until it joins again, so `wasRemoved` can say so.
    */
-  removeHost(args: {
-    readonly userId: number;
-    readonly password: string;
-    readonly hostId: string;
-  }): Promise<RemoveHostResult>;
+  removeHost(args: { readonly userId: number; readonly hostId: string } & Confirmation): Promise<RemoveHostResult>;
   /** True when the account removed this hostId and it hasn't joined since. */
   wasRemoved(hostId: string): boolean;
   /** Every host bound to a user — GET /api/hosts. */
@@ -626,12 +787,9 @@ export interface Accounts {
    * every host that reported admitting it owes a revocation. The caller's own
    * device is refused: that is `logout` with `revoke`.
    */
-  kickDevice(args: {
-    readonly userId: number;
-    readonly password: string;
-    readonly deviceId: number;
-    readonly currentDeviceId?: number;
-  }): Promise<KickDeviceResult>;
+  kickDevice(
+    args: { readonly userId: number; readonly deviceId: number; readonly currentDeviceId?: number } & Confirmation,
+  ): Promise<KickDeviceResult>;
   /**
    * Writes the bound host's current display name, cleaned by the same
    * `normalizeHostName` the host applies (issue #212); a no-op for unbound
@@ -858,6 +1016,73 @@ function migrate(db: DatabaseSync): void {
     `);
   }
   if (version < 9) migrateTo9(db);
+  if (version < 10) {
+    // Provider sign-in (#620, ADR-0044 §3–§6, §9). Every secret a browser or
+    // client carries (state, pending id, one-time code, re-auth grant) is
+    // stored as its SHA-256; the server's own PKCE verifier and nonce toward
+    // the provider are kept as they are, since the exchange sends them.
+    db.exec(`
+      BEGIN;
+      -- Apple sends a name only the first time; its refresh token is revoked
+      -- when the account goes or Apple is unlinked, with the client_id that
+      -- received it (the web Services ID or the app's bundle id).
+      ALTER TABLE user_identities ADD COLUMN name TEXT;
+      ALTER TABLE user_identities ADD COLUMN refresh_token TEXT;
+      ALTER TABLE user_identities ADD COLUMN refresh_client_id TEXT;
+      CREATE TABLE oauth_flows (
+        state_hash TEXT PRIMARY KEY,
+        provider TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('web', 'native', 'link')),
+        verifier TEXT NOT NULL,
+        nonce TEXT NOT NULL,
+        -- web and link: the hash of the browser's binding cookie.
+        binding_hash TEXT,
+        -- native: where the code goes, its PKCE challenge and the client's state.
+        redirect_uri TEXT,
+        code_challenge TEXT,
+        client_state TEXT,
+        link_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
+      CREATE INDEX oauth_flows_expiry ON oauth_flows (expires_at);
+      -- A provider sign-in that found no account, waiting for the person to
+      -- create one or link it to an account they sign in to.
+      CREATE TABLE oauth_pending (
+        id_hash TEXT PRIMARY KEY,
+        provider TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        email TEXT,
+        email_verified INTEGER NOT NULL DEFAULT 0,
+        name TEXT,
+        refresh_token TEXT,
+        refresh_client_id TEXT,
+        kind TEXT NOT NULL CHECK (kind IN ('web', 'native', 'direct')),
+        binding_hash TEXT,
+        redirect_uri TEXT,
+        code_challenge TEXT,
+        client_state TEXT,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
+      CREATE INDEX oauth_pending_expiry ON oauth_pending (expires_at);
+      CREATE TABLE oauth_codes (
+        code_hash TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        code_challenge TEXT NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
+      -- A grant dies with the session it was issued to.
+      CREATE TABLE reauth_grants (
+        grant_hash TEXT PRIMARY KEY,
+        session_hash TEXT NOT NULL REFERENCES sessions(token_hash) ON DELETE CASCADE,
+        expires_at INTEGER NOT NULL
+      );
+      CREATE INDEX reauth_grants_session ON reauth_grants (session_hash);
+      PRAGMA user_version = 10;
+      COMMIT;
+    `);
+  }
 }
 
 /**
@@ -1198,8 +1423,17 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
   const codeEmails = new WindowedCounter(codeLimits.counterMaxEntries, now);
   const codesToday = new WindowedCounter(1, now);
 
+  const oauthLimits = {
+    startMaxPerIp: options.oauthLimits?.startMaxPerIp ?? 30,
+    startWindowMs: options.oauthLimits?.startWindowMs ?? 10 * 60_000,
+    maxPending: options.oauthLimits?.maxPending ?? 10_000,
+  };
+  const oauthStarts = new WindowedCounter(limits.counterMaxEntries, now);
+
   const mailer = options.mailer;
-  const registrationOpen = options.registration === "open" && mailer !== undefined;
+  const registrationOpen = options.registration === "open";
+  /** Email sign-up needs both: new accounts allowed, and a way to mail the code. */
+  const emailSignup = registrationOpen && mailer !== undefined;
 
   /**
    * Whether one more code may go out: every ask counts against its address,
@@ -1293,12 +1527,16 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
   const PENDING_SELECT = `SELECT host_id AS hostId, host_name AS name, host_os AS os, source_ip AS sourceIp, expires_at AS expiresAt,
       redirect_uri AS redirectUri, client_state AS clientState FROM host_link_requests`;
 
-  /** Expired one-use credentials: join tokens, mailed codes, and host-link requests with the host's personal data. */
+  /**
+   * Expired one-use credentials: join tokens, mailed codes, host-link
+   * requests with the host's personal data, and provider sign-in state with
+   * the person's (flows, pending choices, one-time codes, re-auth grants).
+   */
   const sweepExpired = (): void => {
     const at = now();
-    db.prepare("DELETE FROM join_tokens WHERE expires_at <= ?").run(at);
-    db.prepare("DELETE FROM host_link_requests WHERE expires_at <= ?").run(at);
-    db.prepare("DELETE FROM email_codes WHERE expires_at <= ?").run(at);
+    for (const table of ["join_tokens", "host_link_requests", "email_codes", "oauth_flows", "oauth_pending", "oauth_codes", "reauth_grants"]) {
+      db.prepare(`DELETE FROM ${table} WHERE expires_at <= ?`).run(at);
+    }
   };
 
   const mintJoinToken = (userId: number, hostId: string | null): { readonly token: string; readonly expiresAt: number } => {
@@ -1515,6 +1753,136 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
     return { verifiedHash: stored! };
   };
 
+  /** Whether `grant` is a live re-auth grant of the live session `token`, which is `userId`'s (ADR-0044 §6). */
+  const reauthValid = (userId: number, token: string, grant: string): boolean => {
+    const at = now();
+    return (
+      db
+        .prepare(
+          `SELECT 1 AS x FROM reauth_grants g JOIN sessions s ON s.token_hash = g.session_hash
+           WHERE g.grant_hash = ? AND g.session_hash = ? AND g.expires_at > ? AND s.user_id = ? AND s.expires_at > ?`,
+        )
+        .get(sha256Hex(grant), sha256Hex(token), at, userId, at) !== undefined
+    );
+  };
+
+  /** A confirmation that passed: by password, the hash it verified, which the write must still find; or the grant. */
+  type Confirmed = { readonly verifiedHash: string } | { readonly reauth: string; readonly token: string };
+
+  /** The password under the login lockout, or a grant; a grant is 32 random bytes, so a wrong one costs nothing. */
+  const confirmAccount = async (userId: number, confirmation: Confirmation): Promise<"limited" | ConfirmationFailure | Confirmed> => {
+    if ("reauth" in confirmation) {
+      return reauthValid(userId, confirmation.token, confirmation.reauth) ? { reauth: confirmation.reauth, token: confirmation.token } : "invalid_reauth";
+    }
+    return checkPassword(userId, confirmation.password);
+  };
+
+  /**
+   * Inside the write: the verified password is still the account's (a reset
+   * that committed while scrypt ran voids it), or the grant is still live
+   * (its session may have ended meanwhile).
+   */
+  const stillConfirmed = (userId: number, confirmed: Confirmed): ConfirmationFailure | undefined => {
+    if ("verifiedHash" in confirmed) return currentHash(userId) === confirmed.verifiedHash ? undefined : "wrong_password";
+    return reauthValid(userId, confirmed.token, confirmed.reauth) ? undefined : "invalid_reauth";
+  };
+
+  /** Apple's refresh tokens among the account's identities, optionally only one provider's. */
+  const appleGrants = (userId: number): AppleGrant[] =>
+    db
+      .prepare(
+        `SELECT refresh_token AS refreshToken, refresh_client_id AS clientId FROM user_identities
+         WHERE user_id = ? AND provider = 'apple' AND refresh_token IS NOT NULL AND refresh_client_id IS NOT NULL`,
+      )
+      .all(userId) as unknown as AppleGrant[];
+
+  /** A bound identity's account. */
+  const identityOwner = (provider: OAuthProvider, subject: string): number | undefined =>
+    (db.prepare("SELECT user_id AS userId FROM user_identities WHERE provider = ? AND subject = ?").get(provider, subject) as
+      | { userId: number }
+      | undefined)?.userId;
+
+  /**
+   * Binds an identity to an account, or refreshes what the provider said
+   * about it when it is already bound there: a later Apple sign-in brings a
+   * new refresh token, and only the first ever brings the name.
+   */
+  const bindIdentity = (userId: number, identity: ProviderIdentity): void => {
+    db.prepare(
+      `INSERT INTO user_identities (provider, subject, user_id, email, name, refresh_token, refresh_client_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (provider, subject) DO UPDATE SET
+         email = COALESCE(excluded.email, email), name = COALESCE(name, excluded.name),
+         refresh_token = COALESCE(excluded.refresh_token, refresh_token),
+         refresh_client_id = COALESCE(excluded.refresh_client_id, refresh_client_id)
+       WHERE user_id = excluded.user_id`,
+    ).run(
+      identity.provider,
+      identity.subject,
+      userId,
+      identity.email ?? null,
+      identity.name ?? null,
+      identity.refreshToken ?? null,
+      identity.refreshClientId ?? null,
+      now(),
+    );
+  };
+
+  /** Tells an account a sign-in method was added without asking it (ADR-0044 §4, step 2). */
+  const noticeNewMethod = (email: string, provider: OAuthProvider): void => {
+    const name = PROVIDER_NAMES[provider];
+    deliver(
+      email,
+      `A new sign-in method was added: ${name}`,
+      `${name} can now sign in to your PiNomad account, because it confirmed this email address.\n\n` +
+        `If this wasn't you, sign in, remove ${name} under Sign-in methods, and sign out everywhere.\n`,
+    );
+  };
+
+  interface PendingRow {
+    readonly provider: OAuthProvider;
+    readonly subject: string;
+    readonly email: string | null;
+    readonly emailVerified: number;
+    readonly name: string | null;
+    readonly refreshToken: string | null;
+    readonly refreshClientId: string | null;
+    readonly kind: PendingCompletion["kind"];
+    readonly bindingHash: string | null;
+    readonly redirectUri: string | null;
+    readonly codeChallenge: string | null;
+    readonly clientState: string | null;
+  }
+
+  const pendingRow = (id: string): PendingRow | undefined =>
+    db
+      .prepare(
+        `SELECT provider, subject, email, email_verified AS emailVerified, name, refresh_token AS refreshToken,
+                refresh_client_id AS refreshClientId, kind, binding_hash AS bindingHash, redirect_uri AS redirectUri,
+                code_challenge AS codeChallenge, client_state AS clientState
+         FROM oauth_pending WHERE id_hash = ? AND expires_at > ?`,
+      )
+      .get(sha256Hex(id), now()) as PendingRow | undefined;
+
+  const completionOf = (row: PendingRow): PendingCompletion =>
+    row.kind === "web"
+      ? { kind: "web", bindingHash: row.bindingHash ?? "" }
+      : row.kind === "native"
+        ? { kind: "native", native: { redirectUri: row.redirectUri ?? "", codeChallenge: row.codeChallenge ?? "", state: row.clientState ?? "" } }
+        : { kind: "direct" };
+
+  const identityOf = (row: PendingRow): ProviderIdentity => ({
+    provider: row.provider,
+    subject: row.subject,
+    ...(row.email === null ? {} : { email: row.email }),
+    emailVerified: row.emailVerified === 1,
+    ...(row.name === null ? {} : { name: row.name }),
+    ...(row.refreshToken === null || row.refreshClientId === null ? {} : { refreshToken: row.refreshToken, refreshClientId: row.refreshClientId }),
+  });
+
+  /** Runs `write` in one immediate transaction. */
+  const transaction = <T>(write: () => T): T => inTransaction(db, write);
+
   const emailOwner = (email: string): number | undefined =>
     (db.prepare("SELECT id FROM users WHERE email = ?").get(email) as { id: number } | undefined)?.id;
 
@@ -1572,7 +1940,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
     },
 
     requestSignupCode({ email, ip }) {
-      if (!registrationOpen) return "closed";
+      if (!emailSignup) return "closed";
       if (!codeAllowed(ip, email)) return "limited";
       if (emailOwner(email) !== undefined) {
         deliver(
@@ -1595,7 +1963,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
     },
 
     async register({ email, code, password, ip, device }) {
-      if (!registrationOpen) return { status: "refused", reason: "registration_closed" };
+      if (!emailSignup) return { status: "refused", reason: "registration_closed" };
       // Before the code, so a typo in the password doesn't cost the code.
       if (weakPassword(password)) return { status: "refused", reason: "weak_password" };
       if (ipAttempts.hit(ip, limits.ipMaxAttempts, limits.ipWindowMs)) return { status: "limited" };
@@ -1779,24 +2147,28 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       }
     },
 
-    async changePassword({ userId, keepToken, currentPassword, newPassword }) {
+    async changePassword(args) {
+      const { userId, keepToken, newPassword } = args;
       if (weakPassword(newPassword)) return { status: "refused", reason: "weak_password" };
-      const checked = await checkPassword(userId, currentPassword);
+      // A grant also sets a first password on an account that has none.
+      const checked = await confirmAccount(
+        userId,
+        "reauth" in args ? { reauth: args.reauth, token: keepToken } : { password: args.currentPassword },
+      );
       if (checked === "limited") return { status: "limited" };
-      if (checked === "wrong_password") return { status: "refused", reason: "wrong_password" };
+      if (typeof checked === "string") return { status: "refused", reason: checked };
       const hash = await gate.run(() => hashPassword(newPassword));
       if (hash === undefined) return { status: "limited" };
       // Swap only the hash that was verified: a reset or another change that
       // committed while scrypt ran wins, and the old password no longer does.
       db.exec("BEGIN IMMEDIATE");
       try {
-        const swapped = db
-          .prepare("UPDATE users SET password_hash = ? WHERE id = ? AND password_hash = ?")
-          .run(hash, userId, checked.verifiedHash);
-        if (Number(swapped.changes) !== 1) {
+        const stale = stillConfirmed(userId, checked);
+        if (stale !== undefined) {
           db.exec("ROLLBACK");
-          return { status: "refused", reason: "wrong_password" };
+          return { status: "refused", reason: stale };
         }
+        db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hash, userId);
         dropCredentials(db, userId, sha256Hex(keepToken));
         db.exec("COMMIT");
       } catch (error) {
@@ -1806,31 +2178,327 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       return { status: "ok" };
     },
 
-    async deleteAccount({ userId, password }) {
-      const checked = await checkPassword(userId, password);
+    async deleteAccount(args) {
+      const { userId } = args;
+      const checked = await confirmAccount(userId, args);
       if (checked === "limited") return { status: "limited" };
-      if (checked === "wrong_password") return { status: "refused", reason: "wrong_password" };
+      if (typeof checked === "string") return { status: "refused", reason: checked };
       // Same compare-and-swap as a password change: a reset that committed
       // while scrypt ran means the password typed here no longer holds.
       db.exec("BEGIN IMMEDIATE");
       try {
+        const stale = stillConfirmed(userId, checked);
+        if (stale !== undefined) {
+          db.exec("ROLLBACK");
+          return { status: "refused", reason: stale };
+        }
         const hostIds = (db.prepare("SELECT host_id AS hostId FROM hosts WHERE user_id = ?").all(userId) as { hostId: string }[]).map(
           (row) => row.hostId,
         );
-        // ON DELETE CASCADE takes sessions, join tokens, hosts, push
-        // registrations, account devices with their vouchings, the hosts'
-        // pending revocations, mailed codes and provider identities.
-        const deleted = db.prepare("DELETE FROM users WHERE id = ? AND password_hash = ?").run(userId, checked.verifiedHash);
-        if (Number(deleted.changes) !== 1) {
-          db.exec("ROLLBACK");
-          return { status: "refused", reason: "wrong_password" };
-        }
+        // Read before the rows go: Apple is told after the delete (ADR-0044 §9).
+        const grants = appleGrants(userId);
+        // ON DELETE CASCADE takes sessions (and their re-auth grants), join
+        // tokens, hosts, push registrations, account devices with their
+        // vouchings, the hosts' pending revocations, mailed codes, provider
+        // identities, and provider sign-ins in flight.
+        db.prepare("DELETE FROM users WHERE id = ?").run(userId);
         db.exec("COMMIT");
-        return { status: "ok", hostIds };
+        return { status: "ok", hostIds, appleGrants: grants };
       } catch (error) {
         db.exec("ROLLBACK");
         throw error;
       }
+    },
+
+    async confirm(userId, confirmation) {
+      const checked = await confirmAccount(userId, confirmation);
+      return typeof checked === "string" ? checked : "ok";
+    },
+
+    requestReauthCode({ userId, ip }) {
+      if (mailer === undefined) return "closed";
+      const email = userById(userId)?.email ?? null;
+      if (email === null) return "no_email";
+      if (!codeAllowed(ip, email)) return "limited";
+      const code = issueCode("reauth", email, userId);
+      deliver(
+        email,
+        `${code} is your PiNomad confirmation code`,
+        `Your code to confirm a change to your PiNomad account is ${code}. It expires in 10 minutes.\n\n` +
+          "If you didn't ask for it, someone else may be signed in to your account: sign out everywhere.\n",
+      );
+      return "sent";
+    },
+
+    async grantReauth(args) {
+      const { userId, token } = args;
+      const lockKey = accountLockKey(userId);
+      if ("password" in args) {
+        const checked = await checkPassword(userId, args.password);
+        if (checked === "limited") return { status: "limited" };
+        if (checked === "wrong_password") return { status: "refused", reason: "wrong_password" };
+      } else {
+        if (userFailures.isOver(lockKey, limits.userMaxFailures)) return { status: "limited" };
+        const email = userById(userId)?.email ?? null;
+        const spent = email !== null && transaction(() => spendCode("reauth", email, args.code, lockKey, userId));
+        if (!spent) {
+          if (email === null) userFailures.bump(lockKey, limits.userWindowMs);
+          return { status: "refused", reason: "invalid_code" };
+        }
+      }
+      const reauth = randomBytes(32).toString("base64url");
+      const at = now();
+      const expiresAt = at + REAUTH_TTL_MS;
+      // Tied to the session as it stands now: one that ended while the
+      // password was checked gets nothing.
+      const granted = transaction(() => {
+        db.prepare("DELETE FROM reauth_grants WHERE expires_at <= ?").run(at);
+        return db
+          .prepare(
+            `INSERT INTO reauth_grants (grant_hash, session_hash, expires_at)
+             SELECT ?, token_hash, ? FROM sessions WHERE token_hash = ? AND user_id = ? AND expires_at > ?`,
+          )
+          .run(sha256Hex(reauth), expiresAt, sha256Hex(token), userId, at).changes;
+      });
+      return Number(granted) === 1 ? { status: "ok", reauth, expiresAt } : { status: "refused", reason: "unauthenticated" };
+    },
+
+    startOAuthFlow({ provider, kind, ip, bindingHash, native, linkUserId }) {
+      if (oauthStarts.hit(ip, oauthLimits.startMaxPerIp, oauthLimits.startWindowMs)) return { status: "limited" };
+      const at = now();
+      db.prepare("DELETE FROM oauth_flows WHERE expires_at <= ?").run(at);
+      const live = (db.prepare("SELECT COUNT(*) AS n FROM oauth_flows").get() as { n: number }).n;
+      if (live >= oauthLimits.maxPending) return { status: "busy" };
+      const state = randomBytes(32).toString("base64url");
+      const verifier = randomBytes(32).toString("base64url");
+      const nonce = randomBytes(16).toString("base64url");
+      db.prepare(
+        `INSERT INTO oauth_flows (state_hash, provider, kind, verifier, nonce, binding_hash, redirect_uri, code_challenge, client_state,
+                                  link_user_id, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(
+        sha256Hex(state),
+        provider,
+        kind,
+        verifier,
+        nonce,
+        bindingHash ?? null,
+        native?.redirectUri ?? null,
+        native?.codeChallenge ?? null,
+        native?.state ?? null,
+        linkUserId ?? null,
+        at,
+        at + OAUTH_FLOW_TTL_MS,
+      );
+      return { status: "ok", state, verifier, nonce };
+    },
+
+    takeOAuthFlow(provider, state) {
+      const hash = sha256Hex(state);
+      const row = db
+        .prepare(
+          `SELECT provider, kind, verifier, nonce, binding_hash AS bindingHash, redirect_uri AS redirectUri, code_challenge AS codeChallenge,
+                  client_state AS clientState, link_user_id AS linkUserId, expires_at AS expiresAt
+           FROM oauth_flows WHERE state_hash = ?`,
+        )
+        .get(hash) as
+        | {
+            provider: OAuthProvider;
+            kind: OAuthFlow["kind"];
+            verifier: string;
+            nonce: string;
+            bindingHash: string | null;
+            redirectUri: string | null;
+            codeChallenge: string | null;
+            clientState: string | null;
+            linkUserId: number | null;
+            expiresAt: number;
+          }
+        | undefined;
+      // Spent by its first callback, whatever happens next.
+      if (row !== undefined) db.prepare("DELETE FROM oauth_flows WHERE state_hash = ?").run(hash);
+      if (row === undefined || row.expiresAt <= now() || row.provider !== provider) return undefined;
+      return {
+        provider: row.provider,
+        kind: row.kind,
+        verifier: row.verifier,
+        nonce: row.nonce,
+        ...(row.bindingHash === null ? {} : { bindingHash: row.bindingHash }),
+        ...(row.redirectUri === null || row.codeChallenge === null
+          ? {}
+          : { native: { redirectUri: row.redirectUri, codeChallenge: row.codeChallenge, state: row.clientState ?? "" } }),
+        ...(row.linkUserId === null ? {} : { linkUserId: row.linkUserId }),
+      };
+    },
+
+    resolveIdentity(identity, completion) {
+      const result = transaction((): ResolveIdentityResult & { notify?: string } => {
+        const bound = identityOwner(identity.provider, identity.subject);
+        if (bound !== undefined) {
+          bindIdentity(bound, identity);
+          return { status: "user", userId: bound };
+        }
+        // Both sides verified, or no merge: an unverified email must never
+        // reach someone else's account (ADR-0044 §4).
+        if (identity.emailVerified && identity.email !== undefined) {
+          const owner = db.prepare("SELECT id FROM users WHERE email = ? AND email_verified_at IS NOT NULL").get(identity.email) as
+            | { id: number }
+            | undefined;
+          if (owner !== undefined) {
+            bindIdentity(owner.id, identity);
+            return { status: "user", userId: owner.id, notify: identity.email };
+          }
+        }
+        if (!registrationOpen) return { status: "refused", reason: "registration_closed" };
+        const id = randomBytes(32).toString("base64url");
+        const at = now();
+        db.prepare("DELETE FROM oauth_pending WHERE expires_at <= ?").run(at);
+        db.prepare(
+          `INSERT INTO oauth_pending (id_hash, provider, subject, email, email_verified, name, refresh_token, refresh_client_id,
+                                      kind, binding_hash, redirect_uri, code_challenge, client_state, created_at, expires_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          sha256Hex(id),
+          identity.provider,
+          identity.subject,
+          identity.email ?? null,
+          identity.emailVerified ? 1 : 0,
+          identity.name ?? null,
+          identity.refreshToken ?? null,
+          identity.refreshClientId ?? null,
+          completion.kind,
+          completion.kind === "web" ? completion.bindingHash : null,
+          completion.kind === "native" ? completion.native.redirectUri : null,
+          completion.kind === "native" ? completion.native.codeChallenge : null,
+          completion.kind === "native" ? completion.native.state : null,
+          at,
+          at + OAUTH_PENDING_TTL_MS,
+        );
+        return { status: "pending", id, ...(identity.email === undefined ? {} : { email: identity.email }) };
+      });
+      if (result.notify !== undefined) noticeNewMethod(result.notify, identity.provider);
+      const { notify: _notify, ...answer } = result;
+      return answer;
+    },
+
+    linkIdentity(userId, identity) {
+      return transaction(() => {
+        const bound = identityOwner(identity.provider, identity.subject);
+        if (bound !== undefined && bound !== userId) return "identity_taken";
+        bindIdentity(userId, identity);
+        return "linked";
+      });
+    },
+
+    pendingSignIn(id) {
+      const row = pendingRow(id);
+      if (row === undefined) return undefined;
+      return {
+        provider: row.provider,
+        ...(row.email === null ? {} : { email: row.email }),
+        ...(row.name === null ? {} : { name: row.name }),
+        completion: completionOf(row),
+      };
+    },
+
+    createFromPending(id) {
+      return transaction((): PendingResult => {
+        const row = pendingRow(id);
+        if (row === undefined) return { status: "refused", reason: "not_found" };
+        // A refusal leaves the record for the other choice, linking.
+        if (!registrationOpen) return { status: "refused", reason: "registration_closed" };
+        if (row.email === null || row.emailVerified !== 1) return { status: "refused", reason: "no_verified_email" };
+        if (emailOwner(row.email) !== undefined) return { status: "refused", reason: "email_taken" };
+        if (identityOwner(row.provider, row.subject) !== undefined) return { status: "refused", reason: "identity_taken" };
+        const at = now();
+        const userId = Number(
+          db.prepare("INSERT INTO users (email, email_verified_at, password_hash, created_at) VALUES (?, ?, NULL, ?)").run(row.email, at, at)
+            .lastInsertRowid,
+        );
+        bindIdentity(userId, identityOf(row));
+        db.prepare("DELETE FROM oauth_pending WHERE id_hash = ?").run(sha256Hex(id));
+        return { status: "ok", userId, completion: completionOf(row) };
+      });
+    },
+
+    linkPending(id, userId) {
+      return transaction((): PendingResult => {
+        const row = pendingRow(id);
+        if (row === undefined) return { status: "refused", reason: "not_found" };
+        const bound = identityOwner(row.provider, row.subject);
+        if (bound !== undefined && bound !== userId) return { status: "refused", reason: "identity_taken" };
+        bindIdentity(userId, identityOf(row));
+        db.prepare("DELETE FROM oauth_pending WHERE id_hash = ?").run(sha256Hex(id));
+        return { status: "ok", userId, completion: completionOf(row) };
+      });
+    },
+
+    signIn(userId, device) {
+      return transaction(() => {
+        const user = userById(userId);
+        return user === undefined ? undefined : { ...issueSession(userId, device), user: accountUser(user) };
+      });
+    },
+
+    issueOAuthCode(userId, codeChallenge) {
+      const code = randomBytes(32).toString("base64url");
+      const at = now();
+      db.prepare("DELETE FROM oauth_codes WHERE expires_at <= ?").run(at);
+      db.prepare("INSERT INTO oauth_codes (code_hash, user_id, code_challenge, expires_at) VALUES (?, ?, ?, ?)").run(
+        sha256Hex(code),
+        userId,
+        codeChallenge,
+        at + OAUTH_CODE_TTL_MS,
+      );
+      return code;
+    },
+
+    exchangeOAuthCode(code, codeVerifier, device) {
+      const hash = sha256Hex(code);
+      return transaction(() => {
+        const row = db.prepare("SELECT user_id AS userId, code_challenge AS challenge, expires_at AS expiresAt FROM oauth_codes WHERE code_hash = ?").get(hash) as
+          | { userId: number; challenge: string; expiresAt: number }
+          | undefined;
+        if (row === undefined) return undefined;
+        // Spent by any attempt, right verifier or not.
+        db.prepare("DELETE FROM oauth_codes WHERE code_hash = ?").run(hash);
+        if (row.expiresAt <= now() || !safeEqual(createHash("sha256").update(codeVerifier).digest("base64url"), row.challenge)) return undefined;
+        const user = userById(row.userId);
+        return user === undefined ? undefined : { ...issueSession(row.userId, device), user: accountUser(user) };
+      });
+    },
+
+    listIdentities(userId) {
+      const rows = db
+        .prepare("SELECT provider, email, created_at AS createdAt FROM user_identities WHERE user_id = ? ORDER BY created_at, provider")
+        .all(userId) as unknown as { provider: OAuthProvider; email: string | null; createdAt: number }[];
+      return {
+        identities: rows.map((row) => ({ provider: row.provider, ...(row.email === null ? {} : { email: row.email }), createdAt: row.createdAt })),
+        hasPassword: (userById(userId)?.passwordHash ?? null) !== null,
+      };
+    },
+
+    async removeIdentity(args) {
+      const { userId, provider } = args;
+      const checked = await confirmAccount(userId, args);
+      if (checked === "limited") return { status: "limited" };
+      if (typeof checked === "string") return { status: "refused", reason: checked };
+      return transaction((): RemoveIdentityResult => {
+        const stale = stillConfirmed(userId, checked);
+        if (stale !== undefined) return { status: "refused", reason: stale };
+        const counts = db
+          .prepare("SELECT SUM(provider = ?) AS mine, SUM(provider <> ?) AS others FROM user_identities WHERE user_id = ?")
+          .get(provider, provider, userId) as { mine: number | null; others: number | null };
+        if ((counts.mine ?? 0) === 0) return { status: "refused", reason: "not_found" };
+        // Never the last way in: with no password and no other provider, the
+        // account could only be reached through a password reset by email.
+        if ((counts.others ?? 0) === 0 && (userById(userId)?.passwordHash ?? null) === null) {
+          return { status: "refused", reason: "last_method" };
+        }
+        const grants = provider === "apple" ? appleGrants(userId) : [];
+        db.prepare("DELETE FROM user_identities WHERE user_id = ? AND provider = ?").run(userId, provider);
+        return { status: "ok", appleGrants: grants };
+      });
     },
 
     revokeAllSessions(userId) {
@@ -2143,20 +2811,22 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       return Number(db.prepare("DELETE FROM hosts WHERE host_id = ?").run(hostId).changes) > 0;
     },
 
-    async removeHost({ userId, password, hostId }) {
+    async removeHost(args) {
+      const { userId, hostId } = args;
       const owned = (): boolean =>
         db.prepare("SELECT 1 AS x FROM hosts WHERE host_id = ? AND user_id = ?").get(hostId, userId) !== undefined;
       if (!owned()) return { status: "refused", reason: "not_found" };
-      const checked = await checkPassword(userId, password);
+      const checked = await confirmAccount(userId, args);
       if (checked === "limited") return { status: "limited" };
-      if (checked === "wrong_password") return { status: "refused", reason: "wrong_password" };
+      if (typeof checked === "string") return { status: "refused", reason: checked };
       db.exec("BEGIN IMMEDIATE");
       try {
         // As in kickDevice: a reset during scrypt voids the typed password,
         // and a re-join during it may have moved the host to another account.
-        if (currentHash(userId) !== checked.verifiedHash) {
+        const stale = stillConfirmed(userId, checked);
+        if (stale !== undefined) {
           db.exec("ROLLBACK");
-          return { status: "refused", reason: "wrong_password" };
+          return { status: "refused", reason: stale };
         }
         if (!owned()) {
           db.exec("ROLLBACK");
@@ -2314,22 +2984,24 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       db.prepare("DELETE FROM pending_revocations WHERE host_id = ? AND public_key = ?").run(hostId, publicKey);
     },
 
-    async kickDevice({ userId, password, deviceId, currentDeviceId }) {
+    async kickDevice(args) {
+      const { userId, deviceId, currentDeviceId } = args;
       const owned = (): boolean =>
         db.prepare("SELECT 1 AS x FROM account_devices WHERE id = ? AND user_id = ?").get(deviceId, userId) !== undefined;
       // Cheap refusals first: neither costs a scrypt run or a lockout strike.
       if (!owned()) return { status: "refused", reason: "not_found" };
       if (deviceId === currentDeviceId) return { status: "refused", reason: "current_device" };
-      const checked = await checkPassword(userId, password);
+      const checked = await confirmAccount(userId, args);
       if (checked === "limited") return { status: "limited" };
-      if (checked === "wrong_password") return { status: "refused", reason: "wrong_password" };
+      if (typeof checked === "string") return { status: "refused", reason: checked };
       db.exec("BEGIN IMMEDIATE");
       try {
         // Same compare-and-swap as a password change: a reset that committed
         // while scrypt ran means the password typed here no longer holds.
-        if (currentHash(userId) !== checked.verifiedHash) {
+        const stale = stillConfirmed(userId, checked);
+        if (stale !== undefined) {
           db.exec("ROLLBACK");
-          return { status: "refused", reason: "wrong_password" };
+          return { status: "refused", reason: stale };
         }
         if (!owned()) {
           db.exec("ROLLBACK");

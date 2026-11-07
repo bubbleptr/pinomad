@@ -32,6 +32,7 @@ import {
   type PairingRequestResult,
   type PairingStatus,
 } from "./api.ts";
+import type { OAuthProviders } from "./oauth.ts";
 
 export interface RelayOptions {
   /** 0 in tests. */
@@ -66,6 +67,8 @@ export interface RelayOptions {
   readonly push?: ApnsSender;
   /** In-flight push caps, for tests; defaults below. */
   readonly pushLimits?: { readonly perHost?: number; readonly total?: number };
+  /** Sign-in with Google, GitHub and Apple (ADR-0044 §3); unset → none offered. */
+  readonly oauth?: OAuthProviders;
   /** Splice caps and the per-account byte budget (issue #453); unset fields keep DEFAULT_RELAY_LIMITS. */
   readonly limits?: Partial<RelayLimits>;
   /** The byte budget's clock, for tests; Date.now otherwise. */
@@ -707,6 +710,7 @@ export async function startRelay(options: RelayOptions): Promise<Relay> {
         disconnectHost,
         forgetAccount: (userId) => limiter.forgetAccount(accountKey(userId)),
         sendRevocations,
+        ...(options.oauth === undefined ? {} : { oauth: options.oauth }),
       }).catch(() => {
         if (!response.headersSent) response.writeHead(500);
         response.end();

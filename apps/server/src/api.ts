@@ -18,6 +18,18 @@
 // with a one-time code, and the host trades it at POST /api/host-link/token
 // with its PKCE verifier.
 //
+// Sign-in with Google, GitHub and Apple (ADR-0044 §3–§5): GET
+// /api/oauth/:provider/start sends the browser to the provider, whose
+// callback (GET, or Apple's form_post) lands the account, a "no account yet"
+// choice (GET /api/oauth/pending/:id, then POST …/create or …/link), or for
+// native clients a one-time code they trade at POST /api/oauth/token; iOS's
+// own Sign in with Apple posts to /api/oauth/apple/native. Signed in, POST
+// /api/oauth/:provider/link adds a provider, GET /api/me/identities lists
+// them and POST /api/me/identities/:provider/remove unlinks one. POST
+// /api/reauth (after POST /api/reauth/code for a mailed code) grants the
+// confirmation that kicking a device, removing a host, deleting the account
+// and changing the password take instead of the password (§6).
+//
 // Two credential styles share the routes, decided by the request's Origin:
 // the same-origin web client gets a Secure+HttpOnly+SameSite=Strict host-only
 // cookie (mutating requests then must carry that Origin), while the desktop
@@ -29,6 +41,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { relayWsBase } from "@pinomad/host/src/relay-link.ts";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   MAX_PASSWORD_CODEPOINTS,
   MAX_USERNAME_CODEPOINTS,
@@ -37,10 +50,15 @@ import {
   parseDeviceClaim,
   type AccountUser,
   type Accounts,
+  type Confirmation,
+  type NativeRedirect,
+  type PendingCompletion,
+  type PendingResult,
   type HostLinkLoopback,
   type HostLinkRef,
   type SendCodeResult,
 } from "./accounts.ts";
+import { OAUTH_PROVIDERS, type OAuthProvider, type OAuthProviders } from "./oauth.ts";
 
 /** Whether a bound host can serve a pairing ask right now (ADR-0022 §4). */
 export type PairingStatus = "available" | "offline" | "host_too_old" | "key_mismatch";
@@ -94,6 +112,8 @@ export interface ApiContext {
    * for its next register.
    */
   readonly sendRevocations: (hostId: string) => void;
+  /** The configured sign-in providers (ADR-0044 §3); absent → none. */
+  readonly oauth?: OAuthProviders;
 }
 
 const SESSION_COOKIE = "__Host-pinomad-session";
@@ -133,6 +153,27 @@ function parseLoopback(value: { redirectUri?: unknown; codeChallenge?: unknown; 
     url.href === redirectUri;
   return loopbackOnly ? { redirectUri, codeChallenge, state } : null;
 }
+/**
+ * A native client's redirect for a provider sign-in (ADR-0044 §5), or null
+ * when any field is off: exactly `pinomad://auth` (iOS), or the desktop's
+ * listener at `http://127.0.0.1:<port>` with no path, `/` or `/callback` —
+ * never `localhost`, which DNS can point elsewhere.
+ */
+function parseNativeRedirect(redirectUri: string | null, codeChallenge: string | null, state: string | null): NativeRedirect | null {
+  if (redirectUri === null || codeChallenge === null || state === null) return null;
+  if (!PKCE_CHALLENGE.test(codeChallenge) || !LOOPBACK_STATE.test(state)) return null;
+  const loopback = /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})(?:\/|\/callback)?$/.exec(redirectUri);
+  const allowed = redirectUri === "pinomad://auth" || (loopback !== null && Number(loopback[1]) <= 65535);
+  return allowed ? { redirectUri, codeChallenge, state } : null;
+}
+
+/** The redirect with `params` added; the allowed redirects carry no query of their own. */
+const withParams = (redirectUri: string, params: Record<string, string>): string => {
+  const url = new URL(redirectUri);
+  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+  return url.toString();
+};
+
 const MAX_BODY = 8 * 1024;
 // A mailed code is six digits; anything much longer is not a typo of one.
 const MAX_CODE_LENGTH = 32;
@@ -161,6 +202,26 @@ const bodyCode = (value: unknown): string | undefined => {
   const code = (value as { code?: unknown } | null)?.code;
   return typeof code === "string" && code.length <= MAX_CODE_LENGTH ? code : undefined;
 };
+/**
+ * The provider sign-in routes that, like login, answer desktop and
+ * Origin-less native callers in token mode (ADR-0044 §5): trading a one-time
+ * code, iOS's own Apple sign-in, and finishing a native client's pending
+ * sign-in, whose id is the bearer secret.
+ */
+const OAUTH_TOKEN_ROUTE = /^\/api\/oauth\/(?:token|apple\/native|pending\/[A-Za-z0-9_-]{43}\/(?:create|link))$/;
+
+/** A body's `{ password }` or `{ reauth }` (ADR-0044 §6), the grant tied to `token`; undefined when neither or both. */
+function bodyConfirmation(value: unknown, token: string): Confirmation | undefined {
+  const { password, reauth } = (typeof value === "object" && value !== null ? value : {}) as { password?: unknown; reauth?: unknown };
+  if (typeof reauth === "string" && password === undefined) return reauth.length <= 256 ? { reauth, token } : undefined;
+  if (typeof password === "string" && reauth === undefined) return [...password].length <= MAX_PASSWORD_CODEPOINTS ? { password } : undefined;
+  return undefined;
+}
+
+const sha256Hex = (value: string): string => createHash("sha256").update(value, "utf8").digest("hex");
+const pkceChallenge = (verifier: string): string => createHash("sha256").update(verifier).digest("base64url");
+const sameHash = (a: string, b: string): boolean => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 // The desktop renderer's origin — apps/desktop/electron/renderer-files.ts
 // defines APP_SCHEME/APP_HOST. Kept a literal on purpose: the relay must not
@@ -252,22 +313,56 @@ async function authedJson(
   return { ok: true, value: body.value, session };
 }
 
-/** Bearer token first, then the browser session cookie. */
-function sessionToken(request: IncomingMessage): string | undefined {
-  const authorization = request.headers.authorization;
-  if (authorization !== undefined && authorization.startsWith("Bearer ")) return authorization.slice("Bearer ".length);
+/** A request cookie's value. */
+function cookie(request: IncomingMessage, name: string): string | undefined {
   const header = request.headers.cookie;
   if (header === undefined) return undefined;
   for (const part of header.split(";")) {
     const eq = part.indexOf("=");
-    if (eq > 0 && part.slice(0, eq).trim() === SESSION_COOKIE) return part.slice(eq + 1).trim();
+    if (eq > 0 && part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
   }
   return undefined;
+}
+
+/** Bearer token first, then the browser session cookie. */
+function sessionToken(request: IncomingMessage): string | undefined {
+  const authorization = request.headers.authorization;
+  if (authorization !== undefined && authorization.startsWith("Bearer ")) return authorization.slice("Bearer ".length);
+  return cookie(request, SESSION_COOKIE);
 }
 
 const cookieAttributes = "Path=/; Secure; HttpOnly; SameSite=Strict";
 const setSessionCookie = (token: string): string => `${SESSION_COOKIE}=${token}; ${cookieAttributes}`;
 const clearSessionCookie = `${SESSION_COOKIE}=; ${cookieAttributes}; Max-Age=0`;
+
+/**
+ * Binds a web provider sign-in to the browser that started it (ADR-0044
+ * §5): the flow stores this cookie's hash and the callback must bring it,
+ * so nobody can finish their own sign-in in someone else's browser. Apple's
+ * callback is a cross-site POST, hence SameSite=None; the path keeps it off
+ * every other route.
+ */
+const BINDING_COOKIE = "pinomad_oauth";
+const bindingAttributes = "Path=/api/oauth; Secure; HttpOnly; SameSite=None";
+const setBindingCookie = (value: string): string => `${BINDING_COOKIE}=${value}; ${bindingAttributes}; Max-Age=600`;
+const clearBindingCookie = `${BINDING_COOKIE}=; ${bindingAttributes}; Max-Age=0`;
+
+/** Whether this request carries the binding a web flow or pending sign-in was started with. */
+const bound = (request: IncomingMessage, bindingHash: string | undefined): boolean => {
+  const value = cookie(request, BINDING_COOKIE);
+  return value !== undefined && bindingHash !== undefined && sameHash(sha256Hex(value), bindingHash);
+};
+
+/** Reads a urlencoded form body (Apple's form_post), bounded like JSON bodies. */
+async function readForm(request: IncomingMessage): Promise<URLSearchParams | undefined> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request as AsyncIterable<Buffer>) {
+    size += chunk.length;
+    if (size <= MAX_BODY) chunks.push(chunk);
+  }
+  return size > MAX_BODY ? undefined : new URLSearchParams(Buffer.concat(chunks).toString("utf8"));
+}
 
 export async function handleApiRequest(request: IncomingMessage, response: ServerResponse, ctx: ApiContext): Promise<void> {
   const { accounts } = ctx;
@@ -341,13 +436,18 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
   // desktop and Origin-less native callers in token mode (their branch picks
   // the response style).
   const bearer = (request.headers.authorization ?? "").startsWith("Bearer ");
-  const loginTokenMode = ANONYMOUS_ACCOUNT_ROUTES.has(pathname) && (origin === undefined || origin === DESKTOP_ORIGIN);
+  const loginTokenMode =
+    (ANONYMOUS_ACCOUNT_ROUTES.has(pathname) || OAUTH_TOKEN_ROUTE.test(pathname)) && (origin === undefined || origin === DESKTOP_ORIGIN);
+  // Apple's callback is a cross-site form POST from appleid.apple.com. It
+  // carries no session credential: the flow's binding (cookie or PKCE) is
+  // what ties it to whoever started the sign-in.
+  const appleFormPost = pathname === "/api/oauth/apple/callback";
   // The host CLI starts and polls a host link with no credential at all, so
   // there is nothing to forge; it sends no Origin, and only that is let past.
   const hostLinkHostMode =
     (pathname === "/api/host-link/start" || pathname === "/api/host-link/poll" || pathname === "/api/host-link/token") &&
     origin === undefined;
-  if (MUTATING.has(method) && !bearer && !loginTokenMode && !hostLinkHostMode && origin !== ctx.publicOrigin) {
+  if (MUTATING.has(method) && !bearer && !loginTokenMode && !hostLinkHostMode && !appleFormPost && origin !== ctx.publicOrigin) {
     deny(403, "origin_mismatch");
     return;
   }
@@ -406,8 +506,379 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       deny(405, "method_not_allowed", { allow: "GET" });
       return;
     }
-    // Providers arrive with #620.
-    send(200, { registration: accounts.registrationOpen, email: accounts.emailEnabled, providers: [] });
+    send(200, { registration: accounts.registrationOpen, email: accounts.emailEnabled, providers: ctx.oauth?.enabled ?? [] });
+    return;
+  }
+
+  const oauth = ctx.oauth;
+  /** A configured provider by the name in the path. */
+  const enabledProvider = (name: string | undefined): OAuthProvider | undefined => oauth?.enabled.find((provider) => provider === name);
+  const callbackUri = (provider: OAuthProvider): string => `${ctx.publicOrigin}/api/oauth/${provider}/callback`;
+  /** Sends the browser on; provider sign-ins answer navigations, not fetches. */
+  const redirect = (to: string, cookies: readonly string[] = []): void => {
+    response.writeHead(302, { location: to, ...(cookies.length === 0 ? {} : { "set-cookie": [...cookies] }) });
+    response.end();
+  };
+  /** The web client, told how a provider sign-in ended. */
+  const toWebClient = (param: "oauth_error" | "oauth_pending" | "oauth_linked", value: string, cookies?: readonly string[]): void =>
+    redirect(`${ctx.publicOrigin}/?${new URLSearchParams({ [param]: value })}`, cookies);
+  /** A one-time code for a native client's redirect (ADR-0044 §5). */
+  const nativeCode = (userId: number, native: NativeRedirect): string =>
+    withParams(native.redirectUri, { code: accounts.issueOAuthCode(userId, native.codeChallenge), state: native.state });
+  /** A finished pending sign-in or link refused: the reason, with the status its kind of refusal takes. */
+  const pendingRefused = (result: Extract<PendingResult, { status: "refused" }>): void => {
+    const status = { not_found: 404, registration_closed: 403, no_verified_email: 400, email_taken: 409, identity_taken: 409 }[result.reason];
+    deny(status, result.reason);
+  };
+
+  const providerRoute = /^\/api\/oauth\/([a-z]+)\/(start|callback)$/.exec(pathname);
+  if (providerRoute !== null) {
+    const provider = enabledProvider(providerRoute[1]);
+    const expected = providerRoute[2] === "callback" && provider === "apple" ? "POST" : "GET";
+    if (provider === undefined) {
+      deny(404, "not_found");
+      return;
+    }
+    if (method !== expected) {
+      deny(405, "method_not_allowed", { allow: expected });
+      return;
+    }
+    if (providerRoute[2] === "start") {
+      const query = new URL(request.url ?? "/", "http://server.invalid").searchParams;
+      const client = query.get("client") ?? "web";
+      const native = client === "native" ? parseNativeRedirect(query.get("redirect_uri"), query.get("code_challenge"), query.get("state")) : undefined;
+      if ((client !== "web" && client !== "native") || native === null) {
+        deny(400, "invalid_request");
+        return;
+      }
+      const binding = native === undefined ? randomBytes(32).toString("base64url") : undefined;
+      const flow = accounts.startOAuthFlow({
+        provider,
+        kind: native === undefined ? "web" : "native",
+        ip: clientIp(request, ctx.trustProxy),
+        ...(binding === undefined ? {} : { bindingHash: sha256Hex(binding) }),
+        ...(native === undefined ? {} : { native }),
+      });
+      if (flow.status === "limited") deny(429, "rate_limited");
+      else if (flow.status === "busy") deny(503, "busy");
+      else {
+        const to = oauth!.authorizeUrl(provider, {
+          state: flow.state,
+          nonce: flow.nonce,
+          codeChallenge: pkceChallenge(flow.verifier),
+          redirectUri: callbackUri(provider),
+        });
+        redirect(to, binding === undefined ? [] : [setBindingCookie(binding)]);
+      }
+      return;
+    }
+    const params = method === "POST" ? await readForm(request) : new URL(request.url ?? "/", "http://server.invalid").searchParams;
+    const state = params?.get("state");
+    const flow = state === null || state === undefined || state.length > 256 ? undefined : accounts.takeOAuthFlow(provider, state);
+    if (flow === undefined) {
+      toWebClient("oauth_error", "invalid_state");
+      return;
+    }
+    const fail = (reason: string): void => {
+      if (flow.native === undefined) toWebClient("oauth_error", reason);
+      else redirect(withParams(flow.native.redirectUri, { error: reason, state: flow.native.state }));
+    };
+    // Login CSRF: a web flow only finishes in the browser that started it.
+    if (flow.kind !== "native" && !bound(request, flow.bindingHash)) {
+      fail("invalid_state");
+      return;
+    }
+    const code = params!.get("code");
+    if (params!.get("error") !== null || code === null) {
+      fail(params!.get("error") === null ? "invalid_request" : "access_denied");
+      return;
+    }
+    const identity = await oauth!.exchange(provider, {
+      code,
+      verifier: flow.verifier,
+      nonce: flow.nonce,
+      redirectUri: callbackUri(provider),
+      ...(params!.get("user") === null ? {} : { user: params!.get("user")! }),
+    });
+    if ("error" in identity) {
+      fail(identity.error);
+      return;
+    }
+    if (flow.kind === "link") {
+      if (accounts.linkIdentity(flow.linkUserId!, identity) === "identity_taken") fail("identity_taken");
+      else toWebClient("oauth_linked", provider, [clearBindingCookie]);
+      return;
+    }
+    const completion: PendingCompletion =
+      flow.native === undefined ? { kind: "web", bindingHash: flow.bindingHash! } : { kind: "native", native: flow.native };
+    const resolved = accounts.resolveIdentity(identity, completion);
+    if (resolved.status === "refused") {
+      fail(resolved.reason);
+      return;
+    }
+    // The "no account yet" page is the web client's, for native flows too:
+    // the person is still in the browser the client opened.
+    if (resolved.status === "pending") {
+      toWebClient("oauth_pending", resolved.id);
+      return;
+    }
+    if (flow.native !== undefined) {
+      redirect(nativeCode(resolved.userId, flow.native));
+      return;
+    }
+    const session = accounts.signIn(resolved.userId);
+    if (session === undefined) fail("not_found");
+    else redirect(`${ctx.publicOrigin}/`, [setSessionCookie(session.token), clearBindingCookie]);
+    return;
+  }
+
+  if (pathname === "/api/oauth/token" || pathname === "/api/oauth/apple/native") {
+    if (method !== "POST") {
+      deny(405, "method_not_allowed", { allow: "POST" });
+      return;
+    }
+    if (pathname === "/api/oauth/apple/native" && oauth?.appleNative !== true) {
+      deny(404, "not_found");
+      return;
+    }
+    const body = await readJson(request);
+    if (!body.ok) {
+      deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
+      return;
+    }
+    const value = (typeof body.value === "object" && body.value !== null ? body.value : {}) as Record<string, unknown>;
+    const device = parseDeviceClaim(value.device);
+    if (device === "invalid") {
+      deny(400, "invalid_request");
+      return;
+    }
+    if (pathname === "/api/oauth/token") {
+      const { code, code_verifier: verifier } = value;
+      if (typeof code !== "string" || code.length > 256 || typeof verifier !== "string" || !PKCE_VERIFIER.test(verifier)) {
+        deny(400, "invalid_request");
+        return;
+      }
+      const session = accounts.exchangeOAuthCode(code, verifier, device);
+      // RFC 6749 §5.2: a spent, expired or mismatched code is invalid_grant.
+      if (session === undefined) deny(400, "invalid_grant");
+      else signedIn(session);
+      return;
+    }
+    const { identityToken, authorizationCode, nonce, name } = value;
+    if (
+      typeof identityToken !== "string" ||
+      typeof authorizationCode !== "string" ||
+      authorizationCode.length > 1024 ||
+      (nonce !== undefined && (typeof nonce !== "string" || nonce.length > 256)) ||
+      (name !== undefined && typeof name !== "string")
+    ) {
+      deny(400, "invalid_request");
+      return;
+    }
+    const identity = await oauth!.verifyAppleNative({
+      identityToken,
+      authorizationCode,
+      ...(nonce === undefined ? {} : { nonce }),
+      ...(name === undefined ? {} : { name }),
+    });
+    if ("error" in identity) {
+      deny(identity.error === "invalid_token" ? 401 : 400, identity.error === "invalid_token" ? "invalid_token" : "invalid_grant");
+      return;
+    }
+    const resolved = accounts.resolveIdentity(identity, { kind: "direct" });
+    if (resolved.status === "refused") deny(403, resolved.reason);
+    // iOS shows its own "no account yet" choice, then finishes through the
+    // pending routes.
+    else if (resolved.status === "pending") {
+      send(409, { error: "no_account", reason: "no_account", pending: resolved.id, ...(resolved.email === undefined ? {} : { email: resolved.email }) });
+    } else {
+      const session = accounts.signIn(resolved.userId, device);
+      if (session === undefined) deny(404, "not_found");
+      else signedIn(session);
+    }
+    return;
+  }
+
+  const pendingRoute = /^\/api\/oauth\/pending\/([A-Za-z0-9_-]{43})(?:\/(create|link))?$/.exec(pathname);
+  if (pendingRoute !== null) {
+    const id = pendingRoute[1]!;
+    const action = pendingRoute[2];
+    const expected = action === undefined ? "GET" : "POST";
+    if (method !== expected) {
+      deny(405, "method_not_allowed", { allow: expected });
+      return;
+    }
+    /** The pending sign-in, when this caller may see it: a web one only in its own browser. */
+    const visible = () => {
+      const pending = accounts.pendingSignIn(id);
+      return pending === undefined || (pending.completion.kind === "web" && !bound(request, pending.completion.bindingHash)) ? undefined : pending;
+    };
+    if (action === undefined) {
+      const pending = visible();
+      if (pending === undefined) deny(404, "not_found");
+      else {
+        send(200, {
+          provider: pending.provider,
+          ...(pending.email === undefined ? {} : { email: pending.email }),
+          ...(pending.name === undefined ? {} : { name: pending.name }),
+        });
+      }
+      return;
+    }
+    if (action === "create") {
+      const body = await readJson(request, true);
+      if (!body.ok) {
+        deny(body.tooLarge ? 413 : 400, body.tooLarge ? "payload_too_large" : "invalid_json");
+        return;
+      }
+      const device = parseDeviceClaim((body.value as { device?: unknown } | undefined)?.device);
+      if (device === "invalid") {
+        deny(400, "invalid_request");
+        return;
+      }
+      if (visible() === undefined) {
+        deny(404, "not_found");
+        return;
+      }
+      const result = accounts.createFromPending(id);
+      if (result.status === "refused") {
+        pendingRefused(result);
+        return;
+      }
+      if (result.completion.kind === "native") {
+        send(200, { redirect: nativeCode(result.userId, result.completion.native) });
+        return;
+      }
+      // Lands signed in, in the style the caller would get from login: the
+      // web client's cookie, or iOS's token.
+      const session = accounts.signIn(result.userId, device);
+      if (session === undefined) deny(404, "not_found");
+      else signedIn(session);
+      return;
+    }
+    const token = sessionToken(request);
+    if (token === undefined || accounts.authenticate(token) === undefined) {
+      deny(401, "unauthenticated");
+      return;
+    }
+    const body = await authedJson(accounts, request, token, true);
+    if (!body.ok) {
+      deny(body.status, body.error);
+      return;
+    }
+    if (visible() === undefined) {
+      deny(404, "not_found");
+      return;
+    }
+    const result = accounts.linkPending(id, body.session.userId);
+    if (result.status === "refused") pendingRefused(result);
+    // A native client still waits at its redirect, for a session of the
+    // account it was linked to.
+    else if (result.completion.kind === "native") send(200, { redirect: nativeCode(result.userId, result.completion.native) });
+    else send(204);
+    return;
+  }
+
+  const linkRoute = /^\/api\/oauth\/([a-z]+)\/link$/.exec(pathname);
+  const removeRoute = /^\/api\/me\/identities\/([a-z]+)\/remove$/.exec(pathname);
+  if (pathname === "/api/me/identities" || pathname === "/api/reauth/code" || pathname === "/api/reauth" || linkRoute !== null || removeRoute !== null) {
+    const expected = pathname === "/api/me/identities" ? "GET" : "POST";
+    if (method !== expected) {
+      deny(405, "method_not_allowed", { allow: expected });
+      return;
+    }
+    const token = sessionToken(request);
+    const session = token === undefined ? undefined : accounts.authenticate(token);
+    if (session === undefined) {
+      deny(401, "unauthenticated");
+      return;
+    }
+    if (pathname === "/api/me/identities") {
+      send(200, accounts.listIdentities(session.userId));
+      return;
+    }
+    const body = await authedJson(accounts, request, token!, true);
+    if (!body.ok) {
+      deny(body.status, body.error);
+      return;
+    }
+    const current = body.session;
+    if (pathname === "/api/reauth/code") {
+      const result = accounts.requestReauthCode({ userId: current.userId, ip: clientIp(request, ctx.trustProxy) });
+      if (result === "no_email") deny(409, "no_email");
+      else codeSent(result, "email_unavailable");
+      return;
+    }
+    if (pathname === "/api/reauth") {
+      const { password, code } = (typeof body.value === "object" && body.value !== null ? body.value : {}) as { password?: unknown; code?: unknown };
+      const proof =
+        typeof password === "string" && code === undefined && [...password].length <= MAX_PASSWORD_CODEPOINTS
+          ? { password }
+          : typeof code === "string" && password === undefined && code.length <= MAX_CODE_LENGTH
+            ? { code }
+            : undefined;
+      if (proof === undefined) {
+        deny(400, "invalid_request");
+        return;
+      }
+      const result = await accounts.grantReauth({ userId: current.userId, token: token!, ...proof });
+      if (result.status === "limited") deny(429, "rate_limited");
+      else if (result.status === "refused") deny(result.reason === "unauthenticated" ? 401 : 403, result.reason);
+      else send(200, { reauth: result.reauth, expiresAt: result.expiresAt });
+      return;
+    }
+    const confirmation = bodyConfirmation(body.value, token!);
+    if (confirmation === undefined) {
+      deny(400, "invalid_request");
+      return;
+    }
+    if (removeRoute !== null) {
+      const provider = OAUTH_PROVIDERS.find((name) => name === removeRoute[1]);
+      if (provider === undefined) {
+        deny(404, "not_found");
+        return;
+      }
+      const result = await accounts.removeIdentity({ userId: current.userId, provider, ...confirmation });
+      if (result.status === "limited") deny(429, "rate_limited");
+      else if (result.status === "refused") {
+        deny(result.reason === "not_found" ? 404 : result.reason === "last_method" ? 409 : 403, result.reason);
+      } else {
+        for (const grant of result.appleGrants) oauth?.revokeApple(grant.refreshToken, grant.clientId);
+        send(204);
+      }
+      return;
+    }
+    // Linking from settings: the provider's answer is bound to this browser
+    // like a web sign-in, and lands on this account.
+    const provider = enabledProvider(linkRoute![1]);
+    if (provider === undefined) {
+      deny(404, "not_found");
+      return;
+    }
+    const confirmed = await accounts.confirm(current.userId, confirmation);
+    if (confirmed !== "ok") {
+      deny(confirmed === "limited" ? 429 : 403, confirmed === "limited" ? "rate_limited" : confirmed);
+      return;
+    }
+    const binding = randomBytes(32).toString("base64url");
+    const flow = accounts.startOAuthFlow({
+      provider,
+      kind: "link",
+      ip: clientIp(request, ctx.trustProxy),
+      bindingHash: sha256Hex(binding),
+      linkUserId: current.userId,
+    });
+    if (flow.status === "limited") deny(429, "rate_limited");
+    else if (flow.status === "busy") deny(503, "busy");
+    else {
+      const url = oauth!.authorizeUrl(provider, {
+        state: flow.state,
+        nonce: flow.nonce,
+        codeChallenge: pkceChallenge(flow.verifier),
+        redirectUri: callbackUri(provider),
+      });
+      send(200, { url }, { "set-cookie": setBindingCookie(binding) });
+    }
     return;
   }
 
@@ -639,19 +1110,16 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       deny(body.status, body.error);
       return;
     }
-    // The password again, as for kicking a device (ADR-0037 §3): it acts on
-    // a machine other than this one, and only its terminal can bring it back.
-    const value = body.value as { password?: unknown } | null;
-    if (typeof value?.password !== "string" || [...value.password].length > MAX_PASSWORD_CODEPOINTS) {
+    // Confirmed again, as for kicking a device (ADR-0037 §3, ADR-0044 §6):
+    // it acts on a machine other than this one, and only its terminal can
+    // bring it back.
+    const confirmation = bodyConfirmation(body.value, token);
+    if (confirmation === undefined) {
       deny(400, "invalid_request");
       return;
     }
     const current = body.session;
-    const result = await accounts.removeHost({
-      userId: current.userId,
-      password: value.password,
-      hostId: hostRemove[1]!,
-    });
+    const result = await accounts.removeHost({ userId: current.userId, hostId: hostRemove[1]!, ...confirmation });
     if (result.status === "limited") {
       deny(429, "rate_limited");
       return;
@@ -791,10 +1259,10 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       deny(body.status, body.error);
       return;
     }
-    // The password again, as for deleting the account: a session left on a
+    // Confirmed again, as for deleting the account: a session left on a
     // lost phone must not be able to kick the owner's other devices.
-    const value = body.value as { password?: unknown } | null;
-    if (typeof value?.password !== "string" || [...value.password].length > MAX_PASSWORD_CODEPOINTS) {
+    const confirmation = bodyConfirmation(body.value, token!);
+    if (confirmation === undefined) {
       deny(400, "invalid_request");
       return;
     }
@@ -802,9 +1270,9 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     const current = body.session;
     const result = await accounts.kickDevice({
       userId: current.userId,
-      password: value.password,
       deviceId: Number(deviceKick[1]),
       ...(current.deviceId === undefined ? {} : { currentDeviceId: current.deviceId }),
+      ...confirmation,
     });
     if (result.status === "limited") {
       deny(429, "rate_limited");
@@ -915,12 +1383,12 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
         return;
       }
       const current = body.session;
-      const value = body.value as { password?: unknown } | null;
-      if (typeof value?.password !== "string" || [...value.password].length > MAX_PASSWORD_CODEPOINTS) {
+      const confirmation = bodyConfirmation(body.value, token!);
+      if (confirmation === undefined) {
         deny(400, "invalid_request");
         return;
       }
-      const result = await accounts.deleteAccount({ userId: current.userId, password: value.password });
+      const result = await accounts.deleteAccount({ userId: current.userId, ...confirmation });
       if (result.status === "limited") {
         deny(429, "rate_limited");
         return;
@@ -933,6 +1401,8 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       // their control connections now rather than at their next register.
       for (const hostId of result.hostIds) ctx.disconnectHost(hostId);
       ctx.forgetAccount(current.userId);
+      // Apple asks to be told (ADR-0044 §9); the delete never waits on it.
+      for (const grant of result.appleGrants) oauth?.revokeApple(grant.refreshToken, grant.clientId);
       send(204, undefined, { "set-cookie": clearSessionCookie });
       return;
     }
@@ -943,23 +1413,21 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
         return;
       }
       const current = body.session;
-      const value = body.value as { currentPassword?: unknown; newPassword?: unknown } | null;
-      // Same bound as login: an over-long current password can't match, and
-      // must not reach scrypt.
-      if (
-        typeof value?.currentPassword !== "string" ||
-        typeof value.newPassword !== "string" ||
-        [...value.currentPassword].length > MAX_PASSWORD_CODEPOINTS
-      ) {
+      const value = body.value as { currentPassword?: unknown; reauth?: unknown; newPassword?: unknown } | null;
+      // The current password, or a grant (ADR-0044 §6), which also sets a
+      // first password on an account that has none. Same bound as login: an
+      // over-long current password can't match, and must not reach scrypt.
+      const proof =
+        typeof value?.currentPassword === "string" && value.reauth === undefined && [...value.currentPassword].length <= MAX_PASSWORD_CODEPOINTS
+          ? { currentPassword: value.currentPassword }
+          : typeof value?.reauth === "string" && value.currentPassword === undefined && value.reauth.length <= 256
+            ? { reauth: value.reauth }
+            : undefined;
+      if (proof === undefined || typeof value?.newPassword !== "string") {
         deny(400, "invalid_request");
         return;
       }
-      const result = await accounts.changePassword({
-        userId: current.userId,
-        keepToken: token!,
-        currentPassword: value.currentPassword,
-        newPassword: value.newPassword,
-      });
+      const result = await accounts.changePassword({ userId: current.userId, keepToken: token!, newPassword: value.newPassword, ...proof });
       if (result.status === "limited") {
         deny(429, "rate_limited");
         return;
@@ -967,7 +1435,7 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       if (result.status === "refused") {
         // 403, not 401: clients treat 401 as "signed out", and a mistyped
         // current password must not sign the caller out.
-        deny(result.reason === "wrong_password" ? 403 : 400, result.reason);
+        deny(result.reason === "weak_password" ? 400 : 403, result.reason);
         return;
       }
       send(204);
