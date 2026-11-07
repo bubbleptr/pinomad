@@ -29,6 +29,8 @@ Devices reach a host through the server first. Once the connection is up, Auto t
 
 The connection mode is per host, under Settings → Hosts → Connection…: Auto (the default), Direct only (never send conversation data through the PiNomad server; the relay is used only to set up the link), or Relay only (never try peer-to-peer). The same panel shows the current path: P2P (with whether each end is on a LAN, tailnet, or public address; full addresses behind Show addresses) or the relay, plus the last failure.
 
+Under Settings → Hosts, each host lists the routes that reach it: the account relay, a tailnet or LAN address, or this computer. Routes the connection mode leaves out read Off.
+
 The host reads STUN servers from the `rtcStun` key in `<data dir>/settings.json` and advertises the same list in `hello.rtc`:
 
 ```json

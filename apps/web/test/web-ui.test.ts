@@ -3220,19 +3220,63 @@ it("switches between paired hosts on the desktop bridge", async () => {
   expect(sockets.a).toBe(socketsABeforeSwitch);
 
   // A host that drops keeps its last view and reconnects in the background;
-  // focusing it shows the disconnect banner, and A's group still opens A's
-  // conversation without touching A's connection.
+  // the focused one shows the disconnect banner, and A's group still opens A's
+  // conversation without touching A's connection. Focus moves from the
+  // sidebar's machine groups (#502), so focus B before it drops.
+  const groupB = page.getByRole("group", { name: labelB, exact: true });
+  await groupB.getByRole("button", { name: "hello B", exact: true }).click();
+  await page.getByText("host B answer", { exact: true }).waitFor();
   await hostB.close();
   await openHostsMenu(page);
   await page.getByRole("menuitem", { name: `${labelB} (offline)`, exact: true }).waitFor();
-  await page.keyboard.press("Escape");
-  const hosts = await openSettings(page, "Hosts");
-  await hosts.getByRole("button", { name: `Switch to ${labelB}`, exact: true }).click();
   await page.keyboard.press("Escape");
   await page.getByText("Host connection lost", { exact: true }).waitFor();
   await groupA.getByRole("button", { name: "hello A", exact: true }).click();
   await page.getByText("host A answer", { exact: true }).waitFor();
   expect(sockets.a).toBe(socketsABeforeSwitch);
+});
+
+it("leaves a failed pairing for a saved host from the sidebar-less failure page", async () => {
+  const webOrigin = await startWeb(defer);
+  const dirA = await tempDir();
+  defer(dirA.remove);
+  const dirB = await tempDir();
+  defer(dirB.remove);
+  await writeFile(join(dirA.path, "settings.json"), JSON.stringify({ hostName: "Host A" }));
+  await writeFile(join(dirB.path, "settings.json"), JSON.stringify({ hostName: "Host B" }));
+  const hostA = await startFauxHost(defer, { dataDir: dirA.path, browserOrigins: [webOrigin], answers: ["host A answer"] });
+  const hostB = await startFauxHost(defer, { dataDir: dirB.path, browserOrigins: [webOrigin], answers: ["host B answer"] });
+  const tokenA = await connectTo(defer, hostA);
+  const tokenB = await connectTo(defer, hostB);
+  const { url: pairA } = await tokenA.controller.createPairing();
+  const { url: pairB } = await tokenB.controller.createPairing();
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  const context = await browser.newContext({ viewport: { width: 1280, height: 844 } });
+  defer(() => context.close());
+  await stubDesktopBridge(context);
+  const page = await context.newPage();
+
+  await page.goto(webOrigin);
+  await page.getByLabel("Pairing link").fill(pairA);
+  await page.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.getByRole("button", { name: "Pair", exact: true }).click();
+  await prompt(page).waitFor();
+
+  // B goes away between showing its pairing offer and confirming it: the
+  // unsaved pairing fails on a page with no sidebar, so the inline host list
+  // is the only way back to A.
+  const dialog = await openSettings(page, "Hosts");
+  await dialog.getByLabel("Pairing link").fill(pairB);
+  await dialog.getByRole("button", { name: "Connect", exact: true }).click();
+  await page.getByText("Pair with this host?").waitFor();
+  await hostB.close();
+  await page.getByRole("button", { name: "Pair", exact: true }).click();
+  await page.getByText("Could not connect to the host", { exact: true }).waitFor();
+  await page.getByRole("button", { name: "Switch to Host A", exact: true }).click();
+  await prompt(page).waitFor();
+  expect(await page.getByText("Could not connect to the host", { exact: true }).count()).toBe(0);
 });
 
 it("unpairs a host from Settings → Hosts only after confirmation, at both ends", async () => {
@@ -3281,7 +3325,7 @@ it("unpairs a host from Settings → Hosts only after confirmation, at both ends
   await confirm.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect.poll(() => confirm.count()).toBe(0);
   expect(await storedHostCount(page)).toBe(2);
-  await settings.getByRole("button", { name: `Switch to ${labelA}`, exact: true }).waitFor();
+  await settings.getByRole("button", { name: `Unpair ${labelA}…`, exact: true }).waitFor();
 
   // Confirming unpairs B: B drops this device, and focus falls back to A, the
   // only host left — without B's refusal of this device flashing up first.
