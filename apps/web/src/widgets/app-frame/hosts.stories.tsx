@@ -108,7 +108,7 @@ type Story = StoryObj<typeof meta>;
 
 export const Section: Story = {};
 
-/** Each machine lists the routes that reach it; the live relay is marked in use. */
+/** Each machine lists the routes that reach it. */
 export const SectionRoutes: Story = {
   decorators: [withHosts(fakeHosts([ROUTED_HOST, DEVBOX_HOST], ROUTED_HOST.hostKey)), withRuntime(relay)],
 };
@@ -284,7 +284,7 @@ export const DirectOnlyFailure: Story = {
           <Button label="Retry" variant="secondary" />
         </HStack>
       </VStack>
-      <HostsFallback />
+      <HostsFallback canSwitch />
     </div>
   ),
 };

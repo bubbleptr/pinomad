@@ -7,7 +7,6 @@ import {
   filterCandidatesForMode,
   type RemoteCandidate,
 } from "@pinomad/protocol/remote-candidates.ts";
-import type { ConnectionPath } from "@pinomad/protocol/remote-durable.ts";
 import { rtcAddressScope, type RtcAddressScope } from "@pinomad/protocol/rtc.ts";
 import { SCOPE_LABEL } from "./hosts-diagnostics.ts";
 
@@ -22,15 +21,11 @@ export interface HostRoute {
    * cannot open it (an insecure remote socket from an HTTPS page).
    */
   readonly state: "available" | "off" | "blocked";
-  /** The one route the live connection runs over, when that is unambiguous. */
-  readonly inUse?: true;
 }
 
 export interface HostRoutesOptions {
   /** The page's protocol, for example `window.location.protocol`. */
   readonly pageProtocol?: string;
-  /** The live connection's path, from the coordinator's diagnostics. */
-  readonly path?: ConnectionPath;
 }
 
 const hostnameOf = (url: string): string | undefined => {
@@ -72,14 +67,6 @@ function labelOf(candidate: RemoteCandidate, accountHostname: string | undefined
   return scope === "unknown" ? "Direct" : SCOPE_LABEL[scope];
 }
 
-// The coordinator reports a legacy candidate as the relay path (#pathOf in
-// remote-durable.ts), whatever network its address is on.
-const PATH_ROLES: Partial<Record<ConnectionPath, readonly RemoteCandidate["role"][]>> = {
-  relay: ["relay", "legacy"],
-  direct: ["direct"],
-  loopback: ["loopback"],
-};
-
 export function hostRoutes(host: StoredHost, options: HostRoutesOptions = {}): HostRoute[] {
   const candidates = candidatePlan(
     host.url,
@@ -91,15 +78,10 @@ export function hostRoutes(host: StoredHost, options: HostRoutesOptions = {}): H
   const state = (candidate: RemoteCandidate): HostRoute["state"] =>
     candidate.unsupported !== undefined ? "blocked" : allowed.has(candidate.url) ? "available" : "off";
 
-  const roles = options.path === undefined ? undefined : PATH_ROLES[options.path];
-  const live = candidates.filter((c) => state(c) === "available" && roles?.includes(c.role) === true);
-  const inUse = live.length === 1 ? live[0]!.url : undefined;
-
   return candidates.map((candidate) => ({
     url: candidate.url,
     label: labelOf(candidate, accountHostname),
     address: addressOf(candidate.url),
     state: state(candidate),
-    ...(candidate.url === inUse ? { inUse: true as const } : {}),
   }));
 }

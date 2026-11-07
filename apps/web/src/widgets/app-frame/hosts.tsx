@@ -133,7 +133,7 @@ const MODE_NAME: Record<ConnectionMode, string> = {
 function routeNote(route: HostRoute, mode: ConnectionMode): string | undefined {
   if (route.state === "blocked") return "Blocked on HTTPS";
   if (route.state === "off") return `Off in ${MODE_NAME[mode]}`;
-  return route.inUse ? "In use" : undefined;
+  return undefined;
 }
 
 /** Lines the routes up under the host's name, past its status dot. */
@@ -177,12 +177,13 @@ function HostRouteList({ host, routes }: { host: StoredHost; routes: readonly Ho
  * runtime status (ADR-0035 §4) — a token client is connected to none of them.
  */
 function usePairedHosts() {
-  const { hosts, focus } = useHosts();
+  const { hosts, focus, focusHost } = useHosts();
   const infos = useHostRuntimeInfos();
   const labels = hostLabels(hosts);
   const info = (host: StoredHost): HostRuntimeInfo | undefined => infos.get(host.hostKey);
   return {
     hosts,
+    focusHost,
     label: (host: StoredHost): string => labels.get(host.hostKey) ?? host.url,
     isCurrent: (host: StoredHost): boolean => focus?.hostKey === host.hostKey,
     isConnected: (host: StoredHost): boolean => connectionStatus(info(host)) === "connected",
@@ -257,14 +258,21 @@ export function HostsMenu({ onLocate }: { onLocate?: (hostKey: string) => void }
 /**
  * Settings → Hosts: every paired machine with its own runtime status and the
  * routes that reach it (#502), unpairing one, and pairing another. Focus moves
- * from the sidebar's machine groups, not from here. Belongs to this device,
+ * from the sidebar's machine groups, except on the sidebar-less one-shot
+ * screens (`canSwitch`). Belongs to this device,
  * not to the focused host, so it works while every connection is down too.
  */
 export function HostsSection({
   rtcAvailable = browserRtcAvailable(),
+  canSwitch = false,
 }: {
   /** Test/story seam; production reads the real browser capability. */
   rtcAvailable?: boolean;
+  /**
+   * Offer Switch on every host: a one-shot pairing or token screen has no
+   * sidebar to leave it by. Inside the frame focus moves from the sidebar.
+   */
+  canSwitch?: boolean;
 }) {
   const paired = usePairedHosts();
   const { setConnection, forget, focus } = useHosts();
@@ -348,7 +356,6 @@ export function HostsSection({
           {paired.hosts.map((host) => {
             const label = paired.label(host);
             const connected = paired.isConnected(host);
-            const path = livePath(host);
             return (
               <li key={host.hostKey} aria-label={label}>
                 <Item
@@ -359,7 +366,18 @@ export function HostsSection({
                   description={status(host)}
                   endContent={
                     <HStack gap={2} vAlign="center">
-                      {paired.isCurrent(host) ? <Token label="Current" size="sm" /> : null}
+                      {canSwitch ? (
+                        // The stored focus isn't on screen here, so every host is a way out.
+                        <Button
+                          label="Switch"
+                          aria-label={`Switch to ${label}`}
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => paired.focusHost(host.hostKey)}
+                        />
+                      ) : paired.isCurrent(host) ? (
+                        <Token label="Current" size="sm" />
+                      ) : null}
                       <Button
                         label="Connection…"
                         aria-label={`Connection to ${label}`}
@@ -382,10 +400,7 @@ export function HostsSection({
                 />
                 <HostRouteList
                   host={host}
-                  routes={hostRoutes(host, {
-                    pageProtocol: window.location.protocol,
-                    ...(path === undefined ? {} : { path }),
-                  })}
+                  routes={hostRoutes(host, { pageProtocol: window.location.protocol })}
                 />
               </li>
             );
@@ -518,16 +533,17 @@ function unpairText(label: string, info: HostRuntimeInfo | undefined): string {
 
 /**
  * The connection-failure screens repeat the device's hosts inline: a host
- * that can't be reached may need its connection mode changed, and the
- * frame-less screens have no sidebar to switch hosts. A host that refused
+ * that can't be reached may need its connection mode changed. Inside the
+ * frame the sidebar switches hosts; the one-shot pairing and token screens
+ * have none, so they pass `canSwitch`. A host that refused
  * this device gets DeviceRejected instead, which carries its own way forward.
  */
-export function HostsFallback() {
+export function HostsFallback({ canSwitch = false }: { canSwitch?: boolean }) {
   const account = useAccountModel();
   const [accountOpen, setAccountOpen] = useState(false);
   return (
     <VStack gap={3} className="mt-4 w-full max-w-md">
-      <HostsSection />
+      <HostsSection canSwitch={canSwitch} />
       {account.state.status === "unavailable" ? null : (
         <div>
           <Button label="Account…" variant="secondary" size="sm" onClick={() => setAccountOpen(true)} />

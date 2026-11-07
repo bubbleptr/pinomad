@@ -772,7 +772,7 @@ export function RemoteWorkbench({
             <Button label="Retry" variant="secondary" onClick={() => setAttempt(attempt + 1)} />
           </VStack>
         )}
-        {rejected !== undefined && state.unauthorized ? null : <HostsFallback />}
+        {rejected !== undefined && state.unauthorized ? null : <HostsFallback canSwitch />}
       </Centered>
     );
   }

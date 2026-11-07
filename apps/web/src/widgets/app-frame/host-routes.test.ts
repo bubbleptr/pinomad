@@ -1,6 +1,7 @@
 // The routes Settings → Hosts lists under each machine (#502): which network
 // each published endpoint is on, which ones the connection mode leaves out,
-// which ones this page cannot open, and which one carries the connection now.
+// and which ones this page cannot open. Which socket carries the connection
+// is the status line's job: the stored set can change under a live socket.
 import { describe, expect, it } from "vitest";
 import type { EndpointSet, HostEndpoint } from "@pinomad/protocol/endpoints.ts";
 import type { StoredHost } from "@pinomad/client/stored-host.ts";
@@ -59,25 +60,5 @@ describe("hostRoutes", () => {
   it("marks an insecure remote address an HTTPS page cannot open as blocked", () => {
     const routes = hostRoutes(host({ endpointSet: set(RELAY, LAN) }), { pageProtocol: "https:" });
     expect(routes.map((route) => route.state)).toEqual(["available", "blocked"]);
-  });
-
-  it("marks the route in use when the live path names exactly one", () => {
-    const routes = hostRoutes(host({ endpointSet: set(RELAY, TAILNET) }), { path: "relay" });
-    expect(routes.map((route) => route.inUse === true)).toEqual([true, false]);
-  });
-
-  it("marks a pre-endpoint-set host's only address in use, which the coordinator reports as relay", () => {
-    const routes = hostRoutes(host({ url: "wss://studio.tailf76614.ts.net:7422" }), { path: "relay" });
-    expect(routes[0]?.inUse).toBe(true);
-  });
-
-  it("marks nothing in use when several routes share the live path", () => {
-    const routes = hostRoutes(host({ endpointSet: set(TAILNET, LAN) }), { path: "direct" });
-    expect(routes.some((route) => route.inUse === true)).toBe(false);
-  });
-
-  it("marks nothing in use over P2P, which is not one of these sockets", () => {
-    const routes = hostRoutes(host({ endpointSet: set(RELAY) }), { path: "p2p" });
-    expect(routes[0]?.inUse).toBeUndefined();
   });
 });
