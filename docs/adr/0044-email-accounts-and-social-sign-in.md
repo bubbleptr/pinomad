@@ -21,7 +21,7 @@ iOS 要走 TestFlight 外部测试（#440），Beta App Review 同样按 App Sto
 
 1. **账号的身份是一个已验证的邮箱，一个账号可以有多种登录方式。** 登录方式有密码、Google、GitHub、Apple 四种，都指向同一个账号。`users` 加 `email`（小写归一化后 UNIQUE）和 `email_verified_at`，`password_hash` 改为可空（只用快捷登录的账号没有密码）。新表 `user_identities (provider, subject, user_id, email, created_at)`，`(provider, subject)` UNIQUE，`subject` 是提供方给的稳定 ID（Google 和 Apple 的 `sub`、GitHub 的数字 user id），不用邮箱或 GitHub 用户名认人。`username` 只留给迁移期的老账号（§8）。
 
-2. **邮箱注册：先验证邮箱，再建账号。** 客户端提交邮箱，服务端发一个 6 位数字验证码（10 分钟有效，最多试 5 次，只存哈希）；客户端提交验证码和密码（规则沿用现在的：至少 12 位，scrypt），服务端建账号并直接登录。服务端里不存在未验证邮箱的账号。找回密码走同一套验证码，用途分开记。用验证码而不是链接：在另一台设备上收信也能用，iOS 不需要 universal link。
+2. **邮箱注册：先验证邮箱，再建账号。** 客户端提交邮箱，服务端发一个 6 位数字验证码（10 分钟有效，最多试 5 次，只存哈希）；客户端提交验证码和密码（规则沿用现在的：至少 12 位，scrypt），服务端建账号并直接登录。新建的账号都有已验证的邮箱；只有迁移期的老账号暂时没有（§8）。找回密码走同一套验证码，用途分开记。用验证码而不是链接：在另一台设备上收信也能用，iOS 不需要 universal link。
    - 不让人探测邮箱是否注册过：发验证码的接口对已注册和未注册的邮箱回一样的结果；邮箱已注册时，信里写"这个邮箱已有账号，可以直接登录或重置密码"，不发注册码。
    - 限流：发验证码按 IP、按邮箱各自限流，另设全站每日上限；验证码输错和登录共用锁定。
    - 发信：服务端只实现 SMTP（`PINOMAD_SERVER_SMTP_URL`、`PINOMAD_SERVER_MAIL_FROM`），官方实例用 Resend 的 SMTP，`pinomad.si` 配好 SPF、DKIM。自部署的人用任何 SMTP 都行。没配发信时，邮箱注册和找回密码关闭，已有的密码登录照常。
@@ -40,13 +40,13 @@ iOS 要走 TestFlight 外部测试（#440），Beta App Review 同样按 App Sto
 
 5. **客户端怎么拿到登录会话：沿用 #513 的一次性 code + PKCE。**
    - Web：同源，整页跳到 `/api/oauth/<provider>/start`，回调里设会话 cookie，再跳回 Web 客户端。
-   - 桌面端（`app://pinomad`）和 iOS：客户端生成 PKCE verifier，用系统浏览器（桌面）或 `ASWebAuthenticationSession`（iOS）打开 `start`，带上 `code_challenge` 和回跳地址；回调后服务端把浏览器送回 `http://127.0.0.1:<端口>`（桌面，只接受回环地址）或 `pinomad://auth`（iOS），带一个两分钟内一次性的 code；客户端用 `POST /api/oauth/token { code, verifier, device }` 换到 token 模式的会话。`device` 和 `POST /api/login` 的一样（ADR-0037 §1）。
+   - 桌面端（`app://pinomad`）和 iOS：客户端生成 PKCE verifier，用系统浏览器（桌面）或 `ASWebAuthenticationSession`（iOS）打开 `start`，带上 `code_challenge` 和回跳地址；回调后服务端把浏览器送回 `http://127.0.0.1:<端口>`（桌面，只接受回环地址）或 `pinomad://auth`（iOS），带一个两分钟内一次性的 code；客户端用 `POST /api/oauth/token { code, verifier, device }` 换到 token 模式的会话。`device` 和 `POST /api/login` 的一样（ADR-0037 §1）。这两个换会话的接口和 `/api/login` 一样，对 `app://pinomad` 和不带 Origin 的调用方放行 Origin 检查。
    - iOS 上的 Apple 用系统原生的 `ASAuthorizationAppleIDProvider`，把 identity token 和 authorization code 交给 `POST /api/oauth/apple/native`，服务端按 Apple 的 JWKS 验签，audience 是 App 的 bundle id。不跳网页，这也是审核期望的体验。
    - 第 4 条的第 3 步（"还没有账号"）在浏览器里完成，客户端只在最后拿 code。
 
 6. **二次确认：有密码就输密码，没有就收验证码。** 踢设备（ADR-0037 §3）、移除宿主（#512）、删除账号、改或设置密码现在都要再输一次密码，因为它们作用于别的设备，被盗的会话不该能做。只用快捷登录的账号没有密码，改成：`POST /api/reauth` 接受密码，或者先请服务端往账号邮箱发验证码、再提交验证码；通过后得到一个绑定当前会话、5 分钟有效的确认凭据，这几个接口接受 `{ password }` 或 `{ reauth }`。不用"再走一遍 OAuth"：Google 和 GitHub 的浏览器会话通常还在，点一下就过，起不到确认的作用。
 
-7. **取消邀请码，注册由开关控制。** 删掉 `invites` 表（新的 schema 版本里 DROP）、`/api/invites` 和 `/api/invites/revoke`、Web 账号面板里的 Invites 和注册表单里的邀请码字段、文档里的邀请码说明、`GLOSSARY.md` 的"注册邀请码"。`PINOMAD_SERVER_REGISTRATION=open|closed`，默认 `closed`，官方实例设 `open`。关闭时邮箱注册不可用，快捷登录只能登录已经绑定的账号，不建新账号；自部署的人用服务端 CLI `pinomad server user add <邮箱>` 加用户。管理员只剩"能发邀请码"一个特权，随邀请码一起取消：`admin` 列删掉，首次启动建出的账号是普通账号，也可以删除。
+7. **取消邀请码，注册由开关控制。** 删掉 `invites` 表（新的 schema 版本里 DROP）、`/api/invites` 和 `/api/invites/revoke`、Web 账号面板里的 Invites 和注册表单里的邀请码字段、文档里的邀请码说明、`GLOSSARY.md` 的"注册邀请码"。`PINOMAD_SERVER_REGISTRATION=open|closed`，默认 `closed`，官方实例设 `open`。关闭时邮箱注册不可用，快捷登录只拦 §4 的第 3 步（建新账号），第 1、2 步照常；自部署的人用服务端 CLI `pinomad server user add <邮箱>` 加用户。管理员只剩"能发邀请码"一个特权，随邀请码一起取消：`admin` 列删掉，首次启动建出的账号是普通账号，也可以删除。
 
 8. **老账号：下次登录时补邮箱。** 用户名加密码的登录在迁移期保留。登录成功后，没有已验证邮箱的账号收到 `needsEmail: true`，客户端在继续之前要求填邮箱、收验证码；补完后用邮箱登录，用户名不再显示。所有老账号补完后，下一个版本去掉用户名登录（单独的 issue）。`PINOMAD_SERVER_USER` 改为邮箱，首次启动建的账号视为邮箱已验证（是部署者自己填的）；写的不是邮箱时按老账号处理。
 
