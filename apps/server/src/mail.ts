@@ -13,7 +13,10 @@ export function loadMailer(env: NodeJS.ProcessEnv = process.env): Mailer | undef
   if (url === undefined || from === undefined) {
     throw new Error("PINOMAD_SERVER_SMTP_URL and PINOMAD_SERVER_MAIL_FROM go together");
   }
-  const transport = createTransport(url);
+  // smtps:// is TLS from the first byte. Over smtp://, nodemailer upgrades
+  // with STARTTLS only when the server offers it, so a man in the middle who
+  // strips the offer would read the codes: make the upgrade mandatory.
+  const transport = createTransport({ url, ...(url.startsWith("smtp:") ? { requireTLS: true } : {}) });
   return {
     async send(to, subject, text) {
       await transport.sendMail({ from, to, subject, text });
