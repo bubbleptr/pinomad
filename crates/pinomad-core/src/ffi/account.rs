@@ -158,6 +158,12 @@ pub fn account_request(origin: String, token: Option<String>, op: AccountOp) -> 
     core::account_request(&origin, token.as_deref(), &op)
 }
 
+/// Which endpoint `op` calls — the `op_kind` its answer is parsed by.
+#[uniffi::export]
+pub fn account_op_kind(op: AccountOp) -> AccountOpKind {
+    op.kind()
+}
+
 /// The account probe's request: `GET {origin}/api/me`. The verdict comes
 /// from `probe_verdict` once the transport answers (or doesn't, inside the
 /// platform's 5-second timeout).
