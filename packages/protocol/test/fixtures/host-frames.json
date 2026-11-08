@@ -3,7 +3,7 @@
     "type": "hello",
     "protocol": {
       "major": 5,
-      "minor": 31
+      "minor": 32
     },
     "session": {
       "id": "<sessionId>",
@@ -173,7 +173,7 @@
             "home": {
               "kind": "chat"
             },
-            "createdAt": 1794144582912,
+            "createdAt": 1794153708334,
             "requestId": "contract-1"
           }
         ]
@@ -258,7 +258,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1794144582915,
+        "updatedAt": 1794153708337,
         "currentAgent": null
       }
     ]
@@ -301,7 +301,7 @@
             {
               "role": "user",
               "content": "contract run",
-              "timestamp": 1794144582915
+              "timestamp": 1794153708337
             }
           ],
           "kind": "pi.user",
@@ -418,7 +418,7 @@
                   }
                 }
               ],
-              "timestamp": 1794144582920
+              "timestamp": 1794153708342
             }
           ],
           "kind": "pi.system",
@@ -453,7 +453,7 @@
           "items": []
         },
         "pi.provider": {
-          "sessionId": "01a1bb59-bd00-7344-b570-352eca86b2c9"
+          "sessionId": "01a1bbe4-fb2d-73db-b9d8-79c301ddeca8"
         },
         "pi.usage": {
           "models": {},
@@ -524,7 +524,7 @@
         ],
         [
           {
-            "callId": "tool:1794144582875:cw3czxpzhg6",
+            "callId": "tool:1794153708297:osir1egdeya",
             "name": "write",
             "taskId": 16,
             "status": "pending"
@@ -587,7 +587,7 @@
                 "content": [
                   {
                     "type": "toolCall",
-                    "id": "tool:1794144582875:cw3czxpzhg6",
+                    "id": "tool:1794153708297:osir1egdeya",
                     "name": "write",
                     "arguments": {
                       "path": "note.txt",
@@ -595,7 +595,7 @@
                     }
                   }
                 ],
-                "api": "faux:1794144582875:5cnufloqr1o",
+                "api": "faux:1794153708297:ud7bg5kh11",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
@@ -613,7 +613,7 @@
                   }
                 },
                 "stopReason": "toolUse",
-                "timestamp": 1794144582875,
+                "timestamp": 1794153708297,
                 "thinkingLevel": "off"
               }
             ],
@@ -698,7 +698,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1794144582875,
+        "updatedAt": 1794153708297,
         "currentAgent": null,
         "activity": {
           "tool": "write",
@@ -758,7 +758,7 @@
             "model": [
               {
                 "role": "toolResult",
-                "toolCallId": "tool:1794144582875:cw3czxpzhg6",
+                "toolCallId": "tool:1794153708297:osir1egdeya",
                 "toolName": "write",
                 "content": [
                   {
@@ -771,7 +771,7 @@
                 },
                 "isError": false,
                 "durationMs": 1,
-                "timestamp": 1794144582988
+                "timestamp": 1794153708409
               }
             ],
             "data": {
@@ -889,7 +889,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1794144582875,
+        "updatedAt": 1794153708297,
         "currentAgent": null
       }
     ]
@@ -1031,7 +1031,7 @@
                     "text": "contract done"
                   }
                 ],
-                "api": "faux:1794144582875:5cnufloqr1o",
+                "api": "faux:1794153708297:ud7bg5kh11",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
@@ -1049,9 +1049,9 @@
                   }
                 },
                 "stopReason": "stop",
-                "timestamp": 1794144582875,
+                "timestamp": 1794153708297,
                 "pinomad": {
-                  "answerStartedAt": 1794144582997
+                  "answerStartedAt": 1794153708418
                 },
                 "thinkingLevel": "off"
               }

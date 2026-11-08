@@ -1,4 +1,4 @@
-// Background processes the host runs for a conversation family (5.31,
+// Background processes the host runs for a conversation family (5.32,
 // ADR-0045). They live in host memory only; the list is the family root's
 // `pinomad.processes` document, and output is streamed at raw positions.
 import type { ConversationId } from "@earendil-works/pi-durable";

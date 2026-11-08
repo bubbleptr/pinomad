@@ -19,7 +19,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 31 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 32 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -239,7 +239,7 @@ impl CallMethod {
             | Self::RenameTerminal
             | Self::RestartTerminal
             | Self::CloseTerminal => 27,
-            Self::StopProcess => 31,
+            Self::StopProcess => 32,
             Self::EarlierEntries => 28,
             Self::ReorderQueued => 29,
             Self::StartUpgrade | Self::CancelUpgrade | Self::CheckUpgrade => 30,
@@ -277,7 +277,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
         HostFeature::Terminals => 27,
         HostFeature::TranscriptPaging => 28,
         HostFeature::AutoUpgrade => 30,
-        HostFeature::Processes => 31,
+        HostFeature::Processes => 32,
     };
     host_minor >= since
 }

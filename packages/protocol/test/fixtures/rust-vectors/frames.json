@@ -1,12 +1,12 @@
 {
   "protocol": {
     "major": 5,
-    "minor": 31
+    "minor": 32
   },
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":31},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":32},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -16,17 +16,17 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":31},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":32},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
       "expect": "hello"
     },
     {
       "name": "signalHello",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":31},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":32},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
       "expect": "signalHello"
     },
     {
       "name": "signalHello-no-rtc",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":31}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":32}}",
       "expect": "signalHello"
     },
     {
@@ -445,7 +445,7 @@
       },
       {
         "name": "stopProcess",
-        "since": 31
+        "since": 32
       },
       {
         "name": "submission",
@@ -561,7 +561,7 @@
       },
       {
         "name": "processes",
-        "since": 31
+        "since": 32
       },
       {
         "name": "rtc",
@@ -1057,14 +1057,14 @@
       "expect": false
     },
     {
-      "name": "stopProcess@31",
-      "minor": 31,
+      "name": "stopProcess@32",
+      "minor": 32,
       "call": "stopProcess",
       "expect": true
     },
     {
-      "name": "stopProcess@30",
-      "minor": 30,
+      "name": "stopProcess@31",
+      "minor": 31,
       "call": "stopProcess",
       "expect": false
     },
@@ -1267,14 +1267,14 @@
       "expect": false
     },
     {
-      "name": "processes@31",
-      "minor": 31,
+      "name": "processes@32",
+      "minor": 32,
       "feature": "processes",
       "expect": true
     },
     {
-      "name": "processes@30",
-      "minor": 30,
+      "name": "processes@31",
+      "minor": 31,
       "feature": "processes",
       "expect": false
     },

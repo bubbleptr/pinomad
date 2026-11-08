@@ -79,6 +79,18 @@
       "expect": "{\"type\":\"fallback\",\"value\":{\"used\":1,\"system\":0,\"skills\":0,\"tools\":0,\"messages\":1}}"
     },
     {
+      "name": "processes",
+      "presentation": "\"pinomad.processes\"",
+      "value": "{\"processes\":[{\"id\":\"p1\",\"owner\":3,\"name\":\"dev\",\"command\":\"npm run dev\",\"pid\":42,\"startedAt\":1,\"state\":\"running\"},{\"id\":\"p2\",\"owner\":3,\"name\":\"build\",\"command\":\"make\",\"startedAt\":2,\"endedAt\":3,\"state\":{\"exited\":0}},{\"id\":\"p3\",\"owner\":3,\"name\":\"old\",\"command\":\"make\",\"startedAt\":4,\"state\":{\"stopped\":\"shutdown\"}},{\"id\":\"p4\",\"owner\":3,\"name\":\"lost\",\"command\":\"make\",\"startedAt\":5,\"state\":\"lost\"}]}",
+      "expect": "{\"type\":\"pinomad.processes\",\"value\":{\"processes\":[{\"id\":\"p1\",\"owner\":3,\"name\":\"dev\",\"command\":\"npm run dev\",\"pid\":42,\"startedAt\":1,\"state\":\"running\"},{\"id\":\"p2\",\"owner\":3,\"name\":\"build\",\"command\":\"make\",\"startedAt\":2,\"endedAt\":3,\"state\":{\"exited\":0}},{\"id\":\"p3\",\"owner\":3,\"name\":\"old\",\"command\":\"make\",\"startedAt\":4,\"state\":{\"stopped\":\"shutdown\"}},{\"id\":\"p4\",\"owner\":3,\"name\":\"lost\",\"command\":\"make\",\"startedAt\":5,\"state\":\"lost\"}]}}"
+    },
+    {
+      "name": "processes-bad-state",
+      "presentation": "\"pinomad.processes\"",
+      "value": "{\"processes\":[{\"id\":\"p1\",\"owner\":3,\"name\":\"x\",\"command\":\"y\",\"startedAt\":1,\"state\":\"gone\"}]}",
+      "expect": "{\"type\":\"fallback\",\"value\":{\"processes\":[{\"id\":\"p1\",\"owner\":3,\"name\":\"x\",\"command\":\"y\",\"startedAt\":1,\"state\":\"gone\"}]}}"
+    },
+    {
       "name": "todo-bad-status",
       "presentation": "\"pinomad.todo\"",
       "value": "{\"items\":[{\"text\":\"Ship it\",\"status\":\"unknown\"}]}",

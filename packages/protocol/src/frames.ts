@@ -106,7 +106,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 31 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 32 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -409,7 +409,7 @@ export interface CallMethods {
   /** Ends the process and removes the tab. */
   closeTerminal: { args: { terminalId: TerminalId }; result: null };
   /**
-   * Stop a background process (5.31, ADR-0045). The host checks the id belongs
+   * Stop a background process (5.32, ADR-0045). The host checks the id belongs
    * to `conversationId`'s family and resolves after the process exited (or
    * the stop timed out into SIGKILL). Output arrives on `process:<id>`.
    */
@@ -498,7 +498,7 @@ export const CALL_SINCE: Record<CallMethod, number> = {
   renameTerminal: 27,
   restartTerminal: 27,
   closeTerminal: 27,
-  stopProcess: 31,
+  stopProcess: 32,
   startUpgrade: 30,
   cancelUpgrade: 30,
   checkUpgrade: 30,
@@ -540,8 +540,8 @@ export const FEATURE_SINCE = {
   transcriptPaging: 28,
   /** The `autoUpgrade` setting next to the `upgrade` stream and its calls (30, ADR-0043); an older host 4400s the key. */
   autoUpgrade: 30,
-  /** `hello.processes`, the `process:` stream, and the `stopProcess` call (31, ADR-0045). */
-  processes: 31,
+  /** `hello.processes`, the `process:` stream, and the `stopProcess` call (32, ADR-0045). */
+  processes: 32,
 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
@@ -578,7 +578,7 @@ export type ServerFrame =
       readonly rtc?: RtcHello;
       /** Terminals (5.27, ADR-0041). Absent → the pty module is not loaded, or the host predates them. */
       readonly terminals?: TerminalsHello;
-      /** Background processes (5.31, ADR-0045). Absent → the pty module is not loaded, or the host predates them. */
+      /** Background processes (5.32, ADR-0045). Absent → the pty module is not loaded, or the host predates them. */
       readonly processes?: ProcessesHello;
     }
   | {
@@ -596,7 +596,7 @@ export type ServerFrame =
   | { readonly type: "ops"; readonly stream: StreamName; readonly ops: readonly Op[] }
   /**
    * Terminal or process output on a `terminal:<id>` / `process:<id>` stream
-   * (5.27 / 5.31). `seq` is the stream position after `data`, counted in
+   * (5.27 / 5.32). `seq` is the stream position after `data`, counted in
    * UTF-16 code units and never reset. `reset` says `data` replays the host's
    * whole buffer, so the client clears its screen first — the subscribe's
    * `since` fell out of the buffer, or the terminal restarted.

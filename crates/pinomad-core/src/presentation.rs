@@ -193,7 +193,7 @@ impl CodemodeDoc {
     }
 }
 
-/// `ProcessesSchema` (5.31, ADR-0045): the root family's background-process
+/// `ProcessesSchema` (5.32, ADR-0045): the root family's background-process
 /// list. Validation is the contract; the UI reads the raw entries.
 #[derive(Clone, Debug)]
 pub struct ProcessesDoc {

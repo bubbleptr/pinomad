@@ -509,7 +509,7 @@ describe("parseClientFrame", () => {
     expect(kinds({ type: "unsubscribe", stream: `terminal:${id}` })).toBe("frame");
   });
 
-  it("accepts process streams and stopProcess; rejects malformed shapes (5.31)", () => {
+  it("accepts process streams and stopProcess; rejects malformed shapes (5.32)", () => {
     const call = (method: string, args: unknown): unknown => ({ type: "call", id: 1, method, args });
     const id = "4f1c2b9e-1d2a-4c3b-9e8f-0a1b2c3d4e5f";
     expect(parseClientFrame({ type: "subscribe", stream: `process:${id}`, since: 12 })).toEqual({
@@ -523,10 +523,10 @@ describe("parseClientFrame", () => {
     expect(kinds(call("stopProcess", { conversationId: 3, id }))).toBe("frame");
     expect(kinds(call("stopProcess", { conversationId: 3, id: "" }))).toBe("malformed");
     expect(kinds(call("stopProcess", { id }))).toBe("malformed");
-    expect(hostSupportsCall(30, "stopProcess")).toBe(false);
-    expect(hostSupportsCall(31, "stopProcess")).toBe(true);
-    expect(hostSupportsFeature(30, "processes")).toBe(false);
-    expect(hostSupportsFeature(31, "processes")).toBe(true);
+    expect(hostSupportsCall(31, "stopProcess")).toBe(false);
+    expect(hostSupportsCall(32, "stopProcess")).toBe(true);
+    expect(hostSupportsFeature(31, "processes")).toBe(false);
+    expect(hostSupportsFeature(32, "processes")).toBe(true);
   });
 
   it("reads a conversation subscribe's window and the earlierEntries args (5.28)", () => {
