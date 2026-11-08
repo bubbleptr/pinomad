@@ -171,29 +171,6 @@ export function Core({ lang, t, durable }: { lang: Lang; t: LandingCopy["core"];
   );
 }
 
-export function Subscriptions({ t }: { t: LandingCopy["subs"] }) {
-  return (
-    <section className="section" id="subscriptions" aria-labelledby="subs-title">
-      <div className="wrap">
-        <div className="section-head">
-          <SectionHead id="subs-title" eyebrow={t.eyebrow} title={t.title} />
-        </div>
-        <ul className="subs">
-          {t.plans.map((plan) => (
-            <li key={plan.logo} className="sub">
-              <span className={`sub-logo is-${plan.logo}`} aria-hidden="true" />
-              <span>
-                <strong>{plan.name}</strong>
-                <span className="sub-note">{plan.note}</span>
-              </span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </section>
-  );
-}
-
 export function Agents({ lang, t }: { lang: Lang; t: LandingCopy["agents"] }) {
   const image = shot(lang, "subagents", 560, 1120);
   return (
