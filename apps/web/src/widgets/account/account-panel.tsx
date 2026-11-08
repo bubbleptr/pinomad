@@ -415,6 +415,8 @@ function AccountHosts({ state }: { state: SignedInState }) {
   const others = unpairedAccountHosts(state, hosts);
   return (
     <VStack gap={3} style={{ width: "100%" }}>
+      {/* The no-host screen opens here, and App leaves a link's result to it (dureview #642). */}
+      <ProviderLinkReturn />
       <AccountPairingBanners state={state} pairing={pairing} />
       {state.hosts.length === 0 ? (
         <Text type="supporting">No hosts yet.</Text>

@@ -5,7 +5,7 @@ import { HStack, Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AccountConfirmation, AccountError, EmailConfirmation } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
 import { SettingsGroup } from "../../shared/ui/settings-group.tsx";
@@ -39,12 +39,22 @@ export function EmailForm({
   const [error, setError] = useState<AccountError>();
   // The grant lapsed after the new address got its code: confirm again on this step.
   const [reconfirm, setReconfirm] = useState(false);
+  // A save can land after the dialog closed and a new form opened: only a
+  // form still on screen may act on its result (dureview #642).
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
   const run = (call: (confirmation: EmailConfirmation) => Promise<{ ok: true } | { ok: false; error: AccountError }>, then: () => void): void => {
     setBusy(true);
     setError(undefined);
     void (async () => {
       const confirmation = await identity.confirm();
       const result = confirmation.ok ? await call(byName(confirmation.value)) : confirmation;
+      if (!live.current) return;
       setBusy(false);
       if (result.ok) then();
       else {
