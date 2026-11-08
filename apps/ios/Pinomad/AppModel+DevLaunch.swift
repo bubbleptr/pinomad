@@ -33,6 +33,13 @@ extension AppModel {
         let env = ProcessInfo.processInfo.environment
         // The simulator end-to-end seam: attach one file from the app
         // container after pairing, then create the draft once it uploaded.
+        if let page = env["PINOMAD_DEMO_SIGN_IN"] {
+            // The account sheet signed out: `open` as is, `create` or
+            // `reset` on that code flow, `apple-pending` with Sign in with
+            // Apple's "no account yet" step over it.
+            devSignInPage = page
+            present(.account)
+        }
         if let file = env["PINOMAD_ATTACH_FILE"] {
             pendingAttachFile = file
             pendingAttachSend = env["PINOMAD_AUTOSEND"] != nil

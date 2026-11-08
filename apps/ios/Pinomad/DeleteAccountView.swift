@@ -2,7 +2,8 @@ import PinomadCore
 import SwiftUI
 
 /// Delete the account from the iPhone (#451; App Store guideline 5.1.1(v)
-/// wants it in the app). The password again, then the server deletes the
+/// wants it in the app). Confirmed again — the password, or a mailed code on
+/// an account without one (ADR-0044 §6) — then the server deletes the
 /// account and every session, and the sheet lands signed out. Paired hosts
 /// stay paired: revocation lives on the host (ADR-0022 §6).
 struct DeleteAccountView: View {
@@ -10,49 +11,21 @@ struct DeleteAccountView: View {
     let server: String
 
     @Environment(\.dismiss) private var dismiss
-    @State private var password = ""
+    @State private var step = IdentityConfirmation()
     @State private var error: String?
     @State private var busy = false
 
     var body: some View {
         Form {
-            Section {
-                SecureField("Password", text: $password)
-                    .textContentType(.password)
-                    .submitLabel(.go)
-                    .onSubmit(submit)
-            } footer: {
-                Text(AccountCopy.deleteAccountExplanation(server: server))
-            }
+            ConfirmIdentitySection(
+                model: model, step: step,
+                footer: AccountCopy.deleteAccountExplanation(server: server),
+                onSubmit: submit)
 
-            Section {
-                Button(role: .destructive) {
-                    submit()
-                } label: {
-                    HStack {
-                        Spacer()
-                        if busy {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Text("Delete Account")
-                        }
-                        Spacer()
-                    }
-                }
-                .buttonStyle(.tactile(.glassProminent))
-                .tint(.red)
-                .disabled(busy || password.isEmpty)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
-            }
+            FormActionButton(title: "Delete Account", busy: busy, destructive: true, action: submit)
+                .disabled(busy || !step.ready)
 
-            if let error {
-                Section {
-                    Text(error)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                }
-            }
+            FormErrorSection(message: error)
         }
         .navigationTitle("Delete Account")
         .navigationBarTitleDisplayMode(.inline)
@@ -60,11 +33,11 @@ struct DeleteAccountView: View {
     }
 
     private func submit() {
-        guard !busy, !password.isEmpty else { return }
+        guard !busy, step.ready else { return }
         busy = true
         error = nil
         Task {
-            let failure = await model.accountDeleteAccount(password: password)
+            let failure = await step.run(model: model) { await model.accountDeleteAccount(confirmation: $0) }
             busy = false
             if let failure {
                 error = AccountCopy.message(failure)

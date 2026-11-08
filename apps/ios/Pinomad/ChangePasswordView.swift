@@ -1,25 +1,32 @@
 import PinomadCore
 import SwiftUI
 
-/// Change the account password (#450), pushed from the account sheet. This
-/// device stays signed in and the account's other sessions end. A forgotten
-/// password has no screen: the server's admin resets it.
+/// Change the account password (#450), or set a first one on an account
+/// that signs in with a provider only (ADR-0044 §6), pushed from Sign-in
+/// Methods. This device stays signed in and the account's other sessions
+/// end. A forgotten password is reset from the sign-in screen.
 struct ChangePasswordView: View {
     let model: AppModel
-    let onChanged: () -> Void
+    /// False: the account has no password yet, and this sets one.
+    let hasPassword: Bool
+    let onChanged: (String) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var current = ""
+    @State private var step = IdentityConfirmation()
     @State private var new = ""
     @State private var error: String?
     @State private var busy = false
 
+    private var verb: String { hasPassword ? "Change Password" : "Set Password" }
+
     var body: some View {
         Form {
+            ConfirmIdentitySection(
+                model: model, step: step,
+                passwordLabel: "Current Password",
+                onSubmit: submit)
+
             Section {
-                SecureField("Current Password", text: $current)
-                    .textContentType(.password)
-                    .submitLabel(.next)
                 SecureField("New Password", text: $new)
                     .textContentType(.newPassword)
                     .submitLabel(.go)
@@ -28,50 +35,32 @@ struct ChangePasswordView: View {
                 Text("At least 12 characters. Your other devices will be signed out.")
             }
 
-            Section {
-                Button {
-                    submit()
-                } label: {
-                    HStack {
-                        Spacer()
-                        if busy {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Text("Change Password")
-                        }
-                        Spacer()
-                    }
-                }
-                .buttonStyle(.tactile(.glassProminent))
-                .disabled(busy || current.isEmpty || new.isEmpty)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
-            }
+            FormActionButton(title: verb, busy: busy, action: submit)
+                .disabled(busy || !step.ready || new.isEmpty)
 
-            if let error {
-                Section {
-                    Text(error)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                }
-            }
+            FormErrorSection(message: error)
         }
-        .navigationTitle("Change Password")
+        .navigationTitle(verb)
         .navigationBarTitleDisplayMode(.inline)
         .interactiveDismissDisabled(busy)
     }
 
     private func submit() {
-        guard !busy, !current.isEmpty, !new.isEmpty else { return }
+        guard !busy, step.ready, !new.isEmpty else { return }
+        // Checked here first, as the server would: the code isn't spent on it.
+        guard new.unicodeScalars.count >= 12 else {
+            error = AccountCopy.message(AccountFailure(code: "weak_password"))
+            return
+        }
         busy = true
         error = nil
         Task {
-            let failure = await model.accountChangePassword(current: current, new: new)
+            let failure = await step.run(model: model) { await model.accountChangePassword(current: $0, new: new) }
             busy = false
             if let failure {
                 error = AccountCopy.message(failure)
             } else {
-                onChanged()
+                onChanged(hasPassword ? "Password changed. Your other devices were signed out." : "Password set.")
                 dismiss()
             }
         }

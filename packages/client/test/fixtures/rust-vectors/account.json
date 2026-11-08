@@ -269,6 +269,334 @@
         "requestId": "r"
       },
       "expect": "{\"url\":\"https://relay.example.com/api/host-link/deny\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"requestId\\\":\\\"r\\\"}\"}}"
+    },
+    {
+      "name": "change-password-reauth",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "changePassword",
+        "reauth": "g\"1",
+        "newPassword": "first password ✓"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/password\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"reauth\\\":\\\"g\\\\\\\"1\\\",\\\"newPassword\\\":\\\"first password ✓\\\"}\"}}"
+    },
+    {
+      "name": "delete-account-reauth",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "deleteAccount",
+        "reauth": "grant"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/me/delete\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"reauth\\\":\\\"grant\\\"}\"}}"
+    },
+    {
+      "name": "kick-device-reauth",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "kickDevice",
+        "id": 7,
+        "reauth": "grant"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/devices/7/kick\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"reauth\\\":\\\"grant\\\"}\"}}"
+    },
+    {
+      "name": "remove-host-reauth",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "removeHost",
+        "hostId": "c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg",
+        "reauth": "grant"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/hosts/c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg/remove\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"reauth\\\":\\\"grant\\\"}\"}}"
+    },
+    {
+      "name": "auth-methods",
+      "origin": "https://relay.example.com/",
+      "token": null,
+      "op": {
+        "kind": "authMethods"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/auth/methods\",\"init\":{\"method\":\"GET\",\"headers\":{}}}"
+    },
+    {
+      "name": "signup-code",
+      "origin": "https://relay.example.com",
+      "token": null,
+      "op": {
+        "kind": "requestSignupCode",
+        "email": "Ann@Example.com"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/register/code\",\"init\":{\"method\":\"POST\",\"headers\":{\"content-type\":\"application/json\"},\"body\":\"{\\\"email\\\":\\\"Ann@Example.com\\\"}\"}}"
+    },
+    {
+      "name": "register",
+      "origin": "https://relay.example.com",
+      "token": null,
+      "op": {
+        "kind": "register",
+        "email": "a@b.co",
+        "code": "012345",
+        "password": "p \"w\" é",
+        "device": {
+          "id": "Qm3xV8rT2kLp9wYz4nHc1A",
+          "name": "iPhone"
+        }
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/register\",\"init\":{\"method\":\"POST\",\"headers\":{\"content-type\":\"application/json\"},\"body\":\"{\\\"email\\\":\\\"a@b.co\\\",\\\"code\\\":\\\"012345\\\",\\\"password\\\":\\\"p \\\\\\\"w\\\\\\\" é\\\",\\\"device\\\":{\\\"id\\\":\\\"Qm3xV8rT2kLp9wYz4nHc1A\\\",\\\"name\\\":\\\"iPhone\\\"}}\"}}"
+    },
+    {
+      "name": "register-no-device",
+      "origin": "https://relay.example.com",
+      "token": null,
+      "op": {
+        "kind": "register",
+        "email": "a@b.co",
+        "code": "1",
+        "password": "p"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/register\",\"init\":{\"method\":\"POST\",\"headers\":{\"content-type\":\"application/json\"},\"body\":\"{\\\"email\\\":\\\"a@b.co\\\",\\\"code\\\":\\\"1\\\",\\\"password\\\":\\\"p\\\"}\"}}"
+    },
+    {
+      "name": "reset-code",
+      "origin": "https://relay.example.com",
+      "token": null,
+      "op": {
+        "kind": "requestPasswordReset",
+        "email": "a@b.co"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/password/reset/code\",\"init\":{\"method\":\"POST\",\"headers\":{\"content-type\":\"application/json\"},\"body\":\"{\\\"email\\\":\\\"a@b.co\\\"}\"}}"
+    },
+    {
+      "name": "reset-password",
+      "origin": "https://relay.example.com",
+      "token": null,
+      "op": {
+        "kind": "resetPassword",
+        "email": "a@b.co",
+        "code": "999999",
+        "password": "new pw"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/password/reset\",\"init\":{\"method\":\"POST\",\"headers\":{\"content-type\":\"application/json\"},\"body\":\"{\\\"email\\\":\\\"a@b.co\\\",\\\"code\\\":\\\"999999\\\",\\\"password\\\":\\\"new pw\\\"}\"}}"
+    },
+    {
+      "name": "email-code-password",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "requestEmailCode",
+        "email": "new@b.co",
+        "password": "pw"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/me/email/code\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"email\\\":\\\"new@b.co\\\",\\\"password\\\":\\\"pw\\\"}\"}}"
+    },
+    {
+      "name": "email-code-reauth",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "requestEmailCode",
+        "email": "new@b.co",
+        "reauth": "grant"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/me/email/code\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"email\\\":\\\"new@b.co\\\",\\\"reauth\\\":\\\"grant\\\"}\"}}"
+    },
+    {
+      "name": "set-email-password",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "setEmail",
+        "email": "new@b.co",
+        "code": "123456",
+        "password": "pw"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/me/email\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"email\\\":\\\"new@b.co\\\",\\\"code\\\":\\\"123456\\\",\\\"password\\\":\\\"pw\\\"}\"}}"
+    },
+    {
+      "name": "set-email-reauth",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "setEmail",
+        "email": "new@b.co",
+        "code": "123456",
+        "reauth": "grant"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/me/email\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"email\\\":\\\"new@b.co\\\",\\\"code\\\":\\\"123456\\\",\\\"reauth\\\":\\\"grant\\\"}\"}}"
+    },
+    {
+      "name": "identities",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "identities"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/me/identities\",\"init\":{\"method\":\"GET\",\"headers\":{\"authorization\":\"Bearer tok\"}}}"
+    },
+    {
+      "name": "unlink-provider",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "unlinkProvider",
+        "provider": "git hub/é",
+        "password": "pw"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/me/identities/git%20hub%2F%C3%A9/remove\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"password\\\":\\\"pw\\\"}\"}}"
+    },
+    {
+      "name": "unlink-provider-reauth",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "unlinkProvider",
+        "provider": "apple",
+        "reauth": "grant"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/me/identities/apple/remove\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"reauth\\\":\\\"grant\\\"}\"}}"
+    },
+    {
+      "name": "reauth-code",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "requestReauthCode"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/reauth/code\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{}\"}}"
+    },
+    {
+      "name": "reauth-password",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "reauth",
+        "password": "pw \"q\""
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/reauth\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"password\\\":\\\"pw \\\\\\\"q\\\\\\\"\\\"}\"}}"
+    },
+    {
+      "name": "reauth-code-proof",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "reauth",
+        "code": "123456"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/reauth\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"code\\\":\\\"123456\\\"}\"}}"
+    },
+    {
+      "name": "pending-sign-in",
+      "origin": "https://relay.example.com",
+      "token": null,
+      "op": {
+        "kind": "pendingSignIn",
+        "id": "ppppppppppppppppppppppppppppppppppppppppppp"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/oauth/pending/ppppppppppppppppppppppppppppppppppppppppppp\",\"init\":{\"method\":\"GET\",\"headers\":{}}}"
+    },
+    {
+      "name": "create-from-pending",
+      "origin": "https://relay.example.com",
+      "token": null,
+      "op": {
+        "kind": "createFromPending",
+        "id": "a/b"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/oauth/pending/a%2Fb/create\",\"init\":{\"method\":\"POST\",\"headers\":{\"content-type\":\"application/json\"},\"body\":\"{}\"}}"
+    },
+    {
+      "name": "create-from-pending-password",
+      "origin": "https://relay.example.com",
+      "token": null,
+      "op": {
+        "kind": "createFromPending",
+        "id": "ppppppppppppppppppppppppppppppppppppppppppp",
+        "password": "pw é",
+        "device": {
+          "id": "Qm3xV8rT2kLp9wYz4nHc1A"
+        }
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/oauth/pending/ppppppppppppppppppppppppppppppppppppppppppp/create\",\"init\":{\"method\":\"POST\",\"headers\":{\"content-type\":\"application/json\"},\"body\":\"{\\\"password\\\":\\\"pw é\\\",\\\"device\\\":{\\\"id\\\":\\\"Qm3xV8rT2kLp9wYz4nHc1A\\\"}}\"}}"
+    },
+    {
+      "name": "link-pending-password",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "linkPending",
+        "id": "ppppppppppppppppppppppppppppppppppppppppppp",
+        "password": "pw"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/oauth/pending/ppppppppppppppppppppppppppppppppppppppppppp/link\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"password\\\":\\\"pw\\\"}\"}}"
+    },
+    {
+      "name": "link-pending-reauth",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "linkPending",
+        "id": "ppppppppppppppppppppppppppppppppppppppppppp",
+        "reauth": "grant"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/oauth/pending/ppppppppppppppppppppppppppppppppppppppppppp/link\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"reauth\\\":\\\"grant\\\"}\"}}"
+    },
+    {
+      "name": "exchange-oauth-code",
+      "origin": "https://relay.example.com",
+      "token": null,
+      "op": {
+        "kind": "exchangeOAuthCode",
+        "code": "c0de",
+        "codeVerifier": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv",
+        "device": {
+          "id": "Qm3xV8rT2kLp9wYz4nHc1A",
+          "name": "iPhone"
+        }
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/oauth/token\",\"init\":{\"method\":\"POST\",\"headers\":{\"content-type\":\"application/json\"},\"body\":\"{\\\"code\\\":\\\"c0de\\\",\\\"code_verifier\\\":\\\"vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\\\",\\\"device\\\":{\\\"id\\\":\\\"Qm3xV8rT2kLp9wYz4nHc1A\\\",\\\"name\\\":\\\"iPhone\\\"}}\"}}"
+    },
+    {
+      "name": "exchange-oauth-code-no-device",
+      "origin": "https://relay.example.com",
+      "token": null,
+      "op": {
+        "kind": "exchangeOAuthCode",
+        "code": "c",
+        "codeVerifier": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/oauth/token\",\"init\":{\"method\":\"POST\",\"headers\":{\"content-type\":\"application/json\"},\"body\":\"{\\\"code\\\":\\\"c\\\",\\\"code_verifier\\\":\\\"vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\\\"}\"}}"
+    },
+    {
+      "name": "apple-native",
+      "origin": "https://relay.example.com",
+      "token": null,
+      "op": {
+        "kind": "appleNative",
+        "identityToken": "eyJ.id.tok",
+        "authorizationCode": "ac",
+        "nonce": "raw-nonce",
+        "name": "Ann Lee",
+        "device": {
+          "id": "Qm3xV8rT2kLp9wYz4nHc1A",
+          "name": "iPhone"
+        }
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/oauth/apple/native\",\"init\":{\"method\":\"POST\",\"headers\":{\"content-type\":\"application/json\"},\"body\":\"{\\\"identityToken\\\":\\\"eyJ.id.tok\\\",\\\"authorizationCode\\\":\\\"ac\\\",\\\"nonce\\\":\\\"raw-nonce\\\",\\\"name\\\":\\\"Ann Lee\\\",\\\"device\\\":{\\\"id\\\":\\\"Qm3xV8rT2kLp9wYz4nHc1A\\\",\\\"name\\\":\\\"iPhone\\\"}}\"}}"
+    },
+    {
+      "name": "apple-native-bare",
+      "origin": "https://relay.example.com",
+      "token": null,
+      "op": {
+        "kind": "appleNative",
+        "identityToken": "t",
+        "authorizationCode": "c"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/oauth/apple/native\",\"init\":{\"method\":\"POST\",\"headers\":{\"content-type\":\"application/json\"},\"body\":\"{\\\"identityToken\\\":\\\"t\\\",\\\"authorizationCode\\\":\\\"c\\\"}\"}}"
     }
   ],
   "responses": [
@@ -880,6 +1208,384 @@
       "status": 200,
       "body": "{\"redirect\":\"http://127.0.0.1:54321/callback?error=access_denied&state=st\"}",
       "expect": "{\"ok\":true,\"value\":\"http://127.0.0.1:54321/callback?error=access_denied&state=st\"}"
+    },
+    {
+      "name": "delete-account-invalid-reauth",
+      "kind": "deleteAccount",
+      "status": 403,
+      "body": "{\"error\":\"invalid_reauth\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_reauth\",\"status\":403}}"
+    },
+    {
+      "name": "auth-methods-ok",
+      "kind": "authMethods",
+      "status": 200,
+      "body": "{\"registration\":true,\"email\":false,\"providers\":[\"google\",\"apple\"],\"extra\":1}",
+      "expect": "{\"ok\":true,\"value\":{\"registration\":true,\"email\":false,\"providers\":[\"google\",\"apple\"]}}"
+    },
+    {
+      "name": "auth-methods-none",
+      "kind": "authMethods",
+      "status": 200,
+      "body": "{\"registration\":false,\"email\":true,\"providers\":[]}",
+      "expect": "{\"ok\":true,\"value\":{\"registration\":false,\"email\":true,\"providers\":[]}}"
+    },
+    {
+      "name": "auth-methods-bad-provider",
+      "kind": "authMethods",
+      "status": 200,
+      "body": "{\"registration\":true,\"email\":true,\"providers\":[\"google\",1]}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "auth-methods-email-string",
+      "kind": "authMethods",
+      "status": 200,
+      "body": "{\"registration\":true,\"email\":\"yes\",\"providers\":[]}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "auth-methods-404",
+      "kind": "authMethods",
+      "status": 404,
+      "body": "{\"error\":\"not_found\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"not_found\",\"status\":404}}"
+    },
+    {
+      "name": "signup-code-204",
+      "kind": "requestSignupCode",
+      "status": 204,
+      "body": null,
+      "expect": "{\"ok\":true}"
+    },
+    {
+      "name": "signup-code-closed",
+      "kind": "requestSignupCode",
+      "status": 403,
+      "body": "{\"error\":\"registration_closed\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"registration_closed\",\"status\":403}}"
+    },
+    {
+      "name": "register-ok",
+      "kind": "register",
+      "status": 200,
+      "body": "{\"user\":{\"username\":\"a@b.co\",\"email\":\"a@b.co\"},\"expiresAt\":5,\"token\":\"t\"}",
+      "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"a@b.co\",\"email\":\"a@b.co\"},\"expiresAt\":5,\"token\":\"t\"}}"
+    },
+    {
+      "name": "register-invalid-code",
+      "kind": "register",
+      "status": 400,
+      "body": "{\"error\":\"invalid_code\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_code\",\"status\":400}}"
+    },
+    {
+      "name": "register-missing-expiry",
+      "kind": "register",
+      "status": 200,
+      "body": "{\"user\":{\"username\":\"a@b.co\"},\"token\":\"t\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "reset-code-204",
+      "kind": "requestPasswordReset",
+      "status": 204,
+      "body": null,
+      "expect": "{\"ok\":true}"
+    },
+    {
+      "name": "reset-204",
+      "kind": "resetPassword",
+      "status": 204,
+      "body": null,
+      "expect": "{\"ok\":true}"
+    },
+    {
+      "name": "reset-weak",
+      "kind": "resetPassword",
+      "status": 400,
+      "body": "{\"error\":\"weak_password\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"weak_password\",\"status\":400}}"
+    },
+    {
+      "name": "email-code-204",
+      "kind": "requestEmailCode",
+      "status": 204,
+      "body": null,
+      "expect": "{\"ok\":true}"
+    },
+    {
+      "name": "email-code-taken",
+      "kind": "requestEmailCode",
+      "status": 409,
+      "body": "{\"error\":\"email_taken\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"email_taken\",\"status\":409}}"
+    },
+    {
+      "name": "email-code-invalid-reauth",
+      "kind": "requestEmailCode",
+      "status": 403,
+      "body": "{\"error\":\"invalid_reauth\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_reauth\",\"status\":403}}"
+    },
+    {
+      "name": "set-email-ok",
+      "kind": "setEmail",
+      "status": 200,
+      "body": "{\"user\":{\"username\":\"n@b.co\",\"email\":\"n@b.co\"}}",
+      "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"n@b.co\",\"email\":\"n@b.co\"}}}"
+    },
+    {
+      "name": "set-email-no-user",
+      "kind": "setEmail",
+      "status": 200,
+      "body": "{}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "set-email-invalid-reauth",
+      "kind": "setEmail",
+      "status": 403,
+      "body": "{\"error\":\"invalid_reauth\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_reauth\",\"status\":403}}"
+    },
+    {
+      "name": "identities-ok",
+      "kind": "identities",
+      "status": 200,
+      "body": "{\"identities\":[{\"provider\":\"google\",\"email\":\"a@gmail.com\",\"createdAt\":3},{\"provider\":\"apple\",\"createdAt\":4,\"x\":1}],\"hasPassword\":false}",
+      "expect": "{\"ok\":true,\"value\":{\"hasPassword\":false,\"identities\":[{\"provider\":\"google\",\"email\":\"a@gmail.com\",\"createdAt\":3},{\"provider\":\"apple\",\"createdAt\":4}]}}"
+    },
+    {
+      "name": "identities-empty",
+      "kind": "identities",
+      "status": 200,
+      "body": "{\"identities\":[],\"hasPassword\":true}",
+      "expect": "{\"ok\":true,\"value\":{\"hasPassword\":true,\"identities\":[]}}"
+    },
+    {
+      "name": "identities-email-number",
+      "kind": "identities",
+      "status": 200,
+      "body": "{\"identities\":[{\"provider\":\"google\",\"email\":1,\"createdAt\":3}],\"hasPassword\":true}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "identities-missing-has-password",
+      "kind": "identities",
+      "status": 200,
+      "body": "{\"identities\":[]}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "identities-404",
+      "kind": "identities",
+      "status": 404,
+      "body": "{\"error\":\"not_found\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"not_found\",\"status\":404}}"
+    },
+    {
+      "name": "unlink-204",
+      "kind": "unlinkProvider",
+      "status": 204,
+      "body": null,
+      "expect": "{\"ok\":true}"
+    },
+    {
+      "name": "unlink-last-method",
+      "kind": "unlinkProvider",
+      "status": 409,
+      "body": "{\"error\":\"last_method\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"last_method\",\"status\":409}}"
+    },
+    {
+      "name": "reauth-code-204",
+      "kind": "requestReauthCode",
+      "status": 204,
+      "body": null,
+      "expect": "{\"ok\":true}"
+    },
+    {
+      "name": "reauth-code-no-email",
+      "kind": "requestReauthCode",
+      "status": 409,
+      "body": "{\"error\":\"no_email\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"no_email\",\"status\":409}}"
+    },
+    {
+      "name": "reauth-ok",
+      "kind": "reauth",
+      "status": 200,
+      "body": "{\"reauth\":\"grant\",\"expiresAt\":300000}",
+      "expect": "{\"ok\":true,\"value\":{\"reauth\":\"grant\",\"expiresAt\":300000}}"
+    },
+    {
+      "name": "reauth-missing-expiry",
+      "kind": "reauth",
+      "status": 200,
+      "body": "{\"reauth\":\"grant\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "reauth-wrong",
+      "kind": "reauth",
+      "status": 403,
+      "body": "{\"error\":\"invalid_code\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_code\",\"status\":403}}"
+    },
+    {
+      "name": "pending-ok",
+      "kind": "pendingSignIn",
+      "status": 200,
+      "body": "{\"provider\":\"apple\",\"email\":\"x@privaterelay.appleid.com\",\"name\":\"Ann\"}",
+      "expect": "{\"ok\":true,\"value\":{\"provider\":\"apple\",\"email\":\"x@privaterelay.appleid.com\",\"name\":\"Ann\"}}"
+    },
+    {
+      "name": "pending-bare",
+      "kind": "pendingSignIn",
+      "status": 200,
+      "body": "{\"provider\":\"github\"}",
+      "expect": "{\"ok\":true,\"value\":{\"provider\":\"github\"}}"
+    },
+    {
+      "name": "pending-name-number",
+      "kind": "pendingSignIn",
+      "status": 200,
+      "body": "{\"provider\":\"github\",\"name\":4}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "pending-not-found",
+      "kind": "pendingSignIn",
+      "status": 404,
+      "body": "{\"error\":\"not_found\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"not_found\",\"status\":404}}"
+    },
+    {
+      "name": "create-from-pending-session",
+      "kind": "createFromPending",
+      "status": 200,
+      "body": "{\"user\":{\"username\":\"a@b.co\",\"email\":\"a@b.co\"},\"expiresAt\":9,\"token\":\"t\"}",
+      "expect": "{\"ok\":true,\"value\":{\"kind\":\"signedIn\",\"session\":{\"user\":{\"username\":\"a@b.co\",\"email\":\"a@b.co\"},\"expiresAt\":9,\"token\":\"t\"}}}"
+    },
+    {
+      "name": "create-from-pending-app",
+      "kind": "createFromPending",
+      "status": 200,
+      "body": "{\"redirect\":\"pinomad://auth?code=c&state=s\"}",
+      "expect": "{\"ok\":true,\"value\":{\"kind\":\"redirect\",\"url\":\"pinomad://auth?code=c&state=s\"}}"
+    },
+    {
+      "name": "create-from-pending-loopback",
+      "kind": "createFromPending",
+      "status": 200,
+      "body": "{\"redirect\":\"http://127.0.0.1:5000/callback?code=c&state=s\"}",
+      "expect": "{\"ok\":true,\"value\":{\"kind\":\"redirect\",\"url\":\"http://127.0.0.1:5000/callback?code=c&state=s\"}}"
+    },
+    {
+      "name": "create-from-pending-elsewhere",
+      "kind": "createFromPending",
+      "status": 200,
+      "body": "{\"redirect\":\"https://evil.example/?code=c\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "create-from-pending-app-path",
+      "kind": "createFromPending",
+      "status": 200,
+      "body": "{\"redirect\":\"pinomad://auth/x?code=c\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "create-from-pending-pair",
+      "kind": "createFromPending",
+      "status": 200,
+      "body": "{\"redirect\":\"pinomad://pair?code=c\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "create-from-pending-password-required",
+      "kind": "createFromPending",
+      "status": 400,
+      "body": "{\"error\":\"password_required\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"password_required\",\"status\":400}}"
+    },
+    {
+      "name": "link-pending-204",
+      "kind": "linkPending",
+      "status": 204,
+      "body": null,
+      "expect": "{\"ok\":true}"
+    },
+    {
+      "name": "link-pending-app",
+      "kind": "linkPending",
+      "status": 200,
+      "body": "{\"redirect\":\"pinomad://auth/?code=c&state=s\"}",
+      "expect": "{\"ok\":true,\"value\":\"pinomad://auth/?code=c&state=s\"}"
+    },
+    {
+      "name": "link-pending-empty-object",
+      "kind": "linkPending",
+      "status": 200,
+      "body": "{}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "link-pending-wrong",
+      "kind": "linkPending",
+      "status": 403,
+      "body": "{\"error\":\"wrong_password\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"wrong_password\",\"status\":403}}"
+    },
+    {
+      "name": "exchange-ok",
+      "kind": "exchangeOAuthCode",
+      "status": 200,
+      "body": "{\"user\":{\"username\":\"a@b.co\",\"email\":\"a@b.co\"},\"expiresAt\":9,\"token\":\"t\"}",
+      "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"a@b.co\",\"email\":\"a@b.co\"},\"expiresAt\":9,\"token\":\"t\"}}"
+    },
+    {
+      "name": "exchange-invalid-grant",
+      "kind": "exchangeOAuthCode",
+      "status": 400,
+      "body": "{\"error\":\"invalid_grant\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_grant\",\"status\":400}}"
+    },
+    {
+      "name": "apple-signed-in",
+      "kind": "appleNative",
+      "status": 200,
+      "body": "{\"user\":{\"username\":\"a@b.co\",\"email\":\"a@b.co\"},\"expiresAt\":9,\"token\":\"t\"}",
+      "expect": "{\"ok\":true,\"value\":{\"kind\":\"signedIn\",\"session\":{\"user\":{\"username\":\"a@b.co\",\"email\":\"a@b.co\"},\"expiresAt\":9,\"token\":\"t\"}}}"
+    },
+    {
+      "name": "apple-no-account",
+      "kind": "appleNative",
+      "status": 409,
+      "body": "{\"error\":\"no_account\",\"reason\":\"no_account\",\"pending\":\"pnd\",\"email\":\"x@privaterelay.appleid.com\"}",
+      "expect": "{\"ok\":true,\"value\":{\"kind\":\"noAccount\",\"pending\":\"pnd\",\"email\":\"x@privaterelay.appleid.com\"}}"
+    },
+    {
+      "name": "apple-no-account-hidden",
+      "kind": "appleNative",
+      "status": 409,
+      "body": "{\"error\":\"no_account\",\"pending\":\"pnd\"}",
+      "expect": "{\"ok\":true,\"value\":{\"kind\":\"noAccount\",\"pending\":\"pnd\"}}"
+    },
+    {
+      "name": "apple-no-account-no-pending",
+      "kind": "appleNative",
+      "status": 409,
+      "body": "{\"error\":\"no_account\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"no_account\",\"status\":409}}"
+    },
+    {
+      "name": "apple-invalid-token",
+      "kind": "appleNative",
+      "status": 401,
+      "body": "{\"error\":\"invalid_token\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_token\",\"status\":401}}"
     }
   ],
   "probe": [

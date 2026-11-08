@@ -28,18 +28,45 @@ const PRIV = key(23);
 const OFFER_KEY = key(24);
 const OFFER_SECRET = key(25);
 
+/**
+ * A confirmation as the cases spell it (ADR-0044 §6): `password` for the
+ * password, `reauth` for a grant — exactly one of them.
+ */
+export type ConfirmationDesc = { password: string; reauth?: never } | { reauth: string; password?: never };
+
 export type AccountOpDesc =
   | { kind: "login"; username: string; password: string; device?: AccountDeviceClaim }
   | { kind: "requestPairing"; hostId: string }
   | { kind: "registerPushToken" | "removePushToken"; apns: string; environment: "production" | "development" }
-  | { kind: "changePassword"; currentPassword: string; newPassword: string }
-  | { kind: "deleteAccount"; password: string }
-  | { kind: "kickDevice"; id: number; password: string }
-  | { kind: "removeHost"; hostId: string; password: string }
+  | ({ kind: "changePassword"; newPassword: string } & ({ currentPassword: string; reauth?: never } | { reauth: string; currentPassword?: never }))
+  | ({ kind: "deleteAccount" } & ConfirmationDesc)
+  | ({ kind: "kickDevice"; id: number } & ConfirmationDesc)
+  | ({ kind: "removeHost"; hostId: string } & ConfirmationDesc)
   | { kind: "logout"; revoke?: boolean }
   | { kind: "lookupHostLink" | "confirmHostLink" | "denyHostLink"; userCode: string }
   | { kind: "lookupHostLinkRequest" | "confirmHostLinkRequest" | "denyHostLinkRequest"; requestId: string }
-  | { kind: "me" | "revokeAllSessions" | "createJoinToken" | "listHosts" | "listDevices" };
+  | { kind: "me" | "revokeAllSessions" | "createJoinToken" | "listHosts" | "listDevices" }
+  | { kind: "authMethods" | "identities" | "requestReauthCode" }
+  | { kind: "requestSignupCode" | "requestPasswordReset"; email: string }
+  | { kind: "register"; email: string; code: string; password: string; device?: AccountDeviceClaim }
+  | { kind: "resetPassword"; email: string; code: string; password: string }
+  | ({ kind: "requestEmailCode"; email: string } & ConfirmationDesc)
+  | ({ kind: "setEmail"; email: string; code: string } & ConfirmationDesc)
+  | ({ kind: "unlinkProvider"; provider: string } & ConfirmationDesc)
+  | { kind: "reauth"; password: string; code?: never }
+  | { kind: "reauth"; code: string; password?: never }
+  | { kind: "pendingSignIn"; id: string }
+  | { kind: "createFromPending"; id: string; password?: string; device?: AccountDeviceClaim }
+  | ({ kind: "linkPending"; id: string } & ConfirmationDesc)
+  | { kind: "exchangeOAuthCode"; code: string; codeVerifier: string; device?: AccountDeviceClaim }
+  | {
+      kind: "appleNative";
+      identityToken: string;
+      authorizationCode: string;
+      nonce?: string;
+      name?: string;
+      device?: AccountDeviceClaim;
+    };
 
 export interface RequestCase {
   name: string;
@@ -120,6 +147,66 @@ export const REQUEST_CASES: RequestCase[] = [
   { name: "host-link-request-lookup", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "lookupHostLinkRequest", requestId: "r".repeat(43) } },
   { name: "host-link-request-confirm", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "confirmHostLinkRequest", requestId: "r\"q" } },
   { name: "host-link-request-deny", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "denyHostLinkRequest", requestId: "r" } },
+  // A grant stands in for the password on every confirmed action (ADR-0044
+  // §6); a password change names it `reauth` beside the new password, which
+  // also sets a first password on an account without one.
+  { name: "change-password-reauth", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "changePassword", reauth: "g\"1", newPassword: "first password ✓" } },
+  { name: "delete-account-reauth", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "deleteAccount", reauth: "grant" } },
+  { name: "kick-device-reauth", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "kickDevice", id: 7, reauth: "grant" } },
+  { name: "remove-host-reauth", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "removeHost", hostId: HOST_ID_A, reauth: "grant" } },
+  // Email accounts (ADR-0044): codes and addresses go as typed.
+  { name: "auth-methods", origin: `${ACCOUNT_ORIGIN}/`, op: { kind: "authMethods" } },
+  { name: "signup-code", origin: ACCOUNT_ORIGIN, op: { kind: "requestSignupCode", email: "Ann@Example.com" } },
+  {
+    name: "register",
+    origin: ACCOUNT_ORIGIN,
+    op: { kind: "register", email: "a@b.co", code: "012345", password: "p \"w\" é", device: { id: "Qm3xV8rT2kLp9wYz4nHc1A", name: "iPhone" } },
+  },
+  { name: "register-no-device", origin: ACCOUNT_ORIGIN, op: { kind: "register", email: "a@b.co", code: "1", password: "p" } },
+  { name: "reset-code", origin: ACCOUNT_ORIGIN, op: { kind: "requestPasswordReset", email: "a@b.co" } },
+  { name: "reset-password", origin: ACCOUNT_ORIGIN, op: { kind: "resetPassword", email: "a@b.co", code: "999999", password: "new pw" } },
+  { name: "email-code-password", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "requestEmailCode", email: "new@b.co", password: "pw" } },
+  { name: "email-code-reauth", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "requestEmailCode", email: "new@b.co", reauth: "grant" } },
+  { name: "set-email-password", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "setEmail", email: "new@b.co", code: "123456", password: "pw" } },
+  { name: "set-email-reauth", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "setEmail", email: "new@b.co", code: "123456", reauth: "grant" } },
+  // Sign-in methods and re-auth (ADR-0044 §4, §6).
+  { name: "identities", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "identities" } },
+  { name: "unlink-provider", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "unlinkProvider", provider: "git hub/é", password: "pw" } },
+  { name: "unlink-provider-reauth", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "unlinkProvider", provider: "apple", reauth: "grant" } },
+  // An empty object, not no body: the server reads JSON here.
+  { name: "reauth-code", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "requestReauthCode" } },
+  { name: "reauth-password", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "reauth", password: "pw \"q\"" } },
+  { name: "reauth-code-proof", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "reauth", code: "123456" } },
+  // The pending "no account yet" sign-in: the id goes through encodeURIComponent.
+  { name: "pending-sign-in", origin: ACCOUNT_ORIGIN, op: { kind: "pendingSignIn", id: "p".repeat(43) } },
+  { name: "create-from-pending", origin: ACCOUNT_ORIGIN, op: { kind: "createFromPending", id: "a/b" } },
+  {
+    name: "create-from-pending-password",
+    origin: ACCOUNT_ORIGIN,
+    op: { kind: "createFromPending", id: "p".repeat(43), password: "pw é", device: { id: "Qm3xV8rT2kLp9wYz4nHc1A" } },
+  },
+  { name: "link-pending-password", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "linkPending", id: "p".repeat(43), password: "pw" } },
+  { name: "link-pending-reauth", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "linkPending", id: "p".repeat(43), reauth: "grant" } },
+  // A native app's code exchange and iOS's own Apple sign-in (ADR-0044 §5).
+  {
+    name: "exchange-oauth-code",
+    origin: ACCOUNT_ORIGIN,
+    op: { kind: "exchangeOAuthCode", code: "c0de", codeVerifier: "v".repeat(43), device: { id: "Qm3xV8rT2kLp9wYz4nHc1A", name: "iPhone" } },
+  },
+  { name: "exchange-oauth-code-no-device", origin: ACCOUNT_ORIGIN, op: { kind: "exchangeOAuthCode", code: "c", codeVerifier: "v".repeat(43) } },
+  {
+    name: "apple-native",
+    origin: ACCOUNT_ORIGIN,
+    op: {
+      kind: "appleNative",
+      identityToken: "eyJ.id.tok",
+      authorizationCode: "ac",
+      nonce: "raw-nonce",
+      name: "Ann Lee",
+      device: { id: "Qm3xV8rT2kLp9wYz4nHc1A", name: "iPhone" },
+    },
+  },
+  { name: "apple-native-bare", origin: ACCOUNT_ORIGIN, op: { kind: "appleNative", identityToken: "t", authorizationCode: "c" } },
 ];
 
 export interface ResponseCase {
@@ -318,6 +405,72 @@ export const RESPONSE_CASES: ResponseCase[] = [
     status: 200,
     body: '{"redirect":"http://127.0.0.1:54321/callback?error=access_denied&state=st"}',
   },
+  // A grant that lapsed or belongs to another session is a refusal, not a sign-out.
+  { name: "delete-account-invalid-reauth", kind: "deleteAccount", status: 403, body: '{"error":"invalid_reauth"}' },
+  { name: "auth-methods-ok", kind: "authMethods", status: 200, body: '{"registration":true,"email":false,"providers":["google","apple"],"extra":1}' },
+  { name: "auth-methods-none", kind: "authMethods", status: 200, body: '{"registration":false,"email":true,"providers":[]}' },
+  { name: "auth-methods-bad-provider", kind: "authMethods", status: 200, body: '{"registration":true,"email":true,"providers":["google",1]}' },
+  { name: "auth-methods-email-string", kind: "authMethods", status: 200, body: '{"registration":true,"email":"yes","providers":[]}' },
+  { name: "auth-methods-404", kind: "authMethods", status: 404, body: '{"error":"not_found"}' },
+  { name: "signup-code-204", kind: "requestSignupCode", status: 204, body: null },
+  { name: "signup-code-closed", kind: "requestSignupCode", status: 403, body: '{"error":"registration_closed"}' },
+  { name: "register-ok", kind: "register", status: 200, body: '{"user":{"username":"a@b.co","email":"a@b.co"},"expiresAt":5,"token":"t"}' },
+  { name: "register-invalid-code", kind: "register", status: 400, body: '{"error":"invalid_code"}' },
+  { name: "register-missing-expiry", kind: "register", status: 200, body: '{"user":{"username":"a@b.co"},"token":"t"}' },
+  { name: "reset-code-204", kind: "requestPasswordReset", status: 204, body: null },
+  { name: "reset-204", kind: "resetPassword", status: 204, body: null },
+  { name: "reset-weak", kind: "resetPassword", status: 400, body: '{"error":"weak_password"}' },
+  { name: "email-code-204", kind: "requestEmailCode", status: 204, body: null },
+  { name: "email-code-taken", kind: "requestEmailCode", status: 409, body: '{"error":"email_taken"}' },
+  { name: "email-code-invalid-reauth", kind: "requestEmailCode", status: 403, body: '{"error":"invalid_reauth"}' },
+  { name: "set-email-ok", kind: "setEmail", status: 200, body: '{"user":{"username":"n@b.co","email":"n@b.co"}}' },
+  { name: "set-email-no-user", kind: "setEmail", status: 200, body: "{}" },
+  { name: "set-email-invalid-reauth", kind: "setEmail", status: 403, body: '{"error":"invalid_reauth"}' },
+  {
+    name: "identities-ok",
+    kind: "identities",
+    status: 200,
+    body: '{"identities":[{"provider":"google","email":"a@gmail.com","createdAt":3},{"provider":"apple","createdAt":4,"x":1}],"hasPassword":false}',
+  },
+  { name: "identities-empty", kind: "identities", status: 200, body: '{"identities":[],"hasPassword":true}' },
+  { name: "identities-email-number", kind: "identities", status: 200, body: '{"identities":[{"provider":"google","email":1,"createdAt":3}],"hasPassword":true}' },
+  { name: "identities-missing-has-password", kind: "identities", status: 200, body: '{"identities":[]}' },
+  { name: "identities-404", kind: "identities", status: 404, body: '{"error":"not_found"}' },
+  { name: "unlink-204", kind: "unlinkProvider", status: 204, body: null },
+  { name: "unlink-last-method", kind: "unlinkProvider", status: 409, body: '{"error":"last_method"}' },
+  { name: "reauth-code-204", kind: "requestReauthCode", status: 204, body: null },
+  { name: "reauth-code-no-email", kind: "requestReauthCode", status: 409, body: '{"error":"no_email"}' },
+  { name: "reauth-ok", kind: "reauth", status: 200, body: '{"reauth":"grant","expiresAt":300000}' },
+  { name: "reauth-missing-expiry", kind: "reauth", status: 200, body: '{"reauth":"grant"}' },
+  { name: "reauth-wrong", kind: "reauth", status: 403, body: '{"error":"invalid_code"}' },
+  { name: "pending-ok", kind: "pendingSignIn", status: 200, body: '{"provider":"apple","email":"x@privaterelay.appleid.com","name":"Ann"}' },
+  { name: "pending-bare", kind: "pendingSignIn", status: 200, body: '{"provider":"github"}' },
+  { name: "pending-name-number", kind: "pendingSignIn", status: 200, body: '{"provider":"github","name":4}' },
+  { name: "pending-not-found", kind: "pendingSignIn", status: 404, body: '{"error":"not_found"}' },
+  { name: "create-from-pending-session", kind: "createFromPending", status: 200, body: '{"user":{"username":"a@b.co","email":"a@b.co"},"expiresAt":9,"token":"t"}' },
+  { name: "create-from-pending-app", kind: "createFromPending", status: 200, body: '{"redirect":"pinomad://auth?code=c&state=s"}' },
+  { name: "create-from-pending-loopback", kind: "createFromPending", status: 200, body: '{"redirect":"http://127.0.0.1:5000/callback?code=c&state=s"}' },
+  { name: "create-from-pending-elsewhere", kind: "createFromPending", status: 200, body: '{"redirect":"https://evil.example/?code=c"}' },
+  { name: "create-from-pending-app-path", kind: "createFromPending", status: 200, body: '{"redirect":"pinomad://auth/x?code=c"}' },
+  { name: "create-from-pending-pair", kind: "createFromPending", status: 200, body: '{"redirect":"pinomad://pair?code=c"}' },
+  { name: "create-from-pending-password-required", kind: "createFromPending", status: 400, body: '{"error":"password_required"}' },
+  { name: "link-pending-204", kind: "linkPending", status: 204, body: null },
+  { name: "link-pending-app", kind: "linkPending", status: 200, body: '{"redirect":"pinomad://auth/?code=c&state=s"}' },
+  { name: "link-pending-empty-object", kind: "linkPending", status: 200, body: "{}" },
+  { name: "link-pending-wrong", kind: "linkPending", status: 403, body: '{"error":"wrong_password"}' },
+  { name: "exchange-ok", kind: "exchangeOAuthCode", status: 200, body: '{"user":{"username":"a@b.co","email":"a@b.co"},"expiresAt":9,"token":"t"}' },
+  { name: "exchange-invalid-grant", kind: "exchangeOAuthCode", status: 400, body: '{"error":"invalid_grant"}' },
+  { name: "apple-signed-in", kind: "appleNative", status: 200, body: '{"user":{"username":"a@b.co","email":"a@b.co"},"expiresAt":9,"token":"t"}' },
+  {
+    name: "apple-no-account",
+    kind: "appleNative",
+    status: 409,
+    body: '{"error":"no_account","reason":"no_account","pending":"pnd","email":"x@privaterelay.appleid.com"}',
+  },
+  { name: "apple-no-account-hidden", kind: "appleNative", status: 409, body: '{"error":"no_account","pending":"pnd"}' },
+  // Without the pending id, a no_account is just a refusal.
+  { name: "apple-no-account-no-pending", kind: "appleNative", status: 409, body: '{"error":"no_account"}' },
+  { name: "apple-invalid-token", kind: "appleNative", status: 401, body: '{"error":"invalid_token"}' },
 ];
 
 export interface ProbeCase {

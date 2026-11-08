@@ -2,7 +2,7 @@ import PinomadCore
 import SwiftUI
 
 /// Remove another device from the account (#452, ADR-0037 §3), pushed from
-/// the account sheet. The password again, as for deleting the account: a
+/// the account sheet. Confirmed again, as for deleting the account: a
 /// session left on a lost phone mustn't be able to remove the owner's other
 /// devices.
 struct RemoveDeviceView: View {
@@ -10,7 +10,7 @@ struct RemoveDeviceView: View {
     let device: AccountDevice
 
     @Environment(\.dismiss) private var dismiss
-    @State private var password = ""
+    @State private var step = IdentityConfirmation()
     @State private var error: String?
     @State private var busy = false
 
@@ -18,43 +18,15 @@ struct RemoveDeviceView: View {
 
     var body: some View {
         Form {
-            Section {
-                SecureField("Password", text: $password)
-                    .textContentType(.password)
-                    .submitLabel(.go)
-                    .onSubmit(submit)
-            } footer: {
-                Text(AccountCopy.removeDeviceExplanation(name: name, hosts: model.accountRows))
-            }
+            ConfirmIdentitySection(
+                model: model, step: step,
+                footer: AccountCopy.removeDeviceExplanation(name: name, hosts: model.accountRows),
+                onSubmit: submit)
 
-            Section {
-                Button(role: .destructive) {
-                    submit()
-                } label: {
-                    HStack {
-                        Spacer()
-                        if busy {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Text("Remove Device")
-                        }
-                        Spacer()
-                    }
-                }
-                .buttonStyle(.tactile(.glassProminent))
-                .tint(.red)
-                .disabled(busy || password.isEmpty)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets())
-            }
+            FormActionButton(title: "Remove Device", busy: busy, destructive: true, action: submit)
+                .disabled(busy || !step.ready)
 
-            if let error {
-                Section {
-                    Text(error)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                }
-            }
+            FormErrorSection(message: error)
         }
         .navigationTitle("Remove \(device.name ?? "Device")")
         .navigationBarTitleDisplayMode(.inline)
@@ -62,11 +34,11 @@ struct RemoveDeviceView: View {
     }
 
     private func submit() {
-        guard !busy, !password.isEmpty else { return }
+        guard !busy, step.ready else { return }
         busy = true
         error = nil
         Task {
-            let failure = await model.accountKickDevice(device, password: password)
+            let failure = await step.run(model: model) { await model.accountKickDevice(device, confirmation: $0) }
             busy = false
             if let failure {
                 error = AccountCopy.message(failure)

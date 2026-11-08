@@ -21,12 +21,35 @@ public struct AccountSession: Codable, Equatable, Sendable {
     public var token: String
     /// Epoch milliseconds, exactly as /api/login reports it.
     public var expiresAt: Double
+    /// The account's verified email (ADR-0044 §8); nil on a legacy account
+    /// that has none yet, and on records saved before emails existed.
+    public var email: String?
 
-    public init(serverOrigin: String, username: String, token: String, expiresAt: Double) {
+    public init(serverOrigin: String, username: String, token: String, expiresAt: Double, email: String? = nil) {
         self.serverOrigin = serverOrigin
         self.username = username
         self.token = token
         self.expiresAt = expiresAt
+        self.email = email
+    }
+
+    /// The same session with the profile `me` or `setEmail` reported. The
+    /// username stays as signed in: it keys this sign-in's records on the
+    /// device (known hosts, the push registration).
+    public func with(user: AccountUser) -> AccountSession {
+        var next = self
+        next.email = user.email
+        return next
+    }
+
+    /// What to show for the account: its email, else the legacy username.
+    public var displayName: String { email ?? username }
+
+    /// The same sign-in, whatever its profile says: what an answer must
+    /// still match to apply. A profile update doesn't make another session.
+    public func isSameSignIn(as other: AccountSession?) -> Bool {
+        guard let other else { return false }
+        return serverOrigin == other.serverOrigin && token == other.token
     }
 
     public func isExpired(at now: Date = Date()) -> Bool {
@@ -41,12 +64,17 @@ public struct AccountRecord: Codable, Equatable, Sendable {
     public var username: String
     public var token: String?
     public var expiresAt: Double?
+    /// Optional so records from before ADR-0044 still decode.
+    public var email: String?
 
-    public init(serverOrigin: String, username: String, token: String? = nil, expiresAt: Double? = nil) {
+    public init(
+        serverOrigin: String, username: String, token: String? = nil, expiresAt: Double? = nil, email: String? = nil
+    ) {
         self.serverOrigin = serverOrigin
         self.username = username
         self.token = token
         self.expiresAt = expiresAt
+        self.email = email
     }
 
     public init(session: AccountSession) {
@@ -54,7 +82,8 @@ public struct AccountRecord: Codable, Equatable, Sendable {
             serverOrigin: session.serverOrigin,
             username: session.username,
             token: session.token,
-            expiresAt: session.expiresAt)
+            expiresAt: session.expiresAt,
+            email: session.email)
     }
 
     public var session: AccountSession? {
@@ -63,7 +92,8 @@ public struct AccountRecord: Codable, Equatable, Sendable {
             serverOrigin: serverOrigin,
             username: username,
             token: token,
-            expiresAt: expiresAt)
+            expiresAt: expiresAt,
+            email: email)
     }
 
     /// Keep the address and username for the next sign-in, drop the token.
@@ -480,23 +510,17 @@ public struct AccountAPI: Sendable {
         }
     }
 
-    /// Keeps this session and signs out the account's others (#450).
-    public func changePassword(current: String, new: String) async -> Result<Void, AccountFailure> {
-        switch await request(.changePassword(currentPassword: current, newPassword: new), kind: .changePassword) {
-        case .success(.unit): return .success(())
-        case .failure(let failure): return .failure(failure)
-        default: return .failure(.invalidResponse)
-        }
+    /// Keeps this session and signs out the account's others (#450). A
+    /// grant instead of the current password also sets a first password on
+    /// an account that has none (ADR-0044 §6).
+    public func changePassword(current: AccountConfirmation, new: String) async -> Result<Void, AccountFailure> {
+        await unit(.changePassword(current: current, newPassword: new))
     }
 
     /// Deletes the signed-in account and ends this session (#451). 403
-    /// `wrong_password` is a refusal, not a sign-out.
-    public func deleteAccount(password: String) async -> Result<Void, AccountFailure> {
-        switch await request(.deleteAccount(password: password), kind: .deleteAccount) {
-        case .success(.unit): return .success(())
-        case .failure(let failure): return .failure(failure)
-        default: return .failure(.invalidResponse)
-        }
+    /// `wrong_password` or `invalid_reauth` is a refusal, not a sign-out.
+    public func deleteAccount(confirmation: AccountConfirmation) async -> Result<Void, AccountFailure> {
+        await unit(.deleteAccount(confirmation: confirmation))
     }
 
     /// The account's devices (#452); 404 on servers that predate them.
@@ -512,23 +536,149 @@ public struct AccountAPI: Sendable {
     /// through the account to revoke it (ADR-0037 §3). 403 `wrong_password`
     /// is a refusal, not a sign-out; 409 `current_device` means sign out
     /// instead.
-    public func kickDevice(id: Double, password: String) async -> Result<Void, AccountFailure> {
-        switch await request(.kickDevice(id: id, password: password), kind: .kickDevice) {
-        case .success(.unit): return .success(())
-        case .failure(let failure): return .failure(failure)
-        default: return .failure(.invalidResponse)
-        }
+    public func kickDevice(id: Double, confirmation: AccountConfirmation) async -> Result<Void, AccountFailure> {
+        await unit(.kickDevice(id: id, confirmation: confirmation))
     }
 
     /// Takes a host off the account (#512): the server unbinds it and tells
     /// it to stop connecting. The password again, as for kicking a device
     /// (ADR-0037 §3); 403 `wrong_password` is a refusal, not a sign-out, and
     /// 404 `not_found` also comes from servers that predate it.
-    public func removeHost(hostId: String, password: String) async -> Result<Void, AccountFailure> {
-        switch await request(.removeHost(hostId: hostId, password: password), kind: .removeHost) {
+    public func removeHost(hostId: String, confirmation: AccountConfirmation) async -> Result<Void, AccountFailure> {
+        await unit(.removeHost(hostId: hostId, confirmation: confirmation))
+    }
+
+    // MARK: ADR-0044
+
+    /// How this server lets people in.
+    public func authMethods() async -> Result<AuthMethods, AccountFailure> {
+        await value(.authMethods) { if case .authMethods(let methods) = $0 { methods } else { nil } }
+    }
+
+    /// Mails a sign-up code. The answer doesn't say whether the email has
+    /// an account; 403 `registration_closed` when the server takes no
+    /// sign-ups.
+    public func requestSignupCode(email: String) async -> Result<Void, AccountFailure> {
+        await unit(.requestSignupCode(email: email))
+    }
+
+    /// Creates the account from the mailed code and signs it in, like login.
+    public func register(
+        email: String, code: String, password: String, device: AccountDeviceClaim? = nil
+    ) async -> Result<LoginSuccess, AccountFailure> {
+        await value(.register(email: email, code: code, password: password, device: device)) {
+            if case .login(let login) = $0 { login } else { nil }
+        }
+    }
+
+    /// Mails a reset code when the email has an account; the answer doesn't say.
+    public func requestPasswordReset(email: String) async -> Result<Void, AccountFailure> {
+        await unit(.requestPasswordReset(email: email))
+    }
+
+    /// Sets a new password and signs the account out everywhere.
+    public func resetPassword(email: String, code: String, password: String) async -> Result<Void, AccountFailure> {
+        await unit(.resetPassword(email: email, code: code, password: password))
+    }
+
+    /// Mails a code to an email the signed-in account wants to use; 409
+    /// `email_taken` when another account has it.
+    public func requestEmailCode(email: String, confirmation: AccountConfirmation) async -> Result<Void, AccountFailure> {
+        await unit(.requestEmailCode(email: email, confirmation: confirmation))
+    }
+
+    /// Makes the mailed-to email the account's; answers the new profile.
+    public func setEmail(
+        email: String, code: String, confirmation: AccountConfirmation
+    ) async -> Result<AccountMe, AccountFailure> {
+        await value(.setEmail(email: email, code: code, confirmation: confirmation)) {
+            if case .me(let me) = $0 { me } else { nil }
+        }
+    }
+
+    /// The account's sign-in providers and whether it has a password; 404
+    /// on servers from before them.
+    public func identities() async -> Result<AccountIdentities, AccountFailure> {
+        await value(.identities) { if case .identities(let identities) = $0 { identities } else { nil } }
+    }
+
+    /// Removes a provider; 409 `last_method` when nothing else would sign
+    /// the account in.
+    public func unlinkProvider(_ provider: String, confirmation: AccountConfirmation) async -> Result<Void, AccountFailure> {
+        await unit(.unlinkProvider(provider: provider, confirmation: confirmation))
+    }
+
+    /// Mails a re-auth code to the account's email; 409 `no_email` without one.
+    public func requestReauthCode() async -> Result<Void, AccountFailure> {
+        await unit(.requestReauthCode)
+    }
+
+    /// Trades the password or a mailed code for a five-minute grant.
+    public func reauth(_ proof: ReauthProof) async -> Result<ReauthGrant, AccountFailure> {
+        await value(.reauth(proof: proof)) { if case .reauthGrant(let grant) = $0 { grant } else { nil } }
+    }
+
+    /// A pending sign-in's provider and email; 404 `not_found` once spent or expired.
+    public func pendingSignIn(id: String) async -> Result<PendingSignIn, AccountFailure> {
+        await value(.pendingSignIn(id: id)) { if case .pendingSignIn(let pending) = $0 { pending } else { nil } }
+    }
+
+    /// Creates the account a pending sign-in asked for. A server that can't
+    /// mail needs `password`: 400 `password_required` without one.
+    public func createFromPending(
+        id: String, password: String? = nil, device: AccountDeviceClaim? = nil
+    ) async -> Result<PendingOutcome, AccountFailure> {
+        await value(.createFromPending(id: id, password: password, device: device)) {
+            if case .pendingOutcome(let outcome) = $0 { outcome } else { nil }
+        }
+    }
+
+    /// Adds a pending sign-in's provider to this session's account. Answers
+    /// a native redirect when a browser flow started it, else nil.
+    public func linkPending(id: String, confirmation: AccountConfirmation) async -> Result<String?, AccountFailure> {
+        switch await request(.linkPending(id: id, confirmation: confirmation), kind: .linkPending) {
+        case .success(.unit): return .success(nil)
+        case .success(.redirect(let url)): return .success(url)
+        case .failure(let failure): return .failure(failure)
+        default: return .failure(.invalidResponse)
+        }
+    }
+
+    /// A provider sign-in's one-time code and its PKCE verifier, traded for
+    /// a session like a login (ADR-0044 §5).
+    public func exchangeOAuthCode(
+        code: String, codeVerifier: String, device: AccountDeviceClaim? = nil
+    ) async -> Result<LoginSuccess, AccountFailure> {
+        await value(.exchangeOAuthCode(code: code, codeVerifier: codeVerifier, device: device)) {
+            if case .login(let login) = $0 { login } else { nil }
+        }
+    }
+
+    /// iOS's own Sign in with Apple. `nonce` is the raw value whose SHA-256
+    /// went to Apple; `name` only comes the first time.
+    public func appleNative(
+        identityToken: String, authorizationCode: String, nonce: String?, name: String?,
+        device: AccountDeviceClaim? = nil
+    ) async -> Result<AppleNativeOutcome, AccountFailure> {
+        await value(.appleNative(
+            identityToken: identityToken, authorizationCode: authorizationCode,
+            nonce: nonce, name: name, device: device)) {
+            if case .appleNative(let outcome) = $0 { outcome } else { nil }
+        }
+    }
+
+    private func unit(_ op: AccountOp) async -> Result<Void, AccountFailure> {
+        switch await request(op, kind: accountOpKind(op: op)) {
         case .success(.unit): return .success(())
         case .failure(let failure): return .failure(failure)
         default: return .failure(.invalidResponse)
+        }
+    }
+
+    private func value<T>(_ op: AccountOp, _ pick: (AccountValue) -> T?) async -> Result<T, AccountFailure> {
+        switch await request(op, kind: accountOpKind(op: op)) {
+        case .success(let value): return pick(value).map(Result.success) ?? .failure(.invalidResponse)
+        case .failure(let failure): return .failure(failure)
         }
     }
 
@@ -846,7 +996,7 @@ public enum AccountCopy {
 
     public static func message(_ failure: AccountFailure) -> String {
         switch failure.code {
-        case "invalid_credentials": "Wrong username or password."
+        case "invalid_credentials": "Wrong email or password."
         case "rate_limited": "Too many attempts. Wait a few minutes and try again."
         case "network": "Can't reach the server. Check the address and your connection."
         case "origin_required": "Enter the server address."
@@ -863,8 +1013,25 @@ public enum AccountCopy {
         case "pair_rejected": "The host refused this device. If you revoked it before, pair it with a QR code instead."
         case "invalid_offer": "The host's pairing offer was invalid."
         case "pairing_not_saved": "Paired, but this device couldn't save the pairing."
-        case "wrong_password": "The current password is wrong."
+        case "wrong_password": "The password is wrong."
         case "weak_password": "Use a password of at least 12 characters."
+        // ADR-0044: email codes, sign-in methods, provider sign-in.
+        case "invalid_code": "That code is wrong or has expired. Check the latest email, or send a new code."
+        case "invalid_email": "Enter a valid email address."
+        case "registration_closed": "This server isn't taking new accounts."
+        case "email_unavailable": "This server can't send email right now. Try again later."
+        case "email_taken": "Another account already uses that email."
+        case "password_required": "Choose a password for the account."
+        case "invalid_reauth": "The confirmation expired. Confirm again."
+        case "last_method": "This is the only way to sign in to your account. Add another before removing it."
+        case "identity_taken": "That account is already linked to another PiNomad account."
+        case "no_email": "Your account has no email to send a code to."
+        case "no_verified_email": "The provider didn't give a verified email. Sign in another way, or verify your email there first."
+        case "superseded": "You signed in another way while this sign-in was waiting."
+        case "access_denied": "Sign-in was cancelled."
+        case "invalid_state": "This sign-in expired or was started elsewhere. Start again."
+        case "exchange_failed", "invalid_token", "invalid_grant": "The provider's answer couldn't be checked. Try again."
+        case "not_found": "This sign-in expired. Start again."
         case "current_device": "That's the device you're using. Sign out instead."
         // Set by the app: a 404 for a host the list fetched after it still has.
         case "remove_host_unsupported": "This server can't remove hosts. Run pinomad leave on the host, or update the server."

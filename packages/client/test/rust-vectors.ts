@@ -16,8 +16,10 @@ import {
   normalizeServerOrigin,
   probeAccounts,
   type AccountClient,
+  type AccountConfirmation,
   type AccountFetch,
   type AccountFetchInit,
+  type EmailConfirmation,
 } from "../src/account.ts";
 import { classify } from "@pinomad/protocol/presentation.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
@@ -68,6 +70,7 @@ import {
   RESPONSE_CASES,
   SECURE_ORIGIN_CASES,
   type AccountOpDesc,
+  type ConfirmationDesc,
 } from "./account-cases.ts";
 import { DERIVE_CHAT_CASES, RETRY_CASES, SPLIT_CASES } from "./cot-view-cases.ts";
 import {
@@ -609,15 +612,15 @@ const invokeOp = (client: AccountClient, op: AccountOpDesc): Promise<unknown> =>
     case "removePushToken":
       return client.removePushToken({ apns: op.apns, environment: op.environment });
     case "changePassword":
-      return client.changePassword(op.currentPassword, op.newPassword);
+      return client.changePassword(op.reauth === undefined ? op.currentPassword : { reauth: op.reauth }, op.newPassword);
     case "deleteAccount":
-      return client.deleteAccount(op.password);
+      return client.deleteAccount(confirmation(op));
     case "listDevices":
       return client.listDevices();
     case "kickDevice":
-      return client.kickDevice(op.id, op.password);
+      return client.kickDevice(op.id, confirmation(op));
     case "removeHost":
-      return client.removeHost(op.hostId, op.password);
+      return client.removeHost(op.hostId, confirmation(op));
     case "lookupHostLink":
       return client.lookupHostLink(op.userCode);
     case "confirmHostLink":
@@ -630,6 +633,108 @@ const invokeOp = (client: AccountClient, op: AccountOpDesc): Promise<unknown> =>
       return client.confirmHostLinkRequest(op.requestId);
     case "denyHostLinkRequest":
       return client.denyHostLinkRequest(op.requestId);
+    case "authMethods":
+      return client.authMethods();
+    case "requestSignupCode":
+      return client.requestSignupCode(op.email);
+    case "register":
+      return client.register({ email: op.email, code: op.code, password: op.password, ...(op.device === undefined ? {} : { device: op.device }) });
+    case "requestPasswordReset":
+      return client.requestPasswordReset(op.email);
+    case "resetPassword":
+      return client.resetPassword({ email: op.email, code: op.code, password: op.password });
+    case "requestEmailCode":
+      return client.requestEmailCode({ email: op.email, ...emailConfirmation(op) });
+    case "setEmail":
+      return client.setEmail({ email: op.email, code: op.code, ...emailConfirmation(op) });
+    case "identities":
+      return client.identities();
+    case "unlinkProvider":
+      return client.unlinkProvider(op.provider, confirmation(op));
+    case "requestReauthCode":
+      return client.requestReauthCode();
+    case "reauth":
+      return client.reauth(op.code === undefined ? { password: op.password } : { code: op.code });
+    case "pendingSignIn":
+      return client.pendingSignIn(op.id);
+    case "createFromPending":
+      return client.createFromPending(op.id, {
+        ...(op.password === undefined ? {} : { password: op.password }),
+        ...(op.device === undefined ? {} : { device: op.device }),
+      });
+    case "linkPending":
+      return client.linkPending(op.id, confirmation(op));
+    case "exchangeOAuthCode":
+      return client.exchangeOAuthCode(op.code, op.codeVerifier, op.device);
+    case "appleNative":
+      return client.appleNative({
+        identityToken: op.identityToken,
+        authorizationCode: op.authorizationCode,
+        ...(op.nonce === undefined ? {} : { nonce: op.nonce }),
+        ...(op.name === undefined ? {} : { name: op.name }),
+        ...(op.device === undefined ? {} : { device: op.device }),
+      });
+  }
+};
+
+const confirmation = (desc: ConfirmationDesc): AccountConfirmation =>
+  desc.reauth === undefined ? desc.password : { reauth: desc.reauth };
+
+const emailConfirmation = (desc: ConfirmationDesc): EmailConfirmation =>
+  desc.reauth === undefined ? { password: desc.password } : { reauth: desc.reauth };
+
+/** The op a response case answers: its kind with placeholder arguments. */
+const responseOp = (kind: AccountOpDesc["kind"]): AccountOpDesc => {
+  switch (kind) {
+    case "login":
+      return { kind, username: "u", password: "p" };
+    case "requestPairing":
+      return { kind, hostId: "h" };
+    case "registerPushToken":
+    case "removePushToken":
+      return { kind, apns: "ab", environment: "production" };
+    case "changePassword":
+      return { kind, currentPassword: "a", newPassword: "b" };
+    case "deleteAccount":
+      return { kind, password: "p" };
+    case "kickDevice":
+      return { kind, id: 1, password: "p" };
+    case "removeHost":
+      return { kind, hostId: "h", password: "p" };
+    case "lookupHostLink":
+    case "confirmHostLink":
+    case "denyHostLink":
+      return { kind, userCode: "WDJB-MJHT" };
+    case "lookupHostLinkRequest":
+    case "confirmHostLinkRequest":
+    case "denyHostLinkRequest":
+      return { kind, requestId: "r" };
+    case "requestSignupCode":
+    case "requestPasswordReset":
+      return { kind, email: "a@b.co" };
+    case "register":
+    case "resetPassword":
+      return { kind, email: "a@b.co", code: "1", password: "p" };
+    case "requestEmailCode":
+      return { kind, email: "a@b.co", password: "p" };
+    case "setEmail":
+      return { kind, email: "a@b.co", code: "1", password: "p" };
+    case "unlinkProvider":
+      return { kind, provider: "google", password: "p" };
+    case "reauth":
+      return { kind, password: "p" };
+    case "pendingSignIn":
+      return { kind, id: "p" };
+    case "createFromPending":
+      return { kind, id: "p" };
+    case "linkPending":
+      return { kind, id: "p", password: "p" };
+    case "exchangeOAuthCode":
+      return { kind, code: "c", codeVerifier: "v" };
+    case "appleNative":
+      return { kind, identityToken: "t", authorizationCode: "c" };
+    default:
+      return { kind };
   }
 };
 
@@ -654,26 +759,7 @@ async function accountVector(): Promise<VectorFile> {
   );
   const responses = await Promise.all(
     RESPONSE_CASES.map(async (c) => {
-      const op: AccountOpDesc =
-        c.kind === "login"
-          ? { kind: "login", username: "u", password: "p" }
-          : c.kind === "requestPairing"
-            ? { kind: "requestPairing", hostId: "h" }
-            : c.kind === "registerPushToken" || c.kind === "removePushToken"
-              ? { kind: c.kind, apns: "ab", environment: "production" }
-              : c.kind === "changePassword"
-                ? { kind: "changePassword", currentPassword: "a", newPassword: "b" }
-                : c.kind === "deleteAccount"
-                  ? { kind: "deleteAccount", password: "p" }
-                  : c.kind === "kickDevice"
-                    ? { kind: "kickDevice", id: 1, password: "p" }
-                    : c.kind === "removeHost"
-                      ? { kind: "removeHost", hostId: "h", password: "p" }
-                      : c.kind === "lookupHostLink" || c.kind === "confirmHostLink" || c.kind === "denyHostLink"
-                        ? { kind: c.kind, userCode: "WDJB-MJHT" }
-                        : c.kind === "lookupHostLinkRequest" || c.kind === "confirmHostLinkRequest" || c.kind === "denyHostLinkRequest"
-                          ? { kind: c.kind, requestId: "r" }
-                          : { kind: c.kind };
+      const op = responseOp(c.kind);
       const result = await invokeOp(bearerClient("https://relay.example.com", "tok", respondFetch(c.status, c.body)), op);
       return { name: c.name, kind: c.kind, status: c.status, body: c.body, expect: wire(result) };
     }),

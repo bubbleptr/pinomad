@@ -129,7 +129,8 @@ pub fn cot(json: &Json) -> CotView {
 }
 
 use pinomad_core::account::{
-    AccountDeviceClaim, AccountHost, AccountHostPairing, AccountOp, AccountOpKind, PairingOffer,
+    AccountConfirmation, AccountDeviceClaim, AccountHost, AccountHostPairing, AccountOp, AccountOpKind, PairingOffer,
+    ReauthProof,
 };
 use pinomad_core::frames::{ApnsEnvironment, ApnsPushToken};
 use pinomad_core::endpoints::{parse_endpoint_set, ParsedEndpointSet};
@@ -174,10 +175,7 @@ pub fn account_op(json: &Json) -> AccountOp {
         AccountOpKind::Login => AccountOp::Login {
             username: text(json.get("username")).unwrap_or_default(),
             password: text(json.get("password")).unwrap_or_default(),
-            device: json.get("device").map(|device| AccountDeviceClaim {
-                id: text(device.get("id")).unwrap_or_default(),
-                name: text(device.get("name")),
-            }),
+            device: device_claim(json),
         },
         AccountOpKind::RequestPairing => AccountOp::RequestPairing {
             host_id: text(json.get("hostId")).unwrap_or_default(),
@@ -192,20 +190,21 @@ pub fn account_op(json: &Json) -> AccountOp {
         AccountOpKind::RegisterPushToken => AccountOp::RegisterPushToken { token: push_token(json) },
         AccountOpKind::RemovePushToken => AccountOp::RemovePushToken { token: push_token(json) },
         AccountOpKind::ChangePassword => AccountOp::ChangePassword {
-            current_password: text(json.get("currentPassword")).unwrap_or_default(),
+            current: match text(json.get("reauth")) {
+                Some(reauth) => AccountConfirmation::Reauth(reauth),
+                None => AccountConfirmation::Password(text(json.get("currentPassword")).unwrap_or_default()),
+            },
             new_password: text(json.get("newPassword")).unwrap_or_default(),
         },
-        AccountOpKind::DeleteAccount => AccountOp::DeleteAccount {
-            password: text(json.get("password")).unwrap_or_default(),
-        },
+        AccountOpKind::DeleteAccount => AccountOp::DeleteAccount { confirmation: confirmation(json) },
         AccountOpKind::ListDevices => AccountOp::ListDevices,
         AccountOpKind::KickDevice => AccountOp::KickDevice {
             id: num(json.get("id")).unwrap_or_default(),
-            password: text(json.get("password")).unwrap_or_default(),
+            confirmation: confirmation(json),
         },
         AccountOpKind::RemoveHost => AccountOp::RemoveHost {
             host_id: text(json.get("hostId")).unwrap_or_default(),
-            password: text(json.get("password")).unwrap_or_default(),
+            confirmation: confirmation(json),
         },
         AccountOpKind::LookupHostLink => AccountOp::LookupHostLink {
             user_code: text(json.get("userCode")).unwrap_or_default(),
@@ -225,6 +224,82 @@ pub fn account_op(json: &Json) -> AccountOp {
         AccountOpKind::DenyHostLinkRequest => AccountOp::DenyHostLinkRequest {
             request_id: text(json.get("requestId")).unwrap_or_default(),
         },
+        AccountOpKind::AuthMethods => AccountOp::AuthMethods,
+        AccountOpKind::RequestSignupCode => AccountOp::RequestSignupCode { email: field_text(json, "email") },
+        AccountOpKind::Register => AccountOp::Register {
+            email: field_text(json, "email"),
+            code: field_text(json, "code"),
+            password: field_text(json, "password"),
+            device: device_claim(json),
+        },
+        AccountOpKind::RequestPasswordReset => AccountOp::RequestPasswordReset { email: field_text(json, "email") },
+        AccountOpKind::ResetPassword => AccountOp::ResetPassword {
+            email: field_text(json, "email"),
+            code: field_text(json, "code"),
+            password: field_text(json, "password"),
+        },
+        AccountOpKind::RequestEmailCode => AccountOp::RequestEmailCode {
+            email: field_text(json, "email"),
+            confirmation: confirmation(json),
+        },
+        AccountOpKind::SetEmail => AccountOp::SetEmail {
+            email: field_text(json, "email"),
+            code: field_text(json, "code"),
+            confirmation: confirmation(json),
+        },
+        AccountOpKind::Identities => AccountOp::Identities,
+        AccountOpKind::UnlinkProvider => AccountOp::UnlinkProvider {
+            provider: field_text(json, "provider"),
+            confirmation: confirmation(json),
+        },
+        AccountOpKind::RequestReauthCode => AccountOp::RequestReauthCode,
+        AccountOpKind::Reauth => AccountOp::Reauth {
+            proof: match text(json.get("code")) {
+                Some(code) => ReauthProof::Code(code),
+                None => ReauthProof::Password(field_text(json, "password")),
+            },
+        },
+        AccountOpKind::PendingSignIn => AccountOp::PendingSignIn { id: field_text(json, "id") },
+        AccountOpKind::CreateFromPending => AccountOp::CreateFromPending {
+            id: field_text(json, "id"),
+            password: text(json.get("password")),
+            device: device_claim(json),
+        },
+        AccountOpKind::LinkPending => AccountOp::LinkPending {
+            id: field_text(json, "id"),
+            confirmation: confirmation(json),
+        },
+        AccountOpKind::ExchangeOAuthCode => AccountOp::ExchangeOAuthCode {
+            code: field_text(json, "code"),
+            code_verifier: field_text(json, "codeVerifier"),
+            device: device_claim(json),
+        },
+        AccountOpKind::AppleNative => AccountOp::AppleNative {
+            identity_token: field_text(json, "identityToken"),
+            authorization_code: field_text(json, "authorizationCode"),
+            nonce: text(json.get("nonce")),
+            name: text(json.get("name")),
+            device: device_claim(json),
+        },
+    }
+}
+
+fn field_text(json: &Json, key: &str) -> String {
+    text(json.get(key)).unwrap_or_default()
+}
+
+fn device_claim(json: &Json) -> Option<AccountDeviceClaim> {
+    json.get("device").map(|device| AccountDeviceClaim {
+        id: text(device.get("id")).unwrap_or_default(),
+        name: text(device.get("name")),
+    })
+}
+
+/// `{password}` or `{reauth}` as the cases spell a confirmation.
+fn confirmation(json: &Json) -> AccountConfirmation {
+    match text(json.get("reauth")) {
+        Some(reauth) => AccountConfirmation::Reauth(reauth),
+        None => AccountConfirmation::Password(field_text(json, "password")),
     }
 }
 
@@ -262,6 +337,22 @@ pub fn account_op_kind(name: &str) -> AccountOpKind {
         "lookupHostLinkRequest" => AccountOpKind::LookupHostLinkRequest,
         "confirmHostLinkRequest" => AccountOpKind::ConfirmHostLinkRequest,
         "denyHostLinkRequest" => AccountOpKind::DenyHostLinkRequest,
+        "authMethods" => AccountOpKind::AuthMethods,
+        "requestSignupCode" => AccountOpKind::RequestSignupCode,
+        "register" => AccountOpKind::Register,
+        "requestPasswordReset" => AccountOpKind::RequestPasswordReset,
+        "resetPassword" => AccountOpKind::ResetPassword,
+        "requestEmailCode" => AccountOpKind::RequestEmailCode,
+        "setEmail" => AccountOpKind::SetEmail,
+        "identities" => AccountOpKind::Identities,
+        "unlinkProvider" => AccountOpKind::UnlinkProvider,
+        "requestReauthCode" => AccountOpKind::RequestReauthCode,
+        "reauth" => AccountOpKind::Reauth,
+        "pendingSignIn" => AccountOpKind::PendingSignIn,
+        "createFromPending" => AccountOpKind::CreateFromPending,
+        "linkPending" => AccountOpKind::LinkPending,
+        "exchangeOAuthCode" => AccountOpKind::ExchangeOAuthCode,
+        "appleNative" => AccountOpKind::AppleNative,
         other => panic!("unknown account op kind {other}"),
     }
 }
