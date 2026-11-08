@@ -105,6 +105,9 @@ private struct HostsActions: ViewModifier {
                 guard model.accountSession != nil else { return }
                 await model.accountRefreshHosts()
             }
+            // Leaving the list drops a Pair still waiting for its invite: a
+            // late one must not take over the page the reader went to.
+            .onDisappear { model.cancelAccountPairingAsk() }
             .alert(
                 "Pair with this host?",
                 isPresented: Binding(get: { asking != nil }, set: { if !$0 { asking = nil } })
@@ -132,6 +135,16 @@ extension AppModel {
     /// The Hosts list's two halves, from the pairings held now.
     var hostsPartition: HostsPartition {
         AccountHosts.partition(rows: accountRows, storedHostKeys: machines.map(\.hostKey))
+    }
+
+    /// Make the Pair still waiting for its invite stale, and clear its
+    /// progress. Background registrations carry on; only that host's asks
+    /// are dropped.
+    func cancelAccountPairingAsk() {
+        guard let hostId = accountPairingHostId else { return }
+        accountPairingEpochs.invalidate(hostId: hostId)
+        accountPairingHostId = nil
+        accountBusy = false
     }
 
     /// Pair from a Hosts row. A pairing takes over the screen; a sheet the

@@ -54,6 +54,9 @@ struct AccountView: View {
         )) { pending in
             AppleNoAccountView(model: model, pending: pending)
         }
+        // Hosts → a host → Providers lives on this stack too: a saved login or
+        // endpoint pops this path, not the root's.
+        .environment(\.popToProviders, PopToProvidersAction(stack: "account") { path.popToProviders() })
         // This stack isn't navPath; the focus must follow it all the same.
         .onChange(of: path) { _, path in model.followVisiblePage(path.last) }
         .task {
