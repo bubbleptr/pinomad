@@ -45,6 +45,7 @@ import {
 import { AddHostDialog } from "../account/add-host.tsx";
 import { RemoveHostDialog } from "../account/remove-host.tsx";
 import { accountHostFor } from "../account/repair-via-account.tsx";
+import { GROUP_ROWS, SettingsGroup } from "../../shared/ui/settings-group.tsx";
 import { hostRoutes, type HostRoute } from "./host-routes.ts";
 import { useSettingsSubpage } from "./settings-subpage.ts";
 import {
@@ -338,16 +339,11 @@ export function HostsSection({
         <Button label="Add a host…" variant="secondary" size="sm" onClick={() => setAdding(true)} />
       </HStack>
       {accountState === undefined ? null : <AccountPairingBanners state={accountState} pairing={pairing} />}
-      <VStack gap={1}>
-        {others.length === 0 ? null : (
-          <Text type="supporting" weight="semibold">
-            Paired with this device
-          </Text>
-        )}
-        {paired.hosts.length === 0 ? (
-          <Text type="supporting">No paired hosts.</Text>
-        ) : (
-          <ul aria-label="Paired with this device" className="m-0 flex list-none flex-col gap-1 p-0">
+      {paired.hosts.length === 0 ? (
+        <Text type="supporting">No paired hosts.</Text>
+      ) : (
+        <SettingsGroup {...(others.length === 0 ? {} : { title: "Paired with this device" })}>
+          <ul aria-label="Paired with this device" className={GROUP_ROWS}>
             {paired.hosts.map((host) => (
               <PairedHostRow
                 key={host.hostKey}
@@ -362,15 +358,12 @@ export function HostsSection({
               />
             ))}
           </ul>
-        )}
-      </VStack>
+        </SettingsGroup>
+      )}
       {accountState === undefined || others.length === 0 ? null : (
-        <VStack gap={1}>
-          <Text type="supporting" weight="semibold">
-            On your account
-          </Text>
+        <SettingsGroup title="On your account">
           <AccountHostList state={accountState} hosts={others} pairing={pairing} label="On your account" />
-        </VStack>
+        </SettingsGroup>
       )}
       {adding ? <AddHostDialog onClose={() => setAdding(false)} /> : null}
     </VStack>
@@ -421,7 +414,6 @@ function PairedHostRow({
     <li aria-label={label}>
       <Item
         as="div"
-        density="compact"
         startContent={<HostStatusDot connected={connected} />}
         descriptionLines={2}
         label={label}
@@ -541,9 +533,8 @@ function HostDetail({
         )}
       </VStack>
       {connected ? (
-        <VStack gap={1}>
-          <Text weight="semibold">Status</Text>
-          <List density="compact">
+        <SettingsGroup title="Status">
+          <List hasDividers aria-label="Status">
             <ListItem
               label="Path"
               description={
@@ -589,7 +580,7 @@ function HostDetail({
               />
             )}
           </List>
-        </VStack>
+        </SettingsGroup>
       ) : null}
       <VStack gap={1}>
         <Text weight="semibold">Routes</Text>

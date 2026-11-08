@@ -11,6 +11,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { AccountConfirmation, AccountError, AccountIdentities, AccountResult } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
 import { knownSignInProviders, signInProviderName, SignInProviderMark } from "../../entities/provider/sign-in-provider.tsx";
+import { SettingsGroup } from "../../shared/ui/settings-group.tsx";
 import { accountErrorMessage } from "./account-error.ts";
 import { ConfirmDialog } from "./confirm-dialog.tsx";
 import { MIN_PASSWORD_LENGTH, NEW_PASSWORD_INPUT, passwordLength } from "./code-input.ts";
@@ -81,8 +82,8 @@ export function SignInMethods({
   };
   return (
     <VStack gap={2}>
-      <Text weight="semibold">Sign-in methods</Text>
-      <List density="compact" aria-label="Sign-in methods">
+      <SettingsGroup title="Sign-in methods">
+      <List hasDividers aria-label="Sign-in methods">
         <ListItem
           label="Password"
           description={identities.hasPassword ? "Set" : "Not set"}
@@ -112,20 +113,25 @@ export function SignInMethods({
             }
           />
         ))}
-      </List>
-      {linkable.length === 0 ? null : (
-        <HStack>
-          <DropdownMenu
-            button={{ label: "Link another…", variant: "secondary", size: "sm", isDisabled: busy }}
-            hasChevron={false}
-            items={linkable.map((provider) => ({
-              label: provider.name,
-              icon: <SignInProviderMark provider={provider.id} />,
-              onClick: () => start({ kind: "link", provider: provider.id }),
-            }))}
+        {linkable.length === 0 ? null : (
+          <ListItem
+            label="Another way to sign in"
+            description={orList(linkable.map((provider) => provider.name))}
+            endContent={
+              <DropdownMenu
+                button={{ label: "Link another…", variant: "secondary", size: "sm", isDisabled: busy }}
+                hasChevron={false}
+                items={linkable.map((provider) => ({
+                  label: provider.name,
+                  icon: <SignInProviderMark provider={provider.id} />,
+                  onClick: () => start({ kind: "link", provider: provider.id }),
+                }))}
+              />
+            }
           />
-        </HStack>
-      )}
+        )}
+      </List>
+      </SettingsGroup>
       {done === undefined ? null : <Text type="supporting">{done}</Text>}
       {open?.kind === "password" ? (
         <PasswordForm account={account} hasPassword={identities.hasPassword} onClose={close} />
@@ -316,3 +322,7 @@ function ChangePasswordOnly({ account }: { account: AccountModel }) {
     </VStack>
   );
 }
+
+/** "Google", "Google or Apple", "Google, Apple or Microsoft". */
+const orList = (names: readonly string[]): string =>
+  names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} or ${names.at(-1)}`;

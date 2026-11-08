@@ -1,3 +1,4 @@
+import { Avatar } from "@astryxdesign/core/Avatar";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { CheckboxInput } from "@astryxdesign/core/CheckboxInput";
@@ -9,7 +10,7 @@ import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import type {
   AccountDevice,
   AccountDeviceHost,
@@ -26,6 +27,7 @@ import { clearOAuthReturn, oauthReturn } from "../../entities/account/oauth-retu
 import { signInProviderName } from "../../entities/provider/sign-in-provider.tsx";
 import { OFFICIAL_SERVER_ORIGIN } from "../../shared/official-server.ts";
 import { ArrowLeft, ChevronRight } from "../../shared/ui/icons.tsx";
+import { GROUP_ROWS, SettingsGroup } from "../../shared/ui/settings-group.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { accountErrorMessage } from "./account-error.ts";
 import { AccountEmail } from "./account-email.tsx";
@@ -202,6 +204,16 @@ function ProviderLinkReturn() {
 
 const chevron = <ChevronRight aria-hidden="true" style={{ width: "var(--spacing-4)", height: "var(--spacing-4)" }} />;
 
+/** What a page holds, beside its chevron: the overview row's value. */
+function Summary({ value }: { value: string | undefined }) {
+  return (
+    <HStack gap={2} vAlign="center">
+      {value === undefined ? null : <Text type="supporting">{value}</Text>}
+      {chevron}
+    </HStack>
+  );
+}
+
 /** "Password, GitHub": the account's ways in, as the overview sums them up. */
 function useSignInSummary(account: AccountModel): string | undefined {
   const [summary, setSummary] = useState<string>();
@@ -277,52 +289,43 @@ function Overview({
   return (
     <VStack gap={5} style={{ width: "100%" }}>
       <HStack gap={3} vAlign="center">
+        <Avatar name={state.user} size="lg" tooltip={false} />
         <VStack gap={0} className="min-w-0 flex-1">
-          <Heading level={3}>{state.user}</Heading>
+          {/* An email has no spaces to wrap at; break it rather than run under the button. */}
+          <Heading level={3} style={{ overflowWrap: "anywhere" }}>
+            {state.user}
+          </Heading>
           <Text type="supporting">{server}</Text>
         </VStack>
         <Button label="Sign out…" variant="secondary" size="sm" onClick={() => setOpen("sign-out")} />
       </HStack>
-      <List density="compact" aria-label="Account">
-        <ListItem
-          label="Sign-in methods"
-          {...(methods === undefined ? {} : { description: methods })}
-          endContent={chevron}
-          onClick={() => onOpen("security")}
-        />
-        {devices.supported ? (
+      <SettingsGroup>
+        <List density="spacious" hasDividers aria-label="Account">
+          <ListItem label="Sign-in methods" endContent={<Summary value={methods} />} onClick={() => onOpen("security")} />
+          {devices.supported ? (
+            <ListItem label="Signed-in devices" endContent={<Summary value={devices.text} />} onClick={() => onOpen("devices")} />
+          ) : null}
           <ListItem
-            label="Signed-in devices"
-            {...(devices.text === undefined ? {} : { description: devices.text })}
-            endContent={chevron}
-            onClick={() => onOpen("devices")}
-          />
-        ) : null}
-        <ListItem
-          label="Hosts on this account"
-          description={hostSummary(state, hosts)}
-          endContent={chevron}
-          onClick={() => onOpen("hosts")}
-        />
-      </List>
-      <VStack gap={1}>
-        <Text weight="semibold">Danger zone</Text>
-        <List density="compact" aria-label="Danger zone">
-          <ListItem
-            label="Sign out everywhere"
-            // A node wraps where a string would be cut short beside the button.
-            description={<Text type="inherit">Ends every session on every device, including this one.</Text>}
-            endContent={
-              <Button label="Sign out everywhere…" variant="secondary" size="sm" onClick={() => setOpen("everywhere")} />
-            }
-          />
-          <ListItem
-            label="Delete account"
-            description={<Text type="inherit">{`Removes your account from ${server}. Devices stay registered on your hosts.`}</Text>}
-            endContent={<Button label="Delete account…" variant="secondary" size="sm" onClick={() => setOpen("delete")} />}
+            label="Hosts on this account"
+            endContent={<Summary value={hostSummary(state, hosts)} />}
+            onClick={() => onOpen("hosts")}
           />
         </List>
-      </VStack>
+      </SettingsGroup>
+      <SettingsGroup title="Danger zone" tone="danger">
+        <ul aria-label="Danger zone" className={GROUP_ROWS}>
+          <DangerAction
+            title="Sign out everywhere"
+            description="Ends every session on every device, including this one."
+            action={<Button label="Sign out everywhere…" variant="secondary" size="sm" onClick={() => setOpen("everywhere")} />}
+          />
+          <DangerAction
+            title="Delete account"
+            description={`Removes your account from ${server}. Devices stay registered on your hosts.`}
+            action={<Button label="Delete account…" variant="secondary" size="sm" onClick={() => setOpen("delete")} />}
+          />
+        </ul>
+      </SettingsGroup>
       {open === "sign-out" ? (
         <SignOutDialog account={account} server={server} onNotice={onNotice} onClose={() => setOpen(undefined)} />
       ) : open === "everywhere" ? (
@@ -331,6 +334,22 @@ function Overview({
         <DeleteAccountDialog account={account} server={server} onNotice={onNotice} onClose={() => setOpen(undefined)} />
       ) : null}
     </VStack>
+  );
+}
+
+/**
+ * One irreversible action: what it does, and its button. The row wraps, so on
+ * a narrow screen the button drops under the text instead of squeezing it.
+ */
+function DangerAction({ title, description, action }: { title: string; description: string; action: ReactNode }) {
+  return (
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 px-2 py-2">
+      <VStack gap={0} className="min-w-[14rem] flex-1">
+        <Text>{title}</Text>
+        <Text type="supporting">{description}</Text>
+      </VStack>
+      {action}
+    </li>
   );
 }
 
@@ -498,7 +517,9 @@ function AccountHosts({ state }: { state: SignedInState }) {
       ) : others.length === 0 ? (
         <Text type="supporting">Every host on your account is paired with this device.</Text>
       ) : (
-        <AccountHostList state={state} hosts={others} pairing={pairing} label="Hosts on your account" />
+        <SettingsGroup>
+          <AccountHostList state={state} hosts={others} pairing={pairing} label="Hosts on your account" />
+        </SettingsGroup>
       )}
       <HStack>
         <Button label="Add a host…" variant="secondary" size="sm" onClick={() => setAdding(true)} />
@@ -558,7 +579,8 @@ function Devices({ account, hosts }: { account: AccountModel; hosts: readonly Ac
       {devices === undefined ? (
         error === undefined ? <Spinner size="sm" /> : null
       ) : (
-        <List density="compact" aria-label="Signed-in devices">
+        <SettingsGroup>
+          <List hasDividers aria-label="Signed-in devices">
           {devices.map((device) => (
             <DeviceRow
               key={device.id}
@@ -568,7 +590,8 @@ function Devices({ account, hosts }: { account: AccountModel; hosts: readonly Ac
               onRemove={() => setRemoving(device)}
             />
           ))}
-        </List>
+          </List>
+        </SettingsGroup>
       )}
       {removing === undefined ? null : (
         <RemoveDeviceDialog

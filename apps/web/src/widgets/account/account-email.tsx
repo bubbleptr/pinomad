@@ -8,6 +8,7 @@ import { TextInput } from "@astryxdesign/core/TextInput";
 import { useState } from "react";
 import type { AccountConfirmation, AccountError, EmailConfirmation } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
+import { SettingsGroup } from "../../shared/ui/settings-group.tsx";
 import { accountErrorMessage } from "./account-error.ts";
 import { CODE_INPUT } from "./code-input.ts";
 import { useConfirmIdentity } from "./confirm-identity.tsx";
@@ -112,8 +113,8 @@ export function AccountEmail({ account, email }: { account: AccountModel; email:
   const title = email === undefined ? "Add email" : "Change email";
   return (
     <VStack gap={2}>
-      <Text weight="semibold">Email</Text>
-      <List density="compact" aria-label="Email">
+      <SettingsGroup title="Email">
+      <List aria-label="Email">
         <ListItem
           label={email ?? "None yet"}
           {...(changed ? { description: "Email saved." } : {})}
@@ -131,6 +132,7 @@ export function AccountEmail({ account, email }: { account: AccountModel; email:
           }
         />
       </List>
+      </SettingsGroup>
       {open ? (
         <Dialog aria-label={title} isOpen onOpenChange={(next) => (next ? undefined : setOpen(false))} purpose="form" width={460}>
           <Layout
