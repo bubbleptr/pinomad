@@ -20,7 +20,8 @@
 @source "../components/ui";
 
 /* shadcn's theme names, mapped onto page.css's tokens rather than given values of
-   their own. The page is dark only, so there is no light set. */
+   their own. Each zone of the page (page.css) redefines those tokens, so the
+   components follow it from night into daylight without a light set here. */
 @theme inline {
   --color-background: var(--bg);
   --color-foreground: var(--fg);

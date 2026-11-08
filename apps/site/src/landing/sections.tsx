@@ -1,10 +1,10 @@
-import { Fragment, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { localized, type Lang } from "@/lib/i18n.ts";
 import { githubUrl } from "@/lib/nav.ts";
-import { buttonVariants } from "@/components/ui/button.tsx";
 import { blogUrl, type LandingCopy } from "./copy.tsx";
 import { AgentsDiagram, ConnectionDiagram, EnvironmentsDiagram } from "./diagrams.tsx";
 import { DurableDiagram } from "./durable.tsx";
+import { ArrowIcon } from "./icons.tsx";
 import { shot } from "./shots.ts";
 
 // The landing page's sections. The interactive parts (the durable diagram, the
@@ -13,7 +13,9 @@ import { shot } from "./shots.ts";
 export function SectionHead({ id, eyebrow, title, lead }: { id: string; eyebrow: string; title: ReactNode; lead?: string }) {
   return (
     <>
-      <p className="eyebrow">{eyebrow}</p>
+      <p className="eyebrow">
+        {eyebrow}
+      </p>
       <h2 id={id}>{title}</h2>
       {lead && <p className="section-lead">{lead}</p>}
     </>
@@ -52,17 +54,50 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
   const image = shot(lang, "hero", 1200, 2400);
   return (
     <section className="hero" aria-labelledby="hero-title">
-      <div className="wrap">
+      <div className="wrap hero-inner">
+        {/* A total eclipse: the disc is the page's own black, so only its corona and the
+            diamond-ring glint on its rim show. */}
+        <div className="eclipse" aria-hidden="true">
+          <span className="corona" />
+          <span className="corona-rays" />
+          <span className="glint" />
+        </div>
         <h1 id="hero-title">{t.title}</h1>
         <p className="lead">{t.lead}</p>
         <div className="actions">
-          <a className={buttonVariants()} href="#quick-start">
+          <a className="cta" href="#quick-start">
             {t.start}
+            <span className="cta-arrow">
+              <ArrowIcon />
+            </span>
           </a>
           <a className="text-link" href={githubUrl}>
             {t.github}
           </a>
         </div>
+      </div>
+      {/* Everything under the ring, as one block: the spec line, then the models. */}
+      <div className="hero-meta">
+        <div className="wrap">
+          <dl className="specs">
+            {t.specs.map((spec) => (
+              <div key={spec.label}>
+                <dt>{spec.label}</dt>
+                <dd>{spec.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+        <div className="models">
+          <p className="models-label">{t.modelsLabel}</p>
+          {/* Two copies of the list scroll as one band; the second is decoration. */}
+          <div className="ticker">
+            <ModelList t={t} />
+            <ModelList t={t} hidden />
+          </div>
+        </div>
+      </div>
+      <div className="wrap">
         <figure className="shot shot-window hero-shot">
           <img
             src={image.src}
@@ -74,20 +109,19 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
             fetchPriority="high"
           />
         </figure>
-        <div className="models">
-          <span className="models-label">{t.modelsLabel}</span>
-          <ul>
-            {/* The names are inline and unbreakable; the space after each is where the line wraps. */}
-            {t.models.map((model) => (
-              <Fragment key={model}>
-                <li>{model}</li>{" "}
-              </Fragment>
-            ))}
-            <li className="models-more">{t.modelsMore}</li>
-          </ul>
-        </div>
       </div>
     </section>
+  );
+}
+
+function ModelList({ t, hidden }: { t: LandingCopy["hero"]; hidden?: boolean }) {
+  return (
+    <ul aria-hidden={hidden || undefined}>
+      {t.models.map((model) => (
+        <li key={model}>{model}</li>
+      ))}
+      <li className="models-more">{t.modelsMore}</li>
+    </ul>
   );
 }
 

@@ -12,7 +12,7 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "border-transparent bg-primary text-primary-foreground transition-[background-color,border-color] duration-150 ease-[ease] hover:bg-[oklch(0.86_0_0)] active:bg-[oklch(0.8_0_0)] disabled:bg-secondary disabled:text-muted-foreground",
+          "border-transparent bg-primary text-primary-foreground transition-[background-color,border-color] duration-150 ease-[ease] hover:bg-primary/85 active:bg-primary/75 disabled:bg-secondary disabled:text-muted-foreground",
         quiet:
           "border-input bg-transparent text-foreground transition-[background-color,border-color] duration-150 ease-[ease] hover:border-muted-foreground hover:bg-muted active:bg-accent",
         outline: "border-input bg-transparent text-foreground hover:bg-accent",

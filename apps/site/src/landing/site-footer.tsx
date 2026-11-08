@@ -48,6 +48,9 @@ export function SiteFooter({ lang, t }: { lang: Lang; t: LandingCopy["footer"] }
           </ul>
         </nav>
       </div>
+      <p className="footer-mark" aria-hidden="true">
+        PiNomad
+      </p>
     </footer>
   );
 }

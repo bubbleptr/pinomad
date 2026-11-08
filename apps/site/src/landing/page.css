@@ -1,27 +1,129 @@
-/* Near-black and white, no accent colour: the product does the talking. Everything is in this
-   file and the ones landing.css imports beside it — no style props and no <style> inside the
-   SVGs — so the page runs under style-src 'self'. */
+/* One sky, read top to bottom: Void Eclipse black, Abyss Blue, Silver Mist. The page
+   descends through it — night at the top, the blue hour in the middle, a horizon that
+   opens onto daylight for getting started. Each zone (.zone-night, .zone-abyss,
+   .zone-dawn) sets the colour tokens for what's inside it, so components only ever
+   read --bg, --fg and friends. Film grain lies over every zone's background.
+
+   Everything is in this file and the ones landing.css imports beside it — no style
+   props and no <style> inside the SVGs — so the page runs under style-src 'self'. */
+
+@font-face {
+  font-family: "Geist Serif";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("../styles/fonts/GeistSerifVF.woff2") format("woff2");
+}
 
 :root {
   color-scheme: dark;
-  /* Neutral greys with a faint cool bias; surfaces step up in lightness as they rise. */
-  --bg: oklch(0.15 0.003 260);
-  --surface: oklch(0.185 0.003 260);
-  --surface-2: oklch(0.22 0.003 260);
-  --border: oklch(0.27 0.003 260);
-  --border-strong: oklch(0.36 0.003 260);
-  --fg: oklch(0.97 0 0);
-  --fg-2: oklch(0.76 0.003 260);
-  --fg-3: oklch(0.62 0.003 260);
+  /* The palette. */
+  --void: #0b0b0b;
+  --abyss: #2b3b79;
+  --mist: #e4e4e4;
+  /* 256px tiles drawn at 128px: one speck per device pixel on a 2x screen, so the
+     grain reads as fine film rather than as dots. Each value is a whole background
+     layer (image / position / size), dropped into the zones' background lists. */
+  --grain: url("./grain.png") 0 0 / 128px 128px;
+  /* Black specks show far more on mist than white ones do on black. */
+  --grain-light: url("./grain-light.png") 0 0 / 128px 128px;
+
+  --bg: var(--void);
+  --surface: oklch(0.17 0.012 272);
+  --surface-2: oklch(0.215 0.016 272);
+  --border: rgb(228 228 228 / 0.1);
+  --border-strong: rgb(228 228 228 / 0.2);
+  --fg: var(--mist);
+  --fg-2: oklch(0.78 0.012 272);
+  --fg-3: oklch(0.64 0.018 272);
+
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-reveal: cubic-bezier(0.215, 0.61, 0.355, 1);
   --font: Montserrat, -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
     "Microsoft YaHei", "Noto Sans CJK SC", "Segoe UI", sans-serif;
+  /* Chinese headlines fall back to a Song face; Windows has none worth setting this
+     large (SimSun is the default serif there), so it gets YaHei instead. */
+  --font-display: "Geist Serif", "Songti SC", STSong, "Noto Serif CJK SC", "Source Han Serif SC",
+    "Microsoft YaHei", serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  --measure: 72rem;
-  --gutter: clamp(1rem, 4vw, 2rem);
+  --measure: 76rem;
+  --gutter: clamp(1.25rem, 4vw, 2.5rem);
   --radius: 0.875rem;
-  --section-space: clamp(5rem, 12vw, 8.5rem);
+  --section-space: clamp(5.5rem, 12vw, 9.5rem);
+}
+
+/* —— Zones —— */
+.zone-abyss {
+  --surface: rgb(228 228 228 / 0.05);
+  --surface-2: rgb(228 228 228 / 0.09);
+  --border: rgb(228 228 228 / 0.13);
+  --border-strong: rgb(228 228 228 / 0.26);
+  --fg-2: oklch(0.85 0.02 272);
+  --fg-3: oklch(0.76 0.03 272);
+}
+
+.zone-dawn,
+.site-footer {
+  color-scheme: light;
+  --bg: var(--mist);
+  --surface: oklch(0.94 0.004 272);
+  --surface-2: oklch(0.975 0.003 272);
+  --border: rgb(11 11 11 / 0.12);
+  --border-strong: rgb(11 11 11 / 0.26);
+  --fg: var(--void);
+  --fg-2: oklch(0.36 0.02 272);
+  --fg-3: oklch(0.46 0.03 272);
+}
+
+.zone {
+  color: var(--fg);
+}
+
+.zone-abyss {
+  padding-bottom: var(--section-space);
+}
+
+.zone-night {
+  background: var(--grain), var(--void);
+}
+
+/* Night into the blue hour, with the darkest stretch kept long so the first section
+   still reads as night. */
+.zone-abyss {
+  background:
+    var(--grain),
+    linear-gradient(
+      to bottom,
+      var(--void),
+      oklch(0.17 0.03 270) 14%,
+      oklch(0.24 0.07 270) 32%,
+      var(--abyss) 58%,
+      oklch(0.37 0.1 270)
+    );
+}
+
+/* The horizon: blue thins to lavender grey, then to mist. No text sits on it. */
+.horizon {
+  height: clamp(14rem, 42vh, 28rem);
+  background:
+    var(--grain),
+    linear-gradient(
+      to bottom,
+      oklch(0.37 0.1 270),
+      oklch(0.385 0.098 270) 12%,
+      oklch(0.43 0.09 271) 26%,
+      oklch(0.52 0.07 273) 42%,
+      oklch(0.63 0.05 275) 58%,
+      oklch(0.75 0.03 275) 74%,
+      oklch(0.85 0.012 275) 88%,
+      var(--mist)
+    );
+}
+
+.zone-dawn,
+.site-footer {
+  background: var(--grain-light), var(--mist);
 }
 
 *,
@@ -33,7 +135,7 @@
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
-  background: var(--bg);
+  background: var(--void);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -44,13 +146,18 @@ html {
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--void);
   color: var(--fg);
   font-family: var(--font);
   font-size: 1rem;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   font-synthesis: none;
+}
+
+.landing {
+  overflow-x: clip;
+  counter-reset: section;
 }
 
 img {
@@ -85,6 +192,11 @@ a {
   outline: 2px solid var(--fg);
   outline-offset: 3px;
   border-radius: 4px;
+}
+
+/* The header sits outside the zones and changes tone on its own. */
+.site-header :focus-visible {
+  outline-color: var(--header-fg);
 }
 
 code {
@@ -152,35 +264,91 @@ code {
 }
 
 /* —— Header ——
-   The shared bar (components/site-header.css) in the page's colours. */
+   The shared bar (components/site-header.css), night-coloured all the way down: over
+   daylight it reads as a strip of dark glass. */
 .site-header {
-  --header-bg: var(--bg);
-  --header-fg: var(--fg);
-  --header-fg-muted: var(--fg-2);
-  --header-border: var(--border);
-  --header-border-strong: var(--border-strong);
+  --header-bg: var(--void);
+  --header-fg: var(--mist);
+  --header-fg-muted: oklch(0.78 0.012 272);
+  --header-border: rgb(228 228 228 / 0.08);
+  --header-border-strong: rgb(228 228 228 / 0.2);
+}
+
+/* landing.tsx sets data-tone from the zone under the bar, so it turns blue over the blue
+   sections and to frosted mist over the light ones. No attribute (before the script
+   runs, or without it) is the night tone above. */
+.site-header {
+  transition:
+    background-color 0.35s ease,
+    border-color 0.35s ease,
+    color 0.35s ease;
+}
+
+.site-header :is(a, button) {
+  transition:
+    color 0.35s ease,
+    background-color 0.35s ease,
+    border-color 0.35s ease,
+    box-shadow 0.35s ease;
+}
+
+.site-header[data-tone="abyss"] {
+  --header-bg: var(--abyss);
+  --header-fg: var(--mist);
+  --header-fg-muted: oklch(0.86 0.02 272);
+  --header-border: rgb(228 228 228 / 0.12);
+  --header-border-strong: rgb(228 228 228 / 0.3);
+}
+
+.site-header[data-tone="dawn"] {
+  --header-bg: var(--mist);
+  --header-fg: var(--void);
+  --header-fg-muted: oklch(0.36 0.02 272);
+  --header-border: rgb(11 11 11 / 0.1);
+  --header-border-strong: rgb(11 11 11 / 0.22);
+}
+
+/* The bar's call to action: a solid pill in the bar's own ink, so it inverts with the
+   tone — mist on night and blue, ink on mist. */
+.landing .site-header .app-link {
+  border-color: transparent;
+  background: var(--header-fg);
+  color: var(--header-bg);
+  font-weight: 600;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.35),
+    0 1px 2px rgb(0 0 0 / 0.25);
+}
+
+/* The colour is restated here because site-header.css's link :hover rule, which
+   outranks the base rule above, turns link text to --header-fg. */
+.landing .site-header .app-link:hover {
+  border-color: transparent;
+  background: color-mix(in oklch, var(--header-fg) 86%, var(--header-bg));
+  color: var(--header-bg);
 }
 
 section[id] {
   scroll-margin-top: 5rem;
 }
 
-/* —— Type —— */
+/* —— Type: Geist Serif for display, Montserrat for reading, mono for labels —— */
 h1,
 h2 {
-  font-weight: 500;
+  font-family: var(--font-display);
+  font-weight: 400;
   text-wrap: balance;
 }
 
 h1 {
-  font-size: clamp(2.35rem, 6vw, 4.1rem);
-  line-height: 1.06;
+  font-size: clamp(2.9rem, 6.4vw, 5.6rem);
+  line-height: 0.98;
   letter-spacing: -0.035em;
 }
 
 h2 {
-  font-size: clamp(1.85rem, 4vw, 2.75rem);
-  line-height: 1.12;
+  font-size: clamp(2.4rem, 5.4vw, 4.5rem);
+  line-height: 1.02;
   letter-spacing: -0.03em;
 }
 
@@ -196,9 +364,25 @@ html[lang="zh-CN"] :is(h1, h2, h3, h4) {
   letter-spacing: 0;
 }
 
+html[lang="zh-CN"] :is(h1, h2) {
+  font-weight: 600;
+}
+
+/* Break Chinese headings at punctuation and spaces rather than inside a word; a phrase
+   too long for the line still breaks anywhere instead of overflowing. */
+html[lang="zh-CN"] :is(h1, h2) {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
 html[lang="zh-CN"] h1 {
-  font-size: clamp(2rem, 5.4vw, 3.75rem);
-  line-height: 1.2;
+  font-size: clamp(2rem, 6.6vw, 5.5rem);
+  line-height: 1.14;
+}
+
+html[lang="zh-CN"] h2 {
+  font-size: clamp(2.1rem, 4.6vw, 3.75rem);
+  line-height: 1.18;
 }
 
 .lead,
@@ -208,27 +392,48 @@ html[lang="zh-CN"] h1 {
 }
 
 .lead {
-  max-width: 40rem;
-  font-size: clamp(1.05rem, 1.6vw, 1.175rem);
+  max-width: 34rem;
+  font-size: clamp(1.05rem, 1.6vw, 1.2rem);
 }
 
 .section-lead {
   max-width: 38rem;
-  margin-top: 1rem;
-  font-size: 1.05rem;
+  margin-top: 1.5rem;
+  font-size: 1.075rem;
 }
 
+/* Numbered like plates in a catalogue: "02 — Any screen". The number comes from a
+   counter, so sections can move without renumbering by hand. */
 .eyebrow {
-  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin-bottom: 1.5rem;
   color: var(--fg-3);
-  font-size: 0.8rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
+.eyebrow::before {
+  counter-increment: section;
+  content: counter(section, decimal-leading-zero);
+  order: -2;
+  color: var(--fg);
+}
+
+.eyebrow::after {
+  content: "";
+  order: -1;
+  flex: 0 0 2.5rem;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.6;
+}
+
 html[lang="zh-CN"] .eyebrow {
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
 }
 
 /* —— Buttons —— */
@@ -237,7 +442,7 @@ html[lang="zh-CN"] .eyebrow {
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 0.75rem 1.5rem;
+  gap: 0.75rem 1.75rem;
 }
 
 .text-link {
@@ -247,80 +452,410 @@ html[lang="zh-CN"] .eyebrow {
   color: var(--fg-2);
   font-weight: 600;
   font-size: 0.95rem;
-  text-decoration: none;
-  transition: color 0.15s ease;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, currentColor 35%, transparent);
+  text-underline-offset: 0.3em;
+  transition:
+    color 0.15s ease,
+    text-decoration-color 0.15s ease;
 }
 
 .text-link:hover {
   color: var(--fg);
+  text-decoration-color: currentColor;
 }
 
-/* —— Hero —— */
+/* The hero's call to action: brushed silver lit from above, with a halo in the corona's
+   blue under it, and an arrow in a dark bead that nudges forward on hover. */
+.cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 3rem;
+  padding: 0.4rem 0.4rem 0.4rem 1.4rem;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #fbfbfd, var(--mist) 55%, oklch(0.85 0.012 272));
+  color: var(--void);
+  font-size: 0.975rem;
+  font-weight: 600;
+  text-decoration: none;
+  box-shadow:
+    inset 0 1px 0 #fff,
+    inset 0 -1px 0 rgb(11 11 11 / 0.12),
+    0 0 0 1px rgb(228 228 228 / 0.3),
+    0 0.6rem 1.6rem -0.5rem oklch(0.6 0.12 272 / 0.6),
+    0 0 2.75rem -0.4rem oklch(0.7 0.09 272 / 0.35);
+  transition:
+    box-shadow 0.25s ease,
+    translate 0.25s var(--ease-out),
+    scale 0.15s ease;
+}
+
+.cta-arrow {
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 50%;
+  background: var(--void);
+  color: var(--mist);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14);
+}
+
+.cta-arrow svg {
+  width: 1rem;
+  height: 1rem;
+  transition: translate 0.25s var(--ease-out);
+}
+
+@media (hover: hover) {
+  .cta:hover {
+    translate: 0 -1px;
+    box-shadow:
+      inset 0 1px 0 #fff,
+      inset 0 -1px 0 rgb(11 11 11 / 0.12),
+      0 0 0 1px rgb(228 228 228 / 0.45),
+      0 0.8rem 2rem -0.5rem oklch(0.62 0.13 272 / 0.75),
+      0 0 3.5rem -0.2rem oklch(0.72 0.1 272 / 0.5);
+  }
+
+  .cta:hover .cta-arrow svg {
+    translate: 0.15rem 0;
+  }
+}
+
+.cta:active {
+  translate: 0 0;
+  scale: 0.98;
+}
+
+/* —— Hero: a total eclipse, the headline across its dark face —— */
+/* The disc and where its centre sits below the headline's top live here, so the
+   padding can clear the whole ring under the header at any width. */
 .hero {
-  padding-top: clamp(3rem, 8vw, 5.5rem);
+  --disc: min(96vw, 48rem);
+  --eclipse-y: clamp(4.6rem, 10.2vw, 9rem);
+  position: relative;
+  padding-top: calc(var(--disc) / 2 - var(--eclipse-y) + clamp(2.5rem, 6vw, 4.5rem));
   text-align: center;
 }
 
-/* Two lines, one per selling point; a line wraps only when the screen is too
-   narrow to hold it. */
+/* Tall enough to reach past the ring's lower rim, so whatever follows starts a fixed
+   step below the ring rather than wherever the text happens to end. */
+.hero-inner {
+  position: relative;
+  isolation: isolate;
+  min-height: calc(var(--eclipse-y) + var(--disc) / 2 + clamp(0.5rem, 2vw, 1.5rem));
+}
+
+/* Sized off the disc: the box is 1.6 discs wide, so the rim sits at 62.5% of its
+   radius. Centred on the headline. */
+.eclipse {
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  /* A little below the headline's middle, so the lead and buttons sit inside too. */
+  top: var(--eclipse-y);
+  width: calc(var(--disc) * 1.6);
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  pointer-events: none;
+}
+
+/* Too narrow to hold the lead inside the ring: the eclipse rises over the headline
+   instead, and the text runs on below it. */
+@media (max-width: 40rem) {
+  .hero {
+    --disc: 64vw;
+    --eclipse-y: -30vw;
+  }
+}
+
+.corona,
+.corona-rays {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+
+.corona {
+  background:
+    var(--grain),
+    radial-gradient(
+      circle closest-side,
+      var(--void) 0 62.2%,
+      oklch(0.99 0.01 272) 62.5%,
+      oklch(0.93 0.03 272 / 0.95) 63.1%,
+      oklch(0.78 0.07 272 / 0.62) 64.6%,
+      oklch(0.56 0.11 271 / 0.42) 68%,
+      oklch(0.4 0.11 270 / 0.26) 75%,
+      oklch(0.3 0.08 270 / 0.1) 87%,
+      transparent 100%
+    );
+}
+
+/* Streamers: an uneven fan of light, kept to a ring outside the disc and blurred. */
+.corona-rays {
+  background: conic-gradient(
+    from 10deg,
+    transparent 0deg,
+    rgb(228 228 228 / 0.22) 9deg,
+    transparent 21deg,
+    rgb(170 185 240 / 0.16) 38deg,
+    transparent 52deg,
+    rgb(228 228 228 / 0.3) 70deg,
+    transparent 77deg,
+    rgb(150 170 235 / 0.18) 104deg,
+    transparent 131deg,
+    rgb(228 228 228 / 0.2) 158deg,
+    transparent 166deg,
+    rgb(170 185 240 / 0.24) 197deg,
+    transparent 214deg,
+    rgb(228 228 228 / 0.18) 236deg,
+    transparent 251deg,
+    rgb(150 170 235 / 0.22) 281deg,
+    transparent 296deg,
+    rgb(228 228 228 / 0.26) 318deg,
+    transparent 331deg
+  );
+  mask-image: radial-gradient(circle closest-side, transparent 62.4%, #000 63%, rgb(0 0 0 / 0.5) 75%, transparent 96%);
+  filter: blur(10px);
+}
+
+/* The diamond ring: the last bead of sunlight on the rim, up and to the right. */
+.glint {
+  position: absolute;
+  left: calc(50% + 31.25% * cos(-58deg));
+  top: calc(50% + 31.25% * sin(-58deg));
+  width: 0;
+  height: 0;
+}
+
+.glint::before,
+.glint::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  translate: -50% -50%;
+}
+
+.glint::before {
+  width: clamp(5rem, 12vw, 9rem);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle closest-side,
+    #fff 0 7%,
+    oklch(0.95 0.03 272 / 0.9) 14%,
+    oklch(0.75 0.09 272 / 0.4) 34%,
+    oklch(0.5 0.12 270 / 0.12) 62%,
+    transparent
+  );
+}
+
+/* A lens streak through the bead. */
+.glint::after {
+  width: clamp(14rem, 40vw, 30rem);
+  height: 1px;
+  rotate: -14deg;
+  background: linear-gradient(90deg, transparent, oklch(0.95 0.03 272 / 0.75), transparent);
+}
+
 .hero h1 .line {
   display: block;
 }
 
+/* Where a line runs over the rim, a halo of the night keeps it legible. */
+.hero h1 {
+  text-shadow: 0 0 1.25rem var(--void), 0 0 2.5rem rgb(11 11 11 / 0.6);
+}
+
 .hero .lead {
-  margin: 1.5rem auto 0;
+  margin: 2rem auto 0;
 }
 
 .hero .actions {
-  margin-top: 2.25rem;
+  margin-top: 2.5rem;
 }
 
-/* Model providers: plain names, no marks. */
-.models {
-  max-width: 46rem;
-  margin: 2.25rem auto 0;
+/* Spec pairs set like the label on a colour swatch: HOST   macOS · Linux. */
+.specs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem 2.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.specs div {
+  display: flex;
+  gap: 1rem;
+}
+
+.specs dt {
   color: var(--fg-3);
-  font-size: 0.85rem;
-  text-wrap: balance;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.specs dd {
+  color: var(--fg-2);
+}
+
+/* Spec line, then the models: the label sits close to its ticker, further from the specs. */
+.hero-meta {
+  margin-top: 3rem;
+}
+
+.models {
+  margin-top: clamp(2.5rem, 5vw, 3.5rem);
 }
 
 .models-label {
-  display: block;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.9rem;
+  color: var(--fg-3);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+html[lang="zh-CN"] .models-label {
+  letter-spacing: 0.06em;
+}
+
+/* Model providers drift past as one band, fading out at both edges. */
+.ticker {
+  display: flex;
+  width: max-content;
+}
+
+.models {
+  overflow: hidden;
+  mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+}
+
+.ticker ul {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+}
+
+.ticker li {
+  display: flex;
+  align-items: baseline;
   color: var(--fg-2);
-}
-
-.models ul {
-  display: inline;
-}
-
-/* Each name stays whole; the separator rides on the name before it, so a line
-   never starts with one. */
-.models li {
-  display: inline;
+  font-family: var(--font-display);
+  font-size: clamp(1.4rem, 2.6vw, 2rem);
   white-space: nowrap;
 }
 
-.models li:not(:last-child)::after {
-  content: "·";
-  margin-inline: 0.4em 0.15em;
+.ticker li::after {
+  content: "✦";
+  margin-inline: 1.4em;
+  color: var(--fg-3);
+  font-size: 0.45em;
+  translate: 0 -0.35em;
 }
 
 .models-more {
-  color: var(--fg-2);
+  font-style: italic;
 }
 
+/* The app, risen in front of the eclipse's lower rim. */
 .hero-shot {
-  margin-top: clamp(2.5rem, 6vw, 3.5rem);
+  margin-top: clamp(3rem, 7vw, 5rem);
+  box-shadow:
+    0 -1.5rem 7rem -1rem oklch(0.45 0.12 270 / 0.55),
+    0 2.5rem 6rem -1rem rgb(0 0 0 / 0.8);
 }
 
-/* Keeps the Chinese h1's first clause on one line — but only when it fits. The
-   clause is 10 characters at the h1's 2rem floor plus the gutters, about 23rem;
-   media-query rem follows the browser's default font size, so a larger default
-   (or a narrower phone) drops the rule and lets the clause wrap. */
+/* Keeps the Chinese h1's first clause on one line — but only when it fits. */
 @media (min-width: 23rem) {
   .nowrap {
     white-space: nowrap;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ticker {
+    animation: drift 60s linear infinite;
+  }
+
+  .models:hover .ticker {
+    animation-play-state: paused;
+  }
+
+  .corona-rays {
+    animation: turn 240s linear infinite;
+  }
+
+  .corona {
+    animation: dawn 2.4s var(--ease-out) both;
+  }
+
+  .glint {
+    animation: flare 2.8s var(--ease-out) 0.5s both;
+  }
+
+  .glint::before {
+    animation: breathe 7s ease-in-out 3.3s infinite alternate;
+  }
+
+  /* The screenshot tips up from the horizon as it scrolls in. */
+  @supports (animation-timeline: view()) {
+    .hero-shot {
+      transform-origin: 50% 100%;
+      animation: rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 40%;
+    }
+  }
+}
+
+@keyframes drift {
+  to {
+    translate: -50% 0;
+  }
+}
+
+@keyframes turn {
+  to {
+    rotate: 1turn;
+  }
+}
+
+@keyframes dawn {
+  from {
+    opacity: 0;
+    scale: 0.96;
+  }
+}
+
+@keyframes flare {
+  from {
+    opacity: 0;
+    scale: 0.2;
+  }
+  55% {
+    opacity: 1;
+    scale: 1.5;
+  }
+}
+
+@keyframes breathe {
+  to {
+    scale: 1.25;
+    opacity: 0.8;
+  }
+}
+
+@keyframes rise {
+  from {
+    transform: perspective(1800px) rotateX(24deg) scale(0.9);
+    opacity: 0.4;
   }
 }
 
@@ -398,14 +933,8 @@ html[lang="zh-CN"] .eyebrow {
 }
 
 /* The bezel is the black ring between the titanium and the screen. */
-/* The light behind the phone is wider than a phone screen; clip it, not the page. */
-.section-showcase {
-  overflow-x: clip;
-}
-
-/* In its section: centred in the picture column, with a soft pool of light behind it. */
+/* In its section: centred in the picture column, standing still. */
 .showcase-phone {
-  isolation: isolate;
   justify-self: center;
   width: min(17rem, 72%);
 }
@@ -413,22 +942,6 @@ html[lang="zh-CN"] .eyebrow {
 @media (min-width: 56rem) {
   .showcase-phone {
     width: min(19.5rem, 70%);
-  }
-}
-
-.showcase-phone::before {
-  content: "";
-  position: absolute;
-  inset: -12% -45%;
-  z-index: -1;
-  background: radial-gradient(closest-side, oklch(0.32 0.004 260 / 0.55), transparent);
-  pointer-events: none;
-}
-
-/* The float sits on the body, so the figure stays free for the scroll reveal's translate. */
-@media (prefers-reduced-motion: no-preference) {
-  .showcase-phone .phone-body {
-    animation: float 7s var(--ease-in-out) infinite;
   }
 }
 
@@ -524,6 +1037,20 @@ html[lang="zh-CN"] .eyebrow {
   max-width: 44rem;
 }
 
+/* The first section after the horizon starts close: the gradient already gave it air. */
+.zone-dawn > .section:first-child {
+  padding-top: clamp(2rem, 5vw, 4rem);
+}
+
+/* Beside a picture the column is half the page, so the heading steps down a size. */
+.split h2 {
+  font-size: clamp(2.3rem, 4.4vw, 3.6rem);
+}
+
+html[lang="zh-CN"] .split h2 {
+  font-size: clamp(2rem, 3.6vw, 3rem);
+}
+
 /* Text beside a picture; stacks on phones. */
 .split {
   display: grid;
@@ -533,8 +1060,8 @@ html[lang="zh-CN"] .eyebrow {
 
 @media (min-width: 56rem) {
   .split {
-    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
-    gap: 4.5rem;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: clamp(3rem, 6vw, 6rem);
   }
 }
 
@@ -629,16 +1156,16 @@ html[lang="zh-CN"] .eyebrow {
    encrypted, violet for the model, one hue per agent. SVG units are px here, so
    sizes are in the drawing's own units. —— */
 :root {
-  --dg-plate: oklch(0.2 0.003 260);
+  --dg-plate: oklch(0.19 0.02 272);
   --dg-hatch: rgb(255 255 255 / 0.03);
   --dg-hairline: rgb(255 255 255 / 0.07);
   --dg-shine: rgb(255 255 255 / 0.07);
-  --dg-card: oklch(0.275 0.004 260);
-  --dg-card-back: oklch(0.235 0.003 260);
-  --dg-screen: oklch(0.19 0.003 260);
-  --dg-bar: oklch(0.36 0.004 260);
-  --dg-bar-strong: oklch(0.45 0.004 260);
-  --dg-icon: oklch(0.66 0.004 260);
+  --dg-card: oklch(0.27 0.025 272);
+  --dg-card-back: oklch(0.23 0.022 272);
+  --dg-screen: oklch(0.175 0.018 272);
+  --dg-bar: oklch(0.36 0.025 272);
+  --dg-bar-strong: oklch(0.46 0.03 272);
+  --dg-icon: oklch(0.68 0.03 272);
   --dg-line: rgb(255 255 255 / 0.2);
   --dg-line-strong: rgb(255 255 255 / 0.34);
   --dg-green: oklch(0.76 0.15 155);
@@ -649,12 +1176,59 @@ html[lang="zh-CN"] .eyebrow {
   --dg-rose: oklch(0.74 0.11 0);
 }
 
+/* Diagrams set their own text tokens: light on the dark and blue plates, and ink on
+   the light plate in a mist section (below). */
 .diagram {
+  --fg: var(--mist);
+  --fg-2: oklch(0.87 0.02 272);
+  --fg-3: oklch(0.79 0.03 272);
+  color: var(--fg);
   padding: clamp(0.5rem, 2vw, 1.5rem);
   border-radius: var(--radius);
   background-color: var(--dg-plate);
   background-image: repeating-linear-gradient(-45deg, var(--dg-hatch) 0 1px, transparent 1px 7px);
   box-shadow: inset 0 0 0 1px var(--dg-hairline);
+}
+
+/* In the blue sections the plate is Abyss Blue a shade under the ground, and the cards
+   step up from it, so a diagram reads as part of the blue rather than a hole in it. */
+.zone-abyss .diagram {
+  --dg-plate: oklch(0.29 0.08 270);
+  --dg-hatch: rgb(255 255 255 / 0.035);
+  --dg-hairline: rgb(255 255 255 / 0.12);
+  --dg-shine: rgb(255 255 255 / 0.1);
+  --dg-card: oklch(0.4 0.09 271);
+  --dg-card-back: oklch(0.35 0.085 271);
+  --dg-screen: oklch(0.26 0.07 270);
+  --dg-bar: oklch(0.52 0.07 272);
+  --dg-bar-strong: oklch(0.62 0.06 272);
+  --dg-icon: oklch(0.82 0.035 272);
+}
+
+/* On the mist: a light plate, white cards, ink text and soft shadows. */
+.zone-dawn .diagram {
+  --fg: var(--void);
+  --fg-2: oklch(0.36 0.02 272);
+  --fg-3: oklch(0.5 0.025 272);
+  --dg-plate: oklch(0.955 0.004 272);
+  --dg-hatch: rgb(11 11 11 / 0.035);
+  --dg-hairline: rgb(11 11 11 / 0.1);
+  --dg-shine: rgb(255 255 255 / 0.9);
+  --dg-card: oklch(0.995 0.002 272);
+  --dg-card-back: oklch(0.97 0.003 272);
+  --dg-screen: oklch(0.93 0.006 272);
+  --dg-bar: oklch(0.86 0.01 272);
+  --dg-bar-strong: oklch(0.76 0.015 272);
+  --dg-icon: oklch(0.42 0.03 272);
+  --dg-line: rgb(11 11 11 / 0.22);
+  --dg-line-strong: rgb(11 11 11 / 0.36);
+  --dg-violet: oklch(0.55 0.15 295);
+  --dg-green: oklch(0.6 0.15 155);
+}
+
+.zone-dawn .diagram feDropShadow {
+  flood-color: oklch(0.3 0.08 270);
+  flood-opacity: 0.14;
 }
 
 .diagram svg {
@@ -1125,10 +1699,23 @@ html[lang="zh-CN"] .eyebrow {
   font-size: 0.9rem;
 }
 
+/* A slab of night on the mist: the terminal keeps the dark tokens wherever it sits. */
 .code-card {
-  border: 1px solid var(--border);
+  --bg: var(--void);
+  --surface: oklch(0.17 0.012 272);
+  --surface-2: oklch(0.215 0.016 272);
+  --border: rgb(228 228 228 / 0.1);
+  --border-strong: rgb(228 228 228 / 0.22);
+  --fg: var(--mist);
+  --fg-2: oklch(0.78 0.012 272);
+  --fg-3: oklch(0.64 0.018 272);
+  color-scheme: dark;
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--void);
+  color: var(--fg);
+  box-shadow:
+    0 0 0 1px rgb(11 11 11 / 0.9),
+    0 1.5rem 3.5rem -1.5rem oklch(0.3 0.09 270 / 0.55);
 }
 
 .code-card-header {
@@ -1229,31 +1816,86 @@ html[lang="zh-CN"] .eyebrow {
   color: var(--fg);
 }
 
+/* The sign-off: the name across the whole width, inked from night into the blue. */
+.footer-mark {
+  overflow: hidden;
+  padding-inline: var(--gutter);
+  font-family: var(--font-display);
+  padding-block: clamp(1rem, 3vw, 2.5rem) clamp(0.5rem, 1.5vw, 1.25rem);
+  font-size: min(21vw, 19rem);
+  line-height: 0.9;
+  letter-spacing: -0.05em;
+  text-align: center;
+  white-space: nowrap;
+  background: linear-gradient(to bottom, var(--void) 30%, var(--abyss));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  user-select: none;
+}
+
 /* —— Scroll reveal. useReveal adds .reveal only to blocks that start below the first
    screen and only without reduced motion, so nothing is hidden without JS; print
    always shows everything. The transition sits on .is-revealed so hiding is
    instant and only the reveal animates. —— */
 @media screen and (prefers-reduced-motion: no-preference) {
-  .reveal:not(.is-revealed) {
+  /* A long rise out of a soft blur. The curve is GSAP's power3.out. */
+  .reveal:not(.is-revealed),
+  .section-head.reveal:not(.is-revealed) > * {
     opacity: 0;
-    translate: 0 1rem;
+    translate: 0 3.5rem;
+    filter: blur(6px);
   }
 
-  .reveal.is-revealed {
-    transition: opacity 0.6s var(--ease-out), translate 0.6s var(--ease-out);
+  .reveal.is-revealed,
+  .section-head.reveal.is-revealed > * {
+    transition:
+      opacity 0.8s var(--ease-reveal),
+      translate 0.8s var(--ease-reveal),
+      filter 0.8s var(--ease-reveal);
+  }
+
+  /* A section's heading comes in a line at a time: label, title, intro, the rest. The
+     head itself stays put so its children's offsets don't add up. */
+  .section-head.reveal:not(.is-revealed) {
+    opacity: 1;
+    translate: none;
+    filter: none;
+  }
+
+  .section-head.reveal.is-revealed > :nth-child(2) {
+    transition-delay: 80ms;
+  }
+
+  .section-head.reveal.is-revealed > :nth-child(3) {
+    transition-delay: 160ms;
+  }
+
+  .section-head.reveal.is-revealed > :nth-child(n + 4) {
+    transition-delay: 240ms;
   }
 }
 
-/* A slow bob with a hint of tilt, so the phone reads as held rather than pasted on. */
-@keyframes float {
-  0%,
-  100% {
-    translate: 0 0;
-    rotate: 0deg;
+/* Without the drift, the band would cut the list off: show one copy, wrapped. */
+@media (prefers-reduced-motion: reduce) {
+  .models {
+    mask-image: none;
   }
-  50% {
-    translate: 0 -0.6rem;
-    rotate: -0.6deg;
+
+  .ticker {
+    width: auto;
+  }
+
+  .ticker ul {
+    flex: 1;
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 0.4rem;
+  }
+
+  .ticker ul[aria-hidden],
+  .ticker li:last-child::after {
+    display: none;
   }
 }
 
