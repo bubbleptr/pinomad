@@ -3,14 +3,12 @@ import SwiftUI
 
 /// One paired host's connection settings: the Auto / Direct only / Relay
 /// only choice and, while it is the connected host, the coordinator's RTC
-/// status. Reached from the ⓘ in Settings → Hosts, connected or not.
+/// status. Reached from the host's page in Settings, connected or not.
 struct HostDetailView: View {
     let model: AppModel
     let hostKey: String
 
-    @Environment(\.dismiss) private var dismiss
     @State private var mode: HostConnectionMode = .auto
-    @State private var unpairing = false
     /// The full addresses are hidden by default so a screenshot does not
     /// leak the network. The disclosure resets with the page.
     @State private var addressesExpanded = false
@@ -58,13 +56,6 @@ struct HostDetailView: View {
                     }
                 }
             }
-
-            Section {
-                Button("Unpair This Host", role: .destructive) {
-                    unpairing = true
-                }
-                .frame(maxWidth: .infinity, alignment: .center)
-            }
         }
         .navigationTitle(host.map(label) ?? "Host")
         .task(id: isLive) {
@@ -80,15 +71,6 @@ struct HostDetailView: View {
             // saving is the trigger; the model reconnects the live host.
             guard next != model.connectionMode(for: hostKey) else { return }
             model.setConnectionMode(next, for: hostKey)
-        }
-        .alert("Unpair \(host.map(label) ?? "this host")?", isPresented: $unpairing) {
-            Button("Cancel", role: .cancel) {}
-            Button("Unpair", role: .destructive) {
-                model.unpair(hostKey)
-                dismiss()
-            }
-        } message: {
-            Text(model.unpairMessage(hostKey))
         }
     }
 

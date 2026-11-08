@@ -117,15 +117,21 @@ extension AppModel {
             // The settings pages over two demo machines; `failed` opens on
             // the first machine's failure page.
             startSettingsDemo(mode)
-            // With `account`: open the account sheet (`devices`), or push
-            // the Remove form for the first removable device (`remove`), the
-            // one for the first account host (`remove-host`), the Delete
-            // Account form (`delete`), Link for the first unlinked provider
-            // (`link`), or scroll to Delete Account (`bottom`) or Sign-in
-            // Methods (`methods`).
+            // With `account`: open Settings on the Account page (`overview`),
+            // Sign-in and Security (`security`), Signed-in Devices
+            // (`devices`) or Hosts (`hosts`); or the account sheet
+            // (`sheet`), with Remove from Account for the first account
+            // host over it (`remove-host`).
             if let page = env["PINOMAD_DEMO_ACCOUNT"] {
-                devAccountPage = page
-                present(.account)
+                switch page {
+                case "overview": navPath = [.settings, .account]
+                case "security": navPath = [.settings, .account, .accountSecurity]
+                case "devices": navPath = [.settings, .account, .accountDevices]
+                case "hosts": navPath = [.settings]
+                default:
+                    devAccountPage = page
+                    present(.account)
+                }
             }
             return true
         }

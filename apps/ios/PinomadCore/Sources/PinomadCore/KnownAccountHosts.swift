@@ -1,7 +1,8 @@
 import Foundation
 
 /// A host the new-host notice still has to show.
-public struct PendingAccountHost: Codable, Hashable, Sendable {
+public struct PendingAccountHost: Codable, Hashable, Identifiable, Sendable {
+    public var id: String { hostId }
     public var hostId: String
     public var name: String
 

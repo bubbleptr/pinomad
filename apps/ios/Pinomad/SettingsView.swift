@@ -3,72 +3,28 @@ import PinomadCore
 import SwiftUI
 import UIKit
 
-/// This device's settings: its paired hosts — each opening its own
-/// settings — and a way to add one, the account, push and about. Pushed
-/// from the list; needs no connection.
+/// This device's settings: the account's pages (or the way to sign in),
+/// every host this device can use — each paired one opening its own page —
+/// push and about. Pushed from the list; needs no connection.
 struct SettingsView: View {
     let model: AppModel
 
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
-    @State private var unpairing: HostRecord?
+    @State private var asking: AccountHostRow?
+    @State private var removing: PendingAccountHost?
 
     var body: some View {
         List {
-            Section("Hosts") {
-                ForEach(machines, id: \.hostKey) { host in
-                    pairedRow(host)
-                }
-                if machines.isEmpty {
-                    Text("No paired hosts yet.")
-                        .foregroundStyle(.secondary)
-                }
-                NavigationLink(value: Route.addHost) {
-                    Label("Add Host", image: .plus)
-                }
-            }
+            accountSection
 
-            // The failure and connecting pages reach the account only from
-            // here: the avatar lives on the list, the first-run page only
-            // shows before anything is paired.
-            Section {
-                Button {
-                    model.present(.account)
-                } label: {
-                    Label(model.accountSession.map { "Account: \($0.username)" } ?? "Sign in",
-                          image: .userRound)
-                }
-                .tint(.primary)
-            } header: {
-                Text("Account")
-            } footer: {
-                if model.accountSession == nil {
-                    Text("Sign in to pair the hosts on your account.")
-                }
-            }
+            HostsSections(model: model, asking: $asking, removing: $removing)
 
             pushSection
 
             aboutSection
         }
         .navigationTitle("Settings")
-        .alert(
-            "Unpair \(unpairing.map(label) ?? "this host")?",
-            isPresented: Binding(get: { unpairing != nil }, set: { if !$0 { unpairing = nil } }),
-            presenting: unpairing
-        ) { host in
-            Button("Cancel", role: .cancel) {}
-            Button("Unpair", role: .destructive) {
-                let wasLast = machines.count == 1
-                model.unpair(host.hostKey)
-                // Nothing left to pick — the pairing page behind has
-                // the same ways to pair. Unpairing waits for the host's
-                // calls, so decide from the list we had.
-                if wasLast { dismiss() }
-            }
-        } message: { host in
-            Text(model.unpairMessage(host.hostKey))
-        }
+        .hostsActions(model: model, asking: $asking, removing: $removing)
     }
 
     private var machines: [HostRecord] { model.machines }
@@ -77,33 +33,46 @@ struct SettingsView: View {
         model.machineLabel(host.hostKey)
     }
 
-    /// Opens the machine's own settings; every machine is live, so there is
-    /// nothing to switch (#429). Under it, each route that reaches it (#502).
-    private func pairedRow(_ host: HostRecord) -> some View {
-        NavigationLink(value: Route.machine(host.hostKey)) {
-            HStack(alignment: .top, spacing: 10) {
-                // Level with the name, not the middle of the route list.
-                MachineDot(live: model.isConnected(host.hostKey))
-                    .padding(.top, 7)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(label(host))
-                        .foregroundStyle(.primary)
-                    Text(model.connectionLabel(for: host.hostKey))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    HostRouteList(routes: hostRoutes(host), mode: host.connectionMode ?? .auto)
-                        .padding(.top, 4)
+    /// Signed in, the account's three pages; signed out, only the way in,
+    /// which stays a sheet of its own.
+    @ViewBuilder
+    private var accountSection: some View {
+        Section {
+            if let session = model.accountSession, !model.accountNeedsEmail {
+                NavigationLink(value: Route.account) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(session.displayName)
+                            Text(hostOf(session.serverOrigin))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    } icon: {
+                        Image(.userRound)
+                    }
                 }
+                NavigationLink(value: Route.accountSecurity) {
+                    Label("Sign-in and Security", image: .keyRound)
+                }
+                if !model.accountDevicesUnsupported {
+                    NavigationLink(value: Route.accountDevices) {
+                        Label("Signed-in Devices", image: .monitor)
+                    }
+                }
+            } else {
+                Button {
+                    model.present(.account)
+                } label: {
+                    Label(model.accountSession == nil ? "Sign In" : "Finish Signing In", image: .userRound)
+                }
+                .tint(.primary)
             }
-        }
-        .swipeActions {
-            Button("Unpair", role: .destructive) { unpairing = host }
-                // The row's plain tint would turn it black.
-                .tint(.red)
-        }
-        .contextMenu {
-            Button("Unpair", image: .trash2, role: .destructive) { unpairing = host }
+        } header: {
+            Text("Account")
+        } footer: {
+            if model.accountSession == nil {
+                Text("Sign in to pair the hosts on your account.")
+            }
         }
     }
 
@@ -223,8 +192,10 @@ struct SettingsSheet: View {
     }
 }
 
-/// One paired machine's settings: its name, the devices paired with it,
-/// and its archived conversations. Needs that machine connected.
+/// One paired machine's page: how this device reaches it (connection,
+/// routes) and the ways to let it go, which work disconnected; and, while
+/// it is connected, its name, providers, the devices paired with it and its
+/// archived conversations.
 struct MachineSettingsView: View {
     let model: AppModel
     let hostKey: String
@@ -233,6 +204,8 @@ struct MachineSettingsView: View {
     @State private var renaming = false
     @State private var nameDraft = ""
     @State private var unpairing: DeviceEntry?
+    @State private var unpairingHost = false
+    @State private var removingHost: PendingAccountHost?
 
     var body: some View {
         List {
@@ -243,6 +216,11 @@ struct MachineSettingsView: View {
                     } label: {
                         Label("Connection", image: .info)
                     }
+                }
+            }
+            if let host = model.hostRecord(for: hostKey) {
+                Section("Routes") {
+                    HostRouteList(routes: hostRoutes(host), mode: host.connectionMode ?? .auto)
                 }
             }
             if hostKey == model.currentHostKey, let snapshot = model.snapshot {
@@ -263,8 +241,29 @@ struct MachineSettingsView: View {
                     Text("Its settings show once it connects.")
                 }
             }
+            letGoSection
         }
         .navigationTitle(title)
+        // Unpaired or taken off the account: nothing left to show.
+        .onChange(of: model.hostRecord(for: hostKey) == nil) { _, gone in
+            if gone { dismiss() }
+        }
+        .alert("Unpair \(title)?", isPresented: $unpairingHost) {
+            Button("Cancel", role: .cancel) {}
+            Button("Unpair", role: .destructive) {
+                model.unpair(hostKey)
+                dismiss()
+            }
+        } message: {
+            Text(model.unpairMessage(hostKey))
+        }
+        .sheet(item: $removingHost) { host in
+            FormSheet {
+                RemoveHostView(
+                    model: model, host: host,
+                    server: model.accountSession.map { hostOf($0.serverOrigin) } ?? "the server")
+            }
+        }
         .alert("Host name", isPresented: $renaming) {
             TextField("Name", text: $nameDraft)
             Button("Cancel", role: .cancel) {}
@@ -295,6 +294,28 @@ struct MachineSettingsView: View {
                 Text("This host will stop accepting it. It can pair again with a new pairing link.")
             }
         }
+    }
+
+    /// Unpair here, or take the host off the account for every device. Both
+    /// confirm first.
+    private var letGoSection: some View {
+        Section {
+            Button("Unpair…") { unpairingHost = true }
+            if let row = accountRow {
+                Button("Remove from Account…") { removingHost = row.pending }
+                    .disabled(model.accountBusy)
+            }
+        } footer: {
+            if accountRow != nil {
+                Text("Unpairing forgets this host on this iPhone. Removing it from your account disconnects it from the server for every device.")
+            }
+        }
+    }
+
+    /// This host's line in the signed-in account's list, if it is on it.
+    private var accountRow: AccountHostRow? {
+        guard model.accountSession != nil else { return nil }
+        return model.accountRows.first { $0.storedHostKey == hostKey }
     }
 
     private func isThisDevice(_ device: DeviceEntry) -> Bool {
@@ -499,18 +520,6 @@ private struct DeviceRow: View {
         case .account: return "\(at) via account"
         case nil: return "Paired \(at)"
         }
-    }
-}
-
-/// Green while this machine is connected, grey otherwise.
-private struct MachineDot: View {
-    let live: Bool
-
-    var body: some View {
-        Circle()
-            .fill(live ? Color.green : Color.secondary.opacity(0.5))
-            .frame(width: 8, height: 8)
-            .accessibilityLabel(live ? "Connected" : "Not connected")
     }
 }
 

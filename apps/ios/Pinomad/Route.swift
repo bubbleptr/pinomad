@@ -17,6 +17,16 @@ enum Route: Hashable {
     case addProject(hostKey: String)
     /// This device's settings and the paired machines.
     case settings
+    /// Every host this device can use: the paired ones, then the account's
+    /// others. Settings shows the same list on its own page.
+    case hosts
+    /// Who is signed in where, a line for each account page, the sign-outs
+    /// and deleting the account.
+    case account
+    /// The account's email, password and linked providers.
+    case accountSecurity
+    /// Every device signed in to the account.
+    case accountDevices
     /// Scan or paste a pairing link, pushed from Settings.
     case addHost
     /// One paired machine's settings, by host key.
@@ -54,6 +64,10 @@ struct RouteDestination: View {
         case .newConversation: NewConversationView(model: model)
         case .addProject: AddProjectView(model: model)
         case .settings: SettingsView(model: model)
+        case .hosts: HostsPage(model: model)
+        case .account: AccountPage(model: model)
+        case .accountSecurity: SignInSecurityPage(model: model)
+        case .accountDevices: AccountDevicesPage(model: model)
         case .addHost: AddHostView(model: model)
         case .machine(let hostKey): MachineSettingsView(model: model, hostKey: hostKey)
         case .host(let hostKey): HostDetailView(model: model, hostKey: hostKey)
@@ -91,7 +105,7 @@ extension Route {
              .providerSubscriptions(let hostKey), .providerKeys(let hostKey),
              .provider(let hostKey, _, _), .customEndpoint(let hostKey, _):
             HostFocus(hostKey: hostKey)
-        case .settings, .addHost: nil
+        case .settings, .addHost, .hosts, .account, .accountSecurity, .accountDevices: nil
         }
     }
 }

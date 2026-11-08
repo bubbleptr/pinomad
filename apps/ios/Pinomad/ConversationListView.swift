@@ -64,7 +64,13 @@ struct ConversationListView: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button {
-                    model.present(.account)
+                    // Signed in, the account is a Settings page; the
+                    // sign-in form is a sheet of its own.
+                    if model.accountSession != nil, !model.accountNeedsEmail {
+                        model.navPath.append(.account)
+                    } else {
+                        model.present(.account)
+                    }
                 } label: {
                     // The live session, not the remembered record: after a
                     // sign-out the record keeps the name only to prefill login.
