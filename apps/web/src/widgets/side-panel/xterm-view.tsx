@@ -137,19 +137,26 @@ export default function XtermView(props: XtermViewProps) {
       disableStdin: readOnly,
       scrollback: 5000,
       theme: themeFor(element),
+      // The host runs a process under a fixed 120×40 pty (ADR-0045 §3), so
+      // its output's cursor addressing must stay on that same grid.
+      ...(readOnly ? { cols: 120, rows: 40 } : {}),
     });
-    const fit = new FitAddon();
-    screen.loadAddon(fit);
+    let fit: FitAddon | undefined;
+    if (!readOnly) {
+      fit = new FitAddon();
+      screen.loadAddon(fit);
+    }
     screen.open(element);
+    if (readOnly) screen.resize(120, 40);
     terminal.current = screen;
 
     let sent: TerminalSize | undefined;
     const fitNow = (): void => {
+      if (fit === undefined) return;
       // A hidden panel measures as zero; its size stays what the host has.
       if (element.clientWidth === 0 || element.clientHeight === 0) return;
       fit.fit();
-      // The process pty is fixed host-side; the screen only fits itself.
-      if (readOnly || props.terminals === undefined || props.terminalId === undefined) return;
+      if (props.terminals === undefined || props.terminalId === undefined) return;
       if (sent?.cols === screen.cols && sent.rows === screen.rows) return;
       sent = { cols: screen.cols, rows: screen.rows };
       props.terminals.resize(props.terminalId, sent);
@@ -172,18 +179,21 @@ export default function XtermView(props: XtermViewProps) {
     }
     // After attach: the client keeps an attached terminal's size to send
     // again after a reconnect, and the replay doesn't wait on the size.
-    fitNow();
-    const observer = new ResizeObserver(fitNow);
-    observer.observe(element);
+    let observer: ResizeObserver | undefined;
+    if (!readOnly) {
+      fitNow();
+      observer = new ResizeObserver(fitNow);
+      observer.observe(element);
+      screen.focus();
+    }
     const scheme = matchMedia(DARK);
     const retheme = (): void => {
       screen.options.theme = themeFor(element);
     };
     scheme.addEventListener("change", retheme);
-    if (!readOnly) screen.focus();
     return () => {
       scheme.removeEventListener("change", retheme);
-      observer.disconnect();
+      observer?.disconnect();
       typing?.dispose();
       detach();
       screen.dispose();
@@ -195,5 +205,14 @@ export default function XtermView(props: XtermViewProps) {
     if (terminal.current !== undefined) terminal.current.options.disableStdin = readOnly || !enabled;
   }, [readOnly, enabled]);
 
-  return <div ref={container} className="pinomad-terminal h-full min-h-0 w-full px-2 pt-1" />;
+  // A process keeps the host's 120-column grid, so a narrow panel scrolls
+  // sideways rather than shrinking the font or the columns.
+  return (
+    <div className={readOnly ? "h-full min-h-0 w-full overflow-x-auto" : "h-full min-h-0 w-full"}>
+      <div
+        ref={container}
+        className={readOnly ? "pinomad-terminal h-full min-h-0 w-max px-2 pt-1" : "pinomad-terminal h-full min-h-0 w-full px-2 pt-1"}
+      />
+    </div>
+  );
 }
