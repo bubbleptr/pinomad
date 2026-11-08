@@ -632,6 +632,8 @@ class RemoteClient {
   #state: DurableView | undefined;
   #current: ConversationId | undefined;
   #side: ConversationId | undefined;
+  /** Conversations whose streams are being fetched; `#current` is not set until they arrive. */
+  readonly #acquiring = new Map<ConversationId, number>();
   #nextCall = 1;
   #nextNotice = 1;
   /** Every send this session, settled ones kept as idempotency guards. */
@@ -2412,40 +2414,59 @@ class RemoteClient {
    * and their live values carry over (no snapshot wait).
    */
   async #acquire(id: ConversationId): Promise<void> {
-    const missing = this.#conversationStreams(id).filter((stream) => !this.#wanted.has(stream));
-    // Wanted but not fresh: already subscribed (the side may share it) yet the
-    // host has not answered this connection — waiting hands us its new value,
-    // never the stale one left over from before the reconnect.
-    const stale = this.#conversationStreams(id).filter((stream) => this.#wanted.has(stream) && !this.#fresh.has(stream));
-    // Mark the missing streams wanted before taking their snapshot waiters:
-    // #snapshot refuses to wait for a stream nobody wants, so a clear that
-    // released it can never hang this acquire.
-    for (const stream of missing) this.#wanted.add(stream);
-    const shown = Promise.all([...missing, ...stale].map((stream) => this.#snapshot(stream)));
-    for (const stream of missing) {
-      // Before the hello the minor is not known yet; the hello's #wanted loop
-      // sends this stream with the right form once it has read the version.
-      if (this.#helloReceived) this.#subscribe(stream);
+    // A shown conversation is set only once its streams arrived, so an
+    // in-flight acquire is its own owner: the panel may watch and leave the
+    // same document before this resolves.
+    this.#acquiring.set(id, (this.#acquiring.get(id) ?? 0) + 1);
+    try {
+      const missing = this.#conversationStreams(id).filter((stream) => !this.#wanted.has(stream));
+      // Wanted but not fresh: already subscribed (the side may share it) yet the
+      // host has not answered this connection — waiting hands us its new value,
+      // never the stale one left over from before the reconnect.
+      const stale = this.#conversationStreams(id).filter((stream) => this.#wanted.has(stream) && !this.#fresh.has(stream));
+      // Mark the missing streams wanted before taking their snapshot waiters:
+      // #snapshot refuses to wait for a stream nobody wants, so a clear that
+      // released it can never hang this acquire.
+      for (const stream of missing) this.#wanted.add(stream);
+      const shown = Promise.all([...missing, ...stale].map((stream) => this.#snapshot(stream)));
+      for (const stream of missing) {
+        // Before the hello the minor is not known yet; the hello's #wanted loop
+        // sends this stream with the right form once it has read the version.
+        if (this.#helloReceived) this.#subscribe(stream);
+      }
+      await shown;
+    } finally {
+      const left = (this.#acquiring.get(id) ?? 1) - 1;
+      if (left > 0) this.#acquiring.set(id, left);
+      else this.#acquiring.delete(id);
     }
-    await shown;
   }
 
-  /** Release the streams of one slot's conversation the other slot does not still need. */
-  #release(id: ConversationId, other: ConversationId | undefined): void {
-    const keep = new Set<StreamName>(other === undefined ? [] : this.#conversationStreams(other));
+  /** Whether a shown, side, acquiring, or separately watched owner needs this stream. */
+  #streamStillWanted(stream: StreamName): boolean {
+    if (this.#processWatchers.has(stream)) return true;
+    for (const id of [this.#current, this.#side, ...this.#acquiring.keys()]) {
+      if (id !== undefined && this.#conversationStreams(id).includes(stream)) return true;
+    }
+    return false;
+  }
+
+  /** Forget one stream and settle anyone waiting for a snapshot that will never be accepted. */
+  #releaseStream(stream: StreamName): void {
+    this.#wanted.delete(stream);
+    this.#values.delete(stream);
+    this.#earlier.delete(stream);
+    this.#loadingEarlier.delete(stream);
+    this.#fresh.delete(stream);
+    for (const waiter of this.#snapshotWaiters.get(stream)?.splice(0) ?? []) waiter.resolve();
+    this.#send({ type: "unsubscribe", stream });
+  }
+
+  /** Release the streams of one slot's conversation no other owner still needs. */
+  #release(id: ConversationId): void {
     for (const stream of this.#conversationStreams(id)) {
-      if (keep.has(stream) || this.#processWatchers.has(stream)) continue;
-      this.#wanted.delete(stream);
-      this.#values.delete(stream);
-      this.#earlier.delete(stream);
-      this.#loadingEarlier.delete(stream);
-      this.#fresh.delete(stream);
-      // No snapshot will ever be accepted for this stream again, so a sync
-      // barrier waiting on it must settle now. Otherwise a clear during a
-      // reconnect would hold every later call until the sync timer kills a
-      // healthy connection.
-      for (const waiter of this.#snapshotWaiters.get(stream)?.splice(0) ?? []) waiter.resolve();
-      this.#send({ type: "unsubscribe", stream });
+      if (this.#streamStillWanted(stream)) continue;
+      this.#releaseStream(stream);
     }
   }
 
@@ -2653,6 +2674,8 @@ class RemoteClient {
       } else {
         this.#wanted.delete(stream);
         this.#values.delete(stream);
+        // A switch that started before this hello must not wait forever.
+        for (const waiter of this.#snapshotWaiters.get(stream)?.splice(0) ?? []) waiter.resolve();
       }
       this.#notifyProcesses(stream);
     }
@@ -2711,15 +2734,11 @@ class RemoteClient {
         return () => {
           if (!listeners.delete(listener) || listeners.size > 0) return;
           this.#processWatchers.delete(stream);
-          // The shown or side conversation may also need the same document;
-          // only the last owner sends the unsubscribe.
-          const parked =
-            (this.#current !== undefined && this.#conversationStreams(this.#current).includes(stream))
-            || (this.#side !== undefined && this.#conversationStreams(this.#side).includes(stream));
-          if (parked) return;
-          if (!this.#wanted.delete(stream)) return;
-          this.#values.delete(stream);
-          this.#send({ type: "unsubscribe", stream });
+          // A shown, side, or still-acquiring conversation may also need the
+          // same document; only the last owner sends the unsubscribe.
+          if (this.#streamStillWanted(stream)) return;
+          if (!this.#wanted.has(stream)) return;
+          this.#releaseStream(stream);
         };
       },
       attach: (processId, since, sink) => {
@@ -3896,7 +3915,7 @@ class RemoteClient {
     if (id === previous) return;
     await this.#acquire(id);
     this.#current = id;
-    if (previous !== undefined) this.#release(previous, this.#side);
+    if (previous !== undefined) this.#release(previous);
     this.#refresh();
   }
 
@@ -3905,7 +3924,7 @@ class RemoteClient {
     const previous = this.#current;
     if (previous === undefined) return;
     this.#current = undefined;
-    this.#release(previous, this.#side);
+    this.#release(previous);
     this.#refresh();
   }
 
@@ -3925,7 +3944,7 @@ class RemoteClient {
     if (id === previous) return;
     if (id !== undefined) await this.#acquire(id);
     this.#side = id;
-    if (previous !== undefined) this.#release(previous, this.#current);
+    if (previous !== undefined) this.#release(previous);
     this.#refresh();
   }
 

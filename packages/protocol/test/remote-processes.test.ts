@@ -47,10 +47,19 @@ function fakeHost(hello: HelloOptions = { processes: { limit: 8 } }) {
   let current = hello;
   const opened: FrameHandlers[] = [];
   const sent: ClientFrame[] = [];
+  const held = new Set<string>();
+  let active: FrameHandlers | undefined;
+  const snapshotFor = (stream: string): unknown =>
+    stream === doc(1) || stream === doc(4)
+      ? { processes: LIST }
+      : stream.startsWith("conversation:")
+        ? { conversation: { id: Number(stream.slice("conversation:".length)) }, entries: [] }
+        : SNAPSHOTS[stream] ?? null;
   const transport: FrameTransport = {
     label: "fake",
     open(handlers): FrameConnection {
       opened.push(handlers);
+      active = handlers;
       const frame = {
         type: "hello",
         protocol: { major: PROTOCOL.major, minor: current.minor ?? PROTOCOL.minor },
@@ -68,11 +77,8 @@ function fakeHost(hello: HelloOptions = { processes: { limit: 8 } }) {
           sent.push(frame);
           if (frame.type === "subscribe") {
             if (frame.stream.startsWith("terminal:") || frame.stream.startsWith("process:")) return;
-            const value = frame.stream === doc(1) || frame.stream === doc(4)
-              ? { processes: LIST }
-              : frame.stream.startsWith("conversation:")
-                ? { conversation: { id: Number(frame.stream.slice("conversation:".length)) }, entries: [] }
-                : SNAPSHOTS[frame.stream] ?? null;
+            if (held.has(frame.stream)) return;
+            const value = snapshotFor(frame.stream);
             queueMicrotask(() => handlers.message(JSON.stringify({ type: "snapshot", stream: frame.stream, value })));
           } else if (frame.type === "call") {
             const value = frame.method === "stopProcess" ? { state: { stopped: "user" } } : null;
@@ -93,6 +99,12 @@ function fakeHost(hello: HelloOptions = { processes: { limit: 8 } }) {
     connections: () => opened.length,
     setHello: (next: HelloOptions) => {
       current = next;
+    },
+    hold: (stream: string) => held.add(stream),
+    release: (stream: string) => {
+      held.delete(stream);
+      const value = snapshotFor(stream);
+      queueMicrotask(() => active?.message(JSON.stringify({ type: "snapshot", stream, value })));
     },
   };
 }
@@ -130,6 +142,22 @@ async function until(test: () => boolean): Promise<void> {
     if (Date.now() > deadline) throw new Error("condition not met within 5s");
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms = 3000): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`did not finish within ${ms}ms`)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 async function connect(host: ReturnType<typeof fakeHost>): Promise<RemoteDurable> {
@@ -210,6 +238,33 @@ describe("RemoteDurable processes", () => {
       await until(() => subscribes(host.sent).some((frame) => frame.stream === doc(1)));
       stop();
       expect(host.sent.some((frame) => frame.type === "unsubscribe" && frame.stream === doc(1))).toBe(false);
+    } finally {
+      remote.close();
+    }
+  });
+
+  it("keeps a document that a switch is still acquiring when its last process watcher leaves", async () => {
+    const host = fakeHost();
+    const remote = await connect(host);
+    try {
+      await remote.controller.switchConversation(id(1));
+      const before = host.sent.length;
+      host.hold(doc(4));
+      const switching = remote.controller.switchConversation(id(4));
+      await until(() => subscribes(host.sent.slice(before)).some((frame) => frame.stream === doc(4)));
+
+      // The panel watches the new root while the switch is still waiting for
+      // its snapshot; leaving before it lands must not drop the acquisition.
+      const unwatch = remote.processes.watch(id(4), () => {});
+      unwatch();
+      host.release(doc(4));
+
+      await withTimeout(switching);
+      expect(remote.view.current().conversation?.conversation.id).toBe(4);
+      await withTimeout(remote.controller.renameConversation(id(4), "after"));
+      expect(calls(host.sent, "renameConversation").map((frame) => frame.args)).toEqual([
+        { conversationId: 4, title: "after" },
+      ]);
     } finally {
       remote.close();
     }
