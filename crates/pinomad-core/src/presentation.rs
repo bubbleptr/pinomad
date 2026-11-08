@@ -214,14 +214,21 @@ pub struct FallbackDoc {
 
 /// `ContextBreakdownSchema`: token counts of what filled the context window,
 /// `used` being the provider's total and the rest host estimates summing to it.
-#[derive(Clone, Debug)]
-pub struct ContextDoc {
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct ContextBreakdown {
     pub used: f64,
     pub system: f64,
     pub skills: f64,
     pub tools: f64,
     pub mcp: f64,
     pub messages: f64,
+}
+
+/// A classified `pinomad.context` document.
+#[derive(Clone, Debug)]
+pub struct ContextDoc {
+    pub parts: ContextBreakdown,
     raw: Json,
 }
 
@@ -446,12 +453,14 @@ fn decode_codemode(value: &Json) -> CodemodeDoc {
 fn decode_context(value: &Json) -> ContextDoc {
     let count = |key: &str| value.get(key).and_then(Json::as_number).unwrap_or_default();
     ContextDoc {
-        used: count("used"),
-        system: count("system"),
-        skills: count("skills"),
-        tools: count("tools"),
-        mcp: count("mcp"),
-        messages: count("messages"),
+        parts: ContextBreakdown {
+            used: count("used"),
+            system: count("system"),
+            skills: count("skills"),
+            tools: count("tools"),
+            mcp: count("mcp"),
+            messages: count("messages"),
+        },
         raw: value.clone(),
     }
 }

@@ -91,7 +91,13 @@ struct OverviewSheet: View {
         } else {
             List {
                 if let conversation {
-                    Section("Context") { contextRow(ContextMeterReading(conversation.contextUsage)) }
+                    Section("Context") {
+                        let breakdown = ContextBreakdownReading(
+                            conversation.contextBreakdown, window: conversation.contextUsage?.window
+                        )
+                        contextRow(ContextMeterReading(conversation.contextUsage), breakdown: breakdown)
+                        if let breakdown { breakdownRows(breakdown) }
+                    }
                 }
                 if let workspace {
                     Section("Workspace") { workspaceRows(workspace) }
@@ -105,21 +111,36 @@ struct OverviewSheet: View {
 
     // MARK: Context
 
-    /// How full the model's window is: the ring, then the percent and
-    /// figures. Unknown usage keeps the row with an empty ring.
-    private func contextRow(_ reading: ContextMeterReading) -> some View {
-        LabeledContent {
-            Text(reading.detail)
-                .monospacedDigit()
-        } label: {
-            Label {
-                Text("Context window")
-            } icon: {
-                ContextRing(reading: reading)
+    /// How full the model's window is: the percent and figures, orange once
+    /// it nears compaction, over the bar (stacked when the host sent a
+    /// breakdown of the reply the meter counts).
+    private func contextRow(_ reading: ContextMeterReading, breakdown: ContextBreakdownReading?) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            LabeledContent("Context window") {
+                Text(reading.detail)
+                    .monospacedDigit()
+                    .foregroundStyle(reading.warning ? Color(uiColor: .systemOrange) : .secondary)
             }
+            ContextBar(meter: reading, breakdown: breakdown)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(reading.accessibilityLabel)
+    }
+
+    /// A row per part that fills the window, with its tokens and share.
+    private func breakdownRows(_ reading: ContextBreakdownReading) -> some View {
+        ForEach(reading.rows) { row in
+            LabeledContent {
+                Text(row.figure)
+                    .monospacedDigit()
+            } label: {
+                Label {
+                    Text(row.label)
+                } icon: {
+                    ContextBreakdownSwatch(part: row.part)
+                }
+            }
+        }
     }
 
     // MARK: Workspace

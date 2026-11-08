@@ -74,3 +74,47 @@ pub fn context_usage(view: &Json, context_window: Option<f64>) -> Option<Context
     }
     None
 }
+
+/// The host's context breakdown while it belongs to the reply the meter
+/// counts — the web's `matchingBreakdown`. The host stamps it with that
+/// reply's own usage, so a different `used` means another reply (a newer one
+/// not yet broken down, or a fork's parent) and no meter means a compaction
+/// or reset made it stale. `docs` are the view's `{kind, presentation, value}`.
+pub fn matching_breakdown(docs: &[Json], usage: Option<ContextUsage>) -> Option<crate::presentation::ContextBreakdown> {
+    let usage = usage?;
+    docs.iter().find_map(|doc| {
+        let value = doc.get("value").cloned().unwrap_or(Json::Null);
+        match crate::presentation::classify(doc.get("presentation"), &value) {
+            crate::presentation::ClassifiedDoc::Context(context) if context.parts.used == usage.used => Some(context.parts),
+            _ => None,
+        }
+    })
+}
+
+#[cfg(test)]
+mod breakdown_tests {
+    use super::*;
+
+    const PARTS: &str = r#"{"used":124000,"system":8100,"skills":3200,"tools":12000,"mcp":0,"messages":100700}"#;
+    const USAGE: ContextUsage = ContextUsage { used: 124000.0, window: 200000.0 };
+
+    fn doc(presentation: Option<&str>, value: &str) -> Json {
+        let presentation = presentation.map(|p| format!(r#","presentation":"{p}""#)).unwrap_or_default();
+        Json::parse(&format!(r#"{{"kind":"context.breakdown"{presentation},"value":{value}}}"#)).unwrap()
+    }
+
+    #[test]
+    fn returns_the_breakdown_while_it_belongs_to_the_reply_the_meter_shows() {
+        let found = matching_breakdown(&[doc(Some("pinomad.context"), PARTS)], Some(USAGE)).unwrap();
+        assert_eq!((found.used, found.system, found.tools, found.messages), (124000.0, 8100.0, 12000.0, 100700.0));
+    }
+
+    #[test]
+    fn drops_another_reply_a_missing_meter_and_a_malformed_document() {
+        let other = r#"{"used":90000,"system":8100,"skills":3200,"tools":12000,"mcp":0,"messages":66700}"#;
+        assert!(matching_breakdown(&[doc(Some("pinomad.context"), other)], Some(USAGE)).is_none());
+        assert!(matching_breakdown(&[doc(Some("pinomad.context"), PARTS)], None).is_none());
+        assert!(matching_breakdown(&[doc(Some("pinomad.context"), r#"{"used":124000}"#)], Some(USAGE)).is_none());
+        assert!(matching_breakdown(&[doc(None, PARTS)], Some(USAGE)).is_none());
+    }
+}

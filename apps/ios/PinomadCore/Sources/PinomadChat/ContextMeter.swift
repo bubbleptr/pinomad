@@ -8,8 +8,8 @@ public struct ContextMeterReading: Equatable, Sendable {
     /// A nearly full window warns before the conversation compacts itself.
     public static let warningPercent = 80
     /// Counts beyond this are not a plausible context size. Bounding them
-    /// here keeps every Int conversion below in range.
-    private static let maxTokens = 1e12
+    /// here keeps every Int conversion below (and the breakdown's) in range.
+    static let maxTokens = 1e12
 
     public let percent: Int?
     /// A fraction for the ring, capped at a full turn.
