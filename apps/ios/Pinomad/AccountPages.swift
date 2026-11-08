@@ -59,7 +59,7 @@ struct AccountPage: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
-                    Button("Sign Out…") { open = .signOut }
+                    Button("Sign Out") { open = .signOut }
                         .buttonStyle(.tactile(.glass))
                         .controlSize(.small)
                         .disabled(model.accountBusy)
@@ -76,7 +76,7 @@ struct AccountPage: View {
                     Text(session.email ?? "None yet")
                         .foregroundStyle(session.email == nil ? .secondary : .primary)
                     Spacer(minLength: 8)
-                    Button(session.email == nil ? "Add…" : "Change…") { open = .email }
+                    Button(session.email == nil ? "Add" : "Change") { open = .email }
                         .buttonStyle(.tactile(.glass))
                         .controlSize(.small)
                         .disabled(model.accountBusy)
@@ -92,12 +92,12 @@ struct AccountPage: View {
 
             Section {
                 DangerRow(
-                    title: "Sign Out Everywhere…",
+                    title: "Sign Out Everywhere",
                     detail: "Ends every session on every device, including this one.",
                     disabled: model.accountBusy
                 ) { confirmingSignOutEverywhere = true }
                 DangerRow(
-                    title: "Delete Account…",
+                    title: "Delete Account",
                     detail: "Removes your account from \(server). Devices stay paired with your hosts.",
                     disabled: model.accountBusy
                 ) { open = .delete }
@@ -163,11 +163,11 @@ struct AccountPage: View {
                     MethodRow(name: SignInProviders.name(provider), detail: "Not linked") {
                         SignInProviderMark(provider: provider, size: 20)
                     } action: {
-                        Button("Link…") { open = .link(provider) }
+                        Button("Link") { open = .link(provider) }
                             .buttonStyle(.tactile(.glass))
                             .controlSize(.small)
                             .disabled(model.accountBusy)
-                            .accessibilityLabel("Link \(SignInProviders.name(provider))…")
+                            .accessibilityLabel("Link \(SignInProviders.name(provider))")
                     }
                 }
             } else if let failed = model.accountIdentitiesError {
@@ -184,7 +184,7 @@ struct AccountPage: View {
         MethodRow(name: "Password", detail: hasPassword ? "Set" : "Not set") {
             Image(.keyRound)
         } action: {
-            Button(hasPassword ? "Change…" : "Set…") { open = .password(hasPassword: hasPassword) }
+            Button(hasPassword ? "Change" : "Set") { open = .password(hasPassword: hasPassword) }
                 .buttonStyle(.tactile(.glass))
                 .controlSize(.small)
                 .disabled(model.accountBusy)
@@ -198,7 +198,7 @@ struct AccountPage: View {
             SignInProviderMark(provider: identity.provider, size: 20)
         } action: {
             RowMenu(label: "More for \(name)", disabled: model.accountBusy) {
-                Button("Remove…", image: .trash2, role: .destructive) { open = .unlink(identity.provider) }
+                Button("Remove", image: .trash2, role: .destructive) { open = .unlink(identity.provider) }
             }
         }
         .swipeActions {
@@ -253,7 +253,7 @@ struct AccountPage: View {
                 Badge("Removed")
             } else if device.removable {
                 RowMenu(label: "More for \(device.name ?? "Unknown device")", disabled: model.accountBusy) {
-                    Button("Remove…", image: .trash2, role: .destructive) { open = .removeDevice(device) }
+                    Button("Remove", image: .trash2, role: .destructive) { open = .removeDevice(device) }
                 }
             }
         }

@@ -3,7 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 extension View {
-    /// The multi-file picker behind "Attach files…". The model reads each
+    /// The multi-file picker behind "Attach files". The model reads each
     /// URL under its security scope and copies the bytes before uploading.
     func fileAttachmentImporter(
         model: AppModel, key: UInt64, isPresented: Binding<Bool>

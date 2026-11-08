@@ -613,7 +613,7 @@ struct PlusMenu: View {
                     .disabled(true)
             }
             if let attachFiles {
-                Button("Attach files…", image: .file, action: attachFiles)
+                Button("Attach files", image: .file, action: attachFiles)
                     .disabled(!connected || locked)
             }
             // Text triggers need the field, which is off while offline or

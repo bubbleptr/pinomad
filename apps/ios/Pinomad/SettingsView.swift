@@ -317,9 +317,9 @@ struct MachineSettingsView: View {
     /// confirm first.
     private var letGoSection: some View {
         Section {
-            Button("Unpair…") { unpairingHost = true }
+            Button("Unpair") { unpairingHost = true }
             if let row = accountRow {
-                Button("Remove from Account…") { removingHost = row.pending }
+                Button("Remove from Account") { removingHost = row.pending }
                     .disabled(model.accountBusy)
             }
         } footer: {

@@ -141,7 +141,7 @@ private struct ConnectionActions: View {
                 HStack(spacing: 10) {
                     Button(isKey ? "Replace key" : "Sign in again") { onLogin(stored.kind) }
                         .buttonStyle(.tactile(.borderedProminent))
-                    Button(isKey ? "Remove key…" : "Log out…", role: .destructive) { confirming = true }
+                    Button(isKey ? "Remove key" : "Log out", role: .destructive) { confirming = true }
                         .buttonStyle(.tactile(.bordered))
                         .confirmationDialog(
                             provider.stored?.kind == .apiKey ? "Remove the key?" : "Log out of \(provider.name)?",

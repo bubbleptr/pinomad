@@ -58,7 +58,7 @@ struct HostsSections: View {
                                 }
                             }
                             .contextMenu {
-                                Button("Remove from Account…", image: .trash2, role: .destructive) {
+                                Button("Remove from Account", image: .trash2, role: .destructive) {
                                     removing = row.pending
                                 }
                                 .disabled(model.accountBusy)
