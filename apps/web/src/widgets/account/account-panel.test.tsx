@@ -477,10 +477,22 @@ describe("sign-in methods (ADR-0044 §4)", () => {
   });
 
   it("offers no linking where the page can't go to the provider and back", async () => {
-    renderPanel({ ...withMethods(true), providerFlow: "loopback" });
+    renderPanel({ ...withMethods(true), providerFlow: undefined });
     await screen.findByText("GitHub");
     await act(async () => {});
     expect(screen.queryByRole("button", { name: /^Link / })).toBeNull();
+  });
+
+  it("links through the system browser on the desktop and lists the new provider (#631)", async () => {
+    const model = { ...withMethods(true), providerFlow: "loopback" as const };
+    vi.mocked(model.linkProvider).mockResolvedValueOnce({ ok: true, value: {} });
+    renderPanel(model);
+    await userEvent.click(await screen.findByRole("button", { name: "Link Google" }));
+    await userEvent.type(await screen.findByLabelText("Password"), "pw");
+    await userEvent.click(screen.getByRole("button", { name: "Continue to Google" }));
+    expect(model.linkProvider).toHaveBeenCalledWith("google", "pw");
+    expect(await screen.findByText("Google linked.")).toBeTruthy();
+    expect(vi.mocked(model.identities).mock.calls.length).toBeGreaterThan(1);
   });
 
   it("says so when removing the last way in", async () => {

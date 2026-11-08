@@ -21,8 +21,9 @@ type Open =
 
 /**
  * "Sign-in methods" (ADR-0044 §4): the password and each linked provider,
- * removable unless it's the last way in; linking another one only on the page
- * the server serves, where the browser can go to the provider and back.
+ * removable unless it's the last way in; linking another one where a browser
+ * can go to the provider and back: this page itself on the server's own
+ * origin, the system browser in the desktop app (#631).
  */
 export function SignInMethods({
   account,
@@ -44,7 +45,7 @@ export function SignInMethods({
   };
   useEffect(() => {
     load();
-    if (account.providerFlow !== "redirect") return;
+    if (account.providerFlow === undefined) return;
     let live = true;
     void account.authMethods().then((result) => {
       if (live && result.ok) setOffered(result.value.providers);
@@ -64,7 +65,7 @@ export function SignInMethods({
     );
   }
   const linked = new Set(identities.identities.map((identity) => identity.provider));
-  const linkable = account.providerFlow === "redirect" ? knownSignInProviders(offered).filter((provider) => !linked.has(provider.id)) : [];
+  const linkable = account.providerFlow === undefined ? [] : knownSignInProviders(offered).filter((provider) => !linked.has(provider.id));
   const close = (message?: string): void => {
     setOpen(undefined);
     setDone(message);
@@ -149,18 +150,22 @@ export function SignInMethods({
         <ConfirmedAction
           account={account}
           title={`Link ${signInProviderName(open.provider)}`}
-          description={`You'll go to ${signInProviderName(open.provider)} to choose the account, then come back here.`}
+          description={
+            account.providerFlow === "loopback"
+              ? `Your browser opens ${signInProviderName(open.provider)} to choose the account. Come back here when it's done.`
+              : `You'll go to ${signInProviderName(open.provider)} to choose the account, then come back here.`
+          }
           label={`Continue to ${signInProviderName(open.provider)}`}
           variant="primary"
           errorTitle="Couldn't start linking"
           action={async (confirmation) => {
             const result = await account.linkProvider(open.provider, confirmation);
-            if (!result.ok) return result;
-            navigate(result.value);
+            if (!result.ok || result.value.redirect === undefined) return result;
+            navigate(result.value.redirect);
             // The page is leaving for the provider.
             return new Promise<never>(() => {});
           }}
-          onDone={() => close()}
+          onDone={() => close(`${signInProviderName(open.provider)} linked.`)}
           onCancel={() => close()}
         />
       ) : null}

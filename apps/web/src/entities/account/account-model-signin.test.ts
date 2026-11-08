@@ -1,6 +1,7 @@
 // The account model's ADR-0044 calls against scripted fetches: email sign-up
-// and the needsEmail gate, provider sign-in over the desktop loopback, and
-// finishing a pending provider sign-in in cookie mode.
+// and the needsEmail gate, provider sign-in over the desktop loopback,
+// finishing a pending provider sign-in in cookie mode, and linking a provider
+// from the desktop's settings (#631).
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fromBase64Url, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { AccountFetch, AccountFetchInit } from "@pinomad/client/account.ts";
@@ -321,5 +322,67 @@ describe("account model: sign-ins that were overtaken (PR #630 review)", () => {
     await saving;
     expect(model.state).toMatchObject({ status: "signed-in", user: "bob", needsEmail: true });
     expect(model.state).not.toHaveProperty("email");
+  });
+});
+
+describe("account model: linking a provider from the desktop (#631)", () => {
+  const signedInBridge = (open: (input: { state: string; url: string }) => Promise<{ linked: string } | { error: string }>) => {
+    const listen = vi.fn((input: { serverOrigin: string; state: string }) => {
+      void input;
+      return Promise.resolve({ redirectUri: "http://127.0.0.1:53682/callback" });
+    });
+    const openSpy = vi.fn(open);
+    const bridge = {
+      hosts: store(),
+      account: {
+        get: () => Promise.resolve({ serverOrigin: ORIGIN, token: "tok" }),
+        save: () => Promise.resolve(),
+        clear: () => Promise.resolve(),
+      },
+      oauthSignIn: () => Promise.resolve({ error: "unused" }),
+      oauthLink: { listen, open: openSpy },
+    } as unknown as DesktopBridge;
+    return { bridge, listen, open: openSpy };
+  };
+  const me = { status: 200, body: { user: { username: "ada@example.com", email: "ada@example.com" } } };
+  const start = `${ORIGIN}/api/oauth/github/start?link=ticket`;
+
+  it("listens, asks the server with the loopback redirect, opens its URL and settles once linked", async () => {
+    const { bridge, listen, open } = signedInBridge(() => Promise.resolve({ linked: "github" }));
+    const fake = fakeFetch(me, { status: 200, body: [] }, { status: 200, body: { url: start } });
+    const model = makeModel(fake, { bridge });
+    await vi.waitFor(() => expect(model.state.status).toBe("signed-in"));
+    expect(await model.linkProvider("github", { reauth: "grant" })).toEqual({ ok: true, value: {} });
+    const { state } = listen.mock.calls[0]![0];
+    expect(listen.mock.calls[0]![0].serverOrigin).toBe(ORIGIN);
+    const link = fake.calls.find((call) => call.url === `${ORIGIN}/api/oauth/github/link`)!;
+    expect(link.init!.headers).toMatchObject({ authorization: "Bearer tok" });
+    expect(body(link)).toMatchObject({ reauth: "grant", client: "native", redirect_uri: "http://127.0.0.1:53682/callback", state });
+    expect(body(link).code_challenge).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(open).toHaveBeenCalledWith({ state, url: start });
+  });
+
+  it("opens nothing when the server refuses the confirmation, and passes a browser refusal through", async () => {
+    const { bridge, open } = signedInBridge(() => Promise.resolve({ error: "identity_taken" }));
+    const fake = fakeFetch(me, { status: 200, body: [] }, { status: 403, body: { error: "invalid_reauth" } }, { status: 200, body: { url: start } });
+    const model = makeModel(fake, { bridge });
+    await vi.waitFor(() => expect(model.state.status).toBe("signed-in"));
+    expect(await model.linkProvider("github", { reauth: "stale" })).toEqual({ ok: false, error: { code: "invalid_reauth", status: 403 } });
+    expect(open).not.toHaveBeenCalled();
+    expect(await model.linkProvider("github", "pw")).toEqual({ ok: false, error: { code: "identity_taken" } });
+  });
+
+  it("doesn't report a link that came back after this session ended as this account's", async () => {
+    let answer!: (result: { linked: string }) => void;
+    const { bridge, open } = signedInBridge(() => new Promise((resolve) => (answer = resolve)));
+    const fake = fakeFetch(me, { status: 200, body: [] }, { status: 200, body: { url: start } }, { status: 204 });
+    const model = makeModel(fake, { bridge });
+    await vi.waitFor(() => expect(model.state.status).toBe("signed-in"));
+    const linking = model.linkProvider("github", "pw");
+    await vi.waitFor(() => expect(open).toHaveBeenCalled());
+    await model.logout();
+    answer({ linked: "github" });
+    expect(await linking).toEqual({ ok: false, error: { code: "session_ended" } });
+    expect(model.state.status).toBe("signed-out");
   });
 });
