@@ -1,11 +1,14 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
+import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
+import { HStack, Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
+import { List, ListItem } from "@astryxdesign/core/List";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { AccountConfirmation, AccountError, EmailConfirmation } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
+import { SettingsGroup } from "../../shared/ui/settings-group.tsx";
 import { accountErrorMessage } from "./account-error.ts";
 import { CODE_INPUT } from "./code-input.ts";
 import { useConfirmIdentity } from "./confirm-identity.tsx";
@@ -36,12 +39,22 @@ export function EmailForm({
   const [error, setError] = useState<AccountError>();
   // The grant lapsed after the new address got its code: confirm again on this step.
   const [reconfirm, setReconfirm] = useState(false);
+  // A save can land after the dialog closed and a new form opened: only a
+  // form still on screen may act on its result (dureview #642).
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
   const run = (call: (confirmation: EmailConfirmation) => Promise<{ ok: true } | { ok: false; error: AccountError }>, then: () => void): void => {
     setBusy(true);
     setError(undefined);
     void (async () => {
       const confirmation = await identity.confirm();
       const result = confirmation.ok ? await call(byName(confirmation.value)) : confirmation;
+      if (!live.current) return;
       setBusy(false);
       if (result.ok) then();
       else {
@@ -103,44 +116,55 @@ export function EmailForm({
   );
 }
 
-/** The account's email, with "Change email" opening the form in place. */
+/** The account's email, with Change opening the form in a dialog. */
 export function AccountEmail({ account, email }: { account: AccountModel; email: string | undefined }) {
   const [open, setOpen] = useState(false);
   const [changed, setChanged] = useState(false);
-  if (open) {
-    return (
-      <VStack gap={2}>
-        <Text weight="semibold">Change email</Text>
-        <EmailForm
-          account={account}
-          submitLabel="Save"
-          onSaved={() => {
-            setOpen(false);
-            setChanged(true);
-          }}
-          onCancel={() => setOpen(false)}
-        />
-      </VStack>
-    );
-  }
+  const title = email === undefined ? "Add email" : "Change email";
   return (
-    <VStack gap={1}>
-      <HStack gap={2} vAlign="center" hAlign="between">
-        <VStack gap={0}>
-          <Text weight="semibold">Email</Text>
-          <Text type="supporting">{email ?? "None yet"}</Text>
-        </VStack>
-        <Button
-          label={email === undefined ? "Add email" : "Change email"}
-          variant="secondary"
-          size="sm"
-          onClick={() => {
-            setChanged(false);
-            setOpen(true);
-          }}
+    <VStack gap={2}>
+      <SettingsGroup title="Email">
+      <List aria-label="Email">
+        <ListItem
+          label={email ?? "None yet"}
+          {...(changed ? { description: "Email saved." } : {})}
+          endContent={
+            <Button
+              label={email === undefined ? "Add" : "Change"}
+              aria-label={title}
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setChanged(false);
+                setOpen(true);
+              }}
+            />
+          }
         />
-      </HStack>
-      {changed ? <Text type="supporting">Email saved.</Text> : null}
+      </List>
+      </SettingsGroup>
+      {open ? (
+        <Dialog aria-label={title} isOpen onOpenChange={(next) => (next ? undefined : setOpen(false))} purpose="form" width={460}>
+          <Layout
+            header={<DialogHeader title={title} onOpenChange={() => setOpen(false)} />}
+            content={
+              <LayoutContent>
+                <div style={{ padding: "var(--spacing-2)" }}>
+                  <EmailForm
+                    account={account}
+                    submitLabel="Save"
+                    onSaved={() => {
+                      setOpen(false);
+                      setChanged(true);
+                    }}
+                    onCancel={() => setOpen(false)}
+                  />
+                </div>
+              </LayoutContent>
+            }
+          />
+        </Dialog>
+      ) : null}
     </VStack>
   );
 }

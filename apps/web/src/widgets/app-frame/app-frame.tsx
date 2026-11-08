@@ -28,7 +28,8 @@ import {
   type SidebarLocate,
   type SidebarMachine,
 } from "./sidebar.tsx";
-import { SettingsDialog } from "./settings-dialog.tsx";
+import { SettingsDialog, type SectionId } from "./settings-dialog.tsx";
+import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { AccountDialog } from "../account/account-dialog.tsx";
 
 const SIDEBAR_OPEN_KEY = "pinomad.sidebar.open";
@@ -97,8 +98,15 @@ export function AppFrame({
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(readSidebarOpen);
   const [navOpen, setNavOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  // Open Settings, on a given section or the default one.
+  const [settingsAt, setSettingsAt] = useState<{ section?: SectionId }>();
   const [accountOpen, setAccountOpen] = useState(false);
+  const account = useAccountModel();
+  // Signed in, the account lives in Settings; otherwise the sign-in dialog.
+  const openAccount = (): void => {
+    if (account.state.status === "signed-in") setSettingsAt({ section: "account" });
+    else setAccountOpen(true);
+  };
   const [locate, setLocate] = useState<SidebarLocate>();
   const focused = machines.find((machine) => machine.key === focusKey);
   // Under the desktop shell on macOS, the traffic lights own the top-left
@@ -154,8 +162,8 @@ export function AppFrame({
                 }
                 footer={
                   <SidebarFooter
-                    onOpenSettings={() => setSettingsOpen(true)}
-                    onOpenAccount={() => setAccountOpen(true)}
+                    onOpenSettings={() => setSettingsAt({})}
+                    onOpenAccount={openAccount}
                     onLocateHost={locateHost}
                   />
                 }
@@ -197,20 +205,21 @@ export function AppFrame({
           >
             {sidebar}
             <SidebarFooter
-              onOpenSettings={() => setSettingsOpen(true)}
-              onOpenAccount={() => setAccountOpen(true)}
+              onOpenSettings={() => setSettingsAt({})}
+              onOpenAccount={openAccount}
               onLocateHost={locateHost}
               onSelect={() => setNavOpen(false)}
             />
           </MobileNav>
         ) : null}
-        {settingsOpen ? (
+        {settingsAt === undefined ? null : (
           <SettingsDialog
             machines={machines}
             {...(focusKey === undefined ? {} : { initialKey: focusKey })}
-            onClose={() => setSettingsOpen(false)}
+            {...(settingsAt.section === undefined ? {} : { initialSection: settingsAt.section })}
+            onClose={() => setSettingsAt(undefined)}
           />
-        ) : null}
+        )}
         {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}
         {/* Every notice a machine reports also lands as a toast — rejected
             commands only surface as notices otherwise, and the panel that

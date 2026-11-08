@@ -19,7 +19,7 @@ export const Available: Story = {};
 export const Confirm: Story = {
   args: { view: fakeView({ upgrade: fakeUpgrade({ available: { version: "1.0.0", publishedAt: Date.now() - 86_400_000, crossesMajor: true } }) }) },
   play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "Upgrade…" }));
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Upgrade" }));
   },
 };
 

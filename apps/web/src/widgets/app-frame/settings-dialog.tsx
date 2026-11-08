@@ -24,9 +24,11 @@ import type { ModelRef } from "@earendil-works/pi-durable";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { familyUpdatedAt, relativeTime } from "@pinomad/client/family.ts";
 import { summaryOf, thinkingLevelLabels } from "@pinomad/client/model.ts";
+import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useNow } from "../../shared/use-now.ts";
-import { Archive, ArchiveRestore, ArrowBigUpDash, ArrowLeft, Bot, Cancel, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, Laptop, MoreHorizontal, Puzzle, RefreshCw, Sparkles } from "../../shared/ui/icons.tsx";
+import { Archive, ArchiveRestore, ArrowBigUpDash, ArrowLeft, Bot, Cancel, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, Laptop, MoreHorizontal, Puzzle, RefreshCw, Sparkles, UserCircle } from "../../shared/ui/icons.tsx";
+import { AccountPanel } from "../account/account-panel.tsx";
 import { AgentEditorDialog } from "./agent-editor-dialog.tsx";
 import type { FrameMachine } from "./app-frame.tsx";
 import { DevicesSection } from "./devices-section.tsx";
@@ -38,27 +40,37 @@ import { SettingsSubpageContext, type SettingsSubpage } from "./settings-subpage
 import { UpdatesSection } from "./updates-section.tsx";
 
 const SECTIONS = [
-  { id: "hosts", title: "Hosts", icon: Computer, group: "device" },
-  { id: "this-mac", title: "This Mac", icon: Laptop, group: "device" },
-  { id: "updates", title: "Updates", icon: RefreshCw, group: "device" },
-  { id: "providers", title: "Providers", icon: KeyRound, group: "host" },
-  { id: "models", title: "Models", icon: Sparkles, group: "host" },
-  { id: "agents", title: "Agents", icon: Bot, group: "host" },
-  { id: "mcp", title: "MCP", icon: Puzzle, group: "host" },
-  { id: "chats", title: "Chats", icon: ChatBubble, group: "host" },
-  { id: "devices", title: "Devices", icon: Devices, group: "host" },
-  { id: "archived", title: "Archived", icon: Archive, group: "host" },
-  { id: "upgrade", title: "Upgrade", icon: ArrowBigUpDash, group: "host" },
-  { id: "about", title: "About", icon: Info, group: "host" },
+  { id: "account", title: "Account", icon: UserCircle, group: "account", keywords: "profile email password sign-in methods github google apple signed-in devices sessions sign out delete" },
+  { id: "hosts", title: "Hosts", icon: Computer, group: "device", keywords: "pair unpair add connection relay peer-to-peer join" },
+  { id: "this-mac", title: "This Mac", icon: Laptop, group: "device", keywords: "local host install" },
+  { id: "updates", title: "Updates", icon: RefreshCw, group: "device", keywords: "version download" },
+  { id: "providers", title: "Providers", icon: KeyRound, group: "host", keywords: "api key login subscription" },
+  { id: "models", title: "Models", icon: Sparkles, group: "host", keywords: "default model thinking" },
+  { id: "agents", title: "Agents", icon: Bot, group: "host", keywords: "roles subagents" },
+  { id: "mcp", title: "MCP", icon: Puzzle, group: "host", keywords: "servers tools" },
+  { id: "chats", title: "Chats", icon: ChatBubble, group: "host", keywords: "conversations history" },
+  { id: "devices", title: "Devices", icon: Devices, group: "host", keywords: "paired revoke" },
+  { id: "archived", title: "Archived", icon: Archive, group: "host", keywords: "archive restore" },
+  { id: "upgrade", title: "Upgrade", icon: ArrowBigUpDash, group: "host", keywords: "update version pinomad" },
+  { id: "about", title: "About", icon: Info, group: "host", keywords: "version info" },
 ] as const;
 
 type Section = (typeof SECTIONS)[number];
-type SectionId = Section["id"];
+export type SectionId = Section["id"];
+
+type AccountSectionId = "account";
+const isAccountSection = (id: SectionId): id is AccountSectionId => id === "account";
 
 const sectionTitle = (id: SectionId): string => SECTIONS.find((section) => section.id === id)!.title;
 
 const isHostSection = (id: SectionId): boolean =>
   SECTIONS.find((section) => section.id === id)?.group === "host";
+
+/** A section the search box keeps: its name or what it holds contains the query. */
+const matchesQuery = (entry: Section, query: string): boolean => {
+  const needle = query.trim().toLowerCase();
+  return needle === "" || `${entry.title} ${entry.keywords}`.toLowerCase().includes(needle);
+};
 
 const sectionIcon = (Icon: Section["icon"]): ReactNode => (
   <Icon aria-hidden="true" style={{ width: "var(--spacing-4)", height: "var(--spacing-4)" }} />
@@ -77,16 +89,21 @@ const sectionIcon = (Icon: Section["icon"]): ReactNode => (
 export function SettingsDialog({
   machines,
   initialKey,
+  initialSection,
   onClose,
 }: {
   /** Every paired machine; the host group manages one of them at a time. */
   machines: readonly FrameMachine[];
   /** The machine to open on — the focused one. */
   initialKey?: string;
+  /** The section to open on instead of the default (the sidebar's account opens Account). */
+  initialSection?: SectionId;
   onClose: () => void;
 }) {
   const compact = useMediaQuery("(max-width: 640px)");
-  const [section, setSection] = useState<SectionId | undefined>(undefined);
+  const [section, setSection] = useState<SectionId | undefined>(initialSection);
+  const [query, setQuery] = useState("");
+  const accountStatus = useAccountModel().state.status;
   // A page the open section opened inside itself (one host's page).
   const [subpage, setSubpage] = useState<SettingsSubpage>();
   const subpageHost = useMemo(() => ({ ownsBack: compact, set: setSubpage }), [compact]);
@@ -105,7 +122,12 @@ export function SettingsDialog({
   // device's own sections then. An explicit pick stays put and explains itself.
   const active = section ?? (connected ? "providers" : "hosts");
   const hostName = view?.settings?.hostName ?? machine?.label ?? "This host";
-  const groups = [
+  // Signed in, the account; signed out, the sign-in form; no group at all
+  // where this client can't reach an account API.
+  const accountSections =
+    accountStatus === "signed-in" || accountStatus === "signed-out" ? SECTIONS.filter((entry) => entry.group === "account") : [];
+  const allGroups = [
+    ...(accountSections.length === 0 ? [] : [{ title: "Account", sections: accountSections }]),
     {
       title: "This device",
       sections: SECTIONS.filter(
@@ -118,8 +140,13 @@ export function SettingsDialog({
       ? [{ title: choosable ? "Host" : hostName, sections: SECTIONS.filter((entry) => entry.group === "host") }]
       : []),
   ];
+  const searching = query.trim() !== "";
+  const groups = allGroups
+    .map((group) => ({ ...group, sections: group.sections.filter((entry) => matchesQuery(entry, query)) }))
+    .filter((group) => group.sections.length > 0);
+  // Searching looks for a section, not for another host: the picker waits.
   const picker =
-    !choosable || machine === undefined ? null : (
+    searching || !choosable || machine === undefined ? null : (
       <Selector
         label="Host"
         isLabelHidden
@@ -133,10 +160,28 @@ export function SettingsDialog({
       />
     );
 
+  const searchField = (
+    <TextInput
+      label="Search settings"
+      isLabelHidden
+      placeholder="Search"
+      size="sm"
+      startIcon="search"
+      value={query}
+      onChange={setQuery}
+      onKeyDown={(event) => {
+        const first = groups[0]?.sections[0];
+        if (event.key === "Enter" && first !== undefined) setSection(first.id);
+      }}
+    />
+  );
+  const noMatch = groups.length === 0 ? <Text type="supporting">No settings match</Text> : null;
+
   const sectionNav = (
     <LayoutPanel padding={2} width="calc(var(--spacing-10) * 7)" hasDivider>
-      <SideNav aria-label="Settings sections" style={{ width: "100%" }}>
+      <SideNav aria-label="Settings sections" style={{ width: "100%" }} topContent={searchField}>
         <VStack gap={3}>
+          {noMatch}
           {groups.map((group) => (
             <SideNavSection key={group.title} title={group.title}>
               {group.sections[0]?.group === "host" ? picker : null}
@@ -158,6 +203,8 @@ export function SettingsDialog({
 
   const sectionList = (
     <VStack gap={4}>
+      {searchField}
+      {noMatch}
       {groups.map((group) => (
         <VStack key={group.title} gap={1}>
           <Text type="supporting" weight="semibold">
@@ -241,6 +288,7 @@ export function SettingsDialog({
                   section={active}
                   showTitle={!compact}
                   showSupporting={subpage === undefined}
+                  onSection={setSection}
                 />
               </SettingsSubpageContext.Provider>
             )}
@@ -270,6 +318,7 @@ function SectionPage({
   section,
   showTitle,
   showSupporting,
+  onSection,
 }: {
   view?: DurableView;
   remote?: RemoteDurable;
@@ -281,8 +330,17 @@ function SectionPage({
   showTitle: boolean;
   /** Off while the section shows a page of its own, which the supporting line doesn't describe. */
   showSupporting: boolean;
+  onSection: (section: SectionId) => void;
 }) {
-  const { title, supporting, body } = sectionBody(view, remote, device, hostKey, connected, onReconnect, section);
+  const { title, supporting, body } = isAccountSection(section)
+    ? {
+        title: sectionTitle(section),
+        supporting: undefined,
+        body: (
+          <AccountPanel page="overview" />
+        ),
+      }
+    : sectionBody(view, remote, device, hostKey, connected, onReconnect, section);
   const headingId = `settings-${section}-heading`;
   return (
     <VStack
@@ -306,7 +364,7 @@ function sectionBody(
   hostKey: string | undefined,
   connected: boolean,
   onReconnect: (() => void) | undefined,
-  section: SectionId,
+  section: Exclude<SectionId, AccountSectionId>,
 ): { title: string; supporting?: ReactNode; body: ReactNode } {
   if (section === "hosts") {
     return {
@@ -746,8 +804,8 @@ function AgentRoleCard({
               variant="ghost"
               isDisabled={!connected}
               items={[
-                { label: "Edit…", onClick: onEdit },
-                { label: "Delete…", onClick: () => setConfirming(true) },
+                { label: "Edit", onClick: onEdit },
+                { label: "Delete", onClick: () => setConfirming(true) },
               ]}
             />
           </HStack>
@@ -811,7 +869,7 @@ function AgentProblemCard({
               size="sm"
               variant="ghost"
               isDisabled={!connected}
-              items={[{ label: "Delete…", onClick: () => setConfirming(true) }]}
+              items={[{ label: "Delete", onClick: () => setConfirming(true) }]}
             />
           </HStack>
         )}

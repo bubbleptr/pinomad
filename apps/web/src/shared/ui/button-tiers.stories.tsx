@@ -32,8 +32,8 @@ export const InContext: Story = {
             description="Paired Oct 12"
             endContent={
               <HStack gap={2}>
-                <Button label="Connection…" variant="secondary" size="sm" />
-                <Button label="Unpair…" variant="secondary" size="sm" />
+                <Button label="Connection" variant="secondary" size="sm" />
+                <Button label="Unpair" variant="secondary" size="sm" />
               </HStack>
             }
           />

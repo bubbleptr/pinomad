@@ -2,6 +2,7 @@ import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
+import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
@@ -9,7 +10,10 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { AccountConfirmation, AccountError, AccountIdentities, AccountResult } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
 import { knownSignInProviders, signInProviderName, SignInProviderMark } from "../../entities/provider/sign-in-provider.tsx";
+import { KeyRound } from "../../shared/ui/icons.tsx";
+import { SettingsGroup } from "../../shared/ui/settings-group.tsx";
 import { accountErrorMessage } from "./account-error.ts";
+import { ConfirmDialog } from "./confirm-dialog.tsx";
 import { MIN_PASSWORD_LENGTH, NEW_PASSWORD_INPUT, passwordLength } from "./code-input.ts";
 import { useConfirmIdentity } from "./confirm-identity.tsx";
 
@@ -72,12 +76,21 @@ export function SignInMethods({
     if (message !== undefined) load();
   };
   const busy = open !== undefined;
+  const start = (next: Open): void => {
+    setDone(undefined);
+    setOpen(next);
+  };
   return (
     <VStack gap={2}>
-      <Text weight="semibold">Sign-in methods</Text>
-      <List density="compact">
+      <SettingsGroup title="Sign-in methods">
+      <List hasDividers aria-label="Sign-in methods">
         <ListItem
           label="Password"
+          startContent={
+            <MethodMark>
+              <KeyRound aria-hidden="true" style={{ width: 18, height: 18 }} />
+            </MethodMark>
+          }
           description={identities.hasPassword ? "Set" : "Not set"}
           endContent={
             <Button
@@ -85,10 +98,7 @@ export function SignInMethods({
               variant="secondary"
               size="sm"
               isDisabled={busy}
-              onClick={() => {
-                setDone(undefined);
-                setOpen({ kind: "password" });
-              }}
+              onClick={() => start({ kind: "password" })}
             />
           }
         />
@@ -97,47 +107,52 @@ export function SignInMethods({
             key={identity.provider}
             label={signInProviderName(identity.provider)}
             description={identity.email}
-            startContent={<SignInProviderMark provider={identity.provider} />}
+            startContent={
+              <MethodMark>
+                <SignInProviderMark provider={identity.provider} size={20} />
+              </MethodMark>
+            }
+            endContent={
+              <MoreMenu
+                label={`More for ${signInProviderName(identity.provider)}`}
+                size="sm"
+                isDisabled={busy}
+                items={[{ label: "Remove", onClick: () => start({ kind: "remove", provider: identity.provider }) }]}
+              />
+            }
+          />
+        ))}
+        {linkable.map((provider) => (
+          <ListItem
+            key={provider.id}
+            label={provider.name}
+            description="Not linked"
+            startContent={
+              <MethodMark>
+                <SignInProviderMark provider={provider.id} size={20} />
+              </MethodMark>
+            }
             endContent={
               <Button
-                label="Remove"
+                label="Link"
+                aria-label={`Link ${provider.name}`}
                 variant="secondary"
                 size="sm"
                 isDisabled={busy}
-                onClick={() => {
-                  setDone(undefined);
-                  setOpen({ kind: "remove", provider: identity.provider });
-                }}
+                onClick={() => start({ kind: "link", provider: provider.id })}
               />
             }
           />
         ))}
       </List>
-      {linkable.length === 0 ? null : (
-        <HStack gap={2} wrap="wrap">
-          {linkable.map((provider) => (
-            <Button
-              key={provider.id}
-              label={`Link ${provider.name}`}
-              variant="secondary"
-              size="sm"
-              icon={<SignInProviderMark provider={provider.id} />}
-              isDisabled={busy}
-              onClick={() => {
-                setDone(undefined);
-                setOpen({ kind: "link", provider: provider.id });
-              }}
-            />
-          ))}
-        </HStack>
-      )}
+      </SettingsGroup>
       {done === undefined ? null : <Text type="supporting">{done}</Text>}
       {open?.kind === "password" ? (
         <PasswordForm account={account} hasPassword={identities.hasPassword} onClose={close} />
       ) : open?.kind === "remove" ? (
         <ConfirmedAction
           account={account}
-          title={`Remove ${signInProviderName(open.provider)}`}
+          title={`Remove ${signInProviderName(open.provider)}?`}
           description={`You won't be able to sign in with ${signInProviderName(open.provider)} until you link it again.`}
           label={`Remove ${signInProviderName(open.provider)}`}
           variant="destructive"
@@ -232,17 +247,16 @@ function ConfirmedAction({
   };
   const identity = useConfirmIdentity(account, submit);
   return (
-    <VStack gap={2}>
-      <Text weight="semibold">{title}</Text>
-      {description === undefined ? null : <Text type="supporting">{description}</Text>}
+    <ConfirmDialog
+      title={title}
+      {...(description === undefined ? {} : { description })}
+      onClose={onCancel}
+      action={<Button label={label} variant={variant} isLoading={busy} isDisabled={!identity.ready || !isReady} onClick={submit} />}
+    >
       {identity.field}
       {extra?.(submit)}
       {error === undefined ? null : <Banner status="error" title={errorTitle} description={accountErrorMessage(error)} />}
-      <HStack gap={2}>
-        <Button label={label} variant={variant} isLoading={busy} isDisabled={!identity.ready || !isReady} onClick={submit} />
-        <Button label="Cancel" variant="secondary" onClick={onCancel} />
-      </HStack>
-    </VStack>
+    </ConfirmDialog>
   );
 }
 
@@ -289,7 +303,7 @@ function PasswordForm({
   );
 }
 
-/** A server that can't list sign-in methods: the Change password button as before. */
+/** A server that can't list sign-in methods: only the password to change. */
 function ChangePasswordOnly({ account }: { account: AccountModel }) {
   const [open, setOpen] = useState(false);
   const [done, setDone] = useState<string>();
@@ -311,6 +325,7 @@ function ChangePasswordOnly({ account }: { account: AccountModel }) {
         <Button
           label="Change password"
           variant="secondary"
+          size="sm"
           onClick={() => {
             setDone(undefined);
             setOpen(true);
@@ -319,5 +334,17 @@ function ChangePasswordOnly({ account }: { account: AccountModel }) {
       </HStack>
       {done === undefined ? null : <Text type="supporting">{done}</Text>}
     </VStack>
+  );
+}
+
+/** A sign-in method's mark in a box of its own, so every row's name starts at the same edge. */
+function MethodMark({ children }: { children: ReactNode }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)]"
+    >
+      {children}
+    </span>
   );
 }

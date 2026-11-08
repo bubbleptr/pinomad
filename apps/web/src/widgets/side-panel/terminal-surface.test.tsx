@@ -138,7 +138,7 @@ describe("TerminalSurface", () => {
     expect(terminals.restart).toHaveBeenCalledWith("t-shell", { cols: 80, rows: 24 });
     await choose("Terminal 2", "Close");
     expect(terminals.close).toHaveBeenCalledWith("t-shell");
-    await choose("dev server", "Rename…");
+    await choose("dev server", "Rename");
     expect(await screen.findByRole("dialog", { name: "Rename terminal" })).toBeInTheDocument();
   });
 });

@@ -24,14 +24,14 @@ function renderSection(
 describe("HostUpgradeSection", () => {
   it("upgrades when idle after the confirmation", async () => {
     const { remote, user } = renderSection();
-    await user.click(screen.getByRole("button", { name: "Upgrade…" }));
+    await user.click(screen.getByRole("button", { name: "Upgrade" }));
     await user.click(screen.getByRole("button", { name: "Upgrade when idle" }));
     expect(remote.controller.startUpgrade).toHaveBeenCalledWith("idle");
   });
 
   it("warns in the confirmation when the release crosses a protocol major", async () => {
     const { user } = renderSection({ available: { version: "1.0.0", publishedAt: Date.now(), crossesMajor: true } });
-    await user.click(screen.getByRole("button", { name: "Upgrade…" }));
+    await user.click(screen.getByRole("button", { name: "Upgrade" }));
     const confirm = screen.getByRole("group", { name: "Upgrade the host to pinomad 1.0.0?" });
     expect(confirm).toHaveTextContent("Apps that haven't updated yet can't connect");
     expect(confirm).toHaveTextContent("Open terminals close");
@@ -39,7 +39,7 @@ describe("HostUpgradeSection", () => {
 
   it("cancels a wait", async () => {
     const { remote, user } = renderSection({ phase: "waiting", target: "0.14.0" });
-    expect(screen.queryByRole("button", { name: "Upgrade…" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Upgrade" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Cancel upgrade" }));
     expect(remote.controller.cancelUpgrade).toHaveBeenCalled();
   });
@@ -53,7 +53,7 @@ describe("HostUpgradeSection", () => {
   it("keeps the confirmation until the host answers, and says so when it doesn't", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const { user } = renderSection({}, {}, { startUpgrade: () => new Promise(() => {}) });
-    await user.click(screen.getByRole("button", { name: "Upgrade…" }));
+    await user.click(screen.getByRole("button", { name: "Upgrade" }));
     await user.click(screen.getByRole("button", { name: "Upgrade when idle" }));
     expect(screen.getByRole("group", { name: /Upgrade the host/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
@@ -78,7 +78,7 @@ describe("HostUpgradeSection", () => {
 
   it("shows the command instead of the button when the host can't upgrade itself", () => {
     renderSection({ blocked: "no-service" });
-    expect(screen.queryByRole("button", { name: "Upgrade…" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Upgrade" })).toBeNull();
     expect(screen.getByText(/Run `pinomad upgrade` on the host/)).toBeInTheDocument();
   });
 

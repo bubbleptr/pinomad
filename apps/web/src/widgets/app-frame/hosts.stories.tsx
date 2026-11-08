@@ -156,7 +156,7 @@ export const SectionUnpair: Story = {
   decorators: [withHosts(), withRuntime(relay)],
   play: async ({ canvasElement }) => {
     await openConnection(canvasElement);
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "Unpair…" }));
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Unpair" }));
   },
 };
 
@@ -164,7 +164,7 @@ export const SectionUnpair: Story = {
 export const SectionAddHost: Story = {
   decorators: [withHosts(), withRuntime(relay), withAccount(signedIn())],
   play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "Add a host…" }));
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Add a host" }));
   },
 };
 

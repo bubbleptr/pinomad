@@ -550,7 +550,7 @@ function Connection({
       )}
       <HStack gap={2} wrap="wrap">
         <Button label={isKey ? "Replace key" : "Sign in again"} size="sm" isDisabled={!connected} onClick={() => onLogin(stored.kind)} />
-        <Button label={isKey ? "Remove key…" : "Log out…"} variant="secondary" size="sm" isDisabled={!connected} onClick={() => setConfirming(true)} />
+        <Button label={isKey ? "Remove key" : "Log out"} variant="secondary" size="sm" isDisabled={!connected} onClick={() => setConfirming(true)} />
       </HStack>
       {hasOther ? (
         <div>
@@ -588,7 +588,7 @@ function StoredLoginCard({ login, connected, remote }: { login: StoredLogin; con
             size="sm"
             variant="ghost"
             isDisabled={!connected}
-            items={[{ label: "Log out…", onClick: () => setConfirming(true) }]}
+            items={[{ label: "Log out", onClick: () => setConfirming(true) }]}
           />
         )}
       </HStack>

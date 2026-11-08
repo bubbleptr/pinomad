@@ -2,10 +2,13 @@ import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { useState } from "react";
 import { oauthReturn } from "../../entities/account/oauth-return.ts";
-import { AccountPanel } from "./account-panel.tsx";
+import { AccountPanel, type AccountPage } from "./account-panel.tsx";
 
-/** The account panel in a dialog, opened from the sidebar's user bar. */
-export function AccountDialog({ onClose }: { onClose: () => void }) {
+/**
+ * The account panel on its own: signing in from the sidebar, and the account
+ * where no Settings is at hand (the one-shot screens, a provider link's return).
+ */
+export function AccountDialog({ initialPage, onClose }: { initialPage?: AccountPage; onClose: () => void }) {
   return (
     <Dialog isOpen onOpenChange={(open) => (open ? undefined : onClose())} width={480}>
       <Layout
@@ -13,7 +16,7 @@ export function AccountDialog({ onClose }: { onClose: () => void }) {
         content={
           <LayoutContent>
             <div style={{ padding: "var(--spacing-2)" }}>
-              <AccountPanel />
+              <AccountPanel {...(initialPage === undefined ? {} : { initialPage })} />
             </div>
           </LayoutContent>
         }
@@ -24,8 +27,8 @@ export function AccountDialog({ onClose }: { onClose: () => void }) {
 
 /**
  * The account panel, opened on its own when a provider link or sign-in came
- * back to this page (`?oauth_linked=`, `?oauth_error=`): the panel is where
- * that's said. `stayClosed` when the screen App shows has a panel of its own,
+ * back to this page (`?oauth_linked=`, `?oauth_error=`): the account page
+ * says how a link went; signed out, the sign-in form says why it was refused. `stayClosed` when the screen App shows has a panel of its own,
  * or shouldn't be covered. Decided on the first render only.
  */
 export function OAuthReturnDialog({ stayClosed }: { stayClosed: boolean }) {

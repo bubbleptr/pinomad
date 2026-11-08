@@ -162,7 +162,7 @@ export function ConversationComposer({
   // Why a typed command wasn't run; any edit to the draft clears it.
   const [commandError, setCommandError] = useState<string | undefined>(undefined);
   useEffect(() => setCommandError(undefined), [value, images.length, files.entries.length]);
-  // Why the + menu's Run a command… can't open: a command starts at index 0,
+  // Why the + menu's Run a command can't open: a command starts at index 0,
   // so picking one into a draft with a message would bury or replace it.
   const commandsUnavailable =
     slash.commands === undefined
@@ -528,14 +528,14 @@ export function ConversationComposer({
           <>
             <ChatAddMenu
               isDisabled={disconnected || editLocked}
-              // Refetch on open so Run a command…'s disabled reason is current.
+              // Refetch on open so Run a command's disabled reason is current.
               onOpenChange={(open) => {
                 if (open) slash.request(true);
               }}
             >
               <ChatAddMenuItem
                 icon={ImageIcon}
-                label="Add images…"
+                label="Add images"
                 hint={imagesUnavailable ?? "Or paste or drop"}
                 isDisabled={!accepts}
                 onClick={() => fileInput.current?.click()}
@@ -543,16 +543,16 @@ export function ConversationComposer({
               {attachmentsEnabled ? (
                 <ChatAddMenuItem
                   icon={FileIcon}
-                  label="Attach files…"
+                  label="Attach files"
                   hint="Up to 10 · 10 MB each"
                   onClick={() => attachInput.current?.click()}
                 />
               ) : null}
               {skills.trigger === undefined ? null : (
-                <ChatAddMenuItem icon={Sparkles} label="Use a skill…" hint="Or type $" onClick={() => inputRef.current?.openTrigger("$")} />
+                <ChatAddMenuItem icon={Sparkles} label="Use a skill" hint="Or type $" onClick={() => inputRef.current?.openTrigger("$")} />
               )}
               {roles.length === 0 ? null : (
-                <ChatAddMenuItem icon={Bot} label="Mention an agent…" hint="Or type @" onClick={() => inputRef.current?.openTrigger("@")} />
+                <ChatAddMenuItem icon={Bot} label="Mention an agent" hint="Or type @" onClick={() => inputRef.current?.openTrigger("@")} />
               )}
               {!listsCommands ? (
                 <ChatAddMenuItem
@@ -565,7 +565,7 @@ export function ConversationComposer({
                 // Opens the `/` menu, as typing `/` at the start would.
                 <ChatAddMenuItem
                   icon={CommandLine}
-                  label="Run a command…"
+                  label="Run a command"
                   hint={commandsUnavailable ?? "Or type /"}
                   isDisabled={commandsUnavailable !== undefined}
                   onClick={() => inputRef.current?.openTrigger("/")}

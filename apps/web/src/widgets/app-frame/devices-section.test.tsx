@@ -61,7 +61,7 @@ describe("DevicesSection unpairing", () => {
     const { remote, hosts } = renderDevices();
     const user = userEvent.setup();
 
-    await user.click(screen.getByRole("button", { name: "Unpair Mac Desktop…" }));
+    await user.click(screen.getByRole("button", { name: "Unpair Mac Desktop" }));
     await user.click(within(screen.getByRole("group", { name: "Unpair this device?" })).getByRole("button", { name: "Unpair" }));
 
     await waitFor(() => expect(hosts.forget).toHaveBeenCalledWith(DEVBOX_HOST.hostKey));
@@ -72,7 +72,7 @@ describe("DevicesSection unpairing", () => {
     const { remote, hosts } = renderDevices();
     const user = userEvent.setup();
 
-    await user.click(screen.getByRole("button", { name: "Unpair iPhone…" }));
+    await user.click(screen.getByRole("button", { name: "Unpair iPhone" }));
     await user.click(within(screen.getByRole("group", { name: "Unpair iPhone?" })).getByRole("button", { name: "Unpair" }));
 
     await waitFor(() => expect(remote.controller.revokeDevice).toHaveBeenCalledWith(otherKey));

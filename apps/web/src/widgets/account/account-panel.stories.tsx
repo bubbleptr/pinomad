@@ -29,15 +29,23 @@ export const SignedOutSelfHosted: Story = {
   ],
 };
 
+/** The account's other pages, as the overview opens them. */
+
+
+export const HostsOnAccount: Story = { args: { initialPage: "hosts" }, decorators: [withAccount(signedIn())] };
+
+const body = () => within(document.body);
+
 /** Add a host (#496): the command without a token, the code field, and the token command under Advanced. */
 export const AddingHost: Story = {
+  args: { initialPage: "hosts" },
   decorators: [withAccount(signedIn())],
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "Add a host" }));
   },
 };
 
-/** Changing the password (#450): the form opens under Sign-in methods. */
+/** Changing the password (#450), in its own dialog. */
 export const ChangingPassword: Story = {
   decorators: [withAccount(signedIn())],
   play: async ({ canvasElement }) => {
@@ -56,9 +64,8 @@ export const DeletingAccountByCode: Story = {
     }),
   ],
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "Delete account" }));
-    await userEvent.click(await canvas.findByRole("button", { name: "Send code" }));
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Delete account" }));
+    await userEvent.click(await body().findByRole("button", { name: "Send code" }));
   },
 };
 
@@ -70,13 +77,20 @@ export const SigningOut: Story = {
   },
 };
 
-/** Ticked: this device leaves the account's hosts, so the button turns destructive. */
+/** Ticked: this device also leaves the account's hosts. */
 export const SigningOutSharedComputer: Story = {
   decorators: [withAccount(signedIn())],
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "Sign out" }));
-    await userEvent.click(canvas.getByRole("checkbox", { name: /shared computer/ }));
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Sign out" }));
+    await userEvent.click(await body().findByRole("checkbox", { name: /shared computer/ }));
+  },
+};
+
+/** Signing out everywhere asks first. */
+export const SigningOutEverywhere: Story = {
+  decorators: [withAccount(signedIn())],
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Sign out everywhere" }));
   },
 };
 
@@ -96,9 +110,8 @@ export const DeleteAccountWrongPassword: Story = {
     }),
   ],
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(canvas.getByRole("button", { name: "Delete account" }));
-    await userEvent.type(await canvas.findByLabelText("Password"), "not my password{Enter}");
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Delete account" }));
+    await userEvent.type(await body().findByLabelText("Password"), "not my password{Enter}");
   },
 };
 
@@ -116,8 +129,8 @@ export const RemovingDevice: Story = {
     ),
   ],
   play: async ({ canvasElement }) => {
-    const row = (await within(canvasElement).findByText("Mac Desktop")).closest("li")!;
-    await userEvent.click(within(row).getByRole("button", { name: "Remove" }));
+    await userEvent.click(await within(canvasElement).findByRole("button", { name: "More for Mac Desktop" }));
+    await userEvent.click(await body().findByRole("menuitem", { name: "Remove" }));
   },
 };
 
@@ -129,24 +142,25 @@ export const RemoveDeviceWrongPassword: Story = {
     }),
   ],
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    const row = (await canvas.findByText("Mac Desktop")).closest("li")!;
-    await userEvent.click(within(row).getByRole("button", { name: "Remove" }));
-    await userEvent.type(await canvas.findByLabelText("Password"), "not my password{Enter}");
+    await userEvent.click(await within(canvasElement).findByRole("button", { name: "More for Mac Desktop" }));
+    await userEvent.click(await body().findByRole("menuitem", { name: "Remove" }));
+    await userEvent.type(await body().findByLabelText("Password"), "not my password{Enter}");
   },
 };
 
 /** Removing a host from the account (#512): the password again, and what that does to the host. */
 export const RemovingHost: Story = {
+  args: { initialPage: "hosts" },
   decorators: [withAccount(signedIn())],
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "More for omarchy" }));
-    await userEvent.click(await within(document.body).findByRole("menuitem", { name: "Remove from account…" }));
+    await userEvent.click(await within(document.body).findByRole("menuitem", { name: "Remove from account" }));
   },
 };
 
 /** A wrong password keeps the form; the host stays. */
 export const RemoveHostWrongPassword: Story = {
+  args: { initialPage: "hosts" },
   decorators: [
     withAccount(signedIn(), {
       removeHost: fn(async () => ({ ok: false as const, error: { code: "wrong_password", status: 403 } })),
@@ -155,7 +169,7 @@ export const RemoveHostWrongPassword: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "More for omarchy" }));
-    await userEvent.click(await within(document.body).findByRole("menuitem", { name: "Remove from account…" }));
+    await userEvent.click(await within(document.body).findByRole("menuitem", { name: "Remove from account" }));
     await userEvent.type(await within(document.body).findByLabelText("Password"), "not my password{Enter}");
   },
 };
@@ -163,11 +177,13 @@ export const RemoveHostWrongPassword: Story = {
 export const Checking: Story = { decorators: [withAccount({ status: "checking" })] };
 
 export const RefreshFailed: Story = {
+  args: { initialPage: "hosts" },
   decorators: [withAccount(signedIn({ hostsError: { code: "network" } }))],
 };
 
 /** The connected host refused this device, another reinstalled with a new key, and a pairing wasn't saved. */
 export const NeedsRepair: Story = {
+  args: { initialPage: "hosts" },
   decorators: [
     withAccount(
       signedIn({

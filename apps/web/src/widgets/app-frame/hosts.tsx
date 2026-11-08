@@ -29,7 +29,6 @@ import {
   type HostRuntimeInfo,
 } from "../../entities/host/host-runtimes.ts";
 import { useHosts } from "../../entities/host/host-store.ts";
-import { PairingLinkForm } from "../../entities/host/pairing-link-form.tsx";
 import { unansweredUnpair, unpairHost } from "../../entities/host/unpair.ts";
 import { ArrowLeft, ChevronRight, Computer } from "../../shared/ui/icons.tsx";
 import { AccountDialog } from "../account/account-dialog.tsx";
@@ -43,9 +42,10 @@ import {
   type AccountHostIssue,
   type AccountPairing,
 } from "../account/account-hosts.tsx";
-import { AddHostSteps } from "../account/add-host.tsx";
+import { AddHostDialog } from "../account/add-host.tsx";
 import { RemoveHostDialog } from "../account/remove-host.tsx";
 import { accountHostFor } from "../account/repair-via-account.tsx";
+import { GROUP_ROWS, SettingsGroup } from "../../shared/ui/settings-group.tsx";
 import { hostRoutes, type HostRoute } from "./host-routes.ts";
 import { useSettingsSubpage } from "./settings-subpage.ts";
 import {
@@ -336,19 +336,14 @@ export function HostsSection({
   return (
     <VStack gap={4}>
       <HStack hAlign="end">
-        <Button label="Add a host…" variant="secondary" size="sm" onClick={() => setAdding(true)} />
+        <Button label="Add a host" variant="secondary" size="sm" onClick={() => setAdding(true)} />
       </HStack>
       {accountState === undefined ? null : <AccountPairingBanners state={accountState} pairing={pairing} />}
-      <VStack gap={1}>
-        {others.length === 0 ? null : (
-          <Text type="supporting" weight="semibold">
-            Paired with this device
-          </Text>
-        )}
-        {paired.hosts.length === 0 ? (
-          <Text type="supporting">No paired hosts.</Text>
-        ) : (
-          <ul aria-label="Paired with this device" className="m-0 flex list-none flex-col gap-1 p-0">
+      {paired.hosts.length === 0 ? (
+        <Text type="supporting">No paired hosts.</Text>
+      ) : (
+        <SettingsGroup {...(others.length === 0 ? {} : { title: "Paired with this device" })}>
+          <ul aria-label="Paired with this device" className={GROUP_ROWS}>
             {paired.hosts.map((host) => (
               <PairedHostRow
                 key={host.hostKey}
@@ -363,15 +358,12 @@ export function HostsSection({
               />
             ))}
           </ul>
-        )}
-      </VStack>
+        </SettingsGroup>
+      )}
       {accountState === undefined || others.length === 0 ? null : (
-        <VStack gap={1}>
-          <Text type="supporting" weight="semibold">
-            On your account
-          </Text>
+        <SettingsGroup title="On your account">
           <AccountHostList state={accountState} hosts={others} pairing={pairing} label="On your account" />
-        </VStack>
+        </SettingsGroup>
       )}
       {adding ? <AddHostDialog onClose={() => setAdding(false)} /> : null}
     </VStack>
@@ -422,7 +414,6 @@ function PairedHostRow({
     <li aria-label={label}>
       <Item
         as="div"
-        density="compact"
         startContent={<HostStatusDot connected={connected} />}
         descriptionLines={2}
         label={label}
@@ -542,9 +533,8 @@ function HostDetail({
         )}
       </VStack>
       {connected ? (
-        <VStack gap={1}>
-          <Text weight="semibold">Status</Text>
-          <List density="compact">
+        <SettingsGroup title="Status">
+          <List hasDividers aria-label="Status">
             <ListItem
               label="Path"
               description={
@@ -590,16 +580,16 @@ function HostDetail({
               />
             )}
           </List>
-        </VStack>
+        </SettingsGroup>
       ) : null}
       <VStack gap={1}>
         <Text weight="semibold">Routes</Text>
         <HostRouteList host={host} routes={hostRoutes(host, { pageProtocol: window.location.protocol })} />
       </VStack>
       <HStack gap={2} wrap="wrap">
-        <Button label="Unpair…" variant="secondary" size="sm" onClick={() => setUnpairing(true)} />
+        <Button label="Unpair" variant="secondary" size="sm" onClick={() => setUnpairing(true)} />
         {accountMatch === undefined ? null : (
-          <Button label="Remove from account…" variant="secondary" size="sm" onClick={() => setRemoving(true)} />
+          <Button label="Remove from account" variant="secondary" size="sm" onClick={() => setRemoving(true)} />
         )}
       </HStack>
       {unpairing ? (
@@ -672,61 +662,6 @@ function UnpairHostDialog({
   );
 }
 
-/**
- * "Add a host": signed in, the `pinomad join` command and the field for the
- * code it prints (#496), with a pairing link one click away; without an
- * account, the pairing link is the only way.
- */
-function AddHostDialog({ onClose }: { onClose: () => void }) {
-  const account = useAccountModel();
-  const state = account.state;
-  const [pastingLink, setPastingLink] = useState(false);
-  const close = (): void => {
-    if (state.status === "signed-in") void account.refreshHosts();
-    onClose();
-  };
-  const linkForm = (
-    <VStack gap={2}>
-      <Text type="supporting">Paste a pairing link from pinomad pair or Settings → Devices → Pair a device.</Text>
-      <PairingLinkForm />
-    </VStack>
-  );
-  return (
-    <Dialog aria-label="Add a host" isOpen onOpenChange={(open) => (open ? undefined : close())} purpose="form" width={520}>
-      <Layout
-        header={<DialogHeader title="Add a host" onOpenChange={() => close()} />}
-        content={
-          <LayoutContent>
-            <div style={{ padding: "var(--spacing-2)" }}>
-              {state.status !== "signed-in" ? (
-                linkForm
-              ) : (
-                <VStack gap={4}>
-                  <AddHostSteps serverOrigin={state.serverOrigin} />
-                  {pastingLink ? (
-                    linkForm
-                  ) : (
-                    <HStack>
-                      <Button label="Have a pairing link?" variant="ghost" size="sm" onClick={() => setPastingLink(true)} />
-                    </HStack>
-                  )}
-                </VStack>
-              )}
-            </div>
-          </LayoutContent>
-        }
-        footer={
-          <LayoutFooter>
-            <HStack gap={2} hAlign="end">
-              <Button label="Done" variant="secondary" onClick={close} />
-            </HStack>
-          </LayoutFooter>
-        }
-      />
-    </Dialog>
-  );
-}
-
 /** What unpairing does depends on whether the host can still hear about it. */
 function unpairText(label: string, info: HostRuntimeInfo | undefined): string {
   if (connectionStatus(info) === "connected") {
@@ -751,7 +686,7 @@ export function HostsFallback({ canSwitch = false }: { canSwitch?: boolean }) {
       <HostsSection canSwitch={canSwitch} />
       {account.state.status === "unavailable" ? null : (
         <div>
-          <Button label="Account…" variant="secondary" size="sm" onClick={() => setAccountOpen(true)} />
+          <Button label="Account" variant="secondary" size="sm" onClick={() => setAccountOpen(true)} />
         </div>
       )}
       {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}

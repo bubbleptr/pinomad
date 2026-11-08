@@ -94,7 +94,7 @@ it("creates an account with an emailed code and lands signed in", async () => {
   await page.getByRole("button", { name: "Create account" }).click();
 
   // Signed in with no hosts yet: the first-host home, under the new account.
-  await page.getByRole("button", { name: "Account…" }).waitFor();
+  await page.getByRole("button", { name: "Account", exact: true }).waitFor();
   const me = await page.evaluate(async () => (await fetch("/api/me")).json());
   expect(me).toMatchObject({ user: { email: "ada@example.com" } });
 }, 120_000);
@@ -110,28 +110,27 @@ it("signs up with Google through the no-account-yet page, then confirms by maile
   expect(new URL(page.url()).search).toBe("");
   await shoot(page, "pending-sign-in");
   await page.getByRole("button", { name: "Create account" }).click();
-  await page.getByRole("button", { name: "Account…" }).waitFor();
+  await page.getByRole("button", { name: "Account", exact: true }).waitFor();
 
   // A Google-only account: no password, so the confirmation is a mailed code.
-  await page.getByRole("button", { name: "Account…" }).click();
+  await page.getByRole("button", { name: "Account", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Account" });
-  await dialog.getByText("Sign-in methods").waitFor();
+  await dialog.getByRole("heading", { name: "Sign-in methods" }).waitFor();
   await dialog.getByText("Not set").waitFor();
-  await dialog.getByRole("button", { name: "Link GitHub" }).waitFor();
-  await dialog.getByText("Sign-in methods").scrollIntoViewIfNeeded();
+  await dialog.getByRole("button", { name: /^Link .+$/ }).first().waitFor();
   await shoot(page, "sign-in-methods");
 
   await dialog.getByRole("button", { name: "Set password" }).click();
-  await dialog.getByText("We'll email a code to ada@gmail.com.").waitFor();
-  await dialog.getByRole("button", { name: "Send code" }).click();
-  await dialog.getByLabel("Confirmation code").waitFor();
+  const confirm = page.getByRole("dialog", { name: "Set password" });
+  await confirm.getByText("We'll email a code to ada@gmail.com.").waitFor();
+  await confirm.getByRole("button", { name: "Send code" }).click();
+  await confirm.getByLabel("Confirmation code").waitFor();
   const code = mail.codeFor("ada@gmail.com");
   expect(code).toMatch(/^\d{6}$/);
-  await dialog.getByLabel("Confirmation code").fill(code!);
-  await dialog.getByLabel("New password").fill("a brand new password");
+  await confirm.getByLabel("Confirmation code").fill(code!);
+  await confirm.getByLabel("New password").fill("a brand new password");
   await shoot(page, "confirm-by-code");
-  // The row's button opened the form; the form's own is the last.
-  await dialog.getByRole("button", { name: "Set password" }).last().click();
+  await confirm.getByRole("button", { name: "Set password", exact: true }).click();
   await dialog.getByText("Password set.").waitFor();
   await dialog.getByText("Set", { exact: true }).waitFor();
 }, 120_000);

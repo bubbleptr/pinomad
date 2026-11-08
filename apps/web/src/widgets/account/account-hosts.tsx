@@ -11,6 +11,7 @@ import type { StoredHost } from "@pinomad/client/stored-host.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import type { AccountState } from "../../entities/account/account-model.ts";
 import { useHosts } from "../../entities/host/host-store.ts";
+import { GROUP_ROWS } from "../../shared/ui/settings-group.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { accountErrorMessage } from "./account-error.ts";
 import { RemoveHostDialog } from "./remove-host.tsx";
@@ -147,7 +148,7 @@ export function AccountHostList({
   const account = useAccountModel();
   return (
     <>
-      <ul aria-label={label} className="m-0 flex list-none flex-col gap-1 p-0">
+      <ul aria-label={label} className={GROUP_ROWS}>
         {hosts.map(({ host }) => {
           const presence = host.online ? "Online" : `Last seen ${relativeTime(host.lastSeenAt, now)}`;
           const pairable = host.pairing === "available";
@@ -155,7 +156,6 @@ export function AccountHostList({
             <li key={host.hostId}>
               <Item
                 as="div"
-                density="compact"
                 startContent={
                   <span aria-hidden="true" className="inline-flex">
                     <StatusDot variant={host.online ? "success" : "neutral"} label={host.online ? "Online" : "Offline"} />
@@ -180,7 +180,7 @@ export function AccountHostList({
                       label={`More for ${host.name}`}
                       size="sm"
                       isDisabled={removing !== undefined || pairing.pairing === host.hostId}
-                      items={[{ label: "Remove from account…", onClick: () => setRemoving(host) }]}
+                      items={[{ label: "Remove from account", onClick: () => setRemoving(host) }]}
                     />
                   </HStack>
                 }

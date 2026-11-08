@@ -50,7 +50,7 @@ export function NoHostLink() {
   }
   return (
     <VStack gap={6} style={{ width: "100%", maxWidth: 420 }}>
-      <AccountPanel />
+      <AccountPanel initialPage="hosts" />
       <VStack gap={2}>
         <Text type="supporting">Or paste a pairing link from pinomad pair or Settings → Devices → Pair a device.</Text>
         <PairingLinkForm />
