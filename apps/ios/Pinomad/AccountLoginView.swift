@@ -26,6 +26,7 @@ struct AccountLoginView: View {
     @State private var busy: String?
     @State private var codeFlow: CodeFlowKind?
     @State private var appleAttempt: (ticket: SignInTicket, nonce: String)?
+    @State private var appleRequest = AppleSignInRequest()
 
     private enum ProbePhase: Equatable {
         case idle
@@ -168,6 +169,7 @@ struct AccountLoginView: View {
                     }
                     Spacer()
                 }
+                .frame(height: Self.buttonLabelHeight)
             }
             .buttonStyle(.tactile(.glassProminent))
             .disabled(busy != nil || email.trimmed.isEmpty || password.isEmpty)
@@ -194,50 +196,51 @@ struct AccountLoginView: View {
     }
 
     private static let providerButtonHeight: CGFloat = 50
+    /// "Sign in" lands at the provider buttons' height once the glass
+    /// style adds its own padding around the label.
+    private static let buttonLabelHeight: CGFloat = 36
 
-    @ViewBuilder
+    /// All provider buttons are ours, one shape and size: Apple's guidelines
+    /// allow a custom Sign in with Apple button (black or white, Apple logo,
+    /// "Continue with Apple"), so its logo can sit at the size the Google
+    /// and GitHub marks do. Only the authorization sheet is the system's.
     private func providerButton(_ provider: String) -> some View {
-        if provider == "apple" {
-            SignInWithAppleButton(.continue) { request in
-                let attempt = model.beginAppleSignIn()
-                appleAttempt = attempt
-                error = nil
-                request.requestedScopes = [.fullName, .email]
-                request.nonce = AppleNonce.sha256Hex(attempt.nonce)
-            } onCompletion: { result in
-                finishApple(result)
-            }
-            .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
-            .frame(height: Self.providerButtonHeight)
-            .clipShape(.capsule)
-            .disabled(busy != nil)
-            // Keyed by scheme: the system button keeps the style it was
-            // created with.
-            .id(colorScheme)
-        } else {
-            Button {
-                startProvider(provider)
-            } label: {
-                HStack(spacing: 10) {
-                    Spacer()
-                    if busy == provider {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        SignInProviderMark(provider: provider)
-                    }
-                    Text("Continue with \(SignInProviders.name(provider))")
-                    Spacer()
+        let apple = provider == "apple"
+        let fill: Color = apple ? (colorScheme == .dark ? .white : .black) : Color(.tertiarySystemFill)
+        let ink: Color = apple ? (colorScheme == .dark ? .black : .white) : .primary
+        return Button {
+            if apple { startApple() } else { startProvider(provider) }
+        } label: {
+            HStack(spacing: 10) {
+                Spacer()
+                if busy == provider {
+                    ProgressView().controlSize(.small).tint(ink)
+                } else {
+                    SignInProviderMark(provider: provider)
                 }
-                // Same height, shape and type size as the system Apple
-                // button above, which sizes its title from its height.
-                .font(.system(size: 19, weight: .medium))
-                .frame(height: Self.providerButtonHeight)
-                .foregroundStyle(Color.primary)
-                .background(Color(.tertiarySystemFill), in: .capsule)
-                .contentShape(.capsule)
+                Text("Continue with \(SignInProviders.name(provider))")
+                Spacer()
             }
-            .buttonStyle(.press)
-            .disabled(busy != nil)
+            .font(.body.weight(.medium))
+            .frame(minHeight: Self.providerButtonHeight)
+            .foregroundStyle(ink)
+            .background(fill, in: .capsule)
+            .contentShape(.capsule)
+        }
+        .buttonStyle(.press)
+        .disabled(busy != nil)
+    }
+
+    private func startApple() {
+        guard busy == nil else { return }
+        let attempt = model.beginAppleSignIn()
+        appleAttempt = attempt
+        error = nil
+        appleRequest.start { request in
+            request.requestedScopes = [.fullName, .email]
+            request.nonce = AppleNonce.sha256Hex(attempt.nonce)
+        } completion: { result in
+            finishApple(result)
         }
     }
 
