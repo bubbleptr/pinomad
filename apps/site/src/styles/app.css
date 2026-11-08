@@ -35,3 +35,15 @@ html {
   grid-column: 1 / -1;
   contain: inline-size;
 }
+
+/* Abyss Blue is the site's accent. On the dark theme it would sit at 1.9:1, so links and
+   the active sidebar item take a lighter step of the same hue there. */
+@theme {
+  --color-fd-primary: #2b3b79;
+  --color-fd-primary-foreground: #e4e4e4;
+}
+
+.dark {
+  --color-fd-primary: oklch(0.72 0.13 270);
+  --color-fd-primary-foreground: #0b0b0b;
+}
