@@ -30,9 +30,7 @@ export const SignedOutSelfHosted: Story = {
 };
 
 /** The account's other pages, as the overview opens them. */
-export const SignInAndSecurity: Story = { args: { initialPage: "security" }, decorators: [withAccount(signedIn())] };
 
-export const SignedInDevices: Story = { args: { initialPage: "devices" }, decorators: [withAccount(signedIn())] };
 
 export const HostsOnAccount: Story = { args: { initialPage: "hosts" }, decorators: [withAccount(signedIn())] };
 
@@ -49,7 +47,6 @@ export const AddingHost: Story = {
 
 /** Changing the password (#450), in its own dialog. */
 export const ChangingPassword: Story = {
-  args: { initialPage: "security" },
   decorators: [withAccount(signedIn())],
   play: async ({ canvasElement }) => {
     await userEvent.click(await within(canvasElement).findByRole("button", { name: "Change password…" }));
@@ -120,7 +117,6 @@ export const DeleteAccountWrongPassword: Story = {
 
 /** Removing a device (#452): the password again, and which hosts can't be asked to revoke it. */
 export const RemovingDevice: Story = {
-  args: { initialPage: "devices" },
   decorators: [
     withAccount(
       signedIn({
@@ -140,7 +136,6 @@ export const RemovingDevice: Story = {
 
 /** A wrong password keeps the form; nothing is removed. */
 export const RemoveDeviceWrongPassword: Story = {
-  args: { initialPage: "devices" },
   decorators: [
     withAccount(signedIn(), {
       kickDevice: fn(async () => ({ ok: false as const, error: { code: "wrong_password", status: 403 } })),

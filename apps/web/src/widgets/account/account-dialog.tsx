@@ -27,7 +27,7 @@ export function AccountDialog({ initialPage, onClose }: { initialPage?: AccountP
 
 /**
  * The account panel, opened on its own when a provider link or sign-in came
- * back to this page (`?oauth_linked=`, `?oauth_error=`): Sign-in and security
+ * back to this page (`?oauth_linked=`, `?oauth_error=`): the account page
  * says how a link went; signed out, the sign-in form says why it was refused. `stayClosed` when the screen App shows has a panel of its own,
  * or shouldn't be covered. Decided on the first render only.
  */
@@ -36,5 +36,5 @@ export function OAuthReturnDialog({ stayClosed }: { stayClosed: boolean }) {
     const { linked, error } = oauthReturn();
     return !stayClosed && (linked !== undefined || error !== undefined);
   });
-  return open ? <AccountDialog initialPage="security" onClose={() => setOpen(false)} /> : null;
+  return open ? <AccountDialog onClose={() => setOpen(false)} /> : null;
 }

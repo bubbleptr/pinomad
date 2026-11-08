@@ -115,10 +115,9 @@ it("signs up with Google through the no-account-yet page, then confirms by maile
   // A Google-only account: no password, so the confirmation is a mailed code.
   await page.getByRole("button", { name: "Account…" }).click();
   const dialog = page.getByRole("dialog", { name: "Account" });
-  await dialog.getByRole("button", { name: /^Sign-in methods/ }).click();
-  await dialog.getByRole("heading", { name: "Sign-in and security" }).waitFor();
+  await dialog.getByRole("heading", { name: "Sign-in methods" }).waitFor();
   await dialog.getByText("Not set").waitFor();
-  await dialog.getByRole("button", { name: "Link another…" }).waitFor();
+  await dialog.getByRole("button", { name: /^Link .+…$/ }).first().waitFor();
   await shoot(page, "sign-in-methods");
 
   await dialog.getByRole("button", { name: "Set password…" }).click();

@@ -38,13 +38,11 @@ import { useConfirmIdentity } from "./confirm-identity.tsx";
 import { SignInMethods } from "./sign-in-methods.tsx";
 import { SignInScreen } from "./sign-in.tsx";
 
-/** The account's pages: the overview, and the three it leads to. */
-export type AccountPage = "overview" | "security" | "devices" | "hosts";
+/** The account's pages: everything on one, and the hosts not paired here. */
+export type AccountPage = "overview" | "hosts";
 
 const PAGE_TITLE: Record<AccountPage, string> = {
   overview: "Account",
-  security: "Sign-in and security",
-  devices: "Signed-in devices",
   hosts: "Hosts on this account",
 };
 
@@ -52,8 +50,8 @@ type SignedInState = Extract<AccountState, { status: "signed-in" }>;
 
 /**
  * Sign in to the account server, or, signed in, its pages (ADR-0022): the
- * overview with the sign-outs and deletion, sign-in methods, the account's
- * devices and the hosts not paired here. Settings shows one page per section
+ * account in groups (email, sign-in methods, devices, the sign-outs and
+ * deletion), and the hosts not paired here. Settings shows one page per section
  * and moves between them itself (`page`, `onNavigate`); on its own the panel
  * keeps the page and offers a way back. Renders nothing where this client
  * can't reach an account API — a host's own port, a dev server.
@@ -161,16 +159,6 @@ function AccountPageBody({
   switch (page) {
     case "overview":
       return <Overview account={account} state={state} onOpen={onOpen} onNotice={onNotice} />;
-    case "security":
-      return (
-        <VStack gap={5} style={{ width: "100%" }}>
-          <ProviderLinkReturn />
-          <AccountEmail account={account} email={state.email} />
-          <SignInMethods account={account} />
-        </VStack>
-      );
-    case "devices":
-      return <Devices account={account} hosts={state.hosts} />;
     case "hosts":
       return <AccountHosts state={state} />;
   }
@@ -214,50 +202,6 @@ function Summary({ value }: { value: string | undefined }) {
   );
 }
 
-/** "Password, GitHub": the account's ways in, as the overview sums them up. */
-function useSignInSummary(account: AccountModel): string | undefined {
-  const [summary, setSummary] = useState<string>();
-  useEffect(() => {
-    let live = true;
-    void account.identities().then((result) => {
-      if (!live) return;
-      // A server from before sign-in methods: only the password, as it always was.
-      if (!result.ok) {
-        if (result.error.status === 404) setSummary("Password");
-        return;
-      }
-      const ways = [
-        ...(result.value.hasPassword ? ["Password"] : []),
-        ...result.value.identities.map((identity) => signInProviderName(identity.provider)),
-      ];
-      setSummary(ways.length === 0 ? "None" : ways.join(", "));
-    });
-    return () => {
-      live = false;
-    };
-  }, [account]);
-  return summary;
-}
-
-/** The account's devices still signed in, or undefined on a server without the list. */
-function useDeviceSummary(account: AccountModel): { readonly supported: boolean; readonly text?: string } {
-  const [summary, setSummary] = useState<{ supported: boolean; text?: string }>({ supported: true });
-  useEffect(() => {
-    let live = true;
-    void account.listDevices().then((result) => {
-      if (!live) return;
-      if (result.ok) {
-        const active = result.value.filter((device) => device.kickedAt === undefined).length;
-        setSummary({ supported: true, text: active === 1 ? "1 device" : `${active} devices` });
-      } else if (result.error.status === 404) setSummary({ supported: false });
-    });
-    return () => {
-      live = false;
-    };
-  }, [account]);
-  return summary;
-}
-
 function hostSummary(state: SignedInState, pairedHere: readonly StoredHost[]): string {
   if (state.hosts.length === 0) return "None yet";
   const total = state.hosts.length === 1 ? "1 host" : `${state.hosts.length} hosts`;
@@ -283,11 +227,10 @@ function Overview({
 }) {
   const server = new URL(state.serverOrigin).host;
   const { hosts } = useHosts();
-  const methods = useSignInSummary(account);
-  const devices = useDeviceSummary(account);
   const [open, setOpen] = useState<"sign-out" | "everywhere" | "delete">();
   return (
-    <VStack gap={5} style={{ width: "100%" }}>
+    <VStack gap={6} style={{ width: "100%" }}>
+      <ProviderLinkReturn />
       <HStack gap={3} vAlign="center">
         <Avatar name={state.user} size="lg" tooltip={false} />
         <VStack gap={0} className="min-w-0 flex-1">
@@ -299,12 +242,11 @@ function Overview({
         </VStack>
         <Button label="Sign out…" variant="secondary" size="sm" onClick={() => setOpen("sign-out")} />
       </HStack>
-      <SettingsGroup>
-        <List density="spacious" hasDividers aria-label="Account">
-          <ListItem label="Sign-in methods" endContent={<Summary value={methods} />} onClick={() => onOpen("security")} />
-          {devices.supported ? (
-            <ListItem label="Signed-in devices" endContent={<Summary value={devices.text} />} onClick={() => onOpen("devices")} />
-          ) : null}
+      <AccountEmail account={account} email={state.email} />
+      <SignInMethods account={account} />
+      <Devices account={account} hosts={state.hosts} />
+      <SettingsGroup title="Hosts">
+        <List hasDividers aria-label="Hosts">
           <ListItem
             label="Hosts on this account"
             endContent={<Summary value={hostSummary(state, hosts)} />}
@@ -565,9 +507,10 @@ function Devices({ account, hosts }: { account: AccountModel; hosts: readonly Ac
   useEffect(() => {
     void load();
   }, [account]);
-  if (unsupported) return <Text type="supporting">This server doesn't list the account's devices.</Text>;
+  // A server from before the list: the group isn't there at all.
+  if (unsupported) return null;
   return (
-    <VStack gap={3} style={{ width: "100%" }}>
+    <VStack gap={2} style={{ width: "100%" }}>
       {error === undefined ? null : (
         <Banner
           status="warning"
@@ -577,9 +520,15 @@ function Devices({ account, hosts }: { account: AccountModel; hosts: readonly Ac
         />
       )}
       {devices === undefined ? (
-        error === undefined ? <Spinner size="sm" /> : null
+        error === undefined ? (
+          <SettingsGroup title="Signed-in devices">
+            <HStack style={{ padding: "var(--spacing-3)" }}>
+              <Spinner size="sm" />
+            </HStack>
+          </SettingsGroup>
+        ) : null
       ) : (
-        <SettingsGroup>
+        <SettingsGroup title="Signed-in devices">
           <List hasDividers aria-label="Signed-in devices">
           {devices.map((device) => (
             <DeviceRow

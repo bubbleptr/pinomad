@@ -1,6 +1,5 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
@@ -11,6 +10,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { AccountConfirmation, AccountError, AccountIdentities, AccountResult } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
 import { knownSignInProviders, signInProviderName, SignInProviderMark } from "../../entities/provider/sign-in-provider.tsx";
+import { KeyRound } from "../../shared/ui/icons.tsx";
 import { SettingsGroup } from "../../shared/ui/settings-group.tsx";
 import { accountErrorMessage } from "./account-error.ts";
 import { ConfirmDialog } from "./confirm-dialog.tsx";
@@ -86,6 +86,11 @@ export function SignInMethods({
       <List hasDividers aria-label="Sign-in methods">
         <ListItem
           label="Password"
+          startContent={
+            <MethodMark>
+              <KeyRound aria-hidden="true" style={{ width: 18, height: 18 }} />
+            </MethodMark>
+          }
           description={identities.hasPassword ? "Set" : "Not set"}
           endContent={
             <Button
@@ -102,7 +107,11 @@ export function SignInMethods({
             key={identity.provider}
             label={signInProviderName(identity.provider)}
             description={identity.email}
-            startContent={<SignInProviderMark provider={identity.provider} />}
+            startContent={
+              <MethodMark>
+                <SignInProviderMark provider={identity.provider} size={20} />
+              </MethodMark>
+            }
             endContent={
               <MoreMenu
                 label={`More for ${signInProviderName(identity.provider)}`}
@@ -113,23 +122,28 @@ export function SignInMethods({
             }
           />
         ))}
-        {linkable.length === 0 ? null : (
+        {linkable.map((provider) => (
           <ListItem
-            label="Another way to sign in"
-            description={orList(linkable.map((provider) => provider.name))}
+            key={provider.id}
+            label={provider.name}
+            description="Not linked"
+            startContent={
+              <MethodMark>
+                <SignInProviderMark provider={provider.id} size={20} />
+              </MethodMark>
+            }
             endContent={
-              <DropdownMenu
-                button={{ label: "Link another…", variant: "secondary", size: "sm", isDisabled: busy }}
-                hasChevron={false}
-                items={linkable.map((provider) => ({
-                  label: provider.name,
-                  icon: <SignInProviderMark provider={provider.id} />,
-                  onClick: () => start({ kind: "link", provider: provider.id }),
-                }))}
+              <Button
+                label="Link…"
+                aria-label={`Link ${provider.name}…`}
+                variant="secondary"
+                size="sm"
+                isDisabled={busy}
+                onClick={() => start({ kind: "link", provider: provider.id })}
               />
             }
           />
-        )}
+        ))}
       </List>
       </SettingsGroup>
       {done === undefined ? null : <Text type="supporting">{done}</Text>}
@@ -323,6 +337,14 @@ function ChangePasswordOnly({ account }: { account: AccountModel }) {
   );
 }
 
-/** "Google", "Google or Apple", "Google, Apple or Microsoft". */
-const orList = (names: readonly string[]): string =>
-  names.length <= 1 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} or ${names.at(-1)}`;
+/** A sign-in method's mark in a box of its own, so every row's name starts at the same edge. */
+function MethodMark({ children }: { children: ReactNode }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)]"
+    >
+      {children}
+    </span>
+  );
+}

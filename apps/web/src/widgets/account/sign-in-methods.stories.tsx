@@ -44,7 +44,6 @@ export const RemoveWithCode: Story = {
 export const DesktopLinking: Story = {
   args: { account: { ...fakeAccount(signedIn()), providerFlow: "loopback" } },
   play: async ({ canvasElement }) => {
-    await userEvent.click(await within(canvasElement).findByRole("button", { name: "Link another…" }));
-    await userEvent.click(await within(document.body).findByRole("menuitem", { name: "Google" }));
+    await userEvent.click(await within(canvasElement).findByRole("button", { name: "Link Google…" }));
   },
 };

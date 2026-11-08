@@ -58,9 +58,7 @@ export const Hosts: Story = open("Hosts");
 /** Signed in: the account's own group, opened from the sidebar's account. */
 export const Account: Story = { decorators: [withAccount(signedIn())], args: { initialSection: "account" } };
 
-export const AccountSignInAndSecurity: Story = { decorators: [withAccount(signedIn())], args: { initialSection: "security" } };
 
-export const AccountDevices: Story = { decorators: [withAccount(signedIn())], args: { initialSection: "signed-in-devices" } };
 
 /** Signed out, the group is only the sign-in form. */
 export const AccountSignedOut: Story = {
