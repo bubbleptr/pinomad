@@ -1,9 +1,11 @@
 import { Button } from "@astryxdesign/core/Button";
 import { Collapsible } from "@astryxdesign/core/Collapsible";
 import { DropdownMenu, DropdownMenuItem } from "@astryxdesign/core/DropdownMenu";
+import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Heading } from "@astryxdesign/core/Heading";
+import { IconButton } from "@astryxdesign/core/IconButton";
 import { Item } from "@astryxdesign/core/Item";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
+import { HStack, Layout, LayoutContent, LayoutFooter, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
@@ -29,8 +31,21 @@ import {
 import { useHosts } from "../../entities/host/host-store.ts";
 import { PairingLinkForm } from "../../entities/host/pairing-link-form.tsx";
 import { unansweredUnpair, unpairHost } from "../../entities/host/unpair.ts";
-import { Computer } from "../../shared/ui/icons.tsx";
+import { ArrowLeft, ChevronRight, Computer } from "../../shared/ui/icons.tsx";
 import { AccountDialog } from "../account/account-dialog.tsx";
+import {
+  ACCOUNT_HOST_ISSUE,
+  AccountHostList,
+  accountHostIssue,
+  AccountPairingBanners,
+  unpairedAccountHosts,
+  useAccountPairing,
+  type AccountHostIssue,
+  type AccountPairing,
+} from "../account/account-hosts.tsx";
+import { AddHostSteps } from "../account/add-host.tsx";
+import { RemoveHostDialog } from "../account/remove-host.tsx";
+import { accountHostFor } from "../account/repair-via-account.tsx";
 import { hostRoutes, type HostRoute } from "./host-routes.ts";
 import {
   candidateEndLabel,
@@ -136,20 +151,17 @@ function routeNote(route: HostRoute, mode: ConnectionMode): string | undefined {
   return undefined;
 }
 
-/** Lines the routes up under the host's name, past its status dot. */
-const ROUTES_INSET = "ps-6";
-
 /** One machine's routes: each network or server this device can reach it over (#502). */
 function HostRouteList({ host, routes }: { host: StoredHost; routes: readonly HostRoute[] }) {
   if (routes.length === 0) {
     return (
-      <Text type="supporting" className={ROUTES_INSET}>
+      <Text type="supporting">
         No published address
       </Text>
     );
   }
   return (
-    <ul aria-label="Routes" className={`m-0 flex list-none flex-col gap-0.5 p-0 ${ROUTES_INSET}`}>
+    <ul aria-label="Routes" className="m-0 flex list-none flex-col gap-0.5 p-0">
       {routes.map((route) => {
         const note = routeNote(route, host.connectionMode ?? "auto");
         return (
@@ -256,11 +268,13 @@ export function HostsMenu({ onLocate }: { onLocate?: (hostKey: string) => void }
 }
 
 /**
- * Settings → Hosts: every paired machine with its own runtime status and the
- * routes that reach it (#502), unpairing one, and pairing another. Focus moves
+ * Settings → Hosts: every machine this device can use. The ones paired here
+ * come first, each with its own runtime status; signed in, the account's
+ * others follow with Pair. A row offers at most one action — the host's own
+ * page holds its connection, its routes (#502) and unpairing. Focus moves
  * from the sidebar's machine groups, except on the sidebar-less one-shot
- * screens (`canSwitch`). Belongs to this device,
- * not to the focused host, so it works while every connection is down too.
+ * screens (`canSwitch`). Belongs to this device, not to the focused host, so
+ * it works while every connection is down too.
  */
 export function HostsSection({
   rtcAvailable = browserRtcAvailable(),
@@ -275,43 +289,196 @@ export function HostsSection({
   canSwitch?: boolean;
 }) {
   const paired = usePairedHosts();
-  const { setConnection, forget, focus } = useHosts();
-  const [unpairing, setUnpairing] = useState<StoredHost>();
-  const toast = useToast();
-  const [connectionFor, setConnectionFor] = useState<StoredHost>();
-  const [modeError, setModeError] = useState<string>();
-  const connectionInfo =
-    connectionFor === undefined ? undefined : paired.info(connectionFor);
-  const connected = connectionStatus(connectionInfo) === "connected";
-  // The row for the panel's host — or the focused one when no panel is open —
-  // carries the live path, so the list still shows where it is routing.
-  const diagnosticsHostKey = connectionFor?.hostKey ?? focus?.hostKey;
+  const { focus } = useHosts();
+  const account = useAccountModel();
+  const pairing = useAccountPairing();
+  const [detailKey, setDetailKey] = useState<string>();
+  const [adding, setAdding] = useState(false);
+  const signedIn = account.state.status === "signed-in";
+  // The account's list is refreshed on sign-in and on return to the
+  // foreground; a host that joined since shows up when this page opens.
+  useEffect(() => {
+    if (signedIn) void account.refreshHosts();
+  }, [account, signedIn]);
+  const detail = paired.hosts.find((host) => host.hostKey === detailKey);
+  // Only one host has live diagnostics: the open page's, else the focused one.
+  const diagnosticsHostKey = detail?.hostKey ?? focus?.hostKey;
   const diagnosticsInfo = paired.infoOf(diagnosticsHostKey);
-  const diagnosticsRemote = diagnosticsInfo?.phase === "ready" ? diagnosticsInfo.remote : undefined;
   const diagnostics = useRtcDiagnostics(
-    diagnosticsRemote,
+    diagnosticsInfo?.phase === "ready" ? diagnosticsInfo.remote : undefined,
     connectionStatus(diagnosticsInfo) === "connected",
   );
+  const status = (host: StoredHost): string => {
+    const info = paired.info(host);
+    if (connectionStatus(info) !== "connected") return hostStatusText(info);
+    const path = diagnosticsHostKey === host.hostKey ? diagnostics?.path : undefined;
+    return path === undefined ? "Connected" : `Connected · ${PATH_LABEL[path]}`;
+  };
+
+  if (detail !== undefined) {
+    return (
+      <HostDetail
+        host={detail}
+        status={status(detail)}
+        diagnostics={diagnostics}
+        rtcAvailable={rtcAvailable}
+        onBack={() => setDetailKey(undefined)}
+      />
+    );
+  }
+
+  const accountState = account.state.status === "signed-in" ? account.state : undefined;
+  const others = accountState === undefined ? [] : unpairedAccountHosts(accountState);
+  return (
+    <VStack gap={4}>
+      <HStack hAlign="end">
+        <Button label="Add a host…" variant="secondary" size="sm" onClick={() => setAdding(true)} />
+      </HStack>
+      {accountState === undefined ? null : <AccountPairingBanners state={accountState} pairing={pairing} />}
+      <VStack gap={1}>
+        {others.length === 0 ? null : (
+          <Text type="supporting" weight="semibold">
+            Paired with this device
+          </Text>
+        )}
+        {paired.hosts.length === 0 ? (
+          <Text type="supporting">No paired hosts.</Text>
+        ) : (
+          <ul aria-label="Paired with this device" className="m-0 flex list-none flex-col gap-1 p-0">
+            {paired.hosts.map((host) => (
+              <PairedHostRow
+                key={host.hostKey}
+                label={paired.label(host)}
+                status={status(host)}
+                connected={paired.isConnected(host)}
+                isCurrent={paired.isCurrent(host)}
+                issue={accountHostIssue(account.state, host.hostKey)}
+                pairing={pairing}
+                onSwitch={canSwitch ? () => paired.focusHost(host.hostKey) : undefined}
+                onDetails={() => setDetailKey(host.hostKey)}
+              />
+            ))}
+          </ul>
+        )}
+      </VStack>
+      {accountState === undefined || others.length === 0 ? null : (
+        <VStack gap={1}>
+          <Text type="supporting" weight="semibold">
+            On your account
+          </Text>
+          <AccountHostList state={accountState} hosts={others} pairing={pairing} label="On your account" />
+        </VStack>
+      )}
+      {adding ? <AddHostDialog onClose={() => setAdding(false)} /> : null}
+    </VStack>
+  );
+}
+
+/**
+ * A host paired here: its status, the one thing to do about it — Pair again
+ * when the account says it must, Switch on the one-shot screens, otherwise
+ * nothing but the Current mark — and the way to its own page.
+ */
+function PairedHostRow({
+  label,
+  status,
+  connected,
+  isCurrent,
+  issue,
+  pairing,
+  onSwitch,
+  onDetails,
+}: {
+  label: string;
+  status: string;
+  connected: boolean;
+  isCurrent: boolean;
+  issue: AccountHostIssue | undefined;
+  pairing: AccountPairing;
+  onSwitch: (() => void) | undefined;
+  onDetails: () => void;
+}) {
+  const hostId = issue?.match.host.hostId;
+  const action =
+    issue !== undefined ? (
+      <Button
+        label="Pair again"
+        variant="secondary"
+        size="sm"
+        isLoading={pairing.pairing === hostId}
+        isDisabled={issue.match.host.pairing !== "available" || pairing.pairing !== undefined}
+        onClick={() => pairing.pair(issue.match.host.hostId)}
+      />
+    ) : onSwitch !== undefined ? (
+      <Button label="Switch" aria-label={`Switch to ${label}`} variant="secondary" size="sm" onClick={onSwitch} />
+    ) : isCurrent ? (
+      <Token label="Current" size="sm" />
+    ) : null;
+  return (
+    <li aria-label={label}>
+      <Item
+        as="div"
+        density="compact"
+        startContent={<HostStatusDot connected={connected} />}
+        descriptionLines={2}
+        label={label}
+        description={issue === undefined ? status : ACCOUNT_HOST_ISSUE[issue.kind]}
+        endContent={
+          <HStack gap={1} vAlign="center">
+            {action}
+            <IconButton
+              label={`${label} details`}
+              icon={<ChevronRight aria-hidden="true" />}
+              variant="ghost"
+              size="sm"
+              onClick={onDetails}
+            />
+          </HStack>
+        }
+      />
+    </li>
+  );
+}
+
+/**
+ * One paired host's page: how this device reaches it (mode, live path, the
+ * routes it published), then the ways to let it go — unpair here, or take
+ * it off the account entirely.
+ */
+function HostDetail({
+  host,
+  status,
+  diagnostics,
+  rtcAvailable,
+  onBack,
+}: {
+  host: StoredHost;
+  status: string;
+  diagnostics: RtcDiagnostics | undefined;
+  rtcAvailable: boolean;
+  onBack: () => void;
+}) {
+  const paired = usePairedHosts();
+  const { setConnection } = useHosts();
+  const account = useAccountModel();
+  const [modeError, setModeError] = useState<string>();
+  const [unpairing, setUnpairing] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const label = paired.label(host);
+  const info = paired.info(host);
+  const connected = connectionStatus(info) === "connected";
+  const hostMinor = info?.phase === "ready" ? info.view.host?.protocol.minor : undefined;
+  const mode = host.connectionMode ?? "auto";
+  const liveRemote = info?.phase === "ready" ? info.remote : undefined;
   const connectedSince = useRef(Date.now());
   useEffect(() => {
     connectedSince.current = Date.now();
-  }, [diagnosticsRemote, diagnosticsHostKey]);
-  const connectionHost =
-    connectionFor === undefined
-      ? undefined
-      : (paired.hosts.find((host) => host.hostKey === connectionFor.hostKey) ?? connectionFor);
-  const connectionHostMinor =
-    connectionInfo?.phase === "ready" ? connectionInfo.view.host?.protocol.minor : undefined;
+  }, [liveRemote]);
+  const accountMatch = account.state.status === "signed-in" ? accountHostFor(account.state, host.hostKey) : undefined;
 
-  const toggleConnection = (host: StoredHost): void => {
+  const changeMode = (next: ConnectionMode): void => {
     setModeError(undefined);
-    setUnpairing(undefined);
-    setConnectionFor((previous) => (previous?.hostKey === host.hostKey ? undefined : host));
-  };
-
-  const changeMode = (host: StoredHost, mode: ConnectionMode): void => {
-    setModeError(undefined);
-    void setConnection(host.hostKey, { connectionMode: mode }).then(
+    void setConnection(host.hostKey, { connectionMode: next }).then(
       () => {
         const live = paired.info(host);
         if (live === undefined) return;
@@ -324,7 +491,7 @@ export function HostsSection({
         // A terminal coordinator cannot switch modes itself; remount it so
         // the new preference is read by a fresh connection.
         if (live.view.connection === "closed" || live.view.connection === "outdated") live.retry();
-        else live.remote.setConnectionMode(mode);
+        else live.remote.setConnectionMode(next);
       },
       (error: unknown) => {
         const reason = error instanceof Error ? error.message : String(error);
@@ -334,191 +501,219 @@ export function HostsSection({
     );
   };
 
-  // Only the panel's host (or the focused one) has live diagnostics.
-  const livePath = (host: StoredHost): ConnectionPath | undefined =>
-    diagnosticsHostKey === host.hostKey && paired.isConnected(host) ? diagnostics?.path : undefined;
-  const status = (host: StoredHost): string => {
-    const info = paired.info(host);
-    if (connectionStatus(info) !== "connected") return hostStatusText(info);
-    const path = livePath(host);
-    return path === undefined ? "Connected" : `Connected · ${PATH_LABEL[path]}`;
-  };
-
   return (
-    <VStack gap={5}>
-      {paired.hosts.length === 0 ? (
-        <Text type="supporting">No paired hosts.</Text>
-      ) : (
-        // A host is its row plus the routes that reach it; the routes run the
-        // full width under the row so narrow screens don't squeeze them
-        // beside the actions.
-        <ul aria-label="Paired hosts" className="m-0 flex list-none flex-col gap-2 p-0">
-          {paired.hosts.map((host) => {
-            const label = paired.label(host);
-            const connected = paired.isConnected(host);
-            return (
-              <li key={host.hostKey} aria-label={label}>
-                <Item
-                  as="div"
-                  density="compact"
-                  startContent={<HostStatusDot connected={connected} />}
-                  label={label}
-                  description={status(host)}
-                  endContent={
-                    <HStack gap={2} vAlign="center">
-                      {canSwitch ? (
-                        // The stored focus isn't on screen here, so every host is a way out.
-                        <Button
-                          label="Switch"
-                          aria-label={`Switch to ${label}`}
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => paired.focusHost(host.hostKey)}
-                        />
-                      ) : paired.isCurrent(host) ? (
-                        <Token label="Current" size="sm" />
-                      ) : null}
-                      <Button
-                        label="Connection…"
-                        aria-label={`Connection to ${label}`}
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => toggleConnection(host)}
-                      />
-                      <Button
-                        label="Unpair…"
-                        aria-label={`Unpair ${label}…`}
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => {
-                          setConnectionFor(undefined);
-                          setUnpairing(host);
-                        }}
-                      />
-                    </HStack>
-                  }
-                />
-                <HostRouteList
-                  host={host}
-                  routes={hostRoutes(host, { pageProtocol: window.location.protocol })}
-                />
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      {connectionHost === undefined ? null : (
-        <VStack gap={3} role="group" aria-label={`Connection to ${paired.label(connectionHost)}`}>
-          <Text weight="semibold">{`Connection to ${paired.label(connectionHost)}`}</Text>
-          <VStack gap={1}>
-            <HStack gap={2} vAlign="center" wrap="wrap">
-              <SegmentedControl
-                className="shrink-0"
-                value={connectionHost.connectionMode ?? "auto"}
-                onChange={(next) => changeMode(connectionHost, next as ConnectionMode)}
-                label="Connection mode"
-                size="sm"
-              >
-                <SegmentedControlItem value="auto" label="Auto" />
-                <SegmentedControlItem value="directOnly" label="Direct only" />
-                <SegmentedControlItem value="relayOnly" label="Relay only" />
-              </SegmentedControl>
-            </HStack>
-            <Text type="supporting">{MODE_HELP[connectionHost.connectionMode ?? "auto"]}</Text>
-          </VStack>
-          {modeError === undefined ? null : (
-            <Text type="supporting">{`Could not save the connection mode: ${modeError}`}</Text>
-          )}
-          {paired.isConnected(connectionHost) ? (
-            <VStack gap={1}>
-              <Text weight="semibold">Status</Text>
-              <List density="compact">
-                <ListItem
-                  label="Path"
-                  description={
-                    <VStack gap={1}>
-                      <Text type="inherit">{diagnostics === undefined ? "—" : pathLabel(diagnostics)}</Text>
-                      {diagnostics?.path === "p2p" && diagnostics.selectedPair !== undefined ? (
-                        <Collapsible
-                          defaultIsOpen={false}
-                          trigger={
-                            <Text type="body" size="sm" color="secondary" className="block min-h-11 py-3">
-                              Show addresses
-                            </Text>
-                          }
-                        >
-                          <VStack gap={1}>
-                            <AddressRow label="This device" end={diagnostics.selectedPair.local} />
-                            <AddressRow label="Host" end={diagnostics.selectedPair.remote} />
-                          </VStack>
-                        </Collapsible>
-                      ) : null}
-                    </VStack>
-                  }
-                />
-                <ListItem
-                  label="Peer-to-peer"
-                  description={p2pStatus({
-                    diagnostics,
-                    mode: connectionHost.connectionMode ?? "auto",
-                    hostMinor: connectionHostMinor,
-                    rtcAvailable,
-                    connectedSince: connectedSince.current,
-                  })}
-                />
-                {diagnostics?.lastFailure === undefined ? null : (
-                  <ListItem
-                    label="Last failure"
-                    // A node wraps instead of truncating; the age ticks every second.
-                    description={
-                      <Text type="inherit" hasTabularNumbers>
-                        {failureLabel(diagnostics.lastFailure)}
-                      </Text>
-                    }
-                  />
-                )}
-              </List>
-            </VStack>
-          ) : null}
-          <HStack hAlign="end">
-            <Button label="Close" variant="secondary" size="sm" onClick={() => setConnectionFor(undefined)} />
-          </HStack>
+    <VStack gap={5} role="group" aria-label={label}>
+      <HStack gap={2} vAlign="center">
+        <IconButton label="Back to hosts" icon={<ArrowLeft aria-hidden="true" />} variant="ghost" size="sm" onClick={onBack} />
+        <HostStatusDot connected={connected} />
+        <VStack gap={0} className="min-w-0">
+          <Heading level={3}>{label}</Heading>
+          <Text type="supporting">{status}</Text>
         </VStack>
-      )}
-      {unpairing === undefined ? null : (
-        <VStack gap={2} role="group" aria-label={`Unpair ${paired.label(unpairing)}?`}>
-          <Text weight="semibold">{`Unpair ${paired.label(unpairing)}?`}</Text>
-          <Text type="supporting">{unpairText(paired.label(unpairing), paired.info(unpairing))}</Text>
-          <HStack gap={2} hAlign="end">
-            <Button label="Cancel" variant="secondary" size="sm" onClick={() => setUnpairing(undefined)} />
-            <Button
-              label="Unpair"
-              variant="destructive"
-              size="sm"
-              onClick={() => {
-                const host = unpairing;
-                const label = paired.label(host);
-                const info = paired.info(host);
-                const remote = info?.phase === "ready" && connectionStatus(info) === "connected" ? info.remote : undefined;
-                setUnpairing(undefined);
-                setConnectionFor(undefined);
-                void unpairHost({ host, remote, forget }).then(
-                  ({ hostAnswered }) => {
-                    if (remote !== undefined && !hostAnswered) toast(unansweredUnpair(label));
-                  },
-                  (error: unknown) => console.error("Could not unpair the host", error),
-                );
-              }}
-            />
-          </HStack>
-        </VStack>
-      )}
-      <VStack gap={2}>
-        <Heading level={3}>Pair a host</Heading>
-        <Text type="supporting">Paste a pairing link from pinomad pair or Settings → Devices → Pair a device.</Text>
-        <PairingLinkForm />
+      </HStack>
+      <VStack gap={1}>
+        <Text weight="semibold">Connection</Text>
+        <HStack gap={2} vAlign="center" wrap="wrap">
+          <SegmentedControl
+            className="shrink-0"
+            value={mode}
+            onChange={(next) => changeMode(next as ConnectionMode)}
+            label="Connection mode"
+            size="sm"
+          >
+            <SegmentedControlItem value="auto" label="Auto" />
+            <SegmentedControlItem value="directOnly" label="Direct only" />
+            <SegmentedControlItem value="relayOnly" label="Relay only" />
+          </SegmentedControl>
+        </HStack>
+        <Text type="supporting">{MODE_HELP[mode]}</Text>
+        {modeError === undefined ? null : (
+          <Text type="supporting">{`Could not save the connection mode: ${modeError}`}</Text>
+        )}
       </VStack>
+      {connected ? (
+        <VStack gap={1}>
+          <Text weight="semibold">Status</Text>
+          <List density="compact">
+            <ListItem
+              label="Path"
+              description={
+                <VStack gap={1}>
+                  <Text type="inherit">{diagnostics === undefined ? "—" : pathLabel(diagnostics)}</Text>
+                  {diagnostics?.path === "p2p" && diagnostics.selectedPair !== undefined ? (
+                    <Collapsible
+                      defaultIsOpen={false}
+                      trigger={
+                        <Text type="body" size="sm" color="secondary" className="block min-h-11 py-3">
+                          Show addresses
+                        </Text>
+                      }
+                    >
+                      <VStack gap={1}>
+                        <AddressRow label="This device" end={diagnostics.selectedPair.local} />
+                        <AddressRow label="Host" end={diagnostics.selectedPair.remote} />
+                      </VStack>
+                    </Collapsible>
+                  ) : null}
+                </VStack>
+              }
+            />
+            <ListItem
+              label="Peer-to-peer"
+              description={p2pStatus({
+                diagnostics,
+                mode,
+                hostMinor,
+                rtcAvailable,
+                connectedSince: connectedSince.current,
+              })}
+            />
+            {diagnostics?.lastFailure === undefined ? null : (
+              <ListItem
+                label="Last failure"
+                // A node wraps instead of truncating; the age ticks every second.
+                description={
+                  <Text type="inherit" hasTabularNumbers>
+                    {failureLabel(diagnostics.lastFailure)}
+                  </Text>
+                }
+              />
+            )}
+          </List>
+        </VStack>
+      ) : null}
+      <VStack gap={1}>
+        <Text weight="semibold">Routes</Text>
+        <HostRouteList host={host} routes={hostRoutes(host, { pageProtocol: window.location.protocol })} />
+      </VStack>
+      <HStack gap={2} wrap="wrap">
+        <Button label="Unpair…" variant="secondary" size="sm" onClick={() => setUnpairing(true)} />
+        {accountMatch === undefined ? null : (
+          <Button label="Remove from account…" variant="secondary" size="sm" onClick={() => setRemoving(true)} />
+        )}
+      </HStack>
+      {unpairing ? (
+        <UnpairHostDialog
+          host={host}
+          label={label}
+          info={info}
+          onClose={(unpaired) => {
+            setUnpairing(false);
+            if (unpaired) onBack();
+          }}
+        />
+      ) : null}
+      {removing && accountMatch !== undefined && account.state.status === "signed-in" ? (
+        <RemoveHostDialog
+          account={account}
+          hostId={accountMatch.host.hostId}
+          name={accountMatch.host.name}
+          serverOrigin={account.state.serverOrigin}
+          onClose={(removed) => {
+            setRemoving(false);
+            if (removed) onBack();
+          }}
+        />
+      ) : null}
     </VStack>
+  );
+}
+
+/** Unpair, confirmed; the copy says how much the host will hear of it. */
+function UnpairHostDialog({
+  host,
+  label,
+  info,
+  onClose,
+}: {
+  host: StoredHost;
+  label: string;
+  info: HostRuntimeInfo | undefined;
+  onClose: (unpaired: boolean) => void;
+}) {
+  const { forget } = useHosts();
+  const toast = useToast();
+  const title = `Unpair ${label}?`;
+  const unpair = (): void => {
+    const remote = info?.phase === "ready" && connectionStatus(info) === "connected" ? info.remote : undefined;
+    onClose(true);
+    void unpairHost({ host, remote, forget }).then(
+      ({ hostAnswered }) => {
+        if (remote !== undefined && !hostAnswered) toast(unansweredUnpair(label));
+      },
+      (error: unknown) => console.error("Could not unpair the host", error),
+    );
+  };
+  return (
+    <Dialog aria-label={title} isOpen onOpenChange={(open) => (open ? undefined : onClose(false))} purpose="form" width={440}>
+      <Layout
+        header={<DialogHeader title={title} subtitle={unpairText(label, info)} onOpenChange={() => onClose(false)} />}
+        content={<LayoutContent />}
+        footer={
+          <LayoutFooter>
+            <HStack gap={2} hAlign="end">
+              <Button label="Cancel" variant="secondary" onClick={() => onClose(false)} />
+              <Button label="Unpair" variant="destructive" onClick={unpair} />
+            </HStack>
+          </LayoutFooter>
+        }
+      />
+    </Dialog>
+  );
+}
+
+/**
+ * "Add a host": signed in, the `pinomad join` command and the field for the
+ * code it prints (#496), with a pairing link one click away; without an
+ * account, the pairing link is the only way.
+ */
+function AddHostDialog({ onClose }: { onClose: () => void }) {
+  const account = useAccountModel();
+  const state = account.state;
+  const [pastingLink, setPastingLink] = useState(false);
+  const close = (): void => {
+    if (state.status === "signed-in") void account.refreshHosts();
+    onClose();
+  };
+  const linkForm = (
+    <VStack gap={2}>
+      <Text type="supporting">Paste a pairing link from pinomad pair or Settings → Devices → Pair a device.</Text>
+      <PairingLinkForm />
+    </VStack>
+  );
+  return (
+    <Dialog aria-label="Add a host" isOpen onOpenChange={(open) => (open ? undefined : close())} purpose="form" width={520}>
+      <Layout
+        header={<DialogHeader title="Add a host" onOpenChange={() => close()} />}
+        content={
+          <LayoutContent>
+            <div style={{ padding: "var(--spacing-2)" }}>
+              {state.status !== "signed-in" ? (
+                linkForm
+              ) : (
+                <VStack gap={4}>
+                  <AddHostSteps serverOrigin={state.serverOrigin} />
+                  {pastingLink ? (
+                    linkForm
+                  ) : (
+                    <HStack>
+                      <Button label="Have a pairing link?" variant="ghost" size="sm" onClick={() => setPastingLink(true)} />
+                    </HStack>
+                  )}
+                </VStack>
+              )}
+            </div>
+          </LayoutContent>
+        }
+        footer={
+          <LayoutFooter>
+            <HStack gap={2} hAlign="end">
+              <Button label="Done" variant="secondary" onClick={close} />
+            </HStack>
+          </LayoutFooter>
+        }
+      />
+    </Dialog>
   );
 }
 

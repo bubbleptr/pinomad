@@ -301,7 +301,7 @@ function sectionBody(
   if (section === "hosts") {
     return {
       title: "Hosts",
-      supporting: <Text as="p" type="supporting">The hosts this device has paired with. It stays connected to all of them.</Text>,
+      supporting: <Text as="p" type="supporting">The machines this device can use. It stays connected to every one paired here.</Text>,
       body: <HostsSection />,
     };
   }

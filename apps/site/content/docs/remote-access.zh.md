@@ -56,7 +56,7 @@ Tailscale 和 sing-box 共存时，sing-box 配置要改两处，否则控制面
 
 有中继时，客户端先经中继连上；链路就绪后，Auto 在后台尝试 WebRTC DataChannel 直连，打洞成功对话数据就不再经过服务端，失败则留在中继。没有 TURN，所以有些网络（比如双方都在对称 NAT 后面）建不起 P2P。宿主声明 `hello.rtc` 才支持；没有装 `node-datachannel` 原生模块时宿主照常运行，只是不声明。STUN 列表在 `<数据目录>/settings.json` 的 `rtcStun`，默认 Cloudflare 的公共 STUN，`[]` 表示只用 host 候选。
 
-连接方式按宿主设置，在 Settings → Hosts 里点该宿主的 Connection…：Auto（默认）、Direct only（对话数据不经过 PiNomad 服务端，中继只用来建立链路）或 Relay only（只走中继，不尝试 P2P）。同一个面板的 Status 显示当前走 P2P 还是中继；走 P2P 时还显示两端是局域网、tailnet 还是公网地址（点 Show addresses 看完整地址），以及最近一次失败的原因。同一套设置的简述在[快速上手](/zh/docs/)的「WebRTC 直连」一节。
+连接方式按宿主设置，在 Settings → Hosts 里点该宿主那一行右边的箭头，在它的页面的 Connection 下选：Auto（默认）、Direct only（对话数据不经过 PiNomad 服务端，中继只用来建立链路）或 Relay only（只走中继，不尝试 P2P）。同一页的 Status 显示当前走 P2P 还是中继；走 P2P 时还显示两端是局域网、tailnet 还是公网地址（点 Show addresses 看完整地址），以及最近一次失败的原因。同一套设置的简述在[快速上手](/zh/docs/)的「WebRTC 直连」一节。
 
 ## 经自部署中继访问
 

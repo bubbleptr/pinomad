@@ -5,7 +5,6 @@ import { Heading } from "@astryxdesign/core/Heading";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Spinner } from "@astryxdesign/core/Spinner";
-import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { useEffect, useState } from "react";
@@ -16,22 +15,20 @@ import type {
   AccountHostMatch,
   AccountResult,
 } from "@pinomad/client/account.ts";
-import type { StoredHost } from "@pinomad/client/stored-host.ts";
 import { relativeTime } from "@pinomad/client/family.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import type { AccountModel, AccountState } from "../../entities/account/account-model.ts";
-import { useHosts } from "../../entities/host/host-store.ts";
 import { clearOAuthReturn, oauthReturn } from "../../entities/account/oauth-return.ts";
 import { signInProviderName } from "../../entities/provider/sign-in-provider.tsx";
 import { OFFICIAL_SERVER_ORIGIN } from "../../shared/official-server.ts";
 import { useNow } from "../../shared/use-now.ts";
 import { accountErrorMessage } from "./account-error.ts";
 import { AccountEmail } from "./account-email.tsx";
+import { AccountHostList, AccountPairingBanners, unpairedAccountHosts, useAccountPairing, type AccountPairing } from "./account-hosts.tsx";
 import { AddHostSteps } from "./add-host.tsx";
 import { useConfirmIdentity } from "./confirm-identity.tsx";
 import { SignInMethods } from "./sign-in-methods.tsx";
 import { SignInScreen } from "./sign-in.tsx";
-import { RemoveHost } from "./remove-host.tsx";
 
 /**
  * Sign in to the account server, see its hosts, pair or connect to them, and
@@ -99,17 +96,8 @@ function SignedIn({
   state: Extract<AccountState, { status: "signed-in" }>;
   onNotice: (notice: Notice | undefined) => void;
 }) {
-  const [actionError, setActionError] = useState<AccountError>();
-  const { focusHost } = useHosts();
+  const pairing = useAccountPairing();
   const server = new URL(state.serverOrigin).host;
-  // A saved retry finishes what Pair started: focus the host, no reload.
-  const retrySave = (host: StoredHost): void => {
-    setActionError(undefined);
-    void account.retryUnsavedHost(host.account?.hostId).then((result) => {
-      if (result.ok) focusHost(host.hostKey);
-      else setActionError(result.error);
-    });
-  };
   // How a provider link from this page came back (ADR-0044 §5), said once.
   const [returned] = useState(() => {
     const { linked, error } = oauthReturn();
@@ -135,19 +123,8 @@ function SignedIn({
       ) : returned?.error !== undefined ? (
         <Banner status="error" title="Couldn't link the account" description={accountErrorMessage({ code: returned.error })} />
       ) : null}
-      {state.unsavedHosts.map((host) => (
-        <Banner
-          key={host.hostKey}
-          status="warning"
-          title="This pairing wasn't saved"
-          description={`${host.name ?? host.url} will be lost when the app restarts.`}
-          endContent={<Button label="Retry" variant="secondary" onClick={() => retrySave(host)} />}
-        />
-      ))}
-      <HostList account={account} state={state} onError={setActionError} />
-      {actionError === undefined ? null : (
-        <Banner status="error" title="Couldn't pair" description={accountErrorMessage(actionError)} />
-      )}
+      <AccountPairingBanners state={state} pairing={pairing} />
+      <AccountHosts state={state} pairing={pairing} />
       <AddHost account={account} serverOrigin={state.serverOrigin} />
       <Devices account={account} hosts={state.hosts} />
       <AccountEmail account={account} email={state.email} />
@@ -158,145 +135,20 @@ function SignedIn({
   );
 }
 
-function HostList({
-  account,
-  state,
-  onError,
-}: {
-  account: AccountModel;
-  state: Extract<AccountState, { status: "signed-in" }>;
-  onError: (error: AccountError | undefined) => void;
-}) {
-  const now = useNow(30_000);
-  const { focus, focusHost } = useHosts();
-  const [pairing, setPairing] = useState<string>();
-  const [removing, setRemoving] = useState<AccountHostMatch["host"]>();
-  const pair = (hostId: string): void => {
-    setPairing(hostId);
-    onError(undefined);
-    void account.pairHost(hostId).then((result) => {
-      setPairing(undefined);
-      if (result.ok) focusHost(result.value.hostKey);
-      else onError(result.error);
-    });
-  };
+/** The account's hosts this device hasn't paired; the paired ones live in Settings → Hosts. */
+function AccountHosts({ state, pairing }: { state: Extract<AccountState, { status: "signed-in" }>; pairing: AccountPairing }) {
+  const others = unpairedAccountHosts(state);
   return (
     <VStack gap={2}>
-      <HStack gap={2} vAlign="center" hAlign="between">
-        <Text weight="semibold">Hosts</Text>
-        <Button label="Refresh" variant="secondary" size="sm" onClick={() => void account.refreshHosts()} />
-      </HStack>
-      {state.hostsError === undefined ? null : (
-        <Banner status="warning" title="Couldn't refresh hosts" description={accountErrorMessage(state.hostsError)} />
-      )}
+      <Text weight="semibold">Hosts</Text>
       {state.hosts.length === 0 ? (
         <Text type="supporting">No hosts yet. Add one below.</Text>
+      ) : others.length === 0 ? (
+        <Text type="supporting">Every host on your account is paired with this device.</Text>
       ) : (
-        <List density="compact">
-          {state.hosts.map((match) => (
-            <HostRow
-              key={match.host.hostId}
-              match={match}
-              now={now}
-              isCurrent={match.status === "paired" && match.stored?.hostKey === focus?.hostKey}
-              isRevoked={match.stored !== undefined && state.rejectedHostKeys.includes(match.stored.hostKey)}
-              isPairing={pairing === match.host.hostId}
-              isBusy={pairing !== undefined}
-              isRemoveDisabled={removing !== undefined || pairing === match.host.hostId}
-              onPair={() => pair(match.host.hostId)}
-              onRemove={() => setRemoving(match.host)}
-            />
-          ))}
-        </List>
-      )}
-      {removing === undefined ? null : (
-        <VStack gap={2}>
-          <Text weight="semibold">Remove {removing.name}</Text>
-          <RemoveHost
-            account={account}
-            hostId={removing.hostId}
-            name={removing.name}
-            serverOrigin={state.serverOrigin}
-            onClose={() => setRemoving(undefined)}
-          />
-        </VStack>
+        <AccountHostList state={state} hosts={others} pairing={pairing} label="Hosts on your account" />
       )}
     </VStack>
-  );
-}
-
-/** Why a host can't be paired right now, from the server's verdict. */
-const UNPAIRABLE: Record<Exclude<AccountHostMatch["host"]["pairing"], "available">, string> = {
-  offline: "Offline",
-  host_too_old: "Needs pinomad upgrade",
-  key_mismatch: "Run pinomad join again",
-};
-
-function HostRow({
-  match,
-  now,
-  isCurrent,
-  isRevoked,
-  isPairing,
-  isBusy,
-  isRemoveDisabled,
-  onPair,
-  onRemove,
-}: {
-  match: AccountHostMatch;
-  now: number;
-  isCurrent: boolean;
-  isRevoked: boolean;
-  isPairing: boolean;
-  isBusy: boolean;
-  isRemoveDisabled: boolean;
-  onPair: () => void;
-  onRemove: () => void;
-}) {
-  const { focusHost } = useHosts();
-  const { host, status, stored } = match;
-  const presence = host.online ? "Online" : `Last seen ${relativeTime(host.lastSeenAt, now)}`;
-  const pairable = host.pairing === "available";
-  const pairButton = (label: string) => (
-    <Button label={label} variant="secondary" size="sm" isLoading={isPairing} isDisabled={!pairable || isBusy} onClick={onPair} />
-  );
-  // Revoked and key-changed both need the user's explicit re-pair (ADR-0022 §6):
-  // the model never asks for an invite on its own.
-  let detail: string = presence;
-  let end;
-  if (isRevoked) {
-    detail = "This device was refused by the host";
-    end = pairButton("Pair again");
-  } else if (status === "key_changed") {
-    detail = "The host's identity changed. Pair again only if you reinstalled it.";
-    end = (
-      <HStack gap={2} vAlign="center">
-        <Token label="Key changed" color="orange" size="sm" />
-        {pairButton("Pair again")}
-      </HStack>
-    );
-  } else if (status === "paired") {
-    end = isCurrent ? (
-      <Token label="Connected" size="sm" />
-    ) : (
-      <Button label="Connect" variant="secondary" size="sm" onClick={() => focusHost(stored!.hostKey)} />
-    );
-  } else {
-    if (!pairable) detail = `${presence} · ${UNPAIRABLE[host.pairing as keyof typeof UNPAIRABLE]}`;
-    end = pairButton("Pair");
-  }
-  return (
-    <ListItem
-      label={host.name}
-      description={detail}
-      startContent={<StatusDot variant={host.online ? "success" : "neutral"} label={host.online ? "Online" : "Offline"} />}
-      endContent={
-        <HStack gap={1} vAlign="center">
-          {end}
-          <Button label="Remove" variant="secondary" size="sm" isDisabled={isRemoveDisabled} onClick={onRemove} />
-        </HStack>
-      }
-    />
   );
 }
 

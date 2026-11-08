@@ -91,8 +91,9 @@ const UNKNOWN_PAIR: RtcSelectedPair = {
   remote: { type: "srflx", address: "studio-a.local", scope: "unknown" },
 };
 
+/** Opens the first host's own page, where its connection lives. */
 const openConnection = async (canvasElement: HTMLElement): Promise<void> => {
-  const buttons = within(canvasElement).getAllByRole("button", { name: /^Connection to / });
+  const buttons = within(canvasElement).getAllByRole("button", { name: / details$/ });
   await userEvent.click(buttons[0]!);
 };
 
@@ -128,6 +129,43 @@ export const SectionReconnecting: Story = {
 /** A host paired before 5.12 announced no name, so it shows its address. */
 export const SectionUnnamedHost: Story = {
   decorators: [withHosts(fakeHosts([HOME_HOST, { ...DEVBOX_HOST, name: undefined }])), withRuntime(relay)],
+};
+
+/** Signed in: the account's other hosts follow, offering Pair where the server can reach them. */
+export const SectionWithAccount: Story = {
+  decorators: [withHosts(fakeHosts([HOME_HOST])), withRuntime(relay), withAccount(signedIn())],
+};
+
+/** A paired host that refused this device: the row's one action is Pair again. */
+export const SectionRefused: Story = {
+  decorators: [
+    withHosts(),
+    withRuntime(relay),
+    withAccount(signedIn({ rejectedHostKeys: [HOME_HOST.hostKey] })),
+  ],
+};
+
+/** The host's own page: connection, routes, and the ways to let it go. */
+export const SectionHostPage: Story = {
+  decorators: [withHosts(fakeHosts([ROUTED_HOST, DEVBOX_HOST], ROUTED_HOST.hostKey)), withRuntime(relay), withAccount(signedIn())],
+  play: ({ canvasElement }) => openConnection(canvasElement),
+};
+
+/** Unpair asks first, in a dialog. */
+export const SectionUnpair: Story = {
+  decorators: [withHosts(), withRuntime(relay)],
+  play: async ({ canvasElement }) => {
+    await openConnection(canvasElement);
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Unpair…" }));
+  },
+};
+
+/** Add a host, signed in: the join command first, a pairing link on request. */
+export const SectionAddHost: Story = {
+  decorators: [withHosts(), withRuntime(relay), withAccount(signedIn())],
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Add a host…" }));
+  },
 };
 
 export const SectionEmpty: Story = {

@@ -392,7 +392,7 @@ describe("the app frame across hosts", () => {
     expect(within(dialog).getByText("This device")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Hosts" })).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Providers" })).toBeNull();
-    expect(within(dialog).getByText("Pair a host")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Add a host…" })).toBeInTheDocument();
   });
 
   it("keeps the device Updates section while the focused host is connecting", async () => {
@@ -417,7 +417,7 @@ describe("the app frame across hosts", () => {
       const dialog = await screen.findByRole("dialog", { name: "Settings" });
       await userEvent.click(within(dialog).getByRole("button", { name: "Updates" }));
       expect(await within(dialog).findByText("Check for updates")).toBeInTheDocument();
-      expect(within(dialog).queryByText("Pair a host")).toBeNull();
+      expect(within(dialog).queryByRole("button", { name: "Add a host…" })).toBeNull();
     } finally {
       window.pinomadDesktop = previous;
     }

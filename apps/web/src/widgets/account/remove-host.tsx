@@ -64,7 +64,7 @@ export function RemoveHost({ account, hostId, name, serverOrigin, onClose }: Rem
 /** The same form on its own, for the new-host notice. */
 export function RemoveHostDialog(props: RemoveHostProps) {
   return (
-    <Dialog isOpen purpose="form" onOpenChange={(open) => (open ? undefined : props.onClose(false))} width={440}>
+    <Dialog aria-label={`Remove ${props.name}`} isOpen purpose="form" onOpenChange={(open) => (open ? undefined : props.onClose(false))} width={440}>
       <Layout
         header={<DialogHeader title={`Remove ${props.name}`} onOpenChange={() => props.onClose(false)} />}
         content={

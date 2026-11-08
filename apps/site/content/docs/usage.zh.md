@@ -95,7 +95,7 @@ Settings → Providers 管理宿主能用哪些模型，任何一台已配对设
 
 ## 连接方式
 
-在 Settings → Hosts 里点某台宿主的 Connection… 选连接方式（ADR-0033）：Auto（默认，有中继时先经中继连上，链路就绪后在后台切到 WebRTC P2P，打洞失败就留在中继）、Direct only（对话数据不经过 PiNomad 服务端，中继只用来建立链路）或 Relay only（只走中继，不尝试 P2P）。同一个面板的 Status 显示当前走 P2P 还是中继；走 P2P 时还显示两端是局域网 / tailnet / 公网地址（点 Show addresses 看完整地址），以及最近一次失败的原因。没有 TURN，有些网络建不起 P2P；中继和配对细节见[远程访问](/zh/docs/remote-access/)。
+在 Settings → Hosts 里点某台宿主那一行右边的箭头，在它的页面的 Connection 下选连接方式（ADR-0033）：Auto（默认，有中继时先经中继连上，链路就绪后在后台切到 WebRTC P2P，打洞失败就留在中继）、Direct only（对话数据不经过 PiNomad 服务端，中继只用来建立链路）或 Relay only（只走中继，不尝试 P2P）。同一页的 Status 显示当前走 P2P 还是中继；走 P2P 时还显示两端是局域网 / tailnet / 公网地址（点 Show addresses 看完整地址），以及最近一次失败的原因。没有 TURN，有些网络建不起 P2P；中继和配对细节见[远程访问](/zh/docs/remote-access/)。
 
 ## iOS 账号
 
