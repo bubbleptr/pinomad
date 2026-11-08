@@ -50,12 +50,6 @@ describe("Settings → Account", () => {
     expect(await screen.findByRole("heading", { name: "Sign in" })).toBeTruthy();
   });
 
-  it("goes to the Hosts section from the account's host summary", async () => {
-    renderSettings(signedIn(), "account");
-    await userEvent.click(await screen.findByRole("button", { name: /^Hosts on this account/ }));
-    expect(await screen.findByRole("heading", { name: "Hosts" })).toBeTruthy();
-  });
-
   it("signs out from the account page after the dialog confirms", async () => {
     const account = renderSettings(signedIn(), "account");
     await userEvent.click(await screen.findByRole("button", { name: "Sign out…" }));

@@ -162,10 +162,9 @@ describe("AccountPanel", () => {
     expect(within(row("up")).getByRole("button", { name: "Pair" })).toBeEnabled();
   });
 
-  it("opens the account's hosts on their own page and comes back", async () => {
-    renderPanel(fakeModel(signedIn([])));
-    await userEvent.click(await screen.findByRole("button", { name: /^Hosts on this account/ }));
-    expect(screen.getByRole("heading", { name: "Hosts on this account" })).toBeTruthy();
+  it("opens on the account's hosts on its own and comes back to the account", async () => {
+    renderPanel(fakeModel(signedIn([])), "hosts");
+    expect(await screen.findByRole("heading", { name: "Hosts on this account" })).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Back to account" }));
     expect(await screen.findByRole("button", { name: "Sign out…" })).toBeTruthy();
   });

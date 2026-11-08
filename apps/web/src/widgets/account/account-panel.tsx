@@ -19,14 +19,13 @@ import type {
   AccountResult,
 } from "@pinomad/client/account.ts";
 import { relativeTime } from "@pinomad/client/family.ts";
-import type { StoredHost } from "@pinomad/client/stored-host.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { useHosts } from "../../entities/host/host-store.ts";
 import type { AccountModel, AccountState } from "../../entities/account/account-model.ts";
 import { clearOAuthReturn, oauthReturn } from "../../entities/account/oauth-return.ts";
 import { signInProviderName } from "../../entities/provider/sign-in-provider.tsx";
 import { OFFICIAL_SERVER_ORIGIN } from "../../shared/official-server.ts";
-import { ArrowLeft, ChevronRight } from "../../shared/ui/icons.tsx";
+import { ArrowLeft } from "../../shared/ui/icons.tsx";
 import { GROUP_ROWS, SettingsGroup } from "../../shared/ui/settings-group.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { accountErrorMessage } from "./account-error.ts";
@@ -51,19 +50,16 @@ type SignedInState = Extract<AccountState, { status: "signed-in" }>;
 /**
  * Sign in to the account server, or, signed in, its pages (ADR-0022): the
  * account in groups (email, sign-in methods, devices, the sign-outs and
- * deletion), and the hosts not paired here. Settings shows one page per section
- * and moves between them itself (`page`, `onNavigate`); on its own the panel
- * keeps the page and offers a way back. Renders nothing where this client
+ * deletion), and the hosts not paired here. Settings shows the account page
+ * (`page`); on its own the panel can open on the hosts and offers a way back. Renders nothing where this client
  * can't reach an account API — a host's own port, a dev server.
  */
 export function AccountPanel({
   initialPage = "overview",
   page,
-  onNavigate,
 }: {
   initialPage?: AccountPage;
   page?: AccountPage;
-  onNavigate?: (page: AccountPage) => void;
 }) {
   const account = useAccountModel();
   const { state } = account;
@@ -99,7 +95,6 @@ export function AccountPanel({
           page={current}
           account={account}
           state={state}
-          onOpen={onNavigate ?? setOwnPage}
           onNotice={setNotice}
         />
       );
@@ -147,18 +142,16 @@ function AccountPageBody({
   page,
   account,
   state,
-  onOpen,
   onNotice,
 }: {
   page: AccountPage;
   account: AccountModel;
   state: SignedInState;
-  onOpen: (page: AccountPage) => void;
   onNotice: (notice: Notice | undefined) => void;
 }) {
   switch (page) {
     case "overview":
-      return <Overview account={account} state={state} onOpen={onOpen} onNotice={onNotice} />;
+      return <Overview account={account} state={state} onNotice={onNotice} />;
     case "hosts":
       return <AccountHosts state={state} />;
   }
@@ -190,43 +183,21 @@ function ProviderLinkReturn() {
   return null;
 }
 
-const chevron = <ChevronRight aria-hidden="true" style={{ width: "var(--spacing-4)", height: "var(--spacing-4)" }} />;
-
-/** What a page holds, beside its chevron: the overview row's value. */
-function Summary({ value }: { value: string | undefined }) {
-  return (
-    <HStack gap={2} vAlign="center">
-      {value === undefined ? null : <Text type="supporting">{value}</Text>}
-      {chevron}
-    </HStack>
-  );
-}
-
-function hostSummary(state: SignedInState, pairedHere: readonly StoredHost[]): string {
-  if (state.hosts.length === 0) return "None yet";
-  const total = state.hosts.length === 1 ? "1 host" : `${state.hosts.length} hosts`;
-  const unpaired = unpairedAccountHosts(state, pairedHere).length;
-  return unpaired === 0 ? total : `${total}, ${unpaired} not paired here`;
-}
-
 /**
- * Who is signed in where, a line for each page with what it holds, and the
- * two account-wide actions set apart at the bottom. Every action asks first,
+ * Who is signed in where, then the account in groups — email, sign-in
+ * methods, devices — and the two account-wide actions set apart at the bottom. Every action asks first,
  * in a dialog.
  */
 function Overview({
   account,
   state,
-  onOpen,
   onNotice,
 }: {
   account: AccountModel;
   state: SignedInState;
-  onOpen: (page: AccountPage) => void;
   onNotice: (notice: Notice | undefined) => void;
 }) {
   const server = new URL(state.serverOrigin).host;
-  const { hosts } = useHosts();
   const [open, setOpen] = useState<"sign-out" | "everywhere" | "delete">();
   return (
     <VStack gap={6} style={{ width: "100%" }}>
@@ -245,15 +216,6 @@ function Overview({
       <AccountEmail account={account} email={state.email} />
       <SignInMethods account={account} />
       <Devices account={account} hosts={state.hosts} />
-      <SettingsGroup title="Hosts">
-        <List hasDividers aria-label="Hosts">
-          <ListItem
-            label="Hosts on this account"
-            endContent={<Summary value={hostSummary(state, hosts)} />}
-            onClick={() => onOpen("hosts")}
-          />
-        </List>
-      </SettingsGroup>
       <SettingsGroup title="Danger zone" tone="danger">
         <ul aria-label="Danger zone" className={GROUP_ROWS}>
           <DangerAction

@@ -28,7 +28,7 @@ import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { Archive, ArchiveRestore, ArrowBigUpDash, ArrowLeft, Bot, Cancel, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, Laptop, MoreHorizontal, Puzzle, RefreshCw, Sparkles, UserCircle } from "../../shared/ui/icons.tsx";
-import { AccountPanel, type AccountPage } from "../account/account-panel.tsx";
+import { AccountPanel } from "../account/account-panel.tsx";
 import { AgentEditorDialog } from "./agent-editor-dialog.tsx";
 import type { FrameMachine } from "./app-frame.tsx";
 import { DevicesSection } from "./devices-section.tsx";
@@ -60,9 +60,6 @@ export type SectionId = Section["id"];
 
 type AccountSectionId = "account";
 const isAccountSection = (id: SectionId): id is AccountSectionId => id === "account";
-
-/** Where an account page lives in Settings: the account's hosts are in Hosts. */
-const sectionOfAccountPage = (page: AccountPage): SectionId => (page === "hosts" ? "hosts" : "account");
 
 const sectionTitle = (id: SectionId): string => SECTIONS.find((section) => section.id === id)!.title;
 
@@ -340,7 +337,7 @@ function SectionPage({
         title: sectionTitle(section),
         supporting: undefined,
         body: (
-          <AccountPanel page="overview" onNavigate={(page) => onSection(sectionOfAccountPage(page))} />
+          <AccountPanel page="overview" />
         ),
       }
     : sectionBody(view, remote, device, hostKey, connected, onReconnect, section);
