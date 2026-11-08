@@ -1502,7 +1502,7 @@ html[lang="zh-CN"] .split h2 {
   color: var(--fg);
 }
 
-/* The sign-off: the name across the whole width, in the blue. */
+/* The sign-off: the name across the whole width, inked from Void down into Abyss. */
 .footer-mark {
   overflow: hidden;
   padding-inline: var(--gutter);
@@ -1513,7 +1513,10 @@ html[lang="zh-CN"] .split h2 {
   letter-spacing: -0.05em;
   text-align: center;
   white-space: nowrap;
-  color: var(--abyss);
+  background: linear-gradient(to bottom, var(--void) 30%, var(--abyss));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
   user-select: none;
 }
 
