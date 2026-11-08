@@ -193,6 +193,19 @@ impl CodemodeDoc {
     }
 }
 
+/// `ProcessesSchema` (5.31, ADR-0045): the root family's background-process
+/// list. Validation is the contract; the UI reads the raw entries.
+#[derive(Clone, Debug)]
+pub struct ProcessesDoc {
+    raw: Json,
+}
+
+impl ProcessesDoc {
+    pub fn to_json(&self) -> Json {
+        self.raw.clone()
+    }
+}
+
 /// The `fallback` value: an arbitrary document the UI renders generically.
 #[derive(Clone, Debug)]
 pub struct FallbackDoc {
@@ -235,6 +248,7 @@ pub enum DocType {
     Diff,
     Codemode,
     Context,
+    Processes,
     Fallback,
 }
 
@@ -246,6 +260,7 @@ impl DocType {
             DocType::Diff => "pinomad.diff",
             DocType::Codemode => "pinomad.codemode",
             DocType::Context => "pinomad.context",
+            DocType::Processes => "pinomad.processes",
             DocType::Fallback => "fallback",
         }
     }
@@ -259,6 +274,7 @@ pub enum ClassifiedDoc {
     Diff(DiffDoc),
     Codemode(CodemodeDoc),
     Context(ContextDoc),
+    Processes(ProcessesDoc),
     Fallback(FallbackDoc),
 }
 
@@ -271,6 +287,7 @@ impl ClassifiedDoc {
             ClassifiedDoc::Diff(_) => DocType::Diff,
             ClassifiedDoc::Codemode(_) => DocType::Codemode,
             ClassifiedDoc::Context(_) => DocType::Context,
+            ClassifiedDoc::Processes(_) => DocType::Processes,
             ClassifiedDoc::Fallback(_) => DocType::Fallback,
         }
     }
@@ -283,6 +300,7 @@ impl ClassifiedDoc {
             ClassifiedDoc::Diff(d) => d.to_json(),
             ClassifiedDoc::Codemode(d) => d.to_json(),
             ClassifiedDoc::Context(d) => d.to_json(),
+            ClassifiedDoc::Processes(d) => d.to_json(),
             ClassifiedDoc::Fallback(d) => d.to_json(),
         }
     }
@@ -453,6 +471,9 @@ pub fn classify(presentation: Option<&Json>, value: &Json) -> ClassifiedDoc {
             ClassifiedDoc::Codemode(decode_codemode(value))
         }
         Some(s) if str_eq(s, "pinomad.context") && is_context(value) => ClassifiedDoc::Context(decode_context(value)),
+        Some(s) if str_eq(s, "pinomad.processes") && is_processes(value) => {
+            ClassifiedDoc::Processes(ProcessesDoc { raw: value.clone() })
+        }
         _ => ClassifiedDoc::Fallback(FallbackDoc { raw: value.clone() }),
     }
 }
@@ -615,4 +636,46 @@ fn is_codemode(value: &Json) -> bool {
     value.is_object()
         && opt(value, "code", |v| v.is_some_and(is_string))
         && array_of(value.get("calls"), 0, None, is_codemode_call)
+}
+
+/// `ProcessStateSchema`: two string states, or one of the object forms.
+fn is_process_state(value: &Json) -> bool {
+    if let Some(state) = value.as_str() {
+        return str_eq(state, "starting") || str_eq(state, "running") || str_eq(state, "lost");
+    }
+    if !value.is_object() {
+        return false;
+    }
+    let exited = matches!(value.get("exited"), Some(Json::Number(n)) if n.is_finite())
+        || matches!(value.get("exited"), Some(Json::Null));
+    if exited && opt(value, "signal", |v| v.is_some_and(is_string)) {
+        return true;
+    }
+    if let Some(stopped) = value.get("stopped").and_then(Json::as_str) {
+        if str_eq(stopped, "agent")
+            || str_eq(stopped, "user")
+            || str_eq(stopped, "archive")
+            || str_eq(stopped, "shutdown")
+        {
+            return true;
+        }
+    }
+    value.get("failed").is_some_and(is_string)
+}
+
+/// `ProcessInfoSchema`: id, owner, name, command, pid?, startedAt, endedAt?, state.
+fn is_process_info(value: &Json) -> bool {
+    value.is_object()
+        && string_of(value.get("id"), 1, None)
+        && is_number(value.get("owner"))
+        && is_string(value.get("name").unwrap_or(&Json::Null))
+        && is_string(value.get("command").unwrap_or(&Json::Null))
+        && opt(value, "pid", is_number)
+        && is_number(value.get("startedAt"))
+        && opt(value, "endedAt", is_number)
+        && value.get("state").is_some_and(is_process_state)
+}
+
+fn is_processes(value: &Json) -> bool {
+    value.is_object() && array_of(value.get("processes"), 0, None, is_process_info)
 }

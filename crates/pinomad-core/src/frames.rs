@@ -126,6 +126,7 @@ pub enum CallMethod {
     RenameTerminal,
     RestartTerminal,
     CloseTerminal,
+    StopProcess,
     StartUpgrade,
     CancelUpgrade,
     CheckUpgrade,
@@ -185,6 +186,7 @@ impl CallMethod {
             "renameTerminal" => Self::RenameTerminal,
             "restartTerminal" => Self::RestartTerminal,
             "closeTerminal" => Self::CloseTerminal,
+            "stopProcess" => Self::StopProcess,
             "startUpgrade" => Self::StartUpgrade,
             "cancelUpgrade" => Self::CancelUpgrade,
             "checkUpgrade" => Self::CheckUpgrade,
@@ -237,6 +239,7 @@ impl CallMethod {
             | Self::RenameTerminal
             | Self::RestartTerminal
             | Self::CloseTerminal => 27,
+            Self::StopProcess => 31,
             Self::EarlierEntries => 28,
             Self::ReorderQueued => 29,
             Self::StartUpgrade | Self::CancelUpgrade | Self::CheckUpgrade => 30,
@@ -274,6 +277,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
         HostFeature::Terminals => 27,
         HostFeature::TranscriptPaging => 28,
         HostFeature::AutoUpgrade => 30,
+        HostFeature::Processes => 31,
     };
     host_minor >= since
 }
@@ -323,6 +327,9 @@ pub enum HostFeature {
     /// `updateSettings`'s `autoUpgrade` key next to the `upgrade` stream and
     /// its calls (30, ADR-0043) — an older host 4400s the key.
     AutoUpgrade,
+    /// `hello.processes`, the `process:` stream, and `stopProcess` (31,
+    /// ADR-0045).
+    Processes,
 }
 
 

@@ -23,8 +23,10 @@ import { createCoding } from "./extensions/coding.ts";
 import { createCodemode } from "./extensions/codemode.ts";
 import { createContext } from "./extensions/context.ts";
 import { createContextBreakdown } from "./extensions/context-breakdown.ts";
+import { createProcesses } from "./extensions/processes.ts";
 import { createSubagent } from "./extensions/subagent.ts";
 import { todo } from "./extensions/todo.ts";
+import type { Processes } from "./processes.ts";
 import { validatePublicUrl, validateRelayOrigin } from "./gateway.ts";
 import { type OpenHostOptions, openHost } from "./host.ts";
 import { checkoutInfo } from "./organization.ts";
@@ -80,23 +82,34 @@ export async function main(argv: readonly string[]): Promise<void> {
     (host: {
       readonly harness: () => Harness;
       readonly agentRoles: AgentRoleStore;
-    }): readonly BuiltinExtension[] => [
-      createContext({
-        agentsHome,
-        checkout: (input, context) => checkoutInfo(host.harness(), input, context),
-      }),
-      createCoding(options),
-      todo,
-      question,
-      createSubagent({
-        models,
-        modelSummaries: summaries,
-        exclude: [question.extension],
-        roles: () => host.agentRoles.value.roles,
-      }),
-      createCodemode(),
-      createContextBreakdown({ harness: host.harness }),
-    ];
+      readonly processes?: Processes;
+    }): readonly BuiltinExtension[] => {
+      // The document is registered even when the pty is missing: clients can
+      // still show the historical list; only the tools need the runtime.
+      const processes = createProcesses({
+        ...(host.processes === undefined ? {} : { runtime: host.processes }),
+      });
+      return [
+        createContext({
+          agentsHome,
+          checkout: (input, context) => checkoutInfo(host.harness(), input, context),
+        }),
+        createCoding(options),
+        todo,
+        question,
+        processes,
+        createSubagent({
+          models,
+          modelSummaries: summaries,
+          // Foreground subagents do not manage background processes; the
+          // runtime could not report a child's processes to the right family.
+          exclude: [question.extension, processes.extension],
+          roles: () => host.agentRoles.value.roles,
+        }),
+        createCodemode(),
+        createContextBreakdown({ harness: host.harness }),
+      ];
+    };
   const common = {
     dataDir,
     agentsHome,

@@ -28,6 +28,7 @@ import type { StartTerminalsOptions } from "./terminals.ts";
 import { AttachmentStore } from "./attachments.ts";
 import { withAnswerTiming } from "./answer-timing.ts";
 import { startHostUpgrader, type HostUpgradeOptions } from "./upgrade/host-upgrader.ts";
+import { type Processes, startProcesses, settleLostProcesses, type StartProcessesOptions } from "./processes.ts";
 
 const context = BACKGROUND_CONTEXT;
 
@@ -51,6 +52,8 @@ export interface OpenHostOptions {
         readonly harness: () => Harness;
         /** Named-agent files under `<dataDir>/agents` (ADR-0023); open before this runs so extensions can render it. */
         readonly agentRoles: AgentRoleStore;
+        /** The background-process runtime, absent when the pty module did not load (ADR-0045). */
+        readonly processes?: Processes;
       }) => readonly BuiltinExtension[]);
   /** MCP config file (mcpServers format, ADR-0012); absent → no bridge and the `mcp` stream sends null. */
   readonly mcpConfig?: string;
@@ -117,6 +120,8 @@ export interface OpenHostOptions {
   readonly rtc?: RtcOptions;
   /** Terminal seams (ADR-0041): the shell, its environment, the pty loader. Absent runs the login shell. */
   readonly terminals?: StartTerminalsOptions;
+  /** Background-process seams (ADR-0045): the pty loader, limits, and stop timing. */
+  readonly processes?: Omit<StartProcessesOptions, "harness">;
   /**
    * Upgrades from clients (ADR-0043) for the release `current`; absent in a
    * source checkout and in tests, where the `upgrade` stream says `source`.
@@ -136,6 +141,8 @@ export interface OpenedHost {
   readonly relay?: { readonly origin: string; readonly hostId: string; state(): RelayLinkState };
   /** The effective host settings backing the `settings` stream and `updateSettings`. */
   readonly settings: HostSettingsStore;
+  /** The background-process runtime; absent when the pty module did not load. */
+  readonly processes?: Processes;
   /**
    * Mint a one-time pairing offer bound to the joined server — the server's
    * entry point for vouching a new device (ADR-0022 §4). Undefined while the
@@ -175,6 +182,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     });
 
   let harness: Harness | undefined;
+  let processes: Processes | undefined;
   let mcp: McpBridge | undefined;
   let agentRoles: AgentRoleStore | undefined;
   let attachments: AttachmentStore | undefined;
@@ -187,6 +195,18 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     await attachments.open();
     const reports: unknown[] = [];
     let report = (error: unknown): void => void reports.push(error);
+    // Loaded before the extensions resolve so the process extension is only
+    // installed when this host can actually start ptys; settlement waits for
+    // the Harness and does not depend on the pty.
+    processes = await startProcesses({
+      ...options.processes,
+      // The upgrader opens later; until then nothing is installing.
+      installing: () => upgrader?.installing === true,
+      harness: () => {
+        if (harness === undefined) throw new Error("harness is not open yet");
+        return harness;
+      },
+    });
     const registry = createRegistry();
     // Opened before `extensions` resolves: the callback sees the live store,
     // and `subagent` renders its section per request off it.
@@ -200,6 +220,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
               return harness;
             },
             agentRoles,
+            ...(processes === undefined ? {} : { processes }),
           })
         : (options.extensions ?? []);
     for (const { extension } of extensions) registry.install(extension);
@@ -271,6 +292,10 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       },
       context,
     );
+    // A previous host may have left live entries behind; settle them whether
+    // or not this host can start ptys (ADR-0045 §8).
+    if (processes === undefined) await settleLostProcesses(harness, context);
+    else await processes.open(context);
     await ensureIndex(harness, context);
     await ensureDevices(harness, context);
     for (const path of options.projects ?? []) await addProject(harness, path, context);
@@ -290,6 +315,12 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
             settings: hostSettings,
             context,
             seams: options.upgrade,
+            ...(processes === undefined
+              ? {}
+              : {
+                  processesBusy: processes.busy,
+                  drain: () => processes!.drain(context),
+                }),
           });
     const gateway = await startGateway({
       harness,
@@ -322,6 +353,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
           }),
       ...(options.rtc === undefined ? {} : { rtc: options.rtc }),
       ...(options.terminals === undefined ? {} : { terminals: options.terminals }),
+      ...(processes === undefined ? {} : { processes }),
       ...(upgrader === undefined ? {} : { upgrade: upgrader }),
       secure: {
         hostKey,
@@ -364,6 +396,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       harness,
       closed: opened.closed,
       settings: hostSettings,
+      ...(processes === undefined ? {} : { processes }),
       // The binding is read at mint time; admission re-reads it again (a
       // join/leave between the two must not let the old binding through).
       // A server.json without `binding` — written before the field existed —
@@ -412,6 +445,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     };
   } catch (error) {
     upgrader?.close();
+    if (processes !== undefined) await processes.close(context).catch(() => {});
     options.modelAuth?.close();
     attachments?.close();
     agentRoles?.close();

@@ -7,11 +7,12 @@
 // its own position in that buffer and is sent the next piece once the last
 // was handed to its transport, so a slow viewer never pauses the pty or
 // other viewers: if it falls behind the buffer, it gets the whole buffer
-// again with `reset`.
+// again with `reset`. The buffer itself is shared with background processes.
 import { randomUUID } from "node:crypto";
 import { userInfo } from "node:os";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { TerminalId, TerminalInfo, TerminalList } from "@pinomad/protocol/terminals.ts";
+import { OutputBuffer, type OutputFrame, type OutputSink } from "./output-buffer.ts";
 
 /** The part of node-pty's `IPty` the host uses. */
 export interface PtyProcess {
@@ -20,6 +21,8 @@ export interface PtyProcess {
   write(data: string): void;
   resize(cols: number, rows: number): void;
   kill(signal?: string): void;
+  /** The shell's pid; it is the process group id too. */
+  readonly pid?: number;
 }
 
 export type SpawnPty = (
@@ -34,17 +37,9 @@ export interface TerminalSize {
 }
 
 /** One `output` frame's content, before the gateway names the stream. */
-export interface TerminalFrame {
-  readonly seq: number;
-  readonly data: string;
-  readonly reset?: true;
-}
+export type TerminalFrame = OutputFrame;
 
-export interface TerminalSink {
-  /** Resolves once the frame is handed to the transport; the next one waits for it. */
-  output(frame: TerminalFrame): Promise<void>;
-  ended(reason: string): void;
-}
+export type TerminalSink = OutputSink;
 
 export interface TerminalsOptions {
   readonly spawn: SpawnPty;
@@ -63,21 +58,9 @@ export interface TerminalsOptions {
 }
 
 export const TERMINAL_LIMIT = 8;
-const BUFFER_SIZE = 512 * 1024;
-const FLUSH_MS = 8;
-// Raw output can grow 6× as JSON (\u001b), so a 16 KiB piece stays under
-// ~100 KiB on the wire: a conversation frame never waits behind much.
-const MAX_CHUNK = 16 * 1024;
 // A window title longer than this is not one; drop the partial sequence.
 const MAX_TITLE = 1024;
 const TITLE = /\x1b\][02];([^\x07\x1b]*)(?:\x07|\x1b\\)/g;
-
-interface Viewer {
-  readonly sink: TerminalSink;
-  /** The next position to send; `undefined` → send the whole buffer with `reset`. */
-  position: number | undefined;
-  sending: boolean;
-}
 
 interface Terminal {
   readonly id: TerminalId;
@@ -92,14 +75,9 @@ interface Terminal {
   title: string | undefined;
   rename: string | undefined;
   exit: TerminalInfo["exit"];
-  /** Output kept for replay: `buffer` holds positions `start` to `start + buffer.length`. */
-  buffer: string;
-  start: number;
-  pending: string;
-  flushTimer: ReturnType<typeof setTimeout> | undefined;
+  readonly output: OutputBuffer;
   /** An unfinished title sequence at the end of the last output. */
   titleCarry: string;
-  readonly viewers: Set<Viewer>;
 }
 
 export class Terminals {
@@ -152,12 +130,15 @@ export class Terminals {
       title: undefined,
       rename: undefined,
       exit: undefined,
-      buffer: "",
-      start: 0,
-      pending: "",
-      flushTimer: undefined,
+      output: new OutputBuffer({
+        ...(this.#options.bufferSize === undefined ? {} : { bufferSize: this.#options.bufferSize }),
+        ...(this.#options.flushMs === undefined ? {} : { flushMs: this.#options.flushMs }),
+        ...(this.#options.maxChunk === undefined ? {} : { maxChunk: this.#options.maxChunk }),
+        onFlush: (data) => {
+          if (this.#readTitle(terminal, data)) this.#changed(owner);
+        },
+      }),
       titleCarry: "",
-      viewers: new Set(),
     };
     this.#terminals.set(terminal.id, terminal);
     try {
@@ -192,18 +173,13 @@ export class Terminals {
     const terminal = this.#get(id);
     this.#stop(terminal);
     // Positions keep counting; the old output is dropped, so every viewer
-    // starts over from the new shell's first output. The extra one leaves a
-    // gap: a device that read all of the old output and reconnects later
-    // holds a position the buffer no longer has, and gets a reset.
-    terminal.start += terminal.buffer.length + terminal.pending.length + 1;
-    terminal.buffer = "";
-    terminal.pending = "";
+    // starts over from the new shell's first output.
+    terminal.output.discard();
     terminal.titleCarry = "";
     terminal.title = undefined;
     terminal.exit = undefined;
     terminal.cols = size.cols;
     terminal.rows = size.rows;
-    for (const viewer of terminal.viewers) viewer.position = undefined;
     try {
       this.#start(terminal);
     } catch (error) {
@@ -241,15 +217,7 @@ export class Terminals {
    * buffer still has it, otherwise the whole buffer with `reset`, then live.
    */
   attach(id: TerminalId, since: number | undefined, sink: TerminalSink): () => void {
-    const terminal = this.#get(id);
-    const end = terminal.start + terminal.buffer.length;
-    const position = since !== undefined && since >= terminal.start && since <= end ? since : undefined;
-    const viewer: Viewer = { sink, position, sending: false };
-    terminal.viewers.add(viewer);
-    void this.#pump(terminal, viewer);
-    return () => {
-      terminal.viewers.delete(viewer);
-    };
+    return this.#get(id).output.attach(since, sink);
   }
 
   #get(id: TerminalId): Terminal {
@@ -272,13 +240,11 @@ export class Terminals {
     pty.onData((data) => {
       if (terminal.generation !== generation) return;
       this.#options.onOutput?.();
-      terminal.pending += data;
-      if (terminal.pending.length >= (this.#options.maxChunk ?? MAX_CHUNK)) this.#flush(terminal);
-      else terminal.flushTimer ??= setTimeout(() => this.#flush(terminal), this.#options.flushMs ?? FLUSH_MS);
+      terminal.output.push(data);
     });
     pty.onExit(({ exitCode, signal }) => {
       if (terminal.generation !== generation || !this.#terminals.has(terminal.id)) return;
-      this.#flush(terminal);
+      terminal.output.flush();
       terminal.pty = undefined;
       terminal.exit = signal === undefined || signal === 0 ? { code: exitCode } : { code: exitCode, signal };
       this.#changed(terminal.owner);
@@ -286,8 +252,6 @@ export class Terminals {
   }
 
   #stop(terminal: Terminal): void {
-    if (terminal.flushTimer !== undefined) clearTimeout(terminal.flushTimer);
-    terminal.flushTimer = undefined;
     terminal.generation++;
     const pty = terminal.pty;
     terminal.pty = undefined;
@@ -300,9 +264,8 @@ export class Terminals {
 
   #remove(terminal: Terminal): void {
     this.#stop(terminal);
+    terminal.output.close("Terminal closed");
     this.#terminals.delete(terminal.id);
-    for (const viewer of terminal.viewers) viewer.sink.ended("Terminal closed");
-    terminal.viewers.clear();
   }
 
   #resize(terminal: Terminal, size: TerminalSize): void {
@@ -315,27 +278,6 @@ export class Terminals {
       // The process exited between the check and the call.
     }
     this.#changed(terminal.owner);
-  }
-
-  #flush(terminal: Terminal): void {
-    if (terminal.flushTimer !== undefined) clearTimeout(terminal.flushTimer);
-    terminal.flushTimer = undefined;
-    const data = terminal.pending;
-    if (data === "") return;
-    terminal.pending = "";
-    terminal.buffer += data;
-    const bufferSize = this.#options.bufferSize ?? BUFFER_SIZE;
-    if (terminal.buffer.length > bufferSize) {
-      // Drop the oldest output, starting the kept part at a line where one is
-      // near so a replay doesn't open mid-line.
-      let cut = terminal.buffer.length - bufferSize;
-      const line = terminal.buffer.indexOf("\n", cut);
-      if (line !== -1 && line - cut < 1024) cut = line + 1;
-      terminal.buffer = terminal.buffer.slice(cut);
-      terminal.start += cut;
-    }
-    if (this.#readTitle(terminal, data)) this.#changed(terminal.owner);
-    for (const viewer of terminal.viewers) void this.#pump(terminal, viewer);
   }
 
   /** Whether `data` changed the shell's window title (OSC 0 or 2). */
@@ -352,30 +294,6 @@ export class Terminals {
     if (title === undefined || title === terminal.title) return false;
     terminal.title = title;
     return terminal.rename === undefined;
-  }
-
-  async #pump(terminal: Terminal, viewer: Viewer): Promise<void> {
-    if (viewer.sending) return;
-    viewer.sending = true;
-    try {
-      const maxChunk = this.#options.maxChunk ?? MAX_CHUNK;
-      while (terminal.viewers.has(viewer)) {
-        const end = terminal.start + terminal.buffer.length;
-        const reset = viewer.position === undefined || viewer.position < terminal.start;
-        const from = reset ? terminal.start : viewer.position!;
-        // A reset replays the whole buffer at once: the client clears first,
-        // so it must not see a partial screen in between.
-        if (!reset && from >= end) return;
-        let to = reset ? end : Math.min(end, from + maxChunk);
-        // Never end a piece between the halves of a surrogate pair.
-        if (to < end && isHighSurrogate(terminal.buffer.charCodeAt(to - terminal.start - 1))) to--;
-        const data = terminal.buffer.slice(from - terminal.start, to - terminal.start);
-        viewer.position = to;
-        await viewer.sink.output(reset ? { seq: to, data, reset: true } : { seq: to, data });
-      }
-    } finally {
-      viewer.sending = false;
-    }
   }
 
   #changed(owner: ConversationId): void {
@@ -418,7 +336,7 @@ export async function startTerminals(options: StartTerminalsOptions = {}): Promi
 }
 
 /** The user's login shell, as a terminal app would start it. */
-function loginShell(): TerminalsOptions["shell"] {
+export function loginShell(): TerminalsOptions["shell"] {
   let file = process.env.SHELL;
   if (file === undefined || file === "") {
     try {
@@ -448,8 +366,4 @@ function info(terminal: Terminal): TerminalInfo {
     rows: terminal.rows,
     ...(terminal.exit === undefined ? {} : { exit: terminal.exit }),
   };
-}
-
-function isHighSurrogate(code: number): boolean {
-  return code >= 0xd800 && code <= 0xdbff;
 }

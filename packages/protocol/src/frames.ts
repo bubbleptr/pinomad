@@ -8,6 +8,7 @@ import type { HostDevices } from "./devices.ts";
 import type { McpStatus } from "./mcp.ts";
 import type { RtcAnswer, RtcHello, RtcOfferArgs } from "./rtc.ts";
 import type { TerminalId, TerminalsHello } from "./terminals.ts";
+import type { ProcessId, ProcessState, ProcessesHello } from "./processes.ts";
 import { isAutoUpgradeMode, type HostUpgrade, type UpgradeWhen } from "./upgrade.ts";
 import type { TranscriptPage, TranscriptWindow } from "./transcript.ts";
 import type { CommandListing } from "./commands.ts";
@@ -74,6 +75,7 @@ export type StreamName =
   | "tasks"
   | `terminals:${ConversationId}`
   | `terminal:${TerminalId}`
+  | `process:${ProcessId}`
   | HostStreamName;
 
 export const conversationStream = (id: ConversationId): StreamName => `conversation:${id}`;
@@ -407,6 +409,12 @@ export interface CallMethods {
   /** Ends the process and removes the tab. */
   closeTerminal: { args: { terminalId: TerminalId }; result: null };
   /**
+   * Stop a background process (5.31, ADR-0045). The host checks the id belongs
+   * to `conversationId`'s family and resolves after the process exited (or
+   * the stop timed out into SIGKILL). Output arrives on `process:<id>`.
+   */
+  stopProcess: { args: { conversationId: ConversationId; id: ProcessId }; result: { state: ProcessState } };
+  /**
    * Host upgrades (5.30, ADR-0043). Refused while the `upgrade` stream's
    * `blocked` is set; progress arrives on that stream, and on success the
    * host exits and its service manager starts the new release.
@@ -490,6 +498,7 @@ export const CALL_SINCE: Record<CallMethod, number> = {
   renameTerminal: 27,
   restartTerminal: 27,
   closeTerminal: 27,
+  stopProcess: 31,
   startUpgrade: 30,
   cancelUpgrade: 30,
   checkUpgrade: 30,
@@ -531,6 +540,8 @@ export const FEATURE_SINCE = {
   transcriptPaging: 28,
   /** The `autoUpgrade` setting next to the `upgrade` stream and its calls (30, ADR-0043); an older host 4400s the key. */
   autoUpgrade: 30,
+  /** `hello.processes`, the `process:` stream, and the `stopProcess` call (31, ADR-0045). */
+  processes: 31,
 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
@@ -567,6 +578,8 @@ export type ServerFrame =
       readonly rtc?: RtcHello;
       /** Terminals (5.27, ADR-0041). Absent → the pty module is not loaded, or the host predates them. */
       readonly terminals?: TerminalsHello;
+      /** Background processes (5.31, ADR-0045). Absent → the pty module is not loaded, or the host predates them. */
+      readonly processes?: ProcessesHello;
     }
   | {
       /**
@@ -582,13 +595,19 @@ export type ServerFrame =
   | { readonly type: "snapshot"; readonly stream: StreamName; readonly value: unknown }
   | { readonly type: "ops"; readonly stream: StreamName; readonly ops: readonly Op[] }
   /**
-   * Terminal output on a `terminal:<id>` stream (5.27, ADR-0041). `seq` is
-   * the stream position after `data`, counted in UTF-16 code units and never
-   * reset. `reset` says `data` replays the host's whole buffer, so the
-   * client clears its screen first — the subscribe's `since` fell out of the
-   * buffer, or the terminal restarted.
+   * Terminal or process output on a `terminal:<id>` / `process:<id>` stream
+   * (5.27 / 5.31). `seq` is the stream position after `data`, counted in
+   * UTF-16 code units and never reset. `reset` says `data` replays the host's
+   * whole buffer, so the client clears its screen first — the subscribe's
+   * `since` fell out of the buffer, or the terminal restarted.
    */
-  | { readonly type: "output"; readonly stream: `terminal:${TerminalId}`; readonly seq: number; readonly data: string; readonly reset?: true }
+  | {
+      readonly type: "output";
+      readonly stream: `terminal:${TerminalId}` | `process:${ProcessId}`;
+      readonly seq: number;
+      readonly data: string;
+      readonly reset?: true;
+    }
   /** The stream will send nothing more, for example an unknown conversation. */
   | { readonly type: "ended"; readonly stream: StreamName; readonly reason: string }
   | { readonly type: "result"; readonly id: number; readonly ok: true; readonly value: unknown }
@@ -652,7 +671,7 @@ export function parseClientFrame(value: unknown): ParsedClientFrame {
     if (typeof stream !== "string") return { kind: "malformed" };
     if (isStreamName(stream)) {
       if (value.type === "unsubscribe") return { kind: "frame", frame: { type: "unsubscribe", stream } };
-      if (stream.startsWith("terminal:") && value.since !== undefined) {
+      if ((stream.startsWith("terminal:") || stream.startsWith("process:")) && value.since !== undefined) {
         const since = value.since;
         if (typeof since !== "number" || !Number.isSafeInteger(since) || since < 0) return { kind: "malformed" };
         return { kind: "frame", frame: { type: "subscribe", stream, since } };
@@ -690,7 +709,7 @@ export function parseClientFrame(value: unknown): ParsedClientFrame {
 }
 
 /** Every stream name's kind: fixed names plus the `conversation:`/`doc:` prefixes. */
-const STREAM_KINDS = new Set(["conversation", "doc", "tasks", "terminals", "terminal", ...HOST_STREAM_NAMES]);
+const STREAM_KINDS = new Set(["conversation", "doc", "tasks", "terminals", "terminal", "process", ...HOST_STREAM_NAMES]);
 
 function isStreamName(stream: string): stream is StreamName {
   return (
@@ -698,6 +717,7 @@ function isStreamName(stream: string): stream is StreamName {
     || (HOST_STREAM_NAMES as readonly string[]).includes(stream)
     || /^(?:conversation:|doc:.+:|terminals:)[1-9]\d*$/.test(stream)
     || /^terminal:[\w-]+$/.test(stream)
+    || /^process:[\w-]+$/.test(stream)
   );
 }
 
@@ -766,6 +786,8 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
       return terminalId() && (args.name === null || typeof args.name === "string");
     case "closeTerminal":
       return terminalId();
+    case "stopProcess":
+      return conversationId() && nonempty(args.id);
     case "submit":
       return (
         conversationId() && typeof args.text === "string" && (args.whenBusy === "steer" || args.whenBusy === "followUp")

@@ -168,8 +168,8 @@ describe("protocol surface", () => {
     expect(typebox.surface).toEqual(before.surface);
     const typescript = extractWith("presentation.ts", (source) =>
       source.replace(
-        'export type PresentationType = "pinomad.todo" | "pinomad.question" | "pinomad.diff" | "pinomad.codemode" | "pinomad.context";',
-        'export type PresentationType = "pinomad.context" | "pinomad.codemode" | "pinomad.diff" | "pinomad.question" | "pinomad.todo";',
+        'export type PresentationType = "pinomad.todo" | "pinomad.question" | "pinomad.diff" | "pinomad.codemode" | "pinomad.context" | "pinomad.processes";',
+        'export type PresentationType = "pinomad.codemode" | "pinomad.context" | "pinomad.diff" | "pinomad.processes" | "pinomad.question" | "pinomad.todo";',
       ),
     );
     expect(typescript.surface).toEqual(before.surface);

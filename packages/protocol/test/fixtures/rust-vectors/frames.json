@@ -444,6 +444,10 @@
         "since": 14
       },
       {
+        "name": "stopProcess",
+        "since": 31
+      },
+      {
         "name": "submission",
         "since": 25
       },
@@ -554,6 +558,10 @@
       {
         "name": "liveBranch",
         "since": 11
+      },
+      {
+        "name": "processes",
+        "since": 31
       },
       {
         "name": "rtc",
@@ -1049,6 +1057,18 @@
       "expect": false
     },
     {
+      "name": "stopProcess@31",
+      "minor": 31,
+      "call": "stopProcess",
+      "expect": true
+    },
+    {
+      "name": "stopProcess@30",
+      "minor": 30,
+      "call": "stopProcess",
+      "expect": false
+    },
+    {
       "name": "submission@25",
       "minor": 25,
       "call": "submission",
@@ -1244,6 +1264,18 @@
       "name": "liveBranch@10",
       "minor": 10,
       "feature": "liveBranch",
+      "expect": false
+    },
+    {
+      "name": "processes@31",
+      "minor": 31,
+      "feature": "processes",
+      "expect": true
+    },
+    {
+      "name": "processes@30",
+      "minor": 30,
+      "feature": "processes",
       "expect": false
     },
     {

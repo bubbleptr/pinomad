@@ -63,6 +63,7 @@ const ROOTS = [
   { file: "presentation.ts", name: "QuestionSchema" },
   { file: "presentation.ts", name: "DiffSchema" },
   { file: "presentation.ts", name: "CodemodeSchema" },
+  { file: "presentation.ts", name: "ProcessesSchema" },
 ] as const;
 
 interface ProgramSources {

@@ -65,6 +65,31 @@ describe("classify", () => {
     expect(classify("pinomad.question", value)).toEqual({ type: "fallback", value });
   });
 
+  it("classifies a process document and falls back on malformed states", () => {
+    const processes = {
+      processes: [
+        {
+          id: "p1",
+          owner: 3,
+          name: "dev server",
+          command: "npm run dev",
+          pid: 42,
+          startedAt: 1,
+          state: "running",
+        },
+        { id: "p2", owner: 3, name: "build", command: "make", startedAt: 2, endedAt: 3, state: { exited: 0 } },
+        { id: "p3", owner: 3, name: "old", command: "make", startedAt: 4, state: "lost" },
+      ],
+    };
+    expect(classify("pinomad.processes", processes)).toEqual({ type: "pinomad.processes", value: processes });
+    const bad = { processes: [{ ...processes.processes[0]!, state: "gone" }] };
+    expect(classify("pinomad.processes", bad)).toEqual({ type: "fallback", value: bad });
+    expect(classify("pinomad.processes", { processes: [{ id: "p" }] })).toEqual({
+      type: "fallback",
+      value: { processes: [{ id: "p" }] },
+    });
+  });
+
   it("falls back on a malformed question doc", () => {
     expect(classify("pinomad.question", { requests: [{ id: "r1" }] })).toEqual({ type: "fallback", value: { requests: [{ id: "r1" }] } });
     expect(classify("pinomad.question", "nope")).toEqual({ type: "fallback", value: "nope" });

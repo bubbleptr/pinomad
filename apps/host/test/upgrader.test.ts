@@ -14,6 +14,8 @@ const T0 = Date.UTC(2026, 10, 1);
 interface Harness {
   readonly upgrader: HostUpgrader;
   readonly installs: string[];
+  /** One entry per install, for the drain that runs before npm. */
+  readonly drains: number[];
   /** `upgrader.installing` as each install saw it while npm ran. */
   readonly installingDuring: boolean[];
   /** What `admit()` threw while npm ran. */
@@ -43,6 +45,7 @@ function harness(options: {
   let installFailure: string | undefined;
   let checks = 0;
   const installs: string[] = [];
+  const drains: number[] = [];
   const installingDuring: boolean[] = [];
   const admitDuring: unknown[] = [];
   const restarts: number[] = [];
@@ -68,6 +71,7 @@ function harness(options: {
       return installFailure === undefined ? { ok: true } : { ok: false, message: installFailure };
     },
     restart: () => restarts.push(now),
+    drain: async () => void drains.push(now),
     busy,
     mode,
     now: () => now,
@@ -80,6 +84,7 @@ function harness(options: {
   return {
     upgrader,
     installs,
+    drains,
     installingDuring,
     admitDuring,
     restarts,
@@ -181,6 +186,7 @@ describe("HostUpgrader manual upgrades", () => {
     await h.upgrader.start("idle");
     await settle();
     expect(h.installs).toEqual(["0.14.0"]);
+    expect(h.drains).toHaveLength(1);
     expect(h.restarts).toHaveLength(1);
   });
 
