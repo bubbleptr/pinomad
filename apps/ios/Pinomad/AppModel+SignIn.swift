@@ -232,12 +232,19 @@ extension AppModel {
 
     func accountRefreshIdentities() async {
         guard accountAPI() != nil else { return }
+        let asked = accountSession
+        accountIdentitiesError = nil
         let result = await scopedAccountCall { api in await api.identities() } onSuccess: { identities, _ in
             self.accountIdentities = identities
             self.accountIdentitiesUnsupported = false
         }
-        if case .failure(let failure) = result, failure.status == 404, accountSession != nil {
+        // A failure for a session that has since ended belongs to before.
+        guard case .failure(let failure) = result, let asked, asked.isSameSignIn(as: accountSession),
+              !failure.clearsSession else { return }
+        if failure.status == 404 {
             accountIdentitiesUnsupported = true
+        } else if accountIdentities == nil {
+            accountIdentitiesError = AccountCopy.message(failure)
         }
     }
 

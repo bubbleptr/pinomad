@@ -351,6 +351,15 @@ struct AccountView: View {
                             .disabled(model.accountBusy)
                     }
                 }
+            } else if let failed = model.accountIdentitiesError {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Couldn't load sign-in methods. \(failed)")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Button("Try again") {
+                        Task { await model.accountRefreshIdentities() }
+                    }
+                }
             } else {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)

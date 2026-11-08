@@ -317,6 +317,8 @@ final class AppModel {
     var accountIdentities: AccountIdentities?
     /// The server predates sign-in methods (404): only the password, as before.
     var accountIdentitiesUnsupported = false
+    /// Loading the sign-in methods failed (not a 404): shown with a retry.
+    var accountIdentitiesError: String?
     /// Sign in with Apple found no account: the native "no account yet" step.
     var accountApplePending: ApplePendingSignIn?
     /// Push switches, permission, APNs token, and the system callbacks.

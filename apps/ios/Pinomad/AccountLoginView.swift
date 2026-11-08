@@ -477,6 +477,13 @@ struct CodeFlowView: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .interactiveDismissDisabled(busy)
+        // Leaving mid-request would let a late sign-up sign in behind the
+        // reader's back: no way back while it runs, and if the page goes
+        // anyway, the attempt is void and its answer dropped.
+        .navigationBarBackButtonHidden(busy)
+        .onDisappear {
+            if busy, kind == .create { model.signInGate.invalidate() }
+        }
     }
 
     private var prefix: String {

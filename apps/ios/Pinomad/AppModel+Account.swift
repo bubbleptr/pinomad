@@ -158,6 +158,7 @@ extension AppModel {
         accountNeedsEmail = value.needsEmail
         accountIdentities = nil
         accountIdentitiesUnsupported = false
+        accountIdentitiesError = nil
         accountNotice = nil
         accountSignOutWarning = nil
         accountError = nil
@@ -988,6 +989,7 @@ extension AppModel {
         accountNeedsEmail = false
         accountIdentities = nil
         accountIdentitiesUnsupported = false
+        accountIdentitiesError = nil
         accountRows = []
         accountHostsLoaded = false
         clearAccountDevices()
