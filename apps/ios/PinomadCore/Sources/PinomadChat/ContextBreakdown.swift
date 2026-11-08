@@ -38,11 +38,16 @@ public struct ContextBreakdownReading: Equatable, Sendable {
     /// the meter alone. Past the window (a swap to a smaller model) the bar
     /// scales to the total so it still fills, while the shares stay honest.
     public init?(_ breakdown: ContextBreakdown?, window: Double?) {
-        guard let breakdown, let window, window.isFinite, window >= 1 else { return nil }
+        // The meter's bounds: an absurd provider count reads as unknown rather
+        // than trapping the share's Int conversion. Every part is at most
+        // `used`, so bounding `used` bounds them all.
+        let limit = ContextMeterReading.maxTokens
+        guard let breakdown, let window, window.isFinite, window >= 1, window < limit,
+              breakdown.used.isFinite, breakdown.used >= 0, breakdown.used < limit else { return nil }
         let scale = max(window, breakdown.used)
         rows = Part.allCases.compactMap { part in
             let tokens = breakdown[part]
-            guard tokens.isFinite, tokens > 0 else { return nil }
+            guard tokens.isFinite, tokens > 0, tokens <= breakdown.used else { return nil }
             return Row(
                 part: part,
                 fraction: tokens / scale,

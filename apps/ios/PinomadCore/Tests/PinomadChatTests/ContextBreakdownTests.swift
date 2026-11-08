@@ -29,4 +29,12 @@ import Testing
         #expect(ContextBreakdownReading(parts, window: nil) == nil)
         #expect(ContextBreakdownReading(parts, window: 0) == nil)
     }
+
+    /// A provider can report counts beyond any real window; the shares must
+    /// not trap converting to Int. Like the meter, such a reading is unknown.
+    @Test func absurdCountsReadAsNothingToShow() {
+        let absurd = ContextBreakdown(used: 1e25, system: 8_100, skills: 0, tools: 0, mcp: 0, messages: 1e25)
+        #expect(ContextBreakdownReading(absurd, window: 200_000) == nil)
+        #expect(ContextBreakdownReading(parts, window: 1e25) == nil)
+    }
 }

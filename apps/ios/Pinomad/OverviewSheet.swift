@@ -111,22 +111,17 @@ struct OverviewSheet: View {
 
     // MARK: Context
 
-    /// How full the model's window is: the ring, then the percent and
-    /// figures, and the breakdown's bar under them when the host sent one.
-    /// Unknown usage keeps the row with an empty ring.
+    /// How full the model's window is: the percent and figures, orange once
+    /// it nears compaction, over the bar (stacked when the host sent a
+    /// breakdown of the reply the meter counts).
     private func contextRow(_ reading: ContextMeterReading, breakdown: ContextBreakdownReading?) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            LabeledContent {
+            LabeledContent("Context window") {
                 Text(reading.detail)
                     .monospacedDigit()
-            } label: {
-                Label {
-                    Text("Context window")
-                } icon: {
-                    ContextRing(reading: reading)
-                }
+                    .foregroundStyle(reading.warning ? Color(uiColor: .systemOrange) : .secondary)
             }
-            if let breakdown { ContextBreakdownBar(reading: breakdown) }
+            ContextBar(meter: reading, breakdown: breakdown)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(reading.accessibilityLabel)

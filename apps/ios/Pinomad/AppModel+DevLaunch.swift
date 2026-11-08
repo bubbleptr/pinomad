@@ -709,21 +709,22 @@ extension AppModel {
         replyStreams.sync(chat: chat)
     }
 
-    /// `PINOMAD_DEMO_CONTEXT=<used>/<window>` (anything else means nil)
-    /// settles one conversation so the overview's context row and its
-    /// breakdown can be photographed without a host.
+    /// `PINOMAD_DEMO_CONTEXT=<used>/<window>[/plain]` (anything else means
+    /// nil) settles one conversation so the overview's context row and its
+    /// breakdown can be photographed without a host; `plain` leaves the
+    /// breakdown out, as an older host would.
     private func startContextDemo(_ spec: String) {
         navPath = [demoConversationRoute(1)]
         let parts = spec.split(separator: "/")
         let usage: ContextUsage?
-        if parts.count == 2, let used = Double(parts[0]), let window = Double(parts[1]) {
+        if parts.count >= 2, let used = Double(parts[0]), let window = Double(parts[1]) {
             usage = ContextUsage(used: used, window: window)
         } else {
             usage = nil
         }
         // A host breakdown of that reply in plausible proportions; the core
         // only passes one whose total matches the meter, so it uses `used`.
-        let breakdown = usage.map { usage in
+        let breakdown = parts.last == "plain" ? nil : usage.map { usage in
             let part = { (share: Double) in (usage.used * share).rounded() }
             let (system, skills, tools, mcp) = (part(0.065), part(0.026), part(0.097), part(0.077))
             return ContextBreakdown(
