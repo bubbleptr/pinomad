@@ -130,7 +130,7 @@ pub fn cot(json: &Json) -> CotView {
 
 use pinomad_core::account::{
     AccountConfirmation, AccountDeviceClaim, AccountHost, AccountHostPairing, AccountOp, AccountOpKind, PairingOffer,
-    ReauthProof,
+    NativeLinkRedirect, ReauthProof,
 };
 use pinomad_core::frames::{ApnsEnvironment, ApnsPushToken};
 use pinomad_core::endpoints::{parse_endpoint_set, ParsedEndpointSet};
@@ -281,6 +281,26 @@ pub fn account_op(json: &Json) -> AccountOp {
             name: text(json.get("name")),
             device: device_claim(json),
         },
+        AccountOpKind::LinkProvider => AccountOp::LinkProvider {
+            provider: field_text(json, "provider"),
+            confirmation: confirmation(json),
+            native: json.get("native").map(|native| NativeLinkRedirect {
+                redirect_uri: field_text(native, "redirectUri"),
+                code_challenge: field_text(native, "codeChallenge"),
+                state: field_text(native, "state"),
+            }),
+        },
+        AccountOpKind::CompleteLink => AccountOp::CompleteLink {
+            code: field_text(json, "code"),
+            code_verifier: field_text(json, "codeVerifier"),
+        },
+        AccountOpKind::LinkAppleNative => AccountOp::LinkAppleNative {
+            identity_token: field_text(json, "identityToken"),
+            authorization_code: field_text(json, "authorizationCode"),
+            nonce: text(json.get("nonce")),
+            name: text(json.get("name")),
+            confirmation: confirmation(json),
+        },
     }
 }
 
@@ -353,6 +373,9 @@ pub fn account_op_kind(name: &str) -> AccountOpKind {
         "linkPending" => AccountOpKind::LinkPending,
         "exchangeOAuthCode" => AccountOpKind::ExchangeOAuthCode,
         "appleNative" => AccountOpKind::AppleNative,
+        "linkProvider" => AccountOpKind::LinkProvider,
+        "linkAppleNative" => AccountOpKind::LinkAppleNative,
+        "completeLink" => AccountOpKind::CompleteLink,
         other => panic!("unknown account op kind {other}"),
     }
 }

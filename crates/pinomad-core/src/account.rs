@@ -61,6 +61,18 @@ impl AccountConfirmation {
     }
 }
 
+/// Where a native app's link from settings comes back to (#631):
+/// `pinomad://auth` or a loopback listener, with a PKCE challenge and the
+/// app's state; the browser returns with a `code` for `CompleteLink` (with
+/// the verifier the app kept) or `error=…`.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct NativeLinkRedirect {
+    pub redirect_uri: String,
+    pub code_challenge: String,
+    pub state: String,
+}
+
 /// What `Reauth` trades for a grant: the password, or a mailed code.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
@@ -80,7 +92,9 @@ pub enum ReauthProof {
 /// terminal, verbatim (#495), and the loopback trio the request id from a
 /// confirm URL (#513). The rest are ADR-0044's: email sign-up and reset,
 /// sign-in methods, re-auth, the pending "no account yet" sign-in, a native
-/// provider sign-in's code exchange and iOS's own Sign in with Apple.
+/// provider sign-in's code exchange and iOS's own Sign in with Apple, and
+/// linking a provider from settings (#631): through the browser, or
+/// Apple's own sheet.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum AccountOp {
@@ -156,6 +170,22 @@ pub enum AccountOp {
         #[cfg_attr(feature = "ffi", uniffi(default = None))]
         device: Option<AccountDeviceClaim>,
     },
+    LinkProvider {
+        provider: String,
+        confirmation: AccountConfirmation,
+        #[cfg_attr(feature = "ffi", uniffi(default = None))]
+        native: Option<NativeLinkRedirect>,
+    },
+    CompleteLink { code: String, code_verifier: String },
+    LinkAppleNative {
+        identity_token: String,
+        authorization_code: String,
+        #[cfg_attr(feature = "ffi", uniffi(default = None))]
+        nonce: Option<String>,
+        #[cfg_attr(feature = "ffi", uniffi(default = None))]
+        name: Option<String>,
+        confirmation: AccountConfirmation,
+    },
 }
 
 /// Which endpoint an answer belongs to — `account_response` picks its shape
@@ -199,6 +229,9 @@ pub enum AccountOpKind {
     LinkPending,
     ExchangeOAuthCode,
     AppleNative,
+    LinkProvider,
+    CompleteLink,
+    LinkAppleNative,
 }
 
 /// One header on the request the platform sends, in the reference's order.
@@ -260,6 +293,9 @@ impl AccountOp {
             AccountOp::LinkPending { .. } => AccountOpKind::LinkPending,
             AccountOp::ExchangeOAuthCode { .. } => AccountOpKind::ExchangeOAuthCode,
             AccountOp::AppleNative { .. } => AccountOpKind::AppleNative,
+            AccountOp::LinkProvider { .. } => AccountOpKind::LinkProvider,
+            AccountOp::CompleteLink { .. } => AccountOpKind::CompleteLink,
+            AccountOp::LinkAppleNative { .. } => AccountOpKind::LinkAppleNative,
         }
     }
 
@@ -324,7 +360,9 @@ impl AccountOp {
             }
             AccountOp::LinkPending { id, .. } => format!("/api/oauth/pending/{}/link", encode_uri_component(id)),
             AccountOp::ExchangeOAuthCode { .. } => "/api/oauth/token".to_string(),
-            AccountOp::AppleNative { .. } => "/api/oauth/apple/native".to_string(),
+            AccountOp::AppleNative { .. } | AccountOp::LinkAppleNative { .. } => "/api/oauth/apple/native".to_string(),
+            AccountOp::CompleteLink { .. } => "/api/oauth/link/complete".to_string(),
+            AccountOp::LinkProvider { provider, .. } => format!("/api/oauth/{}/link", encode_uri_component(provider)),
         }
     }
 
@@ -413,6 +451,30 @@ impl AccountOp {
                     set_text(o, "name", name);
                 }
                 set_device(o, device);
+            }
+            AccountOp::LinkProvider { confirmation, native, .. } => {
+                confirmation.write(o, "password");
+                if let Some(native) = native {
+                    set_text(o, "client", "native");
+                    set_text(o, "redirect_uri", &native.redirect_uri);
+                    set_text(o, "code_challenge", &native.code_challenge);
+                    set_text(o, "state", &native.state);
+                }
+            }
+            AccountOp::CompleteLink { code, code_verifier } => {
+                set_text(o, "code", code);
+                set_text(o, "code_verifier", code_verifier);
+            }
+            AccountOp::LinkAppleNative { identity_token, authorization_code, nonce, name, confirmation } => {
+                set_text(o, "identityToken", identity_token);
+                set_text(o, "authorizationCode", authorization_code);
+                if let Some(nonce) = nonce {
+                    set_text(o, "nonce", nonce);
+                }
+                if let Some(name) = name {
+                    set_text(o, "name", name);
+                }
+                confirmation.write(o, "password");
             }
             AccountOp::Me
             | AccountOp::Logout { revoke: false }
@@ -743,7 +805,8 @@ pub enum AccountValue {
     HostLink(HostLinkRequest),
     /// Where a settled loopback host link sends the browser (#513): the
     /// host's own `http://127.0.0.1:<port>` listener. Also a `linkPending`
-    /// a native app's browser flow started: its redirect.
+    /// a native app's browser flow started: its redirect. And the provider
+    /// page a `linkProvider` opens (#631).
     Redirect(String),
     Hosts(Vec<AccountHost>),
     Devices(Vec<AccountDevice>),
@@ -943,6 +1006,8 @@ fn decode_value(kind: AccountOpKind, parsed: Option<&Json>) -> Result<AccountVal
         | AccountOpKind::ResetPassword
         | AccountOpKind::RequestEmailCode
         | AccountOpKind::UnlinkProvider
+        | AccountOpKind::LinkAppleNative
+        | AccountOpKind::CompleteLink
         | AccountOpKind::RequestReauthCode => Ok(AccountValue::Unit),
         AccountOpKind::AuthMethods => {
             let providers = value.get("providers").and_then(Json::as_array).ok_or_else(AccountError::invalid)?;
@@ -990,6 +1055,11 @@ fn decode_value(kind: AccountOpKind, parsed: Option<&Json>) -> Result<AccountVal
             Some(value) => native_redirect(value).map(AccountValue::Redirect).ok_or_else(AccountError::invalid),
         },
         AccountOpKind::AppleNative => Ok(AccountValue::AppleNative(AppleNativeOutcome::SignedIn(login_body(value)?))),
+        // Only a web page: the browser is sent there on the server's word.
+        AccountOpKind::LinkProvider => str_field(value, "url")
+            .filter(|url| url.starts_with("http://") || url.starts_with("https://"))
+            .map(AccountValue::Redirect)
+            .ok_or_else(AccountError::invalid),
         AccountOpKind::ConfirmHostLinkRequest | AccountOpKind::DenyHostLinkRequest => {
             loopback_redirect(value).map(AccountValue::Redirect).ok_or_else(AccountError::invalid)
         }

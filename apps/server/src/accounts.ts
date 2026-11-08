@@ -648,6 +648,20 @@ export interface Accounts {
     /** link: the session starting it, which must outlive the provider's answer. */
     readonly linkSessionToken?: string;
   }): { readonly status: "ok"; readonly state: string; readonly verifier: string; readonly nonce: string } | { readonly status: "limited" } | { readonly status: "busy" };
+  /**
+   * Opens a native app's link flow in the browser it runs in (#631): the
+   * flow was stored with the hash of a one-time `ticket` as its binding,
+   * and the app's browser trades that ticket for a binding cookie of its
+   * own. Both the state and the binding change here, so the start URL the
+   * app was given works once. Undefined when no live link flow of
+   * `provider` holds that ticket; counted per source IP with the starts.
+   */
+  startNativeLink(args: {
+    readonly provider: OAuthProvider;
+    readonly ticket: string;
+    readonly bindingHash: string;
+    readonly ip: string;
+  }): { readonly status: "ok"; readonly state: string; readonly verifier: string; readonly nonce: string } | { readonly status: "limited" } | undefined;
   /** Spends the flow `state` names; undefined when unknown, expired or another provider's. */
   takeOAuthFlow(provider: OAuthProvider, state: string): OAuthFlow | undefined;
   /**
@@ -681,6 +695,25 @@ export interface Accounts {
   issueOAuthCode(userId: number, codeChallenge: string): string;
   /** Trades that code with the verifier for a session; any attempt spends the code. */
   exchangeOAuthCode(code: string, codeVerifier: string, device?: DeviceClaim): SignedIn | undefined;
+  /**
+   * A native app's link from settings (#631), back from the provider: the
+   * identity waits under a one-time code for the app that started it, which
+   * alone holds the PKCE verifier. Binding in the browser instead would let
+   * whoever opened someone else's start URL put their identity on that
+   * account. `session_ended` when the starting session is already gone.
+   */
+  issueLinkCode(args: {
+    readonly identity: ProviderIdentity;
+    readonly linkUserId: number;
+    readonly linkSessionHash: string;
+    readonly codeChallenge: string;
+  }): { readonly code: string } | "session_ended";
+  /**
+   * Binds the identity behind a link code, for the session that started the
+   * link and with its verifier; `invalid_grant` for any other code, session
+   * or verifier, which spends the code all the same.
+   */
+  completeLink(args: { readonly code: string; readonly codeVerifier: string; readonly token: string }): "linked" | "identity_taken" | "session_ended" | "invalid_grant";
   /** The account's sign-in methods, for settings. */
   listIdentities(userId: number): { readonly identities: readonly IdentityRow[]; readonly hasPassword: boolean };
   /** Unbinds every identity of `provider` after the confirmation; refuses when nothing else would sign the account in. */
@@ -1451,6 +1484,12 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
     maxPending: options.oauthLimits?.maxPending ?? 10_000,
   };
   const oauthStarts = new WindowedCounter(limits.counterMaxEntries, now);
+  // Native link codes (#631) live only as long as this process: two minutes
+  // at most, and a restart just asks for the link again.
+  const linkCodes = new Map<
+    string,
+    { identity: ProviderIdentity; linkUserId: number; linkSessionHash: string; codeChallenge: string; expiresAt: number }
+  >();
 
   const mailer = options.mailer;
   const registrationOpen = options.registration === "open";
@@ -1548,6 +1587,21 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
 
   const PENDING_SELECT = `SELECT host_id AS hostId, host_name AS name, host_os AS os, source_ip AS sourceIp, expires_at AS expiresAt,
       redirect_uri AS redirectUri, client_state AS clientState FROM host_link_requests`;
+
+  const linkIdentity = (
+    { linkUserId: userId, linkSessionHash }: { readonly linkUserId: number; readonly linkSessionHash: string },
+    identity: ProviderIdentity,
+  ): "linked" | "identity_taken" | "session_ended" =>
+    transaction(() => {
+      const live = db
+        .prepare("SELECT 1 AS x FROM sessions WHERE token_hash = ? AND user_id = ? AND expires_at > ?")
+        .get(linkSessionHash, userId, now());
+      if (live === undefined) return "session_ended";
+      const bound = identityOwner(identity.provider, identity.subject);
+      if (bound !== undefined && bound !== userId) return "identity_taken";
+      bindIdentity(userId, identity);
+      return "linked";
+    });
 
   /**
    * Expired one-use credentials: join tokens, mailed codes, host-link
@@ -2325,6 +2379,19 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       return { status: "ok", state, verifier, nonce };
     },
 
+    startNativeLink({ provider, ticket, bindingHash, ip }) {
+      if (oauthStarts.hit(ip, oauthLimits.startMaxPerIp, oauthLimits.startWindowMs)) return { status: "limited" };
+      const state = randomBytes(32).toString("base64url");
+      const row = db
+        .prepare(
+          `UPDATE oauth_flows SET state_hash = ?, binding_hash = ?
+           WHERE binding_hash = ? AND provider = ? AND kind = 'link' AND redirect_uri IS NOT NULL AND expires_at > ?
+           RETURNING verifier, nonce`,
+        )
+        .get(sha256Hex(state), bindingHash, sha256Hex(ticket), provider, now()) as { verifier: string; nonce: string } | undefined;
+      return row === undefined ? undefined : { status: "ok", state, verifier: row.verifier, nonce: row.nonce };
+    },
+
     takeOAuthFlow(provider, state) {
       const hash = sha256Hex(state);
       const row = db
@@ -2415,18 +2482,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       return answer;
     },
 
-    linkIdentity({ linkUserId: userId, linkSessionHash }, identity) {
-      return transaction(() => {
-        const live = db
-          .prepare("SELECT 1 AS x FROM sessions WHERE token_hash = ? AND user_id = ? AND expires_at > ?")
-          .get(linkSessionHash, userId, now());
-        if (live === undefined) return "session_ended";
-        const bound = identityOwner(identity.provider, identity.subject);
-        if (bound !== undefined && bound !== userId) return "identity_taken";
-        bindIdentity(userId, identity);
-        return "linked";
-      });
-    },
+    linkIdentity: (flow, identity) => linkIdentity(flow, identity),
 
     pendingSignIn(id) {
       const row = pendingRow(id);
@@ -2480,6 +2536,34 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
         const user = userById(userId);
         return user === undefined ? undefined : { ...issueSession(userId, device), user: accountUser(user) };
       });
+    },
+
+    issueLinkCode({ identity, linkUserId, linkSessionHash, codeChallenge }) {
+      const at = now();
+      const live = db.prepare("SELECT 1 AS x FROM sessions WHERE token_hash = ? AND user_id = ? AND expires_at > ?").get(linkSessionHash, linkUserId, at);
+      if (live === undefined) return "session_ended";
+      for (const [hash, entry] of linkCodes) if (entry.expiresAt <= at) linkCodes.delete(hash);
+      // Bounded like the flows that lead here; the oldest goes first.
+      if (linkCodes.size >= oauthLimits.maxPending) linkCodes.delete(linkCodes.keys().next().value!);
+      const code = randomBytes(32).toString("base64url");
+      linkCodes.set(sha256Hex(code), { identity, linkUserId, linkSessionHash, codeChallenge, expiresAt: at + OAUTH_CODE_TTL_MS });
+      return { code };
+    },
+
+    completeLink({ code, codeVerifier, token }) {
+      const hash = sha256Hex(code);
+      const entry = linkCodes.get(hash);
+      // Spent by any attempt, right verifier or not.
+      linkCodes.delete(hash);
+      if (
+        entry === undefined ||
+        entry.expiresAt <= now() ||
+        !safeEqual(sha256Hex(token), entry.linkSessionHash) ||
+        !safeEqual(createHash("sha256").update(codeVerifier).digest("base64url"), entry.codeChallenge)
+      ) {
+        return "invalid_grant";
+      }
+      return linkIdentity({ linkUserId: entry.linkUserId, linkSessionHash: entry.linkSessionHash }, entry.identity);
     },
 
     issueOAuthCode(userId, codeChallenge) {

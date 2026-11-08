@@ -12,7 +12,7 @@ pub use crate::account::{
     AccountConfirmation, AccountDevice, AccountDeviceHost, AccountDeviceHostState, AccountError, AccountHost,
     AccountHostPairing, AccountHostRef, AccountHostStatus, AccountHttpHeader, AccountHttpRequest, AccountIdentities,
     AccountIdentity, AccountMe, AccountOp, AccountOpKind, AccountUser, AccountsProbe, AppleNativeOutcome, AuthMethods,
-    HostLinkRequest, JoinToken, LoginSuccess, PendingOutcome, PendingSignIn, ReauthGrant, ReauthProof,
+    HostLinkRequest, JoinToken, LoginSuccess, NativeLinkRedirect, PendingOutcome, PendingSignIn, ReauthGrant, ReauthProof,
 };
 
 /// The pairing answer at the boundary: the core's typed value plus the
