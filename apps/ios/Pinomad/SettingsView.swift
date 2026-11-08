@@ -12,19 +12,44 @@ struct SettingsView: View {
     @Environment(\.openURL) private var openURL
     @State private var asking: AccountHostRow?
     @State private var removing: PendingAccountHost?
+    @State private var query = ""
 
     var body: some View {
         List {
-            accountSection
+            if shows(accountKeywords) { accountSection }
 
-            HostsSections(model: model, asking: $asking, removing: $removing)
+            if shows(hostKeywords) {
+                HostsSections(model: model, asking: $asking, removing: $removing)
+            }
 
-            pushSection
+            if shows(["Notifications", "Push", "Alerts"]) { pushSection }
 
-            aboutSection
+            if shows(["About", "Version", "Protocol"] + machines.map(label)) { aboutSection }
+
+            if !query.isEmpty, !shows(accountKeywords + hostKeywords + ["Notifications", "Push", "Alerts", "About", "Version", "Protocol"]) {
+                ContentUnavailableView.search(text: query)
+            }
         }
         .navigationTitle("Settings")
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search settings")
         .hostsActions(model: model, asking: $asking, removing: $removing)
+    }
+
+    /// Whether a section answers the search: its name or one of its words.
+    private func shows(_ keywords: [String]) -> Bool {
+        let needle = query.trimmingCharacters(in: .whitespaces)
+        return needle.isEmpty || keywords.contains { $0.localizedCaseInsensitiveContains(needle) }
+    }
+
+    private var accountKeywords: [String] {
+        ["Account", "Sign in", "Sign out", "Email", "Password", "Sign-in methods", "Signed-in devices",
+         "Delete account", "GitHub", "Google", "Apple"]
+            + [model.accountSession?.displayName].compactMap { $0 }
+    }
+
+    private var hostKeywords: [String] {
+        ["Hosts", "Add Host", "Pair", "Unpair", "Connection", "Routes"]
+            + machines.map(label) + model.accountRows.map(\.name)
     }
 
     private var machines: [HostRecord] { model.machines }
@@ -33,8 +58,8 @@ struct SettingsView: View {
         model.machineLabel(host.hostKey)
     }
 
-    /// Signed in, the account's three pages; signed out, only the way in,
-    /// which stays a sheet of its own.
+    /// Signed in, the account's page; signed out, only the way in, which
+    /// stays a sheet of its own.
     @ViewBuilder
     private var accountSection: some View {
         Section {
@@ -49,14 +74,6 @@ struct SettingsView: View {
                         }
                     } icon: {
                         Image(.userRound)
-                    }
-                }
-                NavigationLink(value: Route.accountSecurity) {
-                    Label("Sign-in and Security", image: .keyRound)
-                }
-                if !model.accountDevicesUnsupported {
-                    NavigationLink(value: Route.accountDevices) {
-                        Label("Signed-in Devices", image: .monitor)
                     }
                 }
             } else {

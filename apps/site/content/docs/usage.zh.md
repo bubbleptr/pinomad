@@ -99,7 +99,7 @@ Settings → Providers 管理宿主能用哪些模型，任何一台已配对设
 
 ## iOS 账号
 
-iOS 原生版同时只登录一个服务端账号（ADR-0022）。入口有两个：还没有配对过宿主时，首页的「用账号登录」；已经配对过时，首页左上角的账号按钮，或 Settings 里的 Account 一节。登录后 Account 一节有三页：Account（谁登录在哪个服务端、Sign Out…、登录方式 / 已登录设备 / 账号下宿主各一行摘要，底部 Danger Zone 里是 Sign Out Everywhere… 和 Delete Account…）、Sign-in and Security（邮箱、密码、已关联的登录方式，未关联的收在 Link Another… 菜单里）和 Signed-in Devices。所有改动都先在弹出的表单或对话框里确认。
+iOS 原生版同时只登录一个服务端账号（ADR-0022）。入口有两个：还没有配对过宿主时，首页的「用账号登录」；已经配对过时，首页左上角的账号按钮，或 Settings 里的 Account 一节。登录后点 Settings → Account 进账号页，从上到下是：谁登录在哪个服务端和 Sign Out…；Email；Sign-in Methods（密码、每个已关联的登录方式各一行，⋯ 菜单里可以 Remove…，没关联的写着 Not linked、点 Link… 关联）；Signed-in Devices（服务端不支持设备列表时不显示）；Hosts（账号下宿主的摘要，点进去是 Hosts 列表）；最后是 Danger Zone 里的 Sign Out Everywhere… 和 Delete Account…。所有改动都先在弹出的表单或对话框里确认。Settings 的搜索框可以按名称筛选各节。
 
 登录先填服务端地址（`https://…`；本机开发可以填 `http://127.0.0.1:…` 或 `http://localhost:…`），App 会先探测这个服务端有没有开账号。没开账号会提示「这个服务端没有开启账号」，连不上会提示检查地址和网络；探测通过后再填用户名和密码，密码支持系统密码自动填充。
 

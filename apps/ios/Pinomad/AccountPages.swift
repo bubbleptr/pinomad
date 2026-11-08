@@ -1,16 +1,37 @@
 import PinomadCore
 import SwiftUI
 
-/// Settings → Account (ADR-0022): who is signed in where, with Sign out;
-/// a line for each of the account's pages saying what it holds; and the two
-/// account-wide actions set apart under Danger Zone. Every action confirms
-/// in a sheet or an alert; nothing expands in place.
+/// Settings → Account (ADR-0022), one page in groups: who is signed in
+/// where, with Sign out; the email; every sign-in method, one row each;
+/// the signed-in devices; the account's hosts; and the two account-wide
+/// actions set apart under Danger Zone. Every change confirms in a sheet or
+/// an alert; nothing expands in place.
 struct AccountPage: View {
     let model: AppModel
 
-    @State private var signingOut = false
+    private enum Sheet: Identifiable {
+        case signOut, delete, email
+        case password(hasPassword: Bool)
+        case unlink(String), link(String)
+        case removeDevice(AccountDevice)
+
+        var id: String {
+            switch self {
+            case .signOut: "sign-out"
+            case .delete: "delete"
+            case .email: "email"
+            case .password: "password"
+            case .unlink(let provider): "unlink:\(provider)"
+            case .link(let provider): "link:\(provider)"
+            case .removeDevice(let device): "device:\(device.id)"
+            }
+        }
+    }
+
+    @State private var open: Sheet?
     @State private var confirmingSignOutEverywhere = false
-    @State private var deleting = false
+    /// What the last sign-in change said ("Password set.", "GitHub linked.").
+    @State private var notice: String?
 
     var body: some View {
         Group {
@@ -29,6 +50,7 @@ struct AccountPage: View {
         return List {
             Section {
                 HStack(spacing: 12) {
+                    AccountInitial(name: session.displayName)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(session.displayName)
                             .font(.headline)
@@ -37,33 +59,44 @@ struct AccountPage: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
-                    Button("Sign Out…") { signingOut = true }
+                    Button("Sign Out…") { open = .signOut }
                         .buttonStyle(.tactile(.glass))
                         .controlSize(.small)
                         .disabled(model.accountBusy)
                 }
-                ForEach([model.accountNotice, model.accountSignOutWarning].compactMap { $0 }, id: \.self) { notice in
-                    Text(notice)
+                ForEach([notice, model.accountNotice, model.accountSignOutWarning].compactMap { $0 }, id: \.self) { line in
+                    Text(line)
                         .font(.footnote)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(line == notice ? .secondary : Color.orange)
                 }
             }
 
-            Section {
-                NavigationLink(value: Route.accountSecurity) {
-                    LabeledContent("Sign-in Methods", value: methodsSummary ?? "")
+            Section("Email") {
+                HStack {
+                    Text(session.email ?? "None yet")
+                        .foregroundStyle(session.email == nil ? .secondary : .primary)
+                    Spacer(minLength: 8)
+                    Button(session.email == nil ? "Add…" : "Change…") { open = .email }
+                        .buttonStyle(.tactile(.glass))
+                        .controlSize(.small)
+                        .disabled(model.accountBusy)
                 }
-                if !model.accountDevicesUnsupported {
-                    NavigationLink(value: Route.accountDevices) {
-                        LabeledContent("Signed-in Devices", value: devicesSummary ?? "")
-                    }
-                }
+            }
+
+            methodsSection
+
+            // Hidden on servers that predate the device list.
+            if !model.accountDevicesUnsupported {
+                devicesSection
+            }
+
+            Section("Hosts") {
                 NavigationLink(value: Route.hosts) {
                     LabeledContent("Hosts on This Account", value: hostsSummary)
                 }
             }
 
-            Section("Danger Zone") {
+            Section {
                 DangerRow(
                     title: "Sign Out Everywhere…",
                     detail: "Ends every session on every device, including this one.",
@@ -73,19 +106,32 @@ struct AccountPage: View {
                     title: "Delete Account…",
                     detail: "Removes your account from \(server). Devices stay paired with your hosts.",
                     disabled: model.accountBusy
-                ) { deleting = true }
+                ) { open = .delete }
+            } header: {
+                Text("Danger Zone")
+                    .foregroundStyle(.red)
             }
 
             LegalLinksSection()
         }
         .refreshable { await model.refreshAccountPages() }
         .task { await model.refreshAccountPages() }
-        .sheet(isPresented: $signingOut) {
-            FormSheet { SignOutForm(model: model, server: server) }
-                .presentationDetents([.medium, .large])
-        }
-        .sheet(isPresented: $deleting) {
-            FormSheet { DeleteAccountView(model: model, server: server) }
+        .sheet(item: $open) { sheet in
+            FormSheet {
+                switch sheet {
+                case .signOut: SignOutForm(model: model, server: server)
+                case .delete: DeleteAccountView(model: model, server: server)
+                case .email: ChangeEmailView(model: model) { notice = "Email saved." }
+                case .password(let hasPassword):
+                    ChangePasswordView(model: model, hasPassword: hasPassword) { notice = $0 }
+                case .unlink(let provider):
+                    UnlinkProviderView(model: model, provider: provider) { notice = $0 }
+                case .link(let provider):
+                    LinkProviderView(model: model, provider: provider) { notice = $0 }
+                case .removeDevice(let device): RemoveDeviceView(model: model, device: device)
+                }
+            }
+            .presentationDetents(sheet.id == "sign-out" ? [.medium, .large] : [.large])
         }
         .alert("Sign out everywhere?", isPresented: $confirmingSignOutEverywhere) {
             Button("Cancel", role: .cancel) {}
@@ -97,20 +143,141 @@ struct AccountPage: View {
         }
     }
 
-    /// "Password, GitHub": the account's ways in.
-    private var methodsSummary: String? {
-        // A server from before sign-in methods: only the password, as it always was.
-        if model.accountIdentitiesUnsupported { return "Password" }
-        guard let identities = model.accountIdentities else { return nil }
-        let ways = (identities.hasPassword ? ["Password"] : [])
-            + identities.identities.map { SignInProviders.name($0.provider) }
-        return ways.isEmpty ? "None" : ways.joined(separator: ", ")
+    // MARK: Sign-in methods
+
+    /// The server's providers the account hasn't linked, in row order;
+    /// none until the server said which it offers.
+    private func linkable(_ identities: AccountIdentities) -> [String] {
+        let offered = model.accountServerMethods?.providers ?? []
+        let linked = Set(identities.identities.map(\.provider))
+        return SignInProviders.ids.filter { offered.contains($0) && !linked.contains($0) }
     }
 
-    private var devicesSummary: String? {
-        guard let devices = model.accountDevices else { return nil }
-        let active = devices.filter { $0.kickedAt == nil }.count
-        return active == 1 ? "1 device" : "\(active) devices"
+    /// The password, each linked provider and each one to link, a row
+    /// apiece (ADR-0044 §4, #631). A server from before sign-in methods
+    /// keeps the password alone.
+    private var methodsSection: some View {
+        Section("Sign-in Methods") {
+            if model.accountIdentitiesUnsupported {
+                passwordRow(hasPassword: true)
+            } else if let identities = model.accountIdentities {
+                passwordRow(hasPassword: identities.hasPassword)
+                ForEach(identities.identities, id: \.provider) { identity in
+                    linkedRow(identity)
+                }
+                ForEach(linkable(identities), id: \.self) { provider in
+                    MethodRow(name: SignInProviders.name(provider), detail: "Not linked") {
+                        SignInProviderMark(provider: provider, size: 20)
+                    } action: {
+                        Button("Link…") { open = .link(provider) }
+                            .buttonStyle(.tactile(.glass))
+                            .controlSize(.small)
+                            .disabled(model.accountBusy)
+                            .accessibilityLabel("Link \(SignInProviders.name(provider))…")
+                    }
+                }
+            } else if let failed = model.accountIdentitiesError {
+                RetryLine(message: "Couldn't load sign-in methods. \(failed)") {
+                    await model.accountRefreshIdentities()
+                }
+            } else {
+                ProgressView().controlSize(.small)
+            }
+        }
+    }
+
+    private func passwordRow(hasPassword: Bool) -> some View {
+        MethodRow(name: "Password", detail: hasPassword ? "Set" : "Not set") {
+            Image(.keyRound)
+        } action: {
+            Button(hasPassword ? "Change…" : "Set…") { open = .password(hasPassword: hasPassword) }
+                .buttonStyle(.tactile(.glass))
+                .controlSize(.small)
+                .disabled(model.accountBusy)
+        }
+    }
+
+    /// A linked provider; Remove is in its menu and swipe, not a button.
+    private func linkedRow(_ identity: AccountIdentity) -> some View {
+        let name = SignInProviders.name(identity.provider)
+        return MethodRow(name: name, detail: identity.email) {
+            SignInProviderMark(provider: identity.provider, size: 20)
+        } action: {
+            RowMenu(label: "More for \(name)", disabled: model.accountBusy) {
+                Button("Remove…", image: .trash2, role: .destructive) { open = .unlink(identity.provider) }
+            }
+        }
+        .swipeActions {
+            if !model.accountBusy {
+                Button("Remove", role: .destructive) { open = .unlink(identity.provider) }
+            }
+        }
+    }
+
+    // MARK: Devices
+
+    /// Every install signed in to the account (#452, ADR-0037), the hosts
+    /// each joined through it, and Remove in each row's menu.
+    private var devicesSection: some View {
+        Section {
+            if let devices = model.accountDevices {
+                ForEach(devices) { device in
+                    deviceRow(device)
+                }
+            } else if model.accountDevicesError == nil {
+                ProgressView().controlSize(.small)
+            }
+            if let error = model.accountDevicesError {
+                RetryLine(message: error) { await model.accountRefreshDevices() }
+            }
+        } header: {
+            Text("Signed-in Devices")
+        } footer: {
+            Text("Every app and browser signed in to your account, and the hosts each joined through it.")
+        }
+    }
+
+    private func deviceRow(_ device: AccountDevice) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(device.current ? "This iPhone" : device.name ?? "Unknown device")
+                Text(signInLine(device))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if !device.hosts.isEmpty {
+                    Text(device.hosts
+                        .map { "\($0.name): \(AccountCopy.deviceHostState($0.state))" }
+                        .joined(separator: " · "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 8)
+            if device.current {
+                Badge("This device")
+            } else if device.kickedAt != nil {
+                Badge("Removed")
+            } else if device.removable {
+                RowMenu(label: "More for \(device.name ?? "Unknown device")", disabled: model.accountBusy) {
+                    Button("Remove…", image: .trash2, role: .destructive) { open = .removeDevice(device) }
+                }
+            }
+        }
+        .swipeActions {
+            if device.removable, !model.accountBusy {
+                Button("Remove", role: .destructive) { open = .removeDevice(device) }
+            }
+        }
+    }
+
+    private func signInLine(_ device: AccountDevice) -> String {
+        let signIn = "Last sign-in " + relative(device.lastSeenAt)
+        guard let kickedAt = device.kickedAt else { return signIn }
+        return signIn + " · removed " + relative(kickedAt)
+    }
+
+    private func relative(_ epochMs: Double) -> String {
+        Date(timeIntervalSince1970: epochMs / 1000).formatted(.relative(presentation: .named))
     }
 
     private var hostsSummary: String {
@@ -119,6 +286,85 @@ struct AccountPage: View {
         let unpaired = model.hostsPartition.notPairedHere.count
         let hosts = total == 1 ? "1 host" : "\(total) hosts"
         return unpaired == 0 ? hosts : "\(hosts), \(unpaired) not paired here"
+    }
+}
+
+/// The account's initial in a circle, beside its name.
+private struct AccountInitial: View {
+    let name: String
+
+    var body: some View {
+        Text(name.first.map { String($0).uppercased() } ?? "?")
+            .font(.headline)
+            .foregroundStyle(.tint)
+            .frame(width: 40, height: 40)
+            .background(Color.accentColor.opacity(0.15), in: .circle)
+            .accessibilityHidden(true)
+    }
+}
+
+/// One sign-in method: its mark in a fixed box so every name lines up, what
+/// state it is in, and its one action.
+private struct MethodRow<Mark: View, Action: View>: View {
+    let name: String
+    let detail: String?
+    @ViewBuilder let mark: () -> Mark
+    @ViewBuilder let action: () -> Action
+
+    var body: some View {
+        HStack(spacing: 12) {
+            mark()
+                .frame(width: 20, height: 20)
+                .frame(width: 36, height: 36)
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                if let detail {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 8)
+            action()
+        }
+    }
+}
+
+/// A row's ⋯ menu.
+private struct RowMenu<Items: View>: View {
+    let label: String
+    let disabled: Bool
+    @ViewBuilder let items: () -> Items
+
+    var body: some View {
+        Menu {
+            items()
+        } label: {
+            Image(.ellipsis)
+                .frame(width: 32, height: 32)
+                .contentShape(.rect)
+        }
+        .accessibilityLabel(label)
+        .disabled(disabled)
+    }
+}
+
+/// A load that failed, and Retry.
+private struct RetryLine: View {
+    let message: String
+    let retry: () async -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(message)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Button("Retry") { Task { await retry() } }
+                .buttonStyle(.tactile(.glass))
+                .controlSize(.small)
+        }
     }
 }
 
@@ -194,302 +440,6 @@ private struct AccountSignedOutView: View {
             }
             Button("Sign In") { model.present(.account) }
         }
-    }
-}
-
-/// Settings → Sign-in and Security: the email, the password and each linked
-/// provider, one action a row. Unlinked providers sit in one Link Another
-/// menu however many the server offers.
-struct SignInSecurityPage: View {
-    let model: AppModel
-
-    private enum Sheet: Identifiable {
-        case email, password(hasPassword: Bool), unlink(String), link(String)
-
-        var id: String {
-            switch self {
-            case .email: "email"
-            case .password: "password"
-            case .unlink(let provider): "unlink:\(provider)"
-            case .link(let provider): "link:\(provider)"
-            }
-        }
-    }
-
-    @State private var open: Sheet?
-    /// What the last change said ("Password set.", "Email saved.").
-    @State private var notice: String?
-
-    var body: some View {
-        Group {
-            if let session = model.accountSession {
-                List {
-                    emailSection(session)
-                    methodsSection
-                }
-                .refreshable {
-                    await model.accountRefreshIdentities()
-                    await model.accountRefreshServerMethods()
-                }
-                .task {
-                    async let identities: Void = model.accountRefreshIdentities()
-                    async let profile: Void = model.accountRefreshProfile()
-                    async let methods: Void = model.accountRefreshServerMethods()
-                    _ = await (identities, profile, methods)
-                }
-            } else {
-                AccountSignedOutView(model: model)
-            }
-        }
-        .navigationTitle("Sign-in and Security")
-        .navigationBarTitleDisplayMode(.inline)
-        .sheet(item: $open) { form in
-            FormSheet {
-                switch form {
-                case .email:
-                    ChangeEmailView(model: model) { notice = "Email saved." }
-                case .password(let hasPassword):
-                    ChangePasswordView(model: model, hasPassword: hasPassword) { notice = $0 }
-                case .unlink(let provider):
-                    UnlinkProviderView(model: model, provider: provider) { notice = $0 }
-                case .link(let provider):
-                    LinkProviderView(model: model, provider: provider) { notice = $0 }
-                }
-            }
-        }
-    }
-
-    private func emailSection(_ session: AccountSession) -> some View {
-        Section("Email") {
-            HStack {
-                Text(session.email ?? "None yet")
-                    .foregroundStyle(session.email == nil ? .secondary : .primary)
-                Spacer(minLength: 8)
-                Button(session.email == nil ? "Add…" : "Change…") { open = .email }
-                    .buttonStyle(.tactile(.glass))
-                    .controlSize(.small)
-                    .disabled(model.accountBusy)
-            }
-        }
-    }
-
-    /// The server's providers the account hasn't linked, in menu order;
-    /// none until the server said which it offers.
-    private func linkable(_ identities: AccountIdentities) -> [String] {
-        let offered = model.accountServerMethods?.providers ?? []
-        let linked = Set(identities.identities.map(\.provider))
-        return SignInProviders.ids.filter { offered.contains($0) && !linked.contains($0) }
-    }
-
-    /// The password, each linked provider and the others to link (ADR-0044
-    /// §4, #631). A server from before sign-in methods keeps Change Password.
-    private var methodsSection: some View {
-        Section {
-            if model.accountIdentitiesUnsupported {
-                passwordRow(hasPassword: true)
-            } else if let identities = model.accountIdentities {
-                passwordRow(hasPassword: identities.hasPassword)
-                ForEach(identities.identities, id: \.provider) { identity in
-                    identityRow(identity)
-                }
-                let others = linkable(identities)
-                if !others.isEmpty {
-                    HStack {
-                        Text("Sign in without a password.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                        Spacer(minLength: 8)
-                        Menu("Link Another…") {
-                            ForEach(others, id: \.self) { provider in
-                                Button(SignInProviders.name(provider)) { open = .link(provider) }
-                            }
-                        }
-                        .menuStyle(.button)
-                        .buttonStyle(.glass)
-                        .tint(.primary)
-                        .controlSize(.small)
-                        .fixedSize()
-                        .disabled(model.accountBusy)
-                    }
-                }
-            } else if let failed = model.accountIdentitiesError {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Couldn't load sign-in methods. \(failed)")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    Button("Retry") {
-                        Task { await model.accountRefreshIdentities() }
-                    }
-                    .buttonStyle(.tactile(.glass))
-                    .controlSize(.small)
-                }
-            } else {
-                ProgressView().controlSize(.small)
-            }
-        } header: {
-            Text("Sign-in Methods")
-        } footer: {
-            if let notice { Text(notice) }
-        }
-    }
-
-    private func passwordRow(hasPassword: Bool) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Password")
-                Text(hasPassword ? "Set" : "Not set")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 8)
-            Button(hasPassword ? "Change…" : "Set…") { open = .password(hasPassword: hasPassword) }
-                .buttonStyle(.tactile(.glass))
-                .controlSize(.small)
-                .disabled(model.accountBusy)
-        }
-    }
-
-    /// A linked provider; Remove is in its menu and swipe, not a button.
-    private func identityRow(_ identity: AccountIdentity) -> some View {
-        HStack(spacing: 12) {
-            SignInProviderMark(provider: identity.provider, size: 20)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(SignInProviders.name(identity.provider))
-                if let email = identity.email {
-                    Text(email)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer(minLength: 8)
-            Menu {
-                Button("Remove…", image: .trash2, role: .destructive) { open = .unlink(identity.provider) }
-            } label: {
-                Image(.ellipsis)
-                    .frame(width: 32, height: 32)
-                    .contentShape(.rect)
-            }
-            .accessibilityLabel("More for \(SignInProviders.name(identity.provider))")
-            .disabled(model.accountBusy)
-        }
-        .swipeActions {
-            if !model.accountBusy {
-                Button("Remove", role: .destructive) { open = .unlink(identity.provider) }
-            }
-        }
-    }
-}
-
-/// Settings → Signed-in Devices (#452, ADR-0037): every install signed in
-/// to the account, the hosts each joined through it, and Remove in each
-/// row's menu — which signs it out and asks those hosts to revoke it.
-struct AccountDevicesPage: View {
-    let model: AppModel
-
-    @State private var removing: AccountDevice?
-
-    var body: some View {
-        Group {
-            if model.accountSession == nil {
-                AccountSignedOutView(model: model)
-            } else if model.accountDevicesUnsupported {
-                ContentUnavailableView {
-                    Label("No Device List", image: .monitor)
-                } description: {
-                    Text("This server doesn't list the account's devices.")
-                }
-            } else {
-                list
-            }
-        }
-        .navigationTitle("Signed-in Devices")
-        .navigationBarTitleDisplayMode(.inline)
-        .sheet(item: $removing) { device in
-            FormSheet { RemoveDeviceView(model: model, device: device) }
-        }
-    }
-
-    private var list: some View {
-        List {
-            Section {
-                if let devices = model.accountDevices {
-                    ForEach(devices) { device in
-                        row(device)
-                    }
-                } else if model.accountDevicesError == nil {
-                    ProgressView().controlSize(.small)
-                }
-                if let error = model.accountDevicesError {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(error)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                        Button("Retry") {
-                            Task { await model.accountRefreshDevices() }
-                        }
-                        .buttonStyle(.tactile(.glass))
-                        .controlSize(.small)
-                    }
-                }
-            } footer: {
-                Text("Every app and browser signed in to your account, and the hosts each joined through it.")
-            }
-        }
-        .refreshable { await model.accountRefreshDevices() }
-        .task {
-            async let devices: Void = model.accountRefreshDevices()
-            async let hosts: Void = model.accountRefreshHosts()
-            _ = await (devices, hosts)
-        }
-    }
-
-    private func row(_ device: AccountDevice) -> some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(device.current ? "This iPhone" : device.name ?? "Unknown device")
-                Text(signInLine(device))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if !device.hosts.isEmpty {
-                    Text(device.hosts
-                        .map { "\($0.name): \(AccountCopy.deviceHostState($0.state))" }
-                        .joined(separator: " · "))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer(minLength: 8)
-            if device.current {
-                Badge("This device")
-            } else if device.kickedAt != nil {
-                Badge("Removed")
-            } else if device.removable {
-                Menu {
-                    Button("Remove…", image: .trash2, role: .destructive) { removing = device }
-                } label: {
-                    Image(.ellipsis)
-                        .frame(width: 32, height: 32)
-                        .contentShape(.rect)
-                }
-                .accessibilityLabel("More for \(device.name ?? "Unknown device")")
-                .disabled(model.accountBusy)
-            }
-        }
-        .swipeActions {
-            if device.removable, !model.accountBusy {
-                Button("Remove", role: .destructive) { removing = device }
-            }
-        }
-    }
-
-    private func signInLine(_ device: AccountDevice) -> String {
-        let signIn = "Last sign-in " + relative(device.lastSeenAt)
-        guard let kickedAt = device.kickedAt else { return signIn }
-        return signIn + " · removed " + relative(kickedAt)
-    }
-
-    private func relative(_ epochMs: Double) -> String {
-        Date(timeIntervalSince1970: epochMs / 1000).formatted(.relative(presentation: .named))
     }
 }
 
