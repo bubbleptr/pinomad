@@ -82,7 +82,7 @@ function readCollapsed(): Partial<Record<SectionKey, boolean>> {
   }
 }
 
-const CARD = "flex shrink-0 flex-col gap-0.5 rounded-[var(--radius-element)] bg-[var(--color-background-popover)] px-2.5 shadow-[var(--pigui-overview-card-elevation)]";
+const CARD = "flex shrink-0 flex-col gap-0.5 rounded-[var(--radius-element)] border border-[var(--color-border)] bg-[var(--color-background-popover)] px-2.5";
 
 /**
  * One section card. A titled one folds its rows away under its header — the
@@ -392,9 +392,8 @@ export function OverviewCard({
   return (
     <aside
       aria-label="Overview"
-      // A grey tray of section cards; its radius is the cards' plus its
-      // padding, so the corners stay concentric.
-      className={`pigui-overview absolute end-3 top-3 z-20 flex max-h-[calc(100%-1.5rem)] ${narrow ? "w-[min(20rem,calc(100%-1.5rem))]" : "w-[var(--pigui-overview-width)]"} flex-col gap-[var(--pigui-overview-gap)] overflow-y-auto rounded-[calc(var(--radius-element)+var(--pigui-overview-gap))] bg-[var(--color-background-muted)] p-[var(--pigui-overview-gap)] shadow-[var(--pigui-overview-elevation)]`}
+      // A bare stack of bordered section cards, no tray behind them.
+      className={`absolute end-3 top-3 z-20 flex max-h-[calc(100%-1.5rem)] ${narrow ? "w-[min(20rem,calc(100%-1.5rem))]" : "w-[var(--pigui-overview-width)]"} flex-col gap-1.5 overflow-y-auto`}
       onKeyDown={(event) => {
         if (event.key !== "Escape") return;
         event.stopPropagation();
