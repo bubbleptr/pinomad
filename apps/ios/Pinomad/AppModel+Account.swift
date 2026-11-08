@@ -210,7 +210,8 @@ extension AppModel {
 
         // Taken before asking: a host paired while the list is on its way
         // isn't in it, so an answer from before its join can't forget it.
-        let listedBefore = accountRows.map(\.hostId)
+        // Rows left from before a sign-in belong to the previous account.
+        let listedBefore = accountHostsLoaded ? accountRows.map(\.hostId) : []
         let heldBefore = accountHostCandidates()
 
         switch await api.listHosts() {
