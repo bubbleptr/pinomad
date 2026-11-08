@@ -199,6 +199,26 @@ pub struct FallbackDoc {
     raw: Json,
 }
 
+/// `ContextBreakdownSchema`: token counts of what filled the context window,
+/// `used` being the provider's total and the rest host estimates summing to it.
+#[derive(Clone, Debug)]
+pub struct ContextDoc {
+    pub used: f64,
+    pub system: f64,
+    pub skills: f64,
+    pub tools: f64,
+    pub mcp: f64,
+    pub messages: f64,
+    raw: Json,
+}
+
+impl ContextDoc {
+    /// The document as it arrived.
+    pub fn to_json(&self) -> Json {
+        self.raw.clone()
+    }
+}
+
 impl FallbackDoc {
     /// The document verbatim — the fallback renderer works on the raw value.
     pub fn to_json(&self) -> Json {
@@ -214,6 +234,7 @@ pub enum DocType {
     Question,
     Diff,
     Codemode,
+    Context,
     Fallback,
 }
 
@@ -224,6 +245,7 @@ impl DocType {
             DocType::Question => "pinomad.question",
             DocType::Diff => "pinomad.diff",
             DocType::Codemode => "pinomad.codemode",
+            DocType::Context => "pinomad.context",
             DocType::Fallback => "fallback",
         }
     }
@@ -236,6 +258,7 @@ pub enum ClassifiedDoc {
     Question(QuestionDoc),
     Diff(DiffDoc),
     Codemode(CodemodeDoc),
+    Context(ContextDoc),
     Fallback(FallbackDoc),
 }
 
@@ -247,6 +270,7 @@ impl ClassifiedDoc {
             ClassifiedDoc::Question(_) => DocType::Question,
             ClassifiedDoc::Diff(_) => DocType::Diff,
             ClassifiedDoc::Codemode(_) => DocType::Codemode,
+            ClassifiedDoc::Context(_) => DocType::Context,
             ClassifiedDoc::Fallback(_) => DocType::Fallback,
         }
     }
@@ -258,6 +282,7 @@ impl ClassifiedDoc {
             ClassifiedDoc::Question(d) => d.to_json(),
             ClassifiedDoc::Diff(d) => d.to_json(),
             ClassifiedDoc::Codemode(d) => d.to_json(),
+            ClassifiedDoc::Context(d) => d.to_json(),
             ClassifiedDoc::Fallback(d) => d.to_json(),
         }
     }
@@ -400,6 +425,19 @@ fn decode_codemode(value: &Json) -> CodemodeDoc {
     }
 }
 
+fn decode_context(value: &Json) -> ContextDoc {
+    let count = |key: &str| value.get(key).and_then(Json::as_number).unwrap_or_default();
+    ContextDoc {
+        used: count("used"),
+        system: count("system"),
+        skills: count("skills"),
+        tools: count("tools"),
+        mcp: count("mcp"),
+        messages: count("messages"),
+        raw: value.clone(),
+    }
+}
+
 /// `classify(presentation, value)`: `presentation` is the declared type as it
 /// arrived (a `toolPresentations` entry or a doc's `presentation`), typically
 /// a string or an absent field.
@@ -414,6 +452,7 @@ pub fn classify(presentation: Option<&Json>, value: &Json) -> ClassifiedDoc {
         Some(s) if str_eq(s, "pinomad.codemode") && is_codemode(value) => {
             ClassifiedDoc::Codemode(decode_codemode(value))
         }
+        Some(s) if str_eq(s, "pinomad.context") && is_context(value) => ClassifiedDoc::Context(decode_context(value)),
         _ => ClassifiedDoc::Fallback(FallbackDoc { raw: value.clone() }),
     }
 }
@@ -461,6 +500,11 @@ fn string_of(value: Option<&Json>, min: usize, max: Option<usize>) -> bool {
 /// typebox `Type.Number()` — `typeof number` minus NaN and Infinity.
 fn is_number(value: Option<&Json>) -> bool {
     matches!(value, Some(Json::Number(v)) if v.is_finite())
+}
+
+/// typebox `Type.Integer({minimum: 0})` — `Number.isInteger` and not negative.
+fn is_token_count(value: Option<&Json>) -> bool {
+    matches!(value, Some(Json::Number(v)) if v.is_finite() && v.fract() == 0.0 && *v >= 0.0)
 }
 
 fn is_boolean(value: Option<&Json>) -> bool {
@@ -544,6 +588,13 @@ fn is_question(value: &Json) -> bool {
 
 fn is_diff(value: &Json) -> bool {
     value.is_object() && value.get("patch").is_some_and(is_string)
+}
+
+fn is_context(value: &Json) -> bool {
+    value.is_object()
+        && ["used", "system", "skills", "tools", "mcp", "messages"]
+            .iter()
+            .all(|key| is_token_count(value.get(key)))
 }
 
 fn is_codemode_call(value: &Json) -> bool {

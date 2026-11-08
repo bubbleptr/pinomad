@@ -14,7 +14,7 @@ export interface ContextUsage {
 }
 
 /** pi-ai's `Usage` fields the meter reads; the entry cast is the contract. */
-type UsageLike = {
+export type UsageLike = {
   readonly input: number;
   readonly output: number;
   readonly cacheRead: number;
@@ -28,8 +28,12 @@ type AssistantMessageLike = {
   readonly usage?: UsageLike;
 };
 
-/** Upstream `calculateContextTokens`: the provider's total wins when it reports one. */
-const contextTokens = (usage: UsageLike): number =>
+/**
+ * Upstream `calculateContextTokens`: the provider's total wins when it reports one.
+ * The host's context breakdown stamps its `used` with this same formula — the
+ * client shows the breakdown only while the two agree.
+ */
+export const contextTokens = (usage: UsageLike): number =>
   usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
 
 /**

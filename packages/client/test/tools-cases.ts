@@ -276,6 +276,15 @@ export const CLASSIFY_CASES: ClassifyCase[] = [
     value: { code: "x", calls: [{ name: "read" }] },
   },
   { name: "codemode-bad-code", presentation: "pinomad.codemode", value: { code: 1 } },
+  {
+    name: "context",
+    presentation: "pinomad.context",
+    value: { used: 12_000, system: 900, skills: 300, tools: 2_400, mcp: 1_100, messages: 7_300 },
+  },
+  // Token counts are integers: a fraction or a negative count falls back.
+  { name: "context-fraction", presentation: "pinomad.context", value: { used: 1.5, system: 0, skills: 0, tools: 0, mcp: 0, messages: 1.5 } },
+  { name: "context-negative", presentation: "pinomad.context", value: { used: 1, system: -1, skills: 0, tools: 0, mcp: 0, messages: 2 } },
+  { name: "context-missing-part", presentation: "pinomad.context", value: { used: 1, system: 0, skills: 0, tools: 0, messages: 1 } },
   { name: "todo-bad-status", presentation: "pinomad.todo", value: { items: [{ text: "Ship it", status: "unknown" }] } },
   { name: "todo-missing-field", presentation: "pinomad.todo", value: { items: [{ status: "pending" }] } },
   { name: "todo-non-object", presentation: "pinomad.todo", value: "not a todo" },

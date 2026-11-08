@@ -55,6 +55,30 @@
       "expect": "{\"type\":\"fallback\",\"value\":{\"code\":1}}"
     },
     {
+      "name": "context",
+      "presentation": "\"pinomad.context\"",
+      "value": "{\"used\":12000,\"system\":900,\"skills\":300,\"tools\":2400,\"mcp\":1100,\"messages\":7300}",
+      "expect": "{\"type\":\"pinomad.context\",\"value\":{\"used\":12000,\"system\":900,\"skills\":300,\"tools\":2400,\"mcp\":1100,\"messages\":7300}}"
+    },
+    {
+      "name": "context-fraction",
+      "presentation": "\"pinomad.context\"",
+      "value": "{\"used\":1.5,\"system\":0,\"skills\":0,\"tools\":0,\"mcp\":0,\"messages\":1.5}",
+      "expect": "{\"type\":\"fallback\",\"value\":{\"used\":1.5,\"system\":0,\"skills\":0,\"tools\":0,\"mcp\":0,\"messages\":1.5}}"
+    },
+    {
+      "name": "context-negative",
+      "presentation": "\"pinomad.context\"",
+      "value": "{\"used\":1,\"system\":-1,\"skills\":0,\"tools\":0,\"mcp\":0,\"messages\":2}",
+      "expect": "{\"type\":\"fallback\",\"value\":{\"used\":1,\"system\":-1,\"skills\":0,\"tools\":0,\"mcp\":0,\"messages\":2}}"
+    },
+    {
+      "name": "context-missing-part",
+      "presentation": "\"pinomad.context\"",
+      "value": "{\"used\":1,\"system\":0,\"skills\":0,\"tools\":0,\"messages\":1}",
+      "expect": "{\"type\":\"fallback\",\"value\":{\"used\":1,\"system\":0,\"skills\":0,\"tools\":0,\"messages\":1}}"
+    },
+    {
       "name": "todo-bad-status",
       "presentation": "\"pinomad.todo\"",
       "value": "{\"items\":[{\"text\":\"Ship it\",\"status\":\"unknown\"}]}",

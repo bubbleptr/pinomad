@@ -346,15 +346,15 @@ function SourcesSection({ view }: { view: DurableView }) {
 
 /**
  * Extension documents the transcript does not already show: the todo list
- * has its card under the run and questions sit above the composer, so only
- * other kinds — including a malformed todo, inspected through the fallback —
- * land here.
+ * has its card under the run, questions sit above the composer, and the
+ * context breakdown belongs to the Usage section, so only other kinds —
+ * including a malformed todo, inspected through the fallback — land here.
  */
 function DocumentsSection({ view, remote }: { view: DurableView; remote: RemoteDurable }) {
   const docs = view.docs.filter((doc) => {
     if (doc.value === null) return false;
     const type = classify(doc.presentation, doc.value).type;
-    return type !== "pinomad.todo" && type !== "pinomad.question";
+    return type !== "pinomad.todo" && type !== "pinomad.question" && type !== "pinomad.context";
   });
   if (docs.length === 0) return null;
   return (
