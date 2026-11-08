@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import {
+  BACKGROUND_SUBAGENT_ID,
   DARK_MODE_ID,
   fakeProcesses,
   fakeRemote,
@@ -14,6 +15,7 @@ import {
   PROCESSES,
   SUBAGENT_ID,
   subagentConversation,
+  withBackgroundSubagents,
 } from "../../test/story-fixtures.tsx";
 import { SidePanel } from "./side-panel.tsx";
 
@@ -148,6 +150,41 @@ describe("SidePanel processes", () => {
     fireEvent.click(await screen.findByRole("button", { name: /dev server/ }));
     expect(await screen.findByText("The output of this process is no longer available")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("lets a newly opened subagent detail replace a process detail", async () => {
+    const panelView = fakeView();
+    const processes = fakeProcesses({ lists: { [PARSER_ID]: PROCESSES } });
+    const remote = fakeRemote(panelView, {}, processes);
+    const { rerender } = renderPanel(PARSER_ID, panelView, remote);
+    fireEvent.click(await screen.findByRole("button", { name: /dev server/ }));
+    expect(screen.getByText("bun run dev")).toBeInTheDocument();
+
+    const withSide = fakeView({ side: { id: SUBAGENT_ID, conversation: subagentConversation(), docs: [] } });
+    rerender(panel(PARSER_ID, withSide, remote));
+    expect(await screen.findByText("Write regression tests")).toBeInTheDocument();
+    expect(screen.queryByText("bun run dev")).toBeNull();
+
+    // Leaving the subagent returns to Tasks, not to the process detail that
+    // was open before the task navigation.
+    rerender(panel(PARSER_ID, panelView, remote));
+    expect(screen.queryByText("Background processes stop when the host restarts.")).toBeNull();
+    expect(screen.getByText("dev server")).toBeInTheDocument();
+  });
+
+  it("closes a shown side detail when a process is opened", async () => {
+    const withSide = withBackgroundSubagents(fakeView(), { includeForkChild: false });
+    const side = {
+      id: BACKGROUND_SUBAGENT_ID,
+      conversation: subagentConversation(BACKGROUND_SUBAGENT_ID),
+      docs: [],
+    };
+    const panelView = { ...withSide, side };
+    const processes = fakeProcesses({ lists: { [PARSER_ID]: PROCESSES } });
+    const remote = fakeRemote(panelView, {}, processes);
+    renderPanel(PARSER_ID, panelView, remote);
+    fireEvent.click(await screen.findByRole("button", { name: /dev server/ }));
+    expect(remote.controller.showSide).toHaveBeenCalledWith(undefined);
   });
 
   it("closes the detail when the family changes", async () => {

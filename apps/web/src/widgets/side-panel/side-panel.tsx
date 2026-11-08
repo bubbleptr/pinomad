@@ -158,11 +158,6 @@ function TasksSurface({
   // The family is whatever the main column shows — the panel is its sibling.
   const root = shownId === undefined ? undefined : rootOf(view.organized, shownId);
   const rootId = root?.summary.id;
-  // The list belongs to the family root, so a shown fork reads the root's copy.
-  const processList = useProcessList(remote.processes, rootId);
-  const processRows = processList?.processes ?? [];
-  const [selectedProcess, setSelectedProcess] = useState<{ rootId: ConversationId; id: ProcessId }>();
-  useEffect(() => setSelectedProcess(undefined), [rootId]);
   // Opening another family closes the side only once that family has loaded
   // (the close queues behind the switch); until then its detail is not ours.
   const side =
@@ -170,33 +165,35 @@ function TasksSurface({
       ? view.side
       : undefined;
   const sideSummary = side === undefined ? undefined : findConversation(view.organized, side.id)?.summary;
+  // The list belongs to the family root, so a shown fork reads the root's copy.
+  const processList = useProcessList(remote.processes, rootId);
+  const processRows = processList?.processes ?? [];
+  const [selectedProcess, setSelectedProcess] = useState<{ rootId: ConversationId; id: ProcessId }>();
+  const sideId = side?.id;
+  // Another family, or a subagent side opening over it, ends the process
+  // detail. Closing a side from `openProcess` must not clear the new one.
+  useEffect(() => setSelectedProcess(undefined), [rootId]);
+  useEffect(() => {
+    if (sideId !== undefined) setSelectedProcess(undefined);
+  }, [sideId]);
   const groups = root === undefined ? [] : taskGroupsOf(root);
   const selected =
     selectedProcess !== undefined && selectedProcess.rootId === rootId
       ? processRows.find((process) => process.id === selectedProcess.id)
       : undefined;
   const closeSide = (): void => void remote.controller.showSide(undefined);
+  const openProcess = (id: ProcessId): void => {
+    if (rootId === undefined) return;
+    // Selecting a process is a task navigation too: close any subagent detail.
+    if (view.side !== undefined) void remote.controller.showSide(undefined);
+    setSelectedProcess({ rootId, id });
+  };
   const backgroundSideId = sideSummary?.kind === "subagent" && sideSummary.lifecycle === "background" ? sideSummary.id : undefined;
   // Older links may still name a background detail explicitly. Promote rather
   // than rendering a second Tasks entry point for the same conversation.
   useEffect(() => {
     if (backgroundSideId !== undefined) onOpenInMain(backgroundSideId);
   }, [backgroundSideId, onOpenInMain]);
-
-  if (selected !== undefined && processList !== undefined && rootId !== undefined) {
-    return (
-      <ProcessDetail
-        key={selected.id}
-        process={selected}
-        list={processList}
-        remote={remote}
-        conversationId={rootId}
-        barStart={barStart}
-        barEnd={barEnd}
-        onBack={() => setSelectedProcess(undefined)}
-      />
-    );
-  }
 
   if (side !== undefined && sideSummary?.kind === "subagent" && sideSummary.lifecycle !== "background") {
     return (
@@ -216,6 +213,22 @@ function TasksSurface({
       </VStack>
     );
   }
+
+  if (selected !== undefined && processList !== undefined && rootId !== undefined) {
+    return (
+      <ProcessDetail
+        key={selected.id}
+        process={selected}
+        list={processList}
+        remote={remote}
+        conversationId={rootId}
+        barStart={barStart}
+        barEnd={barEnd}
+        onBack={() => setSelectedProcess(undefined)}
+      />
+    );
+  }
+
   const { active, done, failed } = taskTally(groups.flatMap((group) => group.tasks.map((node) => node.summary)));
   const runningProcesses = processRows.filter((process) => isProcessActive(process.state)).length;
   const tally = [
@@ -262,12 +275,7 @@ function TasksSurface({
                 </List>
               ))}
               {processRows.length === 0 ? null : (
-                <ProcessGroup
-                  processes={processRows}
-                  onOpen={(id) => {
-                    if (rootId !== undefined) setSelectedProcess({ rootId, id });
-                  }}
-                />
+                <ProcessGroup processes={processRows} onOpen={openProcess} />
               )}
             </>
           )}
