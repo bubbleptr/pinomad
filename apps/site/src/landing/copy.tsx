@@ -8,9 +8,6 @@ import type { Lang } from "@/lib/i18n.ts";
 
 type Link = { text: string; href: string };
 
-/** Provider marks drawn by page.css as `.sub-logo.is-<name>` masks. */
-export type SubLogo = "claude" | "openai" | "copilot" | "grok" | "kimi" | "ollama";
-
 export interface LandingCopy {
   skip: string;
   hero: {
@@ -36,11 +33,6 @@ export interface LandingCopy {
     eyebrow: string;
     title: string;
     allFeatures: string;
-  };
-  subs: {
-    eyebrow: string;
-    title: string;
-    plans: { logo: SubLogo; name: string; note: string }[];
   };
   durable: {
     title: string;
@@ -138,18 +130,6 @@ export const copy: Record<Lang, LandingCopy> = {
       eyebrow: "How it works",
       title: "Built on Pi Durable",
       allFeatures: "Everything the agent can do",
-    },
-    subs: {
-      eyebrow: "Models",
-      title: "Bring your own subscription",
-      plans: [
-        { logo: "claude", name: "Claude", note: "Pro · Max" },
-        { logo: "openai", name: "ChatGPT", note: "Plus · Pro" },
-        { logo: "copilot", name: "GitHub Copilot", note: "Subscription" },
-        { logo: "grok", name: "Grok", note: "SuperGrok · X Premium" },
-        { logo: "kimi", name: "Kimi", note: "Kimi Code" },
-        { logo: "ollama", name: "Your endpoint", note: "Ollama · vLLM · LM Studio" },
-      ],
     },
     durable: {
       title: "Runs survive crashes and restarts",
@@ -320,18 +300,6 @@ export const copy: Record<Lang, LandingCopy> = {
       eyebrow: "工作方式",
       title: "基于 Pi Durable",
       allFeatures: "agent 能做的所有事",
-    },
-    subs: {
-      eyebrow: "模型",
-      title: "用你已经付费的订阅",
-      plans: [
-        { logo: "claude", name: "Claude", note: "Pro · Max" },
-        { logo: "openai", name: "ChatGPT", note: "Plus · Pro" },
-        { logo: "copilot", name: "GitHub Copilot", note: "订阅" },
-        { logo: "grok", name: "Grok", note: "SuperGrok · X Premium" },
-        { logo: "kimi", name: "Kimi", note: "Kimi Code" },
-        { logo: "ollama", name: "自己的 endpoint", note: "Ollama · vLLM · LM Studio" },
-      ],
     },
     durable: {
       title: "步步存检查点，重启不用从头来",
