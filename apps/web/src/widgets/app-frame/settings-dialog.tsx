@@ -804,8 +804,8 @@ function AgentRoleCard({
               variant="ghost"
               isDisabled={!connected}
               items={[
-                { label: "Edit…", onClick: onEdit },
-                { label: "Delete…", onClick: () => setConfirming(true) },
+                { label: "Edit", onClick: onEdit },
+                { label: "Delete", onClick: () => setConfirming(true) },
               ]}
             />
           </HStack>
@@ -869,7 +869,7 @@ function AgentProblemCard({
               size="sm"
               variant="ghost"
               isDisabled={!connected}
-              items={[{ label: "Delete…", onClick: () => setConfirming(true) }]}
+              items={[{ label: "Delete", onClick: () => setConfirming(true) }]}
             />
           </HStack>
         )}

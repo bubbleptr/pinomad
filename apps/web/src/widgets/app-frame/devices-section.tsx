@@ -145,8 +145,8 @@ function DeviceRow({
         <HStack gap={2} vAlign="center">
           {isSelf ? <Token label="This device" size="sm" /> : null}
           <Button
-            label="Unpair…"
-            aria-label={`Unpair ${device.name}…`}
+            label="Unpair"
+            aria-label={`Unpair ${device.name}`}
             variant="secondary"
             size="sm"
             isDisabled={!connected}

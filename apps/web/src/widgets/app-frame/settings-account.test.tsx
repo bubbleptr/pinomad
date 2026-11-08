@@ -52,7 +52,7 @@ describe("Settings → Account", () => {
 
   it("signs out from the account page after the dialog confirms", async () => {
     const account = renderSettings(signedIn(), "account");
-    await userEvent.click(await screen.findByRole("button", { name: "Sign out…" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Sign out" }));
     const dialog = screen.getByRole("dialog", { name: "Sign out of pinomad.si?" });
     await userEvent.click(within(dialog).getByRole("button", { name: "Sign out" }));
     expect(account.logout).toHaveBeenCalledWith({ revoke: false });

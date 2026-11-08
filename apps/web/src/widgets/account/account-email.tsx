@@ -106,7 +106,7 @@ export function EmailForm({
   );
 }
 
-/** The account's email, with Change… opening the form in a dialog. */
+/** The account's email, with Change opening the form in a dialog. */
 export function AccountEmail({ account, email }: { account: AccountModel; email: string | undefined }) {
   const [open, setOpen] = useState(false);
   const [changed, setChanged] = useState(false);
@@ -120,8 +120,8 @@ export function AccountEmail({ account, email }: { account: AccountModel; email:
           {...(changed ? { description: "Email saved." } : {})}
           endContent={
             <Button
-              label={email === undefined ? "Add…" : "Change…"}
-              aria-label={`${title}…`}
+              label={email === undefined ? "Add" : "Change"}
+              aria-label={title}
               variant="secondary"
               size="sm"
               onClick={() => {

@@ -94,7 +94,7 @@ export function SignInMethods({
           description={identities.hasPassword ? "Set" : "Not set"}
           endContent={
             <Button
-              label={identities.hasPassword ? "Change password…" : "Set password…"}
+              label={identities.hasPassword ? "Change password" : "Set password"}
               variant="secondary"
               size="sm"
               isDisabled={busy}
@@ -117,7 +117,7 @@ export function SignInMethods({
                 label={`More for ${signInProviderName(identity.provider)}`}
                 size="sm"
                 isDisabled={busy}
-                items={[{ label: "Remove…", onClick: () => start({ kind: "remove", provider: identity.provider }) }]}
+                items={[{ label: "Remove", onClick: () => start({ kind: "remove", provider: identity.provider }) }]}
               />
             }
           />
@@ -134,8 +134,8 @@ export function SignInMethods({
             }
             endContent={
               <Button
-                label="Link…"
-                aria-label={`Link ${provider.name}…`}
+                label="Link"
+                aria-label={`Link ${provider.name}`}
                 variant="secondary"
                 size="sm"
                 isDisabled={busy}
@@ -323,7 +323,7 @@ function ChangePasswordOnly({ account }: { account: AccountModel }) {
     <VStack gap={1}>
       <HStack gap={2}>
         <Button
-          label="Change password…"
+          label="Change password"
           variant="secondary"
           size="sm"
           onClick={() => {

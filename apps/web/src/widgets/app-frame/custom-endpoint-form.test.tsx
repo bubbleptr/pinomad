@@ -218,7 +218,7 @@ describe("CustomEndpointForm editing an endpoint", () => {
 
   it("removes the endpoint only after confirming", async () => {
     const { user, controller, onRemoved } = setup(OLLAMA);
-    await user.click(screen.getByRole("button", { name: "Remove endpoint…" }));
+    await user.click(screen.getByRole("button", { name: "Remove endpoint" }));
     expect(controller.removeCustomProvider).not.toHaveBeenCalled();
 
     const dialog = screen.getByRole("alertdialog", hidden);

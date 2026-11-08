@@ -115,12 +115,12 @@ describe("HostsSection unpairing", () => {
   it("unpairs from the host's page only after the dialog confirms it", async () => {
     const { forget } = harness({ hosts: [HOME_HOST, DEVBOX_HOST], withRuntime: false });
     await openDetails(DEVBOX_HOST.name!);
-    await userEvent.click(screen.getByRole("button", { name: "Unpair…" }));
+    await userEvent.click(screen.getByRole("button", { name: "Unpair" }));
     const dialog = screen.getByRole("dialog", { name: `Unpair ${DEVBOX_HOST.name}?` });
     await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(forget).not.toHaveBeenCalled();
 
-    await userEvent.click(screen.getByRole("button", { name: "Unpair…" }));
+    await userEvent.click(screen.getByRole("button", { name: "Unpair" }));
     await userEvent.click(within(screen.getByRole("dialog", { name: `Unpair ${DEVBOX_HOST.name}?` })).getByRole("button", { name: "Unpair" }));
     await waitFor(() => expect(forget).toHaveBeenCalledWith(DEVBOX_HOST.hostKey));
     // Back on the list, which no longer needs the host's page.
@@ -219,7 +219,7 @@ describe("HostsSection with an account", () => {
     const match: AccountHostMatch = { host: accountHost({ name: "up", hostId: "u".repeat(43), noisePublicKey: "U".repeat(43) }), status: "unpaired", linkable: false, autoRegister: true };
     harness({ account: model(signedIn({ hosts: [match] }), { removeHost }) });
     await userEvent.click(within(row(onAccount(), "up")).getByRole("button", { name: "More for up" }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Remove from account…" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Remove from account" }));
     const dialog = screen.getByRole("dialog", { name: "Remove up" });
     expect(within(dialog).getByText(/stops connecting through pinomad\.si/)).toBeTruthy();
     await act(async () => {
@@ -256,7 +256,7 @@ describe("HostsSection with an account", () => {
     }
     render(<Live />);
     await openDetails("omarchy");
-    await userEvent.click(screen.getByRole("button", { name: "Unpair…" }));
+    await userEvent.click(screen.getByRole("button", { name: "Unpair" }));
     await userEvent.click(within(screen.getByRole("dialog", { name: "Unpair omarchy?" })).getByRole("button", { name: "Unpair" }));
     expect(within(await screen.findByRole("list", { name: "On your account" })).getByText("omarchy")).toBeTruthy();
     expect(within(paired()).queryByText("omarchy")).toBeNull();

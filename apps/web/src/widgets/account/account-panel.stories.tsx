@@ -41,7 +41,7 @@ export const AddingHost: Story = {
   args: { initialPage: "hosts" },
   decorators: [withAccount(signedIn())],
   play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "Add a host…" }));
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Add a host" }));
   },
 };
 
@@ -49,7 +49,7 @@ export const AddingHost: Story = {
 export const ChangingPassword: Story = {
   decorators: [withAccount(signedIn())],
   play: async ({ canvasElement }) => {
-    await userEvent.click(await within(canvasElement).findByRole("button", { name: "Change password…" }));
+    await userEvent.click(await within(canvasElement).findByRole("button", { name: "Change password" }));
   },
 };
 
@@ -64,7 +64,7 @@ export const DeletingAccountByCode: Story = {
     }),
   ],
   play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "Delete account…" }));
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Delete account" }));
     await userEvent.click(await body().findByRole("button", { name: "Send code" }));
   },
 };
@@ -73,7 +73,7 @@ export const DeletingAccountByCode: Story = {
 export const SigningOut: Story = {
   decorators: [withAccount(signedIn())],
   play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "Sign out…" }));
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Sign out" }));
   },
 };
 
@@ -81,7 +81,7 @@ export const SigningOut: Story = {
 export const SigningOutSharedComputer: Story = {
   decorators: [withAccount(signedIn())],
   play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "Sign out…" }));
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Sign out" }));
     await userEvent.click(await body().findByRole("checkbox", { name: /shared computer/ }));
   },
 };
@@ -90,7 +90,7 @@ export const SigningOutSharedComputer: Story = {
 export const SigningOutEverywhere: Story = {
   decorators: [withAccount(signedIn())],
   play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "Sign out everywhere…" }));
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Sign out everywhere" }));
   },
 };
 
@@ -98,7 +98,7 @@ export const SigningOutEverywhere: Story = {
 export const DeletingAccount: Story = {
   decorators: [withAccount(signedIn())],
   play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "Delete account…" }));
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Delete account" }));
   },
 };
 
@@ -110,7 +110,7 @@ export const DeleteAccountWrongPassword: Story = {
     }),
   ],
   play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "Delete account…" }));
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Delete account" }));
     await userEvent.type(await body().findByLabelText("Password"), "not my password{Enter}");
   },
 };
@@ -130,7 +130,7 @@ export const RemovingDevice: Story = {
   ],
   play: async ({ canvasElement }) => {
     await userEvent.click(await within(canvasElement).findByRole("button", { name: "More for Mac Desktop" }));
-    await userEvent.click(await body().findByRole("menuitem", { name: "Remove…" }));
+    await userEvent.click(await body().findByRole("menuitem", { name: "Remove" }));
   },
 };
 
@@ -143,7 +143,7 @@ export const RemoveDeviceWrongPassword: Story = {
   ],
   play: async ({ canvasElement }) => {
     await userEvent.click(await within(canvasElement).findByRole("button", { name: "More for Mac Desktop" }));
-    await userEvent.click(await body().findByRole("menuitem", { name: "Remove…" }));
+    await userEvent.click(await body().findByRole("menuitem", { name: "Remove" }));
     await userEvent.type(await body().findByLabelText("Password"), "not my password{Enter}");
   },
 };
@@ -154,7 +154,7 @@ export const RemovingHost: Story = {
   decorators: [withAccount(signedIn())],
   play: async ({ canvasElement }) => {
     await userEvent.click(within(canvasElement).getByRole("button", { name: "More for omarchy" }));
-    await userEvent.click(await within(document.body).findByRole("menuitem", { name: "Remove from account…" }));
+    await userEvent.click(await within(document.body).findByRole("menuitem", { name: "Remove from account" }));
   },
 };
 
@@ -169,7 +169,7 @@ export const RemoveHostWrongPassword: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "More for omarchy" }));
-    await userEvent.click(await within(document.body).findByRole("menuitem", { name: "Remove from account…" }));
+    await userEvent.click(await within(document.body).findByRole("menuitem", { name: "Remove from account" }));
     await userEvent.type(await within(document.body).findByLabelText("Password"), "not my password{Enter}");
   },
 };

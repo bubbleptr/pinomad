@@ -336,7 +336,7 @@ export function HostsSection({
   return (
     <VStack gap={4}>
       <HStack hAlign="end">
-        <Button label="Add a host…" variant="secondary" size="sm" onClick={() => setAdding(true)} />
+        <Button label="Add a host" variant="secondary" size="sm" onClick={() => setAdding(true)} />
       </HStack>
       {accountState === undefined ? null : <AccountPairingBanners state={accountState} pairing={pairing} />}
       {paired.hosts.length === 0 ? (
@@ -587,9 +587,9 @@ function HostDetail({
         <HostRouteList host={host} routes={hostRoutes(host, { pageProtocol: window.location.protocol })} />
       </VStack>
       <HStack gap={2} wrap="wrap">
-        <Button label="Unpair…" variant="secondary" size="sm" onClick={() => setUnpairing(true)} />
+        <Button label="Unpair" variant="secondary" size="sm" onClick={() => setUnpairing(true)} />
         {accountMatch === undefined ? null : (
-          <Button label="Remove from account…" variant="secondary" size="sm" onClick={() => setRemoving(true)} />
+          <Button label="Remove from account" variant="secondary" size="sm" onClick={() => setRemoving(true)} />
         )}
       </HStack>
       {unpairing ? (
@@ -686,7 +686,7 @@ export function HostsFallback({ canSwitch = false }: { canSwitch?: boolean }) {
       <HostsSection canSwitch={canSwitch} />
       {account.state.status === "unavailable" ? null : (
         <div>
-          <Button label="Account…" variant="secondary" size="sm" onClick={() => setAccountOpen(true)} />
+          <Button label="Account" variant="secondary" size="sm" onClick={() => setAccountOpen(true)} />
         </div>
       )}
       {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}

@@ -327,7 +327,7 @@ function TerminalTabs({
     target === undefined
       ? [{ label: "New terminal", icon: <Plus aria-hidden="true" size={16} />, isDisabled: onNew === undefined, onClick: () => onNew?.() }]
       : [
-          { label: "Rename…", icon: <Pencil aria-hidden="true" size={16} />, onClick: () => onRename(target) },
+          { label: "Rename", icon: <Pencil aria-hidden="true" size={16} />, onClick: () => onRename(target) },
           { label: "Restart", icon: <RefreshCw aria-hidden="true" size={16} />, onClick: () => onRestart(target) },
           { type: "divider" },
           { label: "Close", icon: <Trash2 aria-hidden="true" size={16} />, onClick: () => onClose(target) },

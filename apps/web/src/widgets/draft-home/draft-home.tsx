@@ -268,7 +268,7 @@ export function DraftHome({
                 <ChatAddMenu isDisabled={!connected}>
                   <ChatAddMenuItem
                     icon={ImageIcon}
-                    label="Add images…"
+                    label="Add images"
                     hint={imagesUnavailable ?? "Or paste or drop"}
                     isDisabled={!accepts}
                     onClick={() => fileInput.current?.click()}
@@ -276,7 +276,7 @@ export function DraftHome({
                   {attachmentsEnabled ? (
                     <ChatAddMenuItem
                       icon={FileIcon}
-                      label="Attach files…"
+                      label="Attach files"
                       hint="Up to 10 · 10 MB each"
                       onClick={() => attachInput.current?.click()}
                     />
@@ -284,7 +284,7 @@ export function DraftHome({
                   {skills.trigger === undefined ? null : (
                     <ChatAddMenuItem
                       icon={Sparkles}
-                      label="Use a skill…"
+                      label="Use a skill"
                       hint="Or type $"
                       onClick={() => inputRef.current?.openTrigger("$")}
                     />
@@ -292,7 +292,7 @@ export function DraftHome({
                   {agentRoles.length === 0 ? null : (
                     <ChatAddMenuItem
                       icon={Bot}
-                      label="Mention an agent…"
+                      label="Mention an agent"
                       hint="Or type @"
                       onClick={() => inputRef.current?.openTrigger("@")}
                     />

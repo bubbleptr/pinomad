@@ -211,7 +211,7 @@ function Overview({
           </Heading>
           <Text type="supporting">{server}</Text>
         </VStack>
-        <Button label="Sign out…" variant="secondary" size="sm" onClick={() => setOpen("sign-out")} />
+        <Button label="Sign out" variant="secondary" size="sm" onClick={() => setOpen("sign-out")} />
       </HStack>
       <AccountEmail account={account} email={state.email} />
       <SignInMethods account={account} />
@@ -221,12 +221,12 @@ function Overview({
           <DangerAction
             title="Sign out everywhere"
             description="Ends every session on every device, including this one."
-            action={<Button label="Sign out everywhere…" variant="secondary" size="sm" onClick={() => setOpen("everywhere")} />}
+            action={<Button label="Sign out everywhere" variant="secondary" size="sm" onClick={() => setOpen("everywhere")} />}
           />
           <DangerAction
             title="Delete account"
             description={`Removes your account from ${server}. Devices stay registered on your hosts.`}
-            action={<Button label="Delete account…" variant="secondary" size="sm" onClick={() => setOpen("delete")} />}
+            action={<Button label="Delete account" variant="secondary" size="sm" onClick={() => setOpen("delete")} />}
           />
         </ul>
       </SettingsGroup>
@@ -426,7 +426,7 @@ function AccountHosts({ state }: { state: SignedInState }) {
         </SettingsGroup>
       )}
       <HStack>
-        <Button label="Add a host…" variant="secondary" size="sm" onClick={() => setAdding(true)} />
+        <Button label="Add a host" variant="secondary" size="sm" onClick={() => setAdding(true)} />
       </HStack>
       {adding ? <AddHostDialog onClose={() => setAdding(false)} /> : null}
     </VStack>
@@ -537,7 +537,7 @@ function DeviceRow({
   ) : device.kickedAt !== undefined ? (
     <Token label="Removed" color="gray" size="sm" />
   ) : (
-    <MoreMenu label={`More for ${name}`} size="sm" isDisabled={isBusy} items={[{ label: "Remove…", onClick: onRemove }]} />
+    <MoreMenu label={`More for ${name}`} size="sm" isDisabled={isBusy} items={[{ label: "Remove", onClick: onRemove }]} />
   );
   return (
     <ListItem

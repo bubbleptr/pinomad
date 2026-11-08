@@ -297,7 +297,7 @@ export function CustomEndpointForm({
         </div>
         <HStack gap={2} vAlign="center" wrap="wrap">
           {existing === undefined ? null : (
-            <Button label="Remove endpoint…" variant="secondary" isDisabled={!connected} onClick={() => setConfirmingRemove(true)} />
+            <Button label="Remove endpoint" variant="secondary" isDisabled={!connected} onClick={() => setConfirmingRemove(true)} />
           )}
           {removeError === undefined ? null : <InlineError message={removeError} />}
           <div style={{ marginInlineStart: "auto" }}>

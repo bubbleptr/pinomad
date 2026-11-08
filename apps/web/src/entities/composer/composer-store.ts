@@ -234,7 +234,7 @@ export class ComposerSlot {
     }
     const usable = files.filter((file) => !file.type.startsWith("image/"));
     if (usable.length === 0) return;
-    if (usable.length < files.length) this.#set({ fileError: "Images are attached from Add images…" });
+    if (usable.length < files.length) this.#set({ fileError: "Images are attached from Add images" });
     const room = attachmentRoom(this.#state.fileEntries.length);
     if (room === 0) {
       this.#set({ fileError: `At most ${MAX_ATTACHMENTS_PER_MESSAGE} files per message` });

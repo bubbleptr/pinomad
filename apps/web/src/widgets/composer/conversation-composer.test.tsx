@@ -88,14 +88,14 @@ describe("ConversationComposer commands", () => {
     expect(remote.controller.listCommands).not.toHaveBeenCalled();
   });
 
-  it("offers Run a command… instead of Compact on a 5.15 host", async () => {
+  it("offers Run a command instead of Compact on a 5.15 host", async () => {
     setup();
     await act(async () => {});
     expect(screen.getByRole("menuitem", { name: /^Run a command/, hidden: true })).not.toHaveAttribute("aria-disabled", "true");
     expect(screen.queryByRole("menuitem", { name: /^Compact conversation/, hidden: true })).toBeNull();
   });
 
-  it("shows Run a command… disabled while the list loads", async () => {
+  it("shows Run a command disabled while the list loads", async () => {
     setup({ listCommands: () => new Promise(() => {}) });
     await act(async () => {});
     const row = screen.getByRole("menuitem", { name: /^Run a command/, hidden: true });
@@ -103,13 +103,13 @@ describe("ConversationComposer commands", () => {
     expect(row).toHaveTextContent("Loading…");
   });
 
-  it("offers Attach files… only on a 5.19 host", async () => {
+  it("offers Attach files only on a 5.19 host", async () => {
     setup();
     await act(async () => {});
     expect(screen.getByRole("menuitem", { name: /^Attach files/, hidden: true })).toBeInTheDocument();
   });
 
-  it("hides Attach files… on a pre-5.19 host", async () => {
+  it("hides Attach files on a pre-5.19 host", async () => {
     setup({ minor: 18 });
     await act(async () => {});
     expect(screen.queryByRole("menuitem", { name: /^Attach files/, hidden: true })).toBeNull();

@@ -104,10 +104,10 @@ async function openSettings(page: Page, section: string): Promise<Locator> {
   return dialog;
 }
 
-/** Settings → Hosts → Add a host…, with a pairing link pasted and connected. */
+/** Settings → Hosts → Add a host, with a pairing link pasted and connected. */
 async function pairFromSettings(page: Page, link: string): Promise<void> {
   const settings = await openSettings(page, "Hosts");
-  await settings.getByRole("button", { name: "Add a host…", exact: true }).click();
+  await settings.getByRole("button", { name: "Add a host", exact: true }).click();
   const addHost = page.getByRole("dialog", { name: "Add a host" });
   await addHost.getByLabel("Pairing link").fill(link);
   await addHost.getByRole("button", { name: "Connect", exact: true }).click();
@@ -385,7 +385,7 @@ it("logs a stored login out from the Providers section", async () => {
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("list", { name: "Connected" }).getByText("Anthropic", { exact: true }).click();
-  await dialog.getByRole("button", { name: "Remove key…", exact: true }).click();
+  await dialog.getByRole("button", { name: "Remove key", exact: true }).click();
   // The first button only arms the confirmation; removing is the second step.
   await dialog.getByText("Removes the key from this host.", { exact: false }).waitFor();
   await dialog.getByRole("button", { name: "Remove key", exact: true }).click();
@@ -2003,7 +2003,7 @@ it("disables the follow-up and stop controls while disconnected", async () => {
   await expect.poll(() => composer.textContent()).toBe("unsent follow-up");
 });
 
-it("starts the draft with /compact from the + menu's Run a command…", async () => {
+it("starts the draft with /compact from the + menu's Run a command", async () => {
   const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["done"] });
   const observer = await connectTo(defer, host);
@@ -2016,7 +2016,7 @@ it("starts the draft with /compact from the + menu's Run a command…", async ()
   await page.getByText("done", { exact: true }).waitFor();
   const id = await followFirst(observer);
 
-  // A 5.15 host lists its commands, so Run a command… replaces the old Compact
+  // A 5.15 host lists its commands, so Run a command replaces the old Compact
   // item, in the same flat list as the other entries.
   await more.click();
   expect(await page.getByRole("menuitem", { name: /^Compact conversation/ }).count()).toBe(0);
@@ -2766,7 +2766,7 @@ it("manages paired devices from Settings → Devices", async () => {
   defer(() => phone.close());
   await dialog.getByText("QA phone", { exact: true }).waitFor();
 
-  await dialog.getByRole("button", { name: "Unpair QA phone…", exact: true }).click();
+  await dialog.getByRole("button", { name: "Unpair QA phone", exact: true }).click();
   await dialog
     .getByRole("group", { name: "Unpair QA phone?", exact: true })
     .getByRole("button", { name: "Unpair", exact: true })
@@ -3324,7 +3324,7 @@ it("unpairs a host from Settings → Hosts only after confirmation, at both ends
   // Cancelling the confirmation touches nothing: still on B, both stored.
   const settings = await openSettings(page, "Hosts");
   await settings.getByRole("button", { name: `${labelB} details`, exact: true }).click();
-  await settings.getByRole("button", { name: "Unpair…", exact: true }).click();
+  await settings.getByRole("button", { name: "Unpair", exact: true }).click();
   const confirm = page.getByRole("dialog", { name: `Unpair ${labelB}?`, exact: true });
   await confirm.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect.poll(() => confirm.count()).toBe(0);
@@ -3346,7 +3346,7 @@ it("unpairs a host from Settings → Hosts only after confirmation, at both ends
     }).observe(document.body, { subtree: true, childList: true, characterData: true });
   });
   await settings.getByRole("button", { name: `${labelB} details`, exact: true }).click();
-  await settings.getByRole("button", { name: "Unpair…", exact: true }).click();
+  await settings.getByRole("button", { name: "Unpair", exact: true }).click();
   await page
     .getByRole("dialog", { name: `Unpair ${labelB}?`, exact: true })
     .getByRole("button", { name: "Unpair", exact: true })
@@ -3372,7 +3372,7 @@ it("unpairs a host from Settings → Hosts only after confirmation, at both ends
   await prompt(page).waitFor();
   const lastSettings = await openSettings(page, "Hosts");
   await lastSettings.getByRole("button", { name: `${labelA} details`, exact: true }).click();
-  await lastSettings.getByRole("button", { name: "Unpair…", exact: true }).click();
+  await lastSettings.getByRole("button", { name: "Unpair", exact: true }).click();
   await page
     .getByRole("dialog", { name: `Unpair ${labelA}?`, exact: true })
     .getByRole("button", { name: "Unpair", exact: true })
@@ -3683,7 +3683,7 @@ it("manages named agents from the Agents settings section", async () => {
 
   // Edit: the name stays the file name; the description updates the file and card.
   await settings.getByRole("button", { name: "reviewer actions", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Edit…", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
   const editDialog = page.getByRole("dialog", { name: "Edit reviewer" });
   expect(await editDialog.getByRole("textbox", { name: "Name", exact: true }).isDisabled()).toBe(true);
   await editDialog.getByRole("textbox", { name: "Description", exact: true }).fill("Reviews pull requests");
@@ -3693,7 +3693,7 @@ it("manages named agents from the Agents settings section", async () => {
 
   // Delete: the menu arms the confirm inside the card, then both vanish.
   await settings.getByRole("button", { name: "reviewer actions", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Delete…", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Delete", exact: true }).click();
   await settings.getByText("Conversations already using this agent keep their copy.", { exact: true }).waitFor();
   await settings.getByRole("button", { name: "Delete", exact: true }).click();
   await settings.getByText("No named agents yet.", { exact: true }).waitFor();
@@ -3792,7 +3792,7 @@ it("keeps a pinned thinking level the model no longer supports visible in the ed
   await settings.getByRole("heading", { name: "legacy", exact: true }).waitFor();
 
   await settings.getByRole("button", { name: "legacy actions", exact: true }).click();
-  await page.getByRole("menuitem", { name: "Edit…", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
   const editor = page.getByRole("dialog", { name: "Edit legacy" });
   // The pinned level is visible as an option it is, not silently dropped.
   const levelPicker = editor.getByRole("combobox", { name: "Thinking level", exact: true });
@@ -4008,7 +4008,7 @@ it("creates the draft with a named agent, switches it, and shows @name on the co
   await page.locator("h1").getByText("@reviewer", { exact: true }).waitFor();
   if (shotDir !== undefined) {
     await page.getByRole("button", { name: "More actions", exact: true }).click();
-    await page.getByRole("menuitem", { name: /^Add images…/ }).waitFor();
+    await page.getByRole("menuitem", { name: /^Add images/ }).waitFor();
     await shot(page, "conversation-plus-menu");
     await page.keyboard.press("Escape");
   }
@@ -4249,7 +4249,7 @@ it("opens the agent and skill menus from the + menu, appending the trigger to th
   // have no + entry; typing `@` reaches them.
   await more.click();
   await shot(page, "draft-plus-menu");
-  const mentionAgent = page.getByRole("menuitem", { name: /^Mention an agent…/ });
+  const mentionAgent = page.getByRole("menuitem", { name: /^Mention an agent/ });
   await mentionAgent.waitFor();
   expect(await page.getByRole("menuitem", { name: "Mention a file…", exact: true }).count()).toBe(0);
   await mentionAgent.click();
@@ -4270,7 +4270,7 @@ it("opens the agent and skill menus from the + menu, appending the trigger to th
   await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute("role"))).toBe("menuitem");
   await page.keyboard.type("U");
   await expect
-    .poll(() => page.getByRole("menuitem", { name: /^Use a skill…/ }).evaluate((el) => el === document.activeElement))
+    .poll(() => page.getByRole("menuitem", { name: /^Use a skill/ }).evaluate((el) => el === document.activeElement))
     .toBe(true);
   await page.keyboard.press("Enter");
   const skills = page.getByRole("listbox", { name: "Skills" });
@@ -4284,7 +4284,7 @@ it("opens the agent and skill menus from the + menu, appending the trigger to th
   // After a line break the trigger starts the new line, no space needed.
   await page.keyboard.press("Shift+Enter");
   await more.click();
-  await page.getByRole("menuitem", { name: /^Use a skill…/ }).click();
+  await page.getByRole("menuitem", { name: /^Use a skill/ }).click();
   await skills.getByRole("option", { name: /review/ }).waitFor();
   await page.keyboard.press("Enter");
   await expect.poll(async () => composer.evaluate((el) => (el as HTMLElement).innerText)).toMatch(/then \$review \n\$review \s*$/);
@@ -4293,7 +4293,7 @@ it("opens the agent and skill menus from the + menu, appending the trigger to th
   // so it still gets the space.
   await composer.evaluate(() => document.execCommand("insertText", false, "x\t"));
   await more.click();
-  await page.getByRole("menuitem", { name: /^Use a skill…/ }).click();
+  await page.getByRole("menuitem", { name: /^Use a skill/ }).click();
   await skills.getByRole("option", { name: /review/ }).waitFor();
   await page.keyboard.press("Enter");
   await expect.poll(async () => composer.evaluate((el) => (el as HTMLElement).innerText)).toMatch(/x\t \$review \s*$/);
@@ -4459,15 +4459,17 @@ it("upgrades the host from Settings: waits for a run, cancels, then restarts (AD
 
   const dialog = await openSettings(page, "Upgrade");
   await dialog.getByText("pinomad 0.14.0 is available", { exact: false }).waitFor();
-  await dialog.getByRole("button", { name: "Upgrade…" }).click();
+  // The page's own Upgrade, not the sidebar entry of the same name.
+  const upgrade = dialog.getByRole("region", { name: "Upgrade" }).getByRole("button", { name: "Upgrade", exact: true });
+  await upgrade.click();
   await shot(page, "host-upgrade-confirm");
   await dialog.getByRole("button", { name: "Upgrade when idle" }).click();
   await dialog.getByText("once running tasks finish", { exact: false }).waitFor();
   await dialog.getByRole("button", { name: "Cancel upgrade" }).click();
-  await dialog.getByRole("button", { name: "Upgrade…" }).waitFor();
+  await upgrade.waitFor();
 
   // Started again, the wait ends with the run; the install closes the host.
-  await dialog.getByRole("button", { name: "Upgrade…" }).click();
+  await upgrade.click();
   await dialog.getByRole("button", { name: "Upgrade when idle" }).click();
   await dialog.getByText("once running tasks finish", { exact: false }).waitFor();
   gate.resolve();

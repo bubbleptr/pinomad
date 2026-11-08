@@ -173,7 +173,7 @@ function UpgradeStatus({
             />
           ) : null}
           {canStart ? (
-            <Button label="Upgrade…" variant="secondary" size="sm" onClick={() => setConfirming(true)} />
+            <Button label="Upgrade" variant="secondary" size="sm" onClick={() => setConfirming(true)} />
           ) : null}
           {/* A source checkout has no upgrader to ask. */}
           {phase === "idle" && blocked !== "source" ? (

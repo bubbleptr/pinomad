@@ -394,7 +394,7 @@ describe("the app frame across hosts", () => {
     expect(within(dialog).getByText("This device")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Hosts" })).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Providers" })).toBeNull();
-    expect(within(dialog).getByRole("button", { name: "Add a host…" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Add a host" })).toBeInTheDocument();
   });
 
   it.each<[string, AccountState, string | RegExp, string]>([
@@ -409,7 +409,7 @@ describe("the app frame across hosts", () => {
     );
     await userEvent.click(await screen.findByRole("button", { name: chip }));
     const dialog = await screen.findByRole("dialog", { name: dialogName });
-    if (dialogName === "Settings") expect(await within(dialog).findByRole("button", { name: "Sign out…" })).toBeInTheDocument();
+    if (dialogName === "Settings") expect(await within(dialog).findByRole("button", { name: "Sign out" })).toBeInTheDocument();
     else expect(await within(dialog).findByRole("heading", { name: "Sign in" })).toBeInTheDocument();
   });
 
@@ -435,7 +435,7 @@ describe("the app frame across hosts", () => {
       const dialog = await screen.findByRole("dialog", { name: "Settings" });
       await userEvent.click(within(dialog).getByRole("button", { name: "Updates" }));
       expect(await within(dialog).findByText("Check for updates")).toBeInTheDocument();
-      expect(within(dialog).queryByRole("button", { name: "Add a host…" })).toBeNull();
+      expect(within(dialog).queryByRole("button", { name: "Add a host" })).toBeNull();
     } finally {
       window.pinomadDesktop = previous;
     }

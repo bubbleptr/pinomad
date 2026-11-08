@@ -35,7 +35,7 @@ export const RemoveWithCode: Story = {
   args: ProviderOnly.args,
   play: async ({ canvasElement }) => {
     await userEvent.click(await within(canvasElement).findByRole("button", { name: "More for GitHub" }));
-    await userEvent.click(await within(document.body).findByRole("menuitem", { name: "Remove…" }));
+    await userEvent.click(await within(document.body).findByRole("menuitem", { name: "Remove" }));
     await userEvent.click(await within(document.body).findByRole("button", { name: "Send code" }));
   },
 };
@@ -44,6 +44,6 @@ export const RemoveWithCode: Story = {
 export const DesktopLinking: Story = {
   args: { account: { ...fakeAccount(signedIn()), providerFlow: "loopback" } },
   play: async ({ canvasElement }) => {
-    await userEvent.click(await within(canvasElement).findByRole("button", { name: "Link Google…" }));
+    await userEvent.click(await within(canvasElement).findByRole("button", { name: "Link Google" }));
   },
 };

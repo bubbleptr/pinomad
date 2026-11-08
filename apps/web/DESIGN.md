@@ -9,7 +9,7 @@ Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。组件来�
 | variant | 样子 | 用在哪 |
 |---|---|---|
 | `primary` | 强调色实底 | 完成当前流程的那一步：Save、Sign in、Pair、Create account。一个对话框或一屏最多一个。 |
-| `secondary`（默认） | 表面色底 + 1px 描边 + 1px 投影 | 其余所有带文字的独立动作：设置行里的 Refresh / Remove / Connection… / Unpair…，对话框页脚的 Cancel / Close，打开危险确认的那个按钮（Delete account、Log out…）。 |
+| `secondary`（默认） | 表面色底 + 1px 描边 + 1px 投影 | 其余所有带文字的独立动作：设置行里的 Refresh / Remove / Connection / Unpair，对话框页脚的 Cancel / Close，打开危险确认的那个按钮（Delete account、Log out）。 |
 | `ghost` | 透明，只有字或图标 | 只有下面四种情况，见流程图。 |
 | `destructive` | 浅红底红字 | 不可撤销动作的**最后一步确认**，旁边必须有一个 `secondary` 的 Cancel。 |
 
@@ -32,6 +32,10 @@ Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。组件来�
 
 “都不是”是常态：拿不准时用 `secondary`。按钮单独放在内容区里却用 `ghost`，看起来就是一段文字，用户找不到它。
 
+### 文字
+
+按钮和菜单项的文字不加省略号，打开对话框或菜单的也一样（Sign out、Unpair、Add a host）。省略号只用在进行中的状态（Loading…、Thinking…）和输入框的占位文字里。
+
 ### 尺寸
 
 - 列表行（`ListItem` 的 `endContent`）、行内表单、卡片里：`size="sm"`。
@@ -45,7 +49,7 @@ Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。组件来�
 ```tsx
 <ListItem
   label={device.name}
-  endContent={<Button label="Unpair…" variant="secondary" size="sm" onClick={onUnpair} />}
+  endContent={<Button label="Unpair" variant="secondary" size="sm" onClick={onUnpair} />}
 />
 
 <HStack gap={2}>
@@ -57,8 +61,8 @@ Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。组件来�
 错的：独立动作用 `ghost`（读成纯文字），打开确认的按钮就用 `destructive`（还没确认就在报警）。
 
 ```tsx
-<ListItem label={device.name} endContent={<Button label="Unpair…" variant="ghost" size="sm" />} />
-<Button label="Delete account…" variant="destructive" onClick={() => setOpen(true)} />
+<ListItem label={device.name} endContent={<Button label="Unpair" variant="ghost" size="sm" />} />
+<Button label="Delete account" variant="destructive" onClick={() => setOpen(true)} />
 ```
 
 四档并排的样子见 Storybook 的 `Shared/ButtonTiers`（`src/shared/ui/button-tiers.stories.tsx`），明暗两套都要看。

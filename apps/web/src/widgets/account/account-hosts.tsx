@@ -180,7 +180,7 @@ export function AccountHostList({
                       label={`More for ${host.name}`}
                       size="sm"
                       isDisabled={removing !== undefined || pairing.pairing === host.hostId}
-                      items={[{ label: "Remove from account…", onClick: () => setRemoving(host) }]}
+                      items={[{ label: "Remove from account", onClick: () => setRemoving(host) }]}
                     />
                   </HStack>
                 }
