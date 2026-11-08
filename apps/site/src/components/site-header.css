@@ -85,9 +85,12 @@
   transition: color 0.15s ease;
 }
 
+/* 500, not 400: at the bar's 14px a regular weight reads lighter than the page's
+   body text in the same colour. */
 .site-header :is(.header-nav, .site-menu-links) a,
 .site-header .header-link {
   padding: 0.5rem;
+  font-weight: 500;
 }
 
 .site-header :is(.header-nav, .site-menu-links, .header-actions, .site-menu-actions) a:hover,
