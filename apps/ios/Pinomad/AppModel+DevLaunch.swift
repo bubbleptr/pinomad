@@ -330,7 +330,7 @@ extension AppModel {
                 id: 1, chat: chat, statusText: "", queueItems: queue,
                 agent: AgentState(model: ref, thinkingLevel: .off, instructions: nil, cwd: nil),
                 questions: [], todo: nil, home: nil, checkout: nil, busy: mode == "queue",
-                contextUsage: nil, fresh: true, freshEpoch: 1
+                contextUsage: nil, contextBreakdown: nil, fresh: true, freshEpoch: 1
             )
             navPath = [demoConversationRoute(1)]
             publishDevSnapshot(ClientSnapshot(
@@ -508,7 +508,7 @@ extension AppModel {
         let conversation = ConversationSnapshot(
             id: 1, chat: chat, statusText: "", queueItems: [],
             agent: AgentState(model: nil, thinkingLevel: nil, instructions: nil, cwd: nil),
-            questions: [], todo: nil, home: nil, checkout: nil, busy: false, contextUsage: nil, fresh: true, freshEpoch: 1
+            questions: [], todo: nil, home: nil, checkout: nil, busy: false, contextUsage: nil, contextBreakdown: nil, fresh: true, freshEpoch: 1
         )
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: .connected, unauthorized: false,
@@ -594,7 +594,7 @@ extension AppModel {
                 conversationId: 1, path: worktree, repo: projectPath, subdir: "",
                 branch: "pinomad/overview-sheet", base: "4e73cdb9a1f0c2d3", snapshot: nil
             ),
-            busy: false, contextUsage: nil, fresh: true, freshEpoch: 1
+            busy: false, contextUsage: nil, contextBreakdown: nil, fresh: true, freshEpoch: 1
         )
         func file(_ path: String, _ added: [String], _ removed: [String], isNew: Bool = false) -> PatchFile {
             let lines = [PatchLine(kind: .meta, text: "@@ -1,\(removed.count) +1,\(added.count) @@")]
@@ -694,7 +694,7 @@ extension AppModel {
             id: 1, chat: chat, statusText: "", queueItems: [],
             agent: AgentState(model: nil, thinkingLevel: nil, instructions: nil, cwd: nil),
             questions: [PendingQuestion(kind: "ask_user_question", request: request)],
-            todo: nil, home: nil, checkout: nil, busy: false, contextUsage: nil, fresh: true, freshEpoch: 1
+            todo: nil, home: nil, checkout: nil, busy: false, contextUsage: nil, contextBreakdown: nil, fresh: true, freshEpoch: 1
         )
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: mode == "offline" ? .reconnecting : .connected, unauthorized: false,
@@ -710,8 +710,8 @@ extension AppModel {
     }
 
     /// `PINOMAD_DEMO_CONTEXT=<used>/<window>` (anything else means nil)
-    /// settles one conversation so the overview's context row can be
-    /// photographed without a host.
+    /// settles one conversation so the overview's context row and its
+    /// breakdown can be photographed without a host.
     private func startContextDemo(_ spec: String) {
         navPath = [demoConversationRoute(1)]
         let parts = spec.split(separator: "/")
@@ -720,6 +720,16 @@ extension AppModel {
             usage = ContextUsage(used: used, window: window)
         } else {
             usage = nil
+        }
+        // A host breakdown of that reply in plausible proportions; the core
+        // only passes one whose total matches the meter, so it uses `used`.
+        let breakdown = usage.map { usage in
+            let part = { (share: Double) in (usage.used * share).rounded() }
+            let (system, skills, tools, mcp) = (part(0.065), part(0.026), part(0.097), part(0.077))
+            return ContextBreakdown(
+                used: usage.used, system: system, skills: skills, tools: tools, mcp: mcp,
+                messages: usage.used - system - skills - tools - mcp
+            )
         }
         let ref = ModelRef(provider: "anthropic", modelId: "claude-sonnet-4-5-20250929")
         let model = ModelSummary(
@@ -749,7 +759,7 @@ extension AppModel {
         let conversation = ConversationSnapshot(
             id: 1, chat: chat, statusText: "", queueItems: [],
             agent: AgentState(model: ref, thinkingLevel: .off, instructions: nil, cwd: nil),
-            questions: [], todo: nil, home: nil, checkout: nil, busy: false, contextUsage: usage, fresh: true, freshEpoch: 1
+            questions: [], todo: nil, home: nil, checkout: nil, busy: false, contextUsage: usage, contextBreakdown: breakdown, fresh: true, freshEpoch: 1
         )
         drafts[1] = "Take a look at these changes"
         publishDevSnapshot(ClientSnapshot(
@@ -805,7 +815,7 @@ extension AppModel {
             id: 1, chat: chat, statusText: "", queueItems: [],
             agent: AgentState(model: gpt, thinkingLevel: .high, instructions: nil, cwd: nil),
             questions: [], todo: nil, home: nil, checkout: nil, busy: false,
-            contextUsage: nil, fresh: true, freshEpoch: 1
+            contextUsage: nil, contextBreakdown: nil, fresh: true, freshEpoch: 1
         )
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: .connected, unauthorized: false,
@@ -877,7 +887,7 @@ extension AppModel {
             id: 1, chat: chat, statusText: "", queueItems: [],
             agent: AgentState(model: current, thinkingLevel: .medium, instructions: nil, cwd: nil),
             questions: [], todo: nil, home: nil, checkout: nil, busy: false,
-            contextUsage: nil, fresh: true, freshEpoch: 1
+            contextUsage: nil, contextBreakdown: nil, fresh: true, freshEpoch: 1
         )
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: .connected, unauthorized: false,
@@ -981,7 +991,7 @@ extension AppModel {
                 let conversation = ConversationSnapshot(
                     id: 1, chat: chat, statusText: "", queueItems: [],
                     agent: AgentState(model: nil, thinkingLevel: nil, instructions: nil, cwd: nil),
-                    questions: [], todo: todo, home: nil, checkout: nil, busy: !settled, contextUsage: nil, fresh: true, freshEpoch: 1
+                    questions: [], todo: todo, home: nil, checkout: nil, busy: !settled, contextUsage: nil, contextBreakdown: nil, fresh: true, freshEpoch: 1
                 )
                 self.publishDevSnapshot(ClientSnapshot(
                     version: UInt64(tick + 1), connection: .connected, unauthorized: false,
@@ -1011,7 +1021,7 @@ extension AppModel {
         let conv = ConversationSnapshot(
             id: 1, chat: chat, statusText: streaming ? "Responding…" : "",
             queueItems: [], agent: AgentState(model: nil, thinkingLevel: nil, instructions: nil, cwd: nil),
-            questions: [], todo: nil, home: nil, checkout: nil, busy: streaming, contextUsage: nil, fresh: true, freshEpoch: 1
+            questions: [], todo: nil, home: nil, checkout: nil, busy: streaming, contextUsage: nil, contextBreakdown: nil, fresh: true, freshEpoch: 1
         )
         publishDevSnapshot(ClientSnapshot(
             version: version, connection: .connected, unauthorized: false,
@@ -1095,7 +1105,7 @@ extension AppModel {
             id: 1, chat: chat, statusText: "", queueItems: queue,
             agent: AgentState(model: ref, thinkingLevel: .off, instructions: nil, cwd: nil),
             questions: [], todo: nil, home: nil, checkout: nil, busy: mode == "queue",
-            contextUsage: nil, fresh: true, freshEpoch: 1,
+            contextUsage: nil, contextBreakdown: nil, fresh: true, freshEpoch: 1,
             localSubmissions: local, localQueueItems: localQueue)
         navPath = [demoConversationRoute(1)]
         publishDevSnapshot(ClientSnapshot(

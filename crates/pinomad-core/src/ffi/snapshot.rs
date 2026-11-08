@@ -129,6 +129,9 @@ pub struct ConversationSnapshot {
     /// `contextUsage` — the composer's context meter; `None` until a
     /// qualifying reply lands after the last compaction/reset.
     pub context_usage: Option<ContextUsage>,
+    /// `matchingBreakdown` — what fills that context, while the host's
+    /// breakdown belongs to the reply the meter counts (5.31).
+    pub context_breakdown: Option<crate::presentation::ContextBreakdown>,
     /// Whether this connection has received the conversation's fresh
     /// snapshot. Goes false on a reconnect hello (the old view stays on
     /// screen) and true when the new snapshot lands, so ref images can wait
@@ -405,6 +408,7 @@ fn conversation_of(view: &Json, fresh: bool, fresh_epoch: u64) -> Option<Convers
         .and_then(|models| crate::model::summary_of(models, agent.model.clone()))
         .and_then(|summary| summary.context_window);
     let context_usage = crate::context_usage::context_usage(conversation, context_window);
+    let context_breakdown = crate::context_usage::matching_breakdown(&docs, context_usage);
     Some(ConversationSnapshot {
         id,
         chat,
@@ -422,6 +426,7 @@ fn conversation_of(view: &Json, fresh: bool, fresh_epoch: u64) -> Option<Convers
         checkout: view.get("checkout").map(WorktreeCheckout::from_json),
         busy,
         context_usage,
+        context_breakdown,
         fresh,
         fresh_epoch,
         local_submissions: local_submissions_of(&local_scope),
