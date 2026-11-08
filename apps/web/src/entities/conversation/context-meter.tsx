@@ -1,5 +1,5 @@
-import { Tooltip } from "@astryxdesign/core/Tooltip";
 import type { ContextUsage } from "@pinomad/client/context-usage.ts";
+import type { ContextBreakdown } from "@pinomad/protocol/presentation.ts";
 
 /** A nearly-full window warns before the conversation compacts itself. */
 const WARNING_PERCENT = 80;
@@ -14,62 +14,74 @@ export const formatTokens = (tokens: number): string =>
 /** Spend to the cent; a fraction of a cent still reads as spent. */
 export const formatCost = (cost: number): string => (cost < 0.01 ? "<$0.01" : `$${cost.toFixed(2)}`);
 
-// r=6 inside a 16px viewBox: the ring stands as tall as the row's size-4 icons.
-const CIRCUMFERENCE = 2 * Math.PI * 6;
+const percentOf = (usage: ContextUsage): number => Math.round((usage.used / usage.window) * 100);
+const isWarning = (usage: ContextUsage | undefined): boolean => usage !== undefined && percentOf(usage) >= WARNING_PERCENT;
+
+// The app's categorical data palette (styles.css), even in lightness across
+// themes. Messages take blue: the part the user produces and the one that grows.
+export const PARTS = [
+  { key: "system", label: "System", color: "var(--pigui-data-slate)" },
+  { key: "skills", label: "Skills", color: "var(--pigui-data-amber)" },
+  { key: "tools", label: "Tools", color: "var(--pigui-data-green)" },
+  { key: "mcp", label: "MCP", color: "var(--pigui-data-orange)" },
+  { key: "messages", label: "Messages", color: "var(--pigui-data-blue)" },
+] as const;
 
 /**
- * The overview card's context meter: a ring filling toward the model's
- * window plus the percent in figures, the token counts in its tooltip.
- * `used` may exceed `window` after a swap to a smaller model — the text
- * reports the honest number while the ring saturates at full. Without a
- * qualifying reply the meter reads "—": the last usage predates a
- * compaction/reset and would lie.
+ * The context row's figures: share, then used / window. `used` may exceed
+ * `window` after a swap to a smaller model — the share stays honest. Without
+ * a qualifying reply it reads "—": the last usage predates a compaction or
+ * reset and would lie.
  */
-export function ContextMeter({ usage }: { usage: ContextUsage | undefined }) {
-  const percent = usage === undefined ? undefined : Math.round((usage.used / usage.window) * 100);
-  const warning = percent !== undefined && percent >= WARNING_PERCENT;
-  const text = percent === undefined ? "—" : `${percent}%`;
-  const label =
-    usage === undefined
-      ? "Context usage unknown"
-      : `Context ${percent}% used, ${formatTokens(usage.used)} of ${formatTokens(usage.window)} tokens`;
-  const tooltip = usage === undefined ? "No usage data yet" : `${formatTokens(usage.used)} / ${formatTokens(usage.window)}`;
-  const fill = usage === undefined ? 0 : Math.min(1, usage.used / usage.window);
+export function ContextFigures({ usage }: { usage: ContextUsage | undefined }) {
   return (
-    // `alignment="end"` keeps the tooltip inside the viewport: the meter
-    // sits at the card's right edge, where a centered one clips.
-    <Tooltip content={tooltip} placement="above" alignment="end">
-      <span
-        className={`inline-flex h-7 items-center gap-1.5 px-1 text-xs ${warning ? "text-warning" : "text-muted"}`}
-        {...(percent === undefined
-          ? { "aria-label": label }
-          : {
-              role: "meter",
-              "aria-label": label,
-              "aria-valuemin": 0,
-              "aria-valuemax": 100,
-              "aria-valuenow": Math.min(100, percent),
-            })}
-        tabIndex={0}
-        data-testid="context-meter"
-      >
-        <svg aria-hidden="true" className="size-4 -rotate-90" viewBox="0 0 16 16">
-          {/* Track at quarter opacity of the same ink: a visible ring reads
-              "gauge" where a faint one plus a round-cap arc reads "spinner". */}
-          <circle className="stroke-current opacity-25" cx="8" cy="8" fill="none" r="6" strokeWidth="2" />
-          <circle
-            className="stroke-current"
-            cx="8"
-            cy="8"
-            fill="none"
-            r="6"
-            strokeDasharray={CIRCUMFERENCE}
-            strokeDashoffset={CIRCUMFERENCE * (1 - fill)}
-            strokeWidth="2"
-          />
-        </svg>
-        <span className="tabular-nums">{text}</span>
-      </span>
-    </Tooltip>
+    <span className={isWarning(usage) ? "text-warning" : "text-muted"}>
+      {usage === undefined ? "—" : `${percentOf(usage)}% · ${formatTokens(usage.used)} / ${formatTokens(usage.window)}`}
+    </span>
+  );
+}
+
+/**
+ * The context meter: a bar on the window's scale. With the host's breakdown
+ * of the reply it counts, one segment per part; without one (an older host,
+ * or the reply not broken down yet) a single fill, warning-coloured near
+ * compaction — so a breakdown arriving only colours the bar in and the row
+ * never changes shape. Past the window it scales to the total.
+ */
+export function ContextBar({ usage, breakdown }: { usage: ContextUsage | undefined; breakdown: ContextBreakdown | undefined }) {
+  const segments =
+    usage === undefined
+      ? []
+      : breakdown === undefined
+        ? [{ key: "used", tokens: usage.used, className: isWarning(usage) ? "bg-warning" : "bg-muted", color: undefined }]
+        : PARTS.filter((part) => breakdown[part.key] > 0).map((part) => ({
+            key: part.key,
+            tokens: breakdown[part.key],
+            className: undefined,
+            color: part.color,
+          }));
+  const scale = usage === undefined ? 1 : Math.max(usage.window, usage.used);
+  return (
+    <div
+      className="flex h-1.5 gap-px overflow-hidden rounded-full bg-default"
+      {...(usage === undefined
+        ? { "aria-label": "Context usage unknown" }
+        : {
+            role: "meter",
+            "aria-label": `Context ${percentOf(usage)}% used, ${formatTokens(usage.used)} of ${formatTokens(usage.window)} tokens`,
+            "aria-valuemin": 0,
+            "aria-valuemax": 100,
+            "aria-valuenow": Math.min(100, percentOf(usage)),
+          })}
+      data-testid="context-meter"
+    >
+      {segments.map((segment) => (
+        <span
+          key={segment.key}
+          className={segment.className}
+          style={{ width: `${(segment.tokens / scale) * 100}%`, ...(segment.color === undefined ? {} : { backgroundColor: segment.color }) }}
+        />
+      ))}
+    </div>
   );
 }

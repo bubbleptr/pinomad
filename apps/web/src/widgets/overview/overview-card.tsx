@@ -17,7 +17,7 @@ import { displayName, rootOf, taskGroupsOf } from "@pinomad/client/family.ts";
 import { summaryOf } from "@pinomad/client/model.ts";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ContextBreakdownList, matchingBreakdown } from "../../entities/conversation/context-breakdown.tsx";
-import { ContextMeter, formatCost } from "../../entities/conversation/context-meter.tsx";
+import { ContextBar, ContextFigures, formatCost } from "../../entities/conversation/context-meter.tsx";
 import { branchOf, ChangeFigure, changeStatOf, type ChangeStat } from "../../entities/conversation/change-stat.tsx";
 import { taskTally } from "../../entities/conversation/task-tally.ts";
 import { DocumentView } from "../../presentation/documents.tsx";
@@ -245,7 +245,10 @@ function UsageSection({ view, conversation }: { view: DurableView; conversation:
   const percent = usage === undefined ? "—" : `${Math.round((usage.used / usage.window) * 100)}%`;
   return (
     <Section section="usage" title="Usage" summary={spent > 0 ? `${percent} · ${formatCost(spent)}` : percent}>
-      <Row end={<ContextMeter usage={usage} />}>Context</Row>
+      <Row end={<ContextFigures usage={usage} />}>Context</Row>
+      <div className="pb-1.5">
+        <ContextBar usage={usage} breakdown={breakdown} />
+      </div>
       {usage === undefined || breakdown === undefined ? null : <ContextBreakdownList breakdown={breakdown} window={usage.window} />}
       {spent > 0 ? <Row end={<span className="text-muted">{formatCost(spent)}</span>}>Spent</Row> : null}
     </Section>
