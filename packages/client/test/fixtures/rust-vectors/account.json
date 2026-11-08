@@ -640,6 +640,17 @@
       "expect": "{\"url\":\"https://relay.example.com/api/oauth/apple/native\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"identityToken\\\":\\\"eyJ.id.tok\\\",\\\"authorizationCode\\\":\\\"ac\\\",\\\"nonce\\\":\\\"raw-nonce\\\",\\\"name\\\":\\\"Ann Lee\\\",\\\"reauth\\\":\\\"grant\\\"}\"}}"
     },
     {
+      "name": "complete-link",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "completeLink",
+        "code": "c0de",
+        "codeVerifier": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/oauth/link/complete\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"code\\\":\\\"c0de\\\",\\\"code_verifier\\\":\\\"vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv\\\"}\"}}"
+    },
+    {
       "name": "link-apple-native-bare",
       "origin": "https://relay.example.com",
       "token": "tok",
@@ -1667,6 +1678,20 @@
       "status": 403,
       "body": "{\"error\":\"invalid_reauth\"}",
       "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_reauth\",\"status\":403}}"
+    },
+    {
+      "name": "complete-link-204",
+      "kind": "completeLink",
+      "status": 204,
+      "body": null,
+      "expect": "{\"ok\":true}"
+    },
+    {
+      "name": "complete-link-invalid-grant",
+      "kind": "completeLink",
+      "status": 400,
+      "body": "{\"error\":\"invalid_grant\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_grant\",\"status\":400}}"
     },
     {
       "name": "link-apple-204",

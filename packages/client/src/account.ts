@@ -259,7 +259,8 @@ const emailConfirmationBody = (input: EmailConfirmation): { password: string } |
 /**
  * Where a native app's link from settings comes back to (#631): the same
  * redirects native sign-in allows (`pinomad://auth`, or the desktop's
- * `http://127.0.0.1:<port>/callback`), with a PKCE challenge and the app's state.
+ * `http://127.0.0.1:<port>/callback`), with a PKCE challenge and the app's
+ * state. The verifier stays with the app until `completeLink`.
  */
 export interface NativeLinkRedirect {
   readonly redirectUri: string;
@@ -447,9 +448,16 @@ export interface AccountClient {
    * browser, which comes back to `/?oauth_linked=<provider>` or
    * `/?oauth_error=<reason>`. A native app (#631) passes its redirect
    * instead and opens the one-time URL in its own browser, which comes back
-   * to `redirectUri?linked=<provider>&state=…` or `?error=…&state=…`.
+   * to `redirectUri?code=…&state=…` (traded by `completeLink`) or
+   * `?error=…&state=…`.
    */
   linkProvider(provider: string, confirmation: AccountConfirmation, native?: NativeLinkRedirect): Promise<AccountResult<string>>;
+  /**
+   * Finishes a native app's link (#631): the code its redirect got and the
+   * PKCE verifier behind the challenge it sent. 400 `invalid_grant` for a
+   * spent or foreign code, 409 `identity_taken`.
+   */
+  completeLink(code: string, codeVerifier: string): Promise<AccountResult<void>>;
   /** Binds iOS's own Sign in with Apple to the signed-in account (#631); 409 `identity_taken` when another account has it. */
   linkAppleNative(
     input: { readonly identityToken: string; readonly authorizationCode: string; readonly nonce?: string; readonly name?: string },
@@ -862,6 +870,8 @@ export function createAccountClient(options: {
       const signedIn = session(result);
       return signedIn.ok ? ok({ kind: "signedIn", session: signedIn.value }) : signedIn;
     },
+    completeLink: async (code, codeVerifier) =>
+      done(await request("/api/oauth/link/complete", "POST", { code, code_verifier: codeVerifier })),
     linkAppleNative: async ({ identityToken, authorizationCode, nonce, name }, confirmation) =>
       done(
         await request("/api/oauth/apple/native", "POST", {

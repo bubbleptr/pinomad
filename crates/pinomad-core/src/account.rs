@@ -63,7 +63,8 @@ impl AccountConfirmation {
 
 /// Where a native app's link from settings comes back to (#631):
 /// `pinomad://auth` or a loopback listener, with a PKCE challenge and the
-/// app's state; the browser returns with `linked=<provider>` or `error=…`.
+/// app's state; the browser returns with a `code` for `CompleteLink` (with
+/// the verifier the app kept) or `error=…`.
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct NativeLinkRedirect {
@@ -175,6 +176,7 @@ pub enum AccountOp {
         #[cfg_attr(feature = "ffi", uniffi(default = None))]
         native: Option<NativeLinkRedirect>,
     },
+    CompleteLink { code: String, code_verifier: String },
     LinkAppleNative {
         identity_token: String,
         authorization_code: String,
@@ -228,6 +230,7 @@ pub enum AccountOpKind {
     ExchangeOAuthCode,
     AppleNative,
     LinkProvider,
+    CompleteLink,
     LinkAppleNative,
 }
 
@@ -291,6 +294,7 @@ impl AccountOp {
             AccountOp::ExchangeOAuthCode { .. } => AccountOpKind::ExchangeOAuthCode,
             AccountOp::AppleNative { .. } => AccountOpKind::AppleNative,
             AccountOp::LinkProvider { .. } => AccountOpKind::LinkProvider,
+            AccountOp::CompleteLink { .. } => AccountOpKind::CompleteLink,
             AccountOp::LinkAppleNative { .. } => AccountOpKind::LinkAppleNative,
         }
     }
@@ -357,6 +361,7 @@ impl AccountOp {
             AccountOp::LinkPending { id, .. } => format!("/api/oauth/pending/{}/link", encode_uri_component(id)),
             AccountOp::ExchangeOAuthCode { .. } => "/api/oauth/token".to_string(),
             AccountOp::AppleNative { .. } | AccountOp::LinkAppleNative { .. } => "/api/oauth/apple/native".to_string(),
+            AccountOp::CompleteLink { .. } => "/api/oauth/link/complete".to_string(),
             AccountOp::LinkProvider { provider, .. } => format!("/api/oauth/{}/link", encode_uri_component(provider)),
         }
     }
@@ -455,6 +460,10 @@ impl AccountOp {
                     set_text(o, "code_challenge", &native.code_challenge);
                     set_text(o, "state", &native.state);
                 }
+            }
+            AccountOp::CompleteLink { code, code_verifier } => {
+                set_text(o, "code", code);
+                set_text(o, "code_verifier", code_verifier);
             }
             AccountOp::LinkAppleNative { identity_token, authorization_code, nonce, name, confirmation } => {
                 set_text(o, "identityToken", identity_token);
@@ -998,6 +1007,7 @@ fn decode_value(kind: AccountOpKind, parsed: Option<&Json>) -> Result<AccountVal
         | AccountOpKind::RequestEmailCode
         | AccountOpKind::UnlinkProvider
         | AccountOpKind::LinkAppleNative
+        | AccountOpKind::CompleteLink
         | AccountOpKind::RequestReauthCode => Ok(AccountValue::Unit),
         AccountOpKind::AuthMethods => {
             let providers = value.get("providers").and_then(Json::as_array).ok_or_else(AccountError::invalid)?;

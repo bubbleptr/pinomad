@@ -60,6 +60,7 @@ export type AccountOpDesc =
   | ({ kind: "linkPending"; id: string } & ConfirmationDesc)
   | { kind: "exchangeOAuthCode"; code: string; codeVerifier: string; device?: AccountDeviceClaim }
   | ({ kind: "linkProvider"; provider: string; native?: { redirectUri: string; codeChallenge: string; state: string } } & ConfirmationDesc)
+  | { kind: "completeLink"; code: string; codeVerifier: string }
   | ({ kind: "linkAppleNative"; identityToken: string; authorizationCode: string; nonce?: string; name?: string } & ConfirmationDesc)
   | {
       kind: "appleNative";
@@ -229,6 +230,7 @@ export const REQUEST_CASES: RequestCase[] = [
     token: "tok",
     op: { kind: "linkAppleNative", identityToken: "eyJ.id.tok", authorizationCode: "ac", nonce: "raw-nonce", name: "Ann Lee", reauth: "grant" },
   },
+  { name: "complete-link", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "completeLink", code: "c0de", codeVerifier: "v".repeat(43) } },
   { name: "link-apple-native-bare", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "linkAppleNative", identityToken: "t", authorizationCode: "c", password: "pw" } },
 ];
 
@@ -499,6 +501,8 @@ export const RESPONSE_CASES: ResponseCase[] = [
   { name: "link-provider-not-web", kind: "linkProvider", status: 200, body: '{"url":"javascript:alert(1)"}' },
   { name: "link-provider-no-url", kind: "linkProvider", status: 200, body: "{}" },
   { name: "link-provider-wrong", kind: "linkProvider", status: 403, body: '{"error":"invalid_reauth"}' },
+  { name: "complete-link-204", kind: "completeLink", status: 204, body: null },
+  { name: "complete-link-invalid-grant", kind: "completeLink", status: 400, body: '{"error":"invalid_grant"}' },
   { name: "link-apple-204", kind: "linkAppleNative", status: 204, body: null },
   { name: "link-apple-taken", kind: "linkAppleNative", status: 409, body: '{"error":"identity_taken"}' },
   { name: "link-apple-session-ended", kind: "linkAppleNative", status: 401, body: '{"error":"session_ended"}' },

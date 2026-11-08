@@ -25,7 +25,8 @@
 // native clients a one-time code they trade at POST /api/oauth/token; iOS's
 // own Sign in with Apple posts to /api/oauth/apple/native. Signed in, POST
 // /api/oauth/:provider/link adds a provider (a native app's link opens a
-// one-time start URL in its browser and comes back to its redirect; iOS
+// one-time start URL in its browser, whose redirect brings a one-time code
+// the app trades with its verifier at POST /api/oauth/link/complete; iOS
 // links Apple through /api/oauth/apple/native, signed in and confirmed —
 // #631), GET /api/me/identities lists
 // them and POST /api/me/identities/:provider/remove unlinks one. POST
@@ -645,15 +646,25 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       return;
     }
     if (flow.kind === "link") {
+      if (flow.linkUserId === undefined || flow.linkSessionHash === undefined) {
+        fail("session_ended");
+        return;
+      }
+      const link = { linkUserId: flow.linkUserId, linkSessionHash: flow.linkSessionHash };
+      if (flow.native !== undefined) {
+        // A native app's link (#631) ends in the app, not here: whoever
+        // opened the start URL can't be told apart from the app's user, so
+        // only the app holding the verifier may bind what came back.
+        const issued = accounts.issueLinkCode({ identity, ...link, codeChallenge: flow.native.codeChallenge });
+        if (issued === "session_ended") fail(issued);
+        else redirect(withParams(flow.native.redirectUri, { code: issued.code, state: flow.native.state }), [clearBindingCookie]);
+        return;
+      }
       // Re-checked with the write: the session that started the link may
       // have been signed out, or the password reset, while the provider's
       // pages were open.
-      const linked =
-        flow.linkUserId === undefined || flow.linkSessionHash === undefined
-          ? "session_ended"
-          : accounts.linkIdentity({ linkUserId: flow.linkUserId, linkSessionHash: flow.linkSessionHash }, identity);
+      const linked = accounts.linkIdentity(link, identity);
       if (linked !== "linked") fail(linked);
-      else if (flow.native !== undefined) redirect(withParams(flow.native.redirectUri, { linked: provider, state: flow.native.state }), [clearBindingCookie]);
       else toWebClient("oauth_linked", provider, [clearBindingCookie]);
       return;
     }
@@ -731,8 +742,14 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
     // (#631). Read after the body, so the session is checked as it stands
     // now; no pending record, the identity goes straight to this account.
     let linkToken: string | undefined;
-    if (bearer && (value.password !== undefined || value.reauth !== undefined)) {
-      const token = sessionToken(request)!;
+    if (value.password !== undefined || value.reauth !== undefined) {
+      // A confirmation asks to link, which only the app's own Bearer
+      // session may: never fall back to signing in as the Apple identity.
+      const token = bearer ? sessionToken(request) : undefined;
+      if (token === undefined) {
+        deny(401, "unauthenticated");
+        return;
+      }
       const current = accounts.authenticate(token);
       if (current === undefined) {
         deny(401, "unauthenticated");
@@ -897,7 +914,15 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
 
   const linkRoute = /^\/api\/oauth\/([a-z]+)\/link$/.exec(pathname);
   const removeRoute = /^\/api\/me\/identities\/([a-z]+)\/remove$/.exec(pathname);
-  if (pathname === "/api/me/identities" || pathname === "/api/reauth/code" || pathname === "/api/reauth" || linkRoute !== null || removeRoute !== null) {
+  const linkComplete = pathname === "/api/oauth/link/complete";
+  if (
+    pathname === "/api/me/identities" ||
+    pathname === "/api/reauth/code" ||
+    pathname === "/api/reauth" ||
+    linkComplete ||
+    linkRoute !== null ||
+    removeRoute !== null
+  ) {
     const expected = pathname === "/api/me/identities" ? "GET" : "POST";
     if (method !== expected) {
       deny(405, "method_not_allowed", { allow: expected });
@@ -919,6 +944,19 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
       return;
     }
     const current = body.session;
+    if (linkComplete) {
+      // A native app's link (#631): the code its redirect got, with the
+      // verifier only it holds, from the session that started the link.
+      const { code, code_verifier: verifier } = (typeof body.value === "object" && body.value !== null ? body.value : {}) as Record<string, unknown>;
+      if (typeof code !== "string" || code.length > 256 || typeof verifier !== "string" || !PKCE_VERIFIER.test(verifier)) {
+        deny(400, "invalid_request");
+        return;
+      }
+      const linked = accounts.completeLink({ code, codeVerifier: verifier, token: token! });
+      if (linked === "linked") send(204);
+      else deny({ invalid_grant: 400, identity_taken: 409, session_ended: 401 }[linked], linked);
+      return;
+    }
     if (pathname === "/api/reauth/code") {
       const result = accounts.requestReauthCode({ userId: current.userId, ip: clientIp(request, ctx.trustProxy) });
       if (result === "no_email") deny(409, "no_email");

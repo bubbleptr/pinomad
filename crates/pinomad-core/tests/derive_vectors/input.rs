@@ -290,6 +290,10 @@ pub fn account_op(json: &Json) -> AccountOp {
                 state: field_text(native, "state"),
             }),
         },
+        AccountOpKind::CompleteLink => AccountOp::CompleteLink {
+            code: field_text(json, "code"),
+            code_verifier: field_text(json, "codeVerifier"),
+        },
         AccountOpKind::LinkAppleNative => AccountOp::LinkAppleNative {
             identity_token: field_text(json, "identityToken"),
             authorization_code: field_text(json, "authorizationCode"),
@@ -371,6 +375,7 @@ pub fn account_op_kind(name: &str) -> AccountOpKind {
         "appleNative" => AccountOpKind::AppleNative,
         "linkProvider" => AccountOpKind::LinkProvider,
         "linkAppleNative" => AccountOpKind::LinkAppleNative,
+        "completeLink" => AccountOpKind::CompleteLink,
         other => panic!("unknown account op kind {other}"),
     }
 }

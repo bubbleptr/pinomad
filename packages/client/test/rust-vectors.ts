@@ -668,6 +668,8 @@ const invokeOp = (client: AccountClient, op: AccountOpDesc): Promise<unknown> =>
       return client.exchangeOAuthCode(op.code, op.codeVerifier, op.device);
     case "linkProvider":
       return client.linkProvider(op.provider, confirmation(op), op.native);
+    case "completeLink":
+      return client.completeLink(op.code, op.codeVerifier);
     case "linkAppleNative":
       return client.linkAppleNative(
         {
@@ -747,6 +749,8 @@ const responseOp = (kind: AccountOpDesc["kind"]): AccountOpDesc => {
       return { kind, identityToken: "t", authorizationCode: "c" };
     case "linkProvider":
       return { kind, provider: "google", password: "p" };
+    case "completeLink":
+      return { kind, code: "c", codeVerifier: "v" };
     case "linkAppleNative":
       return { kind, identityToken: "t", authorizationCode: "c", password: "p" };
     default:

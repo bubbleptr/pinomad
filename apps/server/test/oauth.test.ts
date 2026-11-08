@@ -626,7 +626,10 @@ describe("sign-in methods in settings", () => {
 });
 
 describe("linking from a native app's settings (#631)", () => {
-  const challenge = createHash("sha256").update("v".repeat(43)).digest("base64url");
+  const verifier = "v".repeat(43);
+  const challenge = createHash("sha256").update(verifier).digest("base64url");
+  const complete = (started: Started, token: string, code: string | null, codeVerifier = verifier): Promise<ApiResponse> =>
+    post(started.relay, "/api/oauth/link/complete", { code, code_verifier: codeVerifier }, bearer(token));
   const nativeParams = (redirectUri = "pinomad://auth") => ({ client: "native", redirect_uri: redirectUri, code_challenge: challenge, state: "client-state" });
 
   async function grant(started: Started, token: string): Promise<string> {
@@ -654,7 +657,7 @@ describe("linking from a native app's settings (#631)", () => {
     return { ...started.idp.authorize(provider, location(opened), identity), binding, startUrl: startUrl.pathname + startUrl.search };
   }
 
-  it.each(["google", "github"] as const)("links %s and sends the browser back to the app", async (provider) => {
+  it.each(["google", "github"] as const)("sends the browser back to the app with a code that links %s", async (provider) => {
     const started = await startServer();
     const token = await passwordToken(started);
     const { code, state, binding } = await begin(started, token, provider, { sub: "8101", email: "elsewhere@example.net" });
@@ -662,7 +665,11 @@ describe("linking from a native app's settings (#631)", () => {
     expect(back.status).toBe(302);
     const to = new URL(location(back));
     expect(`${to.protocol}//${to.host}${to.pathname}`).toBe("pinomad://auth");
-    expect(Object.fromEntries(to.searchParams)).toEqual({ linked: provider, state: "client-state" });
+    expect(to.searchParams.get("state")).toBe("client-state");
+    // Nothing is bound until the app trades the code.
+    expect((await api(started.relay, { path: "/api/me/identities", headers: bearer(token) })).json.identities).toEqual([]);
+    expect((await complete(started, token, to.searchParams.get("code"))).status).toBe(204);
+    expect((await complete(started, token, to.searchParams.get("code"))).json.error).toBe("invalid_grant");
     const identities = await api(started.relay, { path: "/api/me/identities", headers: bearer(token) });
     expect(identities.json.identities).toMatchObject([{ provider, email: "elsewhere@example.net" }]);
   });
@@ -680,15 +687,31 @@ describe("linking from a native app's settings (#631)", () => {
     const elsewhere = await begin(started, token, "github", { sub: "8102", email: "elsewhere@example.net" }, "http://127.0.0.1:53682/callback");
     const back = new URL(location(await callback(started, "github", { code: elsewhere.code, state: elsewhere.state }, elsewhere.binding)));
     expect(back.origin + back.pathname).toBe("http://127.0.0.1:53682/callback");
-    expect(back.searchParams.get("linked")).toBe("github");
+    expect((await complete(started, token, back.searchParams.get("code"))).status).toBe(204);
   });
 
-  it("answers the app's redirect when the identity is another account's", async () => {
+  it("puts nothing on the account when someone else opens its start URL (dureview #634)", async () => {
+    const started = await startServer();
+    const attacker = await passwordToken(started);
+    // The victim opens the attacker's link and approves their own GitHub.
+    const { code, state, binding } = await begin(started, attacker, "github", { sub: "4040", email: "victim@example.net" });
+    const back = new URL(location(await callback(started, "github", { code, state }, binding)));
+    // The code went to the victim's device; even holding it, the attacker
+    // needs the verifier, and the victim's app needs the attacker's session.
+    const victim = await createViaPending(started, "google", { sub: "g-victim", email: "victim2@example.net" });
+    expect((await post(started.relay, "/api/oauth/link/complete", { code: back.searchParams.get("code"), code_verifier: verifier }, { cookie: `${SESSION_COOKIE}=${victim}`, origin: ORIGIN })).json.error).toBe("invalid_grant");
+    expect((await complete(started, attacker, back.searchParams.get("code"), "w".repeat(43))).json.error).toBe("invalid_grant");
+    expect((await api(started.relay, { path: "/api/me/identities", headers: bearer(attacker) })).json.identities).toEqual([]);
+  });
+
+  it("refuses to complete with an identity another account has", async () => {
     const started = await startServer();
     await createViaPending(started, "google", IDENTITY.google);
-    const { code, state, binding } = await begin(started, await passwordToken(started), "google", IDENTITY.google);
+    const token = await passwordToken(started);
+    const { code, state, binding } = await begin(started, token, "google", IDENTITY.google);
     const to = new URL(location(await callback(started, "google", { code, state }, binding)));
-    expect(Object.fromEntries(to.searchParams)).toEqual({ error: "identity_taken", state: "client-state" });
+    const done = await complete(started, token, to.searchParams.get("code"));
+    expect([done.status, done.json.error]).toEqual([409, "identity_taken"]);
   });
 
   it("refuses the link when the session that started it has ended", async () => {
@@ -699,6 +722,7 @@ describe("linking from a native app's settings (#631)", () => {
     const to = new URL(location(await callback(started, "github", { code, state }, binding)));
     expect(Object.fromEntries(to.searchParams)).toEqual({ error: "session_ended", state: "client-state" });
     const fresh = await passwordToken(started);
+    expect((await complete(started, fresh, "made-up-code")).json.error).toBe("invalid_grant");
     expect((await api(started.relay, { path: "/api/me/identities", headers: bearer(fresh) })).json.identities).toEqual([]);
   });
 
@@ -751,10 +775,19 @@ describe("linking from a native app's settings (#631)", () => {
       expect([taken.status, taken.json.error]).toEqual([409, "identity_taken"]);
     });
 
-    it("needs a live session", async () => {
+    it("needs a live Bearer session, and never signs in when asked to link", async () => {
       const started = await startServer();
       const linked = await post(started.relay, "/api/oauth/apple/native", { ...started.idp.appleNative(IDENTITY.apple), password: PASSWORD }, bearer("gone"));
       expect(linked.status).toBe(401);
+      // An Apple identity with an account of its own, asked to link without a Bearer (dureview #634).
+      await createViaPending(started, "apple", IDENTITY.apple);
+      const owner = await post(started.relay, "/api/login", { username: OWNER, password: PASSWORD }, { origin: ORIGIN });
+      const cookieLink = await post(started.relay, "/api/oauth/apple/native", { ...started.idp.appleNative(IDENTITY.apple), password: PASSWORD }, {
+        cookie: `${SESSION_COOKIE}=${setCookie(owner, SESSION_COOKIE)!}`,
+      });
+      expect([cookieLink.status, cookieLink.json.error]).toEqual([401, "unauthenticated"]);
+      expect(setCookie(cookieLink, SESSION_COOKIE)).toBeUndefined();
+      expect(cookieLink.json.token).toBeUndefined();
     });
   });
 });
