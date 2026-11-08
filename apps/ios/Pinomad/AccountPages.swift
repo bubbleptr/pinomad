@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Settings → Account (ADR-0022), one page in groups: who is signed in
 /// where, with Sign out; the email; every sign-in method, one row each;
-/// the signed-in devices; the account's hosts; and the two account-wide
+/// the signed-in devices; and the two account-wide
 /// actions set apart under Danger Zone. Every change confirms in a sheet or
 /// an alert; nothing expands in place.
 struct AccountPage: View {
@@ -88,12 +88,6 @@ struct AccountPage: View {
             // Hidden on servers that predate the device list.
             if !model.accountDevicesUnsupported {
                 devicesSection
-            }
-
-            Section("Hosts") {
-                NavigationLink(value: Route.hosts) {
-                    LabeledContent("Hosts on This Account", value: hostsSummary)
-                }
             }
 
             Section {
@@ -278,14 +272,6 @@ struct AccountPage: View {
 
     private func relative(_ epochMs: Double) -> String {
         Date(timeIntervalSince1970: epochMs / 1000).formatted(.relative(presentation: .named))
-    }
-
-    private var hostsSummary: String {
-        let total = model.accountRows.count
-        guard total > 0 else { return model.accountHostsLoaded ? "None yet" : "" }
-        let unpaired = model.hostsPartition.notPairedHere.count
-        let hosts = total == 1 ? "1 host" : "\(total) hosts"
-        return unpaired == 0 ? hosts : "\(hosts), \(unpaired) not paired here"
     }
 }
 

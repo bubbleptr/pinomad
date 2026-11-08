@@ -226,8 +226,8 @@ private struct PairButton: View {
     }
 }
 
-/// Settings → Hosts on a page of its own, for the account's "Hosts on this
-/// account" line.
+/// Settings → Hosts on a page of its own, for the New Host Joined alert's
+/// Review Hosts.
 struct HostsPage: View {
     let model: AppModel
 
