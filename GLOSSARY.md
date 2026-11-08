@@ -84,6 +84,10 @@ _Avoid_: 分支（那是 Git 的概念）、副本、子对话、thread
 父对话派出去的任务，拥有自己的对话，和父对话共用执行检出，可以按名字用某个具名 Agent。生命周期分为 Foreground 和 Background：Foreground 属于派出它的那次运行，在右侧 Tasks 呈现；Background 独立于那次运行，在左侧按 root 家族压成一层展示（包括 fork 的后代），真实 parent 不变。两种都对用户只读；在主内容区打开时也不能提交、重试、改模型或普通中止。
 _Avoid_: 子任务、worker、子对话
 
+**后台进程（Background Process）**:
+agent 在对话的执行检出里启动、由宿主跟踪的长期命令（例如 dev server 或日志监控），不阻塞当前工具调用，自己退出时回报发起它的对话。归属发起它的对话，按 root 家族汇总在右侧 Tasks 呈现（ADR-0045）；它不是拥有独立对话的 Background 子代理，也不是供用户交互的终端。
+_Avoid_: Background、后台任务
+
 **具名 Agent（Agent Role）**:
 宿主上一份有名字的 agent 配置：说明、提示词，以及可选的模型和思考等级。可以用它开一条顶层对话，也可以让子代理用它；用的时候抄一份进对话，之后改它不影响这条对话。
 _Avoid_: 具名代理、具名子代理、代理定义、角色、预设、profile、persona；也不是消息的 role（user / assistant）
