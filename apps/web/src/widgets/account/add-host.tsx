@@ -2,12 +2,14 @@ import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { CodeBlock } from "@astryxdesign/core/CodeBlock";
 import { Collapsible } from "@astryxdesign/core/Collapsible";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
+import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
+import { HStack, Layout, LayoutContent, LayoutFooter, VStack } from "@astryxdesign/core/Layout";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { Text } from "@astryxdesign/core/Text";
 import { useState } from "react";
 import type { AccountError, JoinToken } from "@pinomad/client/account.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
+import { PairingLinkForm } from "../../entities/host/pairing-link-form.tsx";
 import { localHostBridge, useLocalHostState } from "../../entities/local-host/use-local-host.ts";
 import { useNow } from "../../shared/use-now.ts";
 import { accountErrorMessage } from "./account-error.ts";
@@ -124,5 +126,60 @@ export function JoinCommand({ token, onRenew }: { token: JoinToken; onRenew: () 
         </Text>
       )}
     </VStack>
+  );
+}
+
+/**
+ * "Add a host": signed in, the `pinomad join` command and the field for the
+ * code it prints (#496), with a pairing link one click away; without an
+ * account, the pairing link is the only way.
+ */
+export function AddHostDialog({ onClose }: { onClose: () => void }) {
+  const account = useAccountModel();
+  const state = account.state;
+  const [pastingLink, setPastingLink] = useState(false);
+  const close = (): void => {
+    if (state.status === "signed-in") void account.refreshHosts();
+    onClose();
+  };
+  const linkForm = (
+    <VStack gap={2}>
+      <Text type="supporting">Paste a pairing link from pinomad pair or Settings → Devices → Pair a device.</Text>
+      <PairingLinkForm />
+    </VStack>
+  );
+  return (
+    <Dialog aria-label="Add a host" isOpen onOpenChange={(open) => (open ? undefined : close())} purpose="form" width={520}>
+      <Layout
+        header={<DialogHeader title="Add a host" onOpenChange={() => close()} />}
+        content={
+          <LayoutContent>
+            <div style={{ padding: "var(--spacing-2)" }}>
+              {state.status !== "signed-in" ? (
+                linkForm
+              ) : (
+                <VStack gap={4}>
+                  <AddHostSteps serverOrigin={state.serverOrigin} />
+                  {pastingLink ? (
+                    linkForm
+                  ) : (
+                    <HStack>
+                      <Button label="Have a pairing link?" variant="ghost" size="sm" onClick={() => setPastingLink(true)} />
+                    </HStack>
+                  )}
+                </VStack>
+              )}
+            </div>
+          </LayoutContent>
+        }
+        footer={
+          <LayoutFooter>
+            <HStack gap={2} hAlign="end">
+              <Button label="Done" variant="secondary" onClick={close} />
+            </HStack>
+          </LayoutFooter>
+        }
+      />
+    </Dialog>
   );
 }

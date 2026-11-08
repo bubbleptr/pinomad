@@ -21,7 +21,7 @@ In the Mac app, the home screen shows the sign-in form until a host is connected
 
 For scripts and machines without anyone to confirm a code, **Add a host** has **Advanced: join with a one-time token**: a `pinomad join https://app.pinomad.si <token>` command that adds the host without a code. Anyone who has it can add a host, so it works once and expires after 10 minutes; click **New command** when it runs out. Add `--name "Mac mini"` to set the name your devices show.
 
-`pinomad leave` takes a host off the account. To do it from the account panel on the web or in the Mac app, for example for a machine you didn't add, click **Remove** next to the host and enter your password: the host stops connecting through the server until you run `pinomad up` on it again.
+`pinomad leave` takes a host off the account. To do it on the web or in the Mac app, for example for a machine you didn't add, go to Settings → Hosts: open a host paired here and click **Remove from account…**, or pick **Remove from account…** from the **⋯** menu of one that isn't, then enter your password: the host stops connecting through the server until you run `pinomad up` on it again.
 
 ## Direct connections
 
@@ -43,15 +43,15 @@ The default is Cloudflare's public STUN server. Set it to `[]` to use only host 
 
 ## Password
 
-To change your password, click **Change password** in the account panel on the web or in the Mac app, or tap **Change Password** on the iPhone's account page. Enter your current password and a new one (at least 12 characters). This device stays signed in, and your other devices are signed out. Sign in on them again with the new password, and on the iPhone that also turns push back on.
+To change your password, click **Change password…** under Settings → Sign-in and security on the web or in the Mac app, or tap **Change Password** on the iPhone's account page. Enter your current password and a new one (at least 12 characters). This device stays signed in, and your other devices are signed out. Sign in on them again with the new password, and on the iPhone that also turns push back on.
 
 If you forgot your password, there's no reset email, because the server doesn't store an email address. Ask the server's admin (whoever sent your invite) to reset it. They give you a new password; sign in with it, then change it to one only you know.
 
 ## Devices on your account
 
-The account panel on the web and in the Mac app, and the iPhone's account page, list every browser and app that has signed in to your account: its name, when it last signed in, and the hosts it joined through the account, with its state on each (registered, waiting for the host to revoke it, or revoked). The one you're using is marked **This device** (**This iPhone** on the phone).
+Settings → Signed-in devices on the web and in the Mac app, and the iPhone's account page, list every browser and app that has signed in to your account: its name, when it last signed in, and the hosts it joined through the account, with its state on each (registered, waiting for the host to revoke it, or revoked). The one you're using is marked **This device** (**This iPhone** on the phone).
 
-If you lose a device, click or tap **Remove** next to it and enter your password. The server signs it out of your account and asks each host it joined through the account to revoke it. A host that's online does it right away; one that's offline does it the next time it connects. The host still has the final say: you can pair the device with it again later with a QR code.
+If you lose a device, pick **Remove…** from its **⋯** menu (on the iPhone, tap **Remove** next to it) and enter your password. The server signs it out of your account and asks each host it joined through the account to revoke it. A host that's online does it right away; one that's offline does it the next time it connects. The host still has the final say: you can pair the device with it again later with a QR code.
 
 To remove the device you're using, sign out with **This is a shared computer** ticked (on the iPhone, turn on **Remove this iPhone from my hosts** before you tap **Sign out**). The server asks each host this device joined through the account to revoke it, the same way Remove does, and the device forgets those hosts along with its keys for them. Hosts you paired with a QR code stay paired. It's off by default: a host keeps every revocation, so ticking it each time you sign out of your own browser would fill each host's device list with dead entries.
 
@@ -63,6 +63,6 @@ The server only knows what went through the account:
 
 ## Delete your account
 
-To delete your account, click **Delete account** at the bottom of the account panel on the web or in the Mac app, or tap **Delete Account** at the bottom of the iPhone's account page, and enter your password. The server deletes the account along with its sessions, host bindings and push registrations, and every device is signed out. The admin account can't be deleted.
+To delete your account, click **Delete account…** under Danger zone in Settings → Account on the web or in the Mac app, or tap **Delete Account** at the bottom of the iPhone's account page, and enter your password. The server deletes the account along with its sessions, host bindings and push registrations, and every device is signed out. The admin account can't be deleted.
 
 Hosts joined to the account lose their connection to the server right away. To reach one through a server again, run `pinomad join` on it with another account. Your devices stay registered on each host, because the host keeps that list itself: a device that reaches the host directly (same network or Tailscale) still connects. To remove a device, unpair it in the host's Settings → Devices, or remove it under **Devices** before you delete the account.

@@ -24,9 +24,11 @@ import type { ModelRef } from "@earendil-works/pi-durable";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { familyUpdatedAt, relativeTime } from "@pinomad/client/family.ts";
 import { summaryOf, thinkingLevelLabels } from "@pinomad/client/model.ts";
+import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useNow } from "../../shared/use-now.ts";
-import { Archive, ArchiveRestore, ArrowBigUpDash, ArrowLeft, Bot, Cancel, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, Laptop, MoreHorizontal, Puzzle, RefreshCw, Sparkles } from "../../shared/ui/icons.tsx";
+import { Archive, ArchiveRestore, ArrowBigUpDash, ArrowLeft, Bot, Cancel, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, Laptop, MoreHorizontal, Puzzle, RefreshCw, ShieldKey, Sparkles, UserCircle } from "../../shared/ui/icons.tsx";
+import { AccountPanel, type AccountPage } from "../account/account-panel.tsx";
 import { AgentEditorDialog } from "./agent-editor-dialog.tsx";
 import type { FrameMachine } from "./app-frame.tsx";
 import { DevicesSection } from "./devices-section.tsx";
@@ -38,6 +40,9 @@ import { SettingsSubpageContext, type SettingsSubpage } from "./settings-subpage
 import { UpdatesSection } from "./updates-section.tsx";
 
 const SECTIONS = [
+  { id: "account", title: "Account", icon: UserCircle, group: "account" },
+  { id: "security", title: "Sign-in and security", icon: ShieldKey, group: "account" },
+  { id: "signed-in-devices", title: "Signed-in devices", icon: Devices, group: "account" },
   { id: "hosts", title: "Hosts", icon: Computer, group: "device" },
   { id: "this-mac", title: "This Mac", icon: Laptop, group: "device" },
   { id: "updates", title: "Updates", icon: RefreshCw, group: "device" },
@@ -53,7 +58,18 @@ const SECTIONS = [
 ] as const;
 
 type Section = (typeof SECTIONS)[number];
-type SectionId = Section["id"];
+export type SectionId = Section["id"];
+
+/** Each account section and the account page it shows. */
+const ACCOUNT_PAGE = { account: "overview", security: "security", "signed-in-devices": "devices" } as const satisfies Partial<
+  Record<SectionId, AccountPage>
+>;
+type AccountSectionId = keyof typeof ACCOUNT_PAGE;
+const isAccountSection = (id: SectionId): id is AccountSectionId => id in ACCOUNT_PAGE;
+
+/** Where an account page lives in Settings: its own section, or Hosts for the account's hosts. */
+const sectionOfAccountPage = (page: AccountPage): SectionId =>
+  page === "hosts" ? "hosts" : (Object.entries(ACCOUNT_PAGE).find(([, each]) => each === page)![0] as SectionId);
 
 const sectionTitle = (id: SectionId): string => SECTIONS.find((section) => section.id === id)!.title;
 
@@ -77,16 +93,20 @@ const sectionIcon = (Icon: Section["icon"]): ReactNode => (
 export function SettingsDialog({
   machines,
   initialKey,
+  initialSection,
   onClose,
 }: {
   /** Every paired machine; the host group manages one of them at a time. */
   machines: readonly FrameMachine[];
   /** The machine to open on — the focused one. */
   initialKey?: string;
+  /** The section to open on instead of the default (the sidebar's account opens Account). */
+  initialSection?: SectionId;
   onClose: () => void;
 }) {
   const compact = useMediaQuery("(max-width: 640px)");
-  const [section, setSection] = useState<SectionId | undefined>(undefined);
+  const [section, setSection] = useState<SectionId | undefined>(initialSection);
+  const accountStatus = useAccountModel().state.status;
   // A page the open section opened inside itself (one host's page).
   const [subpage, setSubpage] = useState<SettingsSubpage>();
   const subpageHost = useMemo(() => ({ ownsBack: compact, set: setSubpage }), [compact]);
@@ -105,7 +125,14 @@ export function SettingsDialog({
   // device's own sections then. An explicit pick stays put and explains itself.
   const active = section ?? (connected ? "providers" : "hosts");
   const hostName = view?.settings?.hostName ?? machine?.label ?? "This host";
+  // Signed in, the account's pages; signed out, only the sign-in form; no
+  // group at all where this client can't reach an account API.
+  const accountSections = SECTIONS.filter(
+    (entry) =>
+      entry.group === "account" && (accountStatus === "signed-in" || (accountStatus === "signed-out" && entry.id === "account")),
+  );
   const groups = [
+    ...(accountSections.length === 0 ? [] : [{ title: "Account", sections: accountSections }]),
     {
       title: "This device",
       sections: SECTIONS.filter(
@@ -241,6 +268,7 @@ export function SettingsDialog({
                   section={active}
                   showTitle={!compact}
                   showSupporting={subpage === undefined}
+                  onSection={setSection}
                 />
               </SettingsSubpageContext.Provider>
             )}
@@ -270,6 +298,7 @@ function SectionPage({
   section,
   showTitle,
   showSupporting,
+  onSection,
 }: {
   view?: DurableView;
   remote?: RemoteDurable;
@@ -281,8 +310,17 @@ function SectionPage({
   showTitle: boolean;
   /** Off while the section shows a page of its own, which the supporting line doesn't describe. */
   showSupporting: boolean;
+  onSection: (section: SectionId) => void;
 }) {
-  const { title, supporting, body } = sectionBody(view, remote, device, hostKey, connected, onReconnect, section);
+  const { title, supporting, body } = isAccountSection(section)
+    ? {
+        title: sectionTitle(section),
+        supporting: undefined,
+        body: (
+          <AccountPanel page={ACCOUNT_PAGE[section]} onNavigate={(page) => onSection(sectionOfAccountPage(page))} />
+        ),
+      }
+    : sectionBody(view, remote, device, hostKey, connected, onReconnect, section);
   const headingId = `settings-${section}-heading`;
   return (
     <VStack
@@ -306,7 +344,7 @@ function sectionBody(
   hostKey: string | undefined,
   connected: boolean,
   onReconnect: (() => void) | undefined,
-  section: SectionId,
+  section: Exclude<SectionId, AccountSectionId>,
 ): { title: string; supporting?: ReactNode; body: ReactNode } {
   if (section === "hosts") {
     return {

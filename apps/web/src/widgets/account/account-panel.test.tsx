@@ -10,7 +10,7 @@ import { HostsContext } from "../../entities/host/host-store.ts";
 import { fakeHosts } from "../../test/story-fixtures.tsx";
 import type { AccountModel, AccountState } from "../../entities/account/account-model.ts";
 import { accountErrorMessage } from "./account-error.ts";
-import { AccountPanel } from "./account-panel.tsx";
+import { AccountPanel, type AccountPage } from "./account-panel.tsx";
 
 const KEY_A = "A".repeat(43);
 const KEY_B = "B".repeat(43);
@@ -94,12 +94,18 @@ function signedIn(hosts: AccountHostMatch[], rejectedHostKeys: string[] = []): E
   };
 }
 
-function renderPanel(model: AccountModel) {
+function renderPanel(model: AccountModel, initialPage?: AccountPage) {
   render(
     <AccountContext.Provider value={model}>
-      <AccountPanel />
+      <AccountPanel {...(initialPage === undefined ? {} : { initialPage })} />
     </AccountContext.Provider>,
   );
+}
+
+/** Opens a row's menu and picks an item from it. */
+async function fromMenu(menu: string, item: string): Promise<void> {
+  await userEvent.click(await screen.findByRole("button", { name: menu }));
+  await userEvent.click(await screen.findByRole("menuitem", { name: item }));
 }
 
 const row = (name: string) => screen.getByText(name).closest("li")!;
@@ -148,12 +154,20 @@ describe("AccountPanel", () => {
             ]),
           )}
         >
-          <AccountPanel />
+          <AccountPanel initialPage="hosts" />
         </AccountContext.Provider>
       </HostsContext.Provider>,
     );
     expect(screen.queryByText("here")).toBeNull();
     expect(within(row("up")).getByRole("button", { name: "Pair" })).toBeEnabled();
+  });
+
+  it("opens a page from the overview on its own and comes back", async () => {
+    renderPanel(fakeModel(signedIn([])));
+    await userEvent.click(await screen.findByRole("button", { name: /^Sign-in methods/ }));
+    expect(screen.getByRole("heading", { name: "Sign-in and security" })).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Back to account" }));
+    expect(await screen.findByRole("button", { name: "Sign out…" })).toBeTruthy();
   });
 
   it("still warns after a failed Sign out everywhere lands on the sign-in form", async () => {
@@ -164,8 +178,9 @@ describe("AccountPanel", () => {
       return Promise.resolve({ ok: false as const, error: { code: "network" } });
     });
     renderPanel(model);
-    await userEvent.click(screen.getByRole("button", { name: "Sign out everywhere" }));
-    await userEvent.click(screen.getByRole("button", { name: "Sign out everywhere?" }));
+    await userEvent.click(screen.getByRole("button", { name: "Sign out everywhere…" }));
+    const dialog = screen.getByRole("dialog", { name: "Sign out everywhere?" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "Sign out everywhere" }));
     expect(await screen.findByText(/Other devices may still be signed in/)).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
   });
@@ -173,14 +188,17 @@ describe("AccountPanel", () => {
   it("signs out keeping the pairings unless the shared-computer box is ticked (#494)", async () => {
     const model = fakeModel(signedIn([]));
     renderPanel(model);
-    await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
-    const shared = screen.getByRole("checkbox", { name: /shared computer/ });
-    expect(shared).not.toBeChecked();
-    await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    const signOut = async (shared: boolean) => {
+      await userEvent.click(screen.getByRole("button", { name: "Sign out…" }));
+      const dialog = screen.getByRole("dialog", { name: "Sign out of nomad.example?" });
+      const box = within(dialog).getByRole("checkbox", { name: /shared computer/ });
+      expect(box).not.toBeChecked();
+      if (shared) await userEvent.click(box);
+      await userEvent.click(within(dialog).getByRole("button", { name: "Sign out" }));
+    };
+    await signOut(false);
     expect(model.logout).toHaveBeenLastCalledWith({ revoke: false });
-
-    await userEvent.click(shared);
-    await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    await signOut(true);
     expect(model.logout).toHaveBeenLastCalledWith({ revoke: true });
   });
 
@@ -191,9 +209,10 @@ describe("AccountPanel", () => {
       return Promise.resolve({ ok: false as const, error: { code: "hosts_not_forgotten" } });
     });
     renderPanel(model);
-    await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
-    await userEvent.click(screen.getByRole("checkbox", { name: /shared computer/ }));
-    await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    await userEvent.click(screen.getByRole("button", { name: "Sign out…" }));
+    const dialog = screen.getByRole("dialog", { name: "Sign out of nomad.example?" });
+    await userEvent.click(within(dialog).getByRole("checkbox", { name: /shared computer/ }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "Sign out" }));
     expect(await screen.findByText(/may still connect to them/)).toBeTruthy();
   });
 
@@ -204,7 +223,7 @@ describe("AccountPanel", () => {
     render(
       <HostsContext.Provider value={hosts}>
         <AccountContext.Provider value={model}>
-          <AccountPanel />
+          <AccountPanel initialPage="hosts" />
         </AccountContext.Provider>
       </HostsContext.Provider>,
     );
@@ -219,8 +238,8 @@ describe("AccountPanel", () => {
 describe("Add a host (#496)", () => {
   it("shows the command without a token and the code entry, minting a token only under Advanced", async () => {
     const model = fakeModel(signedIn([]));
-    renderPanel(model);
-    await userEvent.click(screen.getByRole("button", { name: "Add a host" }));
+    renderPanel(model, "hosts");
+    await userEvent.click(screen.getByRole("button", { name: "Add a host…" }));
     expect(screen.getByText(/sh -s -- up --origin https:\/\/nomad\.example/)).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: /code/i })).toBeInTheDocument();
     expect(model.createJoinToken).not.toHaveBeenCalled();
@@ -234,8 +253,8 @@ describe("Add a host (#496)", () => {
 describe("account settings", () => {
   it("changes the password from the signed-in panel (#450)", async () => {
     const model = fakeModel(signedIn([]));
-    renderPanel(model);
-    await userEvent.click(await screen.findByRole("button", { name: "Change password" }));
+    renderPanel(model, "security");
+    await userEvent.click(await screen.findByRole("button", { name: "Change password…" }));
     await userEvent.type(await screen.findByLabelText("Password"), "old password here");
     await userEvent.type(screen.getByLabelText("New password"), "new password here{Enter}");
     expect(model.changePassword).toHaveBeenCalledWith({ confirmation: "old password here", newPassword: "new password here" });
@@ -246,8 +265,8 @@ describe("account settings", () => {
   it("keeps the form and says so when the current password is wrong", async () => {
     const model = fakeModel(signedIn([]));
     vi.mocked(model.changePassword).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
-    renderPanel(model);
-    await userEvent.click(await screen.findByRole("button", { name: "Change password" }));
+    renderPanel(model, "security");
+    await userEvent.click(await screen.findByRole("button", { name: "Change password…" }));
     await userEvent.type(screen.getByLabelText("Password"), "wrong one");
     await userEvent.type(screen.getByLabelText("New password"), "new password here{Enter}");
     expect(await screen.findByText("The password is wrong.")).toBeTruthy();
@@ -262,7 +281,7 @@ describe("account settings", () => {
       return Promise.resolve({ ok: true, value: undefined });
     });
     renderPanel(model);
-    await userEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete account…" }));
     expect(screen.getByText(/run pinomad join on each/)).toBeTruthy();
     await userEvent.type(await screen.findByLabelText("Password"), "my password{Enter}");
     expect(model.deleteAccount).toHaveBeenCalledWith({ confirmation: "my password" });
@@ -275,7 +294,7 @@ describe("account settings", () => {
     const model = fakeModel(signedIn([]));
     vi.mocked(model.deleteAccount).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
     renderPanel(model);
-    await userEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete account…" }));
     await userEvent.type(await screen.findByLabelText("Password"), "wrong one{Enter}");
     expect(await screen.findByText("The password is wrong.")).toBeTruthy();
     expect(screen.getByLabelText("Password")).toBeTruthy();
@@ -289,7 +308,7 @@ describe("account settings", () => {
       return Promise.resolve({ ok: true, value: undefined });
     });
     renderPanel(model);
-    await userEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete account…" }));
     await userEvent.type(await screen.findByLabelText("Password"), "my password{Enter}");
     expect(await screen.findByText("Account deleted")).toBeTruthy();
     act(() => model.setState({ ...signedIn([]), user: "bob" }));
@@ -304,7 +323,7 @@ describe("account settings", () => {
       () => new Promise((resolve) => (answer = () => resolve({ ok: true, value: undefined }))),
     );
     renderPanel(model);
-    await userEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    await userEvent.click(screen.getByRole("button", { name: "Delete account…" }));
     await userEvent.type(await screen.findByLabelText("Password"), "my password{Enter}");
     act(() => model.setState({ status: "signed-out", mode: "cookie" }));
     act(() => model.setState({ ...signedIn([]), user: "bob" }));
@@ -340,19 +359,19 @@ describe("account devices (#452)", () => {
   const deviceRow = async (name: string) => (await screen.findByText(name)).closest("li")!;
 
   it("lists the account's devices with their state on each host; this device can't be removed", async () => {
-    renderPanel(withDevices(DEVICES));
+    renderPanel(withDevices(DEVICES), "devices");
     const current = await deviceRow("Mac Chrome");
     expect(within(current).getByText("This device")).toBeTruthy();
-    expect(within(current).queryByRole("button", { name: "Remove" })).toBeNull();
+    expect(within(current).queryByRole("button", { name: /^More for/ })).toBeNull();
     const phone = row("iPhone");
     expect(within(phone).getByText(/Last sign-in 3h ago/)).toBeTruthy();
     expect(within(phone).getByText(/omarchy: registered/)).toBeTruthy();
     expect(within(phone).getByText(/studio: waiting for the host/)).toBeTruthy();
-    expect(within(phone).getByRole("button", { name: "Remove" })).toBeTruthy();
+    expect(within(phone).getByRole("button", { name: "More for iPhone" })).toBeTruthy();
     const unknown = row("Unknown device");
     expect(within(unknown).getByText("Removed")).toBeTruthy();
     expect(within(unknown).getByText(/omarchy: revoked/)).toBeTruthy();
-    expect(within(unknown).queryByRole("button", { name: "Remove" })).toBeNull();
+    expect(within(unknown).queryByRole("button", { name: /^More for/ })).toBeNull();
   });
 
   it("removes a device after the password and reloads the list", async () => {
@@ -362,8 +381,9 @@ describe("account devices (#452)", () => {
       { host: plain, status: "paired", stored: stored(KEY_A), linkable: false, autoRegister: false },
       { host: legacy, status: "unpaired", linkable: false, autoRegister: false },
     ]);
-    renderPanel(model);
-    await userEvent.click(within(await deviceRow("iPhone")).getByRole("button", { name: "Remove" }));
+    renderPanel(model, "devices");
+    await deviceRow("iPhone");
+    await fromMenu("More for iPhone", "Remove…");
     expect(screen.getByText(/asks each host it joined through your account to revoke it/)).toBeTruthy();
     // Hosts that don't report devices can't be asked; the form names them.
     expect(screen.getByText(/attic can't be asked/)).toBeTruthy();
@@ -378,8 +398,9 @@ describe("account devices (#452)", () => {
   it("keeps the form when the password is wrong", async () => {
     const model = withDevices(DEVICES);
     vi.mocked(model.kickDevice).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
-    renderPanel(model);
-    await userEvent.click(within(await deviceRow("iPhone")).getByRole("button", { name: "Remove" }));
+    renderPanel(model, "devices");
+    await deviceRow("iPhone");
+    await fromMenu("More for iPhone", "Remove…");
     await userEvent.type(await screen.findByLabelText("Password"), "wrong{Enter}");
     expect(await screen.findByText("The password is wrong.")).toBeTruthy();
     expect(screen.getByLabelText("Password")).toBeTruthy();
@@ -391,7 +412,7 @@ describe("account devices (#452)", () => {
     vi.mocked(model.listDevices).mockResolvedValue({ ok: false, error: { code: "not_found", status: 404 } });
     renderPanel(model);
     await act(async () => {});
-    expect(screen.queryByText("Devices")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Signed-in devices/ })).toBeNull();
   });
 });
 
@@ -399,14 +420,11 @@ describe("removing a host (#512)", () => {
   const boxId = "h".repeat(43);
   const withHost = () =>
     fakeModel(signedIn([{ host: host({ name: "box", hostId: boxId }), status: "unpaired", linkable: false, autoRegister: true }]));
-  const openRemove = async () => {
-    await userEvent.click(within(row("box")).getByRole("button", { name: "More for box" }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Remove from account…" }));
-  };
+  const openRemove = () => fromMenu("More for box", "Remove from account…");
 
   it("removes a host after the password and says what that does", async () => {
     const model = withHost();
-    renderPanel(model);
+    renderPanel(model, "hosts");
     await openRemove();
     expect(screen.getByText(/stops connecting through nomad\.example/)).toBeTruthy();
     expect(screen.getByText(/pinomad up/)).toBeTruthy();
@@ -420,7 +438,7 @@ describe("removing a host (#512)", () => {
   it("keeps the form when the password is wrong", async () => {
     const model = withHost();
     vi.mocked(model.removeHost).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
-    renderPanel(model);
+    renderPanel(model, "hosts");
     await openRemove();
     await userEvent.type(await screen.findByLabelText("Password"), "wrong{Enter}");
     expect(await screen.findByText("The password is wrong.")).toBeTruthy();
@@ -430,7 +448,7 @@ describe("removing a host (#512)", () => {
   it("says so when the server can't remove hosts", async () => {
     const model = withHost();
     vi.mocked(model.removeHost).mockResolvedValueOnce({ ok: false, error: { code: "remove_unsupported" } });
-    renderPanel(model);
+    renderPanel(model, "hosts");
     await openRemove();
     await userEvent.type(await screen.findByLabelText("Password"), "pw{Enter}");
     expect(await screen.findByText(/pinomad leave/)).toBeTruthy();
@@ -458,26 +476,27 @@ describe("sign-in methods (ADR-0044 §4)", () => {
   };
 
   it("lists the password and linked providers, and offers to link the rest", async () => {
-    renderPanel(withMethods(true));
+    renderPanel(withMethods(true), "security");
     const github = (await screen.findByText("GitHub")).closest("li")!;
     expect(within(github).getByText("k@users.noreply.github.com")).toBeTruthy();
-    expect(within(row("Password")).getByRole("button", { name: "Change password" })).toBeTruthy();
-    expect(await screen.findByRole("button", { name: "Link Google" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Link GitHub" })).toBeNull();
+    expect(within(row("Password")).getByRole("button", { name: "Change password…" })).toBeTruthy();
+    await userEvent.click(await screen.findByRole("button", { name: "Link another…" }));
+    expect(await screen.findByRole("menuitem", { name: "Google" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "GitHub" })).toBeNull();
   });
 
   it("offers no linking where the page can't go to the provider and back", async () => {
-    renderPanel({ ...withMethods(true), providerFlow: undefined });
+    renderPanel({ ...withMethods(true), providerFlow: undefined }, "security");
     await screen.findByText("GitHub");
     await act(async () => {});
-    expect(screen.queryByRole("button", { name: /^Link / })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Link another…" })).toBeNull();
   });
 
   it("links through the system browser on the desktop and lists the new provider (#631)", async () => {
     const model = { ...withMethods(true), providerFlow: "loopback" as const };
     vi.mocked(model.linkProvider).mockResolvedValueOnce({ ok: true, value: {} });
-    renderPanel(model);
-    await userEvent.click(await screen.findByRole("button", { name: "Link Google" }));
+    renderPanel(model, "security");
+    await fromMenu("Link another…", "Google");
     await userEvent.type(await screen.findByLabelText("Password"), "pw");
     await userEvent.click(screen.getByRole("button", { name: "Continue to Google" }));
     expect(model.linkProvider).toHaveBeenCalledWith("google", "pw");
@@ -489,12 +508,12 @@ describe("sign-in methods (ADR-0044 §4)", () => {
     const model = { ...withMethods(true), providerFlow: "loopback" as const };
     let finish!: () => void;
     vi.mocked(model.linkProvider).mockReturnValueOnce(new Promise((resolve) => (finish = () => resolve({ ok: true, value: {} }))));
-    renderPanel(model);
-    await userEvent.click(await screen.findByRole("button", { name: "Link Google" }));
+    renderPanel(model, "security");
+    await fromMenu("Link another…", "Google");
     await userEvent.type(await screen.findByLabelText("Password"), "pw");
     await userEvent.click(screen.getByRole("button", { name: "Continue to Google" }));
     await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    await userEvent.click(within(row("Password")).getByRole("button", { name: "Change password" }));
+    await userEvent.click(within(row("Password")).getByRole("button", { name: "Change password…" }));
     await userEvent.type(await screen.findByLabelText("New password"), "half-typed");
     await act(async () => finish());
     expect((screen.getByLabelText("New password") as HTMLInputElement).value).toBe("half-typed");
@@ -504,9 +523,9 @@ describe("sign-in methods (ADR-0044 §4)", () => {
   it("says so when removing the last way in", async () => {
     const model = withMethods(false);
     vi.mocked(model.unlinkProvider).mockResolvedValueOnce({ ok: false, error: { code: "last_method", status: 409 } });
-    renderPanel(model);
+    renderPanel(model, "security");
     expect(within((await screen.findByText("Password")).closest("li")!).getByText("Not set")).toBeTruthy();
-    await userEvent.click(within((await screen.findByText("GitHub")).closest("li")!).getByRole("button", { name: "Remove" }));
+    await fromMenu("More for GitHub", "Remove…");
     // No password: the confirmation is a mailed code.
     await userEvent.click(await screen.findByRole("button", { name: "Send code" }));
     await userEvent.type(await screen.findByLabelText("Confirmation code"), "123456");
@@ -522,8 +541,9 @@ describe("sign-in methods (ADR-0044 §4)", () => {
       ok: true,
       value: [{ id: 2, name: "iPhone", createdAt: 0, lastSeenAt: Date.now(), current: false, hosts: [] }],
     });
-    renderPanel(model);
-    await userEvent.click(within((await screen.findByText("iPhone")).closest("li")!).getByRole("button", { name: "Remove" }));
+    renderPanel(model, "devices");
+    await screen.findByText("iPhone");
+    await fromMenu("More for iPhone", "Remove…");
     expect(await screen.findByText("We'll email a code to kieran@example.com.")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Send code" }));
     await userEvent.type(await screen.findByLabelText("Confirmation code"), "123456{Enter}");

@@ -7,6 +7,8 @@ import {
   NAS_HOST,
   withDesktopLocalHost,
   withDesktopUpdates,
+  signedIn,
+  withAccount,
   withHosts,
 } from "../../test/story-fixtures.tsx";
 import { SettingsDialog } from "./settings-dialog.tsx";
@@ -52,6 +54,19 @@ export const Archived: Story = open("Archived");
 export const About: Story = open("About");
 
 export const Hosts: Story = open("Hosts");
+
+/** Signed in: the account's own group, opened from the sidebar's account. */
+export const Account: Story = { decorators: [withAccount(signedIn())], args: { initialSection: "account" } };
+
+export const AccountSignInAndSecurity: Story = { decorators: [withAccount(signedIn())], args: { initialSection: "security" } };
+
+export const AccountDevices: Story = { decorators: [withAccount(signedIn())], args: { initialSection: "signed-in-devices" } };
+
+/** Signed out, the group is only the sign-in form. */
+export const AccountSignedOut: Story = {
+  decorators: [withAccount({ status: "signed-out", mode: "cookie" })],
+  args: { initialSection: "account" },
+};
 
 /** The desktop app adds Updates under "This device". */
 export const Updates: Story = {

@@ -60,6 +60,7 @@ import {
   Settings01Icon,
   Settings02Icon,
   SidebarLeftIcon,
+  ShieldKeyIcon,
   SparklesIcon,
   StopIcon as HugeStopIcon,
   ThumbsDownIcon,
@@ -153,6 +154,7 @@ export const ThumbsDown = iconComponent(ThumbsDownIcon);
 export const ThumbsUp = iconComponent(ThumbsUpIcon);
 export const Trash2 = iconComponent(Delete02Icon);
 export const UserCircle = iconComponent(UserCircleIcon);
+export const ShieldKey = iconComponent(ShieldKeyIcon);
 
 // Keep the plain bot glyph available for places that need a chat-specific robot icon.
 export const BotMessage = iconComponent(BotIcon);

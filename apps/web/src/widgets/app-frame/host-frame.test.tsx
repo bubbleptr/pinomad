@@ -23,7 +23,9 @@ import {
 } from "../../entities/host/host-runtimes.ts";
 import { HostsContext, type HostsState } from "../../entities/host/host-store.ts";
 import type { HostFocus } from "../../entities/host/focus.ts";
-import { DEVBOX_HOST, fakeHosts, fakeRemote, fakeView, HOME_HOST, PARSER_ID } from "../../test/story-fixtures.tsx";
+import { DEVBOX_HOST, fakeAccount, fakeHosts, fakeRemote, fakeView, HOME_HOST, PARSER_ID, signedIn } from "../../test/story-fixtures.tsx";
+import { AccountContext } from "../../entities/account/account-context.tsx";
+import type { AccountState } from "../../entities/account/account-model.ts";
 import { HostFrame } from "./host-frame.tsx";
 
 const id = (value: number): ConversationId => value as ConversationId;
@@ -393,6 +395,22 @@ describe("the app frame across hosts", () => {
     expect(within(dialog).getByRole("button", { name: "Hosts" })).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Providers" })).toBeNull();
     expect(within(dialog).getByRole("button", { name: "Add a host…" })).toBeInTheDocument();
+  });
+
+  it.each<[string, AccountState, string | RegExp, string]>([
+    ["signed in, opens the account in Settings", signedIn(), /kieran@example\.com/, "Settings"],
+    ["signed out, opens the sign-in dialog", { status: "signed-out", mode: "cookie" }, "Sign in", "Account"],
+  ])("from the sidebar's account, %s", async (_, state, chip, dialogName) => {
+    const registry = createHostRuntimeRegistry();
+    render(
+      <AccountContext.Provider value={fakeAccount(state)}>
+        <Harness hosts={[HOME_HOST]} initialFocus={{ hostKey: HOME_HOST.hostKey }} connect={connected} registry={registry} />
+      </AccountContext.Provider>,
+    );
+    await userEvent.click(await screen.findByRole("button", { name: chip }));
+    const dialog = await screen.findByRole("dialog", { name: dialogName });
+    if (dialogName === "Settings") expect(await within(dialog).findByRole("button", { name: "Sign out…" })).toBeInTheDocument();
+    else expect(await within(dialog).findByRole("heading", { name: "Sign in" })).toBeInTheDocument();
   });
 
   it("keeps the device Updates section while the focused host is connecting", async () => {

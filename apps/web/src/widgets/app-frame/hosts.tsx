@@ -29,7 +29,6 @@ import {
   type HostRuntimeInfo,
 } from "../../entities/host/host-runtimes.ts";
 import { useHosts } from "../../entities/host/host-store.ts";
-import { PairingLinkForm } from "../../entities/host/pairing-link-form.tsx";
 import { unansweredUnpair, unpairHost } from "../../entities/host/unpair.ts";
 import { ArrowLeft, ChevronRight, Computer } from "../../shared/ui/icons.tsx";
 import { AccountDialog } from "../account/account-dialog.tsx";
@@ -43,7 +42,7 @@ import {
   type AccountHostIssue,
   type AccountPairing,
 } from "../account/account-hosts.tsx";
-import { AddHostSteps } from "../account/add-host.tsx";
+import { AddHostDialog } from "../account/add-host.tsx";
 import { RemoveHostDialog } from "../account/remove-host.tsx";
 import { accountHostFor } from "../account/repair-via-account.tsx";
 import { hostRoutes, type HostRoute } from "./host-routes.ts";
@@ -664,61 +663,6 @@ function UnpairHostDialog({
             <HStack gap={2} hAlign="end">
               <Button label="Cancel" variant="secondary" onClick={() => onClose(false)} />
               <Button label="Unpair" variant="destructive" onClick={unpair} />
-            </HStack>
-          </LayoutFooter>
-        }
-      />
-    </Dialog>
-  );
-}
-
-/**
- * "Add a host": signed in, the `pinomad join` command and the field for the
- * code it prints (#496), with a pairing link one click away; without an
- * account, the pairing link is the only way.
- */
-function AddHostDialog({ onClose }: { onClose: () => void }) {
-  const account = useAccountModel();
-  const state = account.state;
-  const [pastingLink, setPastingLink] = useState(false);
-  const close = (): void => {
-    if (state.status === "signed-in") void account.refreshHosts();
-    onClose();
-  };
-  const linkForm = (
-    <VStack gap={2}>
-      <Text type="supporting">Paste a pairing link from pinomad pair or Settings → Devices → Pair a device.</Text>
-      <PairingLinkForm />
-    </VStack>
-  );
-  return (
-    <Dialog aria-label="Add a host" isOpen onOpenChange={(open) => (open ? undefined : close())} purpose="form" width={520}>
-      <Layout
-        header={<DialogHeader title="Add a host" onOpenChange={() => close()} />}
-        content={
-          <LayoutContent>
-            <div style={{ padding: "var(--spacing-2)" }}>
-              {state.status !== "signed-in" ? (
-                linkForm
-              ) : (
-                <VStack gap={4}>
-                  <AddHostSteps serverOrigin={state.serverOrigin} />
-                  {pastingLink ? (
-                    linkForm
-                  ) : (
-                    <HStack>
-                      <Button label="Have a pairing link?" variant="ghost" size="sm" onClick={() => setPastingLink(true)} />
-                    </HStack>
-                  )}
-                </VStack>
-              )}
-            </div>
-          </LayoutContent>
-        }
-        footer={
-          <LayoutFooter>
-            <HStack gap={2} hAlign="end">
-              <Button label="Done" variant="secondary" onClick={close} />
             </HStack>
           </LayoutFooter>
         }
