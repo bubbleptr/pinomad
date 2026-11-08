@@ -11,6 +11,7 @@ export function Landing({ lang, latest }: { lang: Lang; latest?: LatestRelease }
   const t = copy[lang];
   const root = useRef<HTMLDivElement>(null);
   useReveal(root);
+  useHeaderTone(root);
   return (
     <div className="landing" ref={root}>
       <a className="skip-link" href="#main">
@@ -24,15 +25,24 @@ export function Landing({ lang, latest }: { lang: Lang; latest?: LatestRelease }
         start={{ text: t.hero.start, href: "#quick-start" }}
       />
       <main id="main">
-        <Hero lang={lang} t={t.hero} />
-        <Core lang={lang} t={t.core} durable={t.durable} />
-        <Anywhere lang={lang} t={t.anywhere} />
-        <Subscriptions t={t.subs} />
-        <Connection t={t.connection} />
-        <Agents lang={lang} t={t.agents} />
-        <GetStarted t={t.start} />
-        <Next t={t.next} />
-        <Closing lang={lang} t={t.start} latest={latest} />
+        {/* The page is one sky, read top to bottom: night, the blue hour, then a horizon
+            that opens onto daylight. Each zone sets the colour tokens for what's in it. */}
+        <div className="zone zone-night">
+          <Hero lang={lang} t={t.hero} />
+          <Core lang={lang} t={t.core} durable={t.durable} />
+        </div>
+        <div className="zone zone-abyss">
+          <Anywhere lang={lang} t={t.anywhere} />
+          <Subscriptions t={t.subs} />
+          <Connection t={t.connection} />
+          <Agents lang={lang} t={t.agents} />
+        </div>
+        <div className="horizon" aria-hidden="true" />
+        <div className="zone zone-dawn">
+          <GetStarted t={t.start} />
+          <Next t={t.next} />
+          <Closing lang={lang} t={t.start} latest={latest} />
+        </div>
       </main>
       <SiteFooter lang={lang} t={t.footer} />
     </div>
@@ -67,5 +77,49 @@ function useReveal(root: RefObject<HTMLElement | null>) {
       observer.observe(block);
     }
     return () => observer.disconnect();
+  }, [root]);
+}
+
+/** Which header tone each zone calls for; the horizon turns from blue to mist halfway. */
+const tones: [selector: string, tone: string][] = [
+  [".zone-abyss", "abyss"],
+  [".horizon", "horizon"],
+  [".zone-dawn", "dawn"],
+  [".site-footer", "dawn"],
+];
+
+/**
+ * Sets the sticky header's data-tone from the zone behind its middle line, so the bar
+ * matches what it floats over. Over the night zone the attribute is removed and the
+ * stylesheet's default applies.
+ */
+function useHeaderTone(root: RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const header = root.current!.querySelector<HTMLElement>(".site-header")!;
+    const zones = tones.map(([selector, tone]) => [root.current!.querySelector<HTMLElement>(selector)!, tone] as const);
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const line = header.offsetHeight / 2;
+      let tone: string | undefined;
+      for (const [zone, name] of zones) {
+        const { top, bottom } = zone.getBoundingClientRect();
+        if (top > line || bottom <= line) continue;
+        tone = name === "horizon" ? (line - top < (bottom - top) / 2 ? "abyss" : "dawn") : name;
+      }
+      if (tone) header.dataset.tone = tone;
+      else delete header.dataset.tone;
+    };
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(update);
+    };
+    update();
+    addEventListener("scroll", schedule, { passive: true });
+    addEventListener("resize", schedule);
+    return () => {
+      cancelAnimationFrame(frame);
+      removeEventListener("scroll", schedule);
+      removeEventListener("resize", schedule);
+    };
   }, [root]);
 }

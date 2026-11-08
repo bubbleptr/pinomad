@@ -51,7 +51,7 @@ export function landingHead(lang: Lang, softwareVersion?: string) {
     meta: [
       { title: c.title },
       { name: "description", content: c.description },
-      { name: "theme-color", content: "#0f1011" },
+      { name: "theme-color", content: "#0b0b0b" },
       { name: "color-scheme", content: "dark" },
       { property: "og:type", content: "website" },
       { property: "og:site_name", content: "PiNomad" },

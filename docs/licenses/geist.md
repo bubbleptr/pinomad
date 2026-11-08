@@ -1,8 +1,8 @@
 # Geist 字体的来源与许可证
 
-OG 图（`apps/site/og/`，见 `docs/website.md`）的产品名用 Geist 字体排出，字体文件随源文件一起入库，只在本地生成图片时使用，网站本身不加载它们。
+落地页的标题和 OG 图（`apps/site/og/`，见 `docs/website.md`）的产品名用 Geist 字体排出，字体文件随源文件一起入库。Geist Serif 由落地页自托管加载；Geist Pixel 只在本地生成 OG 图时使用。
 
-- 文件：`apps/site/og/fonts/GeistSerifVF.woff2`（Geist Serif，可变字重）、`apps/site/og/fonts/GeistPixel-Square.woff2`（Geist Pixel，方块像素）
+- 文件：`apps/site/src/styles/fonts/GeistSerifVF.woff2`（Geist Serif，可变字重）、`apps/site/og/fonts/GeistPixel-Square.woff2`（Geist Pixel，方块像素）
 - 来源：npm 包 `geist` 1.9.0 的 `dist/fonts/`，未修改
 - 许可：SIL Open Font License 1.1，原文如下
 
