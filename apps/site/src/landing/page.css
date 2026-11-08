@@ -194,6 +194,11 @@ a {
   border-radius: 4px;
 }
 
+/* The header sits outside the zones and changes tone on its own. */
+.site-header :focus-visible {
+  outline-color: var(--header-fg);
+}
+
 code {
   font-family: var(--font-mono);
   font-size: 0.9em;
@@ -699,7 +704,6 @@ html[lang="zh-CN"] .eyebrow {
   color: var(--fg-2);
 }
 
-/* Model providers drift past as one band, fading out at both edges. */
 /* Spec line, then the models: the label sits close to its ticker, further from the specs. */
 .hero-meta {
   margin-top: 3rem;
@@ -722,6 +726,7 @@ html[lang="zh-CN"] .models-label {
   letter-spacing: 0.06em;
 }
 
+/* Model providers drift past as one band, fading out at both edges. */
 .ticker {
   display: flex;
   width: max-content;
@@ -1868,6 +1873,29 @@ html[lang="zh-CN"] .split h2 {
 
   .section-head.reveal.is-revealed > :nth-child(n + 4) {
     transition-delay: 240ms;
+  }
+}
+
+/* Without the drift, the band would cut the list off: show one copy, wrapped. */
+@media (prefers-reduced-motion: reduce) {
+  .models {
+    mask-image: none;
+  }
+
+  .ticker {
+    width: auto;
+  }
+
+  .ticker ul {
+    flex: 1;
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 0.4rem;
+  }
+
+  .ticker ul[aria-hidden],
+  .ticker li:last-child::after {
+    display: none;
   }
 }
 
