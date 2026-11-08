@@ -597,6 +597,59 @@
         "authorizationCode": "c"
       },
       "expect": "{\"url\":\"https://relay.example.com/api/oauth/apple/native\",\"init\":{\"method\":\"POST\",\"headers\":{\"content-type\":\"application/json\"},\"body\":\"{\\\"identityToken\\\":\\\"t\\\",\\\"authorizationCode\\\":\\\"c\\\"}\"}}"
+    },
+    {
+      "name": "link-provider",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "linkProvider",
+        "provider": "git hub/é",
+        "password": "pw"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/oauth/git%20hub%2F%C3%A9/link\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"password\\\":\\\"pw\\\"}\"}}"
+    },
+    {
+      "name": "link-provider-native",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "linkProvider",
+        "provider": "google",
+        "reauth": "grant",
+        "native": {
+          "redirectUri": "pinomad://auth",
+          "codeChallenge": "ccccccccccccccccccccccccccccccccccccccccccc",
+          "state": "st"
+        }
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/oauth/google/link\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"reauth\\\":\\\"grant\\\",\\\"client\\\":\\\"native\\\",\\\"redirect_uri\\\":\\\"pinomad://auth\\\",\\\"code_challenge\\\":\\\"ccccccccccccccccccccccccccccccccccccccccccc\\\",\\\"state\\\":\\\"st\\\"}\"}}"
+    },
+    {
+      "name": "link-apple-native",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "linkAppleNative",
+        "identityToken": "eyJ.id.tok",
+        "authorizationCode": "ac",
+        "nonce": "raw-nonce",
+        "name": "Ann Lee",
+        "reauth": "grant"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/oauth/apple/native\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"identityToken\\\":\\\"eyJ.id.tok\\\",\\\"authorizationCode\\\":\\\"ac\\\",\\\"nonce\\\":\\\"raw-nonce\\\",\\\"name\\\":\\\"Ann Lee\\\",\\\"reauth\\\":\\\"grant\\\"}\"}}"
+    },
+    {
+      "name": "link-apple-native-bare",
+      "origin": "https://relay.example.com",
+      "token": "tok",
+      "op": {
+        "kind": "linkAppleNative",
+        "identityToken": "t",
+        "authorizationCode": "c",
+        "password": "pw"
+      },
+      "expect": "{\"url\":\"https://relay.example.com/api/oauth/apple/native\",\"init\":{\"method\":\"POST\",\"headers\":{\"authorization\":\"Bearer tok\",\"content-type\":\"application/json\"},\"body\":\"{\\\"identityToken\\\":\\\"t\\\",\\\"authorizationCode\\\":\\\"c\\\",\\\"password\\\":\\\"pw\\\"}\"}}"
     }
   ],
   "responses": [
@@ -1586,6 +1639,55 @@
       "status": 401,
       "body": "{\"error\":\"invalid_token\"}",
       "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_token\",\"status\":401}}"
+    },
+    {
+      "name": "link-provider-url",
+      "kind": "linkProvider",
+      "status": 200,
+      "body": "{\"url\":\"https://relay.example.com/api/oauth/google/start?link=t\"}",
+      "expect": "{\"ok\":true,\"value\":\"https://relay.example.com/api/oauth/google/start?link=t\"}"
+    },
+    {
+      "name": "link-provider-not-web",
+      "kind": "linkProvider",
+      "status": 200,
+      "body": "{\"url\":\"javascript:alert(1)\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "link-provider-no-url",
+      "kind": "linkProvider",
+      "status": 200,
+      "body": "{}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
+      "name": "link-provider-wrong",
+      "kind": "linkProvider",
+      "status": 403,
+      "body": "{\"error\":\"invalid_reauth\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_reauth\",\"status\":403}}"
+    },
+    {
+      "name": "link-apple-204",
+      "kind": "linkAppleNative",
+      "status": 204,
+      "body": null,
+      "expect": "{\"ok\":true}"
+    },
+    {
+      "name": "link-apple-taken",
+      "kind": "linkAppleNative",
+      "status": 409,
+      "body": "{\"error\":\"identity_taken\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"identity_taken\",\"status\":409}}"
+    },
+    {
+      "name": "link-apple-session-ended",
+      "kind": "linkAppleNative",
+      "status": 401,
+      "body": "{\"error\":\"session_ended\"}",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"session_ended\",\"status\":401}}"
     }
   ],
   "probe": [

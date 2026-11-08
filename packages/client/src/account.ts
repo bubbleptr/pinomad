@@ -6,7 +6,7 @@
 //
 // crates/pinomad-core replays this client's requests and answers for iOS,
 // the ADR-0044 email, provider sign-in, sign-in method and re-auth ops
-// included (`linkProvider` aside: no native client links a provider yet).
+// included.
 
 import { encodeEndpointSetParam, parseEndpointSet, type EndpointSet } from "@pinomad/protocol/endpoints.ts";
 import { UNAUTHORIZED_CLOSE_CODE, type ApnsPushToken } from "@pinomad/protocol/frames.ts";
@@ -256,6 +256,17 @@ export type EmailConfirmation = { readonly password: string } | { readonly reaut
 const emailConfirmationBody = (input: EmailConfirmation): { password: string } | { reauth: string } =>
   "reauth" in input ? { reauth: input.reauth } : { password: input.password };
 
+/**
+ * Where a native app's link from settings comes back to (#631): the same
+ * redirects native sign-in allows (`pinomad://auth`, or the desktop's
+ * `http://127.0.0.1:<port>/callback`), with a PKCE challenge and the app's state.
+ */
+export interface NativeLinkRedirect {
+  readonly redirectUri: string;
+  readonly codeChallenge: string;
+  readonly state: string;
+}
+
 /** A sign-in provider bound to the account (GET /api/me/identities). */
 export interface AccountIdentity {
   /** "google", "github" or "apple". */
@@ -434,9 +445,16 @@ export interface AccountClient {
   /**
    * Starts adding a provider to the account: the URL to open in this
    * browser, which comes back to `/?oauth_linked=<provider>` or
-   * `/?oauth_error=<reason>`.
+   * `/?oauth_error=<reason>`. A native app (#631) passes its redirect
+   * instead and opens the one-time URL in its own browser, which comes back
+   * to `redirectUri?linked=<provider>&state=…` or `?error=…&state=…`.
    */
-  linkProvider(provider: string, confirmation: AccountConfirmation): Promise<AccountResult<string>>;
+  linkProvider(provider: string, confirmation: AccountConfirmation, native?: NativeLinkRedirect): Promise<AccountResult<string>>;
+  /** Binds iOS's own Sign in with Apple to the signed-in account (#631); 409 `identity_taken` when another account has it. */
+  linkAppleNative(
+    input: { readonly identityToken: string; readonly authorizationCode: string; readonly nonce?: string; readonly name?: string },
+    confirmation: AccountConfirmation,
+  ): Promise<AccountResult<void>>;
   /** Removes a provider; 409 `last_method` when nothing else would sign the account in. */
   unlinkProvider(provider: string, confirmation: AccountConfirmation): Promise<AccountResult<void>>;
   /** The provider sign-in behind `/?oauth_pending=<id>`; 404 `not_found` once spent, expired, or another browser's. */
@@ -772,8 +790,13 @@ export function createAccountClient(options: {
         })),
       });
     },
-    linkProvider: async (provider, confirmation) => {
-      const result = await request(`/api/oauth/${encodeURIComponent(provider)}/link`, "POST", confirmationBody(confirmation));
+    linkProvider: async (provider, confirmation, native) => {
+      const result = await request(`/api/oauth/${encodeURIComponent(provider)}/link`, "POST", {
+        ...confirmationBody(confirmation),
+        ...(native === undefined
+          ? {}
+          : { client: "native", redirect_uri: native.redirectUri, code_challenge: native.codeChallenge, state: native.state }),
+      });
       if (!result.ok) return result;
       // Only a web page: the browser is sent there on the server's word.
       const url = isRecord(result.value) ? result.value.url : undefined;
@@ -839,6 +862,16 @@ export function createAccountClient(options: {
       const signedIn = session(result);
       return signedIn.ok ? ok({ kind: "signedIn", session: signedIn.value }) : signedIn;
     },
+    linkAppleNative: async ({ identityToken, authorizationCode, nonce, name }, confirmation) =>
+      done(
+        await request("/api/oauth/apple/native", "POST", {
+          identityToken,
+          authorizationCode,
+          ...(nonce === undefined ? {} : { nonce }),
+          ...(name === undefined ? {} : { name }),
+          ...confirmationBody(confirmation),
+        }),
+      ),
     createJoinToken: async () => {
       const result = await request("/api/join-tokens", "POST");
       if (!result.ok) return result;

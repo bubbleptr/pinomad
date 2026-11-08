@@ -666,6 +666,18 @@ const invokeOp = (client: AccountClient, op: AccountOpDesc): Promise<unknown> =>
       return client.linkPending(op.id, confirmation(op));
     case "exchangeOAuthCode":
       return client.exchangeOAuthCode(op.code, op.codeVerifier, op.device);
+    case "linkProvider":
+      return client.linkProvider(op.provider, confirmation(op), op.native);
+    case "linkAppleNative":
+      return client.linkAppleNative(
+        {
+          identityToken: op.identityToken,
+          authorizationCode: op.authorizationCode,
+          ...(op.nonce === undefined ? {} : { nonce: op.nonce }),
+          ...(op.name === undefined ? {} : { name: op.name }),
+        },
+        confirmation(op),
+      );
     case "appleNative":
       return client.appleNative({
         identityToken: op.identityToken,
@@ -733,6 +745,10 @@ const responseOp = (kind: AccountOpDesc["kind"]): AccountOpDesc => {
       return { kind, code: "c", codeVerifier: "v" };
     case "appleNative":
       return { kind, identityToken: "t", authorizationCode: "c" };
+    case "linkProvider":
+      return { kind, provider: "google", password: "p" };
+    case "linkAppleNative":
+      return { kind, identityToken: "t", authorizationCode: "c", password: "p" };
     default:
       return { kind };
   }

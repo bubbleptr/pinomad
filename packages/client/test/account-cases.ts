@@ -59,6 +59,8 @@ export type AccountOpDesc =
   | { kind: "createFromPending"; id: string; password?: string; device?: AccountDeviceClaim }
   | ({ kind: "linkPending"; id: string } & ConfirmationDesc)
   | { kind: "exchangeOAuthCode"; code: string; codeVerifier: string; device?: AccountDeviceClaim }
+  | ({ kind: "linkProvider"; provider: string; native?: { redirectUri: string; codeChallenge: string; state: string } } & ConfirmationDesc)
+  | ({ kind: "linkAppleNative"; identityToken: string; authorizationCode: string; nonce?: string; name?: string } & ConfirmationDesc)
   | {
       kind: "appleNative";
       identityToken: string;
@@ -207,6 +209,27 @@ export const REQUEST_CASES: RequestCase[] = [
     },
   },
   { name: "apple-native-bare", origin: ACCOUNT_ORIGIN, op: { kind: "appleNative", identityToken: "t", authorizationCode: "c" } },
+  // Linking from settings (#631): the web's bare confirmation, and a native
+  // app's redirect after it.
+  { name: "link-provider", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "linkProvider", provider: "git hub/é", password: "pw" } },
+  {
+    name: "link-provider-native",
+    origin: ACCOUNT_ORIGIN,
+    token: "tok",
+    op: {
+      kind: "linkProvider",
+      provider: "google",
+      reauth: "grant",
+      native: { redirectUri: "pinomad://auth", codeChallenge: "c".repeat(43), state: "st" },
+    },
+  },
+  {
+    name: "link-apple-native",
+    origin: ACCOUNT_ORIGIN,
+    token: "tok",
+    op: { kind: "linkAppleNative", identityToken: "eyJ.id.tok", authorizationCode: "ac", nonce: "raw-nonce", name: "Ann Lee", reauth: "grant" },
+  },
+  { name: "link-apple-native-bare", origin: ACCOUNT_ORIGIN, token: "tok", op: { kind: "linkAppleNative", identityToken: "t", authorizationCode: "c", password: "pw" } },
 ];
 
 export interface ResponseCase {
@@ -471,6 +494,14 @@ export const RESPONSE_CASES: ResponseCase[] = [
   // Without the pending id, a no_account is just a refusal.
   { name: "apple-no-account-no-pending", kind: "appleNative", status: 409, body: '{"error":"no_account"}' },
   { name: "apple-invalid-token", kind: "appleNative", status: 401, body: '{"error":"invalid_token"}' },
+  { name: "link-provider-url", kind: "linkProvider", status: 200, body: '{"url":"https://relay.example.com/api/oauth/google/start?link=t"}' },
+  // Only a web page is opened on the server's word.
+  { name: "link-provider-not-web", kind: "linkProvider", status: 200, body: '{"url":"javascript:alert(1)"}' },
+  { name: "link-provider-no-url", kind: "linkProvider", status: 200, body: "{}" },
+  { name: "link-provider-wrong", kind: "linkProvider", status: 403, body: '{"error":"invalid_reauth"}' },
+  { name: "link-apple-204", kind: "linkAppleNative", status: 204, body: null },
+  { name: "link-apple-taken", kind: "linkAppleNative", status: 409, body: '{"error":"identity_taken"}' },
+  { name: "link-apple-session-ended", kind: "linkAppleNative", status: 401, body: '{"error":"session_ended"}' },
 ];
 
 export interface ProbeCase {
