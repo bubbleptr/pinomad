@@ -193,10 +193,12 @@ struct AccountLoginView: View {
         }
     }
 
+    private static let providerButtonHeight: CGFloat = 50
+
     @ViewBuilder
     private func providerButton(_ provider: String) -> some View {
         if provider == "apple" {
-            SignInWithAppleButton(.signIn) { request in
+            SignInWithAppleButton(.continue) { request in
                 let attempt = model.beginAppleSignIn()
                 appleAttempt = attempt
                 error = nil
@@ -206,7 +208,7 @@ struct AccountLoginView: View {
                 finishApple(result)
             }
             .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
-            .frame(height: 48)
+            .frame(height: Self.providerButtonHeight)
             .clipShape(.capsule)
             .disabled(busy != nil)
             // Keyed by scheme: the system button keeps the style it was
@@ -226,11 +228,15 @@ struct AccountLoginView: View {
                     Text("Continue with \(SignInProviders.name(provider))")
                     Spacer()
                 }
-                .frame(minHeight: 36)
+                // Same height, shape and type size as the system Apple
+                // button above, which sizes its title from its height.
+                .font(.system(size: 19, weight: .medium))
+                .frame(height: Self.providerButtonHeight)
                 .foregroundStyle(Color.primary)
+                .background(Color(.tertiarySystemFill), in: .capsule)
+                .contentShape(.capsule)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
+            .buttonStyle(.press)
             .disabled(busy != nil)
         }
     }
