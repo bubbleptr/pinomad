@@ -48,9 +48,19 @@
   text-decoration: none;
 }
 
-.site-header .brand img {
-  width: 1.375rem;
+.site-header .brand-mark {
+  width: auto;
   height: 1.375rem;
+}
+
+/* The ghost without its tile (brand-mark.tsx): outline and hat in the bar's ink. */
+.brand-mark .mark-body {
+  fill: var(--mark-body, #fff);
+  stroke: currentColor;
+}
+
+.brand-mark .mark-ink {
+  fill: currentColor;
 }
 
 .header-nav {
@@ -85,9 +95,12 @@
   transition: color 0.15s ease;
 }
 
+/* 500, not 400: at the bar's 14px a regular weight reads lighter than the page's
+   body text in the same colour. */
 .site-header :is(.header-nav, .site-menu-links) a,
 .site-header .header-link {
   padding: 0.5rem;
+  font-weight: 500;
 }
 
 .site-header :is(.header-nav, .site-menu-links, .header-actions, .site-menu-actions) a:hover,

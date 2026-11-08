@@ -20,6 +20,11 @@ html {
   --header-border-strong: color-mix(in oklch, var(--color-fd-foreground) 22%, transparent);
 }
 
+/* On the dark theme the ghost's body takes the bar's colour, as in the app icon. */
+.dark .site-header {
+  --mark-body: var(--color-fd-background);
+}
+
 /* Docs: the header spans the full width above the sidebar, the page and the table of
    contents, and the layout is as wide as the header's bar so the brand lines up with
    the sidebar. The sidebar and the table of contents stick below the header. */
@@ -34,4 +39,16 @@ html {
   grid-row: 1;
   grid-column: 1 / -1;
   contain: inline-size;
+}
+
+/* Abyss Blue is the site's accent. On the dark theme it would sit at 1.9:1, so links and
+   the active sidebar item take a lighter step of the same hue there. */
+@theme {
+  --color-fd-primary: #2b3b79;
+  --color-fd-primary-foreground: #e4e4e4;
+}
+
+.dark {
+  --color-fd-primary: oklch(0.72 0.13 270);
+  --color-fd-primary-foreground: #0b0b0b;
 }

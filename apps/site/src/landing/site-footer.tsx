@@ -1,6 +1,6 @@
 import { localized, type Lang } from "@/lib/i18n.ts";
 import { discordUrl, githubUrl, otherLanguage, siteNav } from "@/lib/nav.ts";
-import favicon from "../../../web/public/favicon.svg?url";
+import { BrandMark } from "@/components/brand-mark.tsx";
 import type { LandingCopy } from "./copy.tsx";
 
 export function SiteFooter({ lang, t }: { lang: Lang; t: LandingCopy["footer"] }) {
@@ -11,7 +11,7 @@ export function SiteFooter({ lang, t }: { lang: Lang; t: LandingCopy["footer"] }
     <footer className="site-footer">
       <div className="wrap">
         <p className="footer-sign">
-          <img src={favicon} alt="" width="20" height="20" />
+          <BrandMark className="brand-mark" />
           {t.sign}
         </p>
         <nav aria-label={t.nav}>

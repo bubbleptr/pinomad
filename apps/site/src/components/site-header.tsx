@@ -2,7 +2,7 @@ import { useId, type MouseEvent, type ReactNode } from "react";
 import type { Lang } from "@/lib/i18n.ts";
 import { discordUrl, githubUrl, otherLanguage, siteNav } from "@/lib/nav.ts";
 import { DiscordIcon, GitHubIcon } from "@/landing/icons.tsx";
-import favicon from "../../../web/public/favicon.svg?url";
+import { BrandMark } from "./brand-mark.tsx";
 
 /**
  * The bar at the top of every page: brand and section links on the left; language,
@@ -63,7 +63,7 @@ export function SiteHeader({
     <header className="site-header">
       <div className="header-bar">
         <a className="brand" href={nav.home.url} aria-label={nav.home.text}>
-          <img src={favicon} alt="" width="22" height="22" />
+          <BrandMark className="brand-mark" />
           <span>PiNomad</span>
         </a>
         <nav className="header-nav" aria-label={nav.primaryNav}>

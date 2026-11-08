@@ -1,8 +1,7 @@
-/* One sky, read top to bottom: Void Eclipse black, Abyss Blue, Silver Mist. The page
-   descends through it — night at the top, the blue hour in the middle, a horizon that
-   opens onto daylight for getting started. Each zone (.zone-night, .zone-abyss,
-   .zone-dawn) sets the colour tokens for what's inside it, so components only ever
-   read --bg, --fg and friends. Film grain lies over every zone's background.
+/* Silver Mist ground, Void Eclipse ink, Abyss Blue for what you act on. One stretch of
+   the page (.zone-abyss) and the hero's stage are solid blue; there the accent flips to
+   mist, so a button is never blue on blue. Zones only redefine the colour tokens, so
+   components read --bg, --fg, --accent and friends. Film grain lies over the grounds.
 
    Everything is in this file and the ones landing.css imports beside it — no style
    props and no <style> inside the SVGs — so the page runs under style-src 'self'. */
@@ -16,26 +15,30 @@
 }
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
   /* The palette. */
   --void: #0b0b0b;
   --abyss: #2b3b79;
   --mist: #e4e4e4;
   /* 256px tiles drawn at 128px: one speck per device pixel on a 2x screen, so the
      grain reads as fine film rather than as dots. Each value is a whole background
-     layer (image / position / size), dropped into the zones' background lists. */
+     layer (image / position / size), dropped into the grounds' background lists.
+     Black specks for the mist, white ones for the blue. */
   --grain: url("./grain.png") 0 0 / 128px 128px;
-  /* Black specks show far more on mist than white ones do on black. */
   --grain-light: url("./grain-light.png") 0 0 / 128px 128px;
 
-  --bg: var(--void);
-  --surface: oklch(0.17 0.012 272);
-  --surface-2: oklch(0.215 0.016 272);
-  --border: rgb(228 228 228 / 0.1);
-  --border-strong: rgb(228 228 228 / 0.2);
-  --fg: var(--mist);
-  --fg-2: oklch(0.78 0.012 272);
-  --fg-3: oklch(0.64 0.018 272);
+  --bg: var(--mist);
+  /* Cards and plates sit a step lighter than the ground. */
+  --surface: oklch(0.975 0.003 272);
+  --surface-2: oklch(0.95 0.004 272);
+  --border: rgb(11 11 11 / 0.12);
+  --border-strong: rgb(11 11 11 / 0.26);
+  --fg: var(--void);
+  --fg-2: oklch(0.36 0.02 272);
+  --fg-3: oklch(0.46 0.03 272);
+  /* Links, focus, the call to action and the section numbers. Mist on Abyss is 8:1. */
+  --accent: var(--abyss);
+  --accent-fg: var(--mist);
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
@@ -54,76 +57,37 @@
 }
 
 /* —— Zones —— */
-.zone-abyss {
-  --surface: rgb(228 228 228 / 0.05);
-  --surface-2: rgb(228 228 228 / 0.09);
-  --border: rgb(228 228 228 / 0.13);
-  --border-strong: rgb(228 228 228 / 0.26);
-  --fg-2: oklch(0.85 0.02 272);
-  --fg-3: oklch(0.76 0.03 272);
-}
-
-.zone-dawn,
-.site-footer {
-  color-scheme: light;
-  --bg: var(--mist);
-  --surface: oklch(0.94 0.004 272);
-  --surface-2: oklch(0.975 0.003 272);
-  --border: rgb(11 11 11 / 0.12);
-  --border-strong: rgb(11 11 11 / 0.26);
-  --fg: var(--void);
-  --fg-2: oklch(0.36 0.02 272);
-  --fg-3: oklch(0.46 0.03 272);
+.zone-abyss,
+.hero-stage {
+  color-scheme: dark;
+  --bg: var(--abyss);
+  --surface: rgb(228 228 228 / 0.06);
+  --surface-2: rgb(228 228 228 / 0.1);
+  --border: rgb(228 228 228 / 0.14);
+  --border-strong: rgb(228 228 228 / 0.28);
+  --fg: var(--mist);
+  --fg-2: oklch(0.87 0.02 272);
+  --fg-3: oklch(0.8 0.03 272);
+  --accent: var(--mist);
+  --accent-fg: var(--abyss);
 }
 
 .zone {
   color: var(--fg);
 }
 
-.zone-abyss {
+.zone-light {
+  background: var(--grain-light), var(--mist);
+}
+
+/* Room before the blue starts; the last zone ends on the closing block instead. */
+.zone-light:not(:last-child) {
   padding-bottom: var(--section-space);
 }
 
-.zone-night {
-  background: var(--grain), var(--void);
-}
-
-/* Night into the blue hour, with the darkest stretch kept long so the first section
-   still reads as night. */
 .zone-abyss {
-  background:
-    var(--grain),
-    linear-gradient(
-      to bottom,
-      var(--void),
-      oklch(0.17 0.03 270) 14%,
-      oklch(0.24 0.07 270) 32%,
-      var(--abyss) 58%,
-      oklch(0.37 0.1 270)
-    );
-}
-
-/* The horizon: blue thins to lavender grey, then to mist. No text sits on it. */
-.horizon {
-  height: clamp(14rem, 42vh, 28rem);
-  background:
-    var(--grain),
-    linear-gradient(
-      to bottom,
-      oklch(0.37 0.1 270),
-      oklch(0.385 0.098 270) 12%,
-      oklch(0.43 0.09 271) 26%,
-      oklch(0.52 0.07 273) 42%,
-      oklch(0.63 0.05 275) 58%,
-      oklch(0.75 0.03 275) 74%,
-      oklch(0.85 0.012 275) 88%,
-      var(--mist)
-    );
-}
-
-.zone-dawn,
-.site-footer {
-  background: var(--grain-light), var(--mist);
+  padding-bottom: var(--section-space);
+  background: var(--grain), var(--abyss);
 }
 
 *,
@@ -135,7 +99,7 @@
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
-  background: var(--void);
+  background: var(--mist);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -146,7 +110,7 @@ html {
 
 body {
   margin: 0;
-  background: var(--void);
+  background: var(--mist);
   color: var(--fg);
   font-family: var(--font);
   font-size: 1rem;
@@ -189,14 +153,9 @@ a {
 }
 
 :focus-visible {
-  outline: 2px solid var(--fg);
+  outline: 2px solid var(--accent);
   outline-offset: 3px;
   border-radius: 4px;
-}
-
-/* The header sits outside the zones and changes tone on its own. */
-.site-header :focus-visible {
-  outline-color: var(--header-fg);
 }
 
 code {
@@ -264,43 +223,9 @@ code {
 }
 
 /* —— Header ——
-   The shared bar (components/site-header.css), night-coloured all the way down: over
-   daylight it reads as a strip of dark glass. */
+   The shared bar (components/site-header.css) in mist and ink, frosted over whatever
+   scrolls under it, the blue stretch included. */
 .site-header {
-  --header-bg: var(--void);
-  --header-fg: var(--mist);
-  --header-fg-muted: oklch(0.78 0.012 272);
-  --header-border: rgb(228 228 228 / 0.08);
-  --header-border-strong: rgb(228 228 228 / 0.2);
-}
-
-/* landing.tsx sets data-tone from the zone under the bar, so it turns blue over the blue
-   sections and to frosted mist over the light ones. No attribute (before the script
-   runs, or without it) is the night tone above. */
-.site-header {
-  transition:
-    background-color 0.35s ease,
-    border-color 0.35s ease,
-    color 0.35s ease;
-}
-
-.site-header :is(a, button) {
-  transition:
-    color 0.35s ease,
-    background-color 0.35s ease,
-    border-color 0.35s ease,
-    box-shadow 0.35s ease;
-}
-
-.site-header[data-tone="abyss"] {
-  --header-bg: var(--abyss);
-  --header-fg: var(--mist);
-  --header-fg-muted: oklch(0.86 0.02 272);
-  --header-border: rgb(228 228 228 / 0.12);
-  --header-border-strong: rgb(228 228 228 / 0.3);
-}
-
-.site-header[data-tone="dawn"] {
   --header-bg: var(--mist);
   --header-fg: var(--void);
   --header-fg-muted: oklch(0.36 0.02 272);
@@ -308,24 +233,20 @@ code {
   --header-border-strong: rgb(11 11 11 / 0.22);
 }
 
-/* The bar's call to action: a solid pill in the bar's own ink, so it inverts with the
-   tone — mist on night and blue, ink on mist. */
+/* The bar's call to action is the page's accent. */
 .landing .site-header .app-link {
   border-color: transparent;
-  background: var(--header-fg);
-  color: var(--header-bg);
+  background: var(--accent);
+  color: var(--accent-fg);
   font-weight: 600;
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.35),
-    0 1px 2px rgb(0 0 0 / 0.25);
 }
 
 /* The colour is restated here because site-header.css's link :hover rule, which
    outranks the base rule above, turns link text to --header-fg. */
 .landing .site-header .app-link:hover {
   border-color: transparent;
-  background: color-mix(in oklch, var(--header-fg) 86%, var(--header-bg));
-  color: var(--header-bg);
+  background: color-mix(in oklch, var(--accent) 88%, white);
+  color: var(--accent-fg);
 }
 
 section[id] {
@@ -420,7 +341,8 @@ html[lang="zh-CN"] h2 {
   counter-increment: section;
   content: counter(section, decimal-leading-zero);
   order: -2;
-  color: var(--fg);
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .eyebrow::after {
@@ -449,7 +371,7 @@ html[lang="zh-CN"] .eyebrow {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  color: var(--fg-2);
+  color: var(--accent);
   font-weight: 600;
   font-size: 0.95rem;
   text-decoration: underline;
@@ -461,12 +383,11 @@ html[lang="zh-CN"] .eyebrow {
 }
 
 .text-link:hover {
-  color: var(--fg);
   text-decoration-color: currentColor;
 }
 
-/* The hero's call to action: brushed silver lit from above, with a halo in the corona's
-   blue under it, and an arrow in a dark bead that nudges forward on hover. */
+/* The hero's call to action: a solid pill in the accent, with an arrow in a bead of
+   the accent's own ink that nudges forward on hover. */
 .cta {
   display: inline-flex;
   align-items: center;
@@ -474,19 +395,16 @@ html[lang="zh-CN"] .eyebrow {
   min-height: 3rem;
   padding: 0.4rem 0.4rem 0.4rem 1.4rem;
   border-radius: 999px;
-  background: linear-gradient(180deg, #fbfbfd, var(--mist) 55%, oklch(0.85 0.012 272));
-  color: var(--void);
+  background: var(--accent);
+  color: var(--accent-fg);
   font-size: 0.975rem;
   font-weight: 600;
   text-decoration: none;
   box-shadow:
-    inset 0 1px 0 #fff,
-    inset 0 -1px 0 rgb(11 11 11 / 0.12),
-    0 0 0 1px rgb(228 228 228 / 0.3),
-    0 0.6rem 1.6rem -0.5rem oklch(0.6 0.12 272 / 0.6),
-    0 0 2.75rem -0.4rem oklch(0.7 0.09 272 / 0.35);
+    inset 0 1px 0 rgb(255 255 255 / 0.16),
+    0 0.5rem 1.25rem -0.6rem oklch(0.3 0.09 270 / 0.6);
   transition:
-    box-shadow 0.25s ease,
+    background-color 0.2s ease,
     translate 0.25s var(--ease-out),
     scale 0.15s ease;
 }
@@ -497,9 +415,8 @@ html[lang="zh-CN"] .eyebrow {
   width: 2.2rem;
   height: 2.2rem;
   border-radius: 50%;
-  background: var(--void);
-  color: var(--mist);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14);
+  background: var(--accent-fg);
+  color: var(--accent);
 }
 
 .cta-arrow svg {
@@ -511,12 +428,7 @@ html[lang="zh-CN"] .eyebrow {
 @media (hover: hover) {
   .cta:hover {
     translate: 0 -1px;
-    box-shadow:
-      inset 0 1px 0 #fff,
-      inset 0 -1px 0 rgb(11 11 11 / 0.12),
-      0 0 0 1px rgb(228 228 228 / 0.45),
-      0 0.8rem 2rem -0.5rem oklch(0.62 0.13 272 / 0.75),
-      0 0 3.5rem -0.2rem oklch(0.72 0.1 272 / 0.5);
+    background: color-mix(in oklch, var(--accent) 88%, white);
   }
 
   .cta:hover .cta-arrow svg {
@@ -529,146 +441,14 @@ html[lang="zh-CN"] .eyebrow {
   scale: 0.98;
 }
 
-/* —— Hero: a total eclipse, the headline across its dark face —— */
-/* The disc and where its centre sits below the headline's top live here, so the
-   padding can clear the whole ring under the header at any width. */
+/* —— Hero: the headline on the mist, then the app on a blue stage —— */
 .hero {
-  --disc: min(96vw, 48rem);
-  --eclipse-y: clamp(4.6rem, 10.2vw, 9rem);
-  position: relative;
-  padding-top: calc(var(--disc) / 2 - var(--eclipse-y) + clamp(2.5rem, 6vw, 4.5rem));
+  padding-top: clamp(4.5rem, 11vw, 8.5rem);
   text-align: center;
-}
-
-/* Tall enough to reach past the ring's lower rim, so whatever follows starts a fixed
-   step below the ring rather than wherever the text happens to end. */
-.hero-inner {
-  position: relative;
-  isolation: isolate;
-  min-height: calc(var(--eclipse-y) + var(--disc) / 2 + clamp(0.5rem, 2vw, 1.5rem));
-}
-
-/* Sized off the disc: the box is 1.6 discs wide, so the rim sits at 62.5% of its
-   radius. Centred on the headline. */
-.eclipse {
-  position: absolute;
-  z-index: -1;
-  left: 50%;
-  /* A little below the headline's middle, so the lead and buttons sit inside too. */
-  top: var(--eclipse-y);
-  width: calc(var(--disc) * 1.6);
-  aspect-ratio: 1;
-  translate: -50% -50%;
-  pointer-events: none;
-}
-
-/* Too narrow to hold the lead inside the ring: the eclipse rises over the headline
-   instead, and the text runs on below it. */
-@media (max-width: 40rem) {
-  .hero {
-    --disc: 64vw;
-    --eclipse-y: -30vw;
-  }
-}
-
-.corona,
-.corona-rays {
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-}
-
-.corona {
-  background:
-    var(--grain),
-    radial-gradient(
-      circle closest-side,
-      var(--void) 0 62.2%,
-      oklch(0.99 0.01 272) 62.5%,
-      oklch(0.93 0.03 272 / 0.95) 63.1%,
-      oklch(0.78 0.07 272 / 0.62) 64.6%,
-      oklch(0.56 0.11 271 / 0.42) 68%,
-      oklch(0.4 0.11 270 / 0.26) 75%,
-      oklch(0.3 0.08 270 / 0.1) 87%,
-      transparent 100%
-    );
-}
-
-/* Streamers: an uneven fan of light, kept to a ring outside the disc and blurred. */
-.corona-rays {
-  background: conic-gradient(
-    from 10deg,
-    transparent 0deg,
-    rgb(228 228 228 / 0.22) 9deg,
-    transparent 21deg,
-    rgb(170 185 240 / 0.16) 38deg,
-    transparent 52deg,
-    rgb(228 228 228 / 0.3) 70deg,
-    transparent 77deg,
-    rgb(150 170 235 / 0.18) 104deg,
-    transparent 131deg,
-    rgb(228 228 228 / 0.2) 158deg,
-    transparent 166deg,
-    rgb(170 185 240 / 0.24) 197deg,
-    transparent 214deg,
-    rgb(228 228 228 / 0.18) 236deg,
-    transparent 251deg,
-    rgb(150 170 235 / 0.22) 281deg,
-    transparent 296deg,
-    rgb(228 228 228 / 0.26) 318deg,
-    transparent 331deg
-  );
-  mask-image: radial-gradient(circle closest-side, transparent 62.4%, #000 63%, rgb(0 0 0 / 0.5) 75%, transparent 96%);
-  filter: blur(10px);
-}
-
-/* The diamond ring: the last bead of sunlight on the rim, up and to the right. */
-.glint {
-  position: absolute;
-  left: calc(50% + 31.25% * cos(-58deg));
-  top: calc(50% + 31.25% * sin(-58deg));
-  width: 0;
-  height: 0;
-}
-
-.glint::before,
-.glint::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  translate: -50% -50%;
-}
-
-.glint::before {
-  width: clamp(5rem, 12vw, 9rem);
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle closest-side,
-    #fff 0 7%,
-    oklch(0.95 0.03 272 / 0.9) 14%,
-    oklch(0.75 0.09 272 / 0.4) 34%,
-    oklch(0.5 0.12 270 / 0.12) 62%,
-    transparent
-  );
-}
-
-/* A lens streak through the bead. */
-.glint::after {
-  width: clamp(14rem, 40vw, 30rem);
-  height: 1px;
-  rotate: -14deg;
-  background: linear-gradient(90deg, transparent, oklch(0.95 0.03 272 / 0.75), transparent);
 }
 
 .hero h1 .line {
   display: block;
-}
-
-/* Where a line runs over the rim, a halo of the night keeps it legible. */
-.hero h1 {
-  text-shadow: 0 0 1.25rem var(--void), 0 0 2.5rem rgb(11 11 11 / 0.6);
 }
 
 .hero .lead {
@@ -764,12 +544,41 @@ html[lang="zh-CN"] .models-label {
   font-style: italic;
 }
 
-/* The app, risen in front of the eclipse's lower rim. */
+/* The app stands on a plate of silver contour lines over Abyss Blue. The picture is
+   gradient-mapped onto the palette, so its ground is Abyss itself; the top padding
+   shows its band of silver above the window. */
+/* Wider than the text column, so the window reads at close to its real size. */
+.hero-stage {
+  width: min(100% - 2 * var(--gutter), 90rem);
+  margin: clamp(3rem, 7vw, 5rem) auto 0;
+  padding-top: max(3rem, 12.6%);
+  /* clip, not hidden: hidden makes a scroll container, and the screenshot's view()
+     timeline would follow this box, which never scrolls, instead of the page. */
+  overflow: clip;
+  border-radius: calc(var(--radius) * 1.75);
+  background: var(--abyss)
+    image-set(url("./hero-stage-1000.webp") 1x, url("./hero-stage.webp") 2x)
+    center top / cover no-repeat;
+}
+
+/* Past 1000px wide the small copy would be stretched even at 1x. */
+@media (min-width: 64rem) {
+  .hero-stage {
+    background-image: url("./hero-stage.webp");
+  }
+}
+
 .hero-shot {
-  margin-top: clamp(3rem, 7vw, 5rem);
-  box-shadow:
-    0 -1.5rem 7rem -1rem oklch(0.45 0.12 270 / 0.55),
-    0 2.5rem 6rem -1rem rgb(0 0 0 / 0.8);
+  width: calc(100% - 2rem);
+  margin-inline: auto;
+  border-radius: var(--radius) var(--radius) 0 0;
+  box-shadow: 0 -0.5rem 3rem -0.5rem rgb(0 0 0 / 0.45);
+}
+
+@media (min-width: 56rem) {
+  .hero-shot {
+    width: 82%;
+  }
 }
 
 /* Keeps the Chinese h1's first clause on one line — but only when it fits. */
@@ -788,23 +597,7 @@ html[lang="zh-CN"] .models-label {
     animation-play-state: paused;
   }
 
-  .corona-rays {
-    animation: turn 240s linear infinite;
-  }
-
-  .corona {
-    animation: dawn 2.4s var(--ease-out) both;
-  }
-
-  .glint {
-    animation: flare 2.8s var(--ease-out) 0.5s both;
-  }
-
-  .glint::before {
-    animation: breathe 7s ease-in-out 3.3s infinite alternate;
-  }
-
-  /* The screenshot tips up from the horizon as it scrolls in. */
+  /* The screenshot tips up off its stage as it scrolls in. */
   @supports (animation-timeline: view()) {
     .hero-shot {
       transform-origin: 50% 100%;
@@ -818,37 +611,6 @@ html[lang="zh-CN"] .models-label {
 @keyframes drift {
   to {
     translate: -50% 0;
-  }
-}
-
-@keyframes turn {
-  to {
-    rotate: 1turn;
-  }
-}
-
-@keyframes dawn {
-  from {
-    opacity: 0;
-    scale: 0.96;
-  }
-}
-
-@keyframes flare {
-  from {
-    opacity: 0;
-    scale: 0.2;
-  }
-  55% {
-    opacity: 1;
-    scale: 1.5;
-  }
-}
-
-@keyframes breathe {
-  to {
-    scale: 1.25;
-    opacity: 0.8;
   }
 }
 
@@ -873,6 +635,7 @@ html[lang="zh-CN"] .models-label {
    image (not a border around it) keeps them crisp. */
 .shot:has(> img) {
   border: 0;
+  box-shadow: 0 1.25rem 2.5rem -1.25rem rgb(11 11 11 / 0.35);
 }
 
 .shot > img {
@@ -1037,11 +800,6 @@ html[lang="zh-CN"] .models-label {
   max-width: 44rem;
 }
 
-/* The first section after the horizon starts close: the gradient already gave it air. */
-.zone-dawn > .section:first-child {
-  padding-top: clamp(2rem, 5vw, 4rem);
-}
-
 /* Beside a picture the column is half the page, so the heading steps down a size. */
 .split h2 {
   font-size: clamp(2.3rem, 4.4vw, 3.6rem);
@@ -1151,65 +909,13 @@ html[lang="zh-CN"] .split h2 {
 
 /* —— Diagrams (diagrams.tsx): miniature product UI on a hatched plate. Depth comes
    from lightness steps (plate < tile < card) plus a highlight along each card's top
-   edge; the SVG's own filter adds the shadow. The page has no accent colour, and
-   colour here only carries meaning: window controls, green for running and
-   encrypted, violet for the model, one hue per agent. SVG units are px here, so
-   sizes are in the drawing's own units. —— */
+   edge; the SVG's own filter adds the shadow. Colour here only carries meaning:
+   window controls, green for running and encrypted, violet for the model, one hue per
+   agent. SVG units are px here, so sizes are in the drawing's own units.
+
+   On the mist: a light plate, white cards, ink text and soft shadows. The hues sit
+   dark enough to read on white. —— */
 :root {
-  --dg-plate: oklch(0.19 0.02 272);
-  --dg-hatch: rgb(255 255 255 / 0.03);
-  --dg-hairline: rgb(255 255 255 / 0.07);
-  --dg-shine: rgb(255 255 255 / 0.07);
-  --dg-card: oklch(0.27 0.025 272);
-  --dg-card-back: oklch(0.23 0.022 272);
-  --dg-screen: oklch(0.175 0.018 272);
-  --dg-bar: oklch(0.36 0.025 272);
-  --dg-bar-strong: oklch(0.46 0.03 272);
-  --dg-icon: oklch(0.68 0.03 272);
-  --dg-line: rgb(255 255 255 / 0.2);
-  --dg-line-strong: rgb(255 255 255 / 0.34);
-  --dg-green: oklch(0.76 0.15 155);
-  --dg-red: oklch(0.66 0.15 25);
-  --dg-amber: oklch(0.8 0.13 80);
-  --dg-violet: oklch(0.74 0.12 295);
-  --dg-blue: oklch(0.74 0.1 245);
-  --dg-rose: oklch(0.74 0.11 0);
-}
-
-/* Diagrams set their own text tokens: light on the dark and blue plates, and ink on
-   the light plate in a mist section (below). */
-.diagram {
-  --fg: var(--mist);
-  --fg-2: oklch(0.87 0.02 272);
-  --fg-3: oklch(0.79 0.03 272);
-  color: var(--fg);
-  padding: clamp(0.5rem, 2vw, 1.5rem);
-  border-radius: var(--radius);
-  background-color: var(--dg-plate);
-  background-image: repeating-linear-gradient(-45deg, var(--dg-hatch) 0 1px, transparent 1px 7px);
-  box-shadow: inset 0 0 0 1px var(--dg-hairline);
-}
-
-/* In the blue sections the plate is Abyss Blue a shade under the ground, and the cards
-   step up from it, so a diagram reads as part of the blue rather than a hole in it. */
-.zone-abyss .diagram {
-  --dg-plate: oklch(0.29 0.08 270);
-  --dg-hatch: rgb(255 255 255 / 0.035);
-  --dg-hairline: rgb(255 255 255 / 0.12);
-  --dg-shine: rgb(255 255 255 / 0.1);
-  --dg-card: oklch(0.4 0.09 271);
-  --dg-card-back: oklch(0.35 0.085 271);
-  --dg-screen: oklch(0.26 0.07 270);
-  --dg-bar: oklch(0.52 0.07 272);
-  --dg-bar-strong: oklch(0.62 0.06 272);
-  --dg-icon: oklch(0.82 0.035 272);
-}
-
-/* On the mist: a light plate, white cards, ink text and soft shadows. */
-.zone-dawn .diagram {
-  --fg: var(--void);
-  --fg-2: oklch(0.36 0.02 272);
-  --fg-3: oklch(0.5 0.025 272);
   --dg-plate: oklch(0.955 0.004 272);
   --dg-hatch: rgb(11 11 11 / 0.035);
   --dg-hairline: rgb(11 11 11 / 0.1);
@@ -1222,13 +928,61 @@ html[lang="zh-CN"] .split h2 {
   --dg-icon: oklch(0.42 0.03 272);
   --dg-line: rgb(11 11 11 / 0.22);
   --dg-line-strong: rgb(11 11 11 / 0.36);
-  --dg-violet: oklch(0.55 0.15 295);
   --dg-green: oklch(0.6 0.15 155);
+  --dg-red: oklch(0.58 0.18 25);
+  --dg-amber: oklch(0.62 0.13 70);
+  --dg-violet: oklch(0.55 0.15 295);
+  --dg-blue: oklch(0.55 0.13 250);
+  --dg-rose: oklch(0.58 0.17 5);
 }
 
-.zone-dawn .diagram feDropShadow {
+.diagram {
+  --fg: var(--void);
+  --fg-2: oklch(0.36 0.02 272);
+  --fg-3: oklch(0.5 0.025 272);
+  color: var(--fg);
+  padding: clamp(0.5rem, 2vw, 1.5rem);
+  border-radius: var(--radius);
+  background-color: var(--dg-plate);
+  background-image: repeating-linear-gradient(-45deg, var(--dg-hatch) 0 1px, transparent 1px 7px);
+  box-shadow: inset 0 0 0 1px var(--dg-hairline);
+}
+
+.diagram feDropShadow {
   flood-color: oklch(0.3 0.08 270);
   flood-opacity: 0.14;
+}
+
+/* In the blue stretch the plate is Abyss Blue a shade under the ground, and the cards
+   step up from it, so a diagram reads as part of the blue rather than a hole in it.
+   Text and hues go light. */
+.zone-abyss .diagram {
+  --fg: var(--mist);
+  --fg-2: oklch(0.87 0.02 272);
+  --fg-3: oklch(0.79 0.03 272);
+  --dg-plate: oklch(0.29 0.08 270);
+  --dg-hatch: rgb(255 255 255 / 0.035);
+  --dg-hairline: rgb(255 255 255 / 0.12);
+  --dg-shine: rgb(255 255 255 / 0.1);
+  --dg-card: oklch(0.4 0.09 271);
+  --dg-card-back: oklch(0.35 0.085 271);
+  --dg-screen: oklch(0.26 0.07 270);
+  --dg-bar: oklch(0.52 0.07 272);
+  --dg-bar-strong: oklch(0.62 0.06 272);
+  --dg-icon: oklch(0.82 0.035 272);
+  --dg-line: rgb(255 255 255 / 0.2);
+  --dg-line-strong: rgb(255 255 255 / 0.34);
+  --dg-green: oklch(0.76 0.15 155);
+  --dg-red: oklch(0.66 0.15 25);
+  --dg-amber: oklch(0.8 0.13 80);
+  --dg-violet: oklch(0.74 0.12 295);
+  --dg-blue: oklch(0.74 0.1 245);
+  --dg-rose: oklch(0.74 0.11 0);
+}
+
+.zone-abyss .diagram feDropShadow {
+  flood-color: #000;
+  flood-opacity: 0.5;
 }
 
 .diagram svg {
@@ -1284,6 +1038,11 @@ html[lang="zh-CN"] .split h2 {
 
 .dg-island {
   fill: var(--bg);
+}
+
+/* The blue ground would light the island up against the darker screen. */
+.zone-abyss .dg-island {
+  fill: var(--void);
 }
 
 .dg-qr {
@@ -1555,14 +1314,14 @@ html[lang="zh-CN"] .split h2 {
 
 .plan-link {
   justify-self: start;
-  color: var(--fg-3);
+  color: var(--accent);
   font-size: 0.875rem;
   font-variant-numeric: tabular-nums;
   text-underline-offset: 0.2em;
 }
 
 .plan-link:hover {
-  color: var(--fg);
+  text-decoration-thickness: 2px;
 }
 
 /* —— Get started: install, then the clients —— */
@@ -1602,7 +1361,7 @@ html[lang="zh-CN"] .split h2 {
 }
 
 .client a {
-  color: var(--fg);
+  color: var(--accent);
   text-underline-offset: 0.2em;
 }
 
@@ -1623,7 +1382,7 @@ html[lang="zh-CN"] .split h2 {
   font-size: 0.9rem;
 }
 
-/* A slab of night on the mist: the terminal keeps the dark tokens wherever it sits. */
+/* The page's one slab of night: the terminal keeps dark tokens wherever it sits. */
 .code-card {
   --bg: var(--void);
   --surface: oklch(0.17 0.012 272);
@@ -1633,6 +1392,8 @@ html[lang="zh-CN"] .split h2 {
   --fg: var(--mist);
   --fg-2: oklch(0.78 0.012 272);
   --fg-3: oklch(0.64 0.018 272);
+  --accent: var(--mist);
+  --accent-fg: var(--void);
   color-scheme: dark;
   border-radius: var(--radius);
   background: var(--void);
@@ -1688,7 +1449,7 @@ html[lang="zh-CN"] .split h2 {
 }
 
 .latest a {
-  color: var(--fg);
+  color: var(--accent);
   text-underline-offset: 0.2em;
 }
 
@@ -1700,6 +1461,7 @@ html[lang="zh-CN"] .split h2 {
 /* —— Footer —— */
 .site-footer {
   border-top: 1px solid var(--border);
+  background: var(--grain-light), var(--mist);
   color: var(--fg-3);
   font-size: 0.875rem;
 }
@@ -1719,10 +1481,10 @@ html[lang="zh-CN"] .split h2 {
   gap: 0.6rem;
 }
 
-.footer-sign img {
-  width: 1.25rem;
+.footer-sign .brand-mark {
+  width: auto;
   height: 1.25rem;
-  opacity: 0.8;
+  color: var(--fg);
 }
 
 .site-footer nav ul {
@@ -1740,7 +1502,7 @@ html[lang="zh-CN"] .split h2 {
   color: var(--fg);
 }
 
-/* The sign-off: the name across the whole width, inked from night into the blue. */
+/* The sign-off: the name across the whole width, inked from Void down into Abyss. */
 .footer-mark {
   overflow: hidden;
   padding-inline: var(--gutter);

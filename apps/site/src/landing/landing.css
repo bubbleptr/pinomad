@@ -21,7 +21,7 @@
 
 /* shadcn's theme names, mapped onto page.css's tokens rather than given values of
    their own. Each zone of the page (page.css) redefines those tokens, so the
-   components follow it from night into daylight without a light set here. */
+   components follow it onto the blue stretch and back without a set of their own. */
 @theme inline {
   --color-background: var(--bg);
   --color-foreground: var(--fg);
@@ -29,8 +29,8 @@
   --color-card-foreground: var(--fg);
   --color-popover: var(--surface-2);
   --color-popover-foreground: var(--fg);
-  --color-primary: var(--fg);
-  --color-primary-foreground: var(--bg);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--accent-fg);
   --color-secondary: var(--surface-2);
   --color-secondary-foreground: var(--fg);
   --color-muted: var(--surface);
@@ -39,7 +39,7 @@
   --color-accent-foreground: var(--fg);
   --color-border: var(--border);
   --color-input: var(--border-strong);
-  --color-ring: var(--fg-3);
+  --color-ring: var(--accent);
   --font-sans: var(--font);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

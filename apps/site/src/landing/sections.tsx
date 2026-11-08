@@ -55,13 +55,6 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
   return (
     <section className="hero" aria-labelledby="hero-title">
       <div className="wrap hero-inner">
-        {/* A total eclipse: the disc is the page's own black, so only its corona and the
-            diamond-ring glint on its rim show. */}
-        <div className="eclipse" aria-hidden="true">
-          <span className="corona" />
-          <span className="corona-rays" />
-          <span className="glint" />
-        </div>
         <h1 id="hero-title">{t.title}</h1>
         <p className="lead">{t.lead}</p>
         <div className="actions">
@@ -76,7 +69,7 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
           </a>
         </div>
       </div>
-      {/* Everything under the ring, as one block: the spec line, then the models. */}
+      {/* The spec line, then the models. */}
       <div className="hero-meta">
         <div className="wrap">
           <dl className="specs">
@@ -97,12 +90,12 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
           </div>
         </div>
       </div>
-      <div className="wrap">
+      <div className="hero-stage">
         <figure className="shot shot-window hero-shot">
           <img
             src={image.src}
             srcSet={image.srcSet}
-            sizes="(min-width: 72rem) 68rem, 100vw"
+            sizes="(min-width: 96rem) 74rem, (min-width: 56rem) 78vw, 100vw"
             width="2400"
             height="1500"
             alt={t.shotAlt}
