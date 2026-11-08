@@ -211,24 +211,37 @@ struct AccountLoginView: View {
         return Button {
             if apple { startApple() } else { startProvider(provider) }
         } label: {
-            HStack(spacing: 10) {
-                Spacer()
-                if busy == provider {
-                    ProgressView().controlSize(.small).tint(ink)
-                } else {
-                    SignInProviderMark(provider: provider)
+            // Every button reserves the widest offered label, leading
+            // aligned, so the marks stack in one column and the titles
+            // start at the same x.
+            ZStack(alignment: .leading) {
+                ForEach(offered, id: \.self) { other in
+                    providerLabel(other, busy: false).hidden()
                 }
-                Text("Continue with \(SignInProviders.name(provider))")
-                Spacer()
+                providerLabel(provider, busy: busy == provider, tint: ink)
             }
             .font(.body.weight(.medium))
-            .frame(minHeight: Self.providerButtonHeight)
+            .frame(maxWidth: .infinity, minHeight: Self.providerButtonHeight)
             .foregroundStyle(ink)
             .background(fill, in: .capsule)
             .contentShape(.capsule)
         }
         .buttonStyle(.press)
         .disabled(busy != nil)
+    }
+
+    private func providerLabel(_ provider: String, busy: Bool, tint: Color = .primary) -> some View {
+        HStack(spacing: 10) {
+            Group {
+                if busy {
+                    ProgressView().controlSize(.small).tint(tint)
+                } else {
+                    SignInProviderMark(provider: provider)
+                }
+            }
+            .frame(width: 20, height: 20)
+            Text("Continue with \(SignInProviders.name(provider))")
+        }
     }
 
     private func startApple() {

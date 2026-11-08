@@ -18,6 +18,11 @@ enum SignInProviders {
 /// A provider's brand mark at text size. Apple is the system symbol; Google
 /// keeps its colors and GitHub follows the text color (the web client's
 /// lobehub SVGs, docs/licenses/lobehub-icons.md).
+///
+/// `size` is the visible height of the mark. The GitHub SVG fills its box;
+/// the Google SVG has a margin and the Apple glyph is narrow and shorter
+/// than its point size, so both are scaled up to look the same size
+/// (measured on screen: at 18 the three marks are 18pt tall).
 struct SignInProviderMark: View {
     let provider: String
     var size: CGFloat = 18
@@ -26,11 +31,12 @@ struct SignInProviderMark: View {
         switch provider {
         case "apple":
             Image(systemName: "apple.logo")
-                .font(.system(size: size * 0.95))
+                .font(.system(size: size * 1.05))
                 .frame(width: size, height: size)
         case "google":
             Image("provider-google-color")
                 .resizable()
+                .frame(width: size * 1.08, height: size * 1.08)
                 .frame(width: size, height: size)
         case "github":
             Image("provider-github")
