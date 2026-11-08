@@ -346,6 +346,47 @@ describe("Processes", () => {
     expect(process.id).toBeTruthy();
   });
 
+  it("keeps another family's ended output when a different family updates", async () => {
+    const value = await setup();
+    const first = await startProcess(value, { name: "first" });
+    value.fake.ptys[0]!.emit("first-output");
+    value.fake.ptys[0]!.finish(0);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const other = await startChat(value.client, "other");
+    const second = await value.runtime.start(
+      { conversationId: other, command: "sleep 30", name: "second", cwd: CWD },
+      CONTEXT,
+    );
+    value.fake.ptys[1]!.emit("second-output");
+    value.fake.ptys[1]!.finish(0);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect((await value.runtime.output({ conversationId: value.conversationId, id: first.id }, CONTEXT)).text).toBe(
+      "first-output",
+    );
+    expect((await value.runtime.output({ conversationId: other, id: second.id }, CONTEXT)).text).toBe("second-output");
+  });
+
+  it("keeps the SIGKILL timer when the shell exits before its group", async () => {
+    let alive = true;
+    const fake = fakeSpawner({
+      onSignal: (pty, signal) => {
+        if (signal === "SIGTERM") pty?.finish(0, 15);
+        if (signal === "SIGKILL") alive = false;
+      },
+    });
+    const value = await setup({
+      fake,
+      processes: { stopGraceMs: 20, groupAlive: () => alive },
+    });
+    const process = await startProcess(value);
+    const stopped = await value.runtime.stop(
+      { conversationId: value.conversationId, id: process.id, reason: "user" },
+      CONTEXT,
+    );
+    expect(stopped.state).toEqual({ stopped: "user" });
+    expect(fake.signals.map((entry) => entry.signal)).toEqual(["SIGTERM", "SIGKILL"]);
+  });
+
   it("evicts the oldest ended output when the budget is exceeded", async () => {
     const value = await setup({ processes: { outputBudget: 20 } });
     const first = await startProcess(value, { name: "first" });

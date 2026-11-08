@@ -56,6 +56,8 @@ export interface ProcessesOptions {
   readonly stopGraceMs?: number;
   /** Sends a signal to a pid (negative for a process group); injected by tests. */
   readonly kill?: (pid: number, signal: NodeJS.Signals) => void;
+  /** Whether the process group still has live members; injected by tests. */
+  readonly groupAlive?: (pid: number) => boolean;
   /** True while an immediate upgrade is installing: exit at once but do not report. */
   readonly installing?: () => boolean;
   readonly onOutput?: () => void;
@@ -107,6 +109,11 @@ interface Entry {
   pty: PtyProcess | undefined;
   stopReason: ProcessStopReason | undefined;
   killTimer: ReturnType<typeof setTimeout> | undefined;
+  groupTimer: ReturnType<typeof setTimeout> | undefined;
+  /** SIGKILL was sent; do not schedule a second grace period. */
+  killed: boolean;
+  /** The stopped document write is running or done. */
+  finishing: boolean;
   generation: number;
   released: boolean;
 }
@@ -211,6 +218,9 @@ export class Processes implements ProcessRuntime {
       pty: undefined,
       stopReason: undefined,
       killTimer: undefined,
+      groupTimer: undefined,
+      killed: false,
+      finishing: false,
       generation: 0,
       released: false,
     };
@@ -378,25 +388,24 @@ export class Processes implements ProcessRuntime {
   }
 
   async #exit(entry: Entry, exitCode: number | null, signal: number | undefined): Promise<void> {
-    if (entry.killTimer !== undefined) clearTimeout(entry.killTimer);
-    entry.killTimer = undefined;
     entry.pty = undefined;
     entry.output.flush();
-    entry.info.endedAt = this.#now();
     if (entry.stopReason === undefined && this.#closing) entry.stopReason = "shutdown";
     if (entry.stopReason !== undefined) {
-      entry.info.state = { stopped: entry.stopReason };
-      try {
-        await this.#write(entry, BACKGROUND_CONTEXT);
-      } catch (error) {
-        this.#diagnose(error);
+      // The pty's exit is only the shell's. A child that ignored SIGTERM can
+      // still be in the process group, so keep the SIGKILL timer and wait for
+      // the whole group before declaring the process stopped.
+      if (this.#groupAlive(entry)) {
+        this.#ensureKillTimer(entry);
+        this.#pollGroup(entry);
+        return;
       }
-      entry.resolveDone();
-      this.#refreshBusy();
-      this.#evictOutputs();
+      await this.#finishStopped(entry);
       return;
     }
 
+    this.#clearStopTimers(entry);
+    entry.info.endedAt = this.#now();
     entry.info.state =
       signal === undefined || signal === 0 ? { exited: exitCode } : { exited: null, signal: signalName(signal) };
     const report = this.#options.installing?.() !== true;
@@ -409,6 +418,72 @@ export class Processes implements ProcessRuntime {
     entry.resolveDone();
     this.#refreshBusy();
     this.#evictOutputs();
+  }
+
+  async #finishStopped(entry: Entry): Promise<void> {
+    if (entry.finishing) return;
+    entry.finishing = true;
+    this.#clearStopTimers(entry);
+    entry.info.endedAt = this.#now();
+    entry.info.state = { stopped: entry.stopReason ?? "shutdown" };
+    try {
+      await this.#write(entry, BACKGROUND_CONTEXT);
+    } catch (error) {
+      this.#diagnose(error);
+    }
+    entry.resolveDone();
+    this.#refreshBusy();
+    this.#evictOutputs();
+  }
+
+  /** SIGTERM already went out; after the grace period the group gets SIGKILL. */
+  #ensureKillTimer(entry: Entry): void {
+    if (entry.killTimer !== undefined || entry.killed) return;
+    const grace = this.#options.stopGraceMs ?? STOP_GRACE_MS;
+    entry.killTimer = setTimeout(() => {
+      entry.killTimer = undefined;
+      entry.killed = true;
+      this.#signal(entry, "SIGKILL");
+    }, grace);
+  }
+
+  #pollGroup(entry: Entry): void {
+    if (entry.groupTimer !== undefined || entry.finishing) return;
+    const check = (): void => {
+      entry.groupTimer = undefined;
+      if (entry.finishing || entry.released || !this.#processes.has(entry.info.id)) return;
+      if (!this.#groupAlive(entry)) {
+        void this.#finishStopped(entry);
+        return;
+      }
+      entry.groupTimer = setTimeout(check, 25);
+    };
+    check();
+  }
+
+  #groupAlive(entry: Entry): boolean {
+    const pid = entry.info.pid;
+    if (pid === undefined) return false;
+    const alive = this.#options.groupAlive ?? ((group: number) => {
+      try {
+        process.kill(-group, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    try {
+      return alive(pid);
+    } catch {
+      return false;
+    }
+  }
+
+  #clearStopTimers(entry: Entry): void {
+    if (entry.killTimer !== undefined) clearTimeout(entry.killTimer);
+    if (entry.groupTimer !== undefined) clearTimeout(entry.groupTimer);
+    entry.killTimer = undefined;
+    entry.groupTimer = undefined;
   }
 
   async #fail(entry: Entry, reason: string, context: Context): Promise<void> {
@@ -431,13 +506,7 @@ export class Processes implements ProcessRuntime {
     // First stop reason wins: an exit after this point is always a stop.
     entry.stopReason ??= reason;
     this.#signal(entry, "SIGTERM");
-    const grace = this.#options.stopGraceMs ?? STOP_GRACE_MS;
-    if (entry.killTimer === undefined && isProcessActive(entry.info.state)) {
-      entry.killTimer = setTimeout(() => {
-        entry.killTimer = undefined;
-        this.#signal(entry, "SIGKILL");
-      }, grace);
-    }
+    this.#ensureKillTimer(entry);
     await entry.done;
     return info(entry);
   }
@@ -460,7 +529,7 @@ export class Processes implements ProcessRuntime {
 
   async #write(entry: Entry, context: Context): Promise<void> {
     const kept = await this.#options.harness().commit((tx) => this.#applyDoc(tx, entry), context);
-    this.#retireMissing(kept);
+    this.#retireMissing(kept, entry.root);
   }
 
   async #reportAndWrite(entry: Entry): Promise<void> {
@@ -482,7 +551,7 @@ export class Processes implements ProcessRuntime {
       });
       return this.#applyDoc(tx, entry);
     }, BACKGROUND_CONTEXT);
-    this.#retireMissing(kept);
+    this.#retireMissing(kept, entry.root);
   }
 
   async #applyDoc(tx: Tx, entry: Entry): Promise<Set<ProcessId>> {
@@ -503,9 +572,9 @@ export class Processes implements ProcessRuntime {
     return new Set(doc.processes.map((process) => process.id));
   }
 
-  #retireMissing(kept: ReadonlySet<ProcessId>): void {
+  #retireMissing(kept: ReadonlySet<ProcessId>, root: ConversationId): void {
     for (const [id, entry] of this.#processes) {
-      if (kept.has(id) || isProcessActive(entry.info.state)) continue;
+      if (entry.root !== root || kept.has(id) || isProcessActive(entry.info.state)) continue;
       this.#release(entry, "Output released");
       this.#processes.delete(id);
       entry.resolveDone();
@@ -516,6 +585,7 @@ export class Processes implements ProcessRuntime {
   #release(entry: Entry, reason: string): void {
     if (entry.released) return;
     entry.released = true;
+    this.#clearStopTimers(entry);
     entry.output.close(reason);
     // The entry may outlive its output (history still lists it); let the
     // retained bytes go now rather than with the entry.
