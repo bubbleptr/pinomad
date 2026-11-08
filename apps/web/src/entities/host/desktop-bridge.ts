@@ -51,6 +51,17 @@ export interface DesktopBridge {
     state: string;
   }) => Promise<{ code: string } | { error: string }>;
   /**
+   * Linking a provider from settings (#631) through the same listener, in
+   * two steps: `listen` answers the 127.0.0.1 redirect the renderer gives
+   * the server's link call, `open` opens the one-time start URL the server
+   * answered and resolves with the code the renderer trades to finish the
+   * link, or the error. Optional like `oauthSignIn`.
+   */
+  readonly oauthLink?: {
+    readonly listen: (input: { serverOrigin: string; state: string }) => Promise<{ redirectUri: string } | { error: string }>;
+    readonly open: (input: { state: string; url: string }) => Promise<{ code: string } | { error: string }>;
+  };
+  /**
    * The label pairing registers on the host's device list ("Mac Desktop
    * (kieran-mbp)"). Optional like `updates`: the browser has no bridge, and a
    * missing one just falls back to the UA-derived name.

@@ -14,7 +14,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** A password and GitHub; Google and Apple can be linked on the server's page. */
+/** A password and GitHub; Google and Apple can be linked. */
 export const PasswordAndGitHub: Story = {};
 
 /** Signed up with GitHub alone: no password yet, and removing it would be the last way in. */
@@ -38,5 +38,14 @@ export const RemoveWithCode: Story = {
     const row = (await canvas.findByText("GitHub")).closest("li")!;
     await userEvent.click(within(row).getByRole("button", { name: "Remove" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Send code" }));
+  },
+};
+
+/** The desktop app (#631): linking opens the system browser, so the description says to come back. */
+export const DesktopLinking: Story = {
+  args: { account: { ...fakeAccount(signedIn()), providerFlow: "loopback" } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Link Google" }));
   },
 };

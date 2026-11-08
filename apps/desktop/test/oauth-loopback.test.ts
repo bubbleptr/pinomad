@@ -1,7 +1,8 @@
 // The desktop's provider sign-in listener (ADR-0044 §5): what it opens, which
-// requests count, single use, and the timeout. Plain Node, no Electron.
+// requests count, single use, and the timeout; and linking from settings
+// (#631) in two steps. Plain Node, no Electron.
 import { describe, expect, it } from "vitest";
-import { loopbackSignIn, type LoopbackSignInInput } from "../electron/oauth-loopback.ts";
+import { loopbackLinks, loopbackSignIn, type LoopbackSignInInput } from "../electron/oauth-loopback.ts";
 
 const INPUT: LoopbackSignInInput = {
   serverOrigin: "https://pinomad.si",
@@ -91,5 +92,73 @@ describe("loopbackSignIn", () => {
     expect(await loopbackSignIn(INPUT, { openExternal: () => Promise.reject(new Error("no browser")) })).toEqual({
       error: "browser_failed",
     });
+  });
+});
+
+describe("loopbackLinks", () => {
+  const START = "https://pinomad.si/api/oauth/github/start?link=ticket";
+
+  function links(timeoutMs?: number) {
+    const opened: string[] = [];
+    const deps = { openExternal: async (url: string) => void opened.push(url), ...(timeoutMs === undefined ? {} : { timeoutMs }) };
+    return { links: loopbackLinks(deps), opened };
+  }
+
+  async function redirect(api: ReturnType<typeof loopbackLinks>, state = "link-1"): Promise<URL> {
+    const listened = await api.listen({ serverOrigin: "https://pinomad.si/", state });
+    if (!("redirectUri" in listened)) throw new Error(listened.error);
+    return new URL(listened.redirectUri);
+  }
+
+  it("gives the renderer a redirect, opens the server's start URL, and answers the code", async () => {
+    const { links: api, opened } = links();
+    const callback = await redirect(api);
+    expect(callback.hostname).toBe("127.0.0.1");
+    expect(callback.pathname).toBe("/callback");
+    const result = api.open({ state: "link-1", url: START });
+    await expect.poll(() => opened).toEqual([START]);
+    const reply = await fetch(`${callback}?code=one-time&state=link-1`);
+    expect(await reply.text()).toContain("Almost done. You can close this tab and return to PiNomad.");
+    expect(await result).toEqual({ code: "one-time" });
+    await expect(fetch(`${callback}?code=late&state=link-1`)).rejects.toThrow();
+  });
+
+  it("passes the server's refusal through", async () => {
+    const { links: api } = links();
+    const callback = await redirect(api);
+    const result = api.open({ state: "link-1", url: START });
+    expect((await fetch(`${callback}?error=identity_taken&state=link-1`)).status).toBe(400);
+    expect(await result).toEqual({ error: "identity_taken" });
+  });
+
+  it("opens only the same server's start route, for the state it listens for", async () => {
+    const { links: api, opened } = links();
+    await redirect(api);
+    expect(await api.open({ state: "other", url: START })).toEqual({ error: "invalid_request" });
+    for (const url of ["https://evil.example/api/oauth/github/start?link=t", "https://pinomad.si/elsewhere", "javascript:alert(1)"]) {
+      await redirect(api);
+      expect(await api.open({ state: "link-1", url })).toEqual({ error: "invalid_request" });
+    }
+    expect(opened).toEqual([]);
+    expect(await api.listen({ serverOrigin: "http://pinomad.si", state: "s" })).toEqual({ error: "invalid_request" });
+  });
+
+  it("ends the last link when a new one starts", async () => {
+    const { links: api } = links();
+    const first = await redirect(api, "first");
+    const waiting = api.open({ state: "first", url: START });
+    await redirect(api, "second");
+    expect(await waiting).toEqual({ error: "superseded" });
+    await expect(fetch(`${first}?code=c&state=first`)).rejects.toThrow();
+  });
+
+  it("gives up after the timeout, opened or not", async () => {
+    const { links: api } = links(50);
+    const callback = await redirect(api);
+    expect(await api.open({ state: "link-1", url: START })).toEqual({ error: "timeout" });
+    await expect(fetch(`${callback}?code=c&state=link-1`)).rejects.toThrow();
+    const unopened = await redirect(api, "late");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await expect(fetch(`${unopened}?code=c&state=late`)).rejects.toThrow();
   });
 });

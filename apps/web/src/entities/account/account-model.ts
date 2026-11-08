@@ -161,8 +161,13 @@ export interface AccountModel {
   identities(): Promise<AccountResult<AccountIdentities>>;
   requestReauthCode(): Promise<AccountResult<void>>;
   reauth(proof: { password: string } | { code: string }): Promise<AccountResult<ReauthGrant>>;
-  /** The provider page to send this browser to; it comes back with `?oauth_linked=` or `?oauth_error=`. */
-  linkProvider(provider: string, confirmation: AccountConfirmation): Promise<AccountResult<string>>;
+  /**
+   * Adds a provider to the signed-in account (ADR-0044 §4). "redirect":
+   * the provider page to send this browser to, which comes back with
+   * `?oauth_linked=` or `?oauth_error=`. "loopback" (#631): the system
+   * browser does it and this settles once the provider is linked.
+   */
+  linkProvider(provider: string, confirmation: AccountConfirmation): Promise<AccountResult<{ readonly redirect?: string }>>;
   unlinkProvider(provider: string, confirmation: AccountConfirmation): Promise<AccountResult<void>>;
   /** The provider sign-in behind `?oauth_pending=`, read on this page's own server. */
   pendingSignIn(id: string): Promise<AccountResult<PendingSignIn>>;
@@ -982,6 +987,41 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     return signIn(built.value.origin, (candidate) => candidate.exchangeOAuthCode(answer.code, verifier, deps.device?.()), started);
   };
 
+  /**
+   * The desktop's link from settings (#631): main's listener first, since
+   * the server needs its redirect; then the one-time start URL the server
+   * answered, opened in the system browser, which comes back with a code
+   * this renderer trades with its verifier.
+   */
+  const loopbackLink = async (
+    active: AccountClient,
+    provider: string,
+    confirmation: AccountConfirmation,
+    stillLive: () => boolean,
+  ): Promise<AccountResult<{ readonly redirect?: string }>> => {
+    const oauthLink = deps.bridge?.oauthLink;
+    if (oauthLink === undefined) return fail("unsupported");
+    const random = (bytes: number): string => toBase64Url(crypto.getRandomValues(new Uint8Array(bytes)));
+    const state = random(16);
+    // Only this renderer can finish the link: the code comes back to it, the verifier never left.
+    const verifier = random(32);
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+    const listened = await oauthLink.listen({ serverOrigin: active.origin, state }).catch(() => ({ error: "loopback_failed" }));
+    if ("error" in listened) return fail(listened.error);
+    const begun = await active.linkProvider(provider, confirmation, {
+      redirectUri: listened.redirectUri,
+      codeChallenge: toBase64Url(new Uint8Array(digest)),
+      state,
+    });
+    if (!begun.ok) return begun;
+    const answer = await oauthLink.open({ state, url: begun.value }).catch(() => ({ error: "loopback_failed" }));
+    if ("error" in answer) return fail(answer.error);
+    // The browser may take minutes: a session that ended meanwhile doesn't get it.
+    if (!stillLive()) return fail("session_ended");
+    const done = await active.completeLink(answer.code, verifier);
+    return done.ok ? { ok: true, value: {} } : done;
+  };
+
   /** A pending sign-in finished: signed in here, or a native app's redirect to follow. */
   const pendingOutcome = async (
     result: AccountResult<PendingOutcome>,
@@ -1062,7 +1102,19 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     identities: () => authed((active) => active.identities()),
     requestReauthCode: () => authed((active) => active.requestReauthCode()),
     reauth: (proof) => authed((active) => active.reauth(proof)),
-    linkProvider: (provider, confirmation) => authed((active) => active.linkProvider(provider, confirmation)),
+    linkProvider: async (provider, confirmation) => {
+      if (providerFlow === "loopback") {
+        return authed(async (active) => {
+          const started = epoch;
+          const stillLive = (): boolean => live(active, started);
+          const result = await loopbackLink(active, provider, confirmation, stillLive);
+          // Nor is a link reported to whoever signed in while it finished.
+          return result.ok && !stillLive() ? fail("session_ended") : result;
+        });
+      }
+      const result = await authed((active) => active.linkProvider(provider, confirmation));
+      return result.ok ? { ok: true, value: { redirect: result.value } } : result;
+    },
     unlinkProvider: (provider, confirmation) => authed((active) => active.unlinkProvider(provider, confirmation)),
     pendingSignIn: (id) => beforeSession(undefined, (candidate) => candidate.pendingSignIn(id)),
     createFromPending: async (id, options) => {

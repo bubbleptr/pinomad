@@ -15,7 +15,7 @@ import { createHostStore, type StoredAccount, type StoredHost } from "./host-sto
 import { createLocalHost, type LocalHost } from "./local-host.ts";
 import { LAUNCHER_EXECUTABLE } from "../../host/src/service/definition.ts";
 import { navigateAwayAction, windowOpenAction } from "./navigation-policy.ts";
-import { loopbackSignIn, type LoopbackSignInInput } from "./oauth-loopback.ts";
+import { loopbackLinks, loopbackSignIn, type LoopbackSignInInput } from "./oauth-loopback.ts";
 import { APP_HOST, APP_SCHEME, contentTypeFor, rendererFilePath, RENDERER_CSP } from "./renderer-files.ts";
 import { createAppUpdater, type AppUpdater, type AutoUpdaterLike } from "./updater.ts";
 import { desktopUserDataDir } from "./user-data.ts";
@@ -204,15 +204,31 @@ function installDeviceNameIpc(): void {
  * window back in front of the browser.
  */
 function installOAuthIpc(): void {
+  const openExternal = (url: string): Promise<void> => shell.openExternal(url);
+  const toFront = (): void => {
+    if (mainWindow === null) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    if (process.platform === "darwin") app.focus({ steal: true });
+  };
   ipcMain.handle("pinomad:oauth:signIn", async (event: IpcMainInvokeEvent, input: LoopbackSignInInput) => {
     if (!isOurRendererFrame(event)) throw new Error("sign-in is only reachable from the bundled renderer");
-    const result = await loopbackSignIn(input, { openExternal: (url) => shell.openExternal(url) });
-    if ("code" in result && mainWindow !== null) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-      if (process.platform === "darwin") app.focus({ steal: true });
-    }
+    const result = await loopbackSignIn(input, { openExternal });
+    if ("code" in result) toFront();
+    return result;
+  });
+  // Linking a provider from settings (#631): listen first, so the renderer
+  // can give the server its redirect, then open the URL the server answered.
+  const links = loopbackLinks({ openExternal });
+  ipcMain.handle("pinomad:oauth:linkListen", (event: IpcMainInvokeEvent, input: { serverOrigin: string; state: string }) => {
+    if (!isOurRendererFrame(event)) throw new Error("linking is only reachable from the bundled renderer");
+    return links.listen(input);
+  });
+  ipcMain.handle("pinomad:oauth:linkOpen", async (event: IpcMainInvokeEvent, input: { state: string; url: string }) => {
+    if (!isOurRendererFrame(event)) throw new Error("linking is only reachable from the bundled renderer");
+    const result = await links.open(input);
+    if ("code" in result) toFront();
     return result;
   });
 }

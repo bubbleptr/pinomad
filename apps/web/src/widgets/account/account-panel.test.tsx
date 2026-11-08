@@ -477,10 +477,38 @@ describe("sign-in methods (ADR-0044 §4)", () => {
   });
 
   it("offers no linking where the page can't go to the provider and back", async () => {
-    renderPanel({ ...withMethods(true), providerFlow: "loopback" });
+    renderPanel({ ...withMethods(true), providerFlow: undefined });
     await screen.findByText("GitHub");
     await act(async () => {});
     expect(screen.queryByRole("button", { name: /^Link / })).toBeNull();
+  });
+
+  it("links through the system browser on the desktop and lists the new provider (#631)", async () => {
+    const model = { ...withMethods(true), providerFlow: "loopback" as const };
+    vi.mocked(model.linkProvider).mockResolvedValueOnce({ ok: true, value: {} });
+    renderPanel(model);
+    await userEvent.click(await screen.findByRole("button", { name: "Link Google" }));
+    await userEvent.type(await screen.findByLabelText("Password"), "pw");
+    await userEvent.click(screen.getByRole("button", { name: "Continue to Google" }));
+    expect(model.linkProvider).toHaveBeenCalledWith("google", "pw");
+    expect(await screen.findByText("Google linked.")).toBeTruthy();
+    expect(vi.mocked(model.identities).mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it("drops a desktop link that finishes after Cancel, keeping the form opened since (dureview #635)", async () => {
+    const model = { ...withMethods(true), providerFlow: "loopback" as const };
+    let finish!: () => void;
+    vi.mocked(model.linkProvider).mockReturnValueOnce(new Promise((resolve) => (finish = () => resolve({ ok: true, value: {} }))));
+    renderPanel(model);
+    await userEvent.click(await screen.findByRole("button", { name: "Link Google" }));
+    await userEvent.type(await screen.findByLabelText("Password"), "pw");
+    await userEvent.click(screen.getByRole("button", { name: "Continue to Google" }));
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await userEvent.click(within(row("Password")).getByRole("button", { name: "Change password" }));
+    await userEvent.type(await screen.findByLabelText("New password"), "half-typed");
+    await act(async () => finish());
+    expect((screen.getByLabelText("New password") as HTMLInputElement).value).toBe("half-typed");
+    expect(screen.queryByText("Google linked.")).toBeNull();
   });
 
   it("says so when removing the last way in", async () => {

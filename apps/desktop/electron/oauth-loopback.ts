@@ -2,8 +2,10 @@
 // 127.0.0.1, open the server's start route in the system browser with the
 // renderer's PKCE challenge and state, and wait for the browser to come back
 // with a one-time code. The renderer trades the code for a session itself; the
-// verifier never leaves it. No Electron import, so the listener is testable
-// on plain Node; main.ts supplies shell.openExternal.
+// verifier never leaves it. Linking a provider from settings (#631) uses the
+// same listener in two steps: the renderer needs its redirect before it asks
+// the server, and the server answers the URL to open. No Electron import, so
+// the listener is testable on plain Node; main.ts supplies shell.openExternal.
 import { createServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { isSecureServerOrigin, normalizeServerOrigin } from "@pinomad/client/account.ts";
@@ -48,10 +50,64 @@ const page = (response: ServerResponse, status: number, text: string): Promise<v
     );
   });
 
+type Answer = LoopbackSignInResult;
+
+/**
+ * A 127.0.0.1 listener for one browser answer: only `GET /callback` with
+ * `state` counts, the first answer wins and later ones get 409. The answer is
+ * a one-time `code` for the renderer to trade, or the server's `error`;
+ * `purpose` only picks the tab's wording.
+ */
+async function listen(state: string, purpose: "sign-in" | "link"): Promise<{ port: number; answered: Promise<Answer>; close(): void }> {
+  let settle: ((answer: Answer) => void) | undefined;
+  const answered = new Promise<Answer>((resolve) => {
+    settle = resolve;
+  });
+  const listener = createServer((request, response) => {
+    const url = URL.parse(request.url ?? "/", "http://127.0.0.1");
+    // A stray tab or another local program: turned away, the wait goes on.
+    if (url === null || request.method !== "GET" || url.pathname !== "/callback" || url.searchParams.get("state") !== state) {
+      void page(response, 404, "Not found.");
+      return;
+    }
+    if (settle === undefined) {
+      void page(response, 409, `This ${purpose} was already answered. You can close this tab.`);
+      return;
+    }
+    const deliver = settle;
+    settle = undefined;
+    const code = url.searchParams.get("code");
+    const error = url.searchParams.get("error");
+    const answer: Answer =
+      code !== null && CODE.test(code) ? { code } : { error: error !== null && STATE.test(error) ? error : "invalid_response" };
+    const text =
+      "error" in answer
+        ? `${purpose === "sign-in" ? "Sign-in" : "Linking"} didn't finish. You can close this tab and try again in PiNomad.`
+        : purpose === "sign-in"
+          ? "You're signed in. You can close this tab and return to PiNomad."
+          : "Almost done. You can close this tab and return to PiNomad.";
+    // The tab gets its page before the listener goes away.
+    void page(response, "error" in answer ? 400 : 200, text).then(() => deliver(answer));
+  });
+  await new Promise<void>((resolve, reject) => {
+    listener.once("error", reject);
+    listener.listen(0, "127.0.0.1", () => resolve());
+  });
+  return {
+    port: (listener.address() as AddressInfo).port,
+    answered,
+    close() {
+      settle?.({ error: "superseded" });
+      settle = undefined;
+      listener.close();
+      listener.closeAllConnections();
+    },
+  };
+}
+
 /**
  * One sign-in: the start URL is opened only for a TLS server (or a loopback
- * dev server), only `GET /callback` with this state counts, the first answer
- * wins and later ones get 409, and the wait ends after `timeoutMs`.
+ * dev server), and the wait ends after `timeoutMs`.
  */
 export async function loopbackSignIn(input: LoopbackSignInInput, deps: LoopbackSignInDeps): Promise<LoopbackSignInResult> {
   if (
@@ -66,46 +122,14 @@ export async function loopbackSignIn(input: LoopbackSignInInput, deps: LoopbackS
   ) {
     return { error: "invalid_request" };
   }
-  let settle: ((result: LoopbackSignInResult) => void) | undefined;
-  const answered = new Promise<LoopbackSignInResult>((resolve) => {
-    settle = resolve;
-  });
-  const listener = createServer((request, response) => {
-    const url = URL.parse(request.url ?? "/", "http://127.0.0.1");
-    // A stray tab or another local program: turned away, the wait goes on.
-    if (url === null || request.method !== "GET" || url.pathname !== "/callback" || url.searchParams.get("state") !== input.state) {
-      void page(response, 404, "Not found.");
-      return;
-    }
-    if (settle === undefined) {
-      void page(response, 409, "This sign-in was already answered. You can close this tab.");
-      return;
-    }
-    const deliver = settle;
-    settle = undefined;
-    const code = url.searchParams.get("code");
-    const error = url.searchParams.get("error");
-    const result: LoopbackSignInResult =
-      code !== null && CODE.test(code) ? { code } : { error: error !== null && STATE.test(error) ? error : "invalid_response" };
-    const text =
-      "code" in result
-        ? "You're signed in. You can close this tab and return to PiNomad."
-        : "Sign-in didn't finish. You can close this tab and try again in PiNomad.";
-    // The tab gets its page before the listener goes away.
-    void page(response, "code" in result ? 200 : 400, text).then(() => deliver(result));
-  });
-  await new Promise<void>((resolve, reject) => {
-    listener.once("error", reject);
-    listener.listen(0, "127.0.0.1", () => resolve());
-  });
+  const listener = await listen(input.state, "sign-in");
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const { port } = listener.address() as AddressInfo;
-    deps.onListening?.(port);
+    deps.onListening?.(listener.port);
     const start = new URL(`${normalizeServerOrigin(input.serverOrigin)}/api/oauth/${input.provider}/start`);
     start.search = new URLSearchParams({
       client: "native",
-      redirect_uri: `http://127.0.0.1:${port}/callback`,
+      redirect_uri: `http://127.0.0.1:${listener.port}/callback`,
       code_challenge: input.codeChallenge,
       state: input.state,
     }).toString();
@@ -114,14 +138,81 @@ export async function loopbackSignIn(input: LoopbackSignInInput, deps: LoopbackS
       () => false,
     );
     if (!opened) return { error: "browser_failed" };
-    const timeout = new Promise<LoopbackSignInResult>((resolve) => {
+    const timeout = new Promise<Answer>((resolve) => {
       timer = setTimeout(() => resolve({ error: "timeout" }), deps.timeoutMs ?? LOOPBACK_TIMEOUT_MS);
     });
-    return await Promise.race([answered, timeout]);
+    return await Promise.race([listener.answered, timeout]);
   } finally {
     clearTimeout(timer);
-    settle = undefined;
     listener.close();
-    listener.closeAllConnections();
   }
+}
+
+export interface LoopbackLinks {
+  /** Starts listening for a link's answer: the redirect to give the server. One link at a time; a new one ends the last. */
+  listen(input: { readonly serverOrigin: string; readonly state: string }): Promise<{ readonly redirectUri: string } | { readonly error: string }>;
+  /**
+   * Opens the server's one-time start URL for the link `state` names and
+   * waits for the browser to come back with the code the renderer trades,
+   * with its verifier, to finish the link.
+   */
+  open(input: { readonly state: string; readonly url: string }): Promise<LoopbackSignInResult>;
+}
+
+/**
+ * Linking a provider from settings (#631) in two steps around the
+ * renderer's own `POST /api/oauth/:provider/link`. The URL to open comes
+ * from the server, so only that server's start route is opened; the
+ * listener goes away after `timeoutMs` from `listen`, answered or not.
+ */
+export function loopbackLinks(deps: LoopbackSignInDeps): LoopbackLinks {
+  let pending: { state: string; origin: string; listener: Awaited<ReturnType<typeof listen>>; expired: Promise<Answer> } | undefined;
+  const end = (): void => {
+    pending?.listener.close();
+    pending = undefined;
+  };
+  return {
+    async listen({ serverOrigin, state }) {
+      if (typeof serverOrigin !== "string" || !isSecureServerOrigin(serverOrigin) || typeof state !== "string" || !STATE.test(state)) {
+        return { error: "invalid_request" };
+      }
+      end();
+      const listener = await listen(state, "link");
+      const entry = {
+        state,
+        origin: normalizeServerOrigin(serverOrigin),
+        listener,
+        expired: new Promise<Answer>((resolve) => {
+          const timer = setTimeout(() => resolve({ error: "timeout" }), deps.timeoutMs ?? LOOPBACK_TIMEOUT_MS);
+          void listener.answered.finally(() => clearTimeout(timer));
+        }),
+      };
+      void entry.expired.then(() => {
+        if (pending === entry) end();
+      });
+      pending = entry;
+      deps.onListening?.(listener.port);
+      return { redirectUri: `http://127.0.0.1:${listener.port}/callback` };
+    },
+    async open({ state, url }) {
+      const entry = pending;
+      if (entry === undefined || typeof state !== "string" || entry.state !== state) return { error: "invalid_request" };
+      const start = typeof url === "string" ? URL.parse(url) : null;
+      if (start === null || start.origin !== entry.origin || !/^\/api\/oauth\/[a-z]{1,32}\/start$/.test(start.pathname)) {
+        if (pending === entry) end();
+        return { error: "invalid_request" };
+      }
+      const opened = await deps.openExternal(start.toString()).then(
+        () => true,
+        () => false,
+      );
+      if (!opened) {
+        if (pending === entry) end();
+        return { error: "browser_failed" };
+      }
+      const answer = await Promise.race([entry.listener.answered, entry.expired]);
+      if (pending === entry) end();
+      return answer;
+    },
+  };
 }
