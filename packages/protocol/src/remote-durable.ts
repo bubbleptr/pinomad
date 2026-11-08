@@ -2656,16 +2656,16 @@ class RemoteClient {
     return undefined;
   }
 
-  /**
-   * A hello decides again whether the list document and attached outputs are
-   * wanted. Without `hello.processes` the historical list still streams; only
-   * output and Stop end, with the reason the panel shows.
-   */
   /** Whether this hello offers the root document that holds the list. */
   #processDocDeclared(): boolean {
     return this.#docs.some((doc) => doc.kind === "pinomad.processes");
   }
 
+  /**
+   * A hello decides again whether the list document and attached outputs are
+   * wanted. Without `hello.processes` the historical list still streams; only
+   * output and Stop end, with the reason the panel shows.
+   */
   #processesAvailability(): void {
     const listable = hostSupportsFeature(this.#hostMinor, "processes") && this.#processDocDeclared();
     for (const stream of [...this.#processWatchers.keys()]) {
