@@ -549,7 +549,9 @@ html[lang="zh-CN"] .models-label {
 .hero-stage {
   margin-top: clamp(3rem, 7vw, 5rem);
   padding: clamp(1rem, 5vw, 4rem) clamp(1rem, 5vw, 4rem) 0;
-  overflow: hidden;
+  /* clip, not hidden: hidden makes a scroll container, and the screenshot's view()
+     timeline would follow this box, which never scrolls, instead of the page. */
+  overflow: clip;
   border-radius: calc(var(--radius) * 1.75);
   background: var(--grain), var(--abyss);
 }
