@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ExtensionDocView } from "@pinomad/protocol/view.ts";
 import type { ProcessInfo } from "@pinomad/protocol/processes.ts";
-import { activeProcesses, processExitCode, processesOf } from "../src/processes.ts";
+import { activeProcesses, orderedProcesses, processExitCode, processesOf } from "../src/processes.ts";
 
 const PROCESSES: ProcessInfo[] = [
   { id: "run", owner: 3 as never, name: "dev", command: "npm run dev", startedAt: 1, state: "running" },
@@ -29,6 +29,18 @@ describe("processesOf", () => {
 describe("activeProcesses", () => {
   it("keeps starting and running entries only", () => {
     expect(activeProcesses(docs({ processes: PROCESSES })).map((process) => process.id)).toEqual(["run", "wait"]);
+  });
+});
+
+describe("orderedProcesses", () => {
+  it("keeps live entries first and lists ended ones newest first", () => {
+    const ordered = orderedProcesses([
+      { id: "old", owner: 3 as never, name: "old", command: "old", startedAt: 1, endedAt: 2, state: { exited: 0 } },
+      { id: "run", owner: 3 as never, name: "run", command: "run", startedAt: 3, state: "running" },
+      { id: "new", owner: 3 as never, name: "new", command: "new", startedAt: 4, endedAt: 9, state: { exited: 1 } },
+      { id: "start", owner: 3 as never, name: "start", command: "start", startedAt: 5, state: "starting" },
+    ]);
+    expect(ordered.map((process) => process.id)).toEqual(["run", "start", "new", "old"]);
   });
 });
 

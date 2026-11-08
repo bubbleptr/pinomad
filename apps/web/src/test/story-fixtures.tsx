@@ -21,7 +21,16 @@ import { PROTOCOL } from "@pinomad/protocol/frames.ts";
 import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { organize, type ConversationNode, type HostIndex, type Project } from "@pinomad/protocol/organization.ts";
-import type { RemoteDurable, RemoteTerminals, TerminalOutputSink, TerminalsState } from "@pinomad/protocol/remote-durable.ts";
+import type {
+  ProcessListState,
+  ProcessOutputSink,
+  RemoteDurable,
+  RemoteProcesses,
+  RemoteTerminals,
+  TerminalOutputSink,
+  TerminalsState,
+} from "@pinomad/protocol/remote-durable.ts";
+import type { ProcessInfo } from "@pinomad/protocol/processes.ts";
 import type { TerminalInfo, TerminalList } from "@pinomad/protocol/terminals.ts";
 import type { HostUpgrade } from "@pinomad/protocol/upgrade.ts";
 import type { ConversationSummary, DurableController, DurableView, ModelSummary } from "@pinomad/protocol/view.ts";
@@ -586,7 +595,11 @@ export function fakeView(overrides: Partial<DurableView> = {}): DurableView {
 // --- Remote --------------------------------------------------------------------
 
 /** A remote whose every call is a logged `fn()` resolving with plausible data. */
-export function fakeRemote(view: DurableView = fakeView(), overrides: Partial<DurableController> = {}): RemoteDurable {
+export function fakeRemote(
+  view: DurableView = fakeView(),
+  overrides: Partial<DurableController> = {},
+  processes: RemoteProcesses = fakeProcesses(),
+): RemoteDurable {
   const controller: DurableController = {
     addProject: fn(async (path: string) => ({ path, name: path.split("/").pop() ?? path, addedAt: now })),
     listFolders: fn(async () => ({
@@ -660,7 +673,12 @@ export function fakeRemote(view: DurableView = fakeView(), overrides: Partial<Du
     setPushToken: fn(async () => {}),
     ...overrides,
   };
-  return { view: { current: () => view, subscribe: () => () => {} }, controller, terminals: fakeTerminals() } as unknown as RemoteDurable;
+  return {
+    view: { current: () => view, subscribe: () => () => {} },
+    controller,
+    terminals: fakeTerminals(),
+    processes,
+  } as unknown as RemoteDurable;
 }
 
 // --- Terminals -------------------------------------------------------------------
@@ -753,6 +771,120 @@ export function fakeTerminals({
       update(terminalId, ({ exit: _exit, ...terminal }) => terminal),
     ),
     close: fn(async (terminalId: string) => update(terminalId, () => undefined)),
+  };
+}
+
+// --- Background processes ---------------------------------------------------------
+
+/** A mixed family: a running server, then ended entries newest first when sorted. */
+export const PROCESSES: readonly ProcessInfo[] = [
+  {
+    id: "p-dev",
+    owner: PARSER_ID,
+    name: "dev server",
+    command: "bun run dev",
+    pid: 4242,
+    startedAt: now - 8 * MINUTE,
+    state: "running",
+  },
+  {
+    id: "p-test",
+    owner: PARSER_ID,
+    name: "bun test --watch",
+    command: "bun test --watch",
+    startedAt: now - 20 * MINUTE,
+    endedAt: now - 2 * MINUTE,
+    state: { exited: 1 },
+  },
+  {
+    id: "p-build",
+    owner: PARSER_ID,
+    name: "build",
+    command: "bun run build",
+    startedAt: now - 12 * MINUTE,
+    endedAt: now - 10 * MINUTE,
+    state: { exited: 0 },
+  },
+  {
+    id: "p-tail",
+    owner: PARSER_ID,
+    name: "tail -f app.log",
+    command: "tail -f app.log",
+    startedAt: now - 30 * MINUTE,
+    endedAt: now - 5 * MINUTE,
+    state: { stopped: "user" },
+  },
+  {
+    id: "p-lost",
+    owner: PARSER_ID,
+    name: "sleep 300",
+    command: "sleep 300",
+    pid: 777,
+    startedAt: now - 60 * MINUTE,
+    state: "lost",
+  },
+];
+
+/** A dev server's colored first screen, replayed on every attach. */
+export const PROCESS_OUTPUT = "\x1b[32mready\x1b[0m in \x1b[33m312\x1b[0m ms\r\n\x1b[36mVITE\x1b[0m v6.0.0  http://localhost:5199/\r\n";
+
+/**
+ * Processes in memory, as the host would keep them: `lists` is keyed by the
+ * family root (Tasks always reads that document), `released` ids end their
+ * output stream, and `unavailable` leaves the historical list but removes
+ * Stop and output.
+ */
+export function fakeProcesses({
+  lists = {},
+  unavailable,
+  released = [],
+  output = PROCESS_OUTPUT,
+}: {
+  lists?: Partial<Record<number, readonly ProcessInfo[]>>;
+  unavailable?: string;
+  released?: readonly string[];
+  output?: string;
+} = {}): RemoteProcesses {
+  const processes = new Map<ConversationId, ProcessInfo[]>(
+    Object.entries(lists).map(([owner, list]) => [id(Number(owner)), [...(list ?? [])]]),
+  );
+  const watchers = new Map<ConversationId, Set<(state: ProcessListState) => void>>();
+  const stateOf = (owner: ConversationId): ProcessListState => ({
+    processes: [...(processes.get(owner) ?? [])],
+    ...(unavailable === undefined ? {} : { unavailable }),
+  });
+  const changed = (owner: ConversationId): void => {
+    for (const watcher of watchers.get(owner) ?? []) watcher(stateOf(owner));
+  };
+  return {
+    watch: fn((conversationId: ConversationId, listener: (state: ProcessListState) => void) => {
+      const set = watchers.get(conversationId) ?? new Set();
+      watchers.set(conversationId, set);
+      set.add(listener);
+      listener(stateOf(conversationId));
+      return () => void set.delete(listener);
+    }),
+    attach: fn((processId: string, _since: number | undefined, sink: ProcessOutputSink) => {
+      if (unavailable !== undefined) {
+        sink.ended(unavailable);
+        return () => {};
+      }
+      if (released.includes(processId)) {
+        sink.ended("The output of this process is no longer available");
+        return () => {};
+      }
+      sink.output(output, true);
+      return () => {};
+    }),
+    stop: fn(async (conversationId: ConversationId, processId: string) => {
+      const list = processes.get(conversationId) ?? [];
+      const index = list.findIndex((process) => process.id === processId);
+      const state = { stopped: "user" as const };
+      if (index !== -1) list[index] = { ...list[index]!, endedAt: Date.now(), state };
+      changed(conversationId);
+      return state;
+    }),
+    unavailable: () => unavailable,
   };
 }
 

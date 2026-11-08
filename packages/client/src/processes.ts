@@ -22,6 +22,20 @@ export function activeProcesses(docs: readonly ExtensionDocView[]): ProcessInfo[
   return processesOf(docs).filter((process) => isProcessActive(process.state));
 }
 
+/**
+ * The Tasks order: live processes first, then ended ones newest first. Live
+ * entries keep the host's order, which is the order they were started in.
+ */
+export function orderedProcesses(processes: readonly ProcessInfo[]): ProcessInfo[] {
+  return [...processes].sort((a, b) => {
+    const aLive = isProcessActive(a.state);
+    const bLive = isProcessActive(b.state);
+    if (aLive !== bLive) return aLive ? -1 : 1;
+    if (aLive) return 0;
+    return (b.endedAt ?? b.startedAt) - (a.endedAt ?? a.startedAt);
+  });
+}
+
 /** The exit code when the state carries one; `null` for a signal death. */
 export function processExitCode(state: ProcessState): number | null | undefined {
   return typeof state === "object" && "exited" in state ? state.exited : undefined;
