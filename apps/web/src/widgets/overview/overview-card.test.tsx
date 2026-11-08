@@ -7,6 +7,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CallMethods } from "@pinomad/protocol/frames.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
+import { contextUsage } from "@pinomad/client/context-usage.ts";
+import { fakeRemote, fakeView } from "../../test/story-fixtures.tsx";
 import { OverviewCard } from "./overview-card.tsx";
 
 type ChangesResult = CallMethods["changes"]["result"];
@@ -138,5 +140,40 @@ describe("OverviewCard collapsible sections", () => {
     withSources();
     expect(screen.getByRole("button", { name: /^Sources/ })).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByText("linear")).not.toBeVisible();
+  });
+});
+
+describe("OverviewCard context breakdown", () => {
+  const withBreakdown = (shift: number) => {
+    const view = fakeView();
+    const conversation = view.conversation!;
+    const used = contextUsage(conversation, 1)!.used + shift;
+    const value = { used, system: 2_000, skills: 500, tools: 4_000, mcp: 1_000, messages: used - 7_500 };
+    const next = { ...view, docs: [...view.docs, { kind: "context.breakdown", presentation: "pinomad.context" as const, value }] };
+    render(
+      <OverviewCard
+        view={next}
+        remote={fakeRemote(next)}
+        conversation={conversation}
+        narrow={false}
+        busy={false}
+        onOpenChanges={() => {}}
+        onOpenTasks={() => {}}
+        onClose={() => {}}
+      />,
+    );
+  };
+
+  it("shows the parts under the meter while they belong to the reply it counts", () => {
+    withBreakdown(0);
+    expect(screen.getByRole("list", { name: "Context breakdown" })).toBeVisible();
+    // Never twice: not also as a raw document card.
+    expect(screen.queryByText("context.breakdown")).toBeNull();
+  });
+
+  it("keeps the meter alone when the breakdown is from another reply", () => {
+    withBreakdown(-1_000);
+    expect(screen.queryByRole("list", { name: "Context breakdown" })).toBeNull();
+    expect(screen.getByRole("meter")).toBeVisible();
   });
 });
