@@ -104,6 +104,24 @@ async function busyValue(harness: Harness, context: Context): Promise<HostValue<
   return Object.assign(busy, { stop: () => watch.stop() });
 }
 
+/** A boolean source that is true while either input is. */
+function mergedBusy(
+  tasks: HostValue<boolean> & { stop(): void },
+  processes: HostValue<boolean> | undefined,
+): HostValue<boolean> & { stop(): void } {
+  if (processes === undefined) return tasks;
+  const busy = new Published(tasks.value || processes.value, (a, b) => a === b);
+  const stopTasks = tasks.subscribe((value) => busy.set(value || processes.value));
+  const stopProcesses = processes.subscribe((value) => busy.set(tasks.value || value));
+  return Object.assign(busy, {
+    stop: () => {
+      stopTasks();
+      stopProcesses();
+      tasks.stop();
+    },
+  });
+}
+
 function modeValue(settings: HostValue<HostSettings>): HostValue<AutoUpgradeMode> & { stop(): void } {
   const mode = new Published<AutoUpgradeMode>(settings.value.autoUpgrade ?? "notify", (a, b) => a === b);
   const stop = settings.subscribe((value) => mode.set(value.autoUpgrade ?? "notify"));
@@ -124,8 +142,13 @@ export async function startHostUpgrader(options: {
   readonly settings: HostValue<HostSettings>;
   readonly context: Context;
   readonly seams: HostUpgradeOptions;
+  /** True while background processes are live (ADR-0045 §5). */
+  readonly processesBusy?: HostValue<boolean>;
+  /** Stop background processes when an install starts (immediate upgrades). */
+  readonly drain?: () => Promise<void>;
 }): Promise<HostUpgrader & { close(): void }> {
-  const busy = await busyValue(options.harness, options.context);
+  const taskBusy = await busyValue(options.harness, options.context);
+  const busy = mergedBusy(taskBusy, options.processesBusy);
   const mode = modeValue(options.settings);
   const { seams } = options;
   const upgrader = new HostUpgrader({
@@ -135,6 +158,7 @@ export async function startHostUpgrader(options: {
     latest: seams.latest ?? latestRelease,
     install: seams.install ?? installRelease,
     restart: seams.restart,
+    ...(options.drain === undefined ? {} : { drain: options.drain }),
     busy,
     mode,
     now: Date.now,

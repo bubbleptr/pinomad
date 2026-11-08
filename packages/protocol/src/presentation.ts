@@ -4,8 +4,9 @@
 // fallback otherwise. Browser-safe: typebox only.
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
+import type { ProcessesState } from "./processes.ts";
 
-export type PresentationType = "pinomad.todo" | "pinomad.question" | "pinomad.diff" | "pinomad.codemode" | "pinomad.context";
+export type PresentationType = "pinomad.todo" | "pinomad.question" | "pinomad.diff" | "pinomad.codemode" | "pinomad.context" | "pinomad.processes";
 
 /** Also used as the `todo_write` tool's `items` element schema on the host. */
 export const TodoItemSchema = Type.Object({
@@ -115,12 +116,50 @@ export const ContextBreakdownSchema = Type.Object({
 
 export type ContextBreakdown = Static<typeof ContextBreakdownSchema>;
 
+/**
+ * A background process entry (5.32, ADR-0045). `lost` says the previous host
+ * stopped tracking it; it does not claim the process exited.
+ */
+export const ProcessStateSchema = Type.Union([
+  Type.Literal("starting"),
+  Type.Literal("running"),
+  Type.Object({
+    exited: Type.Union([Type.Number(), Type.Null()]),
+    signal: Type.Optional(Type.String()),
+  }),
+  Type.Object({
+    stopped: Type.Union([
+      Type.Literal("agent"),
+      Type.Literal("user"),
+      Type.Literal("archive"),
+      Type.Literal("shutdown"),
+    ]),
+  }),
+  Type.Object({ failed: Type.String() }),
+  Type.Literal("lost"),
+]);
+
+export const ProcessInfoSchema = Type.Object({
+  id: Type.String({ minLength: 1 }),
+  owner: Type.Number(),
+  name: Type.String(),
+  command: Type.String(),
+  pid: Type.Optional(Type.Number()),
+  startedAt: Type.Number(),
+  endedAt: Type.Optional(Type.Number()),
+  state: ProcessStateSchema,
+});
+
+/** The root family's `pinomad.processes` document. */
+export const ProcessesSchema = Type.Object({ processes: Type.Array(ProcessInfoSchema) });
+
 export type ClassifiedDoc =
   | { readonly type: "pinomad.todo"; readonly value: TodoState }
   | { readonly type: "pinomad.question"; readonly value: QuestionState }
   | { readonly type: "pinomad.diff"; readonly value: DiffDetails }
   | { readonly type: "pinomad.codemode"; readonly value: CodemodeDetails }
   | { readonly type: "pinomad.context"; readonly value: ContextBreakdown }
+  | { readonly type: "pinomad.processes"; readonly value: ProcessesState }
   | { readonly type: "fallback"; readonly value: unknown };
 
 /**
@@ -143,6 +182,11 @@ export function classify(presentation: PresentationType | undefined, value: unkn
   }
   if (presentation === "pinomad.context" && Value.Check(ContextBreakdownSchema, value)) {
     return { type: "pinomad.context", value };
+  }
+  if (presentation === "pinomad.processes" && Value.Check(ProcessesSchema, value)) {
+    // The schema checks the wire shape; the branded ConversationId is a
+    // compile-time property of the same number.
+    return { type: "pinomad.processes", value: value as unknown as ProcessesState };
   }
   return { type: "fallback", value };
 }

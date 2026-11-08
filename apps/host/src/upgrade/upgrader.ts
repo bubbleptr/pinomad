@@ -32,8 +32,10 @@ export interface HostUpgraderOptions {
   install(version: string): Promise<InstallResult>;
   /** Exits so the service manager starts the new release; never returns in production. */
   restart(): void;
-  /** Whether the task graph has live tasks — a pending question counts (ADR-0009 §5). */
+  /** Whether the task graph has live tasks — a pending question counts (ADR-0009 §5) — or background processes are running. */
   readonly busy: HostValue<boolean>;
+  /** Stop running background processes before installing (ADR-0045 §5). */
+  readonly drain?: () => Promise<void>;
   readonly mode: HostValue<AutoUpgradeMode>;
   now(): number;
   /** Runs `run` every `ms`; returns the stop. */
@@ -255,6 +257,14 @@ export class HostUpgrader implements HostValue<HostUpgrade> {
 
   async #install(version: string): Promise<void> {
     this.#set({ phase: "installing", target: version });
+    try {
+      // Immediate upgrades stop running background processes here; idle
+      // upgrades only start once none are running, so this is normally a no-op.
+      await this.#options.drain?.();
+    } catch (error) {
+      this.#set({ phase: "idle", target: null, failure: { version, message: message(error), attempt: this.value.attempt } });
+      return;
+    }
     let result: InstallResult;
     try {
       result = await this.#options.install(version);

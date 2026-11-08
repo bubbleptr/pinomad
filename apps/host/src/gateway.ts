@@ -74,6 +74,7 @@ import { RTC_DEFAULT_STUN, type RtcHello } from "@pinomad/protocol/rtc.ts";
 import { webSocketCarrier, type RecordCarrier } from "./secure-carrier.ts";
 import { startRtcHost, type RtcHost, type RtcOptions } from "./rtc.ts";
 import { startTerminals, type StartTerminalsOptions, type Terminals, type TerminalSize } from "./terminals.ts";
+import type { Processes } from "./processes.ts";
 import type { HostUpgrade, UpgradeWhen } from "@pinomad/protocol/upgrade.ts";
 import type { ExtensionDoc } from "./builtin-extension.ts";
 import { branchOf, changesOf, checkoutAt, gitBase, worktreeExists, worktreeSettled } from "./checkout.ts";
@@ -322,6 +323,8 @@ export interface GatewayOptions {
    * the host without hello.terminals; everything else keeps working.
    */
   readonly terminals?: StartTerminalsOptions;
+  /** Background processes (ADR-0045), started by openHost before the extensions resolve. */
+  readonly processes?: Processes;
   /**
    * Upgrades started from clients (ADR-0043). Absent (a source checkout,
    * tests) → the `upgrade` stream reports `blocked: "source"` and the calls fail.
@@ -478,6 +481,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       devicePublicKey,
       rtcHello,
       terminals,
+      ...(options.processes === undefined ? {} : { processes: options.processes }),
       closed: (self) => {
         clients.delete(self);
         connections.delete(self);
@@ -795,6 +799,9 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
       await detachPush?.close();
       conversations.dispose();
       terminals?.closeAll();
+      // Background processes must finish before the Harness closes: their
+      // `shutdown` document updates still need it, and no later exit may report.
+      await options.processes?.close(context);
       await rtc?.close();
       await Promise.all([...connections].map((connection) => connection.dispose()));
       for (const socket of server.clients) socket.terminate();
@@ -1822,6 +1829,8 @@ interface ClientHooks {
   rtcOffer(owner: object, deviceKey: string | undefined, attempt: string, sdp: string): Promise<{ sdp: string }>;
   /** The host's terminals, shared by every connection; undefined when the pty module is absent. */
   readonly terminals: Terminals | undefined;
+  /** The host's background processes; undefined when the pty module is absent. */
+  readonly processes?: Processes;
 }
 
 
@@ -2023,6 +2032,7 @@ class GatewayClient {
       endpointSet: this.#hooks.endpointSet(),
       ...(rtc === undefined ? {} : { rtc }),
       ...(this.#hooks.terminals === undefined ? {} : { terminals: { limit: this.#hooks.terminals.limit } }),
+      ...(this.#hooks.processes === undefined ? {} : { processes: this.#hooks.processes.hello }),
     });
   }
 
@@ -2106,6 +2116,17 @@ class GatewayClient {
       const terminalStream = stream as `terminal:${string}`;
       const detach = this.#terminals().attach(terminalStream.slice("terminal:".length), state?.since, {
         output: (frame) => send({ type: "output", stream: terminalStream, ...frame }),
+        ended: (reason) => {
+          void send({ type: "ended", stream, reason });
+          if (this.#subscriptions.get(stream) === state) this.#subscriptions.delete(stream);
+        },
+      });
+      return { stop: detach };
+    }
+    if (stream.startsWith("process:")) {
+      const processStream = stream as `process:${string}`;
+      const detach = this.#processes().attach(processStream.slice("process:".length), state?.since, {
+        output: (frame) => send({ type: "output", stream: processStream, ...frame }),
         ended: (reason) => {
           void send({ type: "ended", stream, reason });
           if (this.#subscriptions.get(stream) === state) this.#subscriptions.delete(stream);
@@ -2351,6 +2372,14 @@ class GatewayClient {
         this.#terminals().close((args as CallMethods["closeTerminal"]["args"]).terminalId);
         this.#terminalSizes.delete((args as CallMethods["closeTerminal"]["args"]).terminalId);
         return null;
+      case "stopProcess": {
+        const input = args as CallMethods["stopProcess"]["args"];
+        const process = await this.#processes().stop(
+          { conversationId: input.conversationId, id: input.id, reason: "user" },
+          context,
+        );
+        return { state: process.state };
+      }
       case "addProject":
         return addProject(this.#options.harness, (args as CallMethods["addProject"]["args"]).path, context);
       case "removeProject":
@@ -2458,17 +2487,36 @@ class GatewayClient {
       }
       case "archive": {
         const input = args as CallMethods["archive"]["args"];
-        await archive(this.#options.harness, input.conversationId, input.archived, context);
+        if (!input.archived) {
+          await archive(this.#options.harness, input.conversationId, false, context);
+          this.#hooks.processes?.unseal(
+            await conversationSubtree(this.#options.harness, input.conversationId, context),
+          );
+          return null;
+        }
+        // Compute the scope before the archive commits, seal it against new
+        // processes, then archive. The seal covers the gap between the two;
+        // the archived flag keeps later starts out after it is removed.
+        const subtree = await conversationSubtree(this.#options.harness, input.conversationId, context);
+        this.#hooks.processes?.seal(subtree);
+        try {
+          await archive(this.#options.harness, input.conversationId, true, context);
+        } catch (error) {
+          this.#hooks.processes?.unseal(subtree);
+          throw error;
+        }
+        // Stop every process of the subtree and wait for its exit before
+        // the checkout can be cleaned (ADR-0045 §5, ADR-0040 §5).
+        await this.#hooks.processes?.closeOwners(subtree, "archive", context);
+        this.#hooks.terminals?.closeOwners(subtree);
         // Archiving cleans worktree directories of the subtree but keeps
         // branches — they may hold unmerged work (ADR-0010 §7).
-        if (input.archived) {
-          // The family's shells end with it, legacy forks' included (ADR-0040 §5).
-          this.#hooks.terminals?.closeOwners(await conversationSubtree(this.#options.harness, input.conversationId, context));
-          const kept = await cleanupArchivedWorktrees(this.#options.harness, input.conversationId, context);
-          for (const { record, reason } of kept) {
-            await this.send({ type: "notice", level: "warning", message: `Kept worktree ${record.path} (branch ${record.branch}): ${reason}` });
-          }
+        const kept = await cleanupArchivedWorktrees(this.#options.harness, input.conversationId, context);
+        for (const { record, reason } of kept) {
+          await this.send({ type: "notice", level: "warning", message: `Kept worktree ${record.path} (branch ${record.branch}): ${reason}` });
         }
+        // The seal stays until the conversation is unarchived: an archived
+        // fork's subagents are not Index entries of their own.
         return null;
       }
       case "createPairing": {
@@ -2865,6 +2913,11 @@ class GatewayClient {
   #terminals(): Terminals {
     if (this.#hooks.terminals === undefined) throw new Error("Terminals are unavailable on this host");
     return this.#hooks.terminals;
+  }
+
+  #processes(): Processes {
+    if (this.#hooks.processes === undefined) throw new Error("Background processes are unavailable on this host");
+    return this.#hooks.processes;
   }
 
   /**

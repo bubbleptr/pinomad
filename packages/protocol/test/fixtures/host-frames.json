@@ -3,7 +3,7 @@
     "type": "hello",
     "protocol": {
       "major": 5,
-      "minor": 30
+      "minor": 32
     },
     "session": {
       "id": "<sessionId>",
@@ -43,6 +43,9 @@
       "signalOnly": true
     },
     "terminals": {
+      "limit": 8
+    },
+    "processes": {
       "limit": 8
     }
   },
@@ -94,7 +97,7 @@
       "rtcStun": [
         "stun:stun.cloudflare.com:3478"
       ],
-      "hostName": "kierandeMacBook-Pro",
+      "hostName": "omarchy",
       "autoUpgrade": "notify",
       "custom": []
     }
@@ -170,7 +173,7 @@
             "home": {
               "kind": "chat"
             },
-            "createdAt": 1793907846403,
+            "createdAt": 1794153708334,
             "requestId": "contract-1"
           }
         ]
@@ -255,63 +258,10 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1793907846405,
+        "updatedAt": 1794153708337,
         "currentAgent": null
       }
     ]
-  },
-  {
-    "type": "snapshot",
-    "stream": "conversation:4",
-    "value": {
-      "conversation": {
-        "id": 4
-      },
-      "entries": [
-        {
-          "model": [
-            {
-              "role": "user",
-              "content": "contract run",
-              "timestamp": 1793907846405
-            }
-          ],
-          "kind": "pi.user",
-          "id": 11,
-          "conversationId": 4
-        }
-      ],
-      "docs": {
-        "pi.agent": {
-          "model": {
-            "provider": "faux",
-            "modelId": "faux-1"
-          },
-          "thinkingLevel": "off",
-          "cwd": "<dataDir>/chats/4"
-        },
-        "pi.live": {
-          "run": {
-            "taskId": 13,
-            "inputs": [
-              12
-            ],
-            "turns": 0,
-            "first": 11
-          }
-        },
-        "pi.inbox": {
-          "items": []
-        },
-        "pi.provider": {
-          "sessionId": "01a1ad3d-6d03-743b-9c0a-6fe498f522fa"
-        },
-        "pi.usage": {
-          "models": {},
-          "tools": {}
-        }
-      }
-    }
   },
   {
     "type": "ops",
@@ -339,155 +289,178 @@
     ]
   },
   {
-    "type": "ops",
+    "type": "snapshot",
     "stream": "conversation:4",
-    "ops": [
-      [
-        "p",
-        [
-          "entries"
-        ],
-        1,
-        0,
-        [
-          {
-            "model": [
-              {
-                "role": "system",
-                "content": "",
-                "toolsAdded": [
-                  {
-                    "name": "read",
-                    "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
-                    "parameters": {
-                      "type": "object",
-                      "properties": {
-                        "path": {
-                          "type": "string",
-                          "description": "Path to the file to read (relative or absolute)"
-                        },
-                        "offset": {
-                          "type": "number",
-                          "description": "Line number to start reading from (1-indexed)"
-                        },
-                        "limit": {
-                          "type": "number",
-                          "description": "Maximum number of lines to read"
-                        }
-                      },
-                      "required": [
-                        "path"
-                      ]
-                    }
-                  },
-                  {
-                    "name": "write",
-                    "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
-                    "parameters": {
-                      "type": "object",
-                      "properties": {
-                        "path": {
-                          "type": "string",
-                          "description": "Path to the file to write (relative or absolute)"
-                        },
-                        "content": {
-                          "type": "string",
-                          "description": "Content to write to the file"
-                        }
-                      },
-                      "required": [
-                        "path",
-                        "content"
-                      ]
-                    }
-                  },
-                  {
-                    "name": "edit",
-                    "description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
-                    "parameters": {
-                      "type": "object",
-                      "properties": {
-                        "path": {
-                          "type": "string",
-                          "description": "Path to the file to edit (relative or absolute)"
-                        },
-                        "edits": {
-                          "type": "array",
-                          "items": {
-                            "type": "object",
-                            "properties": {
-                              "oldText": {
-                                "type": "string",
-                                "description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
-                              },
-                              "newText": {
-                                "type": "string",
-                                "description": "Replacement text for this targeted edit."
-                              }
-                            },
-                            "required": [
-                              "oldText",
-                              "newText"
-                            ]
-                          },
-                          "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
-                        }
-                      },
-                      "required": [
-                        "path",
-                        "edits"
-                      ]
-                    }
-                  },
-                  {
-                    "name": "bash",
-                    "description": "Execute a bash command in the current working directory. Returns combined stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
-                    "parameters": {
-                      "type": "object",
-                      "properties": {
-                        "command": {
-                          "type": "string",
-                          "description": "Bash command to execute"
-                        },
-                        "timeout": {
-                          "type": "number",
-                          "description": "Timeout in seconds (optional, no default timeout)"
-                        }
-                      },
-                      "required": [
-                        "command"
-                      ]
-                    }
-                  }
-                ],
-                "timestamp": 1793907846409
-              }
-            ],
-            "kind": "pi.system",
-            "id": 14,
-            "conversationId": 4,
-            "byTaskId": 13
-          }
-        ]
-      ]
-    ]
-  },
-  {
-    "type": "ops",
-    "stream": "conversation:4",
-    "ops": [
-      [
-        "s",
-        [
-          "docs",
-          "pi.live",
-          "generation"
-        ],
+    "value": {
+      "conversation": {
+        "id": 4
+      },
+      "entries": [
         {
-          "attempt": 1
+          "model": [
+            {
+              "role": "user",
+              "content": "contract run",
+              "timestamp": 1794153708337
+            }
+          ],
+          "kind": "pi.user",
+          "id": 11,
+          "conversationId": 4
+        },
+        {
+          "model": [
+            {
+              "role": "system",
+              "content": "",
+              "toolsAdded": [
+                {
+                  "name": "read",
+                  "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "description": "Path to the file to read (relative or absolute)"
+                      },
+                      "offset": {
+                        "type": "number",
+                        "description": "Line number to start reading from (1-indexed)"
+                      },
+                      "limit": {
+                        "type": "number",
+                        "description": "Maximum number of lines to read"
+                      }
+                    },
+                    "required": [
+                      "path"
+                    ]
+                  }
+                },
+                {
+                  "name": "write",
+                  "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "description": "Path to the file to write (relative or absolute)"
+                      },
+                      "content": {
+                        "type": "string",
+                        "description": "Content to write to the file"
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "content"
+                    ]
+                  }
+                },
+                {
+                  "name": "edit",
+                  "description": "Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "description": "Path to the file to edit (relative or absolute)"
+                      },
+                      "edits": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "oldText": {
+                              "type": "string",
+                              "description": "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with any other edits[].oldText in the same call."
+                            },
+                            "newText": {
+                              "type": "string",
+                              "description": "Replacement text for this targeted edit."
+                            }
+                          },
+                          "required": [
+                            "oldText",
+                            "newText"
+                          ]
+                        },
+                        "description": "One or more targeted replacements. Each edit is matched against the original file, not incrementally. Do not include overlapping or nested edits. If two changes touch the same block or nearby lines, merge them into one edit instead."
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "edits"
+                    ]
+                  }
+                },
+                {
+                  "name": "bash",
+                  "description": "Execute a bash command in the current working directory. Returns combined stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+                  "parameters": {
+                    "type": "object",
+                    "properties": {
+                      "command": {
+                        "type": "string",
+                        "description": "Bash command to execute"
+                      },
+                      "timeout": {
+                        "type": "number",
+                        "description": "Timeout in seconds (optional, no default timeout)"
+                      }
+                    },
+                    "required": [
+                      "command"
+                    ]
+                  }
+                }
+              ],
+              "timestamp": 1794153708342
+            }
+          ],
+          "kind": "pi.system",
+          "id": 14,
+          "conversationId": 4,
+          "byTaskId": 13
         }
-      ]
-    ]
+      ],
+      "docs": {
+        "pi.agent": {
+          "model": {
+            "provider": "faux",
+            "modelId": "faux-1"
+          },
+          "thinkingLevel": "off",
+          "cwd": "<dataDir>/chats/4"
+        },
+        "pi.live": {
+          "run": {
+            "taskId": 13,
+            "inputs": [
+              12
+            ],
+            "turns": 0,
+            "first": 11
+          },
+          "generation": {
+            "attempt": 1
+          }
+        },
+        "pi.inbox": {
+          "items": []
+        },
+        "pi.provider": {
+          "sessionId": "01a1bbe4-fb2d-73db-b9d8-79c301ddeca8"
+        },
+        "pi.usage": {
+          "models": {},
+          "tools": {}
+        }
+      }
+    }
   },
   {
     "type": "ops",
@@ -551,7 +524,7 @@
         ],
         [
           {
-            "callId": "tool:1793907846365:6dtg3c32ncm",
+            "callId": "tool:1794153708297:osir1egdeya",
             "name": "write",
             "taskId": 16,
             "status": "pending"
@@ -614,7 +587,7 @@
                 "content": [
                   {
                     "type": "toolCall",
-                    "id": "tool:1793907846365:6dtg3c32ncm",
+                    "id": "tool:1794153708297:osir1egdeya",
                     "name": "write",
                     "arguments": {
                       "path": "note.txt",
@@ -622,7 +595,7 @@
                     }
                   }
                 ],
-                "api": "faux:1793907846365:amacyhijmdu",
+                "api": "faux:1794153708297:ud7bg5kh11",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
@@ -640,7 +613,7 @@
                   }
                 },
                 "stopReason": "toolUse",
-                "timestamp": 1793907846365,
+                "timestamp": 1794153708297,
                 "thinkingLevel": "off"
               }
             ],
@@ -725,7 +698,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1793907846365,
+        "updatedAt": 1794153708297,
         "currentAgent": null,
         "activity": {
           "tool": "write",
@@ -785,7 +758,7 @@
             "model": [
               {
                 "role": "toolResult",
-                "toolCallId": "tool:1793907846365:6dtg3c32ncm",
+                "toolCallId": "tool:1794153708297:osir1egdeya",
                 "toolName": "write",
                 "content": [
                   {
@@ -798,7 +771,7 @@
                 },
                 "isError": false,
                 "durationMs": 1,
-                "timestamp": 1793907846478
+                "timestamp": 1794153708409
               }
             ],
             "data": {
@@ -916,7 +889,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1793907846365,
+        "updatedAt": 1794153708297,
         "currentAgent": null
       }
     ]
@@ -1058,7 +1031,7 @@
                     "text": "contract done"
                   }
                 ],
-                "api": "faux:1793907846365:amacyhijmdu",
+                "api": "faux:1794153708297:ud7bg5kh11",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
@@ -1076,9 +1049,9 @@
                   }
                 },
                 "stopReason": "stop",
-                "timestamp": 1793907846365,
+                "timestamp": 1794153708297,
                 "pinomad": {
-                  "answerStartedAt": 1793907846489
+                  "answerStartedAt": 1794153708418
                 },
                 "thinkingLevel": "off"
               }

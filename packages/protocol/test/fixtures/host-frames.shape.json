@@ -24,6 +24,9 @@
           ]
         }
       ],
+      "processes": {
+        "limit": "number"
+      },
       "protocol": {
         "major": "number",
         "minor": "number"

@@ -285,6 +285,23 @@ export const CLASSIFY_CASES: ClassifyCase[] = [
   { name: "context-fraction", presentation: "pinomad.context", value: { used: 1.5, system: 0, skills: 0, tools: 0, mcp: 0, messages: 1.5 } },
   { name: "context-negative", presentation: "pinomad.context", value: { used: 1, system: -1, skills: 0, tools: 0, mcp: 0, messages: 2 } },
   { name: "context-missing-part", presentation: "pinomad.context", value: { used: 1, system: 0, skills: 0, tools: 0, messages: 1 } },
+  {
+    name: "processes",
+    presentation: "pinomad.processes",
+    value: {
+      processes: [
+        { id: "p1", owner: 3, name: "dev", command: "npm run dev", pid: 42, startedAt: 1, state: "running" },
+        { id: "p2", owner: 3, name: "build", command: "make", startedAt: 2, endedAt: 3, state: { exited: 0 } },
+        { id: "p3", owner: 3, name: "old", command: "make", startedAt: 4, state: { stopped: "shutdown" } },
+        { id: "p4", owner: 3, name: "lost", command: "make", startedAt: 5, state: "lost" },
+      ],
+    },
+  },
+  {
+    name: "processes-bad-state",
+    presentation: "pinomad.processes",
+    value: { processes: [{ id: "p1", owner: 3, name: "x", command: "y", startedAt: 1, state: "gone" }] },
+  },
   { name: "todo-bad-status", presentation: "pinomad.todo", value: { items: [{ text: "Ship it", status: "unknown" }] } },
   { name: "todo-missing-field", presentation: "pinomad.todo", value: { items: [{ status: "pending" }] } },
   { name: "todo-non-object", presentation: "pinomad.todo", value: "not a todo" },

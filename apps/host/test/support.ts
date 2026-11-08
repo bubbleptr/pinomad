@@ -23,6 +23,7 @@ import { secureWebSocketTransport } from "@pinomad/protocol/secure-channel.ts";
 import type { DurableViewSource, ModelSummary } from "@pinomad/protocol/view.ts";
 import type { AgentRoleStore } from "../src/agent-roles.ts";
 import type { BuiltinExtension } from "../src/builtin-extension.ts";
+import type { Processes } from "../src/processes.ts";
 import type { PushTimers } from "../src/push.ts";
 import { deflateSync, crc32 } from "node:zlib";
 
@@ -115,6 +116,7 @@ export async function startFauxHost(
     agentsHome,
     rtc,
     terminals,
+    processes,
     upgrade,
   }: {
     /** Script of faux responses: plain strings become assistant text, messages and factories pass through. */
@@ -138,6 +140,8 @@ export async function startFauxHost(
           harness: () => Harness;
           /** The host's live named-agent store (`<dataDir>/agents`, ADR-0023). */
           agentRoles: AgentRoleStore;
+          /** The background-process runtime, absent when the pty module did not load. */
+          processes?: Processes;
         }) => readonly BuiltinExtension[]);
     /** Directories registered as projects at open. */
     projects?: readonly string[];
@@ -173,6 +177,8 @@ export async function startFauxHost(
     rtc?: OpenHostOptions["rtc"];
     /** Terminal seams (ADR-0041); absent runs a plain /bin/sh, never the user's login shell. */
     terminals?: OpenHostOptions["terminals"];
+    /** Background-process seams (ADR-0045); absent loads the real pty module. */
+    processes?: OpenHostOptions["processes"];
     /** Upgrade seams (ADR-0043); absent → the host reports `blocked: "source"`. */
     upgrade?: OpenHostOptions["upgrade"];
   } = {},
@@ -216,8 +222,8 @@ export async function startFauxHost(
       : {
           extensions:
             typeof extensions === "function"
-              ? (host: { harness: () => Harness; agentRoles: AgentRoleStore }) =>
-                  extensions({ models, modelSummaries, harness: host.harness, agentRoles: host.agentRoles })
+              ? (host: { harness: () => Harness; agentRoles: AgentRoleStore; processes?: Processes }) =>
+                  extensions({ models, modelSummaries, harness: host.harness, agentRoles: host.agentRoles, ...(host.processes === undefined ? {} : { processes: host.processes }) })
               : extensions,
         }),
     ...(projects === undefined ? {} : { projects }),
@@ -232,6 +238,7 @@ export async function startFauxHost(
     ...(images === undefined ? {} : { images }),
     ...(rtc === undefined ? {} : { rtc }),
     ...(upgrade === undefined ? {} : { upgrade }),
+    ...(processes === undefined ? {} : { processes }),
     terminals: terminals ?? {
       shell: { file: "/bin/sh", args: [] },
       env: { PATH: process.env.PATH ?? "/usr/bin:/bin", PS1: "$ ", HOME: dir.path },
