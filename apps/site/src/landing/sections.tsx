@@ -96,7 +96,7 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
             <img
               src={image.src}
               srcSet={image.srcSet}
-              sizes="(min-width: 72rem) 62rem, 100vw"
+              sizes="(min-width: 72rem) 54rem, (min-width: 56rem) 76vw, 100vw"
               width="2400"
               height="1500"
               alt={t.shotAlt}

@@ -544,21 +544,32 @@ html[lang="zh-CN"] .models-label {
   font-style: italic;
 }
 
-/* A plate of Abyss Blue the app stands on. Flat for now: a generated picture in blue and
-   silver is meant to replace the colour here. */
+/* The app stands on a plate of silver contour lines over Abyss Blue. The picture is
+   gradient-mapped onto the palette, so its ground is Abyss itself; the top padding
+   shows its band of silver above the window. */
 .hero-stage {
   margin-top: clamp(3rem, 7vw, 5rem);
-  padding: clamp(1rem, 5vw, 4rem) clamp(1rem, 5vw, 4rem) 0;
+  padding-top: max(3rem, 12.6%);
   /* clip, not hidden: hidden makes a scroll container, and the screenshot's view()
      timeline would follow this box, which never scrolls, instead of the page. */
   overflow: clip;
   border-radius: calc(var(--radius) * 1.75);
-  background: var(--grain), var(--abyss);
+  background: var(--abyss)
+    image-set(url("./hero-stage-1000.webp") 1x, url("./hero-stage.webp") 2x)
+    center top / cover no-repeat;
 }
 
 .hero-shot {
+  width: calc(100% - 2rem);
+  margin-inline: auto;
   border-radius: var(--radius) var(--radius) 0 0;
   box-shadow: 0 -0.5rem 3rem -0.5rem rgb(0 0 0 / 0.45);
+}
+
+@media (min-width: 56rem) {
+  .hero-shot {
+    width: 76%;
+  }
 }
 
 /* Keeps the Chinese h1's first clause on one line — but only when it fits. */
