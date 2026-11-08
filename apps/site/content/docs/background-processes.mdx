@@ -1,0 +1,62 @@
+---
+title: Background processes
+description: Dev servers and monitor commands the agent starts, tracked by the host; view their output or stop them in Tasks.
+---
+
+Background processes are long-running commands that the agent starts in a conversation's checkout and the host tracks, such as a dev server or a log monitor. They are not terminals you can type into, nor Background subagents with a conversation of their own.
+
+## Where to see them
+
+In the web and desktop apps, open **Tasks** in the side panel beside the chat. Background processes are listed under **Processes**, beside Foreground subagents. Each row shows the name (the command's first line by default), a status dot and how long it has run; ended ones show the exit code, `Stopped`, `Failed` or `Lost`. Click a row to see its read-only output, or click **Stop** at the top right to stop it.
+
+The count in the **Tasks** panel's first row includes running background processes (for example `1 process running`). When the **Tasks** panel is closed, the activity dot on the **Tasks** icon in the chat header counts running background processes too.
+
+On the iPhone, tap **Overview** in the conversation's title bar, see the list under **Processes**, and tap **Stop** to stop a process (the iPhone doesn't show process output).
+
+## How the agent uses them
+
+The host provides four tools (Foreground subagents don't have them):
+
+- `process_start`: start a command in the current conversation's checkout and return the process `id`.
+- `process_output`: read output incrementally from a position (at most 16 KiB per call, with ANSI escapes removed) and the current state.
+- `process_stop`: stop a process and return its final state once it has exited.
+- `process_list`: list running and recently ended processes in the current conversation family; use it to find `id`s again after context compaction.
+
+A background process belongs to the conversation that started it. The list and limit are shared across the root conversation's family: one family can have at most 8 unfinished processes at once (`Starting`, `Running`), and ended ones keep the 20 most recent.
+
+When a process exits on its own, the host sends its exit code (or signal) and the last few lines of output (up to 40 lines, 4 KiB) back to the conversation that started it. If the conversation is idle, the report starts the agent working right away; if the conversation is running, the report is queued into the current run. Processes you or the agent stop don't report.
+
+## Writing a monitor
+
+The host doesn't report each matching line. Write a monitor as a one-shot command that **exits when the event happens**; the automatic report when it exits wakes the agent.
+
+On Linux, use `tail` with `grep`:
+
+```sh
+tail -n0 -F app.log | grep -m1 --line-buffered ERROR
+```
+
+- `-n0`: start at the current end of the file, so existing lines don't trigger it.
+- `-F`: follow the file by name, so it keeps reading the new file after the log is rotated or recreated.
+- `-m1` and `--line-buffered`: print the first matching `ERROR` line and exit at once; the whole pipeline ends and the host sends that line back to the conversation.
+
+This relies on GNU `tail` exiting promptly after `grep` exits; it's confirmed on Linux. Whether the BSD `tail` that ships with macOS exits promptly hasn't been tested, so don't rely on it ending on its own on a macOS host.
+
+## When a process stops
+
+A background process stops when:
+
+- **Stop**: you click **Stop** in the UI, or the agent calls `process_stop`. The host sends `SIGTERM` to the whole process group, then `SIGKILL` after 5 seconds if it hasn't exited.
+- **Archiving the conversation**: when you archive the conversation that started the process, or its root conversation or Fork, the host stops the background processes in that range first, then cleans up the checkout after they exit.
+- **Host shutdown or restart**: before the host exits it stops every running background process; the detail says `Stopped when the host shut down`.
+- **Immediate upgrade**: with **Upgrade now** or `pinomad upgrade --force`, the host stops background processes before installing. **Upgrade when idle** waits for them to end first.
+
+If the host exits unexpectedly, entries that were still running show **Lost** on the next start (the detail says `Lost track after a host restart; it may still be running (pid …)`). That means the host no longer tracks it; the process may still be running, so use the `pid` shown to deal with it yourself on the host.
+
+Output lives only in host memory (the last 512 KiB per process, and up to 64 MiB in total for ended processes across the host). The output is no longer available after a process falls out of the 20-entry history, after its conversation is archived, or after the host restarts.
+
+## Limits
+
+- **No input**: background processes accept no standard input; use **Terminal** in the side panel when you need to interact.
+- **No restart in the UI**: an ended process has no restart button; ask the agent to start it again when you need another run.
+- **Remote access doesn't forward ports**: when you reach the host remotely, the `localhost` ports its processes listen on aren't reachable from the client device; port forwarding isn't supported yet.
