@@ -90,20 +90,18 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
           </div>
         </div>
       </div>
-      <div className="wrap">
-        <div className="hero-stage">
-          <figure className="shot shot-window hero-shot">
-            <img
-              src={image.src}
-              srcSet={image.srcSet}
-              sizes="(min-width: 72rem) 54rem, (min-width: 56rem) 76vw, 100vw"
-              width="2400"
-              height="1500"
-              alt={t.shotAlt}
-              fetchPriority="high"
-            />
-          </figure>
-        </div>
+      <div className="hero-stage">
+        <figure className="shot shot-window hero-shot">
+          <img
+            src={image.src}
+            srcSet={image.srcSet}
+            sizes="(min-width: 96rem) 74rem, (min-width: 56rem) 78vw, 100vw"
+            width="2400"
+            height="1500"
+            alt={t.shotAlt}
+            fetchPriority="high"
+          />
+        </figure>
       </div>
     </section>
   );

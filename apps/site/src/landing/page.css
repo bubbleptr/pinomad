@@ -547,8 +547,10 @@ html[lang="zh-CN"] .models-label {
 /* The app stands on a plate of silver contour lines over Abyss Blue. The picture is
    gradient-mapped onto the palette, so its ground is Abyss itself; the top padding
    shows its band of silver above the window. */
+/* Wider than the text column, so the window reads at close to its real size. */
 .hero-stage {
-  margin-top: clamp(3rem, 7vw, 5rem);
+  width: min(100% - 2 * var(--gutter), 90rem);
+  margin: clamp(3rem, 7vw, 5rem) auto 0;
   padding-top: max(3rem, 12.6%);
   /* clip, not hidden: hidden makes a scroll container, and the screenshot's view()
      timeline would follow this box, which never scrolls, instead of the page. */
@@ -557,6 +559,13 @@ html[lang="zh-CN"] .models-label {
   background: var(--abyss)
     image-set(url("./hero-stage-1000.webp") 1x, url("./hero-stage.webp") 2x)
     center top / cover no-repeat;
+}
+
+/* Past 1000px wide the small copy would be stretched even at 1x. */
+@media (min-width: 64rem) {
+  .hero-stage {
+    background-image: url("./hero-stage.webp");
+  }
 }
 
 .hero-shot {
@@ -568,7 +577,7 @@ html[lang="zh-CN"] .models-label {
 
 @media (min-width: 56rem) {
   .hero-shot {
-    width: 76%;
+    width: 82%;
   }
 }
 
