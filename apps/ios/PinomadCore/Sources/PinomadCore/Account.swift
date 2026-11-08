@@ -933,6 +933,28 @@ public enum AccountHosts {
         }
     }
 
+    /// The hosts a successful list says left the account (#604): listed
+    /// before, or held with a key `serverOrigin`'s account issued, and missing
+    /// now. Each goes as a removal does; a QR pairing among them stays,
+    /// since only vouched keys are forgotten.
+    public static func delistedHostIds(
+        serverOrigin: String, listedBefore: [String], hosts: [HostRecord], listed: [String]
+    ) -> [String] {
+        let origin = normalizeServerOrigin(origin: serverOrigin)
+        let vouched = hosts.compactMap { host -> String? in
+            guard let link = host.account, link.vouched == true,
+                  normalizeServerOrigin(origin: link.serverOrigin) == origin
+            else { return nil }
+            return link.hostId
+        }
+        let present = Set(listed)
+        var delisted: [String] = []
+        for hostId in listedBefore + vouched where !present.contains(hostId) && !delisted.contains(hostId) {
+            delisted.append(hostId)
+        }
+        return delisted
+    }
+
     /// What a 404 to removing `hostId` means (#512): gone already, or a
     /// server that predates removal. `listedAfter` is the host list asked for
     /// after that answer, nil when there is none: one already in flight may
