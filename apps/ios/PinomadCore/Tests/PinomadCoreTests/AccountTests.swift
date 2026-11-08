@@ -120,6 +120,26 @@ struct AccountTests {
         #expect(AccountHosts.vouchedHostKeys(serverOrigin: origin, hostId: "host1", hosts: hosts).isEmpty)
     }
 
+    /// A refresh lets go of hosts that left the account elsewhere (#604):
+    /// those listed before, or held with a key this server's account issued,
+    /// that the new list leaves out. Another server's hosts and a QR pairing
+    /// the account never listed aren't its business.
+    @Test func delistedHostsAreTheKnownOnesTheListLeavesOut() {
+        let origin = "https://relay.example.com"
+        let hosts = [
+            record("issued", account: AccountLink(serverOrigin: origin + "/", hostId: "gone", vouched: true)),
+            record("kept", account: AccountLink(serverOrigin: origin, hostId: "stays", vouched: true)),
+            record("elsewhere", account: AccountLink(serverOrigin: "https://other.example.com", hostId: "far", vouched: true)),
+            record("qr", account: AccountLink(serverOrigin: origin, hostId: "qr-only")),
+        ]
+        let delisted = AccountHosts.delistedHostIds(
+            serverOrigin: origin,
+            listedBefore: ["was-listed", "stays"],
+            hosts: hosts,
+            listed: ["stays", "new"])
+        #expect(delisted == ["was-listed", "gone"])
+    }
+
     /// A 404 to removing a host (#512) is "already gone" only when a list
     /// fetched after it came back without the host. No such list (one was
     /// already in flight, or the fetch failed) is no verdict: the form must

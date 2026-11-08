@@ -208,6 +208,11 @@ extension AppModel {
             }
         }
 
+        // Taken before asking: a host paired while the list is on its way
+        // isn't in it, so an answer from before its join can't forget it.
+        let listedBefore = accountRows.map(\.hostId)
+        let heldBefore = accountHostCandidates()
+
         switch await api.listHosts() {
         case .failure(let failure):
             guard session.isSameSignIn(as: accountSession) else { return }
@@ -269,6 +274,19 @@ extension AppModel {
             if storedRead { accountHostsError = nil }
             if storedRead {
                 startAutomaticRegistrations(result, session: session)
+            }
+            // Hosts that left the account on another device (or `pinomad
+            // leave`) go as a removal here does (#604), or this iPhone keeps
+            // dialing a host the relay answers 4604 for. A queued refresh
+            // means something changed meanwhile (a pairing landed): only
+            // that newer list may decide.
+            if storedRead, !accountRefreshPending {
+                let delisted = AccountHosts.delistedHostIds(
+                    serverOrigin: session.serverOrigin,
+                    listedBefore: listedBefore,
+                    hosts: heldBefore,
+                    listed: hosts.map(\.hostId))
+                for hostId in delisted { forgetRemovedHost(hostId, session: session) }
             }
         }
     }
@@ -457,12 +475,7 @@ extension AppModel {
     /// `hostId`'s, without declining it (#494, #512). Hosts paired by QR
     /// code carry no vouch and stay.
     private func forgetAccountHosts(serverOrigin: String, hostId: String? = nil) {
-        // Saved pairings, plus account pairings whose keychain write failed:
-        // those live only in memory (a runtime, a retry slot) until saved.
-        var candidates = hosts.hosts
-        for key in unsavedHostKeys {
-            if let host = runtimes[key]?.host { candidates.append(host) }
-        }
+        let candidates = accountHostCandidates()
         let unsavedOurs = AccountHosts.vouchedHostKeys(
             serverOrigin: serverOrigin, hostId: hostId, hosts: Array(unsavedAccountHosts.values))
         for (slot, host) in unsavedAccountHosts where unsavedOurs.contains(host.hostKey) {
@@ -475,6 +488,18 @@ extension AppModel {
             keys.append(key)
         }
         for key in keys { forget(key, decline: false) }
+    }
+
+    /// Every host this iPhone holds: saved pairings, plus account pairings
+    /// whose keychain write failed, which live only in memory (a runtime, a
+    /// retry slot) until saved.
+    private func accountHostCandidates() -> [HostRecord] {
+        var candidates = hosts.hosts
+        for key in unsavedHostKeys {
+            if let host = runtimes[key]?.host { candidates.append(host) }
+        }
+        candidates += unsavedAccountHosts.values
+        return candidates
     }
 
     /// Change the account password (#450). This session stays; the server
