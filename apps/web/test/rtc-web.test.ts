@@ -153,9 +153,10 @@ describe("web RTC carrier", () => {
         )
         .toBe(true);
 
-      await dialog.getByRole("button", { name: /^Connection to / }).click();
-      const panel = dialog.getByRole("group", { name: /^Connection to / });
-      await panel.waitFor();
+      // The host's own page carries its connection mode and live path.
+      await dialog.getByRole("button", { name: / details$/ }).click();
+      const panel = dialog;
+      await panel.getByRole("radio", { name: "Auto", exact: true }).waitFor();
       expect(await panel.getByRole("radio", { name: "Auto", exact: true }).isChecked()).toBe(true);
       await panel.getByText("Active", { exact: true }).waitFor();
       await panel.getByText(/^P2P(?: · |$)/).waitFor();

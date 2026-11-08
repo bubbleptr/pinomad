@@ -104,6 +104,15 @@ async function openSettings(page: Page, section: string): Promise<Locator> {
   return dialog;
 }
 
+/** Settings → Hosts → Add a host…, with a pairing link pasted and connected. */
+async function pairFromSettings(page: Page, link: string): Promise<void> {
+  const settings = await openSettings(page, "Hosts");
+  await settings.getByRole("button", { name: "Add a host…", exact: true }).click();
+  const addHost = page.getByRole("dialog", { name: "Add a host" });
+  await addHost.getByLabel("Pairing link").fill(link);
+  await addHost.getByRole("button", { name: "Connect", exact: true }).click();
+}
+
 /** The host menu in the user bar: each paired host's name with its status. */
 async function openHostsMenu(page: Page): Promise<void> {
   await page.getByRole("button", { name: "Hosts", exact: true }).click();
@@ -3193,9 +3202,7 @@ it("switches between paired hosts on the desktop bridge", async () => {
 
   // Pair host B from Settings → Hosts — a second pairing never warns about
   // replacing in multi-host mode.
-  const dialog = await openSettings(page, "Hosts");
-  await dialog.getByLabel("Pairing link").fill(pairB);
-  await dialog.getByRole("button", { name: "Connect", exact: true }).click();
+  await pairFromSettings(page, pairB);
   await page.getByText("Pair with this host?").waitFor();
   expect(await page.getByText("Replaces your current pairing").count()).toBe(0);
   await page.getByRole("button", { name: "Pair", exact: true }).click();
@@ -3267,9 +3274,7 @@ it("leaves a failed pairing for a saved host from the sidebar-less failure page"
   // B goes away between showing its pairing offer and confirming it: the
   // unsaved pairing fails on a page with no sidebar, so the inline host list
   // is the only way back to A.
-  const dialog = await openSettings(page, "Hosts");
-  await dialog.getByLabel("Pairing link").fill(pairB);
-  await dialog.getByRole("button", { name: "Connect", exact: true }).click();
+  await pairFromSettings(page, pairB);
   await page.getByText("Pair with this host?").waitFor();
   await hostB.close();
   await page.getByRole("button", { name: "Pair", exact: true }).click();
@@ -3311,21 +3316,21 @@ it("unpairs a host from Settings → Hosts only after confirmation, at both ends
   await page.getByRole("button", { name: "Connect", exact: true }).click();
   await page.getByRole("button", { name: "Pair", exact: true }).click();
   await prompt(page).waitFor();
-  const pairDialog = await openSettings(page, "Hosts");
-  await pairDialog.getByLabel("Pairing link").fill(pairB);
-  await pairDialog.getByRole("button", { name: "Connect", exact: true }).click();
+  await pairFromSettings(page, pairB);
   await page.getByRole("button", { name: "Pair", exact: true }).click();
   await prompt(page).waitFor();
   expect(await storedHostCount(page)).toBe(2);
 
   // Cancelling the confirmation touches nothing: still on B, both stored.
   const settings = await openSettings(page, "Hosts");
-  await settings.getByRole("button", { name: `Unpair ${labelB}…`, exact: true }).click();
-  const confirm = settings.getByRole("group", { name: `Unpair ${labelB}?`, exact: true });
+  await settings.getByRole("button", { name: `${labelB} details`, exact: true }).click();
+  await settings.getByRole("button", { name: "Unpair…", exact: true }).click();
+  const confirm = page.getByRole("dialog", { name: `Unpair ${labelB}?`, exact: true });
   await confirm.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect.poll(() => confirm.count()).toBe(0);
   expect(await storedHostCount(page)).toBe(2);
-  await settings.getByRole("button", { name: `Unpair ${labelA}…`, exact: true }).waitFor();
+  await settings.getByRole("button", { name: "Back to hosts", exact: true }).click();
+  await settings.getByRole("button", { name: `${labelA} details`, exact: true }).waitFor();
 
   // Confirming unpairs B: B drops this device, and focus falls back to A, the
   // only host left — without B's refusal of this device flashing up first.
@@ -3340,9 +3345,10 @@ it("unpairs a host from Settings → Hosts only after confirmation, at both ends
       }
     }).observe(document.body, { subtree: true, childList: true, characterData: true });
   });
-  await settings.getByRole("button", { name: `Unpair ${labelB}…`, exact: true }).click();
-  await settings
-    .getByRole("group", { name: `Unpair ${labelB}?`, exact: true })
+  await settings.getByRole("button", { name: `${labelB} details`, exact: true }).click();
+  await settings.getByRole("button", { name: "Unpair…", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: `Unpair ${labelB}?`, exact: true })
     .getByRole("button", { name: "Unpair", exact: true })
     .click();
   await waitForView(tokenB.view, (view) => view.devices.length === 0);
@@ -3365,9 +3371,10 @@ it("unpairs a host from Settings → Hosts only after confirmation, at both ends
   await page.goto(`${webOrigin}/#token=${encodeURIComponent(hostB.token)}&url=${encodeURIComponent(hostB.url)}`);
   await prompt(page).waitFor();
   const lastSettings = await openSettings(page, "Hosts");
-  await lastSettings.getByRole("button", { name: `Unpair ${labelA}…`, exact: true }).click();
-  await lastSettings
-    .getByRole("group", { name: `Unpair ${labelA}?`, exact: true })
+  await lastSettings.getByRole("button", { name: `${labelA} details`, exact: true }).click();
+  await lastSettings.getByRole("button", { name: "Unpair…", exact: true }).click();
+  await page
+    .getByRole("dialog", { name: `Unpair ${labelA}?`, exact: true })
     .getByRole("button", { name: "Unpair", exact: true })
     .click();
   await page.getByLabel("Pairing link").waitFor();

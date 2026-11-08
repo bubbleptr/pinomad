@@ -137,37 +137,23 @@ describe("AccountPanel", () => {
     expect(model.login).toHaveBeenCalledWith({ username: "kieran", password: "pw", serverOrigin: "https://nomad.example" });
   });
 
-  it("only lets the user pair hosts the server says are available", () => {
-    renderPanel(
-      fakeModel(
-        signedIn([
-          { host: host({ name: "up", hostId: "u".repeat(43) }), status: "unpaired", linkable: false, autoRegister: true },
-          { host: host({ name: "down", hostId: "d".repeat(43), online: false, pairing: "offline" }), status: "unpaired", linkable: false, autoRegister: true },
-          { host: host({ name: "old", hostId: "o".repeat(43), pairing: "host_too_old" }), status: "unpaired", linkable: false, autoRegister: true },
-        ]),
-      ),
+  it("lists only the account's hosts this device hasn't paired", () => {
+    render(
+      <HostsContext.Provider value={fakeHosts([stored(KEY_A)], null)}>
+        <AccountContext.Provider
+          value={fakeModel(
+            signedIn([
+              { host: host({ name: "here" }), status: "paired", stored: stored(KEY_A), linkable: false, autoRegister: false },
+              { host: host({ name: "up", hostId: "u".repeat(43), noisePublicKey: KEY_B }), status: "unpaired", linkable: false, autoRegister: true },
+            ]),
+          )}
+        >
+          <AccountPanel />
+        </AccountContext.Provider>
+      </HostsContext.Provider>,
     );
+    expect(screen.queryByText("here")).toBeNull();
     expect(within(row("up")).getByRole("button", { name: "Pair" })).toBeEnabled();
-    expect(within(row("down")).getByRole("button", { name: "Pair" })).toBeDisabled();
-    expect(within(row("old")).getByRole("button", { name: "Pair" })).toBeDisabled();
-    expect(within(row("old")).getByText(/pinomad upgrade/)).toBeTruthy();
-  });
-
-  it("reports a key change and re-pairs only on an explicit click", async () => {
-    const model = fakeModel(signedIn([{ host: host({ noisePublicKey: KEY_B }), status: "key_changed", stored: stored(KEY_A), linkable: false, autoRegister: false }]));
-    renderPanel(model);
-    expect(within(row("box")).getByText("Key changed")).toBeTruthy();
-    expect(model.pairHost).not.toHaveBeenCalled();
-    await userEvent.click(within(row("box")).getByRole("button", { name: "Pair again" }));
-    expect(model.pairHost).toHaveBeenCalledWith("h".repeat(43));
-    // The pairing failure surfaces in words, not as a code.
-    expect(await screen.findByText(/didn't answer in time/)).toBeTruthy();
-  });
-
-  it("offers a re-pair for a host that refused this device instead of Connect", () => {
-    renderPanel(fakeModel(signedIn([{ host: host({}), status: "paired", stored: stored(KEY_A), linkable: false, autoRegister: false }], [KEY_A])));
-    expect(within(row("box")).queryByRole("button", { name: "Connect" })).toBeNull();
-    expect(within(row("box")).getByRole("button", { name: "Pair again" })).toBeEnabled();
   });
 
   it("still warns after a failed Sign out everywhere lands on the sign-in form", async () => {
@@ -412,12 +398,16 @@ describe("account devices (#452)", () => {
 describe("removing a host (#512)", () => {
   const boxId = "h".repeat(43);
   const withHost = () =>
-    fakeModel(signedIn([{ host: host({ name: "box", hostId: boxId }), status: "paired", stored: stored(KEY_A), linkable: false, autoRegister: false }]));
+    fakeModel(signedIn([{ host: host({ name: "box", hostId: boxId }), status: "unpaired", linkable: false, autoRegister: true }]));
+  const openRemove = async () => {
+    await userEvent.click(within(row("box")).getByRole("button", { name: "More for box" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Remove from account…" }));
+  };
 
   it("removes a host after the password and says what that does", async () => {
     const model = withHost();
     renderPanel(model);
-    await userEvent.click(within(row("box")).getByRole("button", { name: "Remove" }));
+    await openRemove();
     expect(screen.getByText(/stops connecting through nomad\.example/)).toBeTruthy();
     expect(screen.getByText(/pinomad up/)).toBeTruthy();
     await act(async () => {
@@ -431,7 +421,7 @@ describe("removing a host (#512)", () => {
     const model = withHost();
     vi.mocked(model.removeHost).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
     renderPanel(model);
-    await userEvent.click(within(row("box")).getByRole("button", { name: "Remove" }));
+    await openRemove();
     await userEvent.type(await screen.findByLabelText("Password"), "wrong{Enter}");
     expect(await screen.findByText("The password is wrong.")).toBeTruthy();
     expect(screen.getByLabelText("Password")).toBeTruthy();
@@ -441,7 +431,7 @@ describe("removing a host (#512)", () => {
     const model = withHost();
     vi.mocked(model.removeHost).mockResolvedValueOnce({ ok: false, error: { code: "remove_unsupported" } });
     renderPanel(model);
-    await userEvent.click(within(row("box")).getByRole("button", { name: "Remove" }));
+    await openRemove();
     await userEvent.type(await screen.findByLabelText("Password"), "pw{Enter}");
     expect(await screen.findByText(/pinomad leave/)).toBeTruthy();
   });

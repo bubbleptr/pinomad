@@ -140,8 +140,8 @@ export const RemoveDeviceWrongPassword: Story = {
 export const RemovingHost: Story = {
   decorators: [withAccount(signedIn())],
   play: async ({ canvasElement }) => {
-    const row = within(canvasElement).getByText("omarchy").closest("li")!;
-    await userEvent.click(within(row).getByRole("button", { name: "Remove" }));
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "More for omarchy" }));
+    await userEvent.click(await within(document.body).findByRole("menuitem", { name: "Remove from account…" }));
   },
 };
 
@@ -154,9 +154,9 @@ export const RemoveHostWrongPassword: Story = {
   ],
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const row = canvas.getByText("omarchy").closest("li")!;
-    await userEvent.click(within(row).getByRole("button", { name: "Remove" }));
-    await userEvent.type(await canvas.findByLabelText("Password"), "not my password{Enter}");
+    await userEvent.click(canvas.getByRole("button", { name: "More for omarchy" }));
+    await userEvent.click(await within(document.body).findByRole("menuitem", { name: "Remove from account…" }));
+    await userEvent.type(await within(document.body).findByLabelText("Password"), "not my password{Enter}");
   },
 };
 

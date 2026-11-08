@@ -14,7 +14,7 @@ import { SideNav, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Token } from "@astryxdesign/core/Token";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { agentNameProblem, type AgentRole, type AgentRoleProblem } from "@pinomad/protocol/agents.ts";
 import { hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import type { KeyPair } from "@pinomad/protocol/noise.ts";
@@ -34,6 +34,7 @@ import { HostUpgradeSection } from "./host-upgrade-section.tsx";
 import { HostsSection } from "./hosts.tsx";
 import { LocalHostSection } from "./local-host-section.tsx";
 import { ProvidersSection } from "./providers-section.tsx";
+import { SettingsSubpageContext, type SettingsSubpage } from "./settings-subpage.ts";
 import { UpdatesSection } from "./updates-section.tsx";
 
 const SECTIONS = [
@@ -86,6 +87,9 @@ export function SettingsDialog({
 }) {
   const compact = useMediaQuery("(max-width: 640px)");
   const [section, setSection] = useState<SectionId | undefined>(undefined);
+  // A page the open section opened inside itself (one host's page).
+  const [subpage, setSubpage] = useState<SettingsSubpage>();
+  const subpageHost = useMemo(() => ({ ownsBack: compact, set: setSubpage }), [compact]);
   // Picked here, not followed from focus: a form half-filled for one machine
   // must never be saved to another because focus moved underneath it.
   const [pickedKey, setPickedKey] = useState(initialKey);
@@ -197,7 +201,7 @@ export function SettingsDialog({
         header={
           compact ? (
             <DialogHeader
-              title={section === undefined ? "Settings" : sectionTitle(section)}
+              title={subpage?.title ?? (section === undefined ? "Settings" : sectionTitle(section))}
               startContent={
                 section === undefined ? undefined : (
                   <IconButton
@@ -207,7 +211,7 @@ export function SettingsDialog({
                     // DialogHeader pulls its end slot (the close X) up by spacing-2
                     // to center on the title; the start slot needs the same lift.
                     style={{ marginBlock: "calc(-1 * var(--spacing-2))" }}
-                    onClick={() => setSection(undefined)}
+                    onClick={() => (subpage === undefined ? setSection(undefined) : subpage.back())}
                   />
                 )
               }
@@ -222,20 +226,23 @@ export function SettingsDialog({
             {compact && section === undefined ? (
               sectionList
             ) : (
-              <SectionPage
-                // Host-scoped pages carry form and navigation state, so a
-                // focus switch must remount them instead of handing A's
-                // half-filled form to B's remote. Device sections stay put.
-                key={isHostSection(active) ? `host:${machine?.key ?? "none"}` : undefined}
-                {...(view === undefined ? {} : { view })}
-                {...(remote === undefined ? {} : { remote })}
-                {...(machine?.device === undefined ? {} : { device: machine.device })}
-                {...(machine?.hostKey === undefined ? {} : { hostKey: machine.hostKey })}
-                connected={connected}
-                {...(machine?.retry === undefined ? {} : { onReconnect: machine.retry })}
-                section={active}
-                showTitle={!compact}
-              />
+              <SettingsSubpageContext.Provider value={subpageHost}>
+                <SectionPage
+                  // Host-scoped pages carry form and navigation state, so a
+                  // focus switch must remount them instead of handing A's
+                  // half-filled form to B's remote. Device sections stay put.
+                  key={isHostSection(active) ? `host:${machine?.key ?? "none"}` : undefined}
+                  {...(view === undefined ? {} : { view })}
+                  {...(remote === undefined ? {} : { remote })}
+                  {...(machine?.device === undefined ? {} : { device: machine.device })}
+                  {...(machine?.hostKey === undefined ? {} : { hostKey: machine.hostKey })}
+                  connected={connected}
+                  {...(machine?.retry === undefined ? {} : { onReconnect: machine.retry })}
+                  section={active}
+                  showTitle={!compact}
+                  showSupporting={subpage === undefined}
+                />
+              </SettingsSubpageContext.Provider>
             )}
           </LayoutContent>
         }
@@ -262,6 +269,7 @@ function SectionPage({
   onReconnect,
   section,
   showTitle,
+  showSupporting,
 }: {
   view?: DurableView;
   remote?: RemoteDurable;
@@ -271,6 +279,8 @@ function SectionPage({
   onReconnect?: () => void;
   section: SectionId;
   showTitle: boolean;
+  /** Off while the section shows a page of its own, which the supporting line doesn't describe. */
+  showSupporting: boolean;
 }) {
   const { title, supporting, body } = sectionBody(view, remote, device, hostKey, connected, onReconnect, section);
   const headingId = `settings-${section}-heading`;
@@ -282,7 +292,7 @@ function SectionPage({
     >
       <VStack gap={2}>
         {showTitle ? <Heading level={2} id={headingId}>{title}</Heading> : null}
-        {supporting}
+        {showSupporting ? supporting : null}
       </VStack>
       {body}
     </VStack>
@@ -301,7 +311,7 @@ function sectionBody(
   if (section === "hosts") {
     return {
       title: "Hosts",
-      supporting: <Text as="p" type="supporting">The hosts this device has paired with. It stays connected to all of them.</Text>,
+      supporting: <Text as="p" type="supporting">The machines this device can use. It stays connected to every one paired here.</Text>,
       body: <HostsSection />,
     };
   }
