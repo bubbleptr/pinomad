@@ -5,6 +5,7 @@
 // `view.side`; Background subagents open in main and never repeat here.
 // Changes is the shown conversation's checkout diff (changes-surface.tsx);
 // Terminal is the terminals' owner's shells (terminal-surface.tsx).
+import { Button } from "@astryxdesign/core/Button";
 import { Dialog } from "@astryxdesign/core/Dialog";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
@@ -12,20 +13,24 @@ import { List, ListItem } from "@astryxdesign/core/List";
 import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Text } from "@astryxdesign/core/Text";
-import { useEffect, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { findConversation } from "@pinomad/protocol/organization.ts";
-import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import type { ProcessListState, RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import { isProcessActive, type ProcessId, type ProcessInfo, type ProcessState } from "@pinomad/protocol/processes.ts";
 import type { ConversationSummary, DurableView, SideConversationView } from "@pinomad/protocol/view.ts";
 import { displayName, forksAt, relativeTime, rootOf, taskGroupsOf } from "@pinomad/client/family.ts";
+import { orderedProcesses, processStatusText } from "@pinomad/client/processes.ts";
 import { useNow } from "../../shared/use-now.ts";
 import { taskTally } from "../../entities/conversation/task-tally.ts";
+import { useProcessList } from "../../entities/process/use-process-list.ts";
 import { AnimatedSidebarRight } from "../../shared/ui/animated-icons.tsx";
 import { ArrowLeft, Bot, Cancel, CommandLine, FileDiff } from "../../shared/ui/icons.tsx";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
 import { ConversationSkeleton } from "../chat/conversation-skeleton.tsx";
 import { ChangesSurface } from "./changes-surface.tsx";
+import { LazyXtermView } from "./lazy-xterm-view.tsx";
 import { SurfaceBar } from "./surface-bar.tsx";
 import { TerminalSurface } from "./terminal-surface.tsx";
 
@@ -152,6 +157,12 @@ function TasksSurface({
   const now = useNow(60_000);
   // The family is whatever the main column shows — the panel is its sibling.
   const root = shownId === undefined ? undefined : rootOf(view.organized, shownId);
+  const rootId = root?.summary.id;
+  // The list belongs to the family root, so a shown fork reads the root's copy.
+  const processList = useProcessList(remote.processes, rootId);
+  const processRows = processList?.processes ?? [];
+  const [selectedProcess, setSelectedProcess] = useState<{ rootId: ConversationId; id: ProcessId }>();
+  useEffect(() => setSelectedProcess(undefined), [rootId]);
   // Opening another family closes the side only once that family has loaded
   // (the close queues behind the switch); until then its detail is not ours.
   const side =
@@ -160,6 +171,10 @@ function TasksSurface({
       : undefined;
   const sideSummary = side === undefined ? undefined : findConversation(view.organized, side.id)?.summary;
   const groups = root === undefined ? [] : taskGroupsOf(root);
+  const selected =
+    selectedProcess !== undefined && selectedProcess.rootId === rootId
+      ? processRows.find((process) => process.id === selectedProcess.id)
+      : undefined;
   const closeSide = (): void => void remote.controller.showSide(undefined);
   const backgroundSideId = sideSummary?.kind === "subagent" && sideSummary.lifecycle === "background" ? sideSummary.id : undefined;
   // Older links may still name a background detail explicitly. Promote rather
@@ -167,6 +182,21 @@ function TasksSurface({
   useEffect(() => {
     if (backgroundSideId !== undefined) onOpenInMain(backgroundSideId);
   }, [backgroundSideId, onOpenInMain]);
+
+  if (selected !== undefined && processList !== undefined && rootId !== undefined) {
+    return (
+      <ProcessDetail
+        key={selected.id}
+        process={selected}
+        list={processList}
+        remote={remote}
+        conversationId={rootId}
+        barStart={barStart}
+        barEnd={barEnd}
+        onBack={() => setSelectedProcess(undefined)}
+      />
+    );
+  }
 
   if (side !== undefined && sideSummary?.kind === "subagent" && sideSummary.lifecycle !== "background") {
     return (
@@ -187,10 +217,14 @@ function TasksSurface({
     );
   }
   const { active, done, failed } = taskTally(groups.flatMap((group) => group.tasks.map((node) => node.summary)));
+  const runningProcesses = processRows.filter((process) => isProcessActive(process.state)).length;
   const tally = [
     active.length > 0 ? `${active.length} running` : undefined,
     done > 0 ? `${done} done` : undefined,
     failed > 0 ? `${failed} failed` : undefined,
+    runningProcesses > 0
+      ? `${runningProcesses} ${runningProcesses === 1 ? "process" : "processes"} running`
+      : undefined,
   ].filter((part) => part !== undefined);
   return (
     <VStack className="h-full min-h-0" gap={0}>
@@ -198,34 +232,44 @@ function TasksSurface({
         <span className="truncate text-sm text-muted">{tally.join(" · ")}</span>
       </SurfaceBar>
       <Scrollable>
-          {groups.length === 0 ? (
+          {groups.length === 0 && processRows.length === 0 ? (
             <Text type="supporting" className="p-3 text-muted">
               No tasks yet
             </Text>
           ) : (
-            groups.map((group) => (
-              <List
-                key={group.owner.id}
-                density="compact"
-                header={
-                  // List renders headers bare — pad to sit on the rows' text edge.
-                  <div className="px-3 pt-2">
-                    <Text type="label" weight="semibold">
-                      {group.label}
-                    </Text>
-                  </div>
-                }
-              >
-                {group.tasks.map((node) => (
-                  <SideRow
-                    key={node.summary.id}
-                    summary={node.summary}
-                    now={now}
-                    onOpen={() => openInPanel(node.summary.id)}
-                  />
-                ))}
-              </List>
-            ))
+            <>
+              {groups.map((group) => (
+                <List
+                  key={group.owner.id}
+                  density="compact"
+                  header={
+                    // List renders headers bare — pad to sit on the rows' text edge.
+                    <div className="px-3 pt-2">
+                      <Text type="label" weight="semibold">
+                        {group.label}
+                      </Text>
+                    </div>
+                  }
+                >
+                  {group.tasks.map((node) => (
+                    <SideRow
+                      key={node.summary.id}
+                      summary={node.summary}
+                      now={now}
+                      onOpen={() => openInPanel(node.summary.id)}
+                    />
+                  ))}
+                </List>
+              ))}
+              {processRows.length === 0 ? null : (
+                <ProcessGroup
+                  processes={processRows}
+                  onOpen={(id) => {
+                    if (rootId !== undefined) setSelectedProcess({ rootId, id });
+                  }}
+                />
+              )}
+            </>
           )}
       </Scrollable>
     </VStack>
@@ -264,6 +308,191 @@ function SideRow({
       }
       onClick={onOpen}
     />
+  );
+}
+
+
+/** "12s" under a minute, otherwise "1m 5s" — the tasks' whole-second clock. */
+function elapsedText(ms: number): string {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+}
+
+/** The one-second ticker a live process row shows instead of a result. */
+function ProcessDuration({ startedAt }: { startedAt: number }) {
+  const now = useNow(1000);
+  return <>{elapsedText(now - startedAt)}</>;
+}
+
+type ProcessTone = "running" | "done" | "failed" | "stopped";
+
+/** Running uses the same green pulse as a running subagent; a clean exit is complete. */
+function processTone(state: ProcessState): ProcessTone {
+  if (state === "starting" || state === "running") return "running";
+  if (state === "lost") return "failed";
+  if (typeof state === "object" && "failed" in state) return "failed";
+  if (typeof state === "object" && "exited" in state) {
+    return state.signal === undefined && state.exited === 0 ? "done" : "failed";
+  }
+  return "stopped";
+}
+
+const PROCESS_TONE: Record<ProcessTone, { variant: "success" | "error" | "neutral"; pulse: boolean; label: string }> = {
+  running: { variant: "success", pulse: true, label: "Running" },
+  done: { variant: "neutral", pulse: false, label: "Done" },
+  failed: { variant: "error", pulse: false, label: "Failed" },
+  stopped: { variant: "neutral", pulse: false, label: "Stopped" },
+};
+
+function ProcessGlyph({ state }: { state: ProcessState }) {
+  const tone = PROCESS_TONE[processTone(state)];
+  return (
+    <span aria-hidden="true">
+      <StatusDot variant={tone.variant} label={state === "starting" ? "Starting" : tone.label} isPulsing={tone.pulse} />
+    </span>
+  );
+}
+
+/** The short right-hand result: `exit 1`, `Stopped`, `Lost`. */
+function processResultText(state: ProcessState): string {
+  if (state === "lost") return "Lost";
+  if (typeof state === "object" && "failed" in state) return "Failed";
+  if (typeof state === "object" && "stopped" in state) return "Stopped";
+  if (typeof state === "object" && "exited" in state) {
+    if (state.signal !== undefined) return state.signal;
+    return `exit ${state.exited ?? "?"}`;
+  }
+  return "";
+}
+
+/** A process row: status, name (and command when it differs), duration or result. */
+function ProcessRow({ process, onOpen }: { process: ProcessInfo; onOpen: () => void }) {
+  return (
+    <ListItem
+      label={process.name}
+      description={
+        process.name === process.command ? undefined : (
+          <span className="block truncate font-mono">{process.command}</span>
+        )
+      }
+      startContent={<ProcessGlyph state={process.state} />}
+      endContent={
+        <span aria-hidden="true" className="text-xs text-muted">
+          {isProcessActive(process.state) ? <ProcessDuration startedAt={process.startedAt} /> : processResultText(process.state)}
+        </span>
+      }
+      onClick={onOpen}
+    />
+  );
+}
+
+/** The family's processes beside its Foreground subagent groups. */
+function ProcessGroup({ processes, onOpen }: { processes: readonly ProcessInfo[]; onOpen: (id: ProcessId) => void }) {
+  return (
+    <List
+      density="compact"
+      header={
+        <div className="px-3 pt-2">
+          <Text type="label" weight="semibold">
+            Processes
+          </Text>
+        </div>
+      }
+    >
+      {orderedProcesses(processes).map((process) => (
+        <ProcessRow key={process.id} process={process} onOpen={() => onOpen(process.id)} />
+      ))}
+    </List>
+  );
+}
+
+/** A process's read-only screen; no Stop once it ended or the host lost the pty. */
+function ProcessDetail({
+  process,
+  list,
+  remote,
+  conversationId,
+  barStart,
+  barEnd,
+  onBack,
+}: {
+  process: ProcessInfo;
+  list: ProcessListState;
+  remote: RemoteDurable;
+  conversationId: ConversationId;
+  barStart?: ReactNode;
+  barEnd?: ReactNode;
+  onBack: () => void;
+}) {
+  const [ended, setEnded] = useState<string>();
+  const [stopping, setStopping] = useState(false);
+  const [error, setError] = useState<string>();
+  const canStop = isProcessActive(process.state) && list.unavailable === undefined;
+  const lost =
+    process.state === "lost"
+      ? "The host restarted, so this process's output is no longer available."
+      : undefined;
+  const unavailable = list.unavailable ?? lost ?? ended;
+  const status =
+    processStatusText(process.state)
+    + (process.state === "lost" && process.pid !== undefined ? ` (pid ${process.pid})` : "");
+  const stop = (): void => {
+    setStopping(true);
+    setError(undefined);
+    remote.processes.stop(conversationId, process.id).then(
+      () => setStopping(false),
+      (reason: unknown) => {
+        setError(reason instanceof Error ? reason.message : String(reason));
+        setStopping(false);
+      },
+    );
+  };
+  return (
+    <VStack className="h-full min-h-0" gap={0}>
+      <SurfaceBar
+        start={barStart}
+        end={
+          <>
+            {canStop ? <Button label="Stop" size="sm" variant="secondary" isDisabled={stopping} onClick={stop} /> : null}
+            {barEnd}
+          </>
+        }
+      >
+        <IconButton
+          icon={<ArrowLeft className="size-4" aria-hidden="true" />}
+          label="Back to tasks"
+          size="sm"
+          variant="ghost"
+          onClick={onBack}
+        />
+        <ProcessGlyph state={process.state} />
+        <span className="min-w-0 flex-1 truncate text-sm">{process.name}</span>
+      </SurfaceBar>
+      <div className="shrink-0 border-b border-border px-3 py-2">
+        <div className="break-all font-mono text-xs">{process.command}</div>
+        <div className="mt-1 text-xs text-muted">{status}</div>
+        {error === undefined ? null : (
+          <Text type="supporting" role="alert" className="mt-1">
+            {error}
+          </Text>
+        )}
+      </div>
+      <div className="min-h-0 flex-1">
+        {unavailable === undefined ? (
+          <Suspense fallback={null}>
+            <LazyXtermView processes={remote.processes} processId={process.id} onEnded={setEnded} />
+          </Suspense>
+        ) : (
+          <Text type="supporting" className="block p-3 text-muted">
+            {unavailable}
+          </Text>
+        )}
+      </div>
+      <div className="shrink-0 border-t border-border p-2 text-center text-xs text-muted">
+        Background processes stop when the host restarts.
+      </div>
+    </VStack>
   );
 }
 

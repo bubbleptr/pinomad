@@ -1,17 +1,43 @@
 // The side panel belongs to the family the main column shows. It lists only
 // Foreground Tasks; Forks are independent conversations in the sidebar now.
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { DARK_MODE_ID, fakeRemote, fakeView, FORK_ID, forkConversation, PARSER_ID, SUBAGENT_ID, subagentConversation } from "../../test/story-fixtures.tsx";
+import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import {
+  DARK_MODE_ID,
+  fakeProcesses,
+  fakeRemote,
+  fakeView,
+  FORK_ID,
+  forkConversation,
+  PARSER_ID,
+  PROCESSES,
+  SUBAGENT_ID,
+  subagentConversation,
+} from "../../test/story-fixtures.tsx";
 import { SidePanel } from "./side-panel.tsx";
+
+// xterm parses host output asynchronously; these tests only need the id it
+// was fed, and a way to say the host no longer has the output.
+vi.mock("./lazy-xterm-view.tsx", async () => {
+  const { useEffect } = await import("react");
+  return {
+    LazyXtermView: ({ processId, onEnded }: { processId: string; onEnded?: (reason: string) => void }) => {
+      useEffect(() => {
+        if (processId === "p-released") onEnded?.("The output of this process is no longer available");
+      }, [processId, onEnded]);
+      return <div data-testid="process-output">{processId}</div>;
+    },
+  };
+});
 
 const view = fakeView({ side: { id: SUBAGENT_ID, conversation: subagentConversation(), docs: [] } });
 
-function renderPanel(shownId: typeof PARSER_ID, panelView = view) {
-  render(
+function panel(shownId: typeof PARSER_ID, panelView = view, remote: RemoteDurable = fakeRemote(panelView)) {
+  return (
     <SidePanel
       view={panelView}
-      remote={fakeRemote(panelView)}
+      remote={remote}
       shownId={shownId}
       narrow={false}
       open
@@ -22,8 +48,12 @@ function renderPanel(shownId: typeof PARSER_ID, panelView = view) {
       onSelectSurface={vi.fn()}
       openInPanel={vi.fn()}
       onOpenInMain={vi.fn()}
-    />,
+    />
   );
+}
+
+function renderPanel(shownId: typeof PARSER_ID, panelView = view, remote: RemoteDurable = fakeRemote(panelView)) {
+  return render(panel(shownId, panelView, remote));
 }
 
 describe("SidePanel family", () => {
@@ -46,6 +76,90 @@ describe("SidePanel family", () => {
     renderPanel(DARK_MODE_ID);
     expect(screen.queryByRole("button", { name: "Back to tasks" })).not.toBeInTheDocument();
     // The other family has no tasks; the panel says so rather than showing a fork list.
+    expect(screen.getByText("No tasks yet")).toBeInTheDocument();
+  });
+});
+
+describe("SidePanel processes", () => {
+  it("hides the Processes group when the family has none", () => {
+    renderPanel(PARSER_ID);
+    expect(screen.queryByText("Processes")).toBeNull();
+  });
+
+  it("lists the root's processes while a fork is shown", () => {
+    const fork = fakeView({ conversation: forkConversation() });
+    const processes = fakeProcesses({ lists: { [PARSER_ID]: PROCESSES } });
+    renderPanel(FORK_ID, fork, fakeRemote(fork, {}, processes));
+    expect(processes.watch).toHaveBeenCalledWith(PARSER_ID, expect.any(Function));
+    expect(screen.getByText("Processes")).toBeInTheDocument();
+    expect(screen.getByText("dev server")).toBeInTheDocument();
+    expect(screen.getByText(/1 process running/)).toBeInTheDocument();
+  });
+
+  it("opens a running process, stops it, and hides Stop once it ended", async () => {
+    const panelView = fakeView();
+    const processes = fakeProcesses({ lists: { [PARSER_ID]: PROCESSES } });
+    renderPanel(PARSER_ID, panelView, fakeRemote(panelView, {}, processes));
+    fireEvent.click(await screen.findByRole("button", { name: /dev server/ }));
+    expect(screen.getByRole("button", { name: "Back to tasks" })).toBeInTheDocument();
+    expect(screen.getByText("bun run dev")).toBeInTheDocument();
+    expect(screen.getByText("Running")).toBeInTheDocument();
+    expect(screen.getByTestId("process-output")).toHaveTextContent("p-dev");
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    await waitFor(() => expect(processes.stop).toHaveBeenCalledWith(PARSER_ID, "p-dev"));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Stop" })).toBeNull());
+    expect(await screen.findByText("Stopped by the user")).toBeInTheDocument();
+  });
+
+  it("offers no Stop for an ended process", async () => {
+    const panelView = fakeView();
+    const processes = fakeProcesses({ lists: { [PARSER_ID]: PROCESSES } });
+    renderPanel(PARSER_ID, panelView, fakeRemote(panelView, {}, processes));
+    fireEvent.click(await screen.findByRole("button", { name: /bun test --watch/ }));
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    expect(screen.getByText("Exited with code 1")).toBeInTheDocument();
+  });
+
+  it("shows no Stop and the reason when the host has no process module", async () => {
+    const panelView = fakeView();
+    const reason = "The host couldn't load its process module; its log says which package is missing";
+    const processes = fakeProcesses({ lists: { [PARSER_ID]: PROCESSES }, unavailable: reason });
+    renderPanel(PARSER_ID, panelView, fakeRemote(panelView, {}, processes));
+    fireEvent.click(await screen.findByRole("button", { name: /dev server/ }));
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    expect(screen.getByText(reason)).toBeInTheDocument();
+  });
+
+  it("shows a lost process's pid and no output", async () => {
+    const panelView = fakeView();
+    const processes = fakeProcesses({ lists: { [PARSER_ID]: PROCESSES } });
+    renderPanel(PARSER_ID, panelView, fakeRemote(panelView, {}, processes));
+    fireEvent.click(await screen.findByRole("button", { name: /sleep 300/ }));
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    expect(screen.getByText("Lost track after a host restart; it may still be running (pid 777)")).toBeInTheDocument();
+    expect(screen.getByText("The host restarted, so this process's output is no longer available.")).toBeInTheDocument();
+  });
+
+  it("shows released output as an empty state, not an error", async () => {
+    const panelView = fakeView();
+    const processes = fakeProcesses({ lists: { [PARSER_ID]: [{ ...PROCESSES[0]!, id: "p-released" }] } });
+    renderPanel(PARSER_ID, panelView, fakeRemote(panelView, {}, processes));
+    fireEvent.click(await screen.findByRole("button", { name: /dev server/ }));
+    expect(await screen.findByText("The output of this process is no longer available")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("closes the detail when the family changes", async () => {
+    const panelView = fakeView();
+    const processes = fakeProcesses({ lists: { [PARSER_ID]: PROCESSES } });
+    const remote = fakeRemote(panelView, {}, processes);
+    const { rerender } = renderPanel(PARSER_ID, panelView, remote);
+    fireEvent.click(await screen.findByRole("button", { name: /dev server/ }));
+    expect(screen.getByRole("button", { name: "Back to tasks" })).toBeInTheDocument();
+
+    rerender(panel(DARK_MODE_ID, panelView, remote));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Back to tasks" })).toBeNull());
     expect(screen.getByText("No tasks yet")).toBeInTheDocument();
   });
 });

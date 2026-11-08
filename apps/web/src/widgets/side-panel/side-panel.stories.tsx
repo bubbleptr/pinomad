@@ -1,6 +1,16 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn } from "storybook/test";
-import { fakeRemote, fakeTerminals, fakeView, PARSER_ID, SUBAGENT_ID, subagentConversation, TERMINALS } from "../../test/story-fixtures.tsx";
+import { fn, userEvent, within } from "storybook/test";
+import {
+  fakeProcesses,
+  fakeRemote,
+  fakeTerminals,
+  fakeView,
+  PARSER_ID,
+  PROCESSES,
+  SUBAGENT_ID,
+  subagentConversation,
+  TERMINALS,
+} from "../../test/story-fixtures.tsx";
 import { SidePanel } from "./side-panel.tsx";
 
 const view = fakeView();
@@ -45,6 +55,43 @@ export const TaskDetail: Story = { args: { view: withSubagent, remote: fakeRemot
 /** The detail keeps its header and back button while the snapshot loads. */
 const loadingSubagent = fakeView({ side: { id: SUBAGENT_ID, docs: [] } });
 export const TaskDetailLoading: Story = { args: { view: loadingSubagent, remote: fakeRemote(loadingSubagent) } };
+
+const processList = fakeProcesses({ lists: { [PARSER_ID]: PROCESSES } });
+const withProcesses = fakeRemote(view, {}, processList);
+
+/** Running processes first, then ended ones newest first; the tally counts the live one. */
+export const Processes: Story = { args: { remote: withProcesses } };
+
+const openProcess = (name: RegExp) => async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+  await userEvent.click(await within(canvasElement).findByRole("button", { name }));
+  await within(canvasElement).findByRole("button", { name: "Back to tasks" });
+};
+
+/** A running process's read-only screen, with its command and Stop. */
+export const ProcessDetail: Story = {
+  args: { remote: withProcesses },
+  play: openProcess(/dev server/),
+};
+
+/** A process the previous host stopped tracking: no output, no Stop, its old pid. */
+export const ProcessLost: Story = {
+  args: { remote: withProcesses },
+  play: openProcess(/sleep 300/),
+};
+
+/** Without `hello.processes` the historical list still shows; only Stop and output are gone. */
+export const ProcessesUnavailable: Story = {
+  args: {
+    remote: fakeRemote(
+      view,
+      {},
+      fakeProcesses({
+        lists: { [PARSER_ID]: PROCESSES },
+        unavailable: "The host couldn't load its process module; its log says which package is missing",
+      }),
+    ),
+  },
+};
 
 /** The shown conversation's checkout diff, with branch and +N −M in the first row. */
 export const Changes: Story = { args: { surface: "changes" } };

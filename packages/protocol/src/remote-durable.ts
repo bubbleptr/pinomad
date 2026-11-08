@@ -4,7 +4,15 @@ import { MAX_ATTACHMENTS_PER_MESSAGE, type UserAttachment } from "./attachments.
 import type { ImageVariant, OutgoingImage, ViewImage } from "./images.ts";
 import { checkoutOf, homeOf, organize } from "./organization.ts";
 import type { KeyPair } from "./noise.ts";
-import type { PresentationType } from "./presentation.ts";
+import { classify, type PresentationType } from "./presentation.ts";
+import {
+  isProcessesHello,
+  type ProcessId,
+  type ProcessInfo,
+  type ProcessesHello,
+  processStream,
+  type ProcessState,
+} from "./processes.ts";
 import {
   type CallMethod,
   type CallMethods,
@@ -282,6 +290,37 @@ export interface TerminalOutputSink {
   ended(reason: string): void;
 }
 
+/** One family root's processes as `RemoteProcesses.watch` reports them. */
+export interface ProcessListState {
+  /** The root's `pinomad.processes` document, in host order; empty until its snapshot arrives. */
+  readonly processes: readonly ProcessInfo[];
+  /** Why Stop and output are unavailable on this host; undefined when they work. */
+  readonly unavailable?: string;
+}
+
+export interface ProcessOutputSink {
+  /** `reset`: `data` replays the host's whole retained buffer; clear the screen first. */
+  output(data: string, reset: boolean): void;
+  /** The host ended the stream, the output was released, or this host cannot run processes. */
+  ended(reason: string): void;
+}
+
+/**
+ * Background processes (5.32, ADR-0045) beside the view: the list lives on the
+ * family root's document, so it is read from that conversation even while a
+ * fork is shown. Output is pushed to a sink, not held as state.
+ */
+export interface RemoteProcesses {
+  /** Calls `listener` at once with the root's current list, then on every change. */
+  watch(conversationId: ConversationId, listener: (state: ProcessListState) => void): () => void;
+  /** One sink per process; attaching again replaces it. The first subscribe starts at `since`, or the start. */
+  attach(id: ProcessId, since: number | undefined, sink: ProcessOutputSink): () => void;
+  /** Ends a live process as the user; resolves with its final state. */
+  stop(conversationId: ConversationId, id: ProcessId): Promise<ProcessState>;
+  /** Why Stop and output are unavailable on this host, or undefined when they work. */
+  unavailable(): string | undefined;
+}
+
 /**
  * Terminals (5.27, ADR-0041) beside the view: output is pushed to a sink, not
  * held as state. Streams come back after a reconnect on their own — output
@@ -307,6 +346,7 @@ export interface RemoteDurable {
   readonly view: DurableViewSource;
   readonly controller: DurableController;
   readonly terminals: RemoteTerminals;
+  readonly processes: RemoteProcesses;
   /** Switching mode reconnects the whole client (ADR-0033 §3). */
   setConnectionMode(mode: ConnectionMode): void;
   /** Current path, P2P phase, last failure, selected ICE type, cooldown. */
@@ -617,6 +657,8 @@ class RemoteClient {
   #hostVersion: string | undefined;
   /** The last hello's `terminals`: absent when the host's pty module didn't load. */
   #hostTerminals: TerminalsHello | undefined;
+  /** The last hello's `processes`: absent when the host's pty module didn't load. */
+  #hostProcesses: ProcessesHello | undefined;
   /** `terminals:<id>` streams and who watches them, kept across reconnects. */
   readonly #terminalWatchers = new Map<StreamName, Set<(state: TerminalsState) => void>>();
   /** `terminal:<id>` streams and their sinks, kept across reconnects. */
@@ -625,6 +667,12 @@ class RemoteClient {
   readonly #terminalPositions = new Map<StreamName, number>();
   /** The last size sent per attached terminal, sent again on a new connection. */
   readonly #terminalSizes = new Map<TerminalId, TerminalSize>();
+  /** `doc:pinomad.processes:<root>` streams and who watches them, kept across reconnects. */
+  readonly #processWatchers = new Map<StreamName, Set<(state: ProcessListState) => void>>();
+  /** `process:<id>` streams and their sinks, kept across reconnects. */
+  readonly #processSinks = new Map<StreamName, ProcessOutputSink>();
+  /** The last `output.seq` per attached process: the `since` of a resubscribe. */
+  readonly #processPositions = new Map<StreamName, number>();
   #attempt = 0;
   /**
    * One random suffix per coordinator instance. The host caches answered
@@ -898,6 +946,7 @@ class RemoteClient {
     this.#helloDefaults = frame.defaults ?? {};
     this.#hostVersion = frame.hostVersion;
     this.#hostTerminals = isTerminalsHello(frame.terminals) ? frame.terminals : undefined;
+    this.#hostProcesses = isProcessesHello(frame.processes) ? frame.processes : undefined;
     this.#fresh.clear();
     // A host that got older between reconnects no longer covers every host
     // stream; drop the ones it predates together with their values.
@@ -914,6 +963,7 @@ class RemoteClient {
     if (this.#current !== undefined) for (const stream of this.#conversationStreams(this.#current)) this.#wanted.add(stream);
     if (this.#side !== undefined) for (const stream of this.#conversationStreams(this.#side)) this.#wanted.add(stream);
     this.#terminalsAvailability();
+    this.#processesAvailability();
     for (const stream of this.#wanted) this.#subscribe(stream);
     if (frame.endpointSet !== undefined) {
       const parsed = parseEndpointSet(frame.endpointSet);
@@ -1024,6 +1074,7 @@ class RemoteClient {
         view: this.#viewSource(),
         controller: this.#controller(),
         terminals: this.#terminals(),
+        processes: this.#processes(),
         setConnectionMode: (mode) => this.setConnectionMode(mode),
         rtcDiagnostics: () => this.rtcDiagnostics(),
         close: () => this.#close(),
@@ -2250,23 +2301,31 @@ class RemoteClient {
         this.#fresh.add(frame.stream);
         this.#streamVersions.set(frame.stream, (this.#streamVersions.get(frame.stream) ?? 0) + 1);
         this.#refresh();
+        if (this.#processWatchers.has(frame.stream)) this.#notifyProcesses(frame.stream);
         for (const waiter of this.#snapshotWaiters.get(frame.stream)?.splice(0) ?? []) waiter.resolve();
         return;
       case "ops":
         if (!this.#wanted.has(frame.stream) || !this.#values.has(frame.stream)) return;
         this.#values.set(frame.stream, applyImmutable(this.#values.get(frame.stream), frame.ops));
         this.#refresh();
+        if (this.#processWatchers.has(frame.stream)) this.#notifyProcesses(frame.stream);
         return;
       case "output": {
-        const sink = this.#terminalSinks.get(frame.stream);
+        const processSink = this.#processSinks.get(frame.stream);
+        const sink = processSink ?? this.#terminalSinks.get(frame.stream);
         if (sink === undefined || !this.#wanted.has(frame.stream)) return;
-        this.#terminalPositions.set(frame.stream, frame.seq);
+        if (processSink === undefined) this.#terminalPositions.set(frame.stream, frame.seq);
+        else this.#processPositions.set(frame.stream, frame.seq);
         sink.output(frame.data, frame.reset === true);
         return;
       }
       case "ended": {
         if (frame.stream.startsWith("terminals:") || frame.stream.startsWith("terminal:")) {
           this.#endTerminalStream(frame.stream, frame.reason);
+          return;
+        }
+        if (frame.stream.startsWith("process:")) {
+          this.#endProcessStream(frame.stream, frame.reason);
           return;
         }
         this.#wanted.delete(frame.stream);
@@ -2287,6 +2346,7 @@ class RemoteClient {
           this.#side = undefined;
         }
         this.#refresh();
+        if (this.#processWatchers.has(frame.stream)) this.#notifyProcesses(frame.stream);
         return;
       }
       case "result": {
@@ -2374,7 +2434,7 @@ class RemoteClient {
   #release(id: ConversationId, other: ConversationId | undefined): void {
     const keep = new Set<StreamName>(other === undefined ? [] : this.#conversationStreams(other));
     for (const stream of this.#conversationStreams(id)) {
-      if (keep.has(stream)) continue;
+      if (keep.has(stream) || this.#processWatchers.has(stream)) continue;
       this.#wanted.delete(stream);
       this.#values.delete(stream);
       this.#earlier.delete(stream);
@@ -2395,7 +2455,7 @@ class RemoteClient {
    */
   #subscribe(stream: StreamName): void {
     const refs = stream.startsWith("conversation:") && hostSupportsFeature(this.#hostMinor, "imageRefs");
-    const since = this.#terminalPositions.get(stream);
+    const since = stream.startsWith("process:") ? this.#processPositions.get(stream) : this.#terminalPositions.get(stream);
     const window = this.#window(stream);
     this.#send({
       type: "subscribe",
@@ -2563,6 +2623,130 @@ class RemoteClient {
       restart: (terminalId, size) =>
         this.#terminalCall("restartTerminal", { terminalId, ...(this.#terminalSizes.get(terminalId) ?? size) }).then(() => {}),
       close: (terminalId) => this.#terminalCall("closeTerminal", { terminalId }).then(() => {}),
+    };
+  }
+
+  /** Why this host has no process output or Stop, or undefined when it has them. */
+  #processesUnavailable(): string | undefined {
+    if (!hostSupportsFeature(this.#hostMinor, "processes")) {
+      return "The host is too old for background processes (needs protocol 5.32); run `pinomad upgrade` on the host";
+    }
+    if (this.#hostProcesses === undefined) return "The host couldn't load its process module; its log says which package is missing";
+    return undefined;
+  }
+
+  /**
+   * A hello decides again whether the list document and attached outputs are
+   * wanted. Without `hello.processes` the historical list still streams; only
+   * output and Stop end, with the reason the panel shows.
+   */
+  /** Whether this hello offers the root document that holds the list. */
+  #processDocDeclared(): boolean {
+    return this.#docs.some((doc) => doc.kind === "pinomad.processes");
+  }
+
+  #processesAvailability(): void {
+    const listable = hostSupportsFeature(this.#hostMinor, "processes") && this.#processDocDeclared();
+    for (const stream of [...this.#processWatchers.keys()]) {
+      if (listable) {
+        this.#wanted.add(stream);
+      } else {
+        this.#wanted.delete(stream);
+        this.#values.delete(stream);
+      }
+      this.#notifyProcesses(stream);
+    }
+    const reason = this.#processesUnavailable();
+    if (reason === undefined) {
+      for (const stream of this.#processSinks.keys()) this.#wanted.add(stream);
+      return;
+    }
+    for (const stream of [...this.#processSinks.keys()]) this.#endProcessStream(stream, reason);
+  }
+
+  #notifyProcesses(stream: StreamName): void {
+    const state = this.#processState(stream);
+    for (const listener of [...(this.#processWatchers.get(stream) ?? [])]) listener(state);
+  }
+
+  #processState(stream: StreamName): ProcessListState {
+    const value = this.#values.get(stream);
+    const presentation = this.#docs.find((doc) => doc.kind === "pinomad.processes")?.presentation ?? "pinomad.processes";
+    const classified = classify(presentation, value);
+    const processes = classified.type === "pinomad.processes" ? classified.value.processes : [];
+    const reason = this.#processesUnavailable();
+    return {
+      processes: [...processes],
+      ...(reason === undefined ? {} : { unavailable: reason }),
+    };
+  }
+
+  /** The host ended a process output stream, or this host cannot have one. */
+  #endProcessStream(stream: StreamName, reason: string): void {
+    this.#wanted.delete(stream);
+    const sink = this.#processSinks.get(stream);
+    this.#processSinks.delete(stream);
+    this.#processPositions.delete(stream);
+    sink?.ended(reason);
+  }
+
+  #processCall<M extends CallMethod>(method: M, args: CallMethods[M]["args"]): Promise<CallMethods[M]["result"]> {
+    const reason = this.#processesUnavailable();
+    return reason === undefined ? this.#call(method, args) : Promise.reject(new Error(reason));
+  }
+
+  #processes(): RemoteProcesses {
+    return {
+      watch: (conversationId, listener) => {
+        const stream = docStream("pinomad.processes", conversationId);
+        let listeners = this.#processWatchers.get(stream);
+        const first = listeners === undefined;
+        if (listeners === undefined) this.#processWatchers.set(stream, (listeners = new Set()));
+        listeners.add(listener);
+        listener(this.#processState(stream));
+        if (first && hostSupportsFeature(this.#hostMinor, "processes") && this.#processDocDeclared()) {
+          this.#wanted.add(stream);
+          if (this.#helloReceived) this.#subscribe(stream);
+        }
+        return () => {
+          if (!listeners.delete(listener) || listeners.size > 0) return;
+          this.#processWatchers.delete(stream);
+          // The shown or side conversation may also need the same document;
+          // only the last owner sends the unsubscribe.
+          const parked =
+            (this.#current !== undefined && this.#conversationStreams(this.#current).includes(stream))
+            || (this.#side !== undefined && this.#conversationStreams(this.#side).includes(stream));
+          if (parked) return;
+          if (!this.#wanted.delete(stream)) return;
+          this.#values.delete(stream);
+          this.#send({ type: "unsubscribe", stream });
+        };
+      },
+      attach: (processId, since, sink) => {
+        const stream = processStream(processId);
+        const reason = this.#processesUnavailable();
+        if (reason !== undefined) {
+          sink.ended(reason);
+          return () => {};
+        }
+        // Replacing a sink starts its output over; a reconnect resumes from
+        // the last position this client saw.
+        if (this.#processSinks.has(stream) && this.#wanted.has(stream)) this.#send({ type: "unsubscribe", stream });
+        this.#processSinks.set(stream, sink);
+        if (since === undefined) this.#processPositions.delete(stream);
+        else this.#processPositions.set(stream, since);
+        this.#wanted.add(stream);
+        if (this.#helloReceived) this.#subscribe(stream);
+        return () => {
+          if (this.#processSinks.get(stream) !== sink) return;
+          this.#processSinks.delete(stream);
+          this.#processPositions.delete(stream);
+          if (this.#wanted.delete(stream)) this.#send({ type: "unsubscribe", stream });
+        };
+      },
+      stop: (conversationId, processId) =>
+        this.#processCall("stopProcess", { conversationId, id: processId }).then(({ state }) => state),
+      unavailable: () => this.#processesUnavailable(),
     };
   }
 

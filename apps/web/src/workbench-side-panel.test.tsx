@@ -6,14 +6,26 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { Workbench } from "./App.tsx";
 import { HostsContext } from "./entities/host/host-store.ts";
-import { fakeHosts, fakeRemote, fakeView, HOME_HOST, PARSER_ID } from "./test/story-fixtures.tsx";
+import {
+  DARK_MODE_ID,
+  fakeHosts,
+  fakeProcesses,
+  fakeRemote,
+  fakeView,
+  HOME_HOST,
+  PARSER_ID,
+  settledConversation,
+} from "./test/story-fixtures.tsx";
 
-function renderWorkbench() {
-  const view = fakeView();
-  const hosts = { ...fakeHosts([HOME_HOST], HOME_HOST.hostKey), focus: { hostKey: HOME_HOST.hostKey, conversationId: PARSER_ID } };
+function renderWorkbench(
+  view = fakeView(),
+  remote = fakeRemote(view),
+  conversationId: typeof PARSER_ID = PARSER_ID,
+) {
+  const hosts = { ...fakeHosts([HOME_HOST], HOME_HOST.hostKey), focus: { hostKey: HOME_HOST.hostKey, conversationId } };
   render(
     <HostsContext.Provider value={hosts}>
-      <Workbench remote={fakeRemote(view)} wsUrl="ws://test" hostKey={HOME_HOST.hostKey} framed={false} notify={false} />
+      <Workbench remote={remote} wsUrl="ws://test" hostKey={HOME_HOST.hostKey} framed={false} notify={false} />
     </HostsContext.Provider>,
   );
 }
@@ -63,6 +75,57 @@ describe("side panel surfaces", () => {
     expect(screen.getByRole("img", { name: "Live activity" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Tasks" }));
+    expect(screen.queryByRole("img", { name: "Live activity" })).toBeNull();
+  });
+
+  it("lights the Tasks icon for a running background process alone", async () => {
+    // The dark-mode family has no subagents: only the process can light it.
+    const view = fakeView({ conversation: settledConversation(DARK_MODE_ID) });
+    const remote = fakeRemote(
+      view,
+      {},
+      fakeProcesses({
+        lists: {
+          [DARK_MODE_ID]: [
+            {
+              id: "p-dev",
+              owner: DARK_MODE_ID,
+              name: "dev server",
+              command: "bun run dev",
+              startedAt: Date.now(),
+              state: "running",
+            },
+          ],
+        },
+      }),
+    );
+    renderWorkbench(view, remote, DARK_MODE_ID);
+    expect(await screen.findByRole("img", { name: "Live activity" })).toBeInTheDocument();
+  });
+
+  it("leaves the Tasks icon dark when only a finished process is listed", async () => {
+    const view = fakeView({ conversation: settledConversation(DARK_MODE_ID) });
+    const remote = fakeRemote(
+      view,
+      {},
+      fakeProcesses({
+        lists: {
+          [DARK_MODE_ID]: [
+            {
+              id: "p-done",
+              owner: DARK_MODE_ID,
+              name: "build",
+              command: "bun run build",
+              startedAt: Date.now() - 60_000,
+              endedAt: Date.now(),
+              state: { exited: 0 },
+            },
+          ],
+        },
+      }),
+    );
+    renderWorkbench(view, remote, DARK_MODE_ID);
+    await screen.findByRole("button", { name: "Tasks" });
     expect(screen.queryByRole("img", { name: "Live activity" })).toBeNull();
   });
 

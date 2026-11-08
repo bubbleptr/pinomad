@@ -41,6 +41,8 @@ import { OverviewCard } from "./widgets/overview/overview-card.tsx";
 import { PendingQuestions } from "./presentation/question.tsx";
 import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
+import { isProcessActive } from "@pinomad/protocol/processes.ts";
+import { useProcessList } from "./entities/process/use-process-list.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { generateKeyPair, keyPairFromPrivate, type KeyPair } from "@pinomad/protocol/noise.ts";
 import { fromBase64Url, toBase64Url } from "@pinomad/protocol/secure-channel.ts";
@@ -1155,7 +1157,9 @@ export function Workbench({
   // show; a fork running where the panel has no row must not light it.
   const liveRoot = shownId === undefined ? undefined : rootOf(view.organized, shownId);
   const liveTasks = liveRoot === undefined ? [] : taskGroupsOf(liveRoot).flatMap((group) => group.tasks);
-  const liveActivity = anyAtWork(liveTasks);
+  const liveProcesses = useProcessList(remote.processes, liveRoot?.summary.id);
+  // ADR-0045 §6: the dot means Foreground work or a live background process.
+  const liveActivity = anyAtWork(liveTasks) || (liveProcesses?.processes.some((process) => isProcessActive(process.state)) ?? false);
   const parentId = shownSummary?.parent;
   const parentSummary =
     parentId === undefined ? undefined : findConversation(view.organized, parentId)?.summary;

@@ -10,31 +10,16 @@ import { IconButton } from "@astryxdesign/core/IconButton";
 import { VStack } from "@astryxdesign/core/Layout";
 import { Tab, TabList, TabMenu } from "@astryxdesign/core/TabList";
 import { Text } from "@astryxdesign/core/Text";
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { RemoteTerminals, TerminalsState } from "@pinomad/protocol/remote-durable.ts";
 import type { TerminalId, TerminalInfo, TerminalList } from "@pinomad/protocol/terminals.ts";
 import { exitLabel, partitionTabs, resolveSelection, type SelectionMemory } from "../../entities/terminal/terminal-tabs.ts";
 import { Cancel, Pencil, Plus, RefreshCw, Trash2 } from "../../shared/ui/icons.tsx";
+import { LazyXtermView } from "./lazy-xterm-view.tsx";
 import { RenameTerminalDialog } from "./rename-terminal-dialog.tsx";
 import { SurfaceBar } from "./surface-bar.tsx";
 import { TerminalIllustration } from "./terminal-illustration.tsx";
-
-// xterm measures its cell once, when the screen opens, so the code face (the
-// --font-family-code token in styles.css) must have loaded by then; if it
-// fails, the fallback stack is measured instead.
-// Suspense doesn't catch a chunk that fails to load; this keeps the surface up.
-const XtermView = lazy(() =>
-  Promise.all([import("./xterm-view.tsx"), document.fonts.load('13px "Geist Mono Variable"').catch(() => [])])
-    .then(([module]) => module)
-    .catch(() => ({
-      default: () => (
-        <Text type="supporting" className="p-3">
-          Couldn't load the terminal. Reload the page to try again.
-        </Text>
-      ),
-    })),
-);
 
 /** A new terminal's size until its screen is fitted; the screen resizes it at once. */
 const OPEN_SIZE = { cols: 80, rows: 24 };
@@ -235,7 +220,7 @@ export function TerminalSurface({
           <>
             <div className="min-h-0 flex-1">
               <Suspense fallback={null}>
-                <XtermView
+                <LazyXtermView
                   key={selected.id}
                   terminals={terminals}
                   terminalId={selected.id}
