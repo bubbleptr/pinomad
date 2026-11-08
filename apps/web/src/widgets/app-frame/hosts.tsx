@@ -332,7 +332,7 @@ export function HostsSection({
   }
 
   const accountState = account.state.status === "signed-in" ? account.state : undefined;
-  const others = accountState === undefined ? [] : unpairedAccountHosts(accountState);
+  const others = accountState === undefined ? [] : unpairedAccountHosts(accountState, paired.hosts);
   return (
     <VStack gap={4}>
       <HStack hAlign="end">

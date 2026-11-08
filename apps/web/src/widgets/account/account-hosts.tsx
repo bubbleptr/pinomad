@@ -78,9 +78,15 @@ export const ACCOUNT_HOST_ISSUE: Record<AccountHostIssue["kind"], string> = {
   key_changed: "The host's identity changed. Pair again only if you reinstalled it.",
 };
 
-/** The account's hosts this device hasn't paired. */
-export const unpairedAccountHosts = (state: SignedIn): readonly AccountHostMatch[] =>
-  state.hosts.filter((match) => match.status === "unpaired");
+/**
+ * The account's hosts this device hasn't paired, against the current local
+ * list: a match keeps the verdict of the last refresh, so a host unpaired
+ * here since then still reads `paired` until the next one.
+ */
+export function unpairedAccountHosts(state: SignedIn, pairedHere: readonly StoredHost[]): readonly AccountHostMatch[] {
+  const here = new Set(pairedHere.map((host) => host.hostKey));
+  return state.hosts.filter((match) => match.stored === undefined || !here.has(match.stored.hostKey));
+}
 
 /** Why a host can't be paired right now, from the server's verdict. */
 const UNPAIRABLE: Record<Exclude<AccountHostMatch["host"]["pairing"], "available">, string> = {

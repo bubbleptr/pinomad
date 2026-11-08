@@ -3,6 +3,7 @@
 // connection and unpairing live on the host's own page.
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { AccountHost, AccountHostMatch } from "@pinomad/client/account.ts";
 import type { StoredHost } from "@pinomad/client/stored-host.ts";
@@ -225,6 +226,40 @@ describe("HostsSection with an account", () => {
       await userEvent.type(await within(dialog).findByLabelText("Password"), "my password{Enter}");
     });
     expect(removeHost).toHaveBeenCalledWith({ hostId: "u".repeat(43), confirmation: "my password" });
+  });
+
+  it("moves an unpaired account host to the account's section before the next refresh (dureview #641)", async () => {
+    const home = linked(HOME_HOST, "h".repeat(43));
+    const devbox = linked(DEVBOX_HOST, "d".repeat(43));
+    // The account's verdicts as of the last refresh: both paired here.
+    const account = model(
+      signedIn({
+        hosts: [
+          { host: accountHost({ name: "kieran-mbp" }), status: "paired", stored: home, linkable: false, autoRegister: false },
+          { host: accountHost({ name: "omarchy", hostId: "d".repeat(43), noisePublicKey: DEVBOX_HOST.hostKey }), status: "paired", stored: devbox, linkable: false, autoRegister: false },
+        ],
+      }),
+    );
+    function Live() {
+      const [hosts, setHosts] = useState<readonly StoredHost[]>([home, devbox]);
+      const state: HostsState = {
+        ...fakeHosts(hosts, HOME_HOST.hostKey),
+        forget: async (hostKey) => setHosts((list) => list.filter((each) => each.hostKey !== hostKey)),
+      };
+      return (
+        <HostsContext.Provider value={state}>
+          <AccountContext.Provider value={account}>
+            <HostsSection rtcAvailable />
+          </AccountContext.Provider>
+        </HostsContext.Provider>
+      );
+    }
+    render(<Live />);
+    await openDetails("omarchy");
+    await userEvent.click(screen.getByRole("button", { name: "Unpair…" }));
+    await userEvent.click(within(screen.getByRole("dialog", { name: "Unpair omarchy?" })).getByRole("button", { name: "Unpair" }));
+    expect(within(await screen.findByRole("list", { name: "On your account" })).getByText("omarchy")).toBeTruthy();
+    expect(within(paired()).queryByText("omarchy")).toBeNull();
   });
 
   it("refreshes the account's hosts once when the page opens", () => {

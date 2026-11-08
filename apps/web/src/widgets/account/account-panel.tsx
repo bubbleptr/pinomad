@@ -17,6 +17,7 @@ import type {
 } from "@pinomad/client/account.ts";
 import { relativeTime } from "@pinomad/client/family.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
+import { useHosts } from "../../entities/host/host-store.ts";
 import type { AccountModel, AccountState } from "../../entities/account/account-model.ts";
 import { clearOAuthReturn, oauthReturn } from "../../entities/account/oauth-return.ts";
 import { signInProviderName } from "../../entities/provider/sign-in-provider.tsx";
@@ -137,7 +138,8 @@ function SignedIn({
 
 /** The account's hosts this device hasn't paired; the paired ones live in Settings → Hosts. */
 function AccountHosts({ state, pairing }: { state: Extract<AccountState, { status: "signed-in" }>; pairing: AccountPairing }) {
-  const others = unpairedAccountHosts(state);
+  const { hosts } = useHosts();
+  const others = unpairedAccountHosts(state, hosts);
   return (
     <VStack gap={2}>
       <Text weight="semibold">Hosts</Text>

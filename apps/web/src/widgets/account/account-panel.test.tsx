@@ -138,13 +138,19 @@ describe("AccountPanel", () => {
   });
 
   it("lists only the account's hosts this device hasn't paired", () => {
-    renderPanel(
-      fakeModel(
-        signedIn([
-          { host: host({ name: "here" }), status: "paired", stored: stored(KEY_A), linkable: false, autoRegister: false },
-          { host: host({ name: "up", hostId: "u".repeat(43), noisePublicKey: KEY_B }), status: "unpaired", linkable: false, autoRegister: true },
-        ]),
-      ),
+    render(
+      <HostsContext.Provider value={fakeHosts([stored(KEY_A)], null)}>
+        <AccountContext.Provider
+          value={fakeModel(
+            signedIn([
+              { host: host({ name: "here" }), status: "paired", stored: stored(KEY_A), linkable: false, autoRegister: false },
+              { host: host({ name: "up", hostId: "u".repeat(43), noisePublicKey: KEY_B }), status: "unpaired", linkable: false, autoRegister: true },
+            ]),
+          )}
+        >
+          <AccountPanel />
+        </AccountContext.Provider>
+      </HostsContext.Provider>,
     );
     expect(screen.queryByText("here")).toBeNull();
     expect(within(row("up")).getByRole("button", { name: "Pair" })).toBeEnabled();
