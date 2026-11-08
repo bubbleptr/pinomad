@@ -228,7 +228,7 @@ function installOAuthIpc(): void {
   ipcMain.handle("pinomad:oauth:linkOpen", async (event: IpcMainInvokeEvent, input: { state: string; url: string }) => {
     if (!isOurRendererFrame(event)) throw new Error("linking is only reachable from the bundled renderer");
     const result = await links.open(input);
-    if ("linked" in result) toFront();
+    if ("code" in result) toFront();
     return result;
   });
 }

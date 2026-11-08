@@ -990,19 +990,22 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   /**
    * The desktop's link from settings (#631): main's listener first, since
    * the server needs its redirect; then the one-time start URL the server
-   * answered, opened in the system browser, which comes back to it.
+   * answered, opened in the system browser, which comes back with a code
+   * this renderer trades with its verifier.
    */
   const loopbackLink = async (
     active: AccountClient,
     provider: string,
     confirmation: AccountConfirmation,
+    stillLive: () => boolean,
   ): Promise<AccountResult<{ readonly redirect?: string }>> => {
     const oauthLink = deps.bridge?.oauthLink;
     if (oauthLink === undefined) return fail("unsupported");
     const random = (bytes: number): string => toBase64Url(crypto.getRandomValues(new Uint8Array(bytes)));
     const state = random(16);
-    // The server keeps a challenge with every native flow; a link issues no code to prove it with.
-    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(random(32)));
+    // Only this renderer can finish the link: the code comes back to it, the verifier never left.
+    const verifier = random(32);
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
     const listened = await oauthLink.listen({ serverOrigin: active.origin, state }).catch(() => ({ error: "loopback_failed" }));
     if ("error" in listened) return fail(listened.error);
     const begun = await active.linkProvider(provider, confirmation, {
@@ -1012,7 +1015,11 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     });
     if (!begun.ok) return begun;
     const answer = await oauthLink.open({ state, url: begun.value }).catch(() => ({ error: "loopback_failed" }));
-    return "error" in answer ? fail(answer.error) : { ok: true, value: {} };
+    if ("error" in answer) return fail(answer.error);
+    // The browser may take minutes: a session that ended meanwhile doesn't get it.
+    if (!stillLive()) return fail("session_ended");
+    const done = await active.completeLink(answer.code, verifier);
+    return done.ok ? { ok: true, value: {} } : done;
   };
 
   /** A pending sign-in finished: signed in here, or a native app's redirect to follow. */
@@ -1099,10 +1106,10 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       if (providerFlow === "loopback") {
         return authed(async (active) => {
           const started = epoch;
-          const result = await loopbackLink(active, provider, confirmation);
-          // The browser may take minutes: a link that lands after this
-          // session ended belongs to the old one, not to whoever is here now.
-          return result.ok && !live(active, started) ? fail("session_ended") : result;
+          const stillLive = (): boolean => live(active, started);
+          const result = await loopbackLink(active, provider, confirmation, stillLive);
+          // Nor is a link reported to whoever signed in while it finished.
+          return result.ok && !stillLive() ? fail("session_ended") : result;
         });
       }
       const result = await authed((active) => active.linkProvider(provider, confirmation));

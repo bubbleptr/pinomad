@@ -495,6 +495,22 @@ describe("sign-in methods (ADR-0044 §4)", () => {
     expect(vi.mocked(model.identities).mock.calls.length).toBeGreaterThan(1);
   });
 
+  it("drops a desktop link that finishes after Cancel, keeping the form opened since (dureview #635)", async () => {
+    const model = { ...withMethods(true), providerFlow: "loopback" as const };
+    let finish!: () => void;
+    vi.mocked(model.linkProvider).mockReturnValueOnce(new Promise((resolve) => (finish = () => resolve({ ok: true, value: {} }))));
+    renderPanel(model);
+    await userEvent.click(await screen.findByRole("button", { name: "Link Google" }));
+    await userEvent.type(await screen.findByLabelText("Password"), "pw");
+    await userEvent.click(screen.getByRole("button", { name: "Continue to Google" }));
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await userEvent.click(within(row("Password")).getByRole("button", { name: "Change password" }));
+    await userEvent.type(await screen.findByLabelText("New password"), "half-typed");
+    await act(async () => finish());
+    expect((screen.getByLabelText("New password") as HTMLInputElement).value).toBe("half-typed");
+    expect(screen.queryByText("Google linked.")).toBeNull();
+  });
+
   it("says so when removing the last way in", async () => {
     const model = withMethods(false);
     vi.mocked(model.unlinkProvider).mockResolvedValueOnce({ ok: false, error: { code: "last_method", status: 409 } });

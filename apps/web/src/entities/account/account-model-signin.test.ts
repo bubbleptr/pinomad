@@ -326,7 +326,7 @@ describe("account model: sign-ins that were overtaken (PR #630 review)", () => {
 });
 
 describe("account model: linking a provider from the desktop (#631)", () => {
-  const signedInBridge = (open: (input: { state: string; url: string }) => Promise<{ linked: string } | { error: string }>) => {
+  const signedInBridge = (open: (input: { state: string; url: string }) => Promise<{ code: string } | { error: string }>) => {
     const listen = vi.fn((input: { serverOrigin: string; state: string }) => {
       void input;
       return Promise.resolve({ redirectUri: "http://127.0.0.1:53682/callback" });
@@ -347,9 +347,9 @@ describe("account model: linking a provider from the desktop (#631)", () => {
   const me = { status: 200, body: { user: { username: "ada@example.com", email: "ada@example.com" } } };
   const start = `${ORIGIN}/api/oauth/github/start?link=ticket`;
 
-  it("listens, asks the server with the loopback redirect, opens its URL and settles once linked", async () => {
-    const { bridge, listen, open } = signedInBridge(() => Promise.resolve({ linked: "github" }));
-    const fake = fakeFetch(me, { status: 200, body: [] }, { status: 200, body: { url: start } });
+  it("listens, asks the server with the loopback redirect, opens its URL and trades the code with its verifier", async () => {
+    const { bridge, listen, open } = signedInBridge(() => Promise.resolve({ code: "one-time" }));
+    const fake = fakeFetch(me, { status: 200, body: [] }, { status: 200, body: { url: start } }, { status: 204 });
     const model = makeModel(fake, { bridge });
     await vi.waitFor(() => expect(model.state.status).toBe("signed-in"));
     expect(await model.linkProvider("github", { reauth: "grant" })).toEqual({ ok: true, value: {} });
@@ -360,6 +360,11 @@ describe("account model: linking a provider from the desktop (#631)", () => {
     expect(body(link)).toMatchObject({ reauth: "grant", client: "native", redirect_uri: "http://127.0.0.1:53682/callback", state });
     expect(body(link).code_challenge).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(open).toHaveBeenCalledWith({ state, url: start });
+    const completed = fake.calls.find((call) => call.url === `${ORIGIN}/api/oauth/link/complete`)!;
+    const { code, code_verifier: verifier } = body(completed) as { code: string; code_verifier: string };
+    expect(code).toBe("one-time");
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
+    expect(body(link).code_challenge).toBe(toBase64Url(digest));
   });
 
   it("opens nothing when the server refuses the confirmation, and passes a browser refusal through", async () => {
@@ -373,7 +378,7 @@ describe("account model: linking a provider from the desktop (#631)", () => {
   });
 
   it("doesn't report a link that came back after this session ended as this account's", async () => {
-    let answer!: (result: { linked: string }) => void;
+    let answer!: (result: { code: string }) => void;
     const { bridge, open } = signedInBridge(() => new Promise((resolve) => (answer = resolve)));
     const fake = fakeFetch(me, { status: 200, body: [] }, { status: 200, body: { url: start } }, { status: 204 });
     const model = makeModel(fake, { bridge });
@@ -381,8 +386,9 @@ describe("account model: linking a provider from the desktop (#631)", () => {
     const linking = model.linkProvider("github", "pw");
     await vi.waitFor(() => expect(open).toHaveBeenCalled());
     await model.logout();
-    answer({ linked: "github" });
+    answer({ code: "one-time" });
     expect(await linking).toEqual({ ok: false, error: { code: "session_ended" } });
+    expect(fake.calls.map((call) => call.url)).not.toContain(`${ORIGIN}/api/oauth/link/complete`);
     expect(model.state.status).toBe("signed-out");
   });
 });

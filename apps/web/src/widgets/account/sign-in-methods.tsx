@@ -5,7 +5,7 @@ import { List, ListItem } from "@astryxdesign/core/List";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { AccountConfirmation, AccountError, AccountIdentities, AccountResult } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
 import { knownSignInProviders, signInProviderName, SignInProviderMark } from "../../entities/provider/sign-in-provider.tsx";
@@ -176,6 +176,8 @@ export function SignInMethods({
 /**
  * One confirmed account change: the confirmation field, the action's own
  * button and a Cancel. A refused grant is dropped so the next try asks again.
+ * An answer that arrives after Cancel (a desktop link finishing in the
+ * browser) is dropped: by then another form may be open.
  */
 function ConfirmedAction({
   account,
@@ -205,6 +207,13 @@ function ConfirmedAction({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<AccountError>();
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const submit = (): void => {
     if (!identity.ready || !isReady || busy) return;
     setBusy(true);
@@ -212,6 +221,7 @@ function ConfirmedAction({
     void (async () => {
       const confirmation = await identity.confirm();
       const result = confirmation.ok ? await action(confirmation.value) : confirmation;
+      if (!mounted.current) return;
       setBusy(false);
       if (result.ok) onDone();
       else {

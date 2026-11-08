@@ -18,7 +18,6 @@ export interface LoopbackSignInInput {
 }
 
 export type LoopbackSignInResult = { readonly code: string } | { readonly error: string };
-export type LoopbackLinkResult = { readonly linked: string } | { readonly error: string };
 
 export interface LoopbackSignInDeps {
   /** Opens the start URL in the system browser. */
@@ -51,14 +50,15 @@ const page = (response: ServerResponse, status: number, text: string): Promise<v
     );
   });
 
-type Answer = { readonly code: string } | { readonly linked: string } | { readonly error: string };
+type Answer = LoopbackSignInResult;
 
 /**
  * A 127.0.0.1 listener for one browser answer: only `GET /callback` with
- * `state` counts, the first answer wins and later ones get 409. A sign-in
- * answer is a `code`, a link's a `linked` provider; either may be an `error`.
+ * `state` counts, the first answer wins and later ones get 409. The answer is
+ * a one-time `code` for the renderer to trade, or the server's `error`;
+ * `purpose` only picks the tab's wording.
  */
-async function listen(state: string, expect: "code" | "linked"): Promise<{ port: number; answered: Promise<Answer>; close(): void }> {
+async function listen(state: string, purpose: "sign-in" | "link"): Promise<{ port: number; answered: Promise<Answer>; close(): void }> {
   let settle: ((answer: Answer) => void) | undefined;
   const answered = new Promise<Answer>((resolve) => {
     settle = resolve;
@@ -71,25 +71,21 @@ async function listen(state: string, expect: "code" | "linked"): Promise<{ port:
       return;
     }
     if (settle === undefined) {
-      void page(response, 409, `This ${expect === "code" ? "sign-in" : "link"} was already answered. You can close this tab.`);
+      void page(response, 409, `This ${purpose} was already answered. You can close this tab.`);
       return;
     }
     const deliver = settle;
     settle = undefined;
-    const value = url.searchParams.get(expect);
+    const code = url.searchParams.get("code");
     const error = url.searchParams.get("error");
     const answer: Answer =
-      expect === "code" && value !== null && CODE.test(value)
-        ? { code: value }
-        : expect === "linked" && value !== null && PROVIDER.test(value)
-          ? { linked: value }
-          : { error: error !== null && STATE.test(error) ? error : "invalid_response" };
+      code !== null && CODE.test(code) ? { code } : { error: error !== null && STATE.test(error) ? error : "invalid_response" };
     const text =
       "error" in answer
-        ? `${expect === "code" ? "Sign-in" : "Linking"} didn't finish. You can close this tab and try again in PiNomad.`
-        : expect === "code"
+        ? `${purpose === "sign-in" ? "Sign-in" : "Linking"} didn't finish. You can close this tab and try again in PiNomad.`
+        : purpose === "sign-in"
           ? "You're signed in. You can close this tab and return to PiNomad."
-          : "Linked. You can close this tab and return to PiNomad.";
+          : "Almost done. You can close this tab and return to PiNomad.";
     // The tab gets its page before the listener goes away.
     void page(response, "error" in answer ? 400 : 200, text).then(() => deliver(answer));
   });
@@ -126,7 +122,7 @@ export async function loopbackSignIn(input: LoopbackSignInInput, deps: LoopbackS
   ) {
     return { error: "invalid_request" };
   }
-  const listener = await listen(input.state, "code");
+  const listener = await listen(input.state, "sign-in");
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     deps.onListening?.(listener.port);
@@ -145,8 +141,7 @@ export async function loopbackSignIn(input: LoopbackSignInInput, deps: LoopbackS
     const timeout = new Promise<Answer>((resolve) => {
       timer = setTimeout(() => resolve({ error: "timeout" }), deps.timeoutMs ?? LOOPBACK_TIMEOUT_MS);
     });
-    const answer = await Promise.race([listener.answered, timeout]);
-    return "linked" in answer ? { error: "invalid_response" } : answer;
+    return await Promise.race([listener.answered, timeout]);
   } finally {
     clearTimeout(timer);
     listener.close();
@@ -156,8 +151,12 @@ export async function loopbackSignIn(input: LoopbackSignInInput, deps: LoopbackS
 export interface LoopbackLinks {
   /** Starts listening for a link's answer: the redirect to give the server. One link at a time; a new one ends the last. */
   listen(input: { readonly serverOrigin: string; readonly state: string }): Promise<{ readonly redirectUri: string } | { readonly error: string }>;
-  /** Opens the server's one-time start URL for the link `state` names and waits for the browser to come back. */
-  open(input: { readonly state: string; readonly url: string }): Promise<LoopbackLinkResult>;
+  /**
+   * Opens the server's one-time start URL for the link `state` names and
+   * waits for the browser to come back with the code the renderer trades,
+   * with its verifier, to finish the link.
+   */
+  open(input: { readonly state: string; readonly url: string }): Promise<LoopbackSignInResult>;
 }
 
 /**
@@ -178,7 +177,7 @@ export function loopbackLinks(deps: LoopbackSignInDeps): LoopbackLinks {
         return { error: "invalid_request" };
       }
       end();
-      const listener = await listen(state, "linked");
+      const listener = await listen(state, "link");
       const entry = {
         state,
         origin: normalizeServerOrigin(serverOrigin),
@@ -213,7 +212,7 @@ export function loopbackLinks(deps: LoopbackSignInDeps): LoopbackLinks {
       }
       const answer = await Promise.race([entry.listener.answered, entry.expired]);
       if (pending === entry) end();
-      return "code" in answer ? { error: "invalid_response" } : answer;
+      return answer;
     },
   };
 }

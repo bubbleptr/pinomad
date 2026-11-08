@@ -110,17 +110,17 @@ describe("loopbackLinks", () => {
     return new URL(listened.redirectUri);
   }
 
-  it("gives the renderer a redirect, opens the server's start URL, and answers the linked provider", async () => {
+  it("gives the renderer a redirect, opens the server's start URL, and answers the code", async () => {
     const { links: api, opened } = links();
     const callback = await redirect(api);
     expect(callback.hostname).toBe("127.0.0.1");
     expect(callback.pathname).toBe("/callback");
     const result = api.open({ state: "link-1", url: START });
     await expect.poll(() => opened).toEqual([START]);
-    const reply = await fetch(`${callback}?linked=github&state=link-1`);
-    expect(await reply.text()).toContain("Linked. You can close this tab and return to PiNomad.");
-    expect(await result).toEqual({ linked: "github" });
-    await expect(fetch(`${callback}?linked=github&state=link-1`)).rejects.toThrow();
+    const reply = await fetch(`${callback}?code=one-time&state=link-1`);
+    expect(await reply.text()).toContain("Almost done. You can close this tab and return to PiNomad.");
+    expect(await result).toEqual({ code: "one-time" });
+    await expect(fetch(`${callback}?code=late&state=link-1`)).rejects.toThrow();
   });
 
   it("passes the server's refusal through", async () => {
@@ -149,16 +149,16 @@ describe("loopbackLinks", () => {
     const waiting = api.open({ state: "first", url: START });
     await redirect(api, "second");
     expect(await waiting).toEqual({ error: "superseded" });
-    await expect(fetch(`${first}?linked=github&state=first`)).rejects.toThrow();
+    await expect(fetch(`${first}?code=c&state=first`)).rejects.toThrow();
   });
 
   it("gives up after the timeout, opened or not", async () => {
     const { links: api } = links(50);
     const callback = await redirect(api);
     expect(await api.open({ state: "link-1", url: START })).toEqual({ error: "timeout" });
-    await expect(fetch(`${callback}?linked=github&state=link-1`)).rejects.toThrow();
+    await expect(fetch(`${callback}?code=c&state=link-1`)).rejects.toThrow();
     const unopened = await redirect(api, "late");
     await new Promise((resolve) => setTimeout(resolve, 100));
-    await expect(fetch(`${unopened}?linked=github&state=late`)).rejects.toThrow();
+    await expect(fetch(`${unopened}?code=c&state=late`)).rejects.toThrow();
   });
 });
