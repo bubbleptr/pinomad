@@ -101,19 +101,13 @@ extension AppModel {
         case .success(let value): api = value
         case .failure(let failure): return failure
         }
-        guard let identityToken = credential.identityToken.flatMap({ String(data: $0, encoding: .utf8) }),
-              let authorizationCode = credential.authorizationCode.flatMap({ String(data: $0, encoding: .utf8) })
-        else { return AccountFailure(code: "invalid_token") }
-        // Apple shares the name only the first time; the server keeps it.
-        let name = credential.fullName
-            .map { PersonNameComponentsFormatter.localizedString(from: $0, style: .default) }
-            .flatMap { $0.isEmpty ? nil : $0 }
+        guard let apple = AppleCredential(credential) else { return AccountFailure(code: "invalid_token") }
         let device = accountDeviceClaim()
         accountError = nil
         let result = await ProviderSignIn.apple(ticket: ticket, gate: signInGate, active: { self.accountSession }) {
             await api.appleNative(
-                identityToken: identityToken, authorizationCode: authorizationCode,
-                nonce: nonce, name: name, device: device)
+                identityToken: apple.identityToken, authorizationCode: apple.authorizationCode,
+                nonce: nonce, name: apple.name, device: device)
         }
         return await settle(result, origin: api.origin)
     }
@@ -277,6 +271,77 @@ extension AppModel {
         }.failure
         if failure == nil { await accountRefreshIdentities() }
         return failure
+    }
+
+    // MARK: Linking a provider (#631)
+
+    /// The account's server's sign-in methods: which providers settings
+    /// can offer to link.
+    func accountRefreshServerMethods() async {
+        #if DEBUG
+        if devHostsInjected { return }
+        #endif
+        await AccountScope.run(active: { self.accountSession }) { session in
+            await AccountAPI(origin: session.serverOrigin, transport: self.accountTransport).authMethods()
+        } apply: { result, _ in
+            if case .success(let methods) = result { self.accountServerMethods = methods }
+        }
+    }
+
+    /// Google or GitHub: the server's one-time page in the browser, which
+    /// comes back once the provider is on this account. A sign-in or link
+    /// started meanwhile, or the session ending, drops the answer.
+    func accountLinkProvider(
+        _ provider: String, confirmation: AccountConfirmation, authenticate: (URL) async -> URL?
+    ) async -> ProviderLinkResult {
+        let result = await ProviderLink.web(
+            provider: provider, gate: signInGate, active: { self.accountSession },
+            start: { redirect in
+                await self.scopedAccountCall { api in
+                    await api.linkProvider(provider, confirmation: confirmation, native: redirect)
+                }
+            },
+            authenticate: authenticate)
+        if result == .linked { await accountRefreshIdentities() }
+        return result
+    }
+
+    /// Apple answered a link: hand its credential to the server for this
+    /// account. `ticket` and `nonce` come from `beginAppleSignIn`, taken
+    /// when the button was pressed.
+    func finishAppleLink(
+        ticket: SignInTicket, nonce: String, credential: ASAuthorizationAppleIDCredential,
+        confirmation: AccountConfirmation
+    ) async -> ProviderLinkResult {
+        guard let apple = AppleCredential(credential) else { return .failed(AccountFailure(code: "invalid_token")) }
+        let result = await ProviderLink.apple(ticket: ticket, gate: signInGate, active: { self.accountSession }) {
+            await self.scopedAccountCall { api in
+                await api.linkAppleNative(
+                    identityToken: apple.identityToken, authorizationCode: apple.authorizationCode,
+                    nonce: nonce, name: apple.name, confirmation: confirmation)
+            }
+        }
+        if result == .linked { await accountRefreshIdentities() }
+        return result
+    }
+}
+
+/// What the server needs from an Apple credential.
+private struct AppleCredential {
+    let identityToken: String
+    let authorizationCode: String
+    /// Apple shares the name only the first time; the server keeps it.
+    let name: String?
+
+    init?(_ credential: ASAuthorizationAppleIDCredential) {
+        guard let identityToken = credential.identityToken.flatMap({ String(data: $0, encoding: .utf8) }),
+              let authorizationCode = credential.authorizationCode.flatMap({ String(data: $0, encoding: .utf8) })
+        else { return nil }
+        self.identityToken = identityToken
+        self.authorizationCode = authorizationCode
+        name = credential.fullName
+            .map { PersonNameComponentsFormatter.localizedString(from: $0, style: .default) }
+            .flatMap { $0.isEmpty ? nil : $0 }
     }
 }
 

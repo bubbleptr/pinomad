@@ -667,6 +667,30 @@ public struct AccountAPI: Sendable {
         }
     }
 
+    /// Starts linking Google or GitHub to this session's account (#631):
+    /// the one-time page to open in the browser, which comes back to
+    /// `native`'s redirect. 403 `wrong_password` or `invalid_reauth` is a
+    /// refusal, not a sign-out.
+    public func linkProvider(
+        _ provider: String, confirmation: AccountConfirmation, native: NativeLinkRedirect
+    ) async -> Result<String, AccountFailure> {
+        await value(.linkProvider(provider: provider, confirmation: confirmation, native: native)) {
+            if case .redirect(let url) = $0 { url } else { nil }
+        }
+    }
+
+    /// Links the Apple ID from iOS's own sheet to this session's account
+    /// (#631). 409 `identity_taken` when another account has it; 401
+    /// `session_ended` when the session ended while Apple answered.
+    public func linkAppleNative(
+        identityToken: String, authorizationCode: String, nonce: String?, name: String?,
+        confirmation: AccountConfirmation
+    ) async -> Result<Void, AccountFailure> {
+        await unit(.linkAppleNative(
+            identityToken: identityToken, authorizationCode: authorizationCode,
+            nonce: nonce, name: name, confirmation: confirmation))
+    }
+
     private func unit(_ op: AccountOp) async -> Result<Void, AccountFailure> {
         switch await request(op, kind: accountOpKind(op: op)) {
         case .success(.unit): return .success(())
@@ -1025,6 +1049,7 @@ public enum AccountCopy {
         case "invalid_reauth": "The confirmation expired. Confirm again."
         case "last_method": "This is the only way to sign in to your account. Add another before removing it."
         case "identity_taken": "That account is already linked to another PiNomad account."
+        case "session_ended": "You were signed out before linking finished. Sign in and try again."
         case "no_email": "Your account has no email to send a code to."
         case "no_verified_email": "The provider didn't give a verified email. Sign in another way, or verify your email there first."
         case "superseded": "You signed in another way while this sign-in was waiting."
@@ -1038,6 +1063,17 @@ public enum AccountCopy {
         // Set by the app: a 404 with no list fetched after it to tell why.
         case "remove_host_unconfirmed": "Couldn't confirm the host was removed. Try again."
         default: "Something went wrong (" + failure.code + ")."
+        }
+    }
+
+    /// Linking `provider` from settings (#631) refused: names the provider
+    /// where the general wording can't.
+    public static func linkMessage(_ failure: AccountFailure, provider: String) -> String {
+        switch failure.code {
+        case "identity_taken": "That \(provider) account is already linked to another PiNomad account."
+        case "access_denied": "Linking \(provider) was cancelled."
+        case "invalid_state": "This link expired or was started elsewhere. Start again."
+        default: message(failure)
         }
     }
 

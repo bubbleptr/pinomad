@@ -110,6 +110,87 @@ public enum NativeOAuth {
         guard let code = query["code"], !code.isEmpty else { return .failure(.invalidResponse) }
         return .success(code)
     }
+
+    /// What a link from settings (#631) came back with: `linked=<provider>`
+    /// for this flow's state and provider, else the server's `error=`
+    /// reason. Anything else is `invalid_state`.
+    public static func linked(from callback: URL, provider: String, state: String) -> Result<Void, AccountFailure> {
+        guard isCallback(callback),
+              let items = URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems
+        else { return .failure(AccountFailure(code: "invalid_state")) }
+        let query = Dictionary(items.map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { first, _ in first })
+        guard query["state"] == state else { return .failure(AccountFailure(code: "invalid_state")) }
+        if let error = query["error"], !error.isEmpty { return .failure(AccountFailure(code: error)) }
+        guard query["linked"] == provider else { return .failure(AccountFailure(code: "invalid_state")) }
+        return .success(())
+    }
+}
+
+// MARK: - Linking a provider from settings (#631)
+
+public enum ProviderLinkResult: Equatable, Sendable {
+    case linked
+    case failed(AccountFailure)
+    /// The reader closed the browser sheet or the Apple sheet.
+    case cancelled
+    /// Another sign-in or link started, or the session ended or changed,
+    /// meanwhile: the result is dropped.
+    case superseded
+}
+
+@MainActor
+public enum ProviderLink {
+    /// Google or GitHub: `start` asks the server for the one-time page with
+    /// this flow's redirect, `authenticate` opens it in the browser (nil when
+    /// the reader cancelled), and the callback must carry this state and
+    /// provider. Checked against the gate after the server answers and
+    /// again when the browser comes back, so a link that finishes after a
+    /// sign-out or another sign-in is dropped.
+    public static func web(
+        provider: String,
+        pkce: OAuthPKCE = .random(),
+        gate: SignInGate,
+        active: () -> AccountSession?,
+        start: (NativeLinkRedirect) async -> Result<String, AccountFailure>,
+        authenticate: (URL) async -> URL?
+    ) async -> ProviderLinkResult {
+        let ticket = gate.begin(active: active())
+        let redirect = NativeLinkRedirect(
+            redirectUri: NativeOAuth.redirectURI, codeChallenge: pkce.challenge, state: pkce.state)
+        let page: String
+        switch await start(redirect) {
+        case .success(let value): page = value
+        case .failure(let failure):
+            return gate.isCurrent(ticket, active: active()) ? .failed(failure) : .superseded
+        }
+        guard gate.isCurrent(ticket, active: active()) else { return .superseded }
+        guard let url = URL(string: page) else { return .failed(.invalidResponse) }
+        let callback = await authenticate(url)
+        guard gate.isCurrent(ticket, active: active()) else { return .superseded }
+        guard let callback else { return .cancelled }
+        switch NativeOAuth.linked(from: callback, provider: provider, state: pkce.state) {
+        case .success: return .linked
+        case .failure(let failure): return .failed(failure)
+        }
+    }
+
+    /// Apple once its sheet answered: dropped if `ticket` (taken when the
+    /// button was pressed) went stale while the sheet was up or while the
+    /// server checked the token.
+    public static func apple(
+        ticket: SignInTicket,
+        gate: SignInGate,
+        active: () -> AccountSession?,
+        finish: () async -> Result<Void, AccountFailure>
+    ) async -> ProviderLinkResult {
+        guard gate.isCurrent(ticket, active: active()) else { return .superseded }
+        let result = await finish()
+        guard gate.isCurrent(ticket, active: active()) else { return .superseded }
+        switch result {
+        case .success: return .linked
+        case .failure(let failure): return .failed(failure)
+        }
+    }
 }
 
 // MARK: - Sign in with Apple

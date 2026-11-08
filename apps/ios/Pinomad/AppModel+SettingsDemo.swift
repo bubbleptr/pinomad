@@ -205,6 +205,11 @@ extension AppModel {
                 id: 1, name: nil, createdAt: now - 90 * 86_400_000, lastSeenAt: now - 45 * 86_400_000,
                 current: false, kickedAt: nil, hosts: []),
         ]
+        // GitHub linked; Apple and Google offered to link (#631).
+        accountIdentities = AccountIdentities(
+            identities: [AccountIdentity(provider: "github", email: "kieran@users.noreply.github.com", createdAt: now - 9 * 86_400_000)],
+            hasPassword: true)
+        accountServerMethods = AuthMethods(registration: true, email: true, providers: ["google", "github", "apple"])
     }
 }
 #endif

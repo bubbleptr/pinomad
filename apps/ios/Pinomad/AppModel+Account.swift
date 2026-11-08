@@ -159,6 +159,7 @@ extension AppModel {
         accountIdentities = nil
         accountIdentitiesUnsupported = false
         accountIdentitiesError = nil
+        accountServerMethods = nil
         accountNotice = nil
         accountSignOutWarning = nil
         accountError = nil
@@ -990,6 +991,7 @@ extension AppModel {
         accountIdentities = nil
         accountIdentitiesUnsupported = false
         accountIdentitiesError = nil
+        accountServerMethods = nil
         accountRows = []
         accountHostsLoaded = false
         clearAccountDevices()

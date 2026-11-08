@@ -165,6 +165,142 @@ struct SignInTests {
         #expect(none == .noAccount(pending: "pnd", email: "x@privaterelay.appleid.com"))
     }
 
+    // MARK: - Linking from settings (#631)
+
+    private let linkPKCE = OAuthPKCE(verifier: String(repeating: "v", count: 43), state: "st")
+
+    @Test func linkOpensTheServersPageWithThisFlowsRedirect() async {
+        let gate = SignInGate()
+        var sent: NativeLinkRedirect?
+        var opened: URL?
+        let result = await ProviderLink.web(
+            provider: "google", pkce: linkPKCE, gate: gate, active: { self.session("a") },
+            start: { redirect in
+                sent = redirect
+                return .success("https://relay.example.com/api/oauth/google/start?link=t")
+            },
+            authenticate: { url in
+                opened = url
+                return URL(string: "pinomad://auth?linked=google&state=st")
+            })
+        #expect(result == .linked)
+        #expect(sent == NativeLinkRedirect(redirectUri: "pinomad://auth", codeChallenge: linkPKCE.challenge, state: "st"))
+        #expect(opened?.absoluteString == "https://relay.example.com/api/oauth/google/start?link=t")
+    }
+
+    /// The browser came back after the reader signed out (or into another
+    /// account): the link is not reported, whatever it says.
+    @Test func linkThatComesBackAfterTheSessionChangedIsDropped() async {
+        let gate = SignInGate()
+        var active: AccountSession? = session("a")
+        let signedOut = await ProviderLink.web(
+            provider: "google", pkce: linkPKCE, gate: gate, active: { active },
+            start: { _ in .success("https://relay.example.com/x") },
+            authenticate: { _ in
+                active = nil
+                gate.invalidate()
+                return URL(string: "pinomad://auth?linked=google&state=st")
+            })
+        #expect(signedOut == .superseded)
+
+        active = session("a")
+        let switched = await ProviderLink.web(
+            provider: "google", pkce: linkPKCE, gate: gate, active: { active },
+            start: { _ in .success("https://relay.example.com/x") },
+            authenticate: { _ in
+                active = self.session("b")
+                return URL(string: "pinomad://auth?error=session_ended&state=st")
+            })
+        #expect(switched == .superseded)
+    }
+
+    /// A newer sign-in or link started while the server answered: the
+    /// browser never opens for the older one.
+    @Test func supersededLinkNeverOpensTheBrowser() async {
+        let gate = SignInGate()
+        var opened = 0
+        let result = await ProviderLink.web(
+            provider: "github", pkce: linkPKCE, gate: gate, active: { self.session("a") },
+            start: { _ in
+                _ = gate.begin(active: self.session("a"))
+                return .success("https://relay.example.com/x")
+            },
+            authenticate: { _ in
+                opened += 1
+                return nil
+            })
+        #expect(result == .superseded)
+        #expect(opened == 0)
+    }
+
+    /// `wrong_password` and `invalid_reauth` reach the form, so it can ask
+    /// again; closing the browser is not a failure.
+    @Test func linkReportsRefusalsAndCancel() async {
+        let gate = SignInGate()
+        let refused = await ProviderLink.web(
+            provider: "google", pkce: linkPKCE, gate: gate, active: { self.session("a") },
+            start: { _ in .failure(AccountFailure(code: "invalid_reauth")) },
+            authenticate: { _ in nil })
+        #expect(refused == .failed(AccountFailure(code: "invalid_reauth")))
+
+        let cancelled = await ProviderLink.web(
+            provider: "google", pkce: linkPKCE, gate: gate, active: { self.session("a") },
+            start: { _ in .success("https://relay.example.com/x") },
+            authenticate: { _ in nil })
+        #expect(cancelled == .cancelled)
+
+        let taken = await ProviderLink.web(
+            provider: "google", pkce: linkPKCE, gate: gate, active: { self.session("a") },
+            start: { _ in .success("https://relay.example.com/x") },
+            authenticate: { _ in URL(string: "pinomad://auth?error=identity_taken&state=st") })
+        #expect(taken == .failed(AccountFailure(code: "identity_taken")))
+    }
+
+    @Test func linkCallbackMustBeThisFlowsStateAndProvider() {
+        /// The refusal's code, nil when linked.
+        func refusal(_ url: String) -> String? {
+            if case .failure(let failure) = NativeOAuth.linked(from: URL(string: url)!, provider: "google", state: "st") {
+                return failure.code
+            }
+            return nil
+        }
+        #expect(refusal("pinomad://auth?linked=google&state=st") == nil)
+        #expect(refusal("pinomad://auth?linked=google&state=other") == "invalid_state")
+        #expect(refusal("pinomad://auth?linked=google") == "invalid_state")
+        #expect(refusal("pinomad://auth?linked=github&state=st") == "invalid_state")
+        #expect(refusal("pinomad://auth?code=c0de&state=st") == "invalid_state")
+        #expect(refusal("pinomad://auth?error=access_denied&state=st") == "access_denied")
+        // Another flow's error is not this one's.
+        #expect(refusal("pinomad://auth?error=identity_taken&state=other") == "invalid_state")
+        #expect(refusal("pinomad://pair?linked=google&state=st") == "invalid_state")
+    }
+
+    @Test func appleLinkIsDroppedWhenSupersededAtEitherEnd() async {
+        let gate = SignInGate()
+        let early = gate.begin(active: session("a"))
+        _ = gate.begin(active: session("a"))
+        var asked = 0
+        let first = await ProviderLink.apple(ticket: early, gate: gate, active: { self.session("a") }) {
+            asked += 1
+            return .success(())
+        }
+        #expect(first == .superseded)
+        #expect(asked == 0)
+
+        let late = gate.begin(active: session("a"))
+        let second = await ProviderLink.apple(ticket: late, gate: gate, active: { self.session("a") }) {
+            gate.invalidate()
+            return .success(())
+        }
+        #expect(second == .superseded)
+
+        let fresh = gate.begin(active: session("a"))
+        let taken = await ProviderLink.apple(ticket: fresh, gate: gate, active: { self.session("a") }) {
+            .failure(AccountFailure(code: "identity_taken"))
+        }
+        #expect(taken == .failed(AccountFailure(code: "identity_taken")))
+    }
+
     // MARK: - Callback, PKCE and nonce
 
     @Test func onlyTheAuthCallbackIsTreatedAsOne() {

@@ -1,3 +1,4 @@
+import AuthenticationServices
 import PinomadCore
 import SwiftUI
 
@@ -182,6 +183,112 @@ struct UnlinkProviderView: View {
                 error = AccountCopy.message(failure)
             } else {
                 onRemoved("\(name) removed.")
+                dismiss()
+            }
+        }
+    }
+}
+
+/// Add a provider to the account's sign-in methods (ADR-0044 §4, #631):
+/// confirmed like removing one, then Google or GitHub in the system browser,
+/// or Apple's own sheet. Closing either sheet just stops; a link that comes
+/// back after the session changed is dropped by the model.
+struct LinkProviderView: View {
+    let model: AppModel
+    let provider: String
+    let onLinked: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.webAuthenticationSession) private var webAuthenticationSession
+    @State private var step = IdentityConfirmation()
+    @State private var appleRequest = AppleSignInRequest()
+    @State private var busy = false
+    @State private var error: String?
+
+    private var name: String { SignInProviders.name(provider) }
+
+    var body: some View {
+        Form {
+            ConfirmIdentitySection(
+                model: model, step: step,
+                footer: "Then sign in with \(name) to add it to this account.",
+                onSubmit: submit)
+            FormActionButton(title: "Link \(name)", busy: busy, action: submit)
+                .disabled(busy || !step.ready)
+            FormErrorSection(message: error)
+        }
+        .navigationTitle("Link \(name)")
+        .navigationBarTitleDisplayMode(.inline)
+        .interactiveDismissDisabled(busy)
+    }
+
+    private func submit() {
+        guard !busy, step.ready else { return }
+        busy = true
+        error = nil
+        if provider == "apple" { startApple() } else { startWeb() }
+    }
+
+    private func startWeb() {
+        let session = webAuthenticationSession
+        run { confirmation in
+            await model.accountLinkProvider(provider, confirmation: confirmation) { url in
+                // The shared browser session, as for signing in: the
+                // server's page sets the cookie the provider's answer is
+                // checked against, and a reader already signed in to the
+                // provider there isn't asked again.
+                try? await session.authenticate(
+                    using: url,
+                    callback: .customScheme(NativeOAuth.callbackScheme),
+                    preferredBrowserSession: .shared,
+                    additionalHeaderFields: [:])
+            }
+        }
+    }
+
+    private func startApple() {
+        // Taken at the press, so a sign-out while Apple's sheet is up drops it.
+        let attempt = model.beginAppleSignIn()
+        appleRequest.start { request in
+            request.requestedScopes = [.fullName, .email]
+            request.nonce = AppleNonce.sha256Hex(attempt.nonce)
+        } completion: { result in
+            switch result {
+            case .failure(let failure):
+                busy = false
+                // Closing Apple's sheet is not an error worth showing.
+                if (failure as? ASAuthorizationError)?.code != .canceled {
+                    error = AccountCopy.linkMessage(AccountFailure(code: "access_denied"), provider: name)
+                }
+            case .success(let authorization):
+                guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else {
+                    busy = false
+                    return
+                }
+                run { confirmation in
+                    await model.finishAppleLink(
+                        ticket: attempt.ticket, nonce: attempt.nonce, credential: credential,
+                        confirmation: confirmation)
+                }
+            }
+        }
+    }
+
+    /// Confirms, then links. A refused password or lapsed grant leaves the
+    /// form up to confirm again (`IdentityConfirmation.run`).
+    private func run(_ link: @escaping (AccountConfirmation) async -> ProviderLinkResult) {
+        Task {
+            var outcome = ProviderLinkResult.cancelled
+            let failure = await step.run(model: model) { confirmation in
+                outcome = await link(confirmation)
+                if case .failed(let failure) = outcome { return failure }
+                return nil
+            }
+            busy = false
+            if let failure {
+                error = AccountCopy.linkMessage(failure, provider: name)
+            } else if outcome == .linked {
+                onLinked("\(name) linked.")
                 dismiss()
             }
         }
