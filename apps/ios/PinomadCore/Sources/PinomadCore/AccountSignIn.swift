@@ -112,6 +112,81 @@ public enum NativeOAuth {
     }
 }
 
+// MARK: - Linking a provider from settings (#631)
+
+public enum ProviderLinkResult: Equatable, Sendable {
+    case linked
+    case failed(AccountFailure)
+    /// The reader closed the browser sheet or the Apple sheet.
+    case cancelled
+    /// Another sign-in or link started, or the session ended or changed,
+    /// meanwhile: the result is dropped.
+    case superseded
+}
+
+@MainActor
+public enum ProviderLink {
+    /// Google or GitHub: `start` asks the server for the one-time page with
+    /// this flow's redirect, `authenticate` opens it in the browser (nil when
+    /// the reader cancelled), the callback must carry this state, and
+    /// `complete` trades its code with the verifier only this app holds —
+    /// the server binds nothing before that. Checked against the gate after
+    /// each step, so a link that finishes after a sign-out or another
+    /// sign-in is dropped, and its code never traded.
+    public static func web(
+        pkce: OAuthPKCE = .random(),
+        gate: SignInGate,
+        active: () -> AccountSession?,
+        start: (NativeLinkRedirect) async -> Result<String, AccountFailure>,
+        authenticate: (URL) async -> URL?,
+        complete: (_ code: String, _ verifier: String) async -> Result<Void, AccountFailure>
+    ) async -> ProviderLinkResult {
+        let ticket = gate.begin(active: active())
+        let redirect = NativeLinkRedirect(
+            redirectUri: NativeOAuth.redirectURI, codeChallenge: pkce.challenge, state: pkce.state)
+        let page: String
+        switch await start(redirect) {
+        case .success(let value): page = value
+        case .failure(let failure):
+            return gate.isCurrent(ticket, active: active()) ? .failed(failure) : .superseded
+        }
+        guard gate.isCurrent(ticket, active: active()) else { return .superseded }
+        guard let url = URL(string: page) else { return .failed(.invalidResponse) }
+        let callback = await authenticate(url)
+        guard gate.isCurrent(ticket, active: active()) else { return .superseded }
+        guard let callback else { return .cancelled }
+        let code: String
+        switch NativeOAuth.code(from: callback, pkce: pkce) {
+        case .success(let value): code = value
+        case .failure(let failure): return .failed(failure)
+        }
+        let result = await complete(code, pkce.verifier)
+        guard gate.isCurrent(ticket, active: active()) else { return .superseded }
+        switch result {
+        case .success: return .linked
+        case .failure(let failure): return .failed(failure)
+        }
+    }
+
+    /// Apple once its sheet answered: dropped if `ticket` (taken when the
+    /// button was pressed) went stale while the sheet was up or while the
+    /// server checked the token.
+    public static func apple(
+        ticket: SignInTicket,
+        gate: SignInGate,
+        active: () -> AccountSession?,
+        finish: () async -> Result<Void, AccountFailure>
+    ) async -> ProviderLinkResult {
+        guard gate.isCurrent(ticket, active: active()) else { return .superseded }
+        let result = await finish()
+        guard gate.isCurrent(ticket, active: active()) else { return .superseded }
+        switch result {
+        case .success: return .linked
+        case .failure(let failure): return .failed(failure)
+        }
+    }
+}
+
 // MARK: - Sign in with Apple
 
 public enum AppleNonce {

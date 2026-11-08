@@ -20,18 +20,25 @@ struct AccountView: View {
     @State private var removingDevice: AccountDevice?
     @State private var removingHost: PendingAccountHost?
     @State private var unlinking: String?
+    @State private var linking: String?
     #if DEBUG
     /// `PINOMAD_DEMO_ACCOUNT=delete` opens on the Delete Account form.
     @State private var devDeleting = false
     /// `PINOMAD_DEMO_ACCOUNT=add` opens on Add a Host.
     @State private var devAdding = false
-    /// `PINOMAD_DEMO_ACCOUNT=bottom`, read up front: the sheet's own task
-    /// clears the page it was asked for.
-    @State private var devOpensAtBottom: Bool
+    /// Where `PINOMAD_DEMO_ACCOUNT=bottom` (Delete Account) or `methods`
+    /// (Sign-in Methods) opens scrolled to, read up front: the sheet's own
+    /// task clears the page it was asked for.
+    @State private var devScrollTarget: String?
 
     init(model: AppModel) {
         self.model = model
-        _devOpensAtBottom = State(initialValue: model.devAccountPage == "bottom")
+        let target: String? = switch model.devAccountPage {
+        case "bottom": "delete-account"
+        case "methods": "sign-in-methods"
+        default: nil
+        }
+        _devScrollTarget = State(initialValue: target)
     }
     #endif
 
@@ -126,6 +133,7 @@ struct AccountView: View {
                 emailSection(session)
 
                 signInMethodsSection
+                    .id("sign-in-methods")
 
                 Section {
                     if let warning = model.accountSignOutWarning {
@@ -178,10 +186,9 @@ struct AccountView: View {
             }
             #if DEBUG
             .task {
-                // `PINOMAD_DEMO_ACCOUNT=bottom` opens scrolled to Delete Account.
-                guard devOpensAtBottom else { return }
+                guard let devScrollTarget else { return }
                 try? await Task.sleep(for: .milliseconds(300))
-                proxy.scrollTo("delete-account", anchor: .top)
+                proxy.scrollTo(devScrollTarget, anchor: .top)
             }
             #endif
         }
@@ -196,10 +203,14 @@ struct AccountView: View {
         .navigationDestination(item: $unlinking) { provider in
             UnlinkProviderView(model: model, provider: provider) { methodsNotice = $0 }
         }
+        .navigationDestination(item: $linking) { provider in
+            LinkProviderView(model: model, provider: provider) { methodsNotice = $0 }
+        }
         .refreshable {
             await model.refreshHostsAndAccount()
             await model.accountRefreshDevices()
             await model.accountRefreshIdentities()
+            await model.accountRefreshServerMethods()
         }
         .task {
             // The new-host notice's Remove, from outside this sheet.
@@ -215,6 +226,7 @@ struct AccountView: View {
             case "remove-host":
                 removingHost = model.accountRows.first.map { PendingAccountHost(hostId: $0.hostId, name: $0.name) }
             case "delete": devDeleting = true
+            case "link": linking = model.accountIdentities.flatMap { linkable($0).first }
             case "add": devAdding = true
             default: break
             }
@@ -224,7 +236,8 @@ struct AccountView: View {
             async let devices: Void = model.accountRefreshDevices()
             async let identities: Void = model.accountRefreshIdentities()
             async let profile: Void = model.accountRefreshProfile()
-            _ = await (hosts, devices, identities, profile)
+            async let methods: Void = model.accountRefreshServerMethods()
+            _ = await (hosts, devices, identities, profile, methods)
         }
         #if DEBUG
         .navigationDestination(isPresented: $devDeleting) {
@@ -304,9 +317,17 @@ struct AccountView: View {
         }
     }
 
-    /// The password and each linked provider (ADR-0044 §4). Linking another
-    /// provider happens on the web for now: the server has no native link
-    /// flow yet. A server from before sign-in methods keeps Change Password.
+    /// The server's providers the account hasn't linked, in button order;
+    /// none until the server said which it offers.
+    private func linkable(_ identities: AccountIdentities) -> [String] {
+        let offered = model.accountServerMethods?.providers ?? []
+        let linked = Set(identities.identities.map(\.provider))
+        return SignInProviders.ids.filter { offered.contains($0) && !linked.contains($0) }
+    }
+
+    /// The password, each linked provider, and the server's other providers
+    /// to link (ADR-0044 §4, #631). A server from before sign-in methods
+    /// keeps Change Password.
     @ViewBuilder
     private var signInMethodsSection: some View {
         Section {
@@ -346,6 +367,22 @@ struct AccountView: View {
                         }
                         Spacer()
                         Button("Remove") { unlinking = identity.provider }
+                            .buttonStyle(.tactile(.glass))
+                            .controlSize(.small)
+                            .disabled(model.accountBusy)
+                    }
+                }
+                ForEach(linkable(identities), id: \.self) { provider in
+                    HStack(spacing: 12) {
+                        SignInProviderMark(provider: provider, size: 20)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(SignInProviders.name(provider))
+                            Text("Not linked")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Link") { linking = provider }
                             .buttonStyle(.tactile(.glass))
                             .controlSize(.small)
                             .disabled(model.accountBusy)

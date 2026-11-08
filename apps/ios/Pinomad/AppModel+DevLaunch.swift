@@ -119,8 +119,10 @@ extension AppModel {
             startSettingsDemo(mode)
             // With `account`: open the account sheet (`devices`), or push
             // the Remove form for the first removable device (`remove`), the
-            // one for the first account host (`remove-host`), or the Delete
-            // Account form (`delete`).
+            // one for the first account host (`remove-host`), the Delete
+            // Account form (`delete`), Link for the first unlinked provider
+            // (`link`), or scroll to Delete Account (`bottom`) or Sign-in
+            // Methods (`methods`).
             if let page = env["PINOMAD_DEMO_ACCOUNT"] {
                 devAccountPage = page
                 present(.account)
