@@ -5,7 +5,7 @@
 import { type Static, Type } from "typebox";
 import { Value } from "typebox/value";
 
-export type PresentationType = "pinomad.todo" | "pinomad.question" | "pinomad.diff" | "pinomad.codemode";
+export type PresentationType = "pinomad.todo" | "pinomad.question" | "pinomad.diff" | "pinomad.codemode" | "pinomad.context";
 
 /** Also used as the `todo_write` tool's `items` element schema on the host. */
 export const TodoItemSchema = Type.Object({
@@ -95,11 +95,32 @@ export const CodemodeSchema = Type.Object({ code: Type.Optional(Type.String()), 
 export type CodemodeCall = Static<typeof CodemodeCallSchema>;
 export type CodemodeDetails = Static<typeof CodemodeSchema>;
 
+const TokenCount = Type.Integer({ minimum: 0 });
+
+/**
+ * What filled the context window at the conversation's last qualifying reply.
+ * `used` is the provider's own count, computed exactly as the composer meter
+ * computes it, so a client shows the parts only while `used` matches the
+ * meter; the parts are host estimates of the request that reply answered and
+ * always sum to `used` (`messages` takes the remainder).
+ */
+export const ContextBreakdownSchema = Type.Object({
+  used: TokenCount,
+  system: TokenCount,
+  skills: TokenCount,
+  tools: TokenCount,
+  mcp: TokenCount,
+  messages: TokenCount,
+});
+
+export type ContextBreakdown = Static<typeof ContextBreakdownSchema>;
+
 export type ClassifiedDoc =
   | { readonly type: "pinomad.todo"; readonly value: TodoState }
   | { readonly type: "pinomad.question"; readonly value: QuestionState }
   | { readonly type: "pinomad.diff"; readonly value: DiffDetails }
   | { readonly type: "pinomad.codemode"; readonly value: CodemodeDetails }
+  | { readonly type: "pinomad.context"; readonly value: ContextBreakdown }
   | { readonly type: "fallback"; readonly value: unknown };
 
 /**
@@ -119,6 +140,9 @@ export function classify(presentation: PresentationType | undefined, value: unkn
   }
   if (presentation === "pinomad.codemode" && Value.Check(CodemodeSchema, value)) {
     return { type: "pinomad.codemode", value };
+  }
+  if (presentation === "pinomad.context" && Value.Check(ContextBreakdownSchema, value)) {
+    return { type: "pinomad.context", value };
   }
   return { type: "fallback", value };
 }

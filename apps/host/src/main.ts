@@ -22,6 +22,7 @@ import { question } from "./extensions/question.ts";
 import { createCoding } from "./extensions/coding.ts";
 import { createCodemode } from "./extensions/codemode.ts";
 import { createContext } from "./extensions/context.ts";
+import { createContextBreakdown } from "./extensions/context-breakdown.ts";
 import { createSubagent } from "./extensions/subagent.ts";
 import { todo } from "./extensions/todo.ts";
 import { validatePublicUrl, validateRelayOrigin } from "./gateway.ts";
@@ -94,6 +95,7 @@ export async function main(argv: readonly string[]): Promise<void> {
         roles: () => host.agentRoles.value.roles,
       }),
       createCodemode(),
+      createContextBreakdown({ harness: host.harness }),
     ];
   const common = {
     dataDir,
