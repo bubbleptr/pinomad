@@ -110,20 +110,6 @@ public enum NativeOAuth {
         guard let code = query["code"], !code.isEmpty else { return .failure(.invalidResponse) }
         return .success(code)
     }
-
-    /// What a link from settings (#631) came back with: `linked=<provider>`
-    /// for this flow's state and provider, else the server's `error=`
-    /// reason. Anything else is `invalid_state`.
-    public static func linked(from callback: URL, provider: String, state: String) -> Result<Void, AccountFailure> {
-        guard isCallback(callback),
-              let items = URLComponents(url: callback, resolvingAgainstBaseURL: false)?.queryItems
-        else { return .failure(AccountFailure(code: "invalid_state")) }
-        let query = Dictionary(items.map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { first, _ in first })
-        guard query["state"] == state else { return .failure(AccountFailure(code: "invalid_state")) }
-        if let error = query["error"], !error.isEmpty { return .failure(AccountFailure(code: error)) }
-        guard query["linked"] == provider else { return .failure(AccountFailure(code: "invalid_state")) }
-        return .success(())
-    }
 }
 
 // MARK: - Linking a provider from settings (#631)
@@ -142,17 +128,18 @@ public enum ProviderLinkResult: Equatable, Sendable {
 public enum ProviderLink {
     /// Google or GitHub: `start` asks the server for the one-time page with
     /// this flow's redirect, `authenticate` opens it in the browser (nil when
-    /// the reader cancelled), and the callback must carry this state and
-    /// provider. Checked against the gate after the server answers and
-    /// again when the browser comes back, so a link that finishes after a
-    /// sign-out or another sign-in is dropped.
+    /// the reader cancelled), the callback must carry this state, and
+    /// `complete` trades its code with the verifier only this app holds —
+    /// the server binds nothing before that. Checked against the gate after
+    /// each step, so a link that finishes after a sign-out or another
+    /// sign-in is dropped, and its code never traded.
     public static func web(
-        provider: String,
         pkce: OAuthPKCE = .random(),
         gate: SignInGate,
         active: () -> AccountSession?,
         start: (NativeLinkRedirect) async -> Result<String, AccountFailure>,
-        authenticate: (URL) async -> URL?
+        authenticate: (URL) async -> URL?,
+        complete: (_ code: String, _ verifier: String) async -> Result<Void, AccountFailure>
     ) async -> ProviderLinkResult {
         let ticket = gate.begin(active: active())
         let redirect = NativeLinkRedirect(
@@ -168,7 +155,14 @@ public enum ProviderLink {
         let callback = await authenticate(url)
         guard gate.isCurrent(ticket, active: active()) else { return .superseded }
         guard let callback else { return .cancelled }
-        switch NativeOAuth.linked(from: callback, provider: provider, state: pkce.state) {
+        let code: String
+        switch NativeOAuth.code(from: callback, pkce: pkce) {
+        case .success(let value): code = value
+        case .failure(let failure): return .failed(failure)
+        }
+        let result = await complete(code, pkce.verifier)
+        guard gate.isCurrent(ticket, active: active()) else { return .superseded }
+        switch result {
         case .success: return .linked
         case .failure(let failure): return .failed(failure)
         }

@@ -669,7 +669,7 @@ public struct AccountAPI: Sendable {
 
     /// Starts linking Google or GitHub to this session's account (#631):
     /// the one-time page to open in the browser, which comes back to
-    /// `native`'s redirect. 403 `wrong_password` or `invalid_reauth` is a
+    /// `native`'s redirect with a code for `completeLink`. 403 `wrong_password` or `invalid_reauth` is a
     /// refusal, not a sign-out.
     public func linkProvider(
         _ provider: String, confirmation: AccountConfirmation, native: NativeLinkRedirect
@@ -677,6 +677,13 @@ public struct AccountAPI: Sendable {
         await value(.linkProvider(provider: provider, confirmation: confirmation, native: native)) {
             if case .redirect(let url) = $0 { url } else { nil }
         }
+    }
+
+    /// Finishes a link the browser came back from with `code`: binds it to
+    /// this session's account with the verifier behind the challenge sent.
+    /// 400 `invalid_grant` for a spent or foreign code, 409 `identity_taken`.
+    public func completeLink(code: String, codeVerifier: String) async -> Result<Void, AccountFailure> {
+        await unit(.completeLink(code: code, codeVerifier: codeVerifier))
     }
 
     /// Links the Apple ID from iOS's own sheet to this session's account

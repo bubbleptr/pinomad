@@ -295,13 +295,16 @@ extension AppModel {
         _ provider: String, confirmation: AccountConfirmation, authenticate: (URL) async -> URL?
     ) async -> ProviderLinkResult {
         let result = await ProviderLink.web(
-            provider: provider, gate: signInGate, active: { self.accountSession },
+            gate: signInGate, active: { self.accountSession },
             start: { redirect in
                 await self.scopedAccountCall { api in
                     await api.linkProvider(provider, confirmation: confirmation, native: redirect)
                 }
             },
-            authenticate: authenticate)
+            authenticate: authenticate,
+            complete: { code, verifier in
+                await self.scopedAccountCall { api in await api.completeLink(code: code, codeVerifier: verifier) }
+            })
         if result == .linked { await accountRefreshIdentities() }
         return result
     }
