@@ -4,7 +4,7 @@ import type { ContextUsage } from "@pinomad/client/context-usage.ts";
 /** A nearly-full window warns before the conversation compacts itself. */
 const WARNING_PERCENT = 80;
 
-const formatTokens = (tokens: number): string =>
+export const formatTokens = (tokens: number): string =>
   tokens >= 1_000_000
     ? `${+(tokens / 1_000_000).toFixed(1)}M`
     : tokens >= 1000
