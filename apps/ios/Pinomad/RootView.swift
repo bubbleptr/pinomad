@@ -71,8 +71,8 @@ struct RootView: View {
         // this iPhone on its own, so a join the reader didn't make has to be
         // seen; it waits for any sheet to close (the account sheet shows it
         // itself) and stays until dismissed. Remove goes to the account
-        // sheet's removal form for that host (#512); with several, to the
-        // account's host list, where each can be removed.
+        // sheet's removal form for that host (#512); with several, to Hosts,
+        // where each can be removed.
         .alert("New Host Joined", isPresented: Binding(
             get: { model.newHostNotice != nil && model.modal == nil },
             set: { if !$0 { model.dismissNewHostNotice() } }
@@ -86,9 +86,15 @@ struct RootView: View {
                     model.present(.account)
                 }
             } else {
-                Button("Review in Account") {
+                Button("Review Hosts") {
                     model.dismissNewHostNotice()
-                    model.present(.account)
+                    // The home stack holds Settings' Hosts; elsewhere the
+                    // account sheet leads there.
+                    if model.phase == .home {
+                        model.navPath.append(.hosts)
+                    } else {
+                        model.present(.account)
+                    }
                 }
             }
         } message: {

@@ -846,7 +846,34 @@ public struct AccountReconciliation: Equatable, Sendable {
     public let autoRegisterHostIds: [String]
 }
 
+/// Settings → Hosts' two halves: what the account says about each host
+/// paired here, and the account's hosts this device doesn't hold.
+public struct HostsPartition: Equatable, Sendable {
+    /// By stored hostKey: the account row of a host held here that refused
+    /// this device or changed its key, so its row offers Pair again.
+    public let issues: [String: AccountHostRow]
+    /// The account's hosts with no pairing on this device, in the list's order.
+    public let notPairedHere: [AccountHostRow]
+}
+
 public enum AccountHosts {
+    /// Split the account's rows by the pairings this device holds now. A
+    /// row's status comes from the last list, so a host unpaired since
+    /// still says paired; the stored keys decide (Web #641's review).
+    public static func partition(rows: [AccountHostRow], storedHostKeys: [String]) -> HostsPartition {
+        let held = Set(storedHostKeys)
+        var issues: [String: AccountHostRow] = [:]
+        var notPairedHere: [AccountHostRow] = []
+        for row in rows {
+            guard let key = row.storedHostKey, held.contains(key) else {
+                notPairedHere.append(row)
+                continue
+            }
+            if row.status == .rejected || row.status == .keyChanged { issues[key] = row }
+        }
+        return HostsPartition(issues: issues, notPairedHere: notPairedHere)
+    }
+
     /// Pair the server's list against stored pairings, adopt pre-account
     /// twins, and mark hosts this device was refused from. This is the one
     /// pure decision the host list renders.

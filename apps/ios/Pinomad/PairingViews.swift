@@ -88,18 +88,39 @@ struct PairingStartView: View {
     }
 }
 
-/// Settings → Add Host: the first-run page's ways in, for another host.
+/// Settings → Add Host: signed in, the join command a new host runs,
+/// with a pairing link as the fallback; signed out, the link only.
 struct AddHostView: View {
     let model: AppModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            Text(.init(pairingHowTo))
-                .foregroundStyle(.secondary)
-            PairingSources(model: model)
-            Spacer()
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                // Signed in, a new host joins the account and pairs on its
+                // own; a pairing link stays the way for one that won't.
+                if model.accountSession != nil {
+                    VStack(alignment: .leading, spacing: 20) {
+                        Text("A host is the computer that runs your agents: a Mac or Linux machine. Open a terminal there and run:")
+                            .foregroundStyle(.secondary)
+                        AddAccountHostContent(model: model)
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Or pair with a link")
+                            .font(.headline)
+                        Text(.init(pairingHowTo))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        PairingSources(model: model)
+                            .padding(.top, 4)
+                    }
+                } else {
+                    Text(.init(pairingHowTo))
+                        .foregroundStyle(.secondary)
+                    PairingSources(model: model)
+                }
+            }
+            .padding(20)
         }
-        .padding(20)
         .navigationTitle("Add Host")
         .navigationBarTitleDisplayMode(.inline)
     }

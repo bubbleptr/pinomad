@@ -57,7 +57,7 @@ struct HostUpgradeView: View {
                 if controls.canStart {
                     // The dialog's buttons dismiss it on tap; the pending row and the
                     // inline error carry the host's answer instead.
-                    Button("Upgrade…") { confirming = true }
+                    Button("Upgrade") { confirming = true }
                         .disabled(pending != nil)
                         .confirmationDialog(
                             "Upgrade the host to pinomad \(upgrade.available?.version ?? "")?",

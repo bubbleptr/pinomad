@@ -1,57 +1,46 @@
 import PinomadCore
 import SwiftUI
 
-/// The one account (ADR-0022), opened from the avatar. Signed out, this is
-/// the login form; signed in, the hosts the account vouches for, the devices
-/// signed in to it (#452), the two ways to sign out and deleting the account
-/// (#451). One sheet either way, so signing in lands on the account's hosts
-/// instead of closing.
+/// The account (ADR-0022) as a sheet, for the pages that have no Settings
+/// to push it from. Signed out, this is the sign-in form; signed in, the
+/// same Account page Settings opens, with its pages above it. One sheet
+/// either way, so signing in lands on the account instead of closing.
 struct AccountView: View {
     let model: AppModel
 
     @Environment(\.dismiss) private var dismiss
-    @State private var pendingAccountPair: AccountHostRow?
-    @State private var confirmingSignOutEverywhere = false
-    /// Sign out also takes this iPhone off the account's hosts (#494).
-    @State private var leavingHosts = false
-    /// What the last sign-in methods change said ("Password set.").
-    @State private var methodsNotice: String?
-    @State private var emailSaved = false
-    @State private var removingDevice: AccountDevice?
+    @State private var path: [Route] = []
     @State private var removingHost: PendingAccountHost?
-    @State private var unlinking: String?
-    @State private var linking: String?
-    #if DEBUG
-    /// `PINOMAD_DEMO_ACCOUNT=delete` opens on the Delete Account form.
-    @State private var devDeleting = false
-    /// `PINOMAD_DEMO_ACCOUNT=add` opens on Add a Host.
-    @State private var devAdding = false
-    /// Where `PINOMAD_DEMO_ACCOUNT=bottom` (Delete Account) or `methods`
-    /// (Sign-in Methods) opens scrolled to, read up front: the sheet's own
-    /// task clears the page it was asked for.
-    @State private var devScrollTarget: String?
-
-    init(model: AppModel) {
-        self.model = model
-        let target: String? = switch model.devAccountPage {
-        case "bottom": "delete-account"
-        case "methods": "sign-in-methods"
-        default: nil
-        }
-        _devScrollTarget = State(initialValue: target)
-    }
-    #endif
 
     var body: some View {
-        NavigationStack {
-            if let session = model.accountSession {
-                if model.accountNeedsEmail {
-                    AddEmailView(model: model)
+        NavigationStack(path: $path) {
+            Group {
+                if model.accountSession != nil {
+                    if model.accountNeedsEmail {
+                        AddEmailView(model: model)
+                    } else {
+                        AccountPage(model: model)
+                    }
                 } else {
-                    signedIn(session)
+                    AccountLoginView(model: model)
                 }
-            } else {
-                AccountLoginView(model: model)
+            }
+            .navigationDestination(for: Route.self) { route in
+                RouteDestination(model: model, route: route)
+            }
+            .toolbar {
+                if model.accountSession != nil, !model.accountNeedsEmail {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                    }
+                }
+            }
+            .sheet(item: $removingHost) { host in
+                FormSheet {
+                    RemoveHostView(
+                        model: model, host: host,
+                        server: model.accountSession.map { hostOf($0.serverOrigin) } ?? "the server")
+                }
             }
         }
         // A fresh stack when the session starts or ends: a sign-up step
@@ -65,153 +54,11 @@ struct AccountView: View {
         )) { pending in
             AppleNoAccountView(model: model, pending: pending)
         }
-        // Any session change (Sign out everywhere, a dead token, a new
-        // sign-in) starts the shared-device choice off again.
-        .onChange(of: model.accountSession) { leavingHosts = false }
-        .onDisappear {
-            // Closing the sheet cancels a pairing ask that is still
-            // waiting; a late offer must not replace the session the
-            // reader went back to.
-            model.invalidateAccountPairing()
-        }
-    }
-
-    private func signedIn(_ session: AccountSession) -> some View {
-        ScrollViewReader { proxy in
-            List {
-                Section {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(session.displayName)
-                        Text(hostOf(session.serverOrigin))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if let notice = model.accountNotice {
-                        Text(notice)
-                            .font(.footnote)
-                            .foregroundStyle(.orange)
-                    }
-                }
-
-                Section("Hosts on Your Account") {
-                    if model.accountRefreshing && model.accountRows.isEmpty {
-                        HStack(spacing: 8) {
-                            ProgressView().controlSize(.small)
-                            Text("Loading hosts…")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-                    } else if model.accountRows.isEmpty, model.accountHostsError == nil {
-                        Text("No hosts on this account yet.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(model.accountRows) { row in
-                            accountRow(row)
-                        }
-                    }
-
-                    if let error = model.accountHostsError ?? model.accountError {
-                        Text(error)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                    }
-                }
-
-                Section {
-                    NavigationLink("Add a Host") {
-                        AddAccountHostView(model: model)
-                    }
-                }
-
-                // Hidden on servers that predate the device list.
-                if !model.accountDevicesUnsupported {
-                    devicesSection
-                }
-
-                emailSection(session)
-
-                signInMethodsSection
-                    .id("sign-in-methods")
-
-                Section {
-                    if let warning = model.accountSignOutWarning {
-                        Text(warning)
-                            .font(.footnote)
-                            .foregroundStyle(.orange)
-                    }
-
-                    // Off by default and reset with the view: a host keeps
-                    // every revocation, so each sign-out of your own phone
-                    // would leave a dead key in its device list (#494).
-                    Toggle(isOn: $leavingHosts) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Remove this iPhone from my hosts")
-                            Text(AccountCopy.signOutRevokeExplanation)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .disabled(model.accountBusy)
-
-                    Button("Sign out", role: .destructive) {
-                        let revoke = leavingHosts
-                        // Never carried into the next sign-in on this sheet.
-                        leavingHosts = false
-                        Task { await model.accountSignOut(everywhere: false, revoke: revoke) }
-                    }
-                    .disabled(model.accountBusy)
-
-                    Button("Sign out everywhere", role: .destructive) {
-                        confirmingSignOutEverywhere = true
-                    }
-                    .disabled(model.accountBusy)
-                } footer: {
-                    Text(AccountCopy.signOutExplanation)
-                }
-
-                Section {
-                    NavigationLink {
-                        DeleteAccountView(model: model, server: hostOf(session.serverOrigin))
-                    } label: {
-                        Text("Delete Account")
-                            .foregroundStyle(model.accountBusy ? Color.secondary : Color.red)
-                    }
-                    .disabled(model.accountBusy)
-                    .id("delete-account")
-                }
-
-                LegalLinksSection()
-            }
-            #if DEBUG
-            .task {
-                guard let devScrollTarget else { return }
-                try? await Task.sleep(for: .milliseconds(300))
-                proxy.scrollTo(devScrollTarget, anchor: .top)
-            }
-            #endif
-        }
-        .navigationTitle("Account")
-        .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(item: $removingDevice) { device in
-            RemoveDeviceView(model: model, device: device)
-        }
-        .navigationDestination(item: $removingHost) { host in
-            RemoveHostView(model: model, host: host, server: hostOf(session.serverOrigin))
-        }
-        .navigationDestination(item: $unlinking) { provider in
-            UnlinkProviderView(model: model, provider: provider) { methodsNotice = $0 }
-        }
-        .navigationDestination(item: $linking) { provider in
-            LinkProviderView(model: model, provider: provider) { methodsNotice = $0 }
-        }
-        .refreshable {
-            await model.refreshHostsAndAccount()
-            await model.accountRefreshDevices()
-            await model.accountRefreshIdentities()
-            await model.accountRefreshServerMethods()
-        }
+        // Hosts → a host → Providers lives on this stack too: a saved login or
+        // endpoint pops this path, not the root's.
+        .environment(\.popToProviders, PopToProvidersAction(stack: "account") { path.popToProviders() })
+        // This stack isn't navPath; the focus must follow it all the same.
+        .onChange(of: path) { _, path in model.followVisiblePage(path.last) }
         .task {
             // The new-host notice's Remove, from outside this sheet.
             if let host = model.pendingHostRemoval {
@@ -221,62 +68,19 @@ struct AccountView: View {
             #if DEBUG
             let page = model.devAccountPage
             model.devAccountPage = nil
-            switch page {
-            case "remove": removingDevice = model.accountDevices?.first(where: \.removable)
-            case "remove-host":
-                removingHost = model.accountRows.first.map { PendingAccountHost(hostId: $0.hostId, name: $0.name) }
-            case "delete": devDeleting = true
-            case "link": linking = model.accountIdentities.flatMap { linkable($0).first }
-            case "add": devAdding = true
-            default: break
+            if page == "remove-host" {
+                removingHost = model.accountRows.first?.pending
             }
             #endif
-            // Side by side: a slow host list mustn't hold the devices back.
-            async let hosts: Void = model.accountRefreshHosts()
-            async let devices: Void = model.accountRefreshDevices()
-            async let identities: Void = model.accountRefreshIdentities()
-            async let profile: Void = model.accountRefreshProfile()
-            async let methods: Void = model.accountRefreshServerMethods()
-            _ = await (hosts, devices, identities, profile, methods)
         }
-        #if DEBUG
-        .navigationDestination(isPresented: $devDeleting) {
-            DeleteAccountView(model: model, server: hostOf(session.serverOrigin))
-        }
-        .navigationDestination(isPresented: $devAdding) {
-            AddAccountHostView(model: model)
-        }
-        #endif
-        .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-                Button("Done") { dismiss() }
-            }
-        }
-        .alert(
-            "Pair with this host?",
-            isPresented: Binding(
-                get: { pendingAccountPair != nil },
-                set: { if !$0 { pendingAccountPair = nil } })
-        ) {
-            Button("Cancel", role: .cancel) { pendingAccountPair = nil }
-            Button("Pair") {
-                let row = pendingAccountPair
-                pendingAccountPair = nil
-                if let row { startAccountPair(row) }
-            }
-        } message: {
-            Text("This disconnects \(model.currentHostLabel ?? "the current host") but doesn't forget it.")
-        }
-        .alert("Sign out everywhere?", isPresented: $confirmingSignOutEverywhere) {
-            Button("Cancel", role: .cancel) {}
-            Button("Sign out", role: .destructive) {
-                Task { await model.accountSignOut(everywhere: true) }
-            }
-        } message: {
-            Text("Your account is signed out on every device, and each one needs to sign in again before it gets notifications. Paired hosts stay paired.")
+        .onDisappear {
+            // Closing the sheet cancels a pairing ask that is still
+            // waiting; a late offer must not replace the session the
+            // reader went back to.
+            model.invalidateAccountPairing()
+            model.followVisiblePage(model.navPath.last)
         }
         // The root shows it while no sheet is up; here while this one is.
-        // With several hosts, their rows are right here to remove.
         .alert("New Host Joined", isPresented: Binding(
             get: { model.newHostNotice != nil },
             set: { if !$0 { model.dismissNewHostNotice() } }
@@ -287,305 +91,14 @@ struct AccountView: View {
                     model.dismissNewHostNotice()
                     removingHost = host
                 }
+            } else if model.accountSession != nil {
+                Button("Review Hosts") {
+                    model.dismissNewHostNotice()
+                    path.append(.hosts)
+                }
             }
         } message: {
             Text((model.newHostNotice ?? "") + "\n\n" + HostLinkCopy.newHostsHint)
-        }
-    }
-
-    private func emailSection(_ session: AccountSession) -> some View {
-        Section {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Email")
-                    Text(session.email ?? "None yet")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                NavigationLink {
-                    ChangeEmailView(model: model) { emailSaved = true }
-                } label: {
-                    Text(session.email == nil ? "Add email" : "Change email")
-                        .foregroundStyle(.tint)
-                }
-                .fixedSize()
-                .disabled(model.accountBusy)
-            }
-        } footer: {
-            if emailSaved { Text("Email saved.") }
-        }
-    }
-
-    /// The server's providers the account hasn't linked, in button order;
-    /// none until the server said which it offers.
-    private func linkable(_ identities: AccountIdentities) -> [String] {
-        let offered = model.accountServerMethods?.providers ?? []
-        let linked = Set(identities.identities.map(\.provider))
-        return SignInProviders.ids.filter { offered.contains($0) && !linked.contains($0) }
-    }
-
-    /// The password, each linked provider, and the server's other providers
-    /// to link (ADR-0044 §4, #631). A server from before sign-in methods
-    /// keeps Change Password.
-    @ViewBuilder
-    private var signInMethodsSection: some View {
-        Section {
-            if model.accountIdentitiesUnsupported {
-                NavigationLink("Change Password") {
-                    ChangePasswordView(model: model, hasPassword: true) { methodsNotice = $0 }
-                }
-                .disabled(model.accountBusy)
-            } else if let identities = model.accountIdentities {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Password")
-                        Text(identities.hasPassword ? "Set" : "Not set")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    NavigationLink {
-                        ChangePasswordView(model: model, hasPassword: identities.hasPassword) { methodsNotice = $0 }
-                    } label: {
-                        Text(identities.hasPassword ? "Change password" : "Set password")
-                            .foregroundStyle(.tint)
-                    }
-                    .fixedSize()
-                    .disabled(model.accountBusy)
-                }
-                ForEach(identities.identities, id: \.provider) { identity in
-                    HStack(spacing: 12) {
-                        SignInProviderMark(provider: identity.provider, size: 20)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(SignInProviders.name(identity.provider))
-                            if let email = identity.email {
-                                Text(email)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        Spacer()
-                        Button("Remove") { unlinking = identity.provider }
-                            .buttonStyle(.tactile(.glass))
-                            .controlSize(.small)
-                            .disabled(model.accountBusy)
-                    }
-                }
-                ForEach(linkable(identities), id: \.self) { provider in
-                    HStack(spacing: 12) {
-                        SignInProviderMark(provider: provider, size: 20)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(SignInProviders.name(provider))
-                            Text("Not linked")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Button("Link") { linking = provider }
-                            .buttonStyle(.tactile(.glass))
-                            .controlSize(.small)
-                            .disabled(model.accountBusy)
-                    }
-                }
-            } else if let failed = model.accountIdentitiesError {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Couldn't load sign-in methods. \(failed)")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    Button("Try again") {
-                        Task { await model.accountRefreshIdentities() }
-                    }
-                }
-            } else {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Loading sign-in methods…")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        } header: {
-            Text("Sign-in Methods")
-        } footer: {
-            if let methodsNotice { Text(methodsNotice) }
-        }
-    }
-
-    private var devicesSection: some View {
-        Section {
-            if let devices = model.accountDevices {
-                ForEach(devices) { device in
-                    deviceRow(device)
-                }
-            } else if model.accountDevicesError == nil {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Loading devices…")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            if let error = model.accountDevicesError {
-                Text(error)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-            }
-        } header: {
-            Text("Devices")
-        } footer: {
-            Text("Every app and browser signed in to your account, and the hosts each joined through it.")
-        }
-    }
-
-    private func deviceRow(_ device: AccountDevice) -> some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(device.current ? "This iPhone" : device.name ?? "Unknown device")
-                Text(signInLine(device))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if !device.hosts.isEmpty {
-                    Text(device.hosts
-                        .map { "\($0.name): \(AccountCopy.deviceHostState($0.state))" }
-                        .joined(separator: " · "))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-            if device.removable {
-                Button("Remove") { removingDevice = device }
-                    .buttonStyle(.tactile(.glass))
-                    .controlSize(.small)
-                    .disabled(model.accountBusy)
-            } else if device.kickedAt != nil {
-                Text("Removed")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .swipeActions {
-            if device.removable, !model.accountBusy {
-                Button("Remove", role: .destructive) { removingDevice = device }
-            }
-        }
-    }
-
-    private func signInLine(_ device: AccountDevice) -> String {
-        let signIn = "Last sign-in " + relative(device.lastSeenAt)
-        guard let kickedAt = device.kickedAt else { return signIn }
-        return signIn + " · removed " + relative(kickedAt)
-    }
-
-    private func relative(_ epochMs: Double) -> String {
-        Date(timeIntervalSince1970: epochMs / 1000).formatted(.relative(presentation: .named))
-    }
-
-    @ViewBuilder
-    private func accountRow(_ row: AccountHostRow) -> some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(row.name)
-                HStack(spacing: 5) {
-                    Circle()
-                        .fill(row.online ? Color.green : Color.secondary)
-                        .frame(width: 6, height: 6)
-                    Text(row.online ? "Online" : "Offline")
-                    Text("·")
-                    Text(statusLabel(row.status))
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                if row.status != .paired, let reason = row.pairingReason {
-                    Text(reason)
-                        .font(.caption2)
-                        .foregroundStyle(.orange)
-                }
-            }
-            Spacer()
-            accountAction(row)
-        }
-        // However this iPhone paired with it: removal is the server's act.
-        .swipeActions {
-            if !model.accountBusy {
-                Button("Remove", role: .destructive) { removeHost(row) }
-                    .tint(.red)
-            }
-        }
-        .contextMenu {
-            Button("Remove from Account", image: .trash2, role: .destructive) { removeHost(row) }
-                .disabled(model.accountBusy)
-        }
-    }
-
-    private func removeHost(_ row: AccountHostRow) {
-        removingHost = PendingAccountHost(hostId: row.hostId, name: row.name)
-    }
-
-    @ViewBuilder
-    private func accountAction(_ row: AccountHostRow) -> some View {
-        switch row.action {
-        case .connect(let hostKey):
-            // Already paired, so already connecting with the rest (#429).
-            Text(model.connectionLabel(for: hostKey))
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-        case .pair, .rePair:
-            if model.accountPairingHostId == row.hostId {
-                ProgressView().controlSize(.small)
-            } else {
-                Button(row.action == .rePair ? "Pair again" : "Pair") {
-                    requestAccountPair(row)
-                }
-                .buttonStyle(.tactile(.glass))
-                .controlSize(.small)
-                .disabled(!row.pairable || model.accountBusy)
-            }
-        }
-    }
-
-    private func statusLabel(_ status: AccountHostRowStatus) -> String {
-        switch status {
-        case .paired: "Paired"
-        case .unpaired: "Not paired"
-        case .keyChanged: "Key changed"
-        case .rejected: "Refused by host"
-        }
-    }
-
-    private func requestAccountPair(_ row: AccountHostRow) {
-        if model.connected, model.currentHostKey != row.storedHostKey {
-            pendingAccountPair = row
-        } else {
-            startAccountPair(row)
-        }
-    }
-
-    private func startAccountPair(_ row: AccountHostRow) {
-        Task {
-            if await model.pairViaAccount(hostId: row.hostId) {
-                dismiss()
-            }
-        }
-    }
-}
-
-/// The official server's privacy policy and terms (#455), at the foot of
-/// the account screens. A self-hosted server's operator answers for its
-/// own; the pages say so.
-struct LegalLinksSection: View {
-    var body: some View {
-        Section {
-        } footer: {
-            HStack(spacing: 6) {
-                Link("Privacy Policy", destination: URL(string: "https://pinomad.si/privacy/")!)
-                Text("·")
-                Link("Terms of Service", destination: URL(string: "https://pinomad.si/terms/")!)
-            }
-            .font(.footnote)
-            .frame(maxWidth: .infinity)
         }
     }
 }

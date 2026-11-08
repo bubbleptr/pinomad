@@ -66,7 +66,7 @@ extension AppModel {
                 }
             }
             if sawImage {
-                problem = problem ?? "Images are attached from Add images…"
+                problem = problem ?? "Images are attached from Add Images."
             }
             let added = tray.add(sources)
             if let problem { tray.report(problem) }

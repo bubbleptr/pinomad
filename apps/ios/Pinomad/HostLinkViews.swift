@@ -3,7 +3,7 @@ import SwiftUI
 import UIKit
 
 /// How a computer joins this account (#497), shared by the first-host home
-/// and Account → Add a Host: the tokenless command to run there, the field
+/// and Settings → Add Host: the tokenless command to run there, the field
 /// for the code it then shows, and the one-use token command behind
 /// Advanced for a host that has to join without anyone confirming.
 struct AddAccountHostContent: View {
@@ -474,23 +474,5 @@ struct OneTimeTokenDisclosure: View {
         case .success(let value): token = value
         case .failure(let failure): error = AccountCopy.message(failure)
         }
-    }
-}
-
-/// Account → Add a Host: the same ways in as the first-host home.
-struct AddAccountHostView: View {
-    let model: AppModel
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("A host is the computer that runs your agents: a Mac or Linux machine. Open a terminal there and run:")
-                    .foregroundStyle(.secondary)
-                AddAccountHostContent(model: model)
-            }
-            .padding(20)
-        }
-        .navigationTitle("Add a Host")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }

@@ -170,7 +170,8 @@ extension AppModel {
         }
     }
 
-    /// The account's hosts and devices (#452): this iPhone, a Mac whose
+    /// The account's hosts and devices (#452): mbp paired here, omarchy
+    /// re-keyed, studio and an offline old-host to pair; this iPhone, a Mac whose
     /// removal one host hasn't confirmed, a removed iPad, and an old app's
     /// nameless entry. `old-host` doesn't report devices, so the Remove
     /// form names it.
@@ -181,10 +182,18 @@ extension AppModel {
             AccountHostRow(
                 hostId: "demo-mbp", name: "mbp", online: true, pairing: .available, status: .paired,
                 action: .connect(hostKey: "demo-mbp"), storedHostKey: "demo-mbp", deviceReports: true),
+            // Reinstalled since this iPhone paired: its row offers Pair again.
+            AccountHostRow(
+                hostId: "demo-omarchy", name: "omarchy", online: true, pairing: .available, status: .keyChanged,
+                action: .rePair, storedHostKey: "demo-omarchy", deviceReports: true),
+            AccountHostRow(
+                hostId: "demo-studio", name: "studio", online: true, pairing: .available, status: .unpaired,
+                action: .pair, storedHostKey: nil, deviceReports: true),
             AccountHostRow(
                 hostId: "demo-old", name: "old-host", online: false, pairing: .offline, status: .unpaired,
                 action: .pair, storedHostKey: nil, deviceReports: false),
         ]
+        accountHostsLoaded = true
         accountDevices = [
             AccountDevice(
                 id: 3, name: "iPhone", createdAt: now - 9 * 86_400_000, lastSeenAt: now - 5 * minute,
