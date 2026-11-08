@@ -149,6 +149,12 @@ export class OutputBuffer {
     const end = this.end;
     const from = since === undefined ? this.#start : Math.min(Math.max(since, this.#start), end);
     let to = Math.min(end, from + maxChunk);
+    // Never split an ANSI escape sequence: a client that strips or renders
+    // the text would otherwise see the incomplete tail. next stays raw.
+    if (to < end) {
+      const partial = partialEscapeStart(this.#buffer, from - this.#start, to - this.#start);
+      if (partial !== undefined && this.#start + partial > from) to = this.#start + partial;
+    }
     // Never end a piece between the halves of a surrogate pair.
     if (to < end && isHighSurrogate(this.#buffer.charCodeAt(to - this.#start - 1))) to--;
     const text = this.#buffer.slice(from - this.#start, to - this.#start);
@@ -199,4 +205,69 @@ export class OutputBuffer {
 
 function isHighSurrogate(code: number): boolean {
   return code >= 0xd800 && code <= 0xdbff;
+}
+
+/** The start of an escape sequence the slice ends inside, or undefined. */
+function partialEscapeStart(text: string, from: number, to: number): number | undefined {
+  let index = from;
+  while (index < to) {
+    if (text.charCodeAt(index) !== 0x1b) {
+      index++;
+      continue;
+    }
+    const end = escapeEnd(text, index, to);
+    if (end === -1) return index;
+    index = end;
+  }
+  return undefined;
+}
+
+/** The index after a complete escape sequence, or -1 when it runs past `limit`. */
+function escapeEnd(text: string, start: number, limit: number): number {
+  let index = start + 1;
+  if (index >= limit) return -1;
+  const kind = text.charCodeAt(index);
+  if (kind === 0x5b) {
+    // CSI: parameter/intermediate bytes, then one final byte in 0x40..0x7e.
+    index++;
+    while (index < limit) {
+      const code = text.charCodeAt(index);
+      if (code >= 0x40 && code <= 0x7e) return index + 1;
+      index++;
+    }
+    return -1;
+  }
+  if (kind === 0x5d) {
+    // OSC: BEL or ST terminates it.
+    index++;
+    while (index < limit) {
+      const code = text.charCodeAt(index);
+      if (code === 0x07) return index + 1;
+      if (code === 0x1b && index + 1 < limit && text.charCodeAt(index + 1) === 0x5c) return index + 2;
+      index++;
+    }
+    return -1;
+  }
+  if (kind === 0x50 || kind === 0x58 || kind === 0x5e || kind === 0x5f) {
+    // DCS, SOS, PM, APC: only ST terminates them.
+    index++;
+    while (index < limit) {
+      if (text.charCodeAt(index) === 0x1b && index + 1 < limit && text.charCodeAt(index + 1) === 0x5c) {
+        return index + 2;
+      }
+      index++;
+    }
+    return -1;
+  }
+  // A short escape: intermediates then one final byte. Unknown forms still
+  // consume one following character so scanning always advances.
+  while (index < limit) {
+    const code = text.charCodeAt(index);
+    if (code >= 0x20 && code <= 0x2f) {
+      index++;
+      continue;
+    }
+    return index + 1;
+  }
+  return -1;
 }

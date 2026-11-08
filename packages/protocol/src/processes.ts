@@ -76,6 +76,8 @@ export interface ProcessOutput {
   readonly status: ProcessState;
   /** The exit code when `status` is `exited`; `null` means it died by signal. */
   readonly exitCode?: number | null;
+  /** The host no longer has this process's output (history, restart, or budget). */
+  readonly released?: true;
 }
 
 export const processStream = (id: ProcessId) => `process:${id}` as const;

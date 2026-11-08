@@ -52,6 +52,17 @@ describe("processes extension", () => {
     expect(extension.docs?.[0]).toMatchObject({ presentation: "pinomad.processes" });
   });
 
+  it("says the output is unavailable when the runtime released it", async () => {
+    const runtime = {
+      output: async () => ({ text: "", next: 0, truncated: true, status: "lost" as const, released: true as const }),
+    } as unknown as ProcessRuntime;
+    const extension = createProcesses({ runtime });
+    const tool = (extension.extension.tools ?? []).find((candidate) => candidate.name === "process_output")!;
+    const { api } = apiWithMemo();
+    const result = await tool.execute({ id: "p1" }, api as never, context);
+    expect(JSON.stringify(result.output)).toContain("Output is no longer available");
+  });
+
   it("memoizes the process id before starting and reuses it on a replay", async () => {
     const start = vi.fn(async (input: { id?: string; name: string }) => processInfo(input.id!, input.name));
     const runtime = { start } as unknown as ProcessRuntime;

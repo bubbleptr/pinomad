@@ -5,10 +5,10 @@
 // the working directory) but shares its family's document and limit.
 //
 // Output uses the same bounded, positioned buffer as terminals. On an exit
-// with no stop reason the host reports it to the family root's conversation,
-// and the report and the document update share one commit. A stop reason is
-// remembered before any signal, so an exit after that point is a stop and is
-// never reported.
+// with no stop reason the host reports it to the conversation that started the
+// process, and the report and the family-root document update share one
+// commit. A stop reason is remembered before any signal, so an exit after that
+// point is a stop and is never reported.
 import { randomUUID } from "node:crypto";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { Context } from "@earendil-works/chord";
@@ -35,6 +35,7 @@ export const ENDED_PROCESS_LIMIT = 20;
 /** Total output retained for ended processes across the whole host. */
 export const ENDED_OUTPUT_BUDGET = 64 * 1024 * 1024;
 export const STOP_GRACE_MS = 5_000;
+export const GROUP_WAIT_MS = 2_000;
 const OUTPUT_CHUNK = 16 * 1024;
 const REPORT_LIMIT = 4 * 1024;
 const REPORT_LINES = 40;
@@ -54,6 +55,8 @@ export interface ProcessesOptions {
   /** How long output is gathered before it reaches viewers. */
   readonly flushMs?: number;
   readonly stopGraceMs?: number;
+  /** How long to wait after SIGKILL before accepting a group that still appears alive. */
+  readonly groupWaitMs?: number;
   /** Sends a signal to a pid (negative for a process group); injected by tests. */
   readonly kill?: (pid: number, signal: NodeJS.Signals) => void;
   /** Whether the process group still has live members; injected by tests. */
@@ -112,6 +115,8 @@ interface Entry {
   groupTimer: ReturnType<typeof setTimeout> | undefined;
   /** SIGKILL was sent; do not schedule a second grace period. */
   killed: boolean;
+  killedAt: number | undefined;
+  killWaitTimer: ReturnType<typeof setTimeout> | undefined;
   /** The stopped document write is running or done. */
   finishing: boolean;
   generation: number;
@@ -220,6 +225,8 @@ export class Processes implements ProcessRuntime {
       killTimer: undefined,
       groupTimer: undefined,
       killed: false,
+      killedAt: undefined,
+      killWaitTimer: undefined,
       finishing: false,
       generation: 0,
       released: false,
@@ -251,18 +258,30 @@ export class Processes implements ProcessRuntime {
   }, context: Context): Promise<ProcessOutput> {
     const root = await this.#root(input.conversationId);
     const entry = this.#processes.get(input.id);
-    if (entry === undefined || entry.root !== root) throw new Error("Unknown process");
-    if (entry.released) throw new Error("The output of this process is no longer available");
-    // Show what the pty already wrote without waiting for the 8 ms flush.
-    entry.output.flush();
-    const slice = entry.output.snapshot(input.since, OUTPUT_CHUNK);
-    const state = entry.info.state;
+    if (entry !== undefined && entry.root === root && !entry.released) {
+      // Show what the pty already wrote without waiting for the 8 ms flush.
+      entry.output.flush();
+      const slice = entry.output.snapshot(input.since, OUTPUT_CHUNK);
+      const state = entry.info.state;
+      return {
+        text: stripAnsi(slice.text),
+        next: slice.next,
+        truncated: slice.truncated,
+        status: state,
+        ...(typeof state === "object" && "exited" in state ? { exitCode: state.exited } : {}),
+      };
+    }
+    // A lost or previous-host entry may have no memory; if the family document
+    // still lists it, answer with that state and say the output is gone.
+    const record = await this.#docEntry(root, input.id, context);
+    if (record === undefined) throw new Error("Unknown process");
     return {
-      text: stripAnsi(slice.text),
-      next: slice.next,
-      truncated: slice.truncated,
-      status: state,
-      ...(typeof state === "object" && "exited" in state ? { exitCode: state.exited } : {}),
+      text: "",
+      next: input.since ?? 0,
+      truncated: true,
+      status: record.state,
+      ...(typeof record.state === "object" && "exited" in record.state ? { exitCode: record.state.exited } : {}),
+      released: true,
     };
   }
 
@@ -273,15 +292,30 @@ export class Processes implements ProcessRuntime {
   }, context: Context): Promise<ProcessInfo> {
     const root = await this.#root(input.conversationId);
     const entry = this.#processes.get(input.id);
-    if (entry === undefined) throw new Error("Unknown process");
-    if (entry.root !== root) throw new Error("This process does not belong to the conversation's family");
-    return await this.#stopEntry(entry, input.reason ?? "user", context);
+    if (entry !== undefined && entry.root === root) {
+      return await this.#stopEntry(entry, input.reason ?? "user", context);
+    }
+    if (entry !== undefined) throw new Error("This process does not belong to the conversation's family");
+    // The document may still describe an ended or lost process this host no
+    // longer tracks; there is nothing left to signal, so return that state.
+    const record = await this.#docEntry(root, input.id, context);
+    if (record === undefined) throw new Error("Unknown process");
+    return record;
   }
 
   async list(conversationId: ConversationId, context: Context): Promise<readonly ProcessInfo[]> {
     const root = await this.#root(conversationId);
     const doc = await this.#options.harness().snapshot(ProcessDoc, root, context);
     return doc?.processes ?? [];
+  }
+
+  async #docEntry(
+    root: ConversationId,
+    id: ProcessId,
+    context: Context,
+  ): Promise<ProcessInfo | undefined> {
+    const doc = await this.#options.harness().snapshot(ProcessDoc, root, context);
+    return doc?.processes.find((process) => process.id === id);
   }
 
   /** Pipe one process's output to a viewer; the returned stop detaches it. */
@@ -443,7 +477,14 @@ export class Processes implements ProcessRuntime {
     entry.killTimer = setTimeout(() => {
       entry.killTimer = undefined;
       entry.killed = true;
+      entry.killedAt = this.#now();
       this.#signal(entry, "SIGKILL");
+      // A group of zombies can keep kill(-pgid, 0) succeeding forever: never
+      // let stop, archive, close or install wait on it without a bound.
+      entry.killWaitTimer ??= setTimeout(
+        () => this.#finishAfterKillWait(entry),
+        this.#options.groupWaitMs ?? GROUP_WAIT_MS,
+      );
     }, grace);
   }
 
@@ -456,9 +497,25 @@ export class Processes implements ProcessRuntime {
         void this.#finishStopped(entry);
         return;
       }
+      const wait = this.#options.groupWaitMs ?? GROUP_WAIT_MS;
+      if (entry.killedAt !== undefined && this.#now() - entry.killedAt >= wait) {
+        this.#finishAfterKillWait(entry);
+        return;
+      }
       entry.groupTimer = setTimeout(check, 25);
     };
     check();
+  }
+
+  #finishAfterKillWait(entry: Entry): void {
+    entry.killWaitTimer = undefined;
+    if (entry.finishing || entry.released || !this.#processes.has(entry.info.id)) return;
+    if (this.#groupAlive(entry)) {
+      this.#diagnose(
+        `Process group ${entry.info.pid ?? "unknown"} still appears alive after SIGKILL; marking it stopped`,
+      );
+    }
+    void this.#finishStopped(entry);
   }
 
   #groupAlive(entry: Entry): boolean {
@@ -482,8 +539,10 @@ export class Processes implements ProcessRuntime {
   #clearStopTimers(entry: Entry): void {
     if (entry.killTimer !== undefined) clearTimeout(entry.killTimer);
     if (entry.groupTimer !== undefined) clearTimeout(entry.groupTimer);
+    if (entry.killWaitTimer !== undefined) clearTimeout(entry.killWaitTimer);
     entry.killTimer = undefined;
     entry.groupTimer = undefined;
+    entry.killWaitTimer = undefined;
   }
 
   async #fail(entry: Entry, reason: string, context: Context): Promise<void> {
@@ -534,7 +593,9 @@ export class Processes implements ProcessRuntime {
 
   async #reportAndWrite(entry: Entry): Promise<void> {
     const harness = this.#options.harness();
-    const conversation = await harness.conversation(entry.root, BACKGROUND_CONTEXT);
+    // The owner started the process (it may be a fork); the document still
+    // belongs to the family root.
+    const conversation = await harness.conversation(entry.info.owner, BACKGROUND_CONTEXT);
     const report = reportText(entry);
     if (conversation === undefined) {
       await this.#write(entry, BACKGROUND_CONTEXT);
@@ -665,21 +726,19 @@ export async function startProcesses(options: StartProcessesOptions): Promise<Pr
  * documents, so it works even when the pty module did not load.
  */
 export async function settleLostProcesses(harness: Harness, context: Context): Promise<void> {
-  const roots = new Set<ConversationId>();
   let cursor: import("@earendil-works/pi-durable").Cursor | undefined;
   do {
     const page = await harness.commit((tx) => tx.scanConversations({}, 256, cursor), context);
     for (const record of page.items) {
-      if (roots.has(record.id)) continue;
+      // Process documents live only on family roots; skip every fork and
+      // subagent before paying for a document snapshot.
+      if (record.parent !== undefined || record.owner !== undefined) continue;
       const doc = await harness.snapshot(ProcessDoc, record.id, context);
       if (doc === undefined || !doc.processes.some((process) => process.state === "starting" || process.state === "running")) {
         continue;
       }
-      const root = await familyRoot(harness, record.id, context);
-      if (roots.has(root)) continue;
-      roots.add(root);
       await harness.commit(async (tx) => {
-        const value = await tx.doc(ProcessDoc, root);
+        const value = await tx.doc(ProcessDoc, record.id);
         for (const process of value.processes) {
           if (process.state === "starting" || process.state === "running") process.state = "lost";
         }

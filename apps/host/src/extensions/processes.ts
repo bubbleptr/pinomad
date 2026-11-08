@@ -74,8 +74,12 @@ export function createProcesses(options: { readonly runtime?: ProcessRuntime }):
         ...(args.since === undefined ? {} : { since: args.since }),
       }, context);
       const heading = statusLine(value.status);
-      const body = value.text === "" ? "(no new output)" : value.text;
-      const truncated = value.truncated ? "\n(the beginning of the retained output was truncated)" : "";
+      const body = value.released === true
+        ? "Output is no longer available."
+        : value.text === "" ? "(no new output)" : value.text;
+      const truncated = value.truncated && value.released !== true
+        ? "\n(the beginning of the retained output was truncated)"
+        : "";
       return result(`${heading}\n${body}${truncated}`, value);
     },
   });

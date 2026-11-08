@@ -9,6 +9,7 @@ import { WebSocket } from "ws";
 import { describe, expect, it } from "vitest";
 import type { ServerFrame } from "@pinomad/protocol/frames.ts";
 import { ProcessDoc } from "../src/process-doc.ts";
+import { settleLostProcesses } from "../src/processes.ts";
 import type { PtyProcess } from "../src/terminals.ts";
 import { startChat, startFauxHost, tempDir, useCleanups } from "./support.ts";
 
@@ -146,9 +147,18 @@ async function entries(host: Awaited<ReturnType<typeof startFauxHost>>, conversa
   return JSON.stringify(page.items);
 }
 
-async function until(test: () => boolean, timeoutMs = 5000): Promise<void> {
+async function forkConversation(
+  host: Awaited<ReturnType<typeof startFauxHost>>,
+  root: ConversationId,
+) {
+  const conversation = await host.harness.conversation(root, CONTEXT);
+  const page = await conversation!.entries({}, 1, undefined, CONTEXT);
+  return await conversation!.fork(page.items[0]!.id, { ownership: { kind: "ownerless" } }, CONTEXT);
+}
+
+async function until(test: () => boolean | Promise<boolean>, timeoutMs = 5000): Promise<void> {
   const started = Date.now();
-  while (!test()) {
+  while (!(await test())) {
     if (Date.now() - started > timeoutMs) throw new Error("condition not met in time");
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
@@ -397,10 +407,104 @@ describe("Processes", () => {
     value.fake.ptys[1]!.emit("abcdefghijkl");
     value.fake.ptys[1]!.finish(0);
     await new Promise((resolve) => setTimeout(resolve, 30));
-    await expect(
-      value.runtime.output({ conversationId: value.conversationId, id: first.id }, CONTEXT),
-    ).rejects.toThrow("no longer available");
+    const evicted = await value.runtime.output({ conversationId: value.conversationId, id: first.id }, CONTEXT);
+    expect(evicted).toMatchObject({ released: true, status: { exited: 0 } });
     const kept = await value.runtime.output({ conversationId: value.conversationId, id: second.id }, CONTEXT);
     expect(kept.text).toBe("abcdefghijkl");
+  });
+
+  it("reports a self-exit to the fork that started it, while the document stays on the root", async () => {
+    const value = await setup();
+    const fork = await forkConversation(value.host, value.conversationId);
+    const process = await value.runtime.start(
+      { conversationId: fork.id, command: "sleep 30", name: "fork-monitor", cwd: CWD },
+      CONTEXT,
+    );
+    value.fake.ptys[0]!.finish(3);
+    await until(async () => {
+      const doc = await document(value.host, value.conversationId);
+      return doc?.processes.some((entry) => entry.id === process.id && entry.state !== "running") === true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(await entries(value.host, fork.id)).toContain("fork-monitor");
+    expect(await entries(value.host, fork.id)).toContain("exited with code 3");
+    expect(await entries(value.host, value.conversationId)).not.toContain("fork-monitor");
+    expect((await document(value.host, fork.id))?.processes ?? []).toEqual([]);
+  });
+
+  it("ends a stop after a bounded group wait when the group never disappears", async () => {
+    const diagnostics: string[] = [];
+    const fake = fakeSpawner({
+      onSignal: (pty, signal) => {
+        if (signal === "SIGTERM") pty?.finish(0, 15);
+      },
+    });
+    const value = await setup({
+      fake,
+      processes: {
+        stopGraceMs: 10,
+        groupWaitMs: 30,
+        groupAlive: () => true,
+        diagnostic: (message: string) => diagnostics.push(message),
+      },
+    });
+    const process = await startProcess(value);
+    const stopped = await value.runtime.stop(
+      { conversationId: value.conversationId, id: process.id, reason: "user" },
+      CONTEXT,
+    );
+    expect(stopped.state).toEqual({ stopped: "user" });
+    expect(fake.signals.map((entry) => entry.signal)).toEqual(["SIGTERM", "SIGKILL"]);
+    expect(diagnostics.join("\n")).toContain("still appears alive after SIGKILL");
+  });
+
+  it("settles only root documents and skips forks before snapshotting", async () => {
+    const value = await setup();
+    const fork = await forkConversation(value.host, value.conversationId);
+    const snapshots: number[] = [];
+    const harness = value.host.harness;
+    const wrapped = {
+      snapshot: (token: typeof ProcessDoc, id: ConversationId, context: typeof CONTEXT) => {
+        snapshots.push(Number(id));
+        return harness.snapshot(token, id, context);
+      },
+      commit: (change: Parameters<typeof harness.commit>[0], context: typeof CONTEXT) => harness.commit(change, context),
+    } as unknown as Parameters<typeof settleLostProcesses>[0];
+    await settleLostProcesses(wrapped, CONTEXT);
+    expect(snapshots).toContain(Number(value.conversationId));
+    expect(snapshots).not.toContain(Number(fork.id));
+  });
+
+  it("returns document state and released output for entries no longer in memory", async () => {
+    const value = await setup();
+    await value.host.harness.commit(async (tx) => {
+      const doc = await tx.doc(ProcessDoc, value.conversationId);
+      doc.processes.push({
+        id: "left-over",
+        owner: value.conversationId,
+        name: "left-over",
+        command: "sleep 30",
+        pid: 1234,
+        startedAt: 1,
+        endedAt: 2,
+        state: "lost",
+      });
+    }, CONTEXT);
+    const output = await value.runtime.output(
+      { conversationId: value.conversationId, id: "left-over", since: 7 },
+      CONTEXT,
+    );
+    expect(output).toMatchObject({ text: "", next: 7, released: true, status: "lost" });
+    const stopped = await value.runtime.stop(
+      { conversationId: value.conversationId, id: "left-over", reason: "user" },
+      CONTEXT,
+    );
+    expect(stopped).toMatchObject({ id: "left-over", state: "lost" });
+    await expect(
+      value.runtime.output({ conversationId: value.conversationId, id: "absent" }, CONTEXT),
+    ).rejects.toThrow("Unknown process");
+    await expect(
+      value.runtime.stop({ conversationId: value.conversationId, id: "absent" }, CONTEXT),
+    ).rejects.toThrow("Unknown process");
   });
 });
