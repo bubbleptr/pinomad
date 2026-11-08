@@ -625,6 +625,140 @@ describe("sign-in methods in settings", () => {
   });
 });
 
+describe("linking from a native app's settings (#631)", () => {
+  const challenge = createHash("sha256").update("v".repeat(43)).digest("base64url");
+  const nativeParams = (redirectUri = "pinomad://auth") => ({ client: "native", redirect_uri: redirectUri, code_challenge: challenge, state: "client-state" });
+
+  async function grant(started: Started, token: string): Promise<string> {
+    return (await post(started.relay, "/api/reauth", { password: PASSWORD }, bearer(token))).json.reauth as string;
+  }
+
+  /** The app's link call, then its browser opening the start URL: the provider's answer, and the browser's binding. */
+  async function begin(
+    started: Started,
+    token: string,
+    provider: FakeProvider,
+    identity: FakeIdentity,
+    redirectUri?: string,
+  ): Promise<{ readonly code: string; readonly state: string; readonly binding: string; readonly startUrl: string }> {
+    const begun = await post(started.relay, `/api/oauth/${provider}/link`, { reauth: await grant(started, token), ...nativeParams(redirectUri) }, bearer(token));
+    expect(begun.status).toBe(200);
+    // The app's HTTP client gets no cookie: the browser sets its own.
+    expect(setCookie(begun, BINDING_COOKIE)).toBeUndefined();
+    const startUrl = new URL(begun.json.url as string);
+    expect(startUrl.origin).toBe(ORIGIN);
+    const opened = await api(started.relay, { path: startUrl.pathname + startUrl.search });
+    expect(opened.status).toBe(302);
+    const binding = setCookie(opened, BINDING_COOKIE)!;
+    expect(binding).toBeDefined();
+    return { ...started.idp.authorize(provider, location(opened), identity), binding, startUrl: startUrl.pathname + startUrl.search };
+  }
+
+  it.each(["google", "github"] as const)("links %s and sends the browser back to the app", async (provider) => {
+    const started = await startServer();
+    const token = await passwordToken(started);
+    const { code, state, binding } = await begin(started, token, provider, { sub: "8101", email: "elsewhere@example.net" });
+    const back = await callback(started, provider, { code, state }, binding);
+    expect(back.status).toBe(302);
+    const to = new URL(location(back));
+    expect(`${to.protocol}//${to.host}${to.pathname}`).toBe("pinomad://auth");
+    expect(Object.fromEntries(to.searchParams)).toEqual({ linked: provider, state: "client-state" });
+    const identities = await api(started.relay, { path: "/api/me/identities", headers: bearer(token) });
+    expect(identities.json.identities).toMatchObject([{ provider, email: "elsewhere@example.net" }]);
+  });
+
+  it("opens a start URL once, and only in the browser that opened it", async () => {
+    const started = await startServer();
+    const token = await passwordToken(started);
+    const { code, state, binding, startUrl } = await begin(started, token, "github", { sub: "8102", email: "elsewhere@example.net" }, "http://127.0.0.1:53682/callback");
+    const replay = await api(started.relay, { path: startUrl });
+    expect(webLanding(replay).get("oauth_error")).toBe("invalid_state");
+    // The ticket from the URL is not the browser's binding.
+    const ticket = new URLSearchParams(startUrl.split("?")[1]).get("link")!;
+    const forged = await callback(started, "github", { code, state }, ticket);
+    expect(new URL(location(forged)).searchParams.get("error")).toBe("invalid_state");
+    const elsewhere = await begin(started, token, "github", { sub: "8102", email: "elsewhere@example.net" }, "http://127.0.0.1:53682/callback");
+    const back = new URL(location(await callback(started, "github", { code: elsewhere.code, state: elsewhere.state }, elsewhere.binding)));
+    expect(back.origin + back.pathname).toBe("http://127.0.0.1:53682/callback");
+    expect(back.searchParams.get("linked")).toBe("github");
+  });
+
+  it("answers the app's redirect when the identity is another account's", async () => {
+    const started = await startServer();
+    await createViaPending(started, "google", IDENTITY.google);
+    const { code, state, binding } = await begin(started, await passwordToken(started), "google", IDENTITY.google);
+    const to = new URL(location(await callback(started, "google", { code, state }, binding)));
+    expect(Object.fromEntries(to.searchParams)).toEqual({ error: "identity_taken", state: "client-state" });
+  });
+
+  it("refuses the link when the session that started it has ended", async () => {
+    const started = await startServer();
+    const token = await passwordToken(started);
+    const { code, state, binding } = await begin(started, token, "github", { sub: "666", email: "mallory@example.net" });
+    expect((await post(started.relay, "/api/sessions/revoke-all", {}, bearer(token))).status).toBe(204);
+    const to = new URL(location(await callback(started, "github", { code, state }, binding)));
+    expect(Object.fromEntries(to.searchParams)).toEqual({ error: "session_ended", state: "client-state" });
+    const fresh = await passwordToken(started);
+    expect((await api(started.relay, { path: "/api/me/identities", headers: bearer(fresh) })).json.identities).toEqual([]);
+  });
+
+  it("keeps the web link on the browser's cookie when the client says web", async () => {
+    const started = await startServer();
+    const token = await passwordToken(started);
+    const begun = await post(started.relay, "/api/oauth/github/link", { reauth: await grant(started, token), client: "web" }, bearer(token));
+    const binding = setCookie(begun, BINDING_COOKIE);
+    expect(binding).toBeDefined();
+    const { code, state } = started.idp.authorize("github", begun.json.url as string, { sub: "8103", email: "elsewhere@example.net" });
+    expect(webLanding(await callback(started, "github", { code, state }, binding)).get("oauth_linked")).toBe("github");
+  });
+
+  it("needs a confirmation and an allowed redirect", async () => {
+    const started = await startServer();
+    const token = await passwordToken(started);
+    expect((await post(started.relay, "/api/oauth/github/link", nativeParams(), bearer(token))).status).toBe(400);
+    const reauth = await grant(started, token);
+    for (const redirectUri of ["https://evil.example/callback", "http://localhost:53682/callback", "otherapp://auth"]) {
+      expect((await post(started.relay, "/api/oauth/github/link", { reauth, ...nativeParams(redirectUri) }, bearer(token))).status).toBe(400);
+    }
+    expect((await post(started.relay, "/api/oauth/github/link", { reauth, ...nativeParams(), client: "other" }, bearer(token))).status).toBe(400);
+  });
+
+  describe("Apple on iOS", () => {
+    it("binds the Apple identity to the signed-in account with a confirmation", async () => {
+      const started = await startServer();
+      const token = await passwordToken(started);
+      const apple = { sub: "001.linked", email: "x1@privaterelay.appleid.com" };
+      const linked = await post(started.relay, "/api/oauth/apple/native", { ...started.idp.appleNative(apple, { nonce: "n" }), nonce: "n", reauth: await grant(started, token) }, bearer(token));
+      expect(linked.status).toBe(204);
+      const identities = await api(started.relay, { path: "/api/me/identities", headers: bearer(token) });
+      expect(identities.json.identities).toMatchObject([{ provider: "apple" }]);
+      // And it signs in to this account from now on.
+      const again = await post(started.relay, "/api/oauth/apple/native", started.idp.appleNative(apple));
+      expect((again.json.user as { email: string }).email).toBe(OWNER);
+    });
+
+    it("refuses a wrong confirmation before asking Apple, and an identity another account has", async () => {
+      const started = await startServer();
+      const token = await passwordToken(started);
+      const wrong = await post(started.relay, "/api/oauth/apple/native", { ...started.idp.appleNative(IDENTITY.apple), password: "not the password at all" }, bearer(token));
+      expect([wrong.status, wrong.json.error]).toEqual([403, "wrong_password"]);
+      expect((await post(started.relay, "/api/oauth/apple/native", { ...started.idp.appleNative(IDENTITY.apple), reauth: "made-up" }, bearer(token))).json.error).toBe(
+        "invalid_reauth",
+      );
+
+      await createViaPending(started, "apple", IDENTITY.apple);
+      const taken = await post(started.relay, "/api/oauth/apple/native", { ...started.idp.appleNative(IDENTITY.apple), password: PASSWORD }, bearer(token));
+      expect([taken.status, taken.json.error]).toEqual([409, "identity_taken"]);
+    });
+
+    it("needs a live session", async () => {
+      const started = await startServer();
+      const linked = await post(started.relay, "/api/oauth/apple/native", { ...started.idp.appleNative(IDENTITY.apple), password: PASSWORD }, bearer("gone"));
+      expect(linked.status).toBe(401);
+    });
+  });
+});
+
 describe("re-auth without a password", () => {
   /** A passwordless account from Google, signed in on two devices. */
   async function twoDevices(started: Started): Promise<{ readonly a: Record<string, string>; readonly b: Record<string, string> }> {

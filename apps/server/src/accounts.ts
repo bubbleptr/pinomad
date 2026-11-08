@@ -648,6 +648,20 @@ export interface Accounts {
     /** link: the session starting it, which must outlive the provider's answer. */
     readonly linkSessionToken?: string;
   }): { readonly status: "ok"; readonly state: string; readonly verifier: string; readonly nonce: string } | { readonly status: "limited" } | { readonly status: "busy" };
+  /**
+   * Opens a native app's link flow in the browser it runs in (#631): the
+   * flow was stored with the hash of a one-time `ticket` as its binding,
+   * and the app's browser trades that ticket for a binding cookie of its
+   * own. Both the state and the binding change here, so the start URL the
+   * app was given works once. Undefined when no live link flow of
+   * `provider` holds that ticket; counted per source IP with the starts.
+   */
+  startNativeLink(args: {
+    readonly provider: OAuthProvider;
+    readonly ticket: string;
+    readonly bindingHash: string;
+    readonly ip: string;
+  }): { readonly status: "ok"; readonly state: string; readonly verifier: string; readonly nonce: string } | { readonly status: "limited" } | undefined;
   /** Spends the flow `state` names; undefined when unknown, expired or another provider's. */
   takeOAuthFlow(provider: OAuthProvider, state: string): OAuthFlow | undefined;
   /**
@@ -2323,6 +2337,19 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
         at + OAUTH_FLOW_TTL_MS,
       );
       return { status: "ok", state, verifier, nonce };
+    },
+
+    startNativeLink({ provider, ticket, bindingHash, ip }) {
+      if (oauthStarts.hit(ip, oauthLimits.startMaxPerIp, oauthLimits.startWindowMs)) return { status: "limited" };
+      const state = randomBytes(32).toString("base64url");
+      const row = db
+        .prepare(
+          `UPDATE oauth_flows SET state_hash = ?, binding_hash = ?
+           WHERE binding_hash = ? AND provider = ? AND kind = 'link' AND redirect_uri IS NOT NULL AND expires_at > ?
+           RETURNING verifier, nonce`,
+        )
+        .get(sha256Hex(state), bindingHash, sha256Hex(ticket), provider, now()) as { verifier: string; nonce: string } | undefined;
+      return row === undefined ? undefined : { status: "ok", state, verifier: row.verifier, nonce: row.nonce };
     },
 
     takeOAuthFlow(provider, state) {
