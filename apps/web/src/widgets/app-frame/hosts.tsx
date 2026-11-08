@@ -13,7 +13,7 @@ import { useToast } from "@astryxdesign/core/Toast";
 import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { hostLabels, type StoredHost } from "@pinomad/client/stored-host.ts";
 import { hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import type { ConnectionMode } from "@pinomad/protocol/connection-mode.ts";
@@ -47,6 +47,7 @@ import { AddHostSteps } from "../account/add-host.tsx";
 import { RemoveHostDialog } from "../account/remove-host.tsx";
 import { accountHostFor } from "../account/repair-via-account.tsx";
 import { hostRoutes, type HostRoute } from "./host-routes.ts";
+import { useSettingsSubpage } from "./settings-subpage.ts";
 import {
   candidateEndLabel,
   failureLabel,
@@ -301,6 +302,8 @@ export function HostsSection({
     if (signedIn) void account.refreshHosts();
   }, [account, signedIn]);
   const detail = paired.hosts.find((host) => host.hostKey === detailKey);
+  const closeDetail = useCallback(() => setDetailKey(undefined), []);
+  const settingsOwnsBack = useSettingsSubpage(detail === undefined ? undefined : { title: paired.label(detail), back: closeDetail });
   // Only one host has live diagnostics: the open page's, else the focused one.
   const diagnosticsHostKey = detail?.hostKey ?? focus?.hostKey;
   const diagnosticsInfo = paired.infoOf(diagnosticsHostKey);
@@ -322,7 +325,8 @@ export function HostsSection({
         status={status(detail)}
         diagnostics={diagnostics}
         rtcAvailable={rtcAvailable}
-        onBack={() => setDetailKey(undefined)}
+        hasBack={!settingsOwnsBack}
+        onBack={closeDetail}
       />
     );
   }
@@ -450,12 +454,15 @@ function HostDetail({
   status,
   diagnostics,
   rtcAvailable,
+  hasBack,
   onBack,
 }: {
   host: StoredHost;
   status: string;
   diagnostics: RtcDiagnostics | undefined;
   rtcAvailable: boolean;
+  /** False where the Settings header already carries the way back. */
+  hasBack: boolean;
   onBack: () => void;
 }) {
   const paired = usePairedHosts();
@@ -504,10 +511,13 @@ function HostDetail({
   return (
     <VStack gap={5} role="group" aria-label={label}>
       <HStack gap={2} vAlign="center">
-        <IconButton label="Back to hosts" icon={<ArrowLeft aria-hidden="true" />} variant="ghost" size="sm" onClick={onBack} />
+        {hasBack ? (
+          <IconButton label="Back to hosts" icon={<ArrowLeft aria-hidden="true" />} variant="ghost" size="sm" onClick={onBack} />
+        ) : null}
         <HostStatusDot connected={connected} />
         <VStack gap={0} className="min-w-0">
-          <Heading level={3}>{label}</Heading>
+          {/* The Settings header names the host where it carries the way back. */}
+          {hasBack ? <Heading level={3}>{label}</Heading> : null}
           <Text type="supporting">{status}</Text>
         </VStack>
       </HStack>
