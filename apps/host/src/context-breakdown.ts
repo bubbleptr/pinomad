@@ -111,7 +111,8 @@ export function estimateRequest(payload: unknown, namespaces: readonly CodemodeN
   const tools = toolsOf(payload);
   if (system === "" && tools.length === 0) return undefined;
 
-  const skills = cut(system, "skills");
+  // pi's `formatSkillsForPrompt` listing; the context extension renders it as an untagged section.
+  const skills = cut(system, "available_skills");
   const codemode = cut(skills.rest, "codemode");
   const { builtin, mcp } = splitCodemode(codemode.inside, namespaces);
   let toolTokens = 0;

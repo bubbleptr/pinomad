@@ -1,4 +1,5 @@
 import { fauxAssistantMessage, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
+import { formatSkillsForPrompt } from "@earendil-works/pi-coding-agent";
 import type { Harness } from "@earendil-works/pi-durable";
 import { contextUsage } from "@pinomad/client/context-usage.ts";
 import { classify } from "@pinomad/protocol/presentation.ts";
@@ -14,7 +15,18 @@ const sum = (parts: Record<string, number>): number =>
   parts.system! + parts.skills! + parts.tools! + parts.mcp! + parts.messages!;
 
 const PREAMBLE = "You are PiNomad, a coding agent. ".repeat(40);
-const SKILLS = `<skills>\n${"- review: Review a diff against the repo's standards.\n".repeat(30)}</skills>`;
+// The skills section exactly as `createContext` renders it (an untagged section).
+const SKILLS = formatSkillsForPrompt(
+  Array.from({ length: 30 }, (_, index) => ({
+    name: `skill-${index}`,
+    description: "Review a diff against the repo's standards.",
+    filePath: `/skills/skill-${index}/SKILL.md`,
+    baseDir: `/skills/skill-${index}`,
+    sourceInfo: { path: `/skills/skill-${index}/SKILL.md`, source: "local", scope: "project", origin: "top-level" },
+    disableModelInvocation: false,
+  })),
+  "read",
+);
 const CODEMODE = [
   "<codemode>",
   "Tools scripts can call (`await tools.<name>(args)`):",
@@ -40,7 +52,8 @@ describe("estimateRequest", () => {
       },
       NAMESPACES,
     )!;
-    expect(estimate.skills).toBeGreaterThan(0);
+    const listing = SKILLS.slice(SKILLS.indexOf("<available_skills>"));
+    expect(estimate.skills).toBe(Math.ceil(listing.length / 4));
     // The "## not a namespace" line stays with the built-in tools: only known namespaces start MCP.
     const builtinCodemode = CODEMODE.slice(0, CODEMODE.indexOf("\n## github"));
     expect(estimate.system).toBeGreaterThanOrEqual(Math.floor((PREAMBLE.length + builtinCodemode.length) / 4) - 4);
