@@ -1481,10 +1481,10 @@ html[lang="zh-CN"] .split h2 {
   gap: 0.6rem;
 }
 
-.footer-sign img {
-  width: 1.25rem;
+.footer-sign .brand-mark {
+  width: auto;
   height: 1.25rem;
-  opacity: 0.8;
+  color: var(--fg);
 }
 
 .site-footer nav ul {

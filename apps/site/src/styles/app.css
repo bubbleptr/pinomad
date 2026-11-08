@@ -20,6 +20,11 @@ html {
   --header-border-strong: color-mix(in oklch, var(--color-fd-foreground) 22%, transparent);
 }
 
+/* On the dark theme the ghost's body takes the bar's colour, as in the app icon. */
+.dark .site-header {
+  --mark-body: var(--color-fd-background);
+}
+
 /* Docs: the header spans the full width above the sidebar, the page and the table of
    contents, and the layout is as wide as the header's bar so the brand lines up with
    the sidebar. The sidebar and the table of contents stick below the header. */

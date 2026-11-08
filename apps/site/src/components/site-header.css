@@ -48,9 +48,19 @@
   text-decoration: none;
 }
 
-.site-header .brand img {
-  width: 1.375rem;
+.site-header .brand-mark {
+  width: auto;
   height: 1.375rem;
+}
+
+/* The ghost without its tile (brand-mark.tsx): outline and hat in the bar's ink. */
+.brand-mark .mark-body {
+  fill: var(--mark-body, #fff);
+  stroke: currentColor;
+}
+
+.brand-mark .mark-ink {
+  fill: currentColor;
 }
 
 .header-nav {
