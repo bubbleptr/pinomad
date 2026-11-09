@@ -1,13 +1,11 @@
-/* The iPhone frame around the app's screenshots (anywhere-phone.tsx), drawn plain
-   like the simulator's: a thin grey outline, a black bezel, the Dynamic Island and
-   flat side buttons. Sizes are in cqw, a share of the phone's own width. The
-   screenshots are iPhone 17 Pro ones (402 × 874pt) with the status bar left in;
-   simulator screenshots leave out the island, so it's drawn in the bar's gap. */
+/* The iPhone frame around the app's screenshots (anywhere-phone.tsx), after the
+   simulator's iPhone 17 Pro frame: a brushed silver rim, a dark ring inside it, the
+   black bezel, the Dynamic Island with its camera, and shaded side buttons. Sizes
+   are in cqw, a share of the phone's own width. The screenshots are 402 × 874pt with
+   the status bar left in; simulator screenshots leave out the island, so it's drawn
+   in the bar's gap. */
 
 .phone {
-  --phone-edge: oklch(0.55 0 0);
-  --phone-key: oklch(0.34 0 0);
-
   position: relative;
   justify-self: center;
   width: min(17rem, 72%);
@@ -21,22 +19,61 @@
   }
 }
 
-/* Bezel 3.4cqw; the screen's corners are 62pt of its 402 (15.4%). */
+/* Bezel 4cqw, so the screen is 92cqw wide; its corners are 62pt of 402 (15.4%). */
 .phone-body {
+  --rim: 0.8cqw;
+  --radius: 18.2cqw;
+
   position: relative;
-  padding: 3.4cqw;
-  border-radius: 17.8cqw;
+  padding: 4cqw;
+  border-radius: var(--radius);
   background: #000;
   box-shadow:
-    0 0 0 1px var(--phone-edge),
-    0 1.5rem 3rem -1rem rgb(0 0 0 / 0.6);
+    0 0 0 1px rgb(0 0 0 / 0.45),
+    0 0.6rem 1.2rem -0.4rem rgb(0 0 0 / 0.45),
+    0 2.5rem 5rem -2rem rgb(0 0 0 / 0.7);
+}
+
+/* The dark ring just inside the rim, with a faint edge where it meets the bezel. */
+.phone-body::before {
+  content: "";
+  position: absolute;
+  inset: var(--rim);
+  border-radius: calc(var(--radius) - var(--rim));
+  box-shadow:
+    inset 0 0 0 0.9cqw #1c1c1e,
+    inset 0 0 0 calc(0.9cqw + 1px) rgb(255 255 255 / 0.07);
+  pointer-events: none;
+}
+
+/* The rim: a ring cut out of a gradient that catches light top-left and bottom-right.
+   Drawn last so it covers the buttons' inner ends. */
+.phone-body::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: var(--rim);
+  border-radius: inherit;
+  background: linear-gradient(
+    155deg,
+    #f4f4f6,
+    #a2a2a7 16%,
+    #d9d9dd 38%,
+    #7d7d82 60%,
+    #c8c8cd 82%,
+    #8e8e93
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  pointer-events: none;
 }
 
 .phone-screen {
   position: relative;
   display: grid;
   overflow: clip;
-  border-radius: 14.4cqw;
+  border-radius: 14.2cqw;
   background: #000;
 }
 
@@ -53,64 +90,60 @@
   opacity: 1;
 }
 
-/* 125 × 37pt, 11pt from the top, in a 402pt-wide screen of 93.2cqw. */
+/* 125 × 37pt, 11pt from the top, in a 402pt-wide screen of 92cqw; the camera sits
+   at its right end. */
 .phone-island {
   position: absolute;
-  top: 2.55cqw;
+  top: 2.5cqw;
   left: 50%;
-  width: 29cqw;
-  height: 8.6cqw;
+  width: 28.6cqw;
+  height: 8.5cqw;
   border-radius: 999px;
-  background: #000;
+  background:
+    radial-gradient(circle 1.5cqw at 79% 50%, #2c3344, #12151d 55%, transparent 100%),
+    #000;
   translate: -50% 0;
 }
 
-/* Buttons stand just outside the outline; top and height are shares of the body. */
+/* Buttons stand out of the frame and tuck under the rim; top and height are shares
+   of the body, measured off the simulator's frame. */
 .phone-btn {
   position: absolute;
-  width: 0.9cqw;
-  background: var(--phone-key);
+  width: 1.5cqw;
 }
 
 .btn-action,
 .btn-volume-up,
 .btn-volume-down {
-  left: calc(-0.9cqw - 1px);
-  border-radius: 0.5cqw 0 0 0.5cqw;
-}
-
-.btn-side,
-.btn-camera {
-  right: calc(-0.9cqw - 1px);
-  border-radius: 0 0.5cqw 0.5cqw 0;
-}
-
-.btn-action {
-  top: 18%;
-  height: 5.5%;
-}
-
-.btn-volume-up {
-  top: 27%;
-  height: 9.5%;
-}
-
-.btn-volume-down {
-  top: 38.5%;
-  height: 9.5%;
+  left: -1cqw;
+  border-radius: 0.7cqw 0 0 0.7cqw;
+  background: linear-gradient(90deg, #3a3a3c, #8e8e93 35%, #5e5e62 70%, #2c2c2e);
 }
 
 .btn-side {
-  top: 30%;
-  height: 14%;
+  right: -1cqw;
+  border-radius: 0 0.7cqw 0.7cqw 0;
+  background: linear-gradient(270deg, #3a3a3c, #8e8e93 35%, #5e5e62 70%, #2c2c2e);
 }
 
-/* Camera Control sits nearly flush. */
-.btn-camera {
-  top: 58%;
-  height: 8%;
-  width: 0.5cqw;
-  right: calc(-0.5cqw - 1px);
+.btn-action {
+  top: 17.4%;
+  height: 3.8%;
+}
+
+.btn-volume-up {
+  top: 24.2%;
+  height: 7%;
+}
+
+.btn-volume-down {
+  top: 32.9%;
+  height: 7%;
+}
+
+.btn-side {
+  top: 28.7%;
+  height: 11.1%;
 }
 
 @media (prefers-reduced-motion: no-preference) {

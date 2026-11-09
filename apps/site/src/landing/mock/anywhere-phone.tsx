@@ -34,7 +34,6 @@ export function AnywherePhone({ lang, step, label }: { lang: Lang; step: Step; l
         <span className="phone-btn btn-volume-up" />
         <span className="phone-btn btn-volume-down" />
         <span className="phone-btn btn-side" />
-        <span className="phone-btn btn-camera" />
         <div className="phone-screen">
           {SCREENS.map((screen) => {
             const image = shot(lang, `anywhere-${screen}`, 320, 640);
