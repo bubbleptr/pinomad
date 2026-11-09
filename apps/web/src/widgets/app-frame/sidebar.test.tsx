@@ -4,15 +4,19 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   BACKGROUND_SUBAGENT_ID,
+  fakeMachines,
+  fakeView,
   FORK_ID,
   HOME_HOST,
   NESTED_FORK_ID,
   PARSER_ID,
   SECOND_FORK_ID,
+  SUBAGENT_ID,
+  withSummary,
 } from "../../test/story-fixtures.tsx";
 import * as stories from "./sidebar.stories.tsx";
 
-const { BackgroundSubagents, BackgroundSubagentsCollapsed, ForkRows, ForkSelected, LegacyNestedForks } =
+const { BackgroundSubagents, BackgroundSubagentsCollapsed, Default, ForkRows, ForkSelected, LegacyNestedForks } =
   composeStories(stories);
 
 afterEach(() => {
@@ -62,6 +66,20 @@ describe("background subagent sidebar", () => {
     expect(document.querySelectorAll('[data-kind="root"] .pigui-background-tree-child')).toHaveLength(2);
     expect(document.querySelectorAll('[data-kind="fork"] .pigui-background-tree-child')).toHaveLength(0);
     expect(screen.getByRole("button", { name: "Try a recursive-descent rewrite" })).toBeInTheDocument();
+  });
+});
+
+describe("a subagent that turns background", () => {
+  it("appears under its root by name once its lifecycle changes", () => {
+    const before = fakeView();
+    const { rerender } = render(<Default machines={fakeMachines({ home: before })} />);
+    expect(document.querySelector(".pigui-background-tree-child")).toBeNull();
+
+    // ADR-0046 §6: the first message outside its call turns it background, once.
+    const after = withSummary(before, SUBAGENT_ID, { lifecycle: "background", name: "parser-tests" });
+    rerender(<Default machines={fakeMachines({ home: after })} />);
+    const child = document.querySelector<HTMLElement>(".pigui-background-tree-child")!;
+    expect(within(child).getByRole("button", { name: "parser-tests" })).toBeInTheDocument();
   });
 });
 

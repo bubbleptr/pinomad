@@ -22,7 +22,8 @@ import {
 import { outgoingImage, type ImageVariant } from "@pinomad/protocol/images.ts";
 import { findConversation, type ConversationNode, type Home } from "@pinomad/protocol/organization.ts";
 import { currentAgentOf } from "./entities/conversation/current-agent.ts";
-import { displayName, forksAt, rootOf, taskGroupsOf } from "@pinomad/client/family.ts";
+import { conversationName, subagentMessaging } from "./entities/conversation/subagent.ts";
+import { forksAt, rootOf, taskGroupsOf } from "@pinomad/client/family.ts";
 import { hostLabels, mergeStoredHost, updateStoredHostConnection, updateStoredHostEndpoints } from "@pinomad/client/stored-host.ts";
 import { candidatePlan, preferredLegacyUrl } from "@pinomad/protocol/remote-candidates.ts";
 import { requestNotificationPermission } from "./entities/conversation/notification-permission.ts";
@@ -1130,7 +1131,7 @@ export function Workbench({
     (id: ConversationId) => {
       const summary = findConversation(view.organized, id)?.summary;
       // Every subagent entry follows its lifecycle: background belongs in the
-      // read-only main view, foreground stays in the right-hand Tasks detail.
+      // main view, foreground stays in the right-hand Tasks detail.
       if (summary?.kind === "subagent" && summary.lifecycle === "background") {
         openInMain(id);
         return;
@@ -1168,6 +1169,9 @@ export function Workbench({
   // Any conversation with a parent — fork or subagent — offers a breadcrumb
   // back to the conversation it belongs to.
   const shownSummary = shownId === undefined ? undefined : findConversation(view.organized, shownId)?.summary;
+  // A subagent takes messages and Stop on a 5.33 host (ADR-0046 §6).
+  const messaging =
+    shownSummary?.kind === "subagent" ? subagentMessaging(shownSummary, view.host?.protocol.minor ?? 0) : undefined;
   // A subagent's role comes from the delegating call; a top-level conversation
   // or fork shows the agent it currently runs as.
   const headerAgent =
@@ -1233,7 +1237,7 @@ export function Workbench({
       <div className="flex min-h-0 min-w-[20rem] flex-1 flex-col">
       <FrameHeader
         narrow={narrow}
-        title={drafting ? draftLabel : displayName(shownSummary)}
+        title={drafting ? draftLabel : conversationName(shownSummary)}
         {...(headerAgent === undefined ? {} : { agent: headerAgent })}
         parentSummary={parentSummary}
         onBackToParent={openConversation}
@@ -1306,8 +1310,21 @@ export function Workbench({
               // Same 44rem centered column as the message list, so the
               // composer lines up with the conversation at every width.
               <div className="mx-auto w-full max-w-[44rem]">
-                {shownSummary?.kind === "subagent" ? (
+                {messaging === "read-only" ? (
                   <div className="border-t border-border py-2 text-center text-xs text-muted">Read-only · subagent</div>
+                ) : messaging === "in-call" ? (
+                  // The host refuses messages until the dispatching call ends;
+                  // Stop fails that call, as Esc in the parent would.
+                  <HStack gap={2} vAlign="center" className="border-t border-border py-2">
+                    <span className="min-w-0 flex-1 text-xs text-muted">Working on its task · you can message it when it's done</span>
+                    <Button
+                      label="Stop"
+                      variant="secondary"
+                      size="sm"
+                      isDisabled={view.connection !== "connected"}
+                      onClick={() => void remote.controller.abort()}
+                    />
+                  </HStack>
                 ) : conversation === undefined ? (
                   failed ? null : <ComposerSkeleton />
                 ) : (
@@ -1323,6 +1340,7 @@ export function Workbench({
                       externalEditLocked={takingBackHere}
                       onEditorStateChange={setEditorState}
                       source={hostKey}
+                      subagent={messaging !== undefined}
                       onTakeBack={() => {
                         setTakeBack(undefined);
                         setTakingBack(undefined);

@@ -1,14 +1,14 @@
 // The right-side panel holds fixed surfaces (ADR-0040), switched from their
 // icons at the right of the chat header. Each surface owns the panel's first
 // row, level with that header, for its status and actions. Tasks is the
-// family's Foreground subagents grouped by owner, opening read-only detail via
+// family's Foreground subagents grouped by owner, opening their transcript via
 // `view.side`; Background subagents open in main and never repeat here.
 // Changes is the shown conversation's checkout diff (changes-surface.tsx);
 // Terminal is the terminals' owner's shells (terminal-surface.tsx).
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog } from "@astryxdesign/core/Dialog";
 import { IconButton } from "@astryxdesign/core/IconButton";
-import { Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
+import { HStack, Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
@@ -19,7 +19,8 @@ import { findConversation } from "@pinomad/protocol/organization.ts";
 import type { ProcessListState, RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { isProcessActive, type ProcessId, type ProcessInfo, type ProcessState } from "@pinomad/protocol/processes.ts";
 import type { ConversationSummary, DurableView, SideConversationView } from "@pinomad/protocol/view.ts";
-import { displayName, forksAt, relativeTime, rootOf, taskGroupsOf } from "@pinomad/client/family.ts";
+import { forksAt, relativeTime, rootOf, taskGroupsOf } from "@pinomad/client/family.ts";
+import { conversationName, subagentMessaging, type SubagentMessaging } from "../../entities/conversation/subagent.ts";
 import { orderedProcesses, processStatusText } from "@pinomad/client/processes.ts";
 import { useNow } from "../../shared/use-now.ts";
 import { taskTally } from "../../entities/conversation/task-tally.ts";
@@ -132,7 +133,7 @@ function StatusGlyph({ status }: { status: ConversationSummary["status"] }) {
 
 /**
  * The Tasks surface: the shown family's Foreground Tasks, grouped by owner, or
- * the open subagent's read-only detail. Background subagents are promoted to
+ * the open subagent's transcript. Background subagents are promoted to
  * main rather than rendered as a second Tasks entry point. The bar's `start`
  * and `end` hold the phone dialog's switch and close button.
  */
@@ -201,11 +202,12 @@ function TasksSurface({
         <SurfaceBar start={barStart} end={barEnd}>
           <IconButton icon={<ArrowLeft className="size-4" aria-hidden="true" />} label="Back to tasks" size="sm" variant="ghost" onClick={closeSide} />
           <StatusGlyph status={sideSummary.status} />
-          <span className="min-w-0 flex-1 truncate text-sm">{displayName(sideSummary)}</span>
+          <span className="min-w-0 flex-1 truncate text-sm">{conversationName(sideSummary)}</span>
         </SurfaceBar>
         <TaskDetail
           view={view}
           side={side}
+          messaging={subagentMessaging(sideSummary, view.host?.protocol.minor ?? 0)}
           openInPanel={openInPanel}
           onOpenInMain={onOpenInMain}
           onLoadEarlier={() => remote.controller.loadEarlier(side.id)}
@@ -300,7 +302,7 @@ function SideRow({
 }) {
   return (
     <ListItem
-      label={displayName(summary)}
+      label={conversationName(summary)}
       description={
         summary.status === "running" && summary.activity !== undefined
           ? `→ ${toolDisplayName(summary.activity.tool) ?? summary.activity.tool}${summary.activity.target === undefined ? "" : ` ${summary.activity.target}`}`
@@ -504,16 +506,21 @@ function ProcessDetail({
   );
 }
 
-/** A subagent in the panel: transcript only, no way to talk to it. */
+/**
+ * A Foreground subagent in the panel: its transcript. Talking to it or
+ * stopping it happens in main (ADR-0046 §6), one click away.
+ */
 function TaskDetail({
   view,
   side,
+  messaging,
   openInPanel,
   onOpenInMain,
   onLoadEarlier,
 }: {
   view: DurableView;
   side: SideConversationView;
+  messaging: SubagentMessaging;
   openInPanel: (id: ConversationId) => void;
   onOpenInMain: (id: ConversationId) => void;
   onLoadEarlier: () => Promise<void>;
@@ -541,7 +548,13 @@ function TaskDetail({
           />
         )}
       </div>
-      <div className="shrink-0 border-t border-border p-2 text-center text-xs text-muted">Read-only · subagent</div>
+      {messaging === "read-only" ? (
+        <div className="shrink-0 border-t border-border p-2 text-center text-xs text-muted">Read-only · subagent</div>
+      ) : (
+        <HStack gap={2} hAlign="center" className="shrink-0 border-t border-border p-2">
+          <Button label="Open in main" variant="secondary" size="sm" onClick={() => onOpenInMain(side.id)} />
+        </HStack>
+      )}
     </div>
   );
 }

@@ -1,19 +1,25 @@
-// The main-area anchor for a delegated task. The card shows the label,
-// status, model, elapsed time, and — while running — what the child is doing
-// (the summary's `activity`). The full report lives in the panel's Tasks
-// detail: the card only names it.
+// The main-area anchor for a delegated task. The card shows the subagent's
+// name, status, model, elapsed time, and — while running — what the child is
+// doing (the summary's `activity`). The full report lives in the subagent's
+// own conversation: the card only names it.
+//
+// A background call (ADR-0046 §1) returns as soon as the subagent is
+// dispatched, so its tool state says nothing about the work: once it went
+// through, the card follows the subagent's own summary instead.
 import { Button } from "@astryxdesign/core/Button";
 import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 import type { ChatToolItem } from "@/shared/ui/chat/chat-tool";
-import { displayName } from "@pinomad/client/family.ts";
+import { conversationName } from "@/entities/conversation/subagent";
 import { useNow } from "@/shared/use-now";
 import { toolDisplayName, toolTargetFromArgs } from "@pinomad/client/tool-item.ts";
 import { pinomadOf } from "@pinomad/client/cot-view.ts";
 
-const STATUS_TEXT = { done: "Done", failed: "Failed", running: "Running" } as const;
+type CardStatus = "done" | "failed" | "running" | "idle";
+
+const STATUS_TEXT: Record<CardStatus, string> = { done: "Done", failed: "Failed", running: "Running", idle: "Idle" };
 
 /** "12s" under a minute, otherwise "1m 5s". */
 function elapsedText(ms: number): string {
@@ -28,6 +34,17 @@ function RunningElapsed({ startedAt }: { startedAt: number }) {
   return <>{elapsedText(now - startedAt)}</>;
 }
 
+/** Whether the call asked for `background: true`; arguments still streaming read as no. */
+function dispatchedInBackground(tool: ChatToolItem): boolean {
+  if (tool.argsText === undefined) return false;
+  try {
+    const args: unknown = JSON.parse(tool.argsText);
+    return typeof args === "object" && args !== null && (args as { background?: unknown }).background === true;
+  } catch {
+    return false;
+  }
+}
+
 function SubagentCard({
   tool,
   summary,
@@ -39,24 +56,45 @@ function SubagentCard({
 }) {
   const detail = pinomadOf(tool);
   const pinomad = detail?.kind === "subagent" ? detail : undefined;
-  const status = tool.state === "output-available" ? "done" : tool.state === "output-error" ? "failed" : "running";
-  const name = summary !== undefined ? displayName(summary) : (toolTargetFromArgs(tool.argsText) ?? "Subagent");
+  const callStatus: CardStatus =
+    tool.state === "output-available" ? "done" : tool.state === "output-error" ? "failed" : "running";
+  // Dispatched to the background and the call went through: the work is the
+  // subagent's now, and the call's end only marks the handover.
+  const background = callStatus === "done" && dispatchedInBackground(tool);
+  const status: CardStatus = !background
+    ? callStatus
+    : summary?.status === "failed"
+      ? "failed"
+      : summary?.status === undefined
+        ? "idle"
+        : "running";
+  // Before the summary arrives: the call's `name`, else its description or task.
+  const name = summary !== undefined ? conversationName(summary) : (toolTargetFromArgs(tool.argsText) ?? "Subagent");
   const startedAt = pinomad?.startedAt;
   const endedAt = pinomad?.endedAt;
-  const meta = [
-    STATUS_TEXT[status],
-    summary?.role === undefined ? undefined : `@${summary.role}`,
-    pinomad?.model,
-    startedAt === undefined
+  const elapsed =
+    startedAt === undefined || background
       ? undefined
       : status === "running"
         ? <RunningElapsed key="elapsed" startedAt={startedAt} />
         : endedAt === undefined
           ? undefined
-          : elapsedText(endedAt - startedAt),
-  ];
+          : elapsedText(endedAt - startedAt);
+  const meta = [
+    background ? "Background" : undefined,
+    STATUS_TEXT[status],
+    summary?.role === undefined ? undefined : `@${summary.role}`,
+    pinomad?.model,
+    elapsed,
+  ].filter((part) => part !== undefined && part !== "");
   return (
-    <VStack className="pigui-subagent-card rounded-lg border border-border p-3" gap={1} data-slot="subagent-card" data-status={status}>
+    <VStack
+      className="pigui-subagent-card rounded-lg border border-border p-3"
+      gap={1}
+      data-slot="subagent-card"
+      data-status={status}
+      {...(background ? { "data-background": "" } : {})}
+    >
       <HStack gap={2} vAlign="center">
         <StatusDot
           variant={status === "failed" ? "error" : status === "running" ? "success" : "neutral"}
@@ -69,13 +107,7 @@ function SubagentCard({
         )}
       </HStack>
       <div className="text-xs text-muted tabular-nums">
-        {meta.map((part, index) =>
-          part === undefined || part === "" ? null : index === 0 ? (
-            <span key={index}>{part}</span>
-          ) : (
-            <span key={index}> · {part}</span>
-          ),
-        )}
+        {meta.map((part, index) => (index === 0 ? <span key={index}>{part}</span> : <span key={index}> · {part}</span>))}
       </div>
       {status === "running" && summary?.activity !== undefined ? (
         <div className="text-xs text-muted">
@@ -83,7 +115,7 @@ function SubagentCard({
           {summary.activity.target === undefined ? "" : ` ${summary.activity.target}`}
         </div>
       ) : null}
-      {status === "failed" && tool.output !== undefined && tool.output !== "" ? (
+      {callStatus === "failed" && tool.output !== undefined && tool.output !== "" ? (
         <div className="text-xs text-muted">{tool.output}</div>
       ) : null}
     </VStack>

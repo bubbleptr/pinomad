@@ -12,7 +12,8 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import type { ConversationNode, Home, Project } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
-import { backgroundSubagentsOf, displayName, familyStatus, threadsOf, type FamilyStatus } from "@pinomad/client/family.ts";
+import { backgroundSubagentsOf, familyStatus, threadsOf, type FamilyStatus } from "@pinomad/client/family.ts";
+import { conversationName } from "../../entities/conversation/subagent.ts";
 import { useAppUpdate } from "../../entities/app-update/use-app-update.ts";
 import { ModelLogo } from "../../entities/model/model-logo.tsx";
 import { ArchiveArrowDown, Bot, ChatBubble, FolderAdd, FolderClosed, FolderOpenState, MoreHorizontal, Pencil, Plus, Settings, Trash2, UserCircle } from "../../shared/ui/icons.tsx";
@@ -287,7 +288,7 @@ function BackgroundSubagentRow({
     <div className="pigui-background-tree-child">
       <SideNavItem
         icon={<ModelLogo model={summary.model ?? { provider: "unknown", modelId: "unknown" }} reserve />}
-        label={displayName(summary)}
+        label={conversationName(summary)}
         isSelected={summary.id === shown}
         isDisabled={disabled}
         endContent={summary.status === undefined ? undefined : <FamilyStatusGlyph status={summary.status} />}

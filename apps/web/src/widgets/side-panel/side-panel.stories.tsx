@@ -10,6 +10,7 @@ import {
   SUBAGENT_ID,
   subagentConversation,
   TERMINALS,
+  withSummary,
 } from "../../test/story-fixtures.tsx";
 import { SidePanel } from "./side-panel.tsx";
 
@@ -48,9 +49,13 @@ type Story = StoryObj<typeof meta>;
 /** Foreground work, grouped by its owner. */
 export const Tasks: Story = {};
 
-/** A running subagent's transcript, read-only. */
+/** A pre-ADR-0046 subagent's transcript (no name): read-only. */
 const withSubagent = fakeView({ side: { id: SUBAGENT_ID, conversation: subagentConversation(), docs: [] } });
 export const TaskDetail: Story = { args: { view: withSubagent, remote: fakeRemote(withSubagent) } };
+
+/** A named subagent: messages and Stop are in main, one click away. */
+const withNamedSubagent = withSummary(withSubagent, SUBAGENT_ID, { name: "parser-tests" });
+export const TaskDetailMessageable: Story = { args: { view: withNamedSubagent, remote: fakeRemote(withNamedSubagent) } };
 
 /** The detail keeps its header and back button while the snapshot loads. */
 const loadingSubagent = fakeView({ side: { id: SUBAGENT_ID, docs: [] } });
