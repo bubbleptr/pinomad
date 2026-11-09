@@ -9,8 +9,8 @@ import { HeroApp } from "./mock/hero-app.tsx";
 import { ArrowIcon } from "./icons.tsx";
 import { shot } from "./shots.ts";
 
-// The landing page's sections. The interactive parts (the durable diagram, the
-// get-started copy button) live in their own files.
+// The landing page's sections. The larger interactive parts (the durable diagram,
+// the get-started copy button, the product mocks) live in their own files.
 
 export function SectionHead({ id, eyebrow, title, lead }: { id: string; eyebrow: string; title: ReactNode; lead?: string }) {
   return (
@@ -89,12 +89,12 @@ export function Anywhere({ lang, t }: { lang: Lang; t: LandingCopy["anywhere"] }
       <div className="wrap split">
         <div className="section-head">
           <SectionHead id="anywhere-title" eyebrow={t.eyebrow} title={t.title} lead={t.lead} />
-          <div className="chips steps">
+          <div className="chips">
             {STEPS.map((each, index) => (
               <button
                 key={each}
                 type="button"
-                className="chip step"
+                className="chip chip-step"
                 aria-pressed={each === step}
                 onClick={() => setStep(each)}
               >

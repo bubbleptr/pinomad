@@ -554,8 +554,13 @@
   }
 }
 
-/* A new step slides in, as a pushed page or a new message would. */
+/* A new step slides in, as a pushed page or a new message would. When the section
+   scrolls in (useReveal), the front screen rises in after the back one. */
 @media (prefers-reduced-motion: no-preference) {
+  .phones.reveal.is-revealed .ios-front {
+    animation: ios-rise 0.7s var(--ease-out) 0.35s backwards;
+  }
+
   .ios-front .ios-screen > * {
     animation: ios-in 0.35s var(--ease-out) backwards;
   }
@@ -565,5 +570,12 @@
   from {
     opacity: 0;
     translate: 0 calc(10 * var(--p));
+  }
+}
+
+@keyframes ios-rise {
+  from {
+    opacity: 0;
+    translate: 0 6%;
   }
 }

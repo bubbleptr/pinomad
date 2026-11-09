@@ -714,7 +714,7 @@ html[lang="zh-CN"] .split h2 {
 }
 
 /* Chips that switch a picture beside them. */
-.step {
+.chip-step {
   background: none;
   font: inherit;
   font-size: 0.85rem;
@@ -724,17 +724,17 @@ html[lang="zh-CN"] .split h2 {
     color 0.2s;
 }
 
-.step:hover {
+.chip-step:hover {
   color: var(--fg);
 }
 
-.step[aria-pressed="true"] {
+.chip-step[aria-pressed="true"] {
   border-color: var(--accent);
   background: var(--accent);
   color: var(--accent-fg);
 }
 
-.step:focus-visible {
+.chip-step:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
