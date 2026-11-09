@@ -140,7 +140,6 @@
   --pigui-data-peach: #ffe0d3;
   --pigui-data-coral: #ffad8d;
   --pigui-data-slate: #b7bec8;
-  --pigui-sidebar-wash-alpha: 32%;
   --pigui-sidebar-item-radius: var(--radius);
   --pigui-sidebar-content-padding-x: 0.5rem;
   --pigui-sidebar-group-gap: 0.25rem;
@@ -718,6 +717,9 @@ body {
    app shell and give the sidebar panel one translucent wash of the frame
    color. The main pane keeps its opaque surface so the two columns stay
    distinct; full-screen pages (Centered) paint their own opaque background.
+   The dark material is lighter than the main pane, which would put the
+   frame above the pane, so in dark mode the wash is heavy enough to keep
+   the sidebar the darkest layer with only a hint of the glass showing.
    Ported from Pace; Astryx's sidebar panel is the layout panel that holds
    the side nav. */
 html[data-pinomad-vibrancy],
@@ -731,7 +733,10 @@ html[data-pinomad-vibrancy] .pigui-app-layout.astryx-app-shell:not(#\#):not(#\#)
 }
 
 html[data-pinomad-vibrancy] .pigui-app-layout .astryx-layout-panel:has(.astryx-side-nav):not(#\#):not(#\#):not(#\#) {
-  background-color: color-mix(in srgb, var(--color-background-body) var(--pigui-sidebar-wash-alpha), transparent);
+  background-color: light-dark(
+    color-mix(in srgb, var(--color-background-body) 32%, transparent),
+    color-mix(in srgb, var(--color-background-body) 90%, transparent)
+  );
 }
 
 /* The "N forks" chip under a message that was forked — replaces the Fork
