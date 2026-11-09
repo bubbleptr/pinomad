@@ -81,7 +81,7 @@ _Avoid_: 轮次、turn、回合
 _Avoid_: 分支（那是 Git 的概念）、副本、子对话、thread
 
 **子代理（Subagent）**:
-父对话派出去的任务，拥有自己的对话，和父对话共用执行检出，可以按名字用某个具名 Agent。生命周期分为 Foreground 和 Background：Foreground 属于派出它的那次运行，在右侧 Tasks 呈现；Background 独立于那次运行，在左侧按 root 家族压成一层展示（包括 fork 的后代），真实 parent 不变。两种都对用户只读；在主内容区打开时也不能提交、重试、改模型或普通中止。
+父对话派出去的任务，拥有自己的对话，从空上下文开始，只拿到派出时的任务描述（不像 fork 那样继承历史），可以按名字用某个具名 Agent。每个子代理都有名字，答完还能接着聊、能停；执行检出在派出时选：和父对话共用，或在自己的 worktree 里（ADR-0046）。派出时还选等不等它：Foreground 属于派出它的那次调用，在右侧 Tasks 呈现；Background 独立于那次运行，在左侧按 root 家族压成一层展示（包括 fork 的后代），真实 parent 不变。Foreground 子代理第一次在原调用之外运行时变成 Background，之后不变回。用户可以在主内容区给子代理发消息、按 Stop，不能 fork、重试或改模型。
 _Avoid_: 子任务、worker、子对话
 
 **后台进程（Background Process）**:
@@ -97,7 +97,7 @@ _Avoid_: 具名代理、具名子代理、代理定义、角色、预设、profi
 _Avoid_: 临时项目、默认项目、无项目项目
 
 **执行检出（Execution Checkout）**:
-对话中的 agent 实际读写文件的那一份代码所在的目录：项目目录本身，或在 Git 项目中由 PiNomad 为该对话管理的 worktree；Chat 的执行检出是它的临时目录。fork 和子代理用父对话的执行检出；agent 自己用 git 开的 worktree 不算执行检出。它是并发对话之间隔离文件的边界。工作目录（cwd）可以是执行检出里的子目录；一个 worktree 对应一个分支，但执行检出关心的是文件在哪改，不是分支历史。
+对话中的 agent 实际读写文件的那一份代码所在的目录：项目目录本身，或在 Git 项目中由 PiNomad 为该对话管理的 worktree；Chat 的执行检出是它的临时目录。fork 用父对话的执行检出；子代理在派出时选共用父对话的，或用自己的 worktree（ADR-0046）；agent 自己用 git 开的 worktree 不算执行检出。它是并发对话之间隔离文件的边界。工作目录（cwd）可以是执行检出里的子目录；一个 worktree 对应一个分支，但执行检出关心的是文件在哪改，不是分支历史。
 _Avoid_: 工作目录、cwd、分支、工作副本
 
 ### 扩展与呈现

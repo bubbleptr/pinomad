@@ -3,6 +3,7 @@
 - 状态：Accepted
 - 日期：2026-10-07
 - §4 已由 [ADR-0019](0019-fork-shares-parent-checkout.md) 修订：fork 共用父对话的检出，只有一层，每条消息最多一个
+- §5 已由 [ADR-0046](0046-one-kind-of-subagent.md) 修订：子代理派出时选和父对话共用检出，还是在自己的 worktree 里工作
 
 ## 背景
 
