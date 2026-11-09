@@ -2,6 +2,8 @@
 
 PiNomad Web 的 `apps/web/src/shared/ui/animated-icons.tsx` 与其在 `apps/web/src/app/styles.css` 中的动画样式，经 Pace（PiGUI）`apps/desktop/src/shared/ui/animated-icons.tsx` 与 `primitives.css` 改编以下项目的 SVG 几何和动画动作。运行时使用 React 与 CSS；没有复制上游的 Motion 控制器。本文件记录上游出处与许可。
 
+官网首页的产品界面（`apps/site/src/landing/mock/icons.tsx`）静态复用了其中 `message-add-01` 和 `panel-left` 两个图形，不带动画。
+
 ## Hugeicons Animated
 
 - 项目：[enesgules/hugeicons-animated](https://github.com/enesgules/hugeicons-animated)

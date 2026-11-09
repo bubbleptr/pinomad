@@ -4,6 +4,7 @@ import { githubUrl } from "@/lib/nav.ts";
 import { blogUrl, type LandingCopy } from "./copy.tsx";
 import { AgentsDiagram, ConnectionDiagram, EnvironmentsDiagram } from "./diagrams.tsx";
 import { DurableDiagram } from "./durable.tsx";
+import { HeroApp } from "./mock/hero-app.tsx";
 import { ArrowIcon } from "./icons.tsx";
 import { shot } from "./shots.ts";
 
@@ -51,7 +52,6 @@ function Phone({ lang, alt, className }: { lang: Lang; alt: string; className: s
 }
 
 export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
-  const image = shot(lang, "hero", 1200, 2400);
   return (
     <section className="hero" aria-labelledby="hero-title">
       <div className="wrap hero-inner">
@@ -91,17 +91,7 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
         </div>
       </div>
       <div className="hero-stage">
-        <figure className="shot shot-window hero-shot">
-          <img
-            src={image.src}
-            srcSet={image.srcSet}
-            sizes="(min-width: 96rem) 74rem, (min-width: 56rem) 78vw, 100vw"
-            width="2400"
-            height="1500"
-            alt={t.shotAlt}
-            fetchPriority="high"
-          />
-        </figure>
+        <HeroApp lang={lang} label={t.shotAlt} />
       </div>
     </section>
   );

@@ -4,6 +4,8 @@ Web 客户端设置里 Providers 一节的服务商图标、模型选择器里�
 
 官网首页「用你已经付费的订阅」一节也引用同一批文件中的几个（`apps/site/src/landing/page.css` 里的 `.sub-logo`），只当作 CSS mask 用，统一成单色显示，文件本身不复制、不修改。
 
+官网首屏的产品界面 mock 复制了其中四个（`claude-color`、`openai`、`deepseek-color`、`qwen-color`）到 `apps/site/src/landing/mock/logos/`，去掉了 `<title>`、`style` 和 `width`/`height` 属性（落地页的 CSP 不允许内联样式，尺寸由样式表给），图形本身没改。
+
 iOS 客户端用同一批文件：`apps/ios/scripts/provider-logos.sh` 把它们复制进 `apps/ios/Pinomad/Assets.xcassets/ProviderLogos/`，只改了 Xcode 导入需要的部分（去掉 `<title>` 和 `style`，尺寸写成 24，`currentColor` 换成固定颜色：纯单色的标成模板图随文字变色，和品牌色混用的另存一份深色模式用的白色版本）。对应表在 `apps/ios/PinomadCore/Sources/PinomadChat/Providers.swift`。
 
 - 来源：npm 包 `@lobehub/icons-static-svg`，固定版本 1.98.0
