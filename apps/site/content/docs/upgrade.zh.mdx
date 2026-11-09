@@ -9,8 +9,8 @@ description: 从任一客户端或用 pinomad upgrade 升级、自动升级，�
 
 打开设置，选中宿主，进入 **Upgrade**。Web、Mac 和 iPhone 上都有。页面上显示宿主正在跑的版本，以及有没有更新的版本。点页面上的 **Upgrade** 按钮，然后：
 
-- **Upgrade when idle**：等正在跑的任务结束再升级，等待期间可以取消。
-- **Upgrade now**：打断正在跑的任务，重启后它们会接着跑。
+- **Upgrade when idle**：等正在跑的任务和后台进程结束再升级，等待期间可以取消。
+- **Upgrade now**：打断正在跑的任务（重启后它们会接着跑），并停掉运行中的后台进程。
 
 开始安装后，宿主在回来之前不接收新消息（提示"The host is upgrading"）；重启时打开着的终端会关掉。安装失败时宿主继续跑旧版本，页面上显示 npm 的报错。
 
