@@ -7,12 +7,12 @@ import { shot } from "../shots.ts";
 // (docs/website.md says how to retake them). Answer opens on the push banner over
 // the conversation list, then moves into the conversation with the agent's question.
 
-export const STEPS = ["start", "ask", "review"] as const;
+export const STEPS = ["start", "ask"] as const;
 export type Step = (typeof STEPS)[number];
 
-type Screen = "start" | "banner" | "ask" | "review";
+type Screen = "start" | "banner" | "ask";
 
-const SCREENS: Screen[] = ["start", "banner", "ask", "review"];
+const SCREENS: Screen[] = ["start", "banner", "ask"];
 
 /** How long the banner shows before the conversation opens. */
 const BANNER_MS = 1800;

@@ -40,7 +40,7 @@
   background: #000;
 }
 
-/* All four screens share one cell; the shown one fades in over the others. */
+/* The screens share one cell; the shown one fades in over the others. */
 .phone-screen > img {
   grid-area: 1 / 1;
   display: block;
