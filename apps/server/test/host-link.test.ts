@@ -281,7 +281,9 @@ describe("personal data", () => {
     await addUser({ dataDir, email: "bob@example.com", password: GOOD_PASSWORD });
     const result = await started(accounts);
     accounts.confirmHostLink({ userId: 2, userCode: result.userCode, ip: "127.0.0.1" });
-    expect((await accounts.deleteAccount({ userId: 2, password: GOOD_PASSWORD })).status).toBe("ok");
+    const bob = await accounts.login("bob@example.com", GOOD_PASSWORD, "127.0.0.1");
+    if (bob.status !== "ok") throw new Error("login failed");
+    expect((await accounts.deleteAccount({ userId: 2, keepToken: bob.token, password: GOOD_PASSWORD })).status).toBe("ok");
     expect(rowCount(accounts)).toBe(0);
   });
 });

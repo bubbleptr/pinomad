@@ -310,13 +310,15 @@ export interface AppleGrant {
 
 export type ChangePasswordResult =
   | { readonly status: "ok" }
-  | { readonly status: "refused"; readonly reason: ConfirmationFailure | "weak_password" }
+  /** `unauthenticated`: the caller's session ended while the password was checked. */
+  | { readonly status: "refused"; readonly reason: ConfirmationFailure | "weak_password" | "unauthenticated" }
   | { readonly status: "limited" };
 
 export type DeleteAccountResult =
   /** The account's hosts, whose control connections lost their authorization, and Apple's grants to revoke. */
   | { readonly status: "ok"; readonly hostIds: readonly string[]; readonly appleGrants: readonly AppleGrant[] }
-  | { readonly status: "refused"; readonly reason: ConfirmationFailure }
+  /** `unauthenticated`: the caller's session ended while the password was checked. */
+  | { readonly status: "refused"; readonly reason: ConfirmationFailure | "unauthenticated" }
   | { readonly status: "limited" };
 
 /** Where a native client's browser goes back to, and how it proves it started the flow (ADR-0044 §5). */
@@ -622,7 +624,13 @@ export interface Accounts {
    * and sign-in identities go with it. Devices the hosts registered stay
    * registered: revoking them is the host's call (ADR-0022 §6).
    */
-  deleteAccount(args: { readonly userId: number } & Confirmation): Promise<DeleteAccountResult>;
+  deleteAccount(
+    args: {
+      readonly userId: number;
+      /** The caller's session token, which must still be live when the write runs. */
+      readonly keepToken: string;
+    } & Confirmation,
+  ): Promise<DeleteAccountResult>;
   /** Checks a confirmation for an action that changes nothing here yet, such as starting to link a provider. */
   confirm(userId: number, confirmation: Confirmation): Promise<"ok" | "limited" | ConfirmationFailure>;
   /** Mails a re-auth code to the account's own email (ADR-0044 §6); `no_email` for a legacy account without one. */
@@ -1842,6 +1850,12 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
     );
   };
 
+  /** Whether `token` is still a live session of `userId`; a write may find it signed out elsewhere. */
+  const sessionLive = (userId: number, token: string): boolean =>
+    db
+      .prepare("SELECT 1 AS x FROM sessions WHERE token_hash = ? AND user_id = ? AND expires_at > ?")
+      .get(sha256Hex(token), userId, now()) !== undefined;
+
   /** A confirmation that passed: by password, the hash it verified, which the write must still find; or the grant. */
   type Confirmed = { readonly verifiedHash: string } | { readonly reauth: string; readonly token: string };
 
@@ -2243,11 +2257,15 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       if (typeof checked === "string") return { status: "refused", reason: checked };
       const hash = await gate.run(() => hashPassword(newPassword));
       if (hash === undefined) return { status: "limited" };
-      // Swap only the hash that was verified: a reset or another change that
-      // committed while scrypt ran wins, and the old password no longer does.
+      // Swap only the hash that was verified, and only while the caller's
+      // session is still live: a reset or another change that committed while
+      // scrypt ran wins, and a sign-out elsewhere voids the write.
       db.exec("BEGIN IMMEDIATE");
       try {
-        const stale = stillConfirmed(userId, checked);
+        const stale =
+          "verifiedHash" in checked && !sessionLive(userId, keepToken)
+            ? "unauthenticated"
+            : stillConfirmed(userId, checked);
         if (stale !== undefined) {
           db.exec("ROLLBACK");
           return { status: "refused", reason: stale };
@@ -2263,15 +2281,19 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
     },
 
     async deleteAccount(args) {
-      const { userId } = args;
+      const { userId, keepToken } = args;
       const checked = await confirmAccount(userId, args);
       if (checked === "limited") return { status: "limited" };
       if (typeof checked === "string") return { status: "refused", reason: checked };
-      // Same compare-and-swap as a password change: a reset that committed
-      // while scrypt ran means the password typed here no longer holds.
+      // Same compare-and-swap as a password change, and the session that
+      // confirmed it must still be live: a reset or a sign-out elsewhere that
+      // landed while scrypt ran wins over the delete.
       db.exec("BEGIN IMMEDIATE");
       try {
-        const stale = stillConfirmed(userId, checked);
+        const stale =
+          "verifiedHash" in checked && !sessionLive(userId, keepToken)
+            ? "unauthenticated"
+            : stillConfirmed(userId, checked);
         if (stale !== undefined) {
           db.exec("ROLLBACK");
           return { status: "refused", reason: stale };
