@@ -12,6 +12,8 @@
 
 [M11 右侧面板](https://github.com/bubbleptr/pinomad/milestone/9)：Web/桌面端的右侧面板改成可切换多个页的容器，现有的 Tasks 和 Changes 搬进来，再加 Terminal；Overview 浮层只放摘要，详情进面板。先定页模型并修订 ADR-0039，再落容器和 Tasks、Changes；Terminal 的宿主端和协议可以并行做，界面排在容器之后。iOS 不在本阶段。
 
+[M12 子代理](https://github.com/bubbleptr/pinomad/milestone/10)：子代理只保留一种（ADR-0046），每个都有名字，答完还能接着聊、能停，派出时选等不等它，用户也能在侧栏里直接跟它聊。先做宿主（含协议和 Rust 核心的同步），worktree 检出和 Web/桌面跟在它后面，iOS 最后单独做。
+
 ## 以后
 
 - [Backlog](https://github.com/bubbleptr/pinomad/issues?q=is%3Aopen+is%3Aissue+no%3Amilestone+-label%3Alater+-label%3Atech-debt)：没排进阶段的具体小项
