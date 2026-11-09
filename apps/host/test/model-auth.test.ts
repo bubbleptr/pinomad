@@ -53,6 +53,18 @@ const OLLAMA = {
   models: ["qwen3-coder:30b", "gpt-oss:20b"],
 } as const;
 
+/** An OpenAI-style /models endpoint that lists these entries verbatim. */
+async function listedEndpoint(models: readonly Record<string, unknown>[]): Promise<string> {
+  const server = createServer((_request, response) => {
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ object: "list", data: models }));
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  defer(() => new Promise<void>((resolve) => server.close(() => resolve())));
+  return `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`;
+}
+
 describe("openModelAuth", () => {
   // pi also takes provider keys from the environment; a developer's exported
   // key would make providers look configured and hide what these tests
@@ -249,6 +261,168 @@ describe("openModelAuth", () => {
     expect(opus.thinkingLevels.length).toBeGreaterThan(1);
   });
 
+  it("records the thinking levels the endpoint reports, and only for reasoning models", async () => {
+    const baseUrl = await listedEndpoint([
+      // Magpie reports off as "none", unlike pi's catalog entry for k3.
+      { id: "kimi/k3.1-pro", reasoning: true, reasoning_levels: ["none", "low", "high", "max"] },
+      {
+        id: "gateway/supported",
+        reasoning: true,
+        supported_reasoning_levels: [{ effort: "none" }, { effort: "minimal" }, { effort: "medium" }],
+      },
+      { id: "gateway/not-reasoning", reasoning_levels: ["high"] },
+    ]);
+    const endpoint = {
+      ...OLLAMA,
+      baseUrl,
+      models: ["kimi/k3.1-pro", "gateway/supported", "gateway/not-reasoning"],
+    };
+    const { modelsPath, modelAuth } = await fixture();
+
+    await modelAuth.saveCustomProvider(endpoint, "sk-gateway");
+
+    expect(JSON.parse(await readFile(modelsPath, "utf8")).providers[OLLAMA.id].models).toEqual([
+      {
+        id: "kimi/k3.1-pro",
+        reasoning: true,
+        thinkingLevelMap: {
+          off: "none",
+          minimal: null,
+          low: "low",
+          medium: null,
+          high: "high",
+          xhigh: null,
+          max: "max",
+        },
+      },
+      {
+        id: "gateway/supported",
+        reasoning: true,
+        thinkingLevelMap: {
+          off: "none",
+          minimal: "minimal",
+          low: null,
+          medium: "medium",
+          high: null,
+          xhigh: null,
+          max: null,
+        },
+      },
+      { id: "gateway/not-reasoning" },
+    ]);
+    const summary = (id: string) => modelAuth.models.value.find((model) => model.modelId === id)!;
+    expect(summary("kimi/k3.1-pro").thinkingLevels).toEqual(["off", "low", "high", "max"]);
+    expect(summary("gateway/supported").thinkingLevels).toEqual(["off", "minimal", "medium"]);
+    expect(summary("gateway/not-reasoning").thinkingLevels).toEqual(["off"]);
+  });
+
+  it("falls back to pi's catalog for one model behind a gateway prefix", async () => {
+    const baseUrl = await listedEndpoint([{ id: "kimi/k3.1-pro", reasoning: true }]);
+    const endpoint = { ...OLLAMA, baseUrl, models: ["kimi/k3.1-pro"] };
+    const { modelsPath, modelAuth } = await fixture();
+
+    await modelAuth.saveCustomProvider(endpoint, "sk-gateway");
+
+    expect(JSON.parse(await readFile(modelsPath, "utf8")).providers[OLLAMA.id].models).toEqual([
+      {
+        id: "kimi/k3.1-pro",
+        reasoning: true,
+        thinkingLevelMap: {
+          off: null,
+          minimal: null,
+          low: "low",
+          medium: null,
+          high: "high",
+          xhigh: null,
+          max: "max",
+        },
+      },
+    ]);
+    expect(modelAuth.models.value.find((model) => model.modelId === "kimi/k3.1-pro")!.thinkingLevels).toEqual([
+      "low",
+      "high",
+      "max",
+    ]);
+  });
+
+  it("doesn't guess a catalog map shared by several providers", async () => {
+    const baseUrl = await listedEndpoint([
+      { id: "gateway/gpt-5", reasoning: true },
+      { id: "kimi/k3", reasoning: true },
+    ]);
+    const endpoint = { ...OLLAMA, baseUrl, models: ["gateway/gpt-5", "kimi/k3"] };
+    const { modelsPath, modelAuth } = await fixture();
+
+    await modelAuth.saveCustomProvider(endpoint, "sk-gateway");
+
+    expect(JSON.parse(await readFile(modelsPath, "utf8")).providers[OLLAMA.id].models).toEqual([
+      { id: "gateway/gpt-5", reasoning: true },
+      {
+        id: "kimi/k3",
+        reasoning: true,
+        thinkingLevelMap: {
+          off: null,
+          minimal: null,
+          low: "low",
+          medium: null,
+          high: "high",
+          xhigh: null,
+          max: "max",
+        },
+      },
+    ]);
+    expect(modelAuth.models.value.find((model) => model.modelId === "gateway/gpt-5")!.thinkingLevels).toEqual([
+      "off",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+    ]);
+  });
+
+  it("keeps a hand-written thinking map when the endpoint is saved again", async () => {
+    const manual = {
+      off: null,
+      minimal: null,
+      low: "low",
+      medium: null,
+      high: "high",
+      xhigh: null,
+      max: "max",
+    };
+    const baseUrl = await listedEndpoint([
+      { id: "kimi/k3.1-pro", reasoning: true, reasoning_levels: ["low", "medium", "high"] },
+      { id: "gateway/added", reasoning: true, reasoning_levels: ["minimal"] },
+    ]);
+    const endpoint = { ...OLLAMA, baseUrl, models: ["kimi/k3.1-pro", "gateway/added"] };
+    const { modelsPath, modelAuth } = await fixture({
+      models: {
+        providers: {
+          [OLLAMA.id]: { ...endpoint, models: [{ id: "kimi/k3.1-pro", thinkingLevelMap: manual }] },
+        },
+      },
+    });
+
+    await modelAuth.saveCustomProvider(endpoint, "sk-gateway");
+
+    expect(JSON.parse(await readFile(modelsPath, "utf8")).providers[OLLAMA.id].models).toEqual([
+      { id: "kimi/k3.1-pro", reasoning: true, thinkingLevelMap: manual },
+      {
+        id: "gateway/added",
+        reasoning: true,
+        thinkingLevelMap: {
+          off: null,
+          minimal: "minimal",
+          low: null,
+          medium: null,
+          high: null,
+          xhigh: null,
+          max: null,
+        },
+      },
+    ]);
+  });
+
   it("doesn't hold endpoint edits behind a slow /models, nor write back an endpoint removed meanwhile", async () => {
     let answer: (() => void) | undefined;
     const asked = new Promise<void>((resolve) => {
@@ -326,6 +500,28 @@ describe("openModelAuth", () => {
       // Reasoning waits for a re-save: it changes what every request asks of the model.
       { id: "gateway/k3", contextWindow: 1_048_576, maxTokens: 131_072 },
       { id: "gateway/tuned", contextWindow: 64_000, maxTokens: 32_000 },
+    ]);
+  });
+
+  it("doesn't add a thinking map while backfilling on open", async () => {
+    const baseUrl = await listedEndpoint([
+      { id: "gateway/k3", context_length: 1_048_576, reasoning: true, reasoning_levels: ["low", "high"] },
+    ]);
+    const endpoint = { ...OLLAMA, baseUrl, models: ["gateway/k3"] };
+    const { modelsPath, modelAuth } = await fixture({
+      auth: { [OLLAMA.id]: { type: "api_key", key: "sk-gateway" } },
+      models: {
+        providers: {
+          [OLLAMA.id]: { ...endpoint, models: [{ id: "gateway/k3", reasoning: true }] },
+        },
+      },
+    });
+
+    await until(() => modelAuth.models.value.find((model) => model.modelId === "gateway/k3")?.contextWindow === 1_048_576);
+
+    // The thinking map waits for an explicit re-save, like reasoning itself.
+    expect(JSON.parse(await readFile(modelsPath, "utf8")).providers[OLLAMA.id].models).toEqual([
+      { id: "gateway/k3", reasoning: true, contextWindow: 1_048_576 },
     ]);
   });
 

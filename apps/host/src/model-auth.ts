@@ -6,8 +6,8 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { AuthEvent, AuthPrompt } from "@earendil-works/pi-ai";
-import { getBuiltinProviders } from "@earendil-works/pi-ai/providers/all";
+import type { AuthEvent, AuthPrompt, ThinkingLevelMap } from "@earendil-works/pi-ai";
+import { getBuiltinModels, getBuiltinProviders } from "@earendil-works/pi-ai/providers/all";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type {
   CustomProvider,
@@ -48,13 +48,25 @@ export interface ModelAuth {
   close(): void;
 }
 
-const BUILTIN = new Set<string>(getBuiltinProviders());
+const BUILTIN_PROVIDERS = getBuiltinProviders();
+const BUILTIN = new Set<string>(BUILTIN_PROVIDERS);
 const CUSTOM_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 /** A login nobody finishes — the phone that started it went away — must not hold pi's callback port forever. */
 const LOGIN_TIMEOUT_MS = 15 * 60_000;
 /** An ended flow stays listed this long so its outcome reaches the device that started it. */
 const FINISHED_LOGIN_TTL_MS = 60_000;
 const ENDPOINT_TIMEOUT_MS = 10_000;
+
+/** pi's catalog thinking maps: one list per built-in provider that has the model id. */
+const CATALOG_THINKING_LEVELS = new Map<string, ThinkingLevelMap[]>();
+for (const provider of BUILTIN_PROVIDERS) {
+  for (const model of getBuiltinModels(provider)) {
+    if (!model.reasoning || model.thinkingLevelMap === undefined) continue;
+    const maps = CATALOG_THINKING_LEVELS.get(model.id) ?? [];
+    maps.push(model.thinkingLevelMap);
+    CATALOG_THINKING_LEVELS.set(model.id, maps);
+  }
+}
 
 const sameModel = (a: ModelSummary, b: ModelSummary): boolean =>
   a.provider === b.provider
@@ -273,9 +285,10 @@ export async function openModelAuth(
   // Hosts before #444 saved custom models as bare ids, which pi reads as a
   // 128k window and so compacts long before the model has to. Fill in the
   // limits the endpoint reports, in the background; an unreachable endpoint
-  // keeps its entries as they are. Reasoning and image input stay for an
-  // explicit re-save: turning reasoning on starts sending the thinking level
-  // on every turn, which changes how the model runs, not just when it compacts.
+  // keeps its entries as they are. Reasoning, image input and the thinking-level
+  // map stay for an explicit re-save: turning reasoning on starts sending the
+  // thinking level on every turn, which changes how the model runs, not just
+  // when it compacts.
   // The requests run outside `serial`, so a slow endpoint never holds up a
   // save or removal; only the merge queues, against the file as it is then.
   const opened = await readModelsFile(options.modelsPath);
@@ -462,7 +475,7 @@ export async function openModelAuth(
             name,
             api: input.api,
             baseUrl: input.baseUrl,
-            // A field the user tuned by hand beats what the endpoint reports.
+            // A field the user tuned by hand, thinkingLevelMap included, beats what the endpoint reports.
             models: ids.map((id) => ({ ...reported.get(id), ...(previousModels.get(id) ?? { id }) })),
           };
         });
@@ -535,31 +548,39 @@ async function fetchEndpointModels(
   const body = (await response.json()) as { data?: Listed[]; models?: Listed[] };
   const models =
     api === "google-generative-ai"
-      ? (body.models ?? []).flatMap((model) =>
-          typeof model.name === "string"
-            ? [
-                endpointModel(model.name.replace(/^models\//, ""), {
-                  contextWindow: positive(model.inputTokenLimit),
-                  maxTokens: positive(model.outputTokenLimit),
-                  reasoning: model.thinking === true,
-                  image: false,
-                }),
-              ]
-            : [],
-        )
-      : (body.data ?? []).flatMap((model) =>
-          typeof model.id === "string"
-            ? [
-                endpointModel(model.id, {
-                  contextWindow:
-                    positive(model.context_window) ?? positive(model.context_length) ?? positive(model.max_input_tokens),
-                  maxTokens: positive(model.max_output_tokens),
-                  reasoning: model.reasoning === true,
-                  image: Array.isArray(model.modalities?.input) && model.modalities.input.includes("image"),
-                }),
-              ]
-            : [],
-        );
+      ? (body.models ?? []).flatMap((model) => {
+          if (typeof model.name !== "string") return [];
+          const id = model.name.replace(/^models\//, "");
+          const reasoning = model.thinking === true;
+          return [
+            endpointModel(id, {
+              contextWindow: positive(model.inputTokenLimit),
+              maxTokens: positive(model.outputTokenLimit),
+              reasoning,
+              image: false,
+              thinkingLevelMap: reasoning
+                ? (thinkingLevelMapFrom(reportedThinkingLevels(model)) ?? catalogThinkingLevelMap(id))
+                : undefined,
+            }),
+          ];
+        })
+      : (body.data ?? []).flatMap((model) => {
+          if (typeof model.id !== "string") return [];
+          const id = model.id;
+          const reasoning = model.reasoning === true;
+          return [
+            endpointModel(id, {
+              contextWindow:
+                positive(model.context_window) ?? positive(model.context_length) ?? positive(model.max_input_tokens),
+              maxTokens: positive(model.max_output_tokens),
+              reasoning,
+              image: Array.isArray(model.modalities?.input) && model.modalities.input.includes("image"),
+              thinkingLevelMap: reasoning
+                ? (thinkingLevelMapFrom(reportedThinkingLevels(model)) ?? catalogThinkingLevelMap(id))
+                : undefined,
+            }),
+          ];
+        });
   if (models.length === 0) throw new Error(`${url.host} listed no models`);
   return models;
 }
@@ -580,16 +601,75 @@ const lacksLimits = (model: unknown): boolean =>
 const positive = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 
+/** pi's thinking levels, in the order its catalog writes them. */
+const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+
+/** The thinking levels a /models entry advertises, from either dialect, keyed by pi's level. */
+function reportedThinkingLevels(model: Listed): Map<ThinkingLevel, string> {
+  const levels = new Map<ThinkingLevel, string>();
+  const add = (value: unknown): void => {
+    if (typeof value !== "string") return;
+    const level = value.trim();
+    // Magpie spells off as "none"; pi's level is "off".
+    const piLevel = level.toLowerCase() === "none" ? "off" : level.toLowerCase();
+    if (!(THINKING_LEVELS as readonly string[]).includes(piLevel) || levels.has(piLevel as ThinkingLevel)) return;
+    levels.set(piLevel as ThinkingLevel, level);
+  };
+  if (Array.isArray(model.reasoning_levels)) {
+    for (const value of model.reasoning_levels) add(value);
+  }
+  if (Array.isArray(model.supported_reasoning_levels)) {
+    for (const value of model.supported_reasoning_levels) {
+      if (typeof value === "string") add(value);
+      else if (typeof value === "object" && value !== null && "effort" in value) add(value.effort);
+    }
+  }
+  return levels;
+}
+
+/** Every key is present, so pi hides each level the endpoint did not report. */
+function thinkingLevelMapFrom(levels: Map<ThinkingLevel, string>): ThinkingLevelMap | undefined {
+  if (levels.size === 0) return undefined;
+  return {
+    off: levels.get("off") ?? null,
+    minimal: levels.get("minimal") ?? null,
+    low: levels.get("low") ?? null,
+    medium: levels.get("medium") ?? null,
+    high: levels.get("high") ?? null,
+    xhigh: levels.get("xhigh") ?? null,
+    max: levels.get("max") ?? null,
+  };
+}
+
+/** The catalog map only when the id, un-prefixed, names exactly one built-in model. */
+function catalogThinkingLevelMap(id: string): ThinkingLevelMap | undefined {
+  let matches = CATALOG_THINKING_LEVELS.get(id);
+  if (matches === undefined) {
+    const slash = id.indexOf("/");
+    if (slash === -1) return undefined;
+    matches = CATALOG_THINKING_LEVELS.get(id.slice(slash + 1));
+  }
+  return matches?.length === 1 ? matches[0] : undefined;
+}
+
 /** pi's defaults for a bare id are a 128k window, 16k output, no reasoning and text only. */
 function endpointModel(
   id: string,
-  reported: { contextWindow?: number; maxTokens?: number; reasoning: boolean; image: boolean },
+  reported: {
+    contextWindow?: number;
+    maxTokens?: number;
+    reasoning: boolean;
+    image: boolean;
+    thinkingLevelMap?: ThinkingLevelMap;
+  },
 ): EndpointModel {
   return {
     id,
     ...(reported.contextWindow === undefined ? {} : { contextWindow: reported.contextWindow }),
     ...(reported.maxTokens === undefined ? {} : { maxTokens: reported.maxTokens }),
     ...(reported.reasoning ? { reasoning: true } : {}),
+    ...(reported.thinkingLevelMap === undefined ? {} : { thinkingLevelMap: reported.thinkingLevelMap }),
     ...(reported.image ? { input: ["text", "image"] } : {}),
   };
 }
