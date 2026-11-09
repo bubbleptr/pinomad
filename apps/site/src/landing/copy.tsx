@@ -26,7 +26,8 @@ export interface LandingCopy {
     eyebrow: string;
     title: string;
     lead: string;
-    clients: string[];
+    /** The three moments the phone shows, as buttons that switch it. */
+    steps: [string, string];
     shotAlt: string;
   };
   core: {
@@ -119,12 +120,12 @@ export const copy: Record<Lang, LandingCopy> = {
       ],
     },
     anywhere: {
-      eyebrow: "Any screen",
-      title: "Start at your desk, decide from your phone",
-      lead: "Start a task, then walk away. When the agent needs a decision, it asks one to four multiple-choice questions and waits; the iPhone app notifies you when a run is waiting for you, finished, or failed. Tap through to answer, send a message to steer the run, or queue the next one.",
-      clients: ["Mac app", "Web", "iPhone"],
+      eyebrow: "Away from your desk",
+      title: "Your computer at home is your cloud machine",
+      lead: "The code and the agent stay on your computer at home; your phone is a screen onto it. From anywhere you can start a task, answer the agent's questions, or step in mid-run, then go through what changed, line by line, before you decide what's next.",
+      steps: ["Start a task", "Answer"],
       shotAlt:
-        "The same run in the PiNomad iPhone app: the agent's summary of the accent folding, the README request below it, and the run still going at the bottom with a stop button",
+        "The PiNomad iPhone app at the step chosen beside it: a task sent from the phone to omarchy, or the push notification over the list of machines and then the agent's question about old bills.",
     },
     core: {
       eyebrow: "How it works",
@@ -290,11 +291,11 @@ export const copy: Record<Lang, LandingCopy> = {
       ],
     },
     anywhere: {
-      eyebrow: "多端接力",
-      title: "在电脑前派活，出门用手机拍板",
-      lead: "派完活就能走开。要你拍板时，agent 会出几道选择题等你回答；任务等你、跑完或失败，iPhone 都会推送。点开就能回答，也能中途插话或排下一条。",
-      clients: ["Mac App", "Web", "iPhone"],
-      shotAlt: "同一个任务在 PiNomad iPhone App 里：上面是 agent 对重音字母折叠的总结，下面是写 README 的追问，最底下任务还在跑，旁边是停止按钮",
+      eyebrow: "出门在外",
+      title: "家里的电脑，就是你随身的云主机",
+      lead: "代码和 agent 都留在家里的电脑上，手机只是连上去的一块屏幕。出门在外照样能派活、回答 agent 的提问、中途插话；跑完了在手机上看改了哪些文件，逐行看完 diff 再决定下一步。",
+      steps: ["派活", "拍板"],
+      shotAlt: "PiNomad iPhone App，显示旁边选中的那一步：从手机发给 omarchy 的任务，或者机器列表上弹出的推送，接着是 agent 关于旧账单的提问。",
     },
     core: {
       eyebrow: "工作方式",

@@ -14,6 +14,7 @@
 @import "../components/site-header.css" layer(landing);
 @import "./page.css" layer(landing);
 @import "./mock/mock.css" layer(landing);
+@import "./mock/phone.css" layer(landing);
 @import "tailwindcss/utilities.css" layer(utilities) source(none);
 
 /* Only the landing page's own markup; docs and blog have app.css. */

@@ -1,15 +1,16 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { localized, type Lang } from "@/lib/i18n.ts";
 import { githubUrl } from "@/lib/nav.ts";
 import { blogUrl, type LandingCopy } from "./copy.tsx";
 import { AgentsDiagram, ConnectionDiagram, EnvironmentsDiagram } from "./diagrams.tsx";
 import { DurableDiagram } from "./durable.tsx";
+import { AnywherePhone, STEPS, type Step } from "./mock/anywhere-phone.tsx";
 import { HeroApp } from "./mock/hero-app.tsx";
 import { ArrowIcon } from "./icons.tsx";
 import { shot } from "./shots.ts";
 
-// The landing page's sections. The interactive parts (the durable diagram, the
-// get-started copy button) live in their own files.
+// The landing page's sections. The larger interactive parts (the durable diagram,
+// the get-started copy button, the product mocks) live in their own files.
 
 export function SectionHead({ id, eyebrow, title, lead }: { id: string; eyebrow: string; title: ReactNode; lead?: string }) {
   return (
@@ -20,34 +21,6 @@ export function SectionHead({ id, eyebrow, title, lead }: { id: string; eyebrow:
       <h2 id={id}>{title}</h2>
       {lead && <p className="section-lead">{lead}</p>}
     </>
-  );
-}
-
-/** An iPhone drawn in CSS around a screenshot: titanium edge, black bezel, Dynamic Island, side buttons. */
-function Phone({ lang, alt, className }: { lang: Lang; alt: string; className: string }) {
-  const image = shot(lang, "phone", 603, 1206);
-  return (
-    <figure className={`phone ${className}`}>
-      <div className="phone-body">
-        <span className="phone-btn btn-action" />
-        <span className="phone-btn btn-volume-up" />
-        <span className="phone-btn btn-volume-down" />
-        <span className="phone-btn btn-side" />
-        <span className="phone-btn btn-camera" />
-        <div className="phone-screen">
-          <img
-            src={image.src}
-            srcSet={image.srcSet}
-            sizes="(min-width: 56rem) 18rem, 16rem"
-            width="1206"
-            height="2622"
-            alt={alt}
-            loading="lazy"
-          />
-          <span className="phone-island" />
-        </div>
-      </div>
-    </figure>
   );
 }
 
@@ -108,22 +81,29 @@ function ModelList({ t, hidden }: { t: LandingCopy["hero"]; hidden?: boolean }) 
   );
 }
 
-/** The phone gets a section of its own: drawn as a device, it doesn't sit well beside a flat screenshot. */
+/** Away from your desk: two phone screens, and the steps that switch the one in front. */
 export function Anywhere({ lang, t }: { lang: Lang; t: LandingCopy["anywhere"] }) {
+  const [step, setStep] = useState<Step>("start");
   return (
     <section className="section section-showcase" id="anywhere" aria-labelledby="anywhere-title">
       <div className="wrap split">
         <div className="section-head">
           <SectionHead id="anywhere-title" eyebrow={t.eyebrow} title={t.title} lead={t.lead} />
-          <ul className="chips">
-            {t.clients.map((client) => (
-              <li key={client} className="chip">
-                {client}
-              </li>
+          <div className="chips">
+            {STEPS.map((each, index) => (
+              <button
+                key={each}
+                type="button"
+                className="chip chip-step"
+                aria-pressed={each === step}
+                onClick={() => setStep(each)}
+              >
+                {t.steps[index]}
+              </button>
             ))}
-          </ul>
+          </div>
         </div>
-        <Phone lang={lang} alt={t.shotAlt} className="showcase-phone" />
+        <AnywherePhone lang={lang} step={step} label={t.shotAlt} />
       </div>
     </section>
   );

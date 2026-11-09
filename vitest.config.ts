@@ -68,6 +68,7 @@ export default defineConfig({
         },
       },
       {
+        resolve: { alias: { "@": fileURLToPath(new URL("./apps/site/src", import.meta.url)) } },
         test: {
           ...shared,
           name: "site",
