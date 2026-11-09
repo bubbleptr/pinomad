@@ -8,11 +8,14 @@
 // subagent_stop, subagent_read, and subagent_list work on any subagent.
 // The child starts as a copy of the parent's agent — same cwd, so the same
 // checkout (ADR-0010 §5) — minus this extension (no recursion) and `exclude`.
+import { join } from "node:path";
+import type { Context } from "@earendil-works/chord";
 import { clampThinkingLevel, type ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { Models } from "@earendil-works/pi-ai/models";
 import {
   AgentDoc,
   type AgentChange,
+  type ConversationId,
   configure,
   defineExtension,
   defineTool,
@@ -25,8 +28,11 @@ import { Type } from "typebox";
 import type { AgentRole } from "@pinomad/protocol/agents.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import type { BuiltinExtension } from "../builtin-extension.ts";
+import { branchSuffix, type RepoBase, worktreeBranch } from "../checkout.ts";
+import { IndexDoc } from "../organization.ts";
 import { SubagentDoc } from "../subagent-doc.ts";
 import {
+  answeredHeader,
   answerText,
   assertCapacity,
   assertDispatchable,
@@ -68,6 +74,13 @@ export function createSubagent(options: {
   readonly roles?: () => readonly AgentRole[];
   /** Extensions removed from the child besides this one, e.g. `question`. */
   readonly exclude: readonly Extension[];
+  /** Own worktrees for `checkout: "worktree"` (ADR-0046 §5); absent rejects that checkout. */
+  readonly worktree?: {
+    /** The dispatcher's repository, subdirectory, and HEAD; throws when it has no Git checkout. */
+    readonly base: (dispatcher: ConversationId, context: Context) => Promise<RepoBase>;
+    /** Where a subagent's worktree lives. */
+    readonly path: (child: ConversationId) => string;
+  };
 }): BuiltinExtension {
   const available = (): string => options.modelSummaries().map((model) => `${model.provider}/${model.modelId}`).join(", ");
   const roles = options.roles ?? (() => [] as const);
@@ -131,8 +144,13 @@ export function createSubagent(options: {
     // A rerun finds its child and submission instead of duplicating them.
     replay: "safe",
     execute: async (args, api, context) => {
-      if (args.checkout === "worktree") throw new Error('checkout "worktree" is not available yet; use "shared"');
       const background = args.background === true;
+      let repo: RepoBase | undefined;
+      if (args.checkout === "worktree") {
+        if (options.worktree === undefined) throw new Error('checkout "worktree" is not available on this host; use "shared"');
+        // Git runs outside the commit. A rerun resolves it again and then finds its child.
+        repo = await options.worktree.base(api.conversationId, context);
+      }
       const child = await api.commit(async (tx) => {
         const root = await familyRootIn(tx, api.conversationId);
         const registry = await tx.doc(SubagentsDoc, root);
@@ -145,6 +163,7 @@ export function createSubagent(options: {
           return {
             id: existingId,
             name: recorded?.[0] ?? doc?.name,
+            ...(recorded?.[1].branch === undefined ? {} : { branch: recorded[1].branch, base: recorded[1].base }),
             ...(doc?.model === undefined ? {} : { model: doc.model }),
             ...(doc?.startedAt === undefined ? {} : { startedAt: doc.startedAt }),
           };
@@ -219,7 +238,18 @@ export function createSubagent(options: {
             })
           : api.taskId;
         const created = await tx.createConversation({ ownership: { kind: "task", taskId: owner } });
-        await configure(tx, created.id, change);
+        // Its own worktree: the record lands with the child (ADR-0010 §6); the
+        // env builder creates the directory on first use and after a loss.
+        let worktree: { branch: string; base: string; cwd: string } | undefined;
+        if (repo !== undefined) {
+          const path = options.worktree!.path(created.id);
+          worktree = { branch: worktreeBranch(created.id, branchSuffix()), base: repo.base, cwd: join(path, repo.subdir) };
+          const index = await tx.doc(IndexDoc);
+          // Read-after-set: a fresh array assigned to a document is stored as a copy.
+          if (index.checkouts === undefined) index.checkouts = [];
+          index.checkouts.push({ conversationId: created.id, path, repo: repo.repo, subdir: repo.subdir, branch: worktree.branch, base: repo.base });
+        }
+        await configure(tx, created.id, worktree === undefined ? change : { ...change, cwd: worktree.cwd });
         // The model the child will actually run: its own AgentDoc after
         // configure, else the override, else the caller's — absent for a child
         // with no model at all.
@@ -239,7 +269,8 @@ export function createSubagent(options: {
           dispatcher: api.conversationId,
           createdBy: api.taskId,
           ...(background ? {} : { call: api.taskId }),
-          checkout: "shared",
+          checkout: worktree === undefined ? "shared" : "worktree",
+          ...(worktree === undefined ? {} : { branch: worktree.branch, base: worktree.base }),
           ...(label === undefined || label === "" ? {} : { description: label }),
           status: "working",
           reporters: [],
@@ -248,12 +279,19 @@ export function createSubagent(options: {
         if (background) {
           await dispatch(tx, { root, name, sender: api.conversationId, from: "model", message: args.task });
         }
-        return { id: created.id, name, ...(ref === undefined ? {} : { model: doc.model }), startedAt };
+        return {
+          id: created.id,
+          name,
+          ...(worktree === undefined ? {} : { branch: worktree.branch, base: worktree.base }),
+          ...(ref === undefined ? {} : { model: doc.model }),
+          startedAt,
+        };
       }, context);
       const details = {
         conversationId: child.id,
         ...(child.name === undefined ? {} : { name: child.name }),
         ...(background ? { background: true } : {}),
+        ...(child.branch === undefined ? {} : { branch: child.branch, base: child.base }),
         ...(child.model === undefined ? {} : { model: child.model }),
         ...(child.startedAt === undefined ? {} : { startedAt: child.startedAt }),
       };
@@ -263,7 +301,10 @@ export function createSubagent(options: {
           output: [
             {
               type: "text",
-              text: `Started subagent "${name}" in the background. Its answer will be reported to you when it arrives; message it with subagent_send.`,
+              text:
+                `Started subagent "${name}" in the background` +
+                (child.branch === undefined ? "" : ` on its own worktree branch ${child.branch} (from ${child.base?.slice(0, 12)})`) +
+                ". Its answer will be reported to you when it arrives; message it with subagent_send.",
             },
           ],
           details,
@@ -290,7 +331,7 @@ export function createSubagent(options: {
       }, context);
       if (text === undefined) throw new Error(`Subagent failed: ${settled.status === "unanswered" ? settled.reason : settled.status}`);
       return {
-        output: [{ type: "text", text: `[subagent ${name} answered]\n\n${text}` }],
+        output: [{ type: "text", text: `${answeredHeader(name, child)}\n\n${text}` }],
         details,
       } satisfies ToolExecutionResult;
     },
@@ -391,7 +432,8 @@ export function createSubagent(options: {
         const lines: string[] = [];
         for (const [name, record] of Object.entries((await tx.doc(SubagentsDoc, root)).agents)) {
           const label = record.description === undefined ? "" : ` — ${record.description}`;
-          lines.push(`- ${name}: ${await statusOf(tx, record)}${label} (checkout: ${record.checkout})`);
+          const checkout = record.branch === undefined ? record.checkout : `worktree, branch ${record.branch}`;
+          lines.push(`- ${name}: ${await statusOf(tx, record)}${label} (checkout: ${checkout})`);
         }
         return lines.length === 0 ? "No subagents." : lines.join("\n");
       }, context);

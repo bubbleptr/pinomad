@@ -29,7 +29,8 @@ import { todo } from "./extensions/todo.ts";
 import type { Processes } from "./processes.ts";
 import { validatePublicUrl, validateRelayOrigin } from "./gateway.ts";
 import { type OpenHostOptions, openHost } from "./host.ts";
-import { checkoutInfo } from "./organization.ts";
+import { worktreePath } from "./checkout.ts";
+import { checkoutInfo, subagentWorktreeBase } from "./organization.ts";
 import { readServerConfig, resolveRelayOrigin } from "./server-config.ts";
 import { startHostLogRotation } from "./service/log-rotation.ts";
 import { openModelAuth } from "./model-auth.ts";
@@ -105,6 +106,10 @@ export async function main(argv: readonly string[]): Promise<void> {
           // runtime could not report a child's processes to the right family.
           exclude: [question.extension, processes.extension],
           roles: () => host.agentRoles.value.roles,
+          worktree: {
+            base: (dispatcher, context) => subagentWorktreeBase(host.harness(), dataDir, dispatcher, context),
+            path: (child) => worktreePath(dataDir, child),
+          },
         }),
         createCodemode(),
         createContextBreakdown({ harness: host.harness }),
