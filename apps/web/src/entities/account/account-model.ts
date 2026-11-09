@@ -391,6 +391,10 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     for (const flight of flights.values()) flight.cancelled = true;
     flights.clear();
     unsaved.clear();
+    // A 4401 mark belongs to the session that saw it: another account must
+    // not inherit it, and a host that still refuses this device reports it
+    // again on the next refused connection.
+    rejected.clear();
     stopWatching();
     for (const { timer } of hostWatches.values()) clearTimeout(timer);
     hostWatches.clear();
@@ -492,6 +496,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
 
   /** Save a slot without generating a new key; leaves it queued on failure. */
   const savePending = async (active: AccountClient, host: StoredHost): Promise<boolean> => {
+    const started = epoch;
     if (client !== active) return false;
     if (declinedHost(host)) {
       // The user forgot this host while its save was still failing; retrying
@@ -507,6 +512,9 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     } catch {
       return false;
     }
+    // The save may have outlived its session: it must not clear the new
+    // session's rejection or remove its recovery slot for the same host.
+    if (!live(active, started)) return false;
     if (host.account !== undefined && removedSince(slot, seen)) {
       await forgetAccountHosts(active.origin, host.account.hostId);
       return false;
