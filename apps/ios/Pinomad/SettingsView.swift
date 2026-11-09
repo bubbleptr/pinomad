@@ -13,6 +13,7 @@ struct SettingsView: View {
     @State private var asking: AccountHostRow?
     @State private var removing: PendingAccountHost?
     @State private var query = ""
+    @AppStorage(Appearance.storageKey) private var appearance = Appearance.system
 
     var body: some View {
         List {
@@ -22,11 +23,13 @@ struct SettingsView: View {
                 HostsSections(model: model, asking: $asking, removing: $removing)
             }
 
+            if shows(appearanceKeywords) { appearanceSection }
+
             if shows(["Notifications", "Push", "Alerts"]) { pushSection }
 
             if shows(["About", "Version", "Protocol"] + machines.map(label)) { aboutSection }
 
-            if !query.isEmpty, !shows(accountKeywords + hostKeywords + ["Notifications", "Push", "Alerts", "About", "Version", "Protocol"]) {
+            if !query.isEmpty, !shows(accountKeywords + hostKeywords + appearanceKeywords + ["Notifications", "Push", "Alerts", "About", "Version", "Protocol"]) {
                 ContentUnavailableView.search(text: query)
             }
         }
@@ -51,6 +54,8 @@ struct SettingsView: View {
         ["Hosts", "Add Host", "Pair", "Unpair", "Connection", "Routes"]
             + machines.map(label) + model.accountRows.map(\.name)
     }
+
+    private let appearanceKeywords = ["Appearance", "Theme", "Light", "Dark", "Dark mode", "System"]
 
     private var machines: [HostRecord] { model.machines }
 
@@ -90,6 +95,16 @@ struct SettingsView: View {
             if model.accountSession == nil {
                 Text("Sign in to pair the hosts on your account.")
             }
+        }
+    }
+
+    private var appearanceSection: some View {
+        Section("Appearance") {
+            Picker("Appearance", selection: $appearance) {
+                ForEach(Appearance.allCases) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
         }
     }
 
