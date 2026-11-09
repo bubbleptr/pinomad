@@ -2,7 +2,7 @@ import { type RefObject, useEffect, useRef, useState } from "react";
 import type { Lang } from "@/lib/i18n.ts";
 import { type Block, type Chat, type Inline, type Machine, mockContent } from "./content.ts";
 import { icons, ModelLogo } from "./icons.tsx";
-import { clockText, elapsedText, runAt, type Run } from "./runs.ts";
+import { elapsedText, runAt, type Run } from "./runs.ts";
 
 // The hero's product shot, drawn in HTML: the Mac app with two machines in its
 // sidebar, and in front of it the same conversation open in a browser on another
@@ -225,7 +225,7 @@ function BlockView({ block, clock }: { block: Block; clock: number }) {
       return (
         <p className="mock-tools">
           <span className="mock-shimmer">{block.label}</span>
-          {` · ${clockText(block.since + clock)}`}
+          {` · ${elapsedText(block.since + clock)}`}
         </p>
       );
     case "agents":

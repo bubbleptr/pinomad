@@ -70,7 +70,7 @@ export const mockContent: Record<Lang, MockContent> = {
             ". The map is right; the dedupe step has to run after folding, not before. Checking the rest:",
           ],
         },
-        { kind: "trace", label: "Running bash…", since: 13.6 },
+        { kind: "trace", label: "Running bash…", since: 14 },
       ],
     },
     machines: [
@@ -105,7 +105,7 @@ export const mockContent: Record<Lang, MockContent> = {
                       { ...runs.collisions, title: "Look for slug collisions", activity: "bash bun test" },
                     ],
                   },
-                  { kind: "trace", label: "Running subagent…", since: 64.3 },
+                  { kind: "trace", label: "Running subagent…", since: 64 },
                 ],
               },
               {
@@ -170,7 +170,7 @@ export const mockContent: Record<Lang, MockContent> = {
                     parts: ["Dumped the database (2.1 GB) and started 18 on a fresh volume. ", { code: "@worker" }, " is restoring it:"],
                   },
                   { kind: "agents", runs: [{ ...runs.restore, title: "Restore and verify", activity: "bash pg_restore -j 4" }] },
-                  { kind: "trace", label: "Running subagent…", since: 252.8 },
+                  { kind: "trace", label: "Running subagent…", since: 253 },
                 ],
               },
             ],
@@ -198,7 +198,7 @@ export const mockContent: Record<Lang, MockContent> = {
             "。映射表没问题，去重要放在折叠之后做，而不是之前。继续查剩下的：",
           ],
         },
-        { kind: "trace", label: "Running bash…", since: 13.6 },
+        { kind: "trace", label: "Running bash…", since: 14 },
       ],
     },
     machines: [
@@ -230,7 +230,7 @@ export const mockContent: Record<Lang, MockContent> = {
                       { ...runs.collisions, title: "检查 slug 冲突", activity: "bash bun test" },
                     ],
                   },
-                  { kind: "trace", label: "Running subagent…", since: 64.3 },
+                  { kind: "trace", label: "Running subagent…", since: 64 },
                 ],
               },
               {
@@ -292,7 +292,7 @@ export const mockContent: Record<Lang, MockContent> = {
                     parts: ["数据库已经导出（2.1 GB），18 在新卷上起来了。", { code: "@worker" }, " 正在恢复："],
                   },
                   { kind: "agents", runs: [{ ...runs.restore, title: "恢复并校验", activity: "bash pg_restore -j 4" }] },
-                  { kind: "trace", label: "Running subagent…", since: 252.8 },
+                  { kind: "trace", label: "Running subagent…", since: 253 },
                 ],
               },
             ],
