@@ -1,5 +1,6 @@
 import type { StoredHostConnectionChange } from "@pinomad/client/stored-host.ts";
 import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
+import type { Appearance } from "../appearance/appearance.ts";
 import type { UpdateStatus } from "../app-update/update-protocol.ts";
 import type {
   LocalHostResult,
@@ -102,6 +103,11 @@ export interface DesktopBridge {
     /** Every line the running install printed so far, on each new one. */
     onSetupLines(listener: (lines: readonly string[]) => void): () => void;
   };
+  /**
+   * Point the window's native chrome (macOS vibrancy, title bar, scrollbars)
+   * at the renderer's appearance. Optional: older bridges keep following the system.
+   */
+  readonly setAppearance?: (appearance: Appearance) => Promise<void>;
 }
 
 declare global {

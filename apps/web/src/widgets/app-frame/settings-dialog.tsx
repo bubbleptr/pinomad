@@ -28,9 +28,10 @@ import { summaryOf, thinkingLevelLabels } from "@pinomad/client/model.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useNow } from "../../shared/use-now.ts";
-import { Archive, ArchiveRestore, ArrowBigUpDash, ArrowLeft, Bot, Cancel, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, Laptop, MoreHorizontal, Puzzle, RefreshCw, Sparkles, UserCircle } from "../../shared/ui/icons.tsx";
+import { Archive, ArchiveRestore, ArrowBigUpDash, ArrowLeft, Bot, Cancel, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, Laptop, MoreHorizontal, Palette, Puzzle, RefreshCw, Sparkles, UserCircle } from "../../shared/ui/icons.tsx";
 import { AccountPanel } from "../account/account-panel.tsx";
 import { AgentEditorDialog } from "./agent-editor-dialog.tsx";
+import { AppearanceSection } from "./appearance-section.tsx";
 import type { FrameMachine } from "./app-frame.tsx";
 import { DevicesSection } from "./devices-section.tsx";
 import { HostUpgradeSection } from "./host-upgrade-section.tsx";
@@ -45,6 +46,7 @@ const SECTIONS = [
   { id: "hosts", title: "Hosts", icon: Computer, group: "device", keywords: "pair unpair add connection relay peer-to-peer join" },
   { id: "this-mac", title: "This Mac", icon: Laptop, group: "device", keywords: "local host install" },
   { id: "updates", title: "Updates", icon: RefreshCw, group: "device", keywords: "version download" },
+  { id: "appearance", title: "Appearance", icon: Palette, group: "device", keywords: "theme light dark system color" },
   { id: "providers", title: "Providers", icon: KeyRound, group: "host", keywords: "api key login subscription" },
   { id: "models", title: "Models", icon: Sparkles, group: "host", keywords: "default model thinking" },
   { id: "agents", title: "Agents", icon: Bot, group: "host", keywords: "roles subagents" },
@@ -376,6 +378,9 @@ function sectionBody(
   }
   if (section === "updates") {
     return { title: "Updates", body: <UpdatesSection /> };
+  }
+  if (section === "appearance") {
+    return { title: "Appearance", body: <AppearanceSection /> };
   }
   if (section === "this-mac") {
     return {

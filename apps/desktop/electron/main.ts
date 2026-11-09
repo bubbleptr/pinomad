@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, safeStorage, session, shell, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, protocol, safeStorage, session, shell, type IpcMainInvokeEvent } from "electron";
 import { autoUpdater } from "electron-updater";
 import { execFile, spawn } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
@@ -188,6 +188,24 @@ function installUpdateIpc(updater: AppUpdater): void {
  * check but not safeStorage — a hostname isn't a secret, and pairing must
  * name itself even with a locked keychain.
  */
+/**
+ * The renderer's light / dark / system choice, applied to the native chrome
+ * so the vibrancy under the sidebar matches the page painted over it. Main
+ * keeps no copy: the renderer sends its stored choice each time it loads.
+ */
+function installAppearanceIpc(): void {
+  ipcMain.handle("pinomad:appearance:set", (event: IpcMainInvokeEvent, appearance: unknown) => {
+    if (!isOurRendererFrame(event)) {
+      return Promise.reject(new Error("the appearance is only settable from the bundled renderer"));
+    }
+    if (appearance !== "light" && appearance !== "dark" && appearance !== "system") {
+      return Promise.reject(new Error("unknown appearance"));
+    }
+    nativeTheme.themeSource = appearance;
+    return Promise.resolve();
+  });
+}
+
 function installDeviceNameIpc(): void {
   ipcMain.handle("pinomad:device:name", (event: IpcMainInvokeEvent) => {
     if (!isOurRendererFrame(event)) {
@@ -363,6 +381,7 @@ if (!app.requestSingleInstanceLock()) {
     });
     installHostStoreIpc();
     installDeviceNameIpc();
+    installAppearanceIpc();
     installOAuthIpc();
     if (process.platform === "darwin") {
       const localHost = createLocalHost({

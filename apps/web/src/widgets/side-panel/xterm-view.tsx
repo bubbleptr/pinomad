@@ -186,13 +186,18 @@ export default function XtermView(props: XtermViewProps) {
       observer.observe(element);
       screen.focus();
     }
+    // The scheme changes with the OS, or with the appearance setting, which
+    // the Theme root writes to <html data-theme> without any media event.
     const scheme = matchMedia(DARK);
     const retheme = (): void => {
       screen.options.theme = themeFor(element);
     };
     scheme.addEventListener("change", retheme);
+    const chosen = new MutationObserver(retheme);
+    chosen.observe(document.documentElement, { attributeFilter: ["data-theme"] });
     return () => {
       scheme.removeEventListener("change", retheme);
+      chosen.disconnect();
       observer?.disconnect();
       typing?.dispose();
       detach();
