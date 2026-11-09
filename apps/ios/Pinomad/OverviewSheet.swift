@@ -16,6 +16,10 @@ struct OverviewSheet: View {
     @State private var panel = ChangesPanel()
     @State private var path = NavigationPath()
     @State private var detent = PresentationDetent.medium
+    /// Processes whose Stop is waiting for the host's answer; the row's
+    /// button stays disabled until the call resolves.
+    @State private var stopping: Set<String> = []
+    @State private var stopError: String?
 
     private var snapshot: ClientSnapshot? { model.snapshot }
 
@@ -32,6 +36,19 @@ struct OverviewSheet: View {
 
     /// A chat has no repository to diff; the Web card skips the ask too.
     private var isChat: Bool { conversation?.home == .chat }
+
+    /// The family root whose process list the overview watches, even while
+    /// a fork is shown (ADR-0045 §3).
+    private var processRoot: UInt64? {
+        snapshot.flatMap { rootOf(organized: $0.organized, id: conversationId)?.summary.id }
+    }
+
+    private var processes: ProcessesOverview? {
+        snapshot.flatMap {
+            ProcessesOverview.of(
+                organized: $0.organized, conversation: conversationId, processes: $0.processes)
+        }
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -69,6 +86,12 @@ struct OverviewSheet: View {
             guard !isChat else { return }
             start(panel.open(busy: busy, connected: connected))
         }
+        // The list belongs to the family root; the watch starts as soon as
+        // the organized index names it and survives reconnects in the core.
+        .task(id: processRoot) {
+            guard let root = processRoot else { return }
+            model.watchProcesses(root)
+        }
         .onChange(of: busy) { _, busy in
             start(panel.observe(busy: busy, connected: connected))
         }
@@ -77,7 +100,18 @@ struct OverviewSheet: View {
         }
         // Attached to the stack, not its content: pushing a page must not
         // end the sheet's epoch, while dismissing the sheet must.
-        .onDisappear { panel.close() }
+        .onDisappear {
+            panel.close()
+            model.unwatchProcesses()
+        }
+        .alert("Couldn't stop process", isPresented: Binding(
+            get: { stopError != nil },
+            set: { if !$0 { stopError = nil } }
+        )) {
+            Button("OK", role: .cancel) { stopError = nil }
+        } message: {
+            Text(stopError ?? "")
+        }
     }
 
     @ViewBuilder
@@ -86,7 +120,8 @@ struct OverviewSheet: View {
         let subagents = snapshot.flatMap {
             SubagentOverview.of(organized: $0.organized, conversation: conversationId)
         }
-        if conversation == nil && workspace == nil && subagents == nil {
+        let processes = self.processes
+        if conversation == nil && workspace == nil && subagents == nil && processes == nil {
             ContentUnavailableView { Label("No overview to show", image: .info) }
         } else {
             List {
@@ -104,6 +139,15 @@ struct OverviewSheet: View {
                 }
                 if let subagents {
                     Section("Subagents") { subagentRows(subagents) }
+                }
+                if let processes {
+                    Section {
+                        processRows(processes)
+                    } header: {
+                        Text("Processes")
+                    } footer: {
+                        Text(ProcessesOverview.footer)
+                    }
                 }
             }
         }
@@ -316,6 +360,102 @@ struct OverviewSheet: View {
         if !summary.isEmpty {
             Text(summary.joined(separator: " · "))
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: Processes
+
+    @ViewBuilder
+    private func processRows(_ overview: ProcessesOverview) -> some View {
+        ForEach(overview.rows) { row in
+            HStack(spacing: 10) {
+                Circle()
+                    .fill(processColor(row))
+                    .frame(width: 8, height: 8)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.name)
+                        .lineLimit(1)
+                    if let command = row.command {
+                        Text(command)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                // The visible result is short; VoiceOver reads the long
+                // state line, including a lost process's old pid. Keep this
+                // on the text block so the Stop button stays reachable.
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(processLabel(row))
+                Spacer(minLength: 8)
+                if row.active {
+                    // The running duration ticks like the Web list's clock.
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Text(processElapsedText(
+                            ms: context.date.timeIntervalSince(row.startedAt) * 1000))
+                            .font(.footnote)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                    }
+                } else if !row.result.isEmpty {
+                    Text(row.result)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
+                if row.canStop {
+                    Button("Stop") { stop(row) }
+                        .font(.footnote.weight(.semibold))
+                        .buttonStyle(.borderless)
+                        .disabled(stopping.contains(row.id))
+                }
+            }
+        }
+        let summary = [
+            overview.moreRunning > 0 ? "\(overview.moreRunning) more running" : nil,
+            overview.moreEnded > 0 ? "\(overview.moreEnded) more ended" : nil,
+        ].compactMap { $0 }
+        if !summary.isEmpty {
+            Text(summary.joined(separator: " · "))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func processLabel(_ row: ProcessesOverview.Row) -> String {
+        let command = row.command.map { ", \($0)" } ?? ""
+        return "\(row.name)\(command). \(row.status)"
+    }
+
+    /// A running process is green; a clean exit is neutral, and a lost
+    /// process or a failed/non-zero exit is the error color.
+    private func processColor(_ row: ProcessesOverview.Row) -> Color {
+        switch row.state {
+        case .starting, .running:
+            return .green
+        case .lost, .failed:
+            return .red
+        case let .exited(exited, signal):
+            return signal == nil && exited == 0 ? Color(uiColor: .secondaryLabel) : .red
+        case .stopped:
+            return Color(uiColor: .secondaryLabel)
+        }
+    }
+
+    /// Stop is one tap and no confirmation; the row disables while its call
+    /// waits for the host's answer.
+    private func stop(_ row: ProcessesOverview.Row) {
+        guard let root = processRoot, !stopping.contains(row.id) else { return }
+        stopping.insert(row.id)
+        Task {
+            do {
+                try await model.stopProcess(root: root, id: row.id)
+            } catch {
+                stopError = model.describe(error)
+            }
+            stopping.remove(row.id)
         }
     }
 

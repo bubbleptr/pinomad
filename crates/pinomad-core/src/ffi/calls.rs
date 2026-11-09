@@ -208,6 +208,18 @@ pub enum FfiCall {
     /// Release the shown conversation's subscriptions; host-level streams and
     /// the connection stay. Pending submissions and uploads keep running.
     ClearConversation,
+    /// Keep the family root's `pinomad.processes` doc subscribed while the
+    /// Overview lists it. Local — no host call, and the hello declares the
+    /// doc. `conversation_id` is the root, so a shown fork reads the same
+    /// list as its root (ADR-0045 §3).
+    WatchProcesses { conversation_id: u64 },
+    /// The Overview closed: drop the list subscription unless the shown or
+    /// loading conversation still needs the same doc.
+    UnwatchProcesses,
+    /// Stop one background process (5.32). Request-class, so the caller waits
+    /// for the host's answer and cannot fire twice while the stop runs.
+    /// `conversation_id` is the family root.
+    StopProcess { conversation_id: u64, id: String },
     /// The shown conversation's thinking level.
     SetThinkingLevel { level: ThinkingLevel },
     SetModel { model: ModelRef },
@@ -439,6 +451,9 @@ impl FfiCall {
             },
             FfiCall::SwitchConversation { id } => Call::SwitchConversation { id },
             FfiCall::ClearConversation => Call::ClearConversation,
+            FfiCall::WatchProcesses { conversation_id } => Call::WatchProcesses { conversation_id },
+            FfiCall::UnwatchProcesses => Call::UnwatchProcesses,
+            FfiCall::StopProcess { conversation_id, id } => Call::StopProcess { conversation_id, id },
             FfiCall::SetThinkingLevel { level } => Call::SetThinkingLevel {
                 level: level.as_str().to_string(),
             },

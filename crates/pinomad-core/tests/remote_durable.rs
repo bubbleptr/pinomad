@@ -3667,3 +3667,186 @@ fn upgrade_calls_and_auto_upgrade_need_a_5_30_host() {
     assert_eq!(h.host.method("cancelUpgrade")[0].get("args").cloned(), Some(obj(&[])));
     assert_eq!(h.host.method("updateSettings").len(), 1);
 }
+
+// ─── background processes (5.32, ADR-0045) ────────────────────────────
+
+fn process_doc() -> Json {
+    obj(&[(
+        "processes",
+        Json::array(vec![
+            obj(&[
+                ("id", Json::from("run")),
+                ("owner", Json::from(3.0)),
+                ("name", Json::from("dev")),
+                ("command", Json::from("bun run dev")),
+                ("startedAt", Json::from(10.0)),
+                ("state", Json::from("running")),
+            ]),
+            obj(&[
+                ("id", Json::from("lost")),
+                ("owner", Json::from(3.0)),
+                ("name", Json::from("old")),
+                ("command", Json::from("tail -f log")),
+                ("pid", Json::from(42.0)),
+                ("startedAt", Json::from(1.0)),
+                ("endedAt", Json::from(2.0)),
+                ("state", Json::from("lost")),
+            ]),
+        ]),
+    )])
+}
+
+fn process_hello() -> Json {
+    obj(&[("limit", Json::from(8.0))])
+}
+
+fn process_doc_decl() -> Json {
+    obj(&[
+        ("kind", Json::from("pinomad.processes")),
+        ("presentation", Json::from("pinomad.processes")),
+    ])
+}
+
+fn host_with_processes() -> ScriptedHost {
+    let mut host = ScriptedHost::new(
+        vec![obj(&[])],
+        vec![
+            (
+                "docs".to_string(),
+                Json::array(vec![
+                    obj(&[
+                        ("kind", Json::from(DOC_KIND)),
+                        ("presentation", Json::from(DOC_KIND)),
+                    ]),
+                    process_doc_decl(),
+                ]),
+            ),
+            ("processes".to_string(), process_hello()),
+        ],
+    );
+    host.snapshots
+        .insert("doc:pinomad.processes:1".to_string(), process_doc());
+    host.snapshots
+        .insert("doc:pinomad.processes:2".to_string(), process_doc());
+    host
+}
+
+/// The overview watches the family root, not the shown fork: switching from
+/// the root to a fork must keep the root's process doc subscribed.
+#[test]
+fn a_fork_switch_keeps_the_watched_root_process_doc() {
+    let mut h = Harness::new(host_with_processes());
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    h.invoke(2, Call::WatchProcesses { conversation_id: 1 });
+    h.invoke(3, Call::SwitchConversation { id: 9 });
+
+    assert!(
+        h.host
+            .subscribes()
+            .contains(&"doc:pinomad.processes:1".to_string())
+    );
+    assert!(
+        !h.host
+            .unsubscribes()
+            .contains(&"doc:pinomad.processes:1".to_string())
+    );
+    let view = h.remote.processes_view().expect("watched list");
+    assert_eq!(view.root, 1);
+    assert_eq!(
+        view.processes
+            .iter()
+            .map(|p| p.id.as_str())
+            .collect::<Vec<_>>(),
+        ["run", "lost"]
+    );
+    assert!(view.stop_available);
+
+    h.invoke(4, Call::UnwatchProcesses);
+    assert!(
+        h.host
+            .unsubscribes()
+            .contains(&"doc:pinomad.processes:1".to_string())
+    );
+    assert!(h.remote.processes_view().is_none());
+}
+
+/// A switch waiting for the process doc's snapshot is an owner too: closing
+/// the overview must not release the doc under it, or the switch would wait
+/// forever (the Web P1 fix).
+#[test]
+fn closing_the_list_does_not_release_a_doc_a_switch_is_waiting_for() {
+    let mut h = Harness::new(host_with_processes());
+    h.invoke(1, Call::SwitchConversation { id: 3 });
+    h.host.held.insert("doc:pinomad.processes:2".to_string());
+    h.invoke(2, Call::WatchProcesses { conversation_id: 2 });
+    h.invoke(3, Call::SwitchConversation { id: 2 });
+    // The switch is waiting for the held doc snapshot.
+    assert_eq!(h.connection(), "connected");
+    assert_eq!(h.ops.get(&3), None);
+
+    h.invoke(4, Call::UnwatchProcesses);
+    assert!(
+        !h.host
+            .unsubscribes()
+            .contains(&"doc:pinomad.processes:2".to_string())
+    );
+
+    h.host.held.clear();
+    h.snapshot("doc:pinomad.processes:2", process_doc());
+    assert_eq!(
+        h.dig(&["conversation", "conversation", "id"])
+            .and_then(|v| v.as_number()),
+        Some(2.0)
+    );
+    assert_eq!(h.ops.get(&3), Some(&Ok(None)));
+    let current = h.remote.view().unwrap();
+    assert_eq!(
+        current
+            .get("conversation")
+            .and_then(|c| c.get("conversation"))
+            .and_then(|c| c.get("id"))
+            .and_then(Json::as_number),
+        Some(2.0)
+    );
+}
+
+/// A reconnect hello without `processes` keeps the historical list but takes
+/// Stop away, without a new watch call.
+#[test]
+fn a_reconnect_drops_the_stop_capability_but_keeps_the_list() {
+    let mut h = Harness::new(host_with_processes());
+    h.invoke(1, Call::WatchProcesses { conversation_id: 1 });
+    assert!(h.remote.processes_view().unwrap().stop_available);
+
+    h.disconnect(1000, None);
+    h.host.hello_extras.retain(|(name, _)| name != "processes");
+    h.fire_timer();
+
+    let view = h.remote.processes_view().expect("watched list");
+    assert_eq!(view.processes.len(), 2);
+    assert!(!view.stop_available);
+    assert!(view.unavailable.unwrap().contains("process module"));
+}
+
+/// When the new hello no longer declares the process doc, a switch waiting
+/// for its snapshot must be settled and applied, not left behind.
+#[test]
+fn a_hello_without_the_process_doc_settles_a_waiting_switch() {
+    let mut h = Harness::new(host_with_processes());
+    h.invoke(1, Call::SwitchConversation { id: 3 });
+    h.host.held.insert("doc:pinomad.processes:2".to_string());
+    h.invoke(2, Call::WatchProcesses { conversation_id: 2 });
+    h.invoke(3, Call::SwitchConversation { id: 2 });
+    assert_eq!(h.ops.get(&3), None);
+
+    h.disconnect(1000, None);
+    h.host.hello_extras.retain(|(name, _)| name != "docs");
+    h.fire_timer();
+
+    assert_eq!(h.ops.get(&3), Some(&Ok(None)));
+    assert_eq!(
+        h.dig(&["conversation", "conversation", "id"])
+            .and_then(|v| v.as_number()),
+        Some(2.0)
+    );
+}

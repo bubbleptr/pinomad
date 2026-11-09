@@ -63,6 +63,11 @@ pub struct ClientSnapshot {
     /// Kept while reconnecting, so an `Installing` phase explains the drop.
     #[uniffi(default = None)]
     pub upgrade: Option<HostUpgradeState>,
+    /// The overview's watched family process list (ADR-0045); `None` until
+    /// `WatchProcesses` starts it. Kept across reconnects, with Stop gated
+    /// again by the new hello's capability.
+    #[uniffi(default = None)]
+    pub processes: Option<ProcessesView>,
 }
 
 /// The part of `HostSettings` (settings.ts) the settings page edits.
@@ -460,5 +465,6 @@ pub(crate) fn build(remote: &RemoteDurable) -> Option<ClientSnapshot> {
         conversation: conversation_of(&view, fresh, fresh_epoch),
         providers: providers_of(&view),
         upgrade: upgrade_of(&view),
+        processes: remote.processes_view(),
     })
 }

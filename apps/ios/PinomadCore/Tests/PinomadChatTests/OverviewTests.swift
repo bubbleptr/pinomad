@@ -102,3 +102,127 @@ private func checkout(branch: String?) -> WorktreeCheckout {
         #expect(workspaceBranch(hostMinor: nil, changes: nil, checkout: nil) == nil)
     }
 }
+
+private func process(
+    _ id: String, _ state: ProcessState, active: Bool? = nil,
+    pid: UInt64? = nil, startedAt: Double = 10_000, endedAt: Double? = nil,
+    status: String? = nil, result: String? = nil
+) -> BackgroundProcess {
+    BackgroundProcess(
+        id: id, owner: 1, name: id, command: "run \(id)", pid: pid,
+        startedAt: startedAt, endedAt: endedAt, state: state,
+        active: active ?? {
+            if case .starting = state { return true }
+            if case .running = state { return true }
+            return false
+        }(),
+        status: status ?? "Running",
+        result: result ?? ""
+    )
+}
+
+private func processView(
+    _ root: UInt64, _ processes: [BackgroundProcess], stopAvailable: Bool = true
+) -> ProcessesView {
+    ProcessesView(
+        root: root, processes: processes, stopAvailable: stopAvailable,
+        unavailable: stopAvailable ? nil : "The host couldn't load its process module; its log says which package is missing"
+    )
+}
+
+private func family() -> (Organized, UInt64, UInt64) {
+    let rootId: UInt64 = 1
+    let forkId: UInt64 = 9
+    let fork = ConversationNode(
+        summary: ConversationSummary(
+            id: forkId, kind: .fork, parent: rootId, forkedAt: "e1", title: "fork", status: nil,
+            updatedAt: nil, label: nil, role: nil, activity: nil
+        ),
+        children: []
+    )
+    let root = ConversationNode(
+        summary: ConversationSummary(
+            id: rootId, kind: .conversation, parent: nil, forkedAt: nil, title: "root", status: nil,
+            updatedAt: nil, label: nil, role: nil, activity: nil
+        ),
+        children: [fork]
+    )
+    return (Organized(chats: [root], projects: [], archived: []), rootId, forkId)
+}
+
+@Suite struct ProcessesOverviewTests {
+    /// The list belongs to the family root: opening the overview on a fork
+    /// still reads the root's watched list, never another family's.
+    @Test func aForkReadsItsRootsProcesses() {
+        let (organized, rootId, forkId) = family()
+        let view = processView(rootId, [process("dev", .running)])
+        let overview = ProcessesOverview.of(
+            organized: organized, conversation: forkId, processes: view)
+        #expect(overview?.rows.map(\.id) == ["dev"])
+
+        let other = processView(rootId + 1, [process("dev", .running)])
+        #expect(ProcessesOverview.of(organized: organized, conversation: forkId, processes: other) == nil)
+        #expect(ProcessesOverview.of(organized: organized, conversation: forkId, processes: processView(rootId, [])) == nil)
+    }
+
+    /// A lost process keeps the host's long wording and pid, and neither it
+    /// nor an ended process offers Stop.
+    @Test func lostAndEndedProcessesHaveNoStop() {
+        let (organized, rootId, forkId) = family()
+        let lost = process(
+            "old", .lost, pid: 777, startedAt: 1, endedAt: 2,
+            status: "Lost track after a host restart; it may still be running (pid 777)", result: "Lost"
+        )
+        let exited = process(
+            "build", .exited(exited: 1, signal: nil), startedAt: 3, endedAt: 4,
+            status: "Exited with code 1", result: "exit 1"
+        )
+        let running = process("dev", .running, startedAt: 5)
+        let overview = ProcessesOverview.of(
+            organized: organized, conversation: forkId,
+            processes: processView(rootId, [running, exited, lost])
+        )!
+        #expect(overview.rows.map(\.id) == ["dev", "build", "old"])
+        #expect(overview.rows.filter(\.canStop).map(\.id) == ["dev"])
+        let old = overview.rows.last!
+        #expect(old.status.contains("may still be running"))
+        #expect(old.status.contains("pid 777"))
+        #expect(old.result == "Lost")
+        #expect(!old.canStop)
+    }
+
+    /// Without the host's process module the historical rows still show, but
+    /// nothing offers Stop and the reason travels with the view.
+    @Test func aHostWithoutTheModuleKeepsTheRowsButNotStop() {
+        let (organized, rootId, forkId) = family()
+        let view = processView(rootId, [process("dev", .running), process("old", .lost)], stopAvailable: false)
+        let overview = ProcessesOverview.of(organized: organized, conversation: forkId, processes: view)!
+        #expect(overview.rows.count == 2)
+        #expect(overview.rows.allSatisfy { !$0.canStop })
+        #expect(overview.unavailable?.contains("process module") == true)
+    }
+
+    @Test func elapsedTextUsesWholeSeconds() {
+        #expect(processElapsedText(ms: 12_900) == "12s")
+        #expect(processElapsedText(ms: 65_000) == "1m 5s")
+        #expect(processElapsedText(ms: -1) == "0s")
+    }
+
+    /// Many processes fold the same way Subagents does: three live and three
+    /// ended rows, with the overflow counted.
+    @Test func manyProcessesFoldIntoCounts() {
+        let (organized, rootId, forkId) = family()
+        let live = (0..<5).map { process("run\($0)", .running, startedAt: Double(100 + $0)) }
+        let ended = (0..<4).map {
+            process("old\($0)", .exited(exited: 0, signal: nil),
+                    startedAt: Double($0), endedAt: Double(1000 + $0), result: "exit 0")
+        }
+        let overview = ProcessesOverview.of(
+            organized: organized, conversation: forkId,
+            processes: processView(rootId, live + ended)
+        )!
+        #expect(overview.rows.map(\.id) == ["run0", "run1", "run2", "old0", "old1", "old2"])
+        #expect(overview.moreRunning == 2)
+        #expect(overview.moreEnded == 1)
+    }
+}

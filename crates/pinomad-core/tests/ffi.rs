@@ -74,6 +74,9 @@ struct ScriptedHost {
     /// Methods the host never answers, so a local send stays in flight.
     hung: HashSet<String>,
     minor: f64,
+    /// Fields merged into the hello — `docs`, `processes`, and other
+    /// capability blocks a test wants to pose.
+    hello_extras: Vec<(String, Json)>,
     sent: Vec<Json>,
     conn: u64,
 }
@@ -87,13 +90,14 @@ impl ScriptedHost {
             call_results: HashMap::new(),
             hung: HashSet::new(),
             minor: pinomad_core::frames::PROTOCOL.minor as f64,
+            hello_extras: Vec::new(),
             sent: Vec::new(),
             conn: 0,
         }
     }
 
     fn hello(&self) -> String {
-        obj(&[
+        let base = obj(&[
             ("type", Json::from("hello")),
             ("protocol", obj(&[("major", Json::from(5.0)), ("minor", Json::from(self.minor))])),
             ("session", obj(&[("id", Json::from("fake")), ("directory", Json::from(""))])),
@@ -101,8 +105,12 @@ impl ScriptedHost {
             ("docs", Json::array(vec![])),
             ("toolPresentations", obj(&[])),
             ("defaults", obj(&[])),
-        ])
-        .to_json()
+        ]);
+        let mut object = base.as_object().expect("hello object").as_ref().clone();
+        for (name, value) in &self.hello_extras {
+            object.set(U16String::from_str(name), value.clone());
+        }
+        Json::Object(Arc::new(object)).to_json()
     }
 
     fn method(&self, name: &str) -> Vec<Json> {
@@ -2927,4 +2935,168 @@ fn upgrade_calls_encode_the_reference_frames() {
     assert_eq!(call_args(&h, "cancelUpgrade"), vec![obj(&[])]);
     assert_eq!(call_args(&h, "checkUpgrade"), vec![obj(&[])]);
     assert_eq!(call_args(&h, "updateSettings"), vec![obj(&[("patch", obj(&[("autoUpgrade", Json::from("off"))]))])]);
+}
+
+// ─── background processes (5.32, ADR-0045) ───────────────────────────
+
+fn process(kind: &str, id: &str, state: &str, ended_at: Option<f64>) -> Json {
+    let mut fields = vec![
+        ("id".to_string(), Json::from(id)),
+        ("owner".to_string(), Json::from(3.0)),
+        ("name".to_string(), Json::from(id)),
+        ("command".to_string(), Json::from(format!("run {kind}"))),
+        ("pid".to_string(), Json::from(777.0)),
+        ("startedAt".to_string(), Json::from(10.0)),
+        ("state".to_string(), Json::parse(state).expect("state json")),
+    ];
+    if let Some(ended_at) = ended_at {
+        fields.push(("endedAt".to_string(), Json::from(ended_at)));
+    }
+    let mut object = JsonObject::new();
+    for (name, value) in fields {
+        object.set(U16String::from_str(&name), value);
+    }
+    Json::Object(Arc::new(object))
+}
+
+fn processes_doc() -> Json {
+    obj(&[(
+        "processes",
+        Json::array(vec![
+            process("dev", "run", r#""running""#, None),
+            process("old", "old", r#"{"exited":0}"#, Some(20.0)),
+            process("lost", "lost", r#""lost""#, Some(30.0)),
+        ]),
+    )])
+}
+
+fn process_doc_decl() -> Json {
+    obj(&[
+        ("kind", Json::from("pinomad.processes")),
+        ("presentation", Json::from("pinomad.processes")),
+    ])
+}
+
+fn host_with_process_hello(minor: f64, processes: bool) -> ScriptedHost {
+    let mut host = ScriptedHost::new();
+    host.minor = minor;
+    host.hello_extras = vec![("docs".to_string(), Json::array(vec![process_doc_decl()]))];
+    if processes {
+        host.hello_extras
+            .push(("processes".to_string(), obj(&[("limit", Json::from(8.0))])));
+    }
+    host.snapshots
+        .insert("doc:pinomad.processes:1".to_string(), processes_doc());
+    host
+}
+
+/// Watching the root brings the doc's list into the snapshot, ordered live
+/// first; Stop is a host call with the root and id, not a local mutation.
+#[test]
+fn process_list_and_stop_round_trip() {
+    let host = host_with_process_hello(32.0, true);
+    let mut h = Harness::boot(host, "req-1");
+
+    h.invoke(1, FfiCall::WatchProcesses { conversation_id: 1 });
+    assert_eq!(h.ops.get(&1), Some(&Ok(CallResult::Unit)));
+    let view = h
+        .client
+        .snapshot()
+        .expect("snapshot")
+        .processes
+        .expect("watched list");
+    assert_eq!(view.root, 1);
+    assert!(view.stop_available);
+    assert_eq!(
+        view.processes
+            .iter()
+            .map(|process| process.id.as_str())
+            .collect::<Vec<_>>(),
+        ["run", "lost", "old"]
+    );
+    assert_eq!(
+        view.processes[1].status,
+        "Lost track after a host restart; it may still be running (pid 777)"
+    );
+
+    h.invoke(
+        2,
+        FfiCall::StopProcess {
+            conversation_id: 1,
+            id: "run".to_string(),
+        },
+    );
+    assert_eq!(h.ops.get(&2), Some(&Ok(CallResult::Unit)));
+    let calls = h.host.method("stopProcess");
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0]
+            .get("args")
+            .and_then(|args| args.get("conversationId"))
+            .and_then(Json::as_number),
+        Some(1.0)
+    );
+    assert_eq!(
+        calls[0]
+            .get("args")
+            .and_then(|args| args.get("id"))
+            .and_then(Json::as_str)
+            .map(|id| id.to_string_lossy()),
+        Some("run".to_string())
+    );
+}
+
+/// The doc still lists after the pty failed to load, but Stop is gone until
+/// a host with `hello.processes` reconnects.
+#[test]
+fn a_host_without_the_pty_module_still_lists_history_but_has_no_stop() {
+    let host = host_with_process_hello(32.0, false);
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::WatchProcesses { conversation_id: 1 });
+    let view = h
+        .client
+        .snapshot()
+        .unwrap()
+        .processes
+        .expect("watched list");
+    assert_eq!(view.processes.len(), 3);
+    assert!(!view.stop_available);
+    assert!(view.unavailable.unwrap().contains("process module"));
+
+    h.invoke(
+        2,
+        FfiCall::StopProcess {
+            conversation_id: 1,
+            id: "run".to_string(),
+        },
+    );
+    assert!(matches!(
+        h.ops.get(&2),
+        Some(Err(error)) if error.contains("process module")
+    ));
+    assert!(h.host.method("stopProcess").is_empty());
+}
+
+/// The document survives an older host too; the version gate only takes
+/// Stop away.
+#[test]
+fn an_old_host_lists_the_document_but_has_no_stop() {
+    let host = host_with_process_hello(31.0, true);
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::WatchProcesses { conversation_id: 1 });
+    let view = h
+        .client
+        .snapshot()
+        .unwrap()
+        .processes
+        .expect("watched list");
+    assert_eq!(view.processes.len(), 3);
+    assert!(!view.stop_available);
+    assert!(view.unavailable.unwrap().contains("5.32"));
+}
+
+#[test]
+fn no_process_watch_keeps_the_snapshot_field_absent() {
+    let h = Harness::new();
+    assert!(h.client.snapshot().unwrap().processes.is_none());
 }

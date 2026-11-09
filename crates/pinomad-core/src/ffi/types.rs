@@ -25,6 +25,7 @@ pub use crate::organization::{
     ConversationStatus, HomeKind, SubagentLifecycle, SummaryActivity, SummaryKind,
 };
 pub use crate::patch::{PatchFile, PatchLine, PatchLineKind};
+pub use crate::processes::{BackgroundProcess, ProcessState, ProcessesView};
 pub use crate::presentation::{
     CodemodeCallStatus, DocType, QuestionAnswer, QuestionItem, QuestionOption, QuestionResolution,
     TodoItem, TodoStatus,

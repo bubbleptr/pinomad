@@ -370,6 +370,39 @@ final class HostRuntime {
         }
     }
 
+    /// Watch the family root's process list for the overview (ADR-0045).
+    /// The calls are chained so a quick open/close cannot land the watch
+    /// after the unwatch and leave the doc subscribed.
+    private var processWatch: Task<Void, Never>?
+
+    private func enqueueProcessWatch(_ root: UInt64?) {
+        let previous = processWatch
+        processWatch = Task { [weak self] in
+            _ = await previous?.value
+            guard let self, let session = self.session else { return }
+            if let root {
+                _ = try? await session.invoke(.watchProcesses(conversationId: root))
+            } else {
+                _ = try? await session.invoke(.unwatchProcesses)
+            }
+        }
+    }
+
+    func watchProcesses(_ root: UInt64) {
+        enqueueProcessWatch(root)
+    }
+
+    func unwatchProcesses() {
+        enqueueProcessWatch(nil)
+    }
+
+    /// Stop one process; resolves only after the host applied the stop, so
+    /// the button can stay disabled until then.
+    func stopProcess(root: UInt64, id: String) async throws {
+        guard let session else { throw SessionError.sessionClosed }
+        _ = try await session.invoke(.stopProcess(conversationId: root, id: id))
+    }
+
     /// Release this host's conversation subscription while its connection,
     /// uploads and unsettled submissions keep running (ADR-0035 §2).
     func clearConversation() {

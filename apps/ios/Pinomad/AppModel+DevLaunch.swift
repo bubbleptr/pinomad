@@ -620,12 +620,45 @@ extension AppModel {
             truncated: truncated,
             branch: "pinomad/overview-sheet"
         )
+        // A running dev server and test run, an exited failure, a user stop,
+        // and a host-restart leftover — the mixed list the Overview section
+        // has to render.
+        let process = { (
+            _ id: String, _ name: String, _ command: String, _ state: ProcessState,
+            _ started: Double, _ ended: Double?, _ pid: UInt64?,
+            _ status: String, _ result: String
+        ) in
+            BackgroundProcess(
+                id: id, owner: 1, name: name, command: command, pid: pid,
+                startedAt: started, endedAt: ended, state: state,
+                active: processIsActive(state), status: status, result: result
+            )
+        }
+        let processes = ProcessesView(
+            root: 1,
+            processes: [
+                process("dev", "dev server", "bun run dev", .running,
+                        now - 65_000, nil, nil, "Running", ""),
+                process("tests", "iOS tests", "xcodebuild -scheme Pinomad test", .running,
+                        now - 12_000, nil, nil, "Running", ""),
+                process("unit", "unit tests", "bun test", .exited(exited: 1, signal: nil),
+                        now - 220_000, now - 180_000, nil, "Exited with code 1", "exit 1"),
+                process("preview", "vite preview", "bun run preview", .stopped(stopped: "user"),
+                        now - 460_000, now - 400_000, nil, "Stopped by the user", "Stopped"),
+                process("watcher", "watcher", "tail -f server.log", .lost,
+                        now - 1_000_000, now - 900_000, 4217,
+                        "Lost track after a host restart; it may still be running (pid 4217)",
+                        "Lost"),
+            ],
+            stopAvailable: true,
+            unavailable: nil
+        )
         publishDevSnapshot(ClientSnapshot(
             version: 1, connection: .connected, unauthorized: false, protocolMismatch: nil,
-            host: HostInfo(version: nil, protocol: ProtocolVersion(major: 5, minor: 14)),
+            host: HostInfo(version: nil, protocol: ProtocolVersion(major: 5, minor: 32)),
             hostName: nil, settings: nil, devices: [], organized: organized,
             notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
-            agents: nil, conversation: conversation
+            agents: nil, conversation: conversation, processes: processes
         ))
         replyStreams.sync(chat: chat)
     }
@@ -1118,6 +1151,13 @@ extension AppModel {
             notices: [], models: [model], defaults: Defaults(model: ref, thinkingLevel: .off),
             agents: nil, conversation: conversation))
         replyStreams.sync(chat: chat)
+    }
+}
+
+private func processIsActive(_ state: ProcessState) -> Bool {
+    switch state {
+    case .starting, .running: true
+    default: false
     }
 }
 #endif
