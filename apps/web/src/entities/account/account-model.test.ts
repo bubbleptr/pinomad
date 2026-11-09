@@ -7,6 +7,8 @@ import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import type { AccountDeviceClaim, AccountFetch, AccountFetchInit } from "@pinomad/client/account.ts";
 import {
   createAccountModel,
+  type AccountChannel,
+  type AccountChannelMessage,
   type AccountLocks,
   type AccountModel,
   type AccountVisibility,
@@ -84,6 +86,41 @@ const accountHost = (noisePublicKey: string, hostId = "host-id") => ({
   pairing: "available" as const,
 });
 
+/** One shared cross-tab bus; each model gets a connection that hears the others. */
+const channelBus = () => {
+  const listeners = new Map<number, (message: AccountChannelMessage) => void>();
+  const sent: { readonly from: number; readonly message: AccountChannelMessage }[] = [];
+  let next = 0;
+  return {
+    sent,
+    create: (): AccountChannel => {
+      const id = next++;
+      return {
+        post: (message) => {
+          sent.push({ from: id, message });
+          for (const [other, listener] of listeners) {
+            if (other !== id) listener(message);
+          }
+        },
+        subscribe: (listener) => {
+          listeners.set(id, listener);
+          return () => {
+            if (listeners.get(id) === listener) listeners.delete(id);
+          };
+        },
+      };
+    },
+  };
+};
+
+/** Let a received message's async local work settle without a timer. */
+const flushMicrotasks = async (): Promise<void> => {
+  for (let turn = 0; turn < 10; turn += 1) await Promise.resolve();
+};
+
+/** Tests that do not exercise the channel still must not join the real one. */
+const silentChannel: AccountChannel = { post: () => {}, subscribe: () => () => {} };
+
 interface Setup {
   model: AccountModel;
   calls: { url: string; init: AccountFetchInit | undefined }[];
@@ -101,6 +138,7 @@ function makeModel(options: {
   autoRegister?: boolean;
   removeHost?: (hostKey: string) => Promise<void>;
   visibility?: AccountVisibility;
+  channel?: AccountChannel;
   device?: () => AccountDeviceClaim;
 }): Setup {
   const store = options.store ?? hosts();
@@ -121,6 +159,7 @@ function makeModel(options: {
     ...(options.locks === undefined ? {} : { locks: options.locks }),
     ...(options.removeHost === undefined ? {} : { removeHost: options.removeHost }),
     ...(options.visibility === undefined ? {} : { visibility: options.visibility }),
+    channel: options.channel ?? silentChannel,
     ...(options.bridge === undefined ? {} : { bridge: options.bridge }),
     ...(options.device === undefined ? {} : { device: options.device }),
   });
@@ -1177,6 +1216,210 @@ describe("automatic registration", () => {
       await vi.advanceTimersByTimeAsync(10_000);
       expect(hostListCalls(calls)).toBe(restarted + 2);
     });
+  });
+});
+
+describe("cross-tab account changes (#534)", () => {
+  const offer = () => ({
+    url: "wss://relay.example.com/c/h1",
+    hostKey: toBase64Url(generateKeyPair().publicKey),
+    secret: toBase64Url(generateKeyPair().privateKey),
+    expiresAt: Date.now() + 60_000,
+  });
+
+  /** Holds the next deps.paired call until the test releases it. */
+  const holdSave = (store: ReturnType<typeof hosts>) => {
+    let release!: () => void;
+    let started!: () => void;
+    const begun = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const save = store.save;
+    store.save = async (host) => {
+      started();
+      await gate;
+      return save(host);
+    };
+    return { begun, release };
+  };
+
+  const signedIn = async (setup: Setup): Promise<void> => {
+    await vi.waitFor(() => expect(setup.model.state.status).toBe("signed-in"));
+  };
+
+  it("stops a pairing another tab removed while its save was landing", async () => {
+    const store = hosts();
+    const bus = channelBus();
+    const a = makeModel({ fake: fakeFetch(
+      { status: 401 },
+      { status: 200, body: { user: { username: "admin" } } },
+      { status: 200, body: [] },
+      { status: 204 }, // remove h1
+      { status: 200, body: [] }, // refresh after the removal
+    ), store, channel: bus.create() });
+    const b = makeModel({ fake: fakeFetch(
+      { status: 401 },
+      { status: 200, body: { user: { username: "admin" } } },
+      { status: 200, body: [] },
+      { status: 200, body: offer() }, // B's pairing
+    ), store, channel: bus.create() });
+    await signedIn(a);
+    await signedIn(b);
+
+    const held = holdSave(store);
+    const pairing = b.model.pairHost("h1");
+    await held.begun;
+
+    expect(await a.model.removeHost({ hostId: "h1", confirmation: "pw" })).toEqual({ ok: true, value: undefined });
+    held.release();
+    expect(await pairing).toEqual({ ok: false, error: { code: "host_removed" } });
+    expect(store.stored).toEqual([]);
+    // One sender; the receiving tab applied it locally and did not forward.
+    expect(bus.sent).toEqual([
+      { from: 0, message: { kind: "host-removed", serverOrigin: ORIGIN, hostId: "h1", hostKeys: [] } },
+    ]);
+  });
+
+  it("stops a pairing another tab took away with a shared-computer sign-out", async () => {
+    const store = hosts();
+    const bus = channelBus();
+    const a = makeModel({ fake: fakeFetch(
+      { status: 401 },
+      { status: 200, body: { user: { username: "admin" } } },
+      { status: 200, body: [] },
+      { status: 204 }, // revoke sign-out
+    ), store, channel: bus.create() });
+    const b = makeModel({ fake: fakeFetch(
+      { status: 401 },
+      { status: 200, body: { user: { username: "admin" } } },
+      { status: 200, body: [] },
+      { status: 200, body: offer() }, // B's pairing
+    ), store, channel: bus.create() });
+    await signedIn(a);
+    await signedIn(b);
+
+    const held = holdSave(store);
+    const pairing = b.model.pairHost("h1");
+    await held.begun;
+
+    expect(await a.model.logout({ revoke: true })).toEqual({ ok: true, value: undefined });
+    held.release();
+    expect(await pairing).toEqual({ ok: false, error: { code: "host_removed" } });
+    expect(store.stored).toEqual([]);
+    expect(bus.sent).toEqual([
+      { from: 0, message: { kind: "account-hosts-left", serverOrigin: ORIGIN, hostKeys: [] } },
+    ]);
+  });
+
+  it("closes the runtime another tab left open after a host removal", async () => {
+    const entry = storedHost({ account: { serverOrigin: ORIGIN, hostId: "h1", vouched: true } });
+    const store = hosts([entry]);
+    const bus = channelBus();
+    const a = makeModel({ fake: fakeFetch(
+      { status: 401 },
+      { status: 200, body: { user: { username: "admin" } } },
+      { status: 200, body: [accountHost(entry.hostKey, "h1")] },
+      { status: 204 }, // remove h1
+      { status: 200, body: [] }, // refresh after the removal
+    ), store, channel: bus.create() });
+    const closed: string[] = [];
+    const b = makeModel({ fake: fakeFetch(
+      { status: 401 },
+      { status: 200, body: { user: { username: "admin" } } },
+      { status: 200, body: [accountHost(entry.hostKey, "h1")] },
+    ), store, channel: bus.create(), removeHost: async (hostKey) => {
+      closed.push(hostKey);
+      await store.remove(hostKey);
+    } });
+    await signedIn(a);
+    await signedIn(b);
+
+    expect(await a.model.removeHost({ hostId: "h1", confirmation: "pw" })).toEqual({ ok: true, value: undefined });
+    await flushMicrotasks();
+    expect(closed).toEqual([entry.hostKey]);
+    expect(store.stored).toEqual([]);
+    // The post-removal refresh sees the host gone and sends the slot again;
+    // only the sending tab ever posts.
+    expect(bus.sent[0]).toEqual({
+      from: 0,
+      message: { kind: "host-removed", serverOrigin: ORIGIN, hostId: "h1", hostKeys: [entry.hostKey] },
+    });
+    expect(bus.sent.every(({ from }) => from === 0)).toBe(true);
+  });
+
+  it("closes the runtime another tab left open after a shared-computer sign-out", async () => {
+    const entry = storedHost({ account: { serverOrigin: ORIGIN, hostId: "h1", vouched: true } });
+    const store = hosts([entry]);
+    const bus = channelBus();
+    const a = makeModel({ fake: fakeFetch(
+      { status: 401 },
+      { status: 200, body: { user: { username: "admin" } } },
+      { status: 200, body: [accountHost(entry.hostKey, "h1")] },
+      { status: 204 }, // revoke sign-out
+    ), store, channel: bus.create() });
+    const closed: string[] = [];
+    const b = makeModel({ fake: fakeFetch(
+      { status: 401 },
+      { status: 200, body: { user: { username: "admin" } } },
+      { status: 200, body: [accountHost(entry.hostKey, "h1")] },
+    ), store, channel: bus.create(), removeHost: async (hostKey) => {
+      closed.push(hostKey);
+      await store.remove(hostKey);
+    } });
+    await signedIn(a);
+    await signedIn(b);
+
+    expect(await a.model.logout({ revoke: true })).toEqual({ ok: true, value: undefined });
+    await flushMicrotasks();
+    expect(closed).toEqual([entry.hostKey]);
+    expect(store.stored).toEqual([]);
+    expect(bus.sent).toEqual([
+      { from: 0, message: { kind: "account-hosts-left", serverOrigin: ORIGIN, hostKeys: [entry.hostKey] } },
+    ]);
+  });
+
+  it("forgets a host whose save lands after this tab's shared-computer sign-out", async () => {
+    const store = hosts();
+    const { model } = makeModel({ fake: fakeFetch(
+      { status: 401 },
+      { status: 200, body: { user: { username: "admin" } } },
+      { status: 200, body: [] },
+      { status: 200, body: offer() }, // pairing
+      { status: 204 }, // revoke sign-out
+    ), store });
+    await vi.waitFor(() => expect(model.state.status).toBe("signed-in"));
+
+    const held = holdSave(store);
+    const pairing = model.pairHost("h1");
+    await held.begun;
+
+    expect(await model.logout({ revoke: true })).toEqual({ ok: true, value: undefined });
+    held.release();
+    expect(await pairing).toEqual({ ok: false, error: { code: "host_removed" } });
+    expect(store.stored).toEqual([]);
+  });
+
+  it("ignores a change for another server origin", async () => {
+    const otherOrigin = "https://other.example.com";
+    const other = storedHost({ account: { serverOrigin: otherOrigin, hostId: "h1", vouched: true } });
+    const store = hosts([other]);
+    const bus = channelBus();
+    const { model } = makeModel({ fake: fakeFetch(
+      { status: 401 },
+      { status: 200, body: { user: { username: "admin" } } },
+      { status: 200, body: [] },
+    ), store, channel: bus.create() });
+    await vi.waitFor(() => expect(model.state.status).toBe("signed-in"));
+
+    // A foreign-origin message must not touch this page's host store; a
+    // receiving tab never posts anything back.
+    bus.create().post({ kind: "host-removed", serverOrigin: otherOrigin, hostId: "h1", hostKeys: [] });
+    await flushMicrotasks();
+    expect(store.stored).toEqual([other]);
+    expect(bus.sent).toHaveLength(1);
   });
 });
 

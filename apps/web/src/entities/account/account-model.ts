@@ -56,6 +56,31 @@ export interface AccountVisibility {
   subscribe(listener: () => void): () => void;
 }
 
+/**
+ * Account changes another tab on this browser must apply to the shared host
+ * store: one host left the account, or a shared-computer sign-out took every
+ * host of a server with it.
+ */
+export type AccountChannelMessage =
+  | {
+      readonly kind: "host-removed";
+      readonly serverOrigin: string;
+      readonly hostId: string;
+      /** The stored keys the sender took out; the shared store no longer has them. */
+      readonly hostKeys: readonly string[];
+    }
+  | {
+      readonly kind: "account-hosts-left";
+      readonly serverOrigin: string;
+      readonly hostKeys: readonly string[];
+    };
+
+/** The cross-tab channel; BroadcastChannel sends to the other tabs, never back to the sender. */
+export interface AccountChannel {
+  post(message: AccountChannelMessage): void;
+  subscribe(listener: (message: AccountChannelMessage) => void): () => void;
+}
+
 const browserVisibility: AccountVisibility = {
   subscribe(listener) {
     if (typeof document === "undefined") return () => {};
@@ -65,6 +90,20 @@ const browserVisibility: AccountVisibility = {
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
   },
+};
+
+/** The page's own channel; no-op where the runtime has no BroadcastChannel. */
+const browserChannel = (): AccountChannel | undefined => {
+  if (typeof window === "undefined" || window.BroadcastChannel === undefined) return undefined;
+  const channel = new window.BroadcastChannel("pinomad.account");
+  return {
+    post: (message) => channel.postMessage(message),
+    subscribe: (listener) => {
+      const onMessage = (event: MessageEvent<AccountChannelMessage>): void => listener(event.data);
+      channel.addEventListener("message", onMessage);
+      return () => channel.removeEventListener("message", onMessage);
+    },
+  };
 };
 
 export type AccountState =
@@ -264,6 +303,8 @@ export interface AccountModelDeps {
   readonly locks?: AccountLocks;
   /** Foreground source; defaults to the document. */
   readonly visibility?: AccountVisibility;
+  /** Cross-tab account changes; defaults to a BroadcastChannel where one exists. */
+  readonly channel?: AccountChannel;
   /** Test seam: turn automatic registration off for account-only cases. */
   readonly autoRegister?: boolean;
   /** Where a "redirect" provider sign-in sends the page; defaults to location.assign. */
@@ -302,6 +343,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   let mode: AccountMode = deps.bridge === undefined ? "cookie" : "bearer";
   const providerFlow =
     mode === "cookie" ? ("redirect" as const) : deps.bridge?.oauthSignIn !== undefined ? ("loopback" as const) : undefined;
+  const channel = deps.channel ?? browserChannel();
   let lastOrigin: string | undefined;
   /** The signed-in account's email and needsEmail flag, as its last profile said. */
   let profile: Pick<Extract<AccountState, { status: "signed-in" }>, "email" | "needsEmail"> = {};
@@ -345,9 +387,31 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
    * back, since the removal's forget may have run first.
    */
   const removals = new Map<string, number>();
+  /**
+   * Account-wide removals this page heard of, per server origin: a
+   * shared-computer sign-out takes every host of that server. Unlike a slot
+   * removal it leaves `removals` alone, so saves and handshakes started
+   * before it compare this generation instead.
+   */
+  const originLeaves = new Map<string, number>();
+  interface RemovalMarks {
+    readonly slot: number | undefined;
+    readonly origin: number | undefined;
+  }
+  const removalMarks = (serverOrigin: string, slot: string): RemovalMarks => ({
+    slot: removals.get(slot),
+    origin: originLeaves.get(normalizeServerOrigin(serverOrigin)),
+  });
+  const removedSince = (serverOrigin: string, slot: string, seen: RemovalMarks): boolean =>
+    removals.get(slot) !== seen.slot
+    || originLeaves.get(normalizeServerOrigin(serverOrigin)) !== seen.origin;
+  interface ForgotAccountHosts {
+    readonly forgotten: boolean;
+    /** Stored keys the removal attempted; another tab can close its runtimes with them. */
+    readonly hostKeys: readonly string[];
+  }
   /** Counts refresh() calls, so a slower, older list can tell it was overtaken. */
   let refreshes = 0;
-  const removedSince = (slot: string, seen: number | undefined): boolean => removals.get(slot) !== seen;
   /** watchForHost's live watch per hostId, with its pending refresh between ticks. */
   const hostWatches = new Map<string, { readonly watch: object; readonly timer?: ReturnType<typeof setTimeout> }>();
 
@@ -435,16 +499,17 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   /**
    * Drops every stored host linked to `origin`'s account (or only `hostId`),
    * closing its runtime, without declining it: the owner signing in here
-   * again later should get those hosts back on their own (#494). False when
-   * any of them may still be stored.
+   * again later should get those hosts back on their own (#494). `forgotten`
+   * is false when any of them may still be stored; `hostKeys` names the
+   * records the removal attempted, so another tab can close its runtimes.
    */
-  const forgetAccountHosts = async (origin: string, hostId?: string): Promise<boolean> => {
+  const forgetAccountHosts = async (origin: string, hostId?: string): Promise<ForgotAccountHosts> => {
     let stored: StoredHost[];
     try {
       stored = await deps.hosts.list();
     } catch (error) {
       console.error("Could not read the paired hosts to forget them", error);
-      return false;
+      return { forgotten: false, hostKeys: [] };
     }
     // Only keys the account issued: a QR pairing that later adopted the link
     // is the host's own, and stays.
@@ -452,19 +517,90 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       host.account?.vouched === true
       && normalizeServerOrigin(host.account.serverOrigin) === origin
       && (hostId === undefined || host.account.hostId === hostId);
-    for (const host of stored.filter(vouched)) {
-      await (deps.removeHost?.(host.hostKey) ?? deps.hosts.remove(host.hostKey)).catch((error: unknown) =>
+    const dropped = stored.filter(vouched).map((host) => host.hostKey);
+    for (const hostKey of dropped) {
+      await (deps.removeHost?.(hostKey) ?? deps.hosts.remove(hostKey)).catch((error: unknown) =>
         console.error("Could not forget a host", error),
       );
     }
     // The app's removal logs and swallows a store failure; read back to know.
     try {
-      return !(await deps.hosts.list()).some(vouched);
+      return { forgotten: !(await deps.hosts.list()).some(vouched), hostKeys: dropped };
     } catch (error) {
       console.error("Could not check the forgotten hosts", error);
-      return false;
+      return { forgotten: false, hostKeys: dropped };
     }
   };
+
+  /**
+   * Close a runtime another tab already took out of the shared store: the
+   * record is gone there, so only this page's view and connection remain.
+   */
+  const dropHostRuntimes = async (hostKeys: readonly string[]): Promise<void> => {
+    for (const hostKey of hostKeys) {
+      await (deps.removeHost?.(hostKey) ?? deps.hosts.remove(hostKey)).catch((error: unknown) =>
+        console.error("Could not close a removed host", error),
+      );
+    }
+  };
+
+  /**
+   * The local half of taking `hostId` off this device, shared by this page's
+   * removal and the same change from another tab: no server call, no channel.
+   */
+  const dropHostLocally = async (serverOrigin: string, hostId: string): Promise<ForgotAccountHosts> => {
+    const slot = slotKey(serverOrigin, hostId);
+    removals.set(slot, (removals.get(slot) ?? 0) + 1);
+    cancelAccountRegistration(hostId);
+    if (unsaved.delete(slot)) publishUnsaved();
+    clearTimeout(hostWatches.get(hostId)?.timer);
+    hostWatches.delete(hostId);
+    return forgetAccountHosts(serverOrigin, hostId);
+  };
+
+  /**
+   * The local half of a shared-computer sign-out: every host of `serverOrigin`
+   * leaves this device. Bumps the origin generation so saves and handshakes
+   * that began before it cannot write a key back after the cleanup.
+   */
+  const leaveAccountHosts = async (serverOrigin: string, broadcast: boolean): Promise<boolean> => {
+    const origin = normalizeServerOrigin(serverOrigin);
+    originLeaves.set(origin, (originLeaves.get(origin) ?? 0) + 1);
+    cancelAccountRegistration();
+    let dropped = false;
+    for (const [slot, host] of unsaved) {
+      if (host.account !== undefined && normalizeServerOrigin(host.account.serverOrigin) === origin) {
+        unsaved.delete(slot);
+        dropped = true;
+      }
+    }
+    if (dropped) publishUnsaved();
+    const { forgotten, hostKeys } = await forgetAccountHosts(serverOrigin);
+    if (broadcast) channel?.post({ kind: "account-hosts-left", serverOrigin, hostKeys: [...hostKeys] });
+    return forgotten;
+  };
+
+  /** Apply another tab's change locally; it never goes back out on the channel. */
+  const applyRemoteChange = async (message: AccountChannelMessage): Promise<void> => {
+    if (message.kind === "host-removed") await dropHostLocally(message.serverOrigin, message.hostId);
+    else await leaveAccountHosts(message.serverOrigin, false);
+    // The sender removed the records before posting, so its list is the only
+    // way to find the runtimes this page still has open for them.
+    await dropHostRuntimes(message.hostKeys);
+  };
+
+  channel?.subscribe((message) => {
+    const activeOrigin = client?.origin ?? lastOrigin;
+    if (
+      activeOrigin === undefined
+      || normalizeServerOrigin(activeOrigin) !== normalizeServerOrigin(message.serverOrigin)
+    ) {
+      return;
+    }
+    void applyRemoteChange(message).catch((error: unknown) => {
+      console.error("Could not apply an account change from another tab", error);
+    });
+  });
 
   const deviceName = async (): Promise<string> => (deps.name ?? (() => "This device"))();
 
@@ -502,13 +638,13 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       return false;
     }
     const slot = storedSlot(host);
-    const seen = removals.get(slot);
+    const seen = removalMarks(active.origin, slot);
     try {
       await deps.paired(host);
     } catch {
       return false;
     }
-    if (host.account !== undefined && removedSince(slot, seen)) {
+    if (host.account !== undefined && removedSince(active.origin, slot, seen)) {
       // A removal is about the stored key, not the session: the key still
       // has to be forgotten even when this save outlived its session.
       await forgetAccountHosts(active.origin, host.account.hostId);
@@ -575,7 +711,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       const key = slotKey(active.origin, match.host.hostId);
       if (flights.has(key)) continue;
       const started = epoch;
-      const removed = removals.get(key);
+      const removed = removalMarks(active.origin, key);
       const flight: Flight = { cancelled: false, promise: Promise.resolve() };
       const run = async (): Promise<void> => {
         if (flight.cancelled || !live(active, started)) return;
@@ -617,10 +753,10 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
         try {
           await deps.paired(enriched);
         } catch {
-          if (!removedSince(key, removed)) rememberUnsaved(enriched);
+          if (!removedSince(active.origin, key, removed)) rememberUnsaved(enriched);
           return;
         }
-        if (removedSince(key, removed)) {
+        if (removedSince(active.origin, key, removed)) {
           await forgetAccountHosts(active.origin, match.host.hostId);
           return;
         }
@@ -760,7 +896,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     const active = client;
     const started = epoch;
     const slot = slotKey(active.origin, hostId);
-    const removed = removals.get(slot);
+    const removed = removalMarks(active.origin, slot);
     declined.remove({ serverOrigin: active.origin, hostId });
     // An explicit join wins over an automatic round already in flight.
     cancelAccountRegistration(hostId);
@@ -780,19 +916,19 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     if (!live(active, started)) return fail("stale");
     // Removed from the account while the handshake ran: storing the key
     // would bring the host back on this device.
-    if (removedSince(slot, removed)) return fail("host_removed");
+    if (removedSince(active.origin, slot, removed)) return fail("host_removed");
     const enriched = enrich(hostId, result.value);
     clearRejected(enriched.hostKey);
     try {
       await deps.paired(enriched);
     } catch {
-      if (removedSince(slot, removed)) return fail("host_removed");
+      if (removedSince(active.origin, slot, removed)) return fail("host_removed");
       // The invite is spent and the device registered — a failed save must
       // not orphan the key. Keep the record for retryUnsavedHost.
       rememberUnsaved(enriched);
       return fail("pairing_not_saved");
     }
-    if (removedSince(slot, removed)) {
+    if (removedSince(active.origin, slot, removed)) {
       await forgetAccountHosts(active.origin, hostId);
       return fail("host_removed");
     }
@@ -854,13 +990,8 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
    * the server side is done, and the host stops answering through it either way.
    */
   const forgetRemovedHost = async (origin: string, hostId: string): Promise<void> => {
-    const slot = slotKey(origin, hostId);
-    removals.set(slot, (removals.get(slot) ?? 0) + 1);
-    cancelAccountRegistration(hostId);
-    if (unsaved.delete(slot)) publishUnsaved();
-    clearTimeout(hostWatches.get(hostId)?.timer);
-    hostWatches.delete(hostId);
-    await forgetAccountHosts(origin, hostId);
+    const { hostKeys } = await dropHostLocally(origin, hostId);
+    channel?.post({ kind: "host-removed", serverOrigin: origin, hostId, hostKeys: [...hostKeys] });
   };
 
   const removeHost = async ({
@@ -1169,7 +1300,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
         setState({ status: "checking" });
       }
       const settled = (async () => ({
-        forgotten: revoke ? await forgetAccountHosts(active.origin) : true,
+        forgotten: revoke ? await leaveAccountHosts(active.origin, true) : true,
         result: await active.logout(revoke ? { revoke: true } : undefined),
       }))();
       const waited = settled.then(() => undefined);
