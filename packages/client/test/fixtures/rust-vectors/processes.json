@@ -1,0 +1,86 @@
+{
+  "statusText": [
+    {
+      "name": "starting",
+      "state": "\"starting\"",
+      "expect": "\"Starting\""
+    },
+    {
+      "name": "running",
+      "state": "\"running\"",
+      "expect": "\"Running\""
+    },
+    {
+      "name": "lost",
+      "state": "\"lost\"",
+      "expect": "\"Lost track after a host restart; it may still be running\""
+    },
+    {
+      "name": "stopped-agent",
+      "state": "{\"stopped\":\"agent\"}",
+      "expect": "\"Stopped by the agent\""
+    },
+    {
+      "name": "stopped-user",
+      "state": "{\"stopped\":\"user\"}",
+      "expect": "\"Stopped by the user\""
+    },
+    {
+      "name": "stopped-archive",
+      "state": "{\"stopped\":\"archive\"}",
+      "expect": "\"Stopped when the conversation was archived\""
+    },
+    {
+      "name": "stopped-shutdown",
+      "state": "{\"stopped\":\"shutdown\"}",
+      "expect": "\"Stopped when the host shut down\""
+    },
+    {
+      "name": "failed",
+      "state": "{\"failed\":\"port 3000 is taken\"}",
+      "expect": "\"Failed to start: port 3000 is taken\""
+    },
+    {
+      "name": "exited-zero",
+      "state": "{\"exited\":0}",
+      "expect": "\"Exited with code 0\""
+    },
+    {
+      "name": "exited-failure",
+      "state": "{\"exited\":1}",
+      "expect": "\"Exited with code 1\""
+    },
+    {
+      "name": "exited-no-code",
+      "state": "{\"exited\":null}",
+      "expect": "\"Exited\""
+    },
+    {
+      "name": "exited-signal",
+      "state": "{\"exited\":null,\"signal\":\"SIGTERM\"}",
+      "expect": "\"Exited after signal SIGTERM\""
+    }
+  ],
+  "orderedProcesses": [
+    {
+      "name": "live-first-then-ended-newest",
+      "processes": "[{\"id\":\"old\",\"owner\":3,\"name\":\"old\",\"command\":\"run old\",\"startedAt\":10,\"endedAt\":20,\"state\":{\"exited\":0}},{\"id\":\"run\",\"owner\":3,\"name\":\"run\",\"command\":\"run run\",\"startedAt\":30,\"state\":\"running\"},{\"id\":\"lost\",\"owner\":3,\"name\":\"lost\",\"command\":\"run lost\",\"startedAt\":5,\"endedAt\":40,\"state\":\"lost\"},{\"id\":\"start\",\"owner\":3,\"name\":\"start\",\"command\":\"run start\",\"startedAt\":50,\"state\":\"starting\"},{\"id\":\"new\",\"owner\":3,\"name\":\"new\",\"command\":\"run new\",\"startedAt\":60,\"endedAt\":70,\"state\":{\"stopped\":\"user\"}}]",
+      "expect": "[\"run\",\"start\",\"new\",\"lost\",\"old\"]"
+    },
+    {
+      "name": "same-ended-at-keeps-host-order",
+      "processes": "[{\"id\":\"same-a\",\"owner\":3,\"name\":\"same-a\",\"command\":\"run same-a\",\"startedAt\":10,\"endedAt\":50,\"state\":{\"exited\":0}},{\"id\":\"same-b\",\"owner\":3,\"name\":\"same-b\",\"command\":\"run same-b\",\"startedAt\":20,\"endedAt\":50,\"state\":{\"exited\":1}},{\"id\":\"same-c\",\"owner\":3,\"name\":\"same-c\",\"command\":\"run same-c\",\"startedAt\":5,\"endedAt\":50,\"state\":{\"stopped\":\"agent\"}}]",
+      "expect": "[\"same-a\",\"same-b\",\"same-c\"]"
+    },
+    {
+      "name": "missing-ended-at-uses-started-at",
+      "processes": "[{\"id\":\"no-end-old\",\"owner\":3,\"name\":\"no-end-old\",\"command\":\"run no-end-old\",\"startedAt\":10,\"state\":{\"exited\":0}},{\"id\":\"ended\",\"owner\":3,\"name\":\"ended\",\"command\":\"run ended\",\"startedAt\":1,\"endedAt\":5,\"state\":{\"stopped\":\"user\"}},{\"id\":\"no-end-new\",\"owner\":3,\"name\":\"no-end-new\",\"command\":\"run no-end-new\",\"startedAt\":30,\"state\":\"lost\"}]",
+      "expect": "[\"no-end-new\",\"no-end-old\",\"ended\"]"
+    },
+    {
+      "name": "all-live-keeps-host-order",
+      "processes": "[{\"id\":\"run-b\",\"owner\":3,\"name\":\"run-b\",\"command\":\"run run-b\",\"startedAt\":20,\"state\":\"running\"},{\"id\":\"start-a\",\"owner\":3,\"name\":\"start-a\",\"command\":\"run start-a\",\"startedAt\":10,\"state\":\"starting\"}]",
+      "expect": "[\"run-b\",\"start-a\"]"
+    }
+  ]
+}

@@ -98,7 +98,7 @@ pub fn processes_of(value: &Json) -> Vec<BackgroundProcess> {
 }
 
 fn decode_process(value: &Json) -> BackgroundProcess {
-    let state = decode_state(value.get("state").unwrap_or(&Json::Null));
+    let state = state_of(value.get("state").unwrap_or(&Json::Null));
     let pid = crate::json::num_key(value.get("pid"));
     let active = state.is_active();
     BackgroundProcess {
@@ -116,7 +116,9 @@ fn decode_process(value: &Json) -> BackgroundProcess {
     }
 }
 
-fn decode_state(value: &Json) -> ProcessState {
+/// Decode one `ProcessState` wire value. `processes_of` has already checked
+/// the schema; callers outside it get a renderable state rather than a panic.
+pub fn state_of(value: &Json) -> ProcessState {
     if let Some(text) = value.as_str() {
         let units = text.units();
         if units == crate::u16str::U16String::from_str("starting").units() {
