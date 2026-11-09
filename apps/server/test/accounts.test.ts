@@ -646,6 +646,23 @@ describe("changing the password (#450)", () => {
     expect((await login(relay, "admin", NEW_PASSWORD)).status).toBe(401);
   });
 
+  it("does not change the password when the session is revoked while the current one is being checked", async () => {
+    const { relay, accounts } = await startServer();
+    const token = (await login(relay)).json.token as string;
+    const pending = accounts.changePassword({
+      userId: 1,
+      keepToken: token,
+      currentPassword: GOOD_PASSWORD,
+      newPassword: NEW_PASSWORD,
+    });
+    // The hash is read and scrypt starts before the call returns, so this
+    // revocation lands while the check is in flight.
+    accounts.revokeAllSessions(1);
+    expect(await pending).toEqual({ status: "refused", reason: "unauthenticated" });
+    expect((await login(relay, "admin", GOOD_PASSWORD)).status).toBe(200);
+    expect((await login(relay, "admin", NEW_PASSWORD)).status).toBe(401);
+  });
+
   it("issues no session to a login whose password changed while it was being checked", async () => {
     const { accounts } = await startServer();
     const pending = accounts.login("admin", GOOD_PASSWORD, "203.0.113.9");
@@ -1000,12 +1017,24 @@ describe("deleting an account (#451)", () => {
     const started = await startServer();
     const { accounts } = started;
     const bob = await signUpBob(started);
-    const pending = accounts.deleteAccount({ userId: 2, password: GOOD_PASSWORD });
+    const pending = accounts.deleteAccount({ userId: 2, keepToken: bob.token, password: GOOD_PASSWORD });
     const db = new DatabaseSync(accounts.dbPath);
     db.prepare("UPDATE users SET password_hash = 'scrypt$reset-meanwhile' WHERE id = 2").run();
     db.close();
     expect(await pending).toEqual({ status: "refused", reason: "wrong_password" });
     expect(accounts.authenticate(bob.token)).toBeDefined();
+  });
+
+  it("does not delete an account whose session is revoked while the password is being checked", async () => {
+    const started = await startServer();
+    const { relay, accounts } = started;
+    const bob = await signUpBob(started);
+    const pending = accounts.deleteAccount({ userId: 2, keepToken: bob.token, password: GOOD_PASSWORD });
+    // The hash is read and scrypt starts before the call returns, so this
+    // revocation lands while the check is in flight.
+    accounts.revokeAllSessions(2);
+    expect(await pending).toEqual({ status: "refused", reason: "unauthenticated" });
+    expect((await login(relay, BOB)).status).toBe(200);
   });
 
   it("refuses malformed bodies and anonymous callers", async () => {

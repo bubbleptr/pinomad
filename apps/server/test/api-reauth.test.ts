@@ -30,7 +30,7 @@ interface Started {
   readonly authenticated: (token: string) => Promise<void>;
 }
 
-async function startServer(): Promise<Started> {
+async function startServer(overrides?: (accounts: Accounts) => Partial<Accounts>): Promise<Started> {
   const dataDir = await tempDir(dirs);
   const accounts = await openAccounts({ dataDir, bootstrapUser: "admin", bootstrapPassword: GOOD_PASSWORD });
   const waiting = new Map<string, () => void>();
@@ -42,6 +42,7 @@ async function startServer(): Promise<Started> {
       waiting.delete(token);
       return result;
     },
+    ...overrides?.(accounts),
   };
   const relay = await startRelay({ port: 0, publicOrigin: ORIGIN, accounts: watched });
   relays.push(relay);
@@ -142,6 +143,35 @@ describe("signed-in routes re-authenticate after reading the body", () => {
     const started = await startServer();
     const admin = ((await (await login(started.relay, "admin")).json()) as { token: string }).token;
     expect(await postRevokedMidBody(started, path, body, admin)).toBe(401);
+  });
+});
+
+describe("writes re-check the session inside the transaction (#585)", () => {
+  it("answers 401 when the session is revoked while a password change is checked", async () => {
+    const started = await startServer((accounts) => ({
+      changePassword(args) {
+        const pending = accounts.changePassword(args);
+        accounts.revokeAllSessions(args.userId);
+        return pending;
+      },
+    }));
+    const admin = ((await (await login(started.relay, "admin")).json()) as { token: string }).token;
+    expect((await post(started.relay, "/api/password", { currentPassword: GOOD_PASSWORD, newPassword: NEW_PASSWORD }, admin)).status).toBe(401);
+    expect((await login(started.relay, "admin", GOOD_PASSWORD)).status).toBe(200);
+    expect((await login(started.relay, "admin", NEW_PASSWORD)).status).toBe(401);
+  });
+
+  it("answers 401 when the session is revoked while an account delete is checked", async () => {
+    const started = await startServer((accounts) => ({
+      deleteAccount(args) {
+        const pending = accounts.deleteAccount(args);
+        accounts.revokeAllSessions(args.userId);
+        return pending;
+      },
+    }));
+    const bob = await signUpBob(started);
+    expect((await post(started.relay, "/api/me/delete", { password: GOOD_PASSWORD }, bob)).status).toBe(401);
+    expect((await login(started.relay, BOB)).status).toBe(200);
   });
 });
 

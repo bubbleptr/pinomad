@@ -1558,13 +1558,13 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
         deny(400, "invalid_request");
         return;
       }
-      const result = await accounts.deleteAccount({ userId: current.userId, ...confirmation });
+      const result = await accounts.deleteAccount({ userId: current.userId, keepToken: token!, ...confirmation });
       if (result.status === "limited") {
         deny(429, "rate_limited");
         return;
       }
       if (result.status === "refused") {
-        deny(403, result.reason);
+        deny(result.reason === "unauthenticated" ? 401 : 403, result.reason);
         return;
       }
       // The bindings are gone, and with them the hosts' authorization: close
@@ -1603,9 +1603,11 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
         return;
       }
       if (result.status === "refused") {
-        // 403, not 401: clients treat 401 as "signed out", and a mistyped
-        // current password must not sign the caller out.
-        deny(result.reason === "weak_password" ? 400 : 403, result.reason);
+        // A mistyped current password is 403, not 401: clients treat 401 as
+        // "signed out", and it must not sign the caller out. A session
+        // revoked while scrypt ran is 401, because that is what the caller is.
+        const status = result.reason === "weak_password" ? 400 : result.reason === "unauthenticated" ? 401 : 403;
+        deny(status, result.reason);
         return;
       }
       send(204);
