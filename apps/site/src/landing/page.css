@@ -545,20 +545,23 @@ html[lang="zh-CN"] .models-label {
 }
 
 /* The app stands on a plate of silver contour lines over Abyss Blue. The picture is
-   gradient-mapped onto the palette, so its ground is Abyss itself; the top padding
-   shows its band of silver above the window. */
+   gradient-mapped onto the palette, so its ground is Abyss itself. It is anchored at
+   the bottom, which trims the top of its silver band to about the padding above the
+   window, so the plate shows a strip of silver and then the app, not a field of blue.
+   The padding is in vw, not %: a percentage would follow the section's width, which
+   keeps growing after the plate stops at 90rem. */
 /* Wider than the text column, so the window reads at close to its real size. */
 .hero-stage {
   width: min(100% - 2 * var(--gutter), 90rem);
   margin: clamp(3rem, 7vw, 5rem) auto 0;
-  padding-top: max(3rem, 12.6%);
+  padding-top: clamp(2.5rem, 7vw, 6.5rem);
   /* clip, not hidden: hidden makes a scroll container, and the screenshot's view()
      timeline would follow this box, which never scrolls, instead of the page. */
   overflow: clip;
   border-radius: calc(var(--radius) * 1.75);
   background: var(--abyss)
     image-set(url("./hero-stage-1000.webp") 1x, url("./hero-stage.webp") 2x)
-    center top / cover no-repeat;
+    center bottom / cover no-repeat;
 }
 
 /* Past 1000px wide the small copy would be stretched even at 1x. */
@@ -616,8 +619,8 @@ html[lang="zh-CN"] .models-label {
 
 @keyframes rise {
   from {
-    transform: perspective(1800px) rotateX(24deg) scale(0.9);
-    opacity: 0.4;
+    transform: perspective(1800px) rotateX(10deg) scale(0.96);
+    opacity: 0.6;
   }
 }
 
