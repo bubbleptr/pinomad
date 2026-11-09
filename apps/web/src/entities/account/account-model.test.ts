@@ -418,15 +418,15 @@ describe("account model", () => {
     expect((model.state as Extract<typeof model.state, { status: "signed-in" }>).rejectedHostKeys).toEqual([]);
   });
 
-  it("drops a 4401 rejection when the session ends", async () => {
+  it("keeps a 4401 rejection when the same account signs back in", async () => {
     const entry = storedHost({ account: { serverOrigin: ORIGIN, hostId: "h1" } });
     const { model } = makeModel({ fake: fakeFetch(
       { status: 401 },
       { status: 200, body: { user: { username: "admin" } } },
       { status: 200, body: [accountHost(entry.hostKey, "h1")] },
       { status: 204 }, // logout
-      { status: 200, body: { user: { username: "bob" }, expiresAt: 1 } },
-      { status: 200, body: [] },
+      { status: 200, body: { user: { username: "admin" }, expiresAt: 1 } },
+      { status: 200, body: [accountHost(entry.hostKey, "h1")] },
     ), store: hosts([entry]) });
     await vi.waitFor(() => expect(model.state.status).toBe("signed-in"));
     model.hostRejected(entry.hostKey);
@@ -434,10 +434,13 @@ describe("account model", () => {
       entry.hostKey,
     ]);
 
+    // The host still refuses this device's key: the pairings and the
+    // rejection outlive the account session.
     expect(await model.logout()).toEqual({ ok: true, value: undefined });
-    expect((await model.login({ username: "bob", password: "pw" })).ok).toBe(true);
-    // The refusal belonged to the session that saw it, not to this new one.
-    expect((model.state as Extract<typeof model.state, { status: "signed-in" }>).rejectedHostKeys).toEqual([]);
+    expect((await model.login({ username: "admin", password: "pw" })).ok).toBe(true);
+    expect((model.state as Extract<typeof model.state, { status: "signed-in" }>).rejectedHostKeys).toEqual([
+      entry.hostKey,
+    ]);
   });
 
   it("drops a pending save that lands after the account changed", async () => {
@@ -500,6 +503,57 @@ describe("account model", () => {
     expect(signedIn().user).toBe("bob");
     expect(signedIn().rejectedHostKeys).toEqual([pending.hostKey]);
     expect(signedIn().unsavedHosts).toHaveLength(1);
+  });
+
+  it("forgets a removed host's key even when its save outlives the session", async () => {
+    const store = hosts();
+    store.setFailSaves(true);
+    const offer = {
+      url: "wss://relay.example.com/c/h1",
+      hostKey: toBase64Url(generateKeyPair().publicKey),
+      secret: toBase64Url(generateKeyPair().privateKey),
+      expiresAt: Date.now() + 60_000,
+    };
+    const { model } = makeModel({ fake: fakeFetch(
+      { status: 401 },
+      { status: 200, body: { user: { username: "admin" } } },
+      { status: 200, body: [] },
+      { status: 200, body: offer }, // pairing, its save fails
+      { status: 204 }, // remove h1 from the account
+      { status: 200, body: [] }, // refresh after the removal
+      { status: 204 }, // logout
+    ), store });
+    await vi.waitFor(() => expect(model.state.status).toBe("signed-in"));
+    expect(await model.pairHost("h1")).toEqual({ ok: false, error: { code: "pairing_not_saved" } });
+    store.setFailSaves(false);
+
+    // Hold the retry inside deps.paired; remove the host and sign out while
+    // the key is still on its way to the store.
+    let releaseSave!: () => void;
+    let saveStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      saveStarted = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
+    const save = store.save;
+    store.save = async (host) => {
+      saveStarted();
+      await gate;
+      return save(host);
+    };
+    const retried = model.retryUnsavedHost("h1");
+    await started;
+
+    expect(await model.removeHost({ hostId: "h1", confirmation: "pw" })).toEqual({ ok: true, value: undefined });
+    expect(await model.logout()).toEqual({ ok: true, value: undefined });
+    releaseSave();
+    await retried;
+
+    // The stale save did write the key, but the removal's cleanup still ran.
+    expect(store.saved.map((host) => host.account?.hostId)).toEqual(["h1"]);
+    expect(store.stored).toEqual([]);
   });
 
   it("keeps the paired record when the store save fails, for retry", async () => {
