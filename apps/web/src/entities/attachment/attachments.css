@@ -39,6 +39,7 @@
 .file-chip__size {
   flex-shrink: 0;
   color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .file-chip[data-status="failed"] .file-chip__size {

@@ -95,7 +95,7 @@ export function ChangesSurface({
           </span>
         )}
         {stat.kind === "unavailable" ? null : (
-          <span className="shrink-0 text-sm">
+          <span className="shrink-0 text-sm tabular-nums">
             <ChangeFigure stat={stat} />
             {stat.kind === "ready" && stat.files > 0 && (stat.additions > 0 || stat.deletions > 0) ? (
               <span className="text-muted">

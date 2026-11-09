@@ -386,7 +386,7 @@ function ProcessRow({ process, onOpen }: { process: ProcessInfo; onOpen: () => v
       }
       startContent={<ProcessGlyph state={process.state} />}
       endContent={
-        <span aria-hidden="true" className="text-xs text-muted">
+        <span aria-hidden="true" className="text-xs text-muted tabular-nums">
           {isProcessActive(process.state) ? <ProcessDuration startedAt={process.startedAt} /> : processResultText(process.state)}
         </span>
       }

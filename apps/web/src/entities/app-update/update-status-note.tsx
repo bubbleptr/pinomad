@@ -13,7 +13,7 @@ export function UpdateStatusNote({ update }: { update: AppUpdate | undefined }) 
     case "available":
     case "downloading": {
       const percent = status.progressPercent === undefined ? "" : ` ${Math.round(status.progressPercent)}%`;
-      return <Text type="supporting">{`Downloading PiNomad ${status.availableVersion ?? ""}…${percent}`}</Text>;
+      return <Text type="supporting" className="tabular-nums">{`Downloading PiNomad ${status.availableVersion ?? ""}…${percent}`}</Text>;
     }
     case "ready":
       return <Button label="Restart to update" variant="primary" onClick={() => update.install()} />;
