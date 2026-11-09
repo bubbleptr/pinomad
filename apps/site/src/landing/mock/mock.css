@@ -481,7 +481,7 @@
   z-index: 2;
   flex-direction: column;
   width: calc(420 * var(--u));
-  height: calc(460 * var(--u));
+  height: calc(400 * var(--u));
   padding-bottom: calc(40 * var(--u));
   overflow: clip;
   border-radius: calc(12 * var(--u));
@@ -546,6 +546,39 @@
   width: calc(100% - 32 * var(--u));
 }
 
+/* The web client's shimmer for live labels ("Running bash…"): a bright band swept
+   across text at rest in a dimmer grey. Here the sweep is a keyframe; the band is
+   parked off the left edge when motion is reduced. */
+.mock-shimmer {
+  padding-bottom: 0.1em;
+  background-image:
+    linear-gradient(100deg, transparent, var(--m-fg), transparent),
+    linear-gradient(#8f8f8f, #8f8f8f);
+  background-repeat: no-repeat;
+  background-size:
+    2.6em 100%,
+    100% 100%;
+  background-position:
+    -2.6em 0,
+    0 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.mock-agent {
+  display: flex;
+  align-items: center;
+  gap: calc(6 * var(--u));
+  font-size: calc(13 * var(--u));
+}
+
+.mock-agent .mock-logo {
+  width: calc(14 * var(--u));
+  height: calc(14 * var(--u));
+}
+
 /* —— Sizes —— */
 @media (min-width: 40rem) {
   .mock {
@@ -558,6 +591,13 @@
 
   .mock-sidebar {
     display: flex;
+  }
+
+  /* The app's conversation starts under its title bar rather than sitting on the
+     composer, so the window isn't empty at the top. */
+  .mock-app .mock-scroll {
+    justify-content: flex-start;
+    padding-top: calc(28 * var(--u));
   }
 }
 
@@ -637,6 +677,10 @@
   .mock-note {
     animation: mock-note 0.5s var(--ease-out) 3.4s backwards;
   }
+
+  .mock-shimmer {
+    animation: mock-shimmer 2.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -681,6 +725,22 @@
   12%,
   80% {
     background: var(--m-faint);
+  }
+}
+
+/* Positions are shares of the room left beside the 2.6em band: -60% parks it off
+   the left edge and 160% past the right for labels of these lengths. */
+@keyframes mock-shimmer {
+  0% {
+    background-position:
+      -60% 0,
+      0 0;
+  }
+  55%,
+  100% {
+    background-position:
+      160% 0,
+      0 0;
   }
 }
 

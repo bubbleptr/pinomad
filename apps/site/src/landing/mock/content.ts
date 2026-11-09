@@ -12,7 +12,9 @@ export type Block =
   | { kind: "user"; text: string }
   | { kind: "text"; parts: Inline[] }
   | { kind: "tools"; summary: string; added?: number; removed?: number; seconds?: number }
-  | { kind: "agents"; runs: Run[] };
+  | { kind: "agents"; runs: Run[] }
+  /** The live step at the bottom of a running turn: a shimmering label and its clock. */
+  | { kind: "trace"; label: string; since: number };
 
 export type Chat = { id: string; title: string; running?: boolean; blocks: Block[] };
 
@@ -31,6 +33,8 @@ export type MockContent = {
   url: string;
   /** The note beside the restarting machine. */
   restarted: string;
+  /** What the browser in front shows: one of the default conversation's subagents, opened. */
+  aside: { agent: string; model: Run["model"]; title: string; blocks: Block[] };
 };
 
 const url = "app.pinomad.si";
@@ -48,6 +52,27 @@ export const mockContent: Record<Lang, MockContent> = {
     url,
     defaultChat: "fold",
     restarted: "omarchy restarted. Its run picked up where it left off.",
+    aside: {
+      agent: "critic",
+      model: "openai",
+      title: "Look for slug collisions",
+      blocks: [
+        {
+          kind: "user",
+          text: "Check that folding can't give two of the 2,400 fixture titles the same slug.",
+        },
+        { kind: "tools", summary: "Read 2 files, ran 1 command", seconds: 18 },
+        {
+          kind: "text",
+          parts: [
+            "Found one pair: “Straße” and “Strasse” both fold to ",
+            { code: "strasse" },
+            ". The map is right; the dedupe step has to run after folding, not before. Checking the rest:",
+          ],
+        },
+        { kind: "trace", label: "Running bash…", since: 13.6 },
+      ],
+    },
     machines: [
       {
         name: "macbook-pro",
@@ -80,6 +105,7 @@ export const mockContent: Record<Lang, MockContent> = {
                       { ...runs.collisions, title: "Look for slug collisions", activity: "bash bun test" },
                     ],
                   },
+                  { kind: "trace", label: "Running subagent…", since: 64.3 },
                 ],
               },
               {
@@ -144,6 +170,7 @@ export const mockContent: Record<Lang, MockContent> = {
                     parts: ["Dumped the database (2.1 GB) and started 18 on a fresh volume. ", { code: "@worker" }, " is restoring it:"],
                   },
                   { kind: "agents", runs: [{ ...runs.restore, title: "Restore and verify", activity: "bash pg_restore -j 4" }] },
+                  { kind: "trace", label: "Running subagent…", since: 252.8 },
                 ],
               },
             ],
@@ -155,7 +182,25 @@ export const mockContent: Record<Lang, MockContent> = {
   zh: {
     url,
     defaultChat: "fold",
-    restarted: "omarchy 重启了，运行从断点接着跑。",
+    restarted: "omarchy 重启了，运行接着跑。",
+    aside: {
+      agent: "critic",
+      model: "openai",
+      title: "检查 slug 冲突",
+      blocks: [
+        { kind: "user", text: "确认折叠后，fixtures 里 2400 个标题不会有两个撞成同一个 slug。" },
+        { kind: "tools", summary: "Read 2 files, ran 1 command", seconds: 18 },
+        {
+          kind: "text",
+          parts: [
+            "找到一对：“Straße” 和 “Strasse” 折叠后都是 ",
+            { code: "strasse" },
+            "。映射表没问题，去重要放在折叠之后做，而不是之前。继续查剩下的：",
+          ],
+        },
+        { kind: "trace", label: "Running bash…", since: 13.6 },
+      ],
+    },
     machines: [
       {
         name: "macbook-pro",
@@ -185,6 +230,7 @@ export const mockContent: Record<Lang, MockContent> = {
                       { ...runs.collisions, title: "检查 slug 冲突", activity: "bash bun test" },
                     ],
                   },
+                  { kind: "trace", label: "Running subagent…", since: 64.3 },
                 ],
               },
               {
@@ -246,6 +292,7 @@ export const mockContent: Record<Lang, MockContent> = {
                     parts: ["数据库已经导出（2.1 GB），18 在新卷上起来了。", { code: "@worker" }, " 正在恢复："],
                   },
                   { kind: "agents", runs: [{ ...runs.restore, title: "恢复并校验", activity: "bash pg_restore -j 4" }] },
+                  { kind: "trace", label: "Running subagent…", since: 252.8 },
                 ],
               },
             ],

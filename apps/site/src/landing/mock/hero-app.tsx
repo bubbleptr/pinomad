@@ -2,7 +2,7 @@ import { type RefObject, useEffect, useRef, useState } from "react";
 import type { Lang } from "@/lib/i18n.ts";
 import { type Block, type Chat, type Inline, type Machine, mockContent } from "./content.ts";
 import { icons, ModelLogo } from "./icons.tsx";
-import { elapsedText, runAt, type Run } from "./runs.ts";
+import { clockText, elapsedText, runAt, type Run } from "./runs.ts";
 
 // The hero's product shot, drawn in HTML: the Mac app with two machines in its
 // sidebar, and in front of it the same conversation open in a browser on another
@@ -49,7 +49,7 @@ export function HeroApp({ lang, label }: { lang: Lang; label: string }) {
   // without this the cards would animate in again.
   const [switched, setSwitched] = useState(false);
   const chat = chats.find((each) => each.id === shown)!;
-  const home = chats.find((each) => each.id === content.defaultChat)!;
+  const aside = content.aside;
 
   return (
     <figure className="hero-shot mock" ref={ref} aria-label={label} data-switched={switched || undefined}>
@@ -97,7 +97,7 @@ export function HeroApp({ lang, label }: { lang: Lang; label: string }) {
         </div>
       </div>
 
-      <div className="mock-browser mock-scale" aria-hidden="true" data-away={shown !== home.id || undefined}>
+      <div className="mock-browser mock-scale" aria-hidden="true" data-away={shown !== content.defaultChat || undefined}>
         <div className="mock-chrome">
           <span className="mock-dots">
             <i />
@@ -111,10 +111,12 @@ export function HeroApp({ lang, label }: { lang: Lang; label: string }) {
         </div>
         <div className="mock-head">
           {icons.panelLeft}
-          <span className="mock-title">{home.title}</span>
+          <span className="mock-title">{aside.title}</span>
+          <span className="mock-agent">
+            <ModelLogo model={aside.model} />@{aside.agent}
+          </span>
         </div>
-        <Transcript chat={{ ...home, blocks: home.blocks.filter((block) => block.kind === "agents") }} clock={clock} />
-        <Composer running={home.running} model="claude" modelName="Claude Opus 5.5 · High" />
+        <Transcript chat={{ id: "aside", title: aside.title, blocks: aside.blocks }} clock={clock} />
       </div>
     </figure>
   );
@@ -217,6 +219,13 @@ function BlockView({ block, clock }: { block: Block; clock: number }) {
           {block.removed === undefined ? null : <span className="mock-removed"> -{block.removed}</span>}
           {block.seconds === undefined ? null : ` · ${elapsedText(block.seconds)}`}
           {icons.chevronRight}
+        </p>
+      );
+    case "trace":
+      return (
+        <p className="mock-tools">
+          <span className="mock-shimmer">{block.label}</span>
+          {` · ${clockText(block.since + clock)}`}
         </p>
       );
     case "agents":

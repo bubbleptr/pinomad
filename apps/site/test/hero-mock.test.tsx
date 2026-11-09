@@ -13,7 +13,7 @@ const escape = (text: string) => renderToString(<>{text}</>);
 
 describe("hero mock", () => {
   for (const lang of ["en", "zh"] as const) {
-    it(`prerenders the default conversation in both windows (${lang})`, () => {
+    it(`prerenders the whole first frame (${lang})`, () => {
       const content = mockContent[lang];
       const html = renderToString(<HeroApp lang={lang} label="label" />);
       const chats = content.machines.flatMap((machine) => machine.projects.flatMap((project) => project.chats));
@@ -22,11 +22,16 @@ describe("hero mock", () => {
       const runs = shown!.blocks.flatMap((block) => (block.kind === "agents" ? block.runs : []));
       expect(runs.length).toBeGreaterThan(1);
       for (const run of runs) {
-        // The card in the app, the card in the browser, and the row in the sidebar.
-        expect(html.split(escape(run.title)).length - 1).toBeGreaterThanOrEqual(3);
+        // The card in the app and the row in the sidebar.
+        expect(html.split(escape(run.title)).length - 1).toBeGreaterThanOrEqual(2);
       }
       for (const chat of chats) expect(html).toContain(escape(chat.title));
+      // The browser in front, with the subagent's own conversation in it.
       expect(html).toContain(content.url);
+      for (const block of content.aside.blocks) {
+        if (block.kind === "user") expect(html).toContain(escape(block.text));
+        if (block.kind === "trace") expect(html).toContain(escape(block.label));
+      }
     });
   }
 

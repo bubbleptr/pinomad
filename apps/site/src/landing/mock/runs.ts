@@ -37,3 +37,10 @@ export function elapsedText(seconds: number): string {
   if (whole < 60) return `${whole}s`;
   return `${Math.floor(whole / 60)}m ${whole % 60}s`;
 }
+
+/** "13.6s", "1m 4.3s": the live step's clock, to a tenth as the client shows it. */
+export function clockText(seconds: number): string {
+  const tenths = Math.max(0, Math.round(seconds * 10)) / 10;
+  if (tenths < 60) return `${tenths.toFixed(1)}s`;
+  return `${Math.floor(tenths / 60)}m ${(tenths % 60).toFixed(1)}s`;
+}
