@@ -39,6 +39,7 @@ function makeModel(fake: ReturnType<typeof fakeFetch>, options?: { bridge?: Desk
     fetch: fake.impl,
     hosts: store(),
     paired: () => Promise.resolve(),
+    channel: { post: () => {}, subscribe: () => () => {} },
     autoRegister: false,
     device: () => ({ id: "d".repeat(22), name: "Mac Chrome" }),
     ...(options?.bridge === undefined ? {} : { bridge: options.bridge }),
