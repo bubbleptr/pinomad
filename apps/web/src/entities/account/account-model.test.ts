@@ -1279,7 +1279,7 @@ describe("cross-tab account changes (#534)", () => {
     expect(store.stored).toEqual([]);
     // One sender; the receiving tab applied it locally and did not forward.
     expect(bus.sent).toEqual([
-      { from: 0, message: { kind: "host-removed", serverOrigin: ORIGIN, hostId: "h1" } },
+      { from: 0, message: { kind: "host-removed", serverOrigin: ORIGIN, hostId: "h1", hostKeys: [] } },
     ]);
   });
 
@@ -1310,7 +1310,74 @@ describe("cross-tab account changes (#534)", () => {
     expect(await pairing).toEqual({ ok: false, error: { code: "host_removed" } });
     expect(store.stored).toEqual([]);
     expect(bus.sent).toEqual([
-      { from: 0, message: { kind: "account-hosts-left", serverOrigin: ORIGIN } },
+      { from: 0, message: { kind: "account-hosts-left", serverOrigin: ORIGIN, hostKeys: [] } },
+    ]);
+  });
+
+  it("closes the runtime another tab left open after a host removal", async () => {
+    const entry = storedHost({ account: { serverOrigin: ORIGIN, hostId: "h1", vouched: true } });
+    const store = hosts([entry]);
+    const bus = channelBus();
+    const a = makeModel({ fake: fakeFetch(
+      { status: 401 },
+      { status: 200, body: { user: { username: "admin" } } },
+      { status: 200, body: [accountHost(entry.hostKey, "h1")] },
+      { status: 204 }, // remove h1
+      { status: 200, body: [] }, // refresh after the removal
+    ), store, channel: bus.create() });
+    const closed: string[] = [];
+    const b = makeModel({ fake: fakeFetch(
+      { status: 401 },
+      { status: 200, body: { user: { username: "admin" } } },
+      { status: 200, body: [accountHost(entry.hostKey, "h1")] },
+    ), store, channel: bus.create(), removeHost: async (hostKey) => {
+      closed.push(hostKey);
+      await store.remove(hostKey);
+    } });
+    await signedIn(a);
+    await signedIn(b);
+
+    expect(await a.model.removeHost({ hostId: "h1", confirmation: "pw" })).toEqual({ ok: true, value: undefined });
+    await flushMicrotasks();
+    expect(closed).toEqual([entry.hostKey]);
+    expect(store.stored).toEqual([]);
+    // The post-removal refresh sees the host gone and sends the slot again;
+    // only the sending tab ever posts.
+    expect(bus.sent[0]).toEqual({
+      from: 0,
+      message: { kind: "host-removed", serverOrigin: ORIGIN, hostId: "h1", hostKeys: [entry.hostKey] },
+    });
+    expect(bus.sent.every(({ from }) => from === 0)).toBe(true);
+  });
+
+  it("closes the runtime another tab left open after a shared-computer sign-out", async () => {
+    const entry = storedHost({ account: { serverOrigin: ORIGIN, hostId: "h1", vouched: true } });
+    const store = hosts([entry]);
+    const bus = channelBus();
+    const a = makeModel({ fake: fakeFetch(
+      { status: 401 },
+      { status: 200, body: { user: { username: "admin" } } },
+      { status: 200, body: [accountHost(entry.hostKey, "h1")] },
+      { status: 204 }, // revoke sign-out
+    ), store, channel: bus.create() });
+    const closed: string[] = [];
+    const b = makeModel({ fake: fakeFetch(
+      { status: 401 },
+      { status: 200, body: { user: { username: "admin" } } },
+      { status: 200, body: [accountHost(entry.hostKey, "h1")] },
+    ), store, channel: bus.create(), removeHost: async (hostKey) => {
+      closed.push(hostKey);
+      await store.remove(hostKey);
+    } });
+    await signedIn(a);
+    await signedIn(b);
+
+    expect(await a.model.logout({ revoke: true })).toEqual({ ok: true, value: undefined });
+    await flushMicrotasks();
+    expect(closed).toEqual([entry.hostKey]);
+    expect(store.stored).toEqual([]);
+    expect(bus.sent).toEqual([
+      { from: 0, message: { kind: "account-hosts-left", serverOrigin: ORIGIN, hostKeys: [entry.hostKey] } },
     ]);
   });
 
@@ -1349,7 +1416,7 @@ describe("cross-tab account changes (#534)", () => {
 
     // A foreign-origin message must not touch this page's host store; a
     // receiving tab never posts anything back.
-    bus.create().post({ kind: "host-removed", serverOrigin: otherOrigin, hostId: "h1" });
+    bus.create().post({ kind: "host-removed", serverOrigin: otherOrigin, hostId: "h1", hostKeys: [] });
     await flushMicrotasks();
     expect(store.stored).toEqual([other]);
     expect(bus.sent).toHaveLength(1);

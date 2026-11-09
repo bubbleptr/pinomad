@@ -62,8 +62,18 @@ export interface AccountVisibility {
  * host of a server with it.
  */
 export type AccountChannelMessage =
-  | { readonly kind: "host-removed"; readonly serverOrigin: string; readonly hostId: string }
-  | { readonly kind: "account-hosts-left"; readonly serverOrigin: string };
+  | {
+      readonly kind: "host-removed";
+      readonly serverOrigin: string;
+      readonly hostId: string;
+      /** The stored keys the sender took out; the shared store no longer has them. */
+      readonly hostKeys: readonly string[];
+    }
+  | {
+      readonly kind: "account-hosts-left";
+      readonly serverOrigin: string;
+      readonly hostKeys: readonly string[];
+    };
 
 /** The cross-tab channel; BroadcastChannel sends to the other tabs, never back to the sender. */
 export interface AccountChannel {
@@ -395,6 +405,11 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   const removedSince = (serverOrigin: string, slot: string, seen: RemovalMarks): boolean =>
     removals.get(slot) !== seen.slot
     || originLeaves.get(normalizeServerOrigin(serverOrigin)) !== seen.origin;
+  interface ForgotAccountHosts {
+    readonly forgotten: boolean;
+    /** Stored keys the removal attempted; another tab can close its runtimes with them. */
+    readonly hostKeys: readonly string[];
+  }
   /** Counts refresh() calls, so a slower, older list can tell it was overtaken. */
   let refreshes = 0;
   /** watchForHost's live watch per hostId, with its pending refresh between ticks. */
@@ -484,16 +499,17 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   /**
    * Drops every stored host linked to `origin`'s account (or only `hostId`),
    * closing its runtime, without declining it: the owner signing in here
-   * again later should get those hosts back on their own (#494). False when
-   * any of them may still be stored.
+   * again later should get those hosts back on their own (#494). `forgotten`
+   * is false when any of them may still be stored; `hostKeys` names the
+   * records the removal attempted, so another tab can close its runtimes.
    */
-  const forgetAccountHosts = async (origin: string, hostId?: string): Promise<boolean> => {
+  const forgetAccountHosts = async (origin: string, hostId?: string): Promise<ForgotAccountHosts> => {
     let stored: StoredHost[];
     try {
       stored = await deps.hosts.list();
     } catch (error) {
       console.error("Could not read the paired hosts to forget them", error);
-      return false;
+      return { forgotten: false, hostKeys: [] };
     }
     // Only keys the account issued: a QR pairing that later adopted the link
     // is the host's own, and stays.
@@ -501,17 +517,30 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       host.account?.vouched === true
       && normalizeServerOrigin(host.account.serverOrigin) === origin
       && (hostId === undefined || host.account.hostId === hostId);
-    for (const host of stored.filter(vouched)) {
-      await (deps.removeHost?.(host.hostKey) ?? deps.hosts.remove(host.hostKey)).catch((error: unknown) =>
+    const dropped = stored.filter(vouched).map((host) => host.hostKey);
+    for (const hostKey of dropped) {
+      await (deps.removeHost?.(hostKey) ?? deps.hosts.remove(hostKey)).catch((error: unknown) =>
         console.error("Could not forget a host", error),
       );
     }
     // The app's removal logs and swallows a store failure; read back to know.
     try {
-      return !(await deps.hosts.list()).some(vouched);
+      return { forgotten: !(await deps.hosts.list()).some(vouched), hostKeys: dropped };
     } catch (error) {
       console.error("Could not check the forgotten hosts", error);
-      return false;
+      return { forgotten: false, hostKeys: dropped };
+    }
+  };
+
+  /**
+   * Close a runtime another tab already took out of the shared store: the
+   * record is gone there, so only this page's view and connection remain.
+   */
+  const dropHostRuntimes = async (hostKeys: readonly string[]): Promise<void> => {
+    for (const hostKey of hostKeys) {
+      await (deps.removeHost?.(hostKey) ?? deps.hosts.remove(hostKey)).catch((error: unknown) =>
+        console.error("Could not close a removed host", error),
+      );
     }
   };
 
@@ -519,7 +548,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
    * The local half of taking `hostId` off this device, shared by this page's
    * removal and the same change from another tab: no server call, no channel.
    */
-  const dropHostLocally = async (serverOrigin: string, hostId: string): Promise<boolean> => {
+  const dropHostLocally = async (serverOrigin: string, hostId: string): Promise<ForgotAccountHosts> => {
     const slot = slotKey(serverOrigin, hostId);
     removals.set(slot, (removals.get(slot) ?? 0) + 1);
     cancelAccountRegistration(hostId);
@@ -546,13 +575,20 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       }
     }
     if (dropped) publishUnsaved();
-    const forgotten = await forgetAccountHosts(serverOrigin);
-    if (broadcast) channel?.post({ kind: "account-hosts-left", serverOrigin });
+    const { forgotten, hostKeys } = await forgetAccountHosts(serverOrigin);
+    if (broadcast) channel?.post({ kind: "account-hosts-left", serverOrigin, hostKeys: [...hostKeys] });
     return forgotten;
   };
 
-  // Another tab's removal and sign-out are local facts here too, but they never
-  // go back out on the channel (that would loop).
+  /** Apply another tab's change locally; it never goes back out on the channel. */
+  const applyRemoteChange = async (message: AccountChannelMessage): Promise<void> => {
+    if (message.kind === "host-removed") await dropHostLocally(message.serverOrigin, message.hostId);
+    else await leaveAccountHosts(message.serverOrigin, false);
+    // The sender removed the records before posting, so its list is the only
+    // way to find the runtimes this page still has open for them.
+    await dropHostRuntimes(message.hostKeys);
+  };
+
   channel?.subscribe((message) => {
     const activeOrigin = client?.origin ?? lastOrigin;
     if (
@@ -561,10 +597,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     ) {
       return;
     }
-    const applied = message.kind === "host-removed"
-      ? dropHostLocally(message.serverOrigin, message.hostId)
-      : leaveAccountHosts(message.serverOrigin, false);
-    void applied.catch((error: unknown) => {
+    void applyRemoteChange(message).catch((error: unknown) => {
       console.error("Could not apply an account change from another tab", error);
     });
   });
@@ -957,8 +990,8 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
    * the server side is done, and the host stops answering through it either way.
    */
   const forgetRemovedHost = async (origin: string, hostId: string): Promise<void> => {
-    await dropHostLocally(origin, hostId);
-    channel?.post({ kind: "host-removed", serverOrigin: origin, hostId });
+    const { hostKeys } = await dropHostLocally(origin, hostId);
+    channel?.post({ kind: "host-removed", serverOrigin: origin, hostId, hostKeys: [...hostKeys] });
   };
 
   const removeHost = async ({
