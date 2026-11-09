@@ -1,6 +1,5 @@
-import { useRef, useState } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import type { Lang } from "@/lib/i18n.ts";
-import { useClock } from "./clock.ts";
 import { type Block, type Chat, type Inline, type Machine, mockContent } from "./content.ts";
 import { icons, ModelLogo } from "./icons.tsx";
 import { elapsedText, runAt, type Run } from "./runs.ts";
@@ -17,6 +16,28 @@ import { elapsedText, runAt, type Run } from "./runs.ts";
 
 const RUNNING = "Steer the running turn…";
 const IDLE = "Ask · @ agent or file · / command · $ skill";
+
+/**
+ * Seconds the hero has been on screen: paused while it's scrolled away, and 0 for
+ * good under reduced motion, which is also the prerendered value.
+ */
+function useClock(ref: RefObject<HTMLElement | null>) {
+  const [clock, setClock] = useState(0);
+  useEffect(() => {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const observer = new IntersectionObserver(([entry]) => {
+      clearInterval(timer);
+      if (entry?.isIntersecting) timer = setInterval(() => setClock((seconds) => seconds + 1), 1000);
+    });
+    observer.observe(ref.current!);
+    return () => {
+      observer.disconnect();
+      clearInterval(timer);
+    };
+  }, [ref]);
+  return clock;
+}
 
 export function HeroApp({ lang, label }: { lang: Lang; label: string }) {
   const content = mockContent[lang];

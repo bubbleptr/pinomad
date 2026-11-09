@@ -5,11 +5,10 @@ import openai from "./logos/openai.svg?raw";
 import qwen from "./logos/qwen-color.svg?raw";
 import type { Model } from "./runs.ts";
 
-// The clients' icons, drawn inline: Lucide outlines (docs/licenses/lucide.md), the
+// The client's icons, drawn inline: Lucide outlines (docs/licenses/lucide.md), the
 // Hugeicons New chat and panel glyphs from apps/web/src/shared/ui/animated-icons.tsx
 // (docs/licenses/animated-icons.md), and the LobeHub model marks the web client uses
-// (docs/licenses/lobehub-icons.md). The iPhone app's glyphs are Lucide too, at the
-// version apps/ios/scripts/lucide-icons.sh pins.
+// (docs/licenses/lobehub-icons.md).
 
 function Line({ children }: { children: ReactNode }) {
   return (
@@ -98,107 +97,6 @@ export const icons = {
       <path d="M8 11V7a4 4 0 0 1 8 0v4" />
     </Line>
   ),
-};
-
-/** The iPhone app's glyphs (apps/ios/scripts/lucide-icons.txt). */
-export const iosIcons = {
-  chevronLeft: (
-    <Line>
-      <path d="m15 18-6-6 6-6" />
-    </Line>
-  ),
-  chevronRight: icons.chevronRight,
-  chevronDown: icons.chevronDown,
-  userRound: (
-    <Line>
-      <circle cx="12" cy="8" r="5" />
-      <path d="M20 21a8 8 0 0 0-16 0" />
-    </Line>
-  ),
-  settings: icons.settings,
-  inbox: (
-    <Line>
-      <path d="M22 12h-6l-2 3h-4l-2-3H2" />
-      <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
-    </Line>
-  ),
-  bellCheck: (
-    <Line>
-      <path d="M10.268 21a2 2 0 0 0 3.464 0" />
-      <path d="m15 8 2 2 4-4" />
-      <path d="M16.8607 4.4824A6 6 0 0 0 6 8C6 12.499 4.589 13.956 3.262 15.326" />
-      <path d="M3.262 15.326A1 1 0 0 0 4 17H20A1 1 0 0 0 20.74 15.327C20.209 14.779 19.665 14.218 19.203 13.454" />
-    </Line>
-  ),
-  circleDashed: (
-    <Line>
-      <path d="M10.1 2.182a10 10 0 0 1 3.8 0M13.9 21.818a10 10 0 0 1-3.8 0M17.609 3.721a10 10 0 0 1 2.69 2.7M2.182 13.9a10 10 0 0 1 0-3.8M20.279 17.609a10 10 0 0 1-2.7 2.69M21.818 10.1a10 10 0 0 1 0 3.8M3.721 6.391a10 10 0 0 1 2.7-2.69M6.391 20.279a10 10 0 0 1-2.69-2.7" />
-    </Line>
-  ),
-  ban: (
-    <Line>
-      <path d="M4.929 4.929 19.07 19.071" />
-      <circle cx="12" cy="12" r="10" />
-    </Line>
-  ),
-  monitor: icons.monitor,
-  folder: (
-    <Line>
-      <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
-    </Line>
-  ),
-  plus: icons.plus,
-  search: (
-    <Line>
-      <path d="m21 21-4.34-4.34" />
-      <circle cx="11" cy="11" r="8" />
-    </Line>
-  ),
-  squarePen: (
-    <Line>
-      <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-      <path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z" />
-    </Line>
-  ),
-  layoutGridCircles: (
-    <Line>
-      <circle cx="17.5" cy="17.5" r="3.5" />
-      <circle cx="17.5" cy="6.5" r="3.5" />
-      <circle cx="6.5" cy="17.5" r="3.5" />
-      <circle cx="6.5" cy="6.5" r="3.5" />
-    </Line>
-  ),
-  checkCheck: (
-    <Line>
-      <path d="M18 6 7 17l-5-5" />
-      <path d="m22 10-7.5 7.5L13 16" />
-    </Line>
-  ),
-  circleCheck: (
-    <Line>
-      <circle cx="12" cy="12" r="10" />
-      <path d="m9 12 2 2 4-4" />
-    </Line>
-  ),
-  copy: (
-    <Line>
-      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
-      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-    </Line>
-  ),
-  circle: (
-    <Line>
-      <circle cx="12" cy="12" r="10" />
-    </Line>
-  ),
-  circleDot: (
-    <Line>
-      <circle cx="12" cy="12" r="10" />
-      <circle cx="12" cy="12" r="1" />
-    </Line>
-  ),
-  arrowUp: icons.send,
-  stop: icons.stop,
 };
 
 const marks: Record<Model, string> = { claude, deepseek, openai, qwen };

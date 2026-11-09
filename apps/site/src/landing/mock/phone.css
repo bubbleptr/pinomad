@@ -1,0 +1,120 @@
+/* The iPhone frame around the app's screenshots (anywhere-phone.tsx), drawn plain
+   like the simulator's: a thin grey outline, a black bezel, the Dynamic Island and
+   flat side buttons. Sizes are in cqw, a share of the phone's own width. The
+   screenshots are iPhone 17 Pro ones (402 × 874pt) with the status bar left in;
+   simulator screenshots leave out the island, so it's drawn in the bar's gap. */
+
+.phone {
+  --phone-edge: oklch(0.55 0 0);
+  --phone-key: oklch(0.34 0 0);
+
+  position: relative;
+  justify-self: center;
+  width: min(17rem, 72%);
+  margin: 0;
+  container-type: inline-size;
+}
+
+@media (min-width: 56rem) {
+  .phone {
+    width: min(19.5rem, 70%);
+  }
+}
+
+/* Bezel 3.4cqw; the screen's corners are 62pt of its 402 (15.4%). */
+.phone-body {
+  position: relative;
+  padding: 3.4cqw;
+  border-radius: 17.8cqw;
+  background: #000;
+  box-shadow:
+    0 0 0 1px var(--phone-edge),
+    0 1.5rem 3rem -1rem rgb(0 0 0 / 0.6);
+}
+
+.phone-screen {
+  position: relative;
+  display: grid;
+  overflow: clip;
+  border-radius: 14.4cqw;
+  background: #000;
+}
+
+/* All four screens share one cell; the shown one fades in over the others. */
+.phone-screen > img {
+  grid-area: 1 / 1;
+  display: block;
+  width: 100%;
+  height: auto;
+  opacity: 0;
+}
+
+.phone-screen > img[data-shown] {
+  opacity: 1;
+}
+
+/* 125 × 37pt, 11pt from the top, in a 402pt-wide screen of 93.2cqw. */
+.phone-island {
+  position: absolute;
+  top: 2.55cqw;
+  left: 50%;
+  width: 29cqw;
+  height: 8.6cqw;
+  border-radius: 999px;
+  background: #000;
+  translate: -50% 0;
+}
+
+/* Buttons stand just outside the outline; top and height are shares of the body. */
+.phone-btn {
+  position: absolute;
+  width: 0.9cqw;
+  background: var(--phone-key);
+}
+
+.btn-action,
+.btn-volume-up,
+.btn-volume-down {
+  left: calc(-0.9cqw - 1px);
+  border-radius: 0.5cqw 0 0 0.5cqw;
+}
+
+.btn-side,
+.btn-camera {
+  right: calc(-0.9cqw - 1px);
+  border-radius: 0 0.5cqw 0.5cqw 0;
+}
+
+.btn-action {
+  top: 18%;
+  height: 5.5%;
+}
+
+.btn-volume-up {
+  top: 27%;
+  height: 9.5%;
+}
+
+.btn-volume-down {
+  top: 38.5%;
+  height: 9.5%;
+}
+
+.btn-side {
+  top: 30%;
+  height: 14%;
+}
+
+/* Camera Control sits nearly flush. */
+.btn-camera {
+  top: 58%;
+  height: 8%;
+  width: 0.5cqw;
+  right: calc(-0.5cqw - 1px);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .phone-screen > img {
+    transition: opacity 0.35s var(--ease-out);
+  }
+}

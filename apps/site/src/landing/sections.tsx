@@ -4,7 +4,7 @@ import { githubUrl } from "@/lib/nav.ts";
 import { blogUrl, type LandingCopy } from "./copy.tsx";
 import { AgentsDiagram, ConnectionDiagram, EnvironmentsDiagram } from "./diagrams.tsx";
 import { DurableDiagram } from "./durable.tsx";
-import { AnywherePhones, STEPS, type Step } from "./mock/anywhere-phones.tsx";
+import { AnywherePhone, STEPS, type Step } from "./mock/anywhere-phone.tsx";
 import { HeroApp } from "./mock/hero-app.tsx";
 import { ArrowIcon } from "./icons.tsx";
 import { shot } from "./shots.ts";
@@ -103,7 +103,7 @@ export function Anywhere({ lang, t }: { lang: Lang; t: LandingCopy["anywhere"] }
             ))}
           </div>
         </div>
-        <AnywherePhones lang={lang} step={step} label={t.shotAlt} onStep={setStep} />
+        <AnywherePhone lang={lang} step={step} label={t.shotAlt} />
       </div>
     </section>
   );
