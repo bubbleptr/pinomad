@@ -20,6 +20,7 @@ import {
 } from "@pinomad/protocol/relay.ts";
 import { openAccounts, type Accounts } from "../src/accounts.ts";
 import { startRelay, type Relay } from "../src/relay.ts";
+import { fillJoinCommand, tokenJoinCommands } from "./join-command-fixture.ts";
 import { removeTempDir, tempDir } from "./support.ts";
 
 const ORIGIN = "https://relay.example.com";
@@ -42,7 +43,7 @@ interface Started {
   readonly dataDir: string;
 }
 
-async function startServer(options?: { readonly now?: () => number }): Promise<Started> {
+async function startServer(options?: { readonly now?: () => number; readonly publicOrigin?: string }): Promise<Started> {
   const dataDir = await tempDir(dirs);
   const accounts = await openAccounts({
     dataDir,
@@ -52,7 +53,7 @@ async function startServer(options?: { readonly now?: () => number }): Promise<S
   });
   const relay = await startRelay({
     port: 0,
-    publicOrigin: ORIGIN,
+    publicOrigin: options?.publicOrigin ?? ORIGIN,
     registerTimeoutMs: 150,
     accounts,
   });
@@ -180,7 +181,9 @@ const hostRow = (accounts: Accounts, hostId: string): Record<string, unknown> | 
 
 describe("join tokens", () => {
   it("requires a session and returns token, expiry, and the join command", async () => {
-    const { relay } = await startServer();
+    // One fixture case is enough here; join-command.test.ts runs every case.
+    const joinCase = tokenJoinCommands[0];
+    const { relay } = await startServer({ publicOrigin: joinCase.serverOrigin });
     // No credential at all is refused by the Origin gate; a bad Bearer gets 401.
     expect((await api(relay, { method: "POST", path: "/api/join-tokens" })).status).toBe(403);
     expect(
@@ -193,7 +196,7 @@ describe("join tokens", () => {
     expect(response.status).toBe(200);
     const { token, expiresAt, command } = response.json as { token: string; expiresAt: number; command: string };
     // One line for scripts; the install script brings its own Node (#499).
-    expect(command).toBe(`curl -fsSL https://pinomad.si/install.sh | sh -s -- join ${ORIGIN} ${token}`);
+    expect(command).toBe(fillJoinCommand(joinCase, token));
     expect(expiresAt).toBeGreaterThan(Date.now());
     expect(expiresAt).toBeLessThanOrEqual(Date.now() + 10 * MINUTE + 1000);
   });
