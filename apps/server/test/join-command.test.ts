@@ -1,27 +1,12 @@
 // The join command POST /api/join-tokens returns, checked against the fixture
 // the web and iOS tests read too, so a fix to the command lands on every end
 // at once (#518, #519).
-import { readFileSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { openAccounts } from "../src/accounts.ts";
 import { startRelay, type Relay } from "../src/relay.ts";
+import { fillJoinCommand, tokenJoinCommands } from "./join-command-fixture.ts";
 import { removeTempDir, tempDir } from "./support.ts";
-
-interface JoinCommandCase {
-  readonly name: string;
-  readonly serverOrigin: string;
-  readonly token: string | null;
-  readonly command: string;
-}
-
-const fixture = JSON.parse(
-  readFileSync(new URL("../../../packages/protocol/test/fixtures/join-commands.json", import.meta.url), "utf8"),
-) as { readonly cases: readonly JoinCommandCase[] };
-// The server builds only the one-use token command; the clients build the tokenless one.
-const withToken = fixture.cases.filter(
-  (c): c is JoinCommandCase & { readonly token: string } => c.token !== null,
-);
 
 const PASSWORD = "correct horse battery";
 
@@ -58,13 +43,13 @@ function post(relay: Relay, path: string, options: { readonly bearer?: string; r
 }
 
 describe("join command", () => {
-  it.each(withToken)("$name", async ({ serverOrigin, token: placeholder, command }) => {
+  it.each(tokenJoinCommands)("$name", async (entry) => {
     const dataDir = await tempDir(dirs);
     const accounts = await openAccounts({ dataDir, bootstrapUser: "admin", bootstrapPassword: PASSWORD });
-    const relay = await startRelay({ port: 0, publicOrigin: serverOrigin, accounts });
+    const relay = await startRelay({ port: 0, publicOrigin: entry.serverOrigin, accounts });
     relays.push(relay);
     const session = (await post(relay, "/api/login", { body: { username: "admin", password: PASSWORD } })).token as string;
     const minted = await post(relay, "/api/join-tokens", { bearer: session });
-    expect(minted.command).toBe(command.replace(placeholder, minted.token as string));
+    expect(minted.command).toBe(fillJoinCommand(entry, minted.token as string));
   });
 });
