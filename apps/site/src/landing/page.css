@@ -555,7 +555,7 @@ html[lang="zh-CN"] .models-label {
   width: min(100% - 2 * var(--gutter), 90rem);
   margin: clamp(3rem, 7vw, 5rem) auto 0;
   padding-top: clamp(2.5rem, 7vw, 6.5rem);
-  /* clip, not hidden: hidden makes a scroll container, and the screenshot's view()
+  /* clip, not hidden: hidden makes a scroll container, and the app's view()
      timeline would follow this box, which never scrolls, instead of the page. */
   overflow: clip;
   border-radius: calc(var(--radius) * 1.75);
@@ -574,8 +574,6 @@ html[lang="zh-CN"] .models-label {
 .hero-shot {
   width: calc(100% - 2rem);
   margin-inline: auto;
-  border-radius: var(--radius) var(--radius) 0 0;
-  box-shadow: 0 -0.5rem 3rem -0.5rem rgb(0 0 0 / 0.45);
 }
 
 @media (min-width: 56rem) {
@@ -600,7 +598,7 @@ html[lang="zh-CN"] .models-label {
     animation-play-state: paused;
   }
 
-  /* The screenshot tips up off its stage as it scrolls in. */
+  /* The app tips up off its stage as it scrolls in. */
   @supports (animation-timeline: view()) {
     .hero-shot {
       transform-origin: 50% 100%;

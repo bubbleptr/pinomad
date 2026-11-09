@@ -110,7 +110,7 @@ export const copy: Record<Lang, LandingCopy> = {
       models: [...models, "Qwen", "Kimi", "Z.AI", "MiniMax", "OpenRouter", "GitHub Copilot"],
       modelsMore: "17 more",
       shotAlt:
-        "The PiNomad web client mid-run: the slugkit project's conversations in the sidebar; the agent has folded accented letters in slugs, been asked to document the rules in the README, edited it, and is running the tests again",
+        "The PiNomad Mac app with two machines in its sidebar. On macbook-pro, @planner has handed a fix to two @worker agents and a @critic, each on its own model; on omarchy, a Postgres upgrade is running. In front, the same conversation is open in a browser.",
 
       specs: [
         { label: "Host", value: "macOS · Linux" },
@@ -282,7 +282,7 @@ export const copy: Record<Lang, LandingCopy> = {
       modelsLabel: "pi 支持的模型都能用",
       models: [...models, "通义千问", "Kimi", "智谱 Z.AI", "MiniMax", "OpenRouter", "GitHub Copilot"],
       modelsMore: "另有 17 家",
-      shotAlt: "PiNomad Web 客户端运行画面：左侧是 slugkit 项目的对话列表；agent 改好了重音字母的折叠，又被要求在 README 里写明规则，改完 README 后正在重跑测试",
+      shotAlt: "PiNomad Mac App，侧栏里有两台机器：macbook-pro 上 @planner 把修复拆给了两个 @worker 和一个 @critic，各用各的模型；omarchy 上在升级 Postgres。前面是同一个对话在浏览器里打开的样子。",
       specs: [
         { label: "宿主", value: "macOS · Linux" },
         { label: "客户端", value: "Mac · Web · iPhone" },

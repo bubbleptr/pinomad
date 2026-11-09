@@ -1,0 +1,692 @@
+/* The hero's product windows (hero-app.tsx). Colours and sizes are the web client's
+   dark theme, measured off its Storybook; every length is a multiple of --u, one
+   pixel of a 1200px-wide window, so the drawing scales with the figure like a
+   screenshot would. Below 40rem it is a 420px-wide portrait window without the
+   sidebar. */
+
+.mock {
+  --m-bg: #141414;
+  --m-side: #232323;
+  --m-fg: oklch(0.94 0 0);
+  --m-fg-2: #bdbdbd;
+  --m-muted: #a3a3a3;
+  --m-faint: #7a7a7a;
+  --m-border: oklch(0.33 0 0);
+  --m-select: rgb(255 255 255 / 0.1);
+  --m-bubble: #2c2c2c;
+  --m-field: #333;
+  --m-code: #242424;
+  --m-green: rgb(91 161 76);
+  --m-added: #7ccf7c;
+  --m-removed: #ef8f8f;
+  --m-font: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+
+  position: relative;
+  container-type: inline-size;
+  aspect-ratio: 420 / 520;
+  margin-block: 0;
+  color: var(--m-fg);
+  font-family: var(--m-font);
+  text-align: start;
+}
+
+.mock-scale {
+  --u: calc(100cqi / 420);
+  font-size: calc(15 * var(--u));
+  line-height: 1.6;
+}
+
+.mock-app {
+  position: absolute;
+  inset: 0;
+  /* Its own stacking context, so its edge highlight stays under the browser. */
+  z-index: 1;
+  display: flex;
+  overflow: clip;
+  border-radius: calc(12 * var(--u)) calc(12 * var(--u)) 0 0;
+  background: var(--m-bg);
+  /* Up onto the plate, and a long soft fall onto it. */
+  box-shadow:
+    0 -0.5rem 3rem -0.5rem rgb(0 0 0 / 0.45),
+    0 2rem 5rem -1.5rem rgb(4 8 28 / 0.6);
+}
+
+/* A hairline all round, and a brighter stretch of it at the top left, where the
+   light over the stage catches the edge. */
+.mock-app::before,
+.mock-app::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.mock-app::before {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
+}
+
+.mock-app::after {
+  box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.4), inset 1px 0 0 0 rgb(255 255 255 / 0.22);
+  mask-image: radial-gradient(45% 60% at 10% 0%, #000 0%, rgb(0 0 0 / 0.5) 40%, transparent 75%);
+}
+
+.mock-icon {
+  flex: none;
+  width: calc(18 * var(--u));
+  height: calc(18 * var(--u));
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.mock-logo {
+  display: inline-flex;
+  flex: none;
+  width: calc(16 * var(--u));
+  height: calc(16 * var(--u));
+}
+
+.mock-logo svg {
+  width: 100%;
+  height: 100%;
+}
+
+.mock-grow {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* —— Sidebar —— */
+.mock-sidebar {
+  display: none;
+  position: relative;
+  flex: none;
+  flex-direction: column;
+  width: calc(260 * var(--u));
+  padding: 0 calc(12 * var(--u));
+  background: var(--m-side);
+  font-size: calc(14 * var(--u));
+  line-height: calc(20 * var(--u));
+}
+
+.mock-band {
+  display: flex;
+  align-items: center;
+  gap: calc(18 * var(--u));
+  height: calc(44 * var(--u));
+  padding-inline: calc(6 * var(--u));
+  color: var(--m-muted);
+}
+
+.mock-lights,
+.mock-dots {
+  display: flex;
+  gap: calc(8 * var(--u));
+}
+
+.mock-lights i {
+  width: calc(12 * var(--u));
+  height: calc(12 * var(--u));
+  border-radius: 50%;
+  background: #ff5f57;
+}
+
+.mock-lights i:nth-child(2) {
+  background: #febc2e;
+}
+
+.mock-lights i:nth-child(3) {
+  background: #28c840;
+}
+
+.mock-row {
+  display: flex;
+  align-items: center;
+  gap: calc(10 * var(--u));
+  width: 100%;
+  height: calc(32 * var(--u));
+  padding: 0 calc(8 * var(--u));
+  border: 0;
+  border-radius: calc(10 * var(--u));
+  background: none;
+  color: var(--m-fg);
+  font: inherit;
+  font-weight: 500;
+  text-align: start;
+}
+
+.mock-row > .mock-icon:last-child {
+  width: calc(14 * var(--u));
+  color: var(--m-muted);
+}
+
+.mock-new {
+  margin-bottom: calc(6 * var(--u));
+}
+
+.mock-chat {
+  cursor: pointer;
+}
+
+.mock-chat:hover {
+  background: rgb(255 255 255 / 0.05);
+}
+
+.mock-chat[aria-pressed="true"] {
+  background: var(--m-select);
+}
+
+.mock-chat:focus-visible {
+  outline: 2px solid var(--mist);
+  outline-offset: -2px;
+}
+
+.mock-machine {
+  position: relative;
+}
+
+.mock-machine-name {
+  padding: calc(14 * var(--u)) calc(8 * var(--u)) calc(4 * var(--u));
+  color: var(--m-muted);
+  font-size: calc(12.5 * var(--u));
+}
+
+.mock-dot {
+  position: relative;
+  flex: none;
+  width: calc(8 * var(--u));
+  height: calc(8 * var(--u));
+  margin-inline: calc(5 * var(--u));
+  border-radius: 50%;
+  background: var(--m-faint);
+}
+
+.mock-row .mock-dot:not([data-running]) {
+  visibility: hidden;
+}
+
+.mock-dot[data-running] {
+  background: var(--m-green);
+}
+
+/* Background subagents hang off their conversation on a dashed tree line. */
+.mock-family {
+  position: relative;
+  margin-left: calc(17 * var(--u));
+  padding-left: calc(12 * var(--u));
+}
+
+.mock-family::before {
+  content: "";
+  position: absolute;
+  top: calc(-4 * var(--u));
+  bottom: calc(16 * var(--u));
+  left: 0;
+  border-left: 1px dashed var(--m-faint);
+}
+
+.mock-child {
+  position: relative;
+  font-weight: 400;
+}
+
+.mock-child::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: calc(-12 * var(--u));
+  width: calc(10 * var(--u));
+  border-top: 1px dashed var(--m-faint);
+}
+
+.mock-foot {
+  display: flex;
+  align-items: center;
+  gap: calc(14 * var(--u));
+  margin-top: auto;
+  padding: calc(14 * var(--u)) calc(8 * var(--u));
+  color: var(--m-muted);
+}
+
+.mock-foot span {
+  flex: 1;
+  color: var(--m-fg);
+}
+
+/* The note under the machine that restarts: an annotation on the app, not part of
+   it, so it is drawn in the page's own colours. It sits in the sidebar's empty
+   lower half, pointing up at the machine. */
+.mock-note {
+  position: relative;
+  margin: calc(14 * var(--u)) calc(4 * var(--u)) 0;
+  padding: calc(7 * var(--u)) calc(10 * var(--u));
+  border-radius: calc(6 * var(--u));
+  background: var(--mist);
+  color: var(--abyss);
+  font-family: var(--font);
+  font-size: calc(12 * var(--u));
+  font-weight: 600;
+  line-height: 1.45;
+  box-shadow: 0 calc(6 * var(--u)) calc(18 * var(--u)) rgb(0 0 0 / 0.35);
+}
+
+.mock-note::before {
+  content: "";
+  position: absolute;
+  top: calc(-5 * var(--u));
+  left: calc(16 * var(--u));
+  width: calc(10 * var(--u));
+  height: calc(10 * var(--u));
+  rotate: 45deg;
+  background: inherit;
+}
+
+/* —— Main column —— */
+.mock-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.mock-head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: calc(16 * var(--u));
+  height: calc(44 * var(--u));
+  padding: 0 calc(20 * var(--u)) 0 calc(24 * var(--u));
+  color: var(--m-muted);
+}
+
+.mock-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--m-fg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The conversation sits on the composer and fades out under the title bar, as the
+   client's does when it's scrolled. */
+.mock-scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 0;
+  overflow: clip;
+  padding: 0 calc(20 * var(--u)) calc(20 * var(--u));
+  mask-image: linear-gradient(to bottom, transparent, #000 calc(56 * var(--u)));
+}
+
+.mock-column {
+  display: flex;
+  flex-direction: column;
+  gap: calc(16 * var(--u));
+  width: 100%;
+  max-width: calc(704 * var(--u));
+  margin-inline: auto;
+}
+
+.mock-column p {
+  margin: 0;
+}
+
+.mock-user {
+  align-self: flex-end;
+  max-width: 85%;
+  padding: calc(10 * var(--u)) calc(18 * var(--u));
+  border-radius: calc(22 * var(--u));
+  background: var(--m-bubble);
+}
+
+.mock-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.25em;
+  color: var(--m-muted);
+}
+
+.mock-tools .mock-icon {
+  width: calc(14 * var(--u));
+}
+
+.mock-added {
+  color: var(--m-added);
+}
+
+.mock-removed {
+  color: var(--m-removed);
+}
+
+.mock-text code {
+  padding: 0.1em 0.35em;
+  border-radius: calc(4 * var(--u));
+  background: var(--m-code);
+  color: #c6c6c6;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.mock-cards {
+  display: flex;
+  flex-direction: column;
+  gap: calc(8 * var(--u));
+}
+
+.mock-card {
+  display: flex;
+  flex-direction: column;
+  gap: calc(4 * var(--u));
+  padding: calc(12 * var(--u));
+  border: 1px solid var(--m-border);
+  border-radius: calc(8 * var(--u));
+  background: var(--m-bg);
+}
+
+.mock-card-head {
+  display: flex;
+  align-items: center;
+  gap: calc(8 * var(--u));
+  font-size: calc(14 * var(--u));
+  line-height: calc(20 * var(--u));
+}
+
+.mock-card-head .mock-dot {
+  margin: 0;
+}
+
+.mock-button {
+  padding: calc(3 * var(--u)) calc(12 * var(--u));
+  border: 1px solid var(--m-border);
+  border-radius: calc(10 * var(--u));
+  font-weight: 500;
+}
+
+.mock-meta {
+  overflow: hidden;
+  color: var(--m-muted);
+  font-size: calc(12 * var(--u));
+  line-height: calc(16 * var(--u));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mock-composer {
+  flex: none;
+  width: calc(100% - 40 * var(--u));
+  max-width: calc(704 * var(--u));
+  margin: 0 auto calc(16 * var(--u));
+  padding: calc(12 * var(--u)) calc(14 * var(--u)) calc(10 * var(--u));
+  border-radius: calc(24 * var(--u));
+  background: var(--m-field);
+}
+
+.mock-placeholder {
+  display: block;
+  padding-inline: calc(4 * var(--u));
+  overflow: hidden;
+  color: var(--m-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mock-composer-bar {
+  display: flex;
+  align-items: center;
+  gap: calc(10 * var(--u));
+  margin-top: calc(14 * var(--u));
+  color: var(--m-fg-2);
+  font-size: calc(14 * var(--u));
+}
+
+.mock-send {
+  display: grid;
+  place-items: center;
+  width: calc(32 * var(--u));
+  height: calc(32 * var(--u));
+  border-radius: 50%;
+  background: var(--m-fg);
+  color: var(--m-bg);
+}
+
+.mock-send[data-running] {
+  background: #4a4a4a;
+  color: var(--m-fg);
+}
+
+.mock-send .mock-icon {
+  width: calc(16 * var(--u));
+  height: calc(16 * var(--u));
+}
+
+/* —— The browser in front —— */
+.mock-browser {
+  display: none;
+  position: absolute;
+  /* No further out than the stage's margin beside the app (1rem until 56rem). */
+  right: -1rem;
+  /* Past the stage's bottom edge, which cuts it off as it does the app. */
+  bottom: calc(-40 * var(--u));
+  z-index: 2;
+  flex-direction: column;
+  width: calc(420 * var(--u));
+  height: calc(460 * var(--u));
+  padding-bottom: calc(40 * var(--u));
+  overflow: clip;
+  border-radius: calc(12 * var(--u));
+  background: var(--m-bg);
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.1),
+    0 calc(30 * var(--u)) calc(70 * var(--u)) calc(-10 * var(--u)) rgb(0 0 0 / 0.7);
+  transition:
+    opacity 0.3s var(--ease-out),
+    translate 0.3s var(--ease-out);
+}
+
+.mock-browser[data-away] {
+  opacity: 0;
+  translate: 0 calc(16 * var(--u));
+  pointer-events: none;
+}
+
+.mock-chrome {
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: calc(38 * var(--u));
+  padding: 0 calc(14 * var(--u));
+  background: #1d1d1d;
+  font-size: calc(12 * var(--u));
+}
+
+.mock-dots i {
+  width: calc(10 * var(--u));
+  height: calc(10 * var(--u));
+  border-radius: 50%;
+  background: #3c3c3c;
+}
+
+.mock-url {
+  display: flex;
+  align-items: center;
+  gap: calc(6 * var(--u));
+  margin-inline: auto;
+  padding: calc(3 * var(--u)) calc(40 * var(--u));
+  border-radius: calc(8 * var(--u));
+  background: #2a2a2a;
+  color: var(--m-muted);
+}
+
+.mock-url .mock-icon {
+  width: calc(11 * var(--u));
+  height: calc(11 * var(--u));
+}
+
+.mock-browser .mock-head {
+  gap: calc(12 * var(--u));
+  padding-left: calc(16 * var(--u));
+}
+
+.mock-browser .mock-scroll {
+  padding-inline: calc(16 * var(--u));
+}
+
+.mock-browser .mock-composer {
+  width: calc(100% - 32 * var(--u));
+}
+
+/* —— Sizes —— */
+@media (min-width: 40rem) {
+  .mock {
+    aspect-ratio: 16 / 10;
+  }
+
+  .mock-scale {
+    --u: calc(100cqi / 1200);
+  }
+
+  .mock-sidebar {
+    display: flex;
+  }
+}
+
+@media (min-width: 48rem) {
+  .mock-browser {
+    display: flex;
+  }
+}
+
+@media (min-width: 56rem) {
+  .mock-browser {
+    right: calc(-44 * var(--u));
+  }
+}
+
+@media (min-width: 48rem) {
+
+  /* The app dims a little where the browser stands over it. */
+  .mock-main {
+    position: relative;
+  }
+
+  .mock-main::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(40% 55% at 92% 72%, rgb(0 0 0 / 0.35), transparent 100%);
+    pointer-events: none;
+    transition: opacity 0.3s;
+  }
+
+  .mock:has(.mock-browser[data-away]) .mock-main::after {
+    opacity: 0;
+  }
+}
+
+/* —— Motion: one entrance, then only the timers move. —— */
+@media (prefers-reduced-motion: no-preference) {
+  .mock-dot[data-running]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: inherit;
+    animation: mock-pulse 2s ease-out infinite;
+  }
+
+  .mock:not([data-switched]) :is(.mock-card, .mock-child) {
+    animation: mock-in 0.5s var(--ease-out) backwards;
+  }
+
+  .mock:not([data-switched]) :is(.mock-card, .mock-child):nth-child(1) {
+    animation-delay: 0.6s;
+  }
+
+  .mock:not([data-switched]) :is(.mock-card, .mock-child):nth-child(2) {
+    animation-delay: 0.9s;
+  }
+
+  .mock:not([data-switched]) :is(.mock-card, .mock-child):nth-child(3) {
+    animation-delay: 1.2s;
+  }
+
+  .mock-browser {
+    animation: mock-rise 0.8s var(--ease-out) 1.6s backwards;
+  }
+
+  /* The machine drops off for a moment and comes back with its run still going. */
+  .mock-machine[data-restarts] > :not(.mock-note) {
+    animation: mock-offline 2.4s ease-in-out 3s both;
+  }
+
+  .mock-machine[data-restarts] .mock-dot[data-running] {
+    animation: mock-dot-offline 2.4s ease-in-out 3s both;
+  }
+
+  .mock-note {
+    animation: mock-note 0.5s var(--ease-out) 3.4s backwards;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mock-browser {
+    transition: none;
+  }
+}
+
+@keyframes mock-in {
+  from {
+    opacity: 0;
+    translate: 0 calc(8 * var(--u));
+  }
+}
+
+@keyframes mock-rise {
+  from {
+    opacity: 0;
+    translate: 0 calc(28 * var(--u));
+  }
+}
+
+@keyframes mock-pulse {
+  from {
+    opacity: 0.6;
+    scale: 1;
+  }
+  to {
+    opacity: 0;
+    scale: 2.6;
+  }
+}
+
+@keyframes mock-offline {
+  12%,
+  80% {
+    opacity: 0.4;
+  }
+}
+
+@keyframes mock-dot-offline {
+  12%,
+  80% {
+    background: var(--m-faint);
+  }
+}
+
+@keyframes mock-note {
+  from {
+    opacity: 0;
+    translate: 0 calc(-6 * var(--u));
+  }
+}

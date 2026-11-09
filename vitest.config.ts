@@ -71,7 +71,7 @@ export default defineConfig({
         test: {
           ...shared,
           name: "site",
-          include: ["apps/site/test/**/*.test.ts"],
+          include: ["apps/site/test/**/*.test.{ts,tsx}"],
         },
       },
       {
