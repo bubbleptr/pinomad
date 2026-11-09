@@ -65,7 +65,7 @@ import {
 } from "./entities/host/host-runtimes.ts";
 import { useComposerSlot, useComposerSlotState } from "./entities/composer/composer-context.tsx";
 import { HostsFallback } from "./widgets/app-frame/hosts.tsx";
-import { AccountProvider } from "./entities/account/account-context.tsx";
+import { AccountProvider, useAccountModel } from "./entities/account/account-context.tsx";
 import { PairingLinkForm } from "./entities/host/pairing-link-form.tsx";
 import { DeviceRejected } from "./widgets/app-frame/device-rejected.tsx";
 import { NoHostLink } from "./widgets/account/no-host-link.tsx";
@@ -78,6 +78,7 @@ import { useDurableView, useRemoteDurable } from "./use-remote.ts";
 import { createBrowserRtcPlatform } from "./entities/host/browser-rtc.ts";
 import { secureOptions } from "./entities/host/secure-options.ts";
 import { HostRuntimes, type RemoteConnect } from "./entities/host/host-runtime.tsx";
+import { syncAppHint } from "./shared/app-hint.ts";
 import { Centered } from "./shared/ui/centered.tsx";
 import { reloadedKey, VersionMismatch } from "./widgets/app-frame/version-mismatch.tsx";
 
@@ -432,6 +433,7 @@ export function App() {
     <HostsContext.Provider value={state}>
       <HostRuntimesContext.Provider value={registry}>
         <AccountProvider>
+          <AppHint hostCount={hosts.length} />
           <AddEmailGate>
             {address?.kind === "token" ? (
               <RemoteWorkbench
@@ -491,6 +493,27 @@ export function App() {
       </HostRuntimesContext.Provider>
     </HostsContext.Provider>
   );
+}
+
+/**
+ * The "this browser uses the web app" marker read by pinomad.si (#354).
+ * Signed in counts, and so does any paired host — a QR-only pairing has no
+ * account. Signing out with no hosts left clears it. syncAppHint writes only
+ * on the official app host, so self-hosted copies and the desktop app no-op.
+ */
+function AppHint({ hostCount }: { hostCount: number }) {
+  const { state } = useAccountModel();
+  const inUse =
+    state.status === "signed-in" || hostCount > 0
+      ? true
+      : state.status === "signed-out"
+        ? false
+        : undefined;
+  useEffect(() => {
+    if (inUse === undefined) return;
+    syncAppHint(window.location.hostname, inUse);
+  }, [inUse]);
+  return null;
 }
 
 /**

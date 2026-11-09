@@ -1,5 +1,5 @@
 // Loaded as a classic, synchronous script at the top of <head>, so it runs before
-// anything paints. The web app at app.pinomad.si sets the `pinomad_app` cookie on
+// anything paints. The web app at app.pinomad.si sets the `pinomad_app=1` cookie on
 // pinomad.si for a browser that uses it (signed in or paired). The cookie carries
 // no credential: a forged or stale one only sends the visitor to the app's own
 // sign-in screen.

@@ -6,6 +6,7 @@ import { Heading } from "@astryxdesign/core/Heading";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { useMediaQuery } from "@astryxdesign/core/hooks";
 import { HStack, Layout, LayoutContent, LayoutPanel, VStack } from "@astryxdesign/core/Layout";
+import { Link } from "@astryxdesign/core/Link";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
@@ -601,6 +602,16 @@ function AboutSection({ view, remote, connected }: { view: DurableView; remote: 
           label="Settings file"
           description={
             <span style={{ wordBreak: "break-all", userSelect: "all" }}>{view.session.directory}/settings.json</span>
+          }
+        />
+        <ListItem
+          label="Website"
+          description={
+            // `?home` keeps the site on its home page instead of forwarding
+            // a marked browser back to the app.
+            <Link href="https://pinomad.si/?home" isExternalLink>
+              pinomad.si
+            </Link>
           }
         />
       </List>
