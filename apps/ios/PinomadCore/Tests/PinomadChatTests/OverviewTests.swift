@@ -206,6 +206,12 @@ private func family() -> (Organized, UInt64, UInt64) {
         #expect(processElapsedText(ms: 12_900) == "12s")
         #expect(processElapsedText(ms: 65_000) == "1m 5s")
         #expect(processElapsedText(ms: -1) == "0s")
+        // dureview's trigger: a startedAt far outside Date/Int range must
+        // hide the duration, not trap in the Int conversion.
+        #expect(processElapsedText(ms: 1e25) == "")
+        #expect(processElapsedText(ms: -1e25) == "")
+        #expect(processElapsedText(ms: .infinity) == "")
+        #expect(processElapsedText(ms: .nan) == "")
     }
 
     /// Many processes fold the same way Subagents does: three live and three

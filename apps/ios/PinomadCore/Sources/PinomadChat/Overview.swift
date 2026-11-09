@@ -123,9 +123,14 @@ public struct ProcessesOverview: Equatable, Sendable {
 
 /// `12s` under a minute, otherwise `1m 5s` — the same clock as the Web list.
 public func processElapsedText(ms: Double) -> String {
-    let seconds = max(0, Int(ms / 1000))
-    if seconds < 60 { return "\(seconds)s" }
-    return "\(seconds / 60)m \(seconds % 60)s"
+    // A host can send any number as startedAt; converting a non-finite or
+    // out-of-range Double to Int traps. Hide the duration instead.
+    guard ms.isFinite else { return "" }
+    let seconds = ms / 1000
+    guard seconds >= Double(Int.min), seconds <= Double(Int.max) else { return "" }
+    let whole = max(0, Int(seconds))
+    if whole < 60 { return "\(whole)s" }
+    return "\(whole / 60)m \(whole % 60)s"
 }
 
 /// The branch the workspace is on. A host that reports the live branch

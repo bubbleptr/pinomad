@@ -20,6 +20,9 @@ struct OverviewSheet: View {
     /// button stays disabled until the call resolves.
     @State private var stopping: Set<String> = []
     @State private var stopError: String?
+    /// Bound to the host that opened the sheet, so a focus change while it
+    /// is up cannot send the unwatch to another host.
+    @State private var processWatch = ProcessWatchSession()
 
     private var snapshot: ClientSnapshot? { model.snapshot }
 
@@ -88,9 +91,13 @@ struct OverviewSheet: View {
         }
         // The list belongs to the family root; the watch starts as soon as
         // the organized index names it and survives reconnects in the core.
+        // It stays bound to this host even if focus moves elsewhere.
         .task(id: processRoot) {
-            guard let root = processRoot else { return }
-            model.watchProcesses(root)
+            guard let root = processRoot else {
+                processWatch.close()
+                return
+            }
+            processWatch.open(root: root, on: model.focusedRuntime)
         }
         .onChange(of: busy) { _, busy in
             start(panel.observe(busy: busy, connected: connected))
@@ -102,7 +109,7 @@ struct OverviewSheet: View {
         // end the sheet's epoch, while dismissing the sheet must.
         .onDisappear {
             panel.close()
-            model.unwatchProcesses()
+            processWatch.close()
         }
         .alert("Couldn't stop process", isPresented: Binding(
             get: { stopError != nil },
@@ -392,13 +399,17 @@ struct OverviewSheet: View {
                 Spacer(minLength: 8)
                 if row.active {
                     // The running duration ticks like the Web list's clock.
+                    // A startedAt the clock can't represent hides it.
                     TimelineView(.periodic(from: .now, by: 1)) { context in
-                        Text(processElapsedText(
-                            ms: context.date.timeIntervalSince(row.startedAt) * 1000))
-                            .font(.footnote)
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                            .accessibilityHidden(true)
+                        let elapsed = processElapsedText(
+                            ms: context.date.timeIntervalSince(row.startedAt) * 1000)
+                        if !elapsed.isEmpty {
+                            Text(elapsed)
+                                .font(.footnote)
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
+                        }
                     }
                 } else if !row.result.isEmpty {
                     Text(row.result)

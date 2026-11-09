@@ -451,3 +451,5 @@ final class HostRuntime {
 
     private static var nextLocalToastID: UInt64 = .max
 }
+
+extension HostRuntime: ProcessWatching {}
