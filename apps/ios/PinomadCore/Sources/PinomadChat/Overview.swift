@@ -1,3 +1,4 @@
+import Foundation
 import PinomadCore
 
 /// The overview sheet's subagent section (the Web card's Subagents): the
@@ -48,6 +49,88 @@ public struct SubagentOverview: Equatable, Sendable {
         let tasks = taskGroupsOf(root: root).flatMap { $0.tasks.map(\.summary) }
         return tasks.isEmpty ? nil : SubagentOverview(tasks: tasks)
     }
+}
+
+/// The overview's background-process section (ADR-0045): the family root's
+/// list, live rows before ended ones, with Stop only while the host still
+/// has the process. The core already ordered and worded the rows; this maps
+/// them to display values and folds overflow like Subagents.
+public struct ProcessesOverview: Equatable, Sendable {
+    public struct Row: Equatable, Sendable, Identifiable {
+        public let id: String
+        public let name: String
+        /// The command when it says more than the name.
+        public let command: String?
+        /// The long state line, including the old pid for `lost`.
+        public let status: String
+        /// The short right-hand result: `exit 1`, `Stopped`, `Lost`.
+        public let result: String
+        public let state: ProcessState
+        public let active: Bool
+        public let canStop: Bool
+        public let startedAt: Date
+    }
+
+    public let rows: [Row]
+    /// Live processes past the listed ones.
+    public let moreRunning: Int
+    /// Ended processes past the listed ones.
+    public let moreEnded: Int
+    /// Whether the host has `hello.processes`, so Stop is meaningful at all.
+    public let canStop: Bool
+    /// Why Stop is gone (old host or no pty module), for the section's note.
+    public let unavailable: String?
+
+    /// Live and ended rows each show this many before folding into counts.
+    public static let listed = 3
+    public static let footer = "Background processes stop when the host restarts."
+
+    public init(view: ProcessesView) {
+        let live = view.processes.filter(\.active)
+        let ended = view.processes.filter { !$0.active }
+        let row = { (process: BackgroundProcess) in
+            Row(
+                id: process.id,
+                name: process.name,
+                command: process.command == process.name ? nil : process.command,
+                status: process.status,
+                result: process.result,
+                state: process.state,
+                active: process.active,
+                canStop: view.stopAvailable && process.active,
+                startedAt: Date(timeIntervalSince1970: process.startedAt / 1000)
+            )
+        }
+        rows = live.prefix(Self.listed).map(row) + ended.prefix(Self.listed).map(row)
+        moreRunning = max(0, live.count - Self.listed)
+        moreEnded = max(0, ended.count - Self.listed)
+        canStop = view.stopAvailable
+        unavailable = view.unavailable
+    }
+
+    /// The family's list for `conversation`, or nil when it has none (the
+    /// section hides). A fork reads its root's watched list, never another
+    /// family's.
+    public static func of(
+        organized: Organized, conversation: UInt64, processes: ProcessesView?
+    ) -> ProcessesOverview? {
+        guard let root = rootOf(organized: organized, id: conversation)?.summary.id,
+              let processes, processes.root == root, !processes.processes.isEmpty
+        else { return nil }
+        return ProcessesOverview(view: processes)
+    }
+}
+
+/// `12s` under a minute, otherwise `1m 5s` — the same clock as the Web list.
+public func processElapsedText(ms: Double) -> String {
+    // A host can send any number as startedAt; converting a non-finite or
+    // out-of-range Double to Int traps. Hide the duration instead.
+    guard ms.isFinite else { return "" }
+    let seconds = ms / 1000
+    guard seconds >= Double(Int.min), seconds <= Double(Int.max) else { return "" }
+    let whole = max(0, Int(seconds))
+    if whole < 60 { return "\(whole)s" }
+    return "\(whole / 60)m \(whole % 60)s"
 }
 
 /// The branch the workspace is on. A host that reports the live branch

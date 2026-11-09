@@ -22,7 +22,7 @@ use crate::frames::{
     ApnsPushToken, ClientFrame, HostFeature, HostRtc, ImageVariant, PROTOCOL, RtcMaxMessageSize,
     ServerFrame, UNAUTHORIZED_CLOSE_CODE, classify_server_frame, conversation_stream, doc_stream,
     encode_client_frame, host_streams, host_supports_call, host_supports_feature, minor_version,
-    parse_host_rtc, parse_rtc_max_message_size,
+    parse_host_processes, parse_host_rtc, parse_rtc_max_message_size,
 };
 use crate::json::{Json, JsonObject, num_key};
 use crate::organization::{checkout_of, home_of, organize};
@@ -312,6 +312,18 @@ pub enum Call {
     /// Release both the main and side conversation subscriptions, keeping
     /// host-level streams and the connection (M8 focus handoff).
     ClearConversation,
+    /// Keep the family root's `pinomad.processes` doc subscribed while the
+    /// overview lists it. Local: there is no host call, and the doc is
+    /// declared by the hello. `conversation_id` is the family root.
+    WatchProcesses { conversation_id: u64 },
+    /// The overview closed: drop the list subscription unless the shown (or
+    /// loading) conversation still needs the same doc.
+    UnwatchProcesses,
+    /// `stopProcess` (5.32, ADR-0045): the user stopped a process. Request-
+    /// class, so the caller waits for the host's answer instead of allowing
+    /// a second tap while the stop is still running. `conversation_id` is
+    /// the family root.
+    StopProcess { conversation_id: u64, id: String },
     Fork {
         entry_id: String,
         prompt: String,
@@ -1100,6 +1112,15 @@ pub struct RemoteDurable {
     earlier_followers: HashMap<u64, Vec<u64>>,
     fresh: HashSet<Vec<u16>>,
     docs: Vec<DocDecl>,
+    /// The family root whose processes the overview watches, if any; its
+    /// `pinomad.processes` doc stays wanted while the sheet is up.
+    process_watch: Option<u64>,
+    /// `hello.processes` on the current connection: the host's pty loaded.
+    host_processes: bool,
+    /// Ops whose snapshot waiters a stream release settled. Driving them
+    /// here would re-enter the current op's step, so the event loop flushes
+    /// the list after the mutation finishes.
+    settled_waiters: Vec<u64>,
     pending_calls: HashMap<u64, u64>,
     next_call: u64,
     next_notice: u64,
@@ -1247,6 +1268,9 @@ impl RemoteDurable {
             earlier_followers: HashMap::new(),
             fresh: HashSet::new(),
             docs: Vec::new(),
+            process_watch: None,
+            host_processes: false,
+            settled_waiters: Vec::new(),
             pending_calls: HashMap::new(),
             next_call: 1,
             next_notice: 1,
@@ -1414,6 +1438,16 @@ impl RemoteDurable {
             Event::RtcClosed { peer, reason } => self.rtc_closed(peer, reason),
             Event::RtcSelectedCandidate { peer, local, remote } => self.rtc_selected(peer, local, remote),
             Event::SetConnectionMode { mode } => self.set_connection_mode(mode),
+        }
+        // A released stream settles its snapshot waiters; continue those
+        // ops only after the current step's mutation is complete.
+        while !self.settled_waiters.is_empty() {
+            let settled = std::mem::take(&mut self.settled_waiters);
+            for op_id in settled {
+                if let Some(index) = self.active.iter().position(|op| op.op_id == op_id) {
+                    self.drive(index);
+                }
+            }
         }
         // #release can complete the reconnect barrier from inside an op's
         // step, where finish_reconnect's queued-op replay would re-enter the
@@ -1649,6 +1683,9 @@ impl RemoteDurable {
                 continue;
             }
             self.hello_received = false;
+            // Until this candidate's hello arrives, the previous connection's
+            // pty capability says nothing about this one.
+            self.host_processes = false;
             self.next_conn += 1;
             let id = self.next_conn;
             self.generation += 1;
@@ -3636,6 +3673,7 @@ impl RemoteDurable {
             _ => 0,
         };
         self.host_minor = host_minor;
+        self.host_processes = parse_host_processes(&frame);
         self.host_rtc = parse_host_rtc(&frame)?;
         if self.host_rtc.as_ref().is_some_and(|rtc| rtc.signal_only) && !self.signal_only_hint {
             self.signal_only_hint = true;
@@ -3654,6 +3692,17 @@ impl RemoteDurable {
         }
         self.arm_phase(Phase::Sync, self.timeouts.sync_ms);
         self.docs = parse_docs(&frame)?;
+        // A reconnect may land on a host whose hello no longer declares the
+        // process doc. Drop the old list and settle a switch waiting on it
+        // instead of leaving the waiter dangling (ADR-0024 §3).
+        if let Some(root) = self.process_watch {
+            let stream = Self::process_stream(root);
+            if self.process_doc_declared() {
+                self.wanted.insert(stream);
+            } else if self.wanted.contains(&stream) {
+                self.drop_stream(&stream);
+            }
+        }
         self.hello_models = frame.get("models").cloned().unwrap_or(Json::Null);
         self.hello_defaults = frame
             .get("defaults")
@@ -4280,6 +4329,24 @@ impl RemoteDurable {
                 None => steps.push_back(Step::Unside),
             },
             Call::ClearConversation => steps.push_back(Step::ClearConversation),
+            Call::WatchProcesses { conversation_id } => {
+                self.watch_processes(*conversation_id);
+                steps.push_back(Step::Done { value: DoneValue::Unit });
+            }
+            Call::UnwatchProcesses => {
+                self.unwatch_processes();
+                steps.push_back(Step::Done { value: DoneValue::Unit });
+            }
+            Call::StopProcess { conversation_id, id } => {
+                if let Some(reason) = self.processes_unavailable() {
+                    return Err(reason);
+                }
+                let args = obj(&[
+                    ("conversationId", Json::Number(*conversation_id as f64)),
+                    ("id", Json::from(id.clone())),
+                ]);
+                steps.push_back(Step::Call { method: "stopProcess", args });
+            }
             Call::Fork { entry_id, prompt, remove_tools, show } => {
                 let conversation = self.current.ok_or_else(|| "No conversation selected".to_string())?;
                 let mut args = JsonObject::new();
@@ -4709,7 +4776,7 @@ impl RemoteDurable {
                 let previous = self.current;
                 self.current = Some(id);
                 if let Some(previous) = previous {
-                    self.release(previous, self.side);
+                    self.release(previous);
                 }
                 if previous != Some(id) && self.conversation_is_fresh() {
                     self.conversation_fresh_epoch += 1;
@@ -4719,7 +4786,7 @@ impl RemoteDurable {
                 let previous = self.side;
                 self.side = Some(id);
                 if let Some(previous) = previous {
-                    self.release(previous, self.current);
+                    self.release(previous);
                 }
             }
         }
@@ -4855,31 +4922,134 @@ impl RemoteDurable {
         streams
     }
 
-    /// `#release` — unsubscribe the streams of one slot's conversation the
-    /// other slot does not still need.
-    fn release(&mut self, id: u64, other: Option<u64>) {
-        let keep: HashSet<Vec<u16>> = other
-            .map(|other| self.conversation_streams(other).into_iter().collect())
-            .unwrap_or_default();
+    /// `#release` — unsubscribe the streams of one slot's conversation no
+    /// other owner still needs: the other slot, an in-flight switch waiting
+    /// for its snapshot, or the overview's process list.
+    fn release(&mut self, id: u64) {
         for stream in self.conversation_streams(id) {
-            if keep.contains(&stream) {
+            if self.stream_still_wanted(&stream) {
                 continue;
             }
-            self.wanted.remove(&stream);
-            self.values.remove(&stream);
-            self.earlier.remove(&stream);
-            self.loading_earlier.remove(&stream);
-            self.fresh.remove(&stream);
-            // The stream will never deliver a snapshot again; a reconnect
-            // barrier must not keep waiting for it. Releasing the last
-            // non-host stream can complete the barrier once host-level
-            // streams are already fresh.
-            if let Some(remaining) = &mut self.reconnect_remaining {
-                remaining.remove(&stream);
-            }
-            self.send(ClientFrame::Unsubscribe { stream: U16String(stream) });
+            self.release_stream(stream);
         }
         self.note_reconnect_barrier_complete();
+    }
+
+    /// Whether a shown, side, acquiring, or watched root still needs the
+    /// stream. A switch that is waiting on it counts: releasing would leave
+    /// its snapshot waiter dangling (ADR-0024 §3).
+    fn stream_still_wanted(&self, stream: &[u16]) -> bool {
+        if self
+            .process_watch
+            .is_some_and(|root| Self::process_stream(root).as_slice() == stream)
+        {
+            return true;
+        }
+        for id in [self.current, self.side].into_iter().flatten() {
+            if self
+                .conversation_streams(id)
+                .iter()
+                .any(|candidate| candidate.as_slice() == stream)
+            {
+                return true;
+            }
+        }
+        self.active.iter().any(|op| {
+            matches!(&op.waiting, Some(Wait::Snapshots(waiting)) if waiting.contains(stream))
+        })
+    }
+
+    /// Forget a stream and settle anyone waiting for a snapshot that will
+    /// never be accepted; the event loop drives them after the mutation.
+    fn drop_stream(&mut self, stream: &[u16]) {
+        self.wanted.remove(stream);
+        self.values.remove(stream);
+        self.earlier.remove(stream);
+        self.loading_earlier.remove(stream);
+        self.fresh.remove(stream);
+        // A reconnect barrier must not keep waiting for a stream that will
+        // never deliver one; dropping the last non-host stream can complete
+        // it once host-level streams are already fresh.
+        if let Some(remaining) = &mut self.reconnect_remaining {
+            remaining.remove(stream);
+        }
+        let mut settled = Vec::new();
+        for op in self.active.iter_mut() {
+            if let Some(Wait::Snapshots(waiting)) = &mut op.waiting {
+                if waiting.remove(stream) && waiting.is_empty() {
+                    op.waiting = None;
+                    settled.push(op.op_id);
+                }
+            }
+        }
+        self.settled_waiters.extend(settled);
+    }
+
+    fn release_stream(&mut self, stream: Vec<u16>) {
+        self.drop_stream(&stream);
+        self.send(ClientFrame::Unsubscribe { stream: U16String(stream) });
+        self.note_reconnect_barrier_complete();
+    }
+
+    /// `stopProcess`'s local gate: an old host or one without a pty module.
+    fn processes_unavailable(&self) -> Option<String> {
+        crate::processes::unavailable_reason(self.host_minor, self.host_processes)
+    }
+
+    fn process_stream(root: u64) -> Vec<u16> {
+        doc_stream(&U16String::from_str("pinomad.processes"), root).0
+    }
+
+    /// Whether this hello declares the process document; without it there is
+    /// no list stream to subscribe to.
+    fn process_doc_declared(&self) -> bool {
+        let kind = U16String::from_str("pinomad.processes");
+        self.docs.iter().any(|doc| {
+            doc.kind
+                .as_str()
+                .is_some_and(|value| value.units() == kind.units())
+        })
+    }
+
+    /// What the overview lists now, or `None` before a watch starts.
+    pub fn processes_view(&self) -> Option<crate::processes::ProcessesView> {
+        let root = self.process_watch?;
+        let value = self.values.get(&Self::process_stream(root));
+        Some(crate::processes::view(
+            root,
+            value,
+            self.host_minor,
+            self.host_processes,
+        ))
+    }
+
+    fn watch_processes(&mut self, root: u64) {
+        let previous = self.process_watch.replace(root);
+        if let Some(previous) = previous.filter(|previous| *previous != root) {
+            self.release_process_doc(previous);
+        }
+        if self.process_doc_declared() {
+            let stream = Self::process_stream(root);
+            if self.wanted.insert(stream.clone()) {
+                self.subscribe_stream(stream);
+            }
+        }
+        let _ = self.refresh();
+    }
+
+    fn unwatch_processes(&mut self) {
+        if let Some(root) = self.process_watch.take() {
+            self.release_process_doc(root);
+        }
+        let _ = self.refresh();
+    }
+
+    fn release_process_doc(&mut self, root: u64) {
+        let stream = Self::process_stream(root);
+        if self.stream_still_wanted(&stream) {
+            return;
+        }
+        self.release_stream(stream);
     }
 
     /// Mark a released stream's barrier completion for the end of the event.
@@ -4911,7 +5081,7 @@ impl RemoteDurable {
         let Some(previous) = self.current.take() else {
             return Ok(());
         };
-        self.release(previous, self.side);
+        self.release(previous);
         self.refresh()
     }
 
@@ -4920,7 +5090,7 @@ impl RemoteDurable {
         let previous = self.side;
         self.side = id;
         if let Some(previous) = previous {
-            self.release(previous, self.current);
+            self.release(previous);
         }
         self.refresh()
     }
@@ -6087,7 +6257,8 @@ fn op_kind(call: &Call) -> OpKind {
         | Call::AnswerLogin { .. }
         | Call::CancelLogin { .. }
         | Call::SaveCustomProvider { .. }
-        | Call::RemoveCustomProvider { .. } => OpKind::Request,
+        | Call::RemoveCustomProvider { .. }
+        | Call::StopProcess { .. } => OpKind::Request,
         Call::Abort { .. } => OpKind::Unqueued,
         Call::ListFiles { .. }
         | Call::ListSkills { .. }
@@ -6099,7 +6270,9 @@ fn op_kind(call: &Call) -> OpKind {
         | Call::ListEndpointModels { .. }
         | Call::StartUpgrade { .. }
         | Call::CancelUpgrade
-        | Call::CheckUpgrade => OpKind::Direct,
+        | Call::CheckUpgrade
+        | Call::WatchProcesses { .. }
+        | Call::UnwatchProcesses => OpKind::Direct,
         _ => OpKind::Command,
     }
 }

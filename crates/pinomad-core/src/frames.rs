@@ -327,7 +327,7 @@ pub enum HostFeature {
     /// `updateSettings`'s `autoUpgrade` key next to the `upgrade` stream and
     /// its calls (30, ADR-0043) — an older host 4400s the key.
     AutoUpgrade,
-    /// `hello.processes`, the `process:` stream, and `stopProcess` (31,
+    /// `hello.processes`, the `process:` stream, and `stopProcess` (32,
     /// ADR-0045).
     Processes,
 }
@@ -352,6 +352,18 @@ impl HostRtc {
         object.set(U16String::from_str("signalOnly"), Json::Bool(self.signal_only));
         Json::Object(Arc::new(object))
     }
+}
+
+/// `hello.processes` (5.32, ADR-0045): present when the host's pty module
+/// loaded. Absent or malformed is no capability, not a hello error — the host
+/// omits it when unavailable, and a future host may add fields.
+pub fn parse_host_processes(hello: &Json) -> bool {
+    hello.get("processes").is_some_and(|value| {
+        value.is_object()
+            && value
+                .get("limit")
+                .is_some_and(|limit| limit.as_number().is_some())
+    })
 }
 
 /// Parse `hello.rtc`; a malformed block is a hello error, not a silently

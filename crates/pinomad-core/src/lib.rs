@@ -24,6 +24,7 @@ pub mod organization;
 pub mod pairing_link;
 pub mod patch;
 pub mod presentation;
+pub mod processes;
 pub mod provider_failure;
 pub mod questions;
 pub mod relay;

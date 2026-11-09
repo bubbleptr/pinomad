@@ -43,6 +43,7 @@ import {
   thinkingLevelLabels,
 } from "../src/model.ts";
 import { parsePatch } from "../src/patch.ts";
+import { orderedProcesses, processStatusText } from "../src/processes.ts";
 import { stripUserBlocks, type UserContent } from "../src/skill-blocks.ts";
 import { skillMentionRanges } from "../src/skill-mentions.ts";
 import { parseCommandInput } from "../src/command-input.ts";
@@ -114,6 +115,7 @@ import {
   PARENT_FOLDER_CASES,
 } from "./misc-cases.ts";
 import { PATCH_CASES } from "./patch-cases.ts";
+import { PROCESS_ORDER_CASES, PROCESS_STATUS_CASES } from "./processes-cases.ts";
 import { SKILL_BLOCK_CASES } from "./skill-blocks-cases.ts";
 import { USER_BLOCK_CASES } from "./attachment-blocks-cases.ts";
 import { SKILL_MENTION_CASES } from "./skill-mentions-cases.ts";
@@ -522,6 +524,21 @@ function patchVector(): VectorFile {
   });
 }
 
+function processesVector(): VectorFile {
+  return write("processes", {
+    statusText: PROCESS_STATUS_CASES.map((c) => ({
+      name: c.name,
+      state: wire(c.state),
+      expect: expect(wire(processStatusText(c.state))),
+    })),
+    orderedProcesses: PROCESS_ORDER_CASES.map((c) => ({
+      name: c.name,
+      processes: wire(c.processes),
+      expect: expect(wire(orderedProcesses(c.processes).map((process) => process.id))),
+    })),
+  });
+}
+
 function skillBlocksVector(): VectorFile {
   // Skill cases are string content (a string never carries attachments); the
   // attachment cases exercise whole-block parsing.
@@ -839,6 +856,7 @@ export async function buildVectors(): Promise<VectorFile[]> {
     modelsVector(),
     miscVector(),
     patchVector(),
+    processesVector(),
     skillMentionsVector(),
     skillBlocksVector(),
     commandInputVector(),

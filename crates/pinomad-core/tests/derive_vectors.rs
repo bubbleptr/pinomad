@@ -3,12 +3,14 @@
 // the expectations; regenerate with PINOMAD_UPDATE_VECTORS=1.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use pinomad_core::chat::{agent_of, queue_items, queued_input, status_text, task_rows, usage_rows};
 use pinomad_core::context_usage::context_usage;
 use pinomad_core::cot_view::{derive_chat, retry_of, split_subagent_calls, submission_queue_rows, submission_rows};
-use pinomad_core::json::Json;
+use pinomad_core::json::{Json, JsonObject};
 use pinomad_core::presentation::classify;
+use pinomad_core::processes::{ordered_processes, processes_of, state_of, status_text as process_status_text};
 use pinomad_core::tool_diff_stat::tool_diff_stat_from_result;
 use pinomad_core::tool_item::{
     format_tool_duration, normalize_tool_name, tool_display_name, tool_kind_from_name,
@@ -943,5 +945,28 @@ fn command_input_replay() {
             }
         };
         assert_eq!(norm(&got), expect_text(case), "{name}");
+    }
+}
+
+/// Background-process wording and order (ADR-0045) — the same derivations as
+/// `packages/client/src/processes.ts`. `status_text` takes a pid only for
+/// `lost`; the vector compares the no-pid form, as the client does.
+#[test]
+fn process_derivations_replay() {
+    let file = load("processes");
+    for case in cases(&file, "statusText") {
+        let name = as_text(field(case, "name"));
+        let state = Json::parse(&as_text(field(case, "state"))).unwrap();
+        let got = Json::String(U16String::from_str(&process_status_text(&state_of(&state), None)));
+        assert_eq!(norm(&got), expect_text(case), "{name}");
+    }
+    for case in cases(&file, "orderedProcesses") {
+        let name = as_text(field(case, "name"));
+        let processes = Json::parse(&as_text(field(case, "processes"))).unwrap();
+        let mut doc = JsonObject::new();
+        doc.set(U16String::from_str("processes"), processes);
+        let ordered = ordered_processes(processes_of(&Json::Object(Arc::new(doc))));
+        let ids = Json::array(ordered.iter().map(|process| Json::from(process.id.clone())).collect());
+        assert_eq!(norm(&ids), expect_text(case), "{name}");
     }
 }
