@@ -2,9 +2,11 @@ import type { Lang } from "@/lib/i18n.ts";
 import type { Run } from "./runs.ts";
 
 // What the hero's product windows show: two machines in the sidebar, their projects
-// and conversations, and what each conversation holds. The app's own words (New chat,
-// View, Running…) stay English in both languages, as in the real client; the
-// conversations are written per language.
+// and conversations, and what each conversation holds. The story is one feature of a
+// cross-platform app split by machine: the iOS and web clients on the Mac (iOS only
+// builds there), the API and its database on the Linux box at home. The app's own
+// words (New chat, View, Running…) stay English in both languages, as in the real
+// client; the conversations are written per language.
 
 export type Inline = string | { code: string };
 
@@ -40,34 +42,36 @@ export type MockContent = {
 const url = "app.pinomad.si";
 
 const runs = {
-  fold: { agent: "worker", model: "claude", modelId: "anthropic/claude-sonnet-5-5", since: 64, finishesIn: 150 },
-  vietnamese: { agent: "worker", model: "deepseek", modelId: "deepseek/deepseek-v4.1-flash", since: 43, finishesIn: 5 },
-  collisions: { agent: "critic", model: "openai", modelId: "openai/gpt-5.5", since: 31, finishesIn: 200 },
+  ios: { agent: "worker", model: "claude", modelId: "anthropic/claude-sonnet-5-5", since: 64, finishesIn: 150 },
+  web: { agent: "worker", model: "deepseek", modelId: "deepseek/deepseek-v4.1-flash", since: 43, finishesIn: 5 },
+  formats: { agent: "critic", model: "openai", modelId: "openai/gpt-5.5", since: 31, finishesIn: 200 },
   tests: { agent: "worker", model: "claude", modelId: "anthropic/claude-sonnet-5-5", since: 96, done: true },
-  restore: { agent: "worker", model: "qwen", modelId: "ollama/qwen3-coder:30b", since: 252, finishesIn: 240 },
+  backfill: { agent: "worker", model: "qwen", modelId: "ollama/qwen3-coder:30b", since: 252, finishesIn: 240 },
 } as const;
 
 export const mockContent: Record<Lang, MockContent> = {
   en: {
     url,
-    defaultChat: "fold",
+    defaultChat: "currency",
     restarted: "omarchy restarted. Its run picked up where it left off.",
     aside: {
       agent: "critic",
       model: "openai",
-      title: "Look for slug collisions",
+      title: "Compare formats",
       blocks: [
         {
           kind: "user",
-          text: "Check that folding can't give two of the 2,400 fixture titles the same slug.",
+          text: "Compare how iOS and the web format all 30 currencies.",
         },
         { kind: "tools", summary: "Read 2 files, ran 1 command", seconds: 18 },
         {
           kind: "text",
           parts: [
-            "Found one pair: “Straße” and “Strasse” both fold to ",
-            { code: "strasse" },
-            ". The map is right; the dedupe step has to run after folding, not before. Checking the rest:",
+            "Found one: yen and won have no decimals, but the web shows ",
+            { code: "¥1,200.00" },
+            " where iOS shows ",
+            { code: "¥1,200" },
+            ". Both should take the decimals from the currency. Checking the rest:",
           ],
         },
         { kind: "trace", label: "Running bash…", since: 14 },
@@ -78,68 +82,64 @@ export const mockContent: Record<Lang, MockContent> = {
         name: "macbook-pro",
         projects: [
           {
-            name: "slugkit",
+            name: "splitbill",
             chats: [
               {
-                id: "fold",
-                title: "Fold accented letters",
+                id: "currency",
+                title: "Currencies in the apps",
                 running: true,
                 blocks: [
                   {
                     kind: "user",
-                    text: "@planner Slugs drop accented letters: “Ærøskøbing” comes out as “rskbing”. Plan the fix and split it up.",
+                    text: "@planner Bills need a currency: show it next to every amount on iOS and the web, and settle up in the trip's home currency. The API side is being done on omarchy.",
                   },
-                  { kind: "tools", summary: "Read 3 files", seconds: 12 },
+                  { kind: "tools", summary: "Read 4 files", seconds: 12 },
                   {
                     kind: "text",
                     parts: [
-                      { code: "slugify()" },
-                      " strips everything outside ASCII before it lowercases. The fix is to fold letters to ASCII first, then make sure no two titles end up with the same slug. Handing it out:",
+                      { code: "Bill.amount" },
+                      " is a bare number, and both clients print it as dollars. The API will send a currency code with each bill, so each client has to show it and format the amount for that currency. Handing it out:",
                     ],
                   },
                   {
                     kind: "agents",
                     runs: [
-                      { ...runs.fold, title: "Add the fold map", activity: "edit src/slug.js" },
-                      { ...runs.vietnamese, title: "Cover Vietnamese letters", activity: "read test/slug.test.js" },
-                      { ...runs.collisions, title: "Look for slug collisions", activity: "bash bun test" },
+                      { ...runs.ios, title: "Currency on iOS", activity: "edit ios/BillRow.swift" },
+                      { ...runs.web, title: "Currency on the web", activity: "edit web/src/BillRow.tsx" },
+                      { ...runs.formats, title: "Compare formats", activity: "bash bun test" },
                     ],
                   },
                   { kind: "trace", label: "Running subagent…", since: 64 },
                 ],
               },
               {
-                id: "docs",
-                title: "Docs and tests",
+                id: "tests",
+                title: "Settle-up tests",
                 blocks: [
-                  { kind: "user", text: "Document the folding rules in the README and add a test for every example." },
-                  { kind: "agents", runs: [{ ...runs.tests, title: "Table-driven tests" }] },
+                  { kind: "user", text: "Add a settle-up test for every currency we support, including the ones without decimals." },
+                  { kind: "agents", runs: [{ ...runs.tests, title: "One trip per currency" }] },
                   { kind: "tools", summary: "Edited 2 files, ran 1 command", added: 38, removed: 2, seconds: 74 },
                   {
                     kind: "text",
                     parts: [
                       "Done. ",
-                      { code: "README.md" },
-                      " lists the map with one example per letter, and ",
-                      { code: "test/slug.test.js" },
-                      " checks each of them. All 14 tests pass.",
+                      { code: "settle.test.ts" },
+                      " settles one trip in each currency, yen and won included. All 32 tests pass.",
                     ],
                   },
                 ],
               },
               {
-                id: "cyrillic",
-                title: "Non-Latin titles",
+                id: "android",
+                title: "Android app",
                 blocks: [
-                  { kind: "user", text: "Should Cyrillic and Greek titles go through the same map?" },
+                  { kind: "user", text: "When we build the Android app, should it share code with iOS or be written natively?" },
                   {
                     kind: "text",
                     parts: [
-                      "No. Folding only drops marks from Latin letters; ",
-                      { code: "Москва" },
-                      " needs transliteration to become ",
-                      { code: "moskva" },
-                      ". That is a table per script, so I'd keep it out of the fold map and add it as its own step.",
+                      "Natively, for now. Conversion and rounding already live on the server, so an Android client only formats amounts and calls ",
+                      { code: "/bills" },
+                      ". Shared code pays off once all three clients need the same logic on the device.",
                     ],
                   },
                 ],
@@ -153,23 +153,32 @@ export const mockContent: Record<Lang, MockContent> = {
         restarts: true,
         projects: [
           {
-            name: "homelab",
+            name: "splitbill-api",
             chats: [
               {
-                id: "postgres",
-                title: "Upgrade Postgres to 18",
+                id: "api",
+                title: "Currency in the bills API",
                 running: true,
                 blocks: [
                   {
                     kind: "user",
-                    text: "Move the Postgres container to 18 and migrate the data. Keep the old volume until the new one checks out.",
+                    text: "Add a currency to bills, fill it in for the old ones, and have the API return each amount in its own currency and in the trip's home currency.",
                   },
-                  { kind: "tools", summary: "Read 2 files, ran 4 commands", seconds: 95 },
+                  { kind: "tools", summary: "Read 4 files, ran 3 commands", seconds: 95 },
                   {
                     kind: "text",
-                    parts: ["Dumped the database (2.1 GB) and started 18 on a fresh volume. ", { code: "@worker" }, " is restoring it:"],
+                    parts: [
+                      "Added the column in ",
+                      { code: "0042_bill_currency.sql" },
+                      ", and the API returns both amounts. 1.2 million old bills still need a currency; ",
+                      { code: "@worker" },
+                      " is filling them in batches:",
+                    ],
                   },
-                  { kind: "agents", runs: [{ ...runs.restore, title: "Restore and verify", activity: "bash pg_restore -j 4" }] },
+                  {
+                    kind: "agents",
+                    runs: [{ ...runs.backfill, title: "Backfill old bills", activity: "bash bun run backfill --batch 500" }],
+                  },
                   { kind: "trace", label: "Running subagent…", since: 253 },
                 ],
               },
@@ -181,21 +190,23 @@ export const mockContent: Record<Lang, MockContent> = {
   },
   zh: {
     url,
-    defaultChat: "fold",
+    defaultChat: "currency",
     restarted: "omarchy 重启了，运行接着跑。",
     aside: {
       agent: "critic",
       model: "openai",
-      title: "检查 slug 冲突",
+      title: "检查金额格式",
       blocks: [
-        { kind: "user", text: "确认折叠后，fixtures 里 2400 个标题不会有两个撞成同一个 slug。" },
+        { kind: "user", text: "确认同一笔金额在 iOS 和 Web 上显示得一样，我们支持的 30 种货币都要查。" },
         { kind: "tools", summary: "Read 2 files, ran 1 command", seconds: 18 },
         {
           kind: "text",
           parts: [
-            "找到一对：“Straße” 和 “Strasse” 折叠后都是 ",
-            { code: "strasse" },
-            "。映射表没问题，去重要放在折叠之后做，而不是之前。继续查剩下的：",
+            "找到一处：日元和韩元没有小数位。Web 显示成 ",
+            { code: "¥1,200.00" },
+            "，iOS 是 ",
+            { code: "¥1,200" },
+            "。两端都应该按货币取小数位，不要一律写死两位。继续查剩下的：",
           ],
         },
         { kind: "trace", label: "Running bash…", since: 14 },
@@ -206,65 +217,60 @@ export const mockContent: Record<Lang, MockContent> = {
         name: "macbook-pro",
         projects: [
           {
-            name: "slugkit",
+            name: "splitbill",
             chats: [
               {
-                id: "fold",
-                title: "折叠重音字母",
+                id: "currency",
+                title: "iOS 和 Web 支持多币种",
                 running: true,
                 blocks: [
-                  { kind: "user", text: "@planner slug 会丢掉带重音的字母：“Ærøskøbing” 变成了 “rskbing”。定个方案，拆开分给大家。" },
-                  { kind: "tools", summary: "Read 3 files", seconds: 12 },
+                  {
+                    kind: "user",
+                    text: "@planner 账单要支持多币种：iOS 和 Web 上每笔金额旁边显示币种，结算时按这次旅行的主币种算。服务端在 omarchy 上做。",
+                  },
+                  { kind: "tools", summary: "Read 4 files", seconds: 12 },
                   {
                     kind: "text",
                     parts: [
-                      { code: "slugify()" },
-                      " 在转小写之前把 ASCII 以外的字符全删了。修法是先把字母折叠成 ASCII，再确认不会有两个标题撞成同一个 slug。分给：",
+                      { code: "Bill.amount" },
+                      " 现在只是一个数字，两端都当成美元显示。接口会给每笔账单带上币种代码，客户端要把币种显示出来，并按这种货币的格式显示金额。分给：",
                     ],
                   },
                   {
                     kind: "agents",
                     runs: [
-                      { ...runs.fold, title: "加折叠映射表", activity: "edit src/slug.js" },
-                      { ...runs.vietnamese, title: "补越南语字母", activity: "read test/slug.test.js" },
-                      { ...runs.collisions, title: "检查 slug 冲突", activity: "bash bun test" },
+                      { ...runs.ios, title: "iOS 显示币种", activity: "edit ios/BillRow.swift" },
+                      { ...runs.web, title: "Web 显示币种", activity: "edit web/src/BillRow.tsx" },
+                      { ...runs.formats, title: "检查金额格式", activity: "bash bun test" },
                     ],
                   },
                   { kind: "trace", label: "Running subagent…", since: 64 },
                 ],
               },
               {
-                id: "docs",
-                title: "补文档和测试",
+                id: "tests",
+                title: "补结算测试",
                 blocks: [
-                  { kind: "user", text: "在 README 里写清楚折叠规则，每个例子补一个测试。" },
-                  { kind: "agents", runs: [{ ...runs.tests, title: "表驱动测试" }] },
+                  { kind: "user", text: "每种支持的货币都补一个结算测试，没有小数位的也要有。" },
+                  { kind: "agents", runs: [{ ...runs.tests, title: "每种货币一次旅行" }] },
                   { kind: "tools", summary: "Edited 2 files, ran 1 command", added: 38, removed: 2, seconds: 74 },
                   {
                     kind: "text",
-                    parts: [
-                      "好了。",
-                      { code: "README.md" },
-                      " 列出了映射表，每个字母一个例子；",
-                      { code: "test/slug.test.js" },
-                      " 逐个检查。14 个测试全部通过。",
-                    ],
+                    parts: ["好了。", { code: "settle.test.ts" }, " 每种货币结算一次旅行，日元和韩元都在里面。32 个测试全部通过。"],
                   },
                 ],
               },
               {
-                id: "cyrillic",
-                title: "非拉丁标题",
+                id: "android",
+                title: "安卓版怎么写",
                 blocks: [
-                  { kind: "user", text: "西里尔字母和希腊字母的标题也走同一张映射表吗？" },
+                  { kind: "user", text: "以后做安卓版，是和 iOS 共享代码，还是直接写原生？" },
                   {
                     kind: "text",
                     parts: [
-                      "不走。折叠只是去掉拉丁字母上的符号；",
-                      { code: "Москва" },
-                      " 要靠音译才能变成 ",
-                      { code: "moskva" },
-                      "。那是每种文字一张表，建议不放进折叠映射表，单独加一步。",
+                      "先写原生。换算和取整已经在服务端，安卓客户端只负责显示金额、调 ",
+                      { code: "/bills" },
+                      "。等三个端都要在设备上跑同一套逻辑时，共享代码才划算。",
                     ],
                   },
                 ],
@@ -278,20 +284,29 @@ export const mockContent: Record<Lang, MockContent> = {
         restarts: true,
         projects: [
           {
-            name: "homelab",
+            name: "splitbill-api",
             chats: [
               {
-                id: "postgres",
-                title: "Postgres 升到 18",
+                id: "api",
+                title: "账单接口加币种",
                 running: true,
                 blocks: [
-                  { kind: "user", text: "把 Postgres 容器升到 18，迁移数据。新卷验证通过之前别删旧卷。" },
-                  { kind: "tools", summary: "Read 2 files, ran 4 commands", seconds: 95 },
+                  { kind: "user", text: "账单加上币种，旧账单也补上；接口返回每笔金额的原币种金额和按旅行主币种换算后的金额。" },
+                  { kind: "tools", summary: "Read 4 files, ran 3 commands", seconds: 95 },
                   {
                     kind: "text",
-                    parts: ["数据库已经导出（2.1 GB），18 在新卷上起来了。", { code: "@worker" }, " 正在恢复："],
+                    parts: [
+                      "已经在 ",
+                      { code: "0042_bill_currency.sql" },
+                      " 里加了这一列，接口也会返回两种金额。还有 120 万条旧账单没有币种，",
+                      { code: "@worker" },
+                      " 正在分批回填：",
+                    ],
                   },
-                  { kind: "agents", runs: [{ ...runs.restore, title: "恢复并校验", activity: "bash pg_restore -j 4" }] },
+                  {
+                    kind: "agents",
+                    runs: [{ ...runs.backfill, title: "回填旧账单", activity: "bash bun run backfill --batch 500" }],
+                  },
                   { kind: "trace", label: "Running subagent…", since: 253 },
                 ],
               },

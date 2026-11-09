@@ -110,7 +110,7 @@ export const copy: Record<Lang, LandingCopy> = {
       models: [...models, "Qwen", "Kimi", "Z.AI", "MiniMax", "OpenRouter", "GitHub Copilot"],
       modelsMore: "17 more",
       shotAlt:
-        "The PiNomad Mac app with two machines in its sidebar. On macbook-pro, @planner has handed a fix to two @worker agents and a @critic, each on its own model; on omarchy, a Postgres upgrade is running. In front, the same conversation is open in a browser.",
+        "The PiNomad Mac app with two machines in its sidebar. On macbook-pro, @planner has split currency support for the iOS and web clients between two @worker agents and a @critic, each on its own model; on omarchy, the API is filling in a currency for old bills. In front, the @critic's own conversation is open in a browser.",
 
       specs: [
         { label: "Host", value: "macOS · Linux" },
@@ -282,7 +282,7 @@ export const copy: Record<Lang, LandingCopy> = {
       modelsLabel: "pi 支持的模型都能用",
       models: [...models, "通义千问", "Kimi", "智谱 Z.AI", "MiniMax", "OpenRouter", "GitHub Copilot"],
       modelsMore: "另有 17 家",
-      shotAlt: "PiNomad Mac App，侧栏里有两台机器：macbook-pro 上 @planner 把修复拆给了两个 @worker 和一个 @critic，各用各的模型；omarchy 上在升级 Postgres。前面是同一个对话在浏览器里打开的样子。",
+      shotAlt: "PiNomad Mac App，侧栏里有两台机器：macbook-pro 上 @planner 把 iOS 和 Web 的多币种支持分给了两个 @worker 和一个 @critic，各用各的模型；omarchy 上服务端正在给旧账单回填币种。前面的浏览器里打开的是 @critic 自己的对话。",
       specs: [
         { label: "宿主", value: "macOS · Linux" },
         { label: "客户端", value: "Mac · Web · iPhone" },
