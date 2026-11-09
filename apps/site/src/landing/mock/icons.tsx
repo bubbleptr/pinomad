@@ -5,8 +5,10 @@ import openai from "./logos/openai.svg?raw";
 import qwen from "./logos/qwen-color.svg?raw";
 import type { Model } from "./runs.ts";
 
-// The client's icons: Lucide outlines (docs/licenses/lucide.md) and the LobeHub model
-// marks the web client uses (docs/licenses/lobehub-icons.md), drawn inline.
+// The client's icons, drawn inline: Lucide outlines (docs/licenses/lucide.md), the
+// Hugeicons New chat and panel glyphs from apps/web/src/shared/ui/animated-icons.tsx
+// (docs/licenses/animated-icons.md), and the LobeHub model marks the web client uses
+// (docs/licenses/lobehub-icons.md).
 
 function Line({ children }: { children: ReactNode }) {
   return (
@@ -16,17 +18,18 @@ function Line({ children }: { children: ReactNode }) {
   );
 }
 
+const panel = (
+  <>
+    <path d="M13 3H11C7.22876 3 5.34315 3 4.17157 4.17157C3 5.34315 3 7.22876 3 11V13C3 16.7712 3 18.6569 4.17157 19.8284C5.34315 21 7.22876 21 11 21H13C16.7712 21 18.6569 21 19.8284 19.8284C21 18.6569 21 16.7712 21 13V11C21 7.22876 21 5.34315 19.8284 4.17157C18.6569 3 16.7712 3 13 3Z" />
+    <path d="M9 3V21" />
+  </>
+);
+
 export const icons = {
-  panelLeft: (
-    <Line>
-      <rect width="18" height="18" x="3" y="3" rx="2" />
-      <path d="M9 3v18" />
-    </Line>
-  ),
+  panelLeft: <Line>{panel}</Line>,
   panelRight: (
     <Line>
-      <rect width="18" height="18" x="3" y="3" rx="2" />
-      <path d="M15 3v18" />
+      <g transform="translate(24 0) scale(-1 1)">{panel}</g>
     </Line>
   ),
   tasks: (
@@ -37,8 +40,8 @@ export const icons = {
   ),
   newChat: (
     <Line>
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h8" />
-      <path d="M18 2v6M15 5h6" />
+      <path d="M12.5 3.00372C11.6049 2.99039 10.7047 3.01289 9.8294 3.07107C5.64639 3.34913 2.31441 6.72838 2.04024 10.9707C1.98659 11.8009 1.98659 12.6607 2.04024 13.4909C2.1401 15.036 2.82343 16.4666 3.62791 17.6746C4.09501 18.5203 3.78674 19.5758 3.30021 20.4978C2.94941 21.1626 2.77401 21.495 2.91484 21.7351C3.05568 21.9752 3.37026 21.9829 3.99943 21.9982C5.24367 22.0285 6.08268 21.6757 6.74868 21.1846C7.1264 20.9061 7.31527 20.7668 7.44544 20.7508C7.5756 20.7348 7.83177 20.8403 8.34401 21.0513C8.8044 21.2409 9.33896 21.3579 9.8294 21.3905C11.2536 21.4852 12.7435 21.4854 14.1706 21.3905C18.3536 21.1125 21.6856 17.7332 21.9598 13.4909C22.0021 12.836 22.011 12.1627 21.9866 11.5" />
+      <path d="M8.5 15H15.5M8.5 10H12M15 5.5H22M18.5 2L18.5 9" />
     </Line>
   ),
   folder: (
