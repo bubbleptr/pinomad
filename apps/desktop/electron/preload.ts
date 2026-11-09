@@ -1,9 +1,9 @@
 // Sandboxed preload: ipcRenderer.invoke reaches only the pinomad:hosts:*,
 // pinomad:account:*, pinomad:updates:*, pinomad:localHost:* (macOS),
-// pinomad:oauth:* and pinomad:device:name handlers in main (the
+// pinomad:oauth:*, pinomad:device:name and pinomad:appearance:set handlers in main (the
 // paired-host list behind safeStorage, the app updater, the installed host's
 // service switch, provider sign-in and linking through the system browser, and the
-// pairing-time device label), and the document marker tells the renderer which
+// pairing-time device label, the native chrome's light or dark), and the document marker tells the renderer which
 // platform owns the window — the renderer has no Node `process`. Copied from
 // Pace's pattern.
 import { contextBridge, ipcRenderer } from "electron";
@@ -59,6 +59,7 @@ const bridge: DesktopBridge = {
     clear: () => ipcRenderer.invoke("pinomad:account:clear"),
   },
   deviceName: () => ipcRenderer.invoke("pinomad:device:name"),
+  setAppearance: (appearance) => ipcRenderer.invoke("pinomad:appearance:set", appearance),
   oauthSignIn: (input) => ipcRenderer.invoke("pinomad:oauth:signIn", input),
   oauthLink: {
     listen: (input) => ipcRenderer.invoke("pinomad:oauth:linkListen", input),
