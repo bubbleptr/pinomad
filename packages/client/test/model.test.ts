@@ -23,8 +23,14 @@ describe("clampLevel", () => {
     expect(clampLevel(C(CLAMP_CASES, "skips-unsupported-middle").levels, "high")).toBe("medium");
   });
 
-  it("falls back to off when nothing supported is below the wanted level", () => {
-    expect(clampLevel(C(CLAMP_CASES, "nothing-below").levels, "off")).toBe("off");
+  it("falls back to the lowest supported level when nothing is at or below the wanted one", () => {
+    expect(clampLevel(C(CLAMP_CASES, "nothing-below").levels, "off")).toBe("high");
+    expect(clampLevel(C(CLAMP_CASES, "lowest-supported").levels, "off")).toBe("low");
+    expect(clampLevel(C(CLAMP_CASES, "only-high").levels, "off")).toBe("high");
+    expect(clampLevel(C(CLAMP_CASES, "unknown-want-no-unknown-support").levels, "turbo" as never)).toBe("low");
+  });
+
+  it("stays off when the model reports no levels", () => {
     expect(clampLevel(C(CLAMP_CASES, "empty-levels").levels, "medium")).toBe("off");
   });
 });

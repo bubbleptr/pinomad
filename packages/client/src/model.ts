@@ -25,7 +25,9 @@ const LEVEL_ORDER: readonly ThinkingLevel[] = ["off", "minimal", "low", "medium"
 export const clampLevel = (levels: readonly ThinkingLevel[], want: ThinkingLevel): ThinkingLevel => {
   if (levels.includes(want)) return want;
   const wantIndex = LEVEL_ORDER.indexOf(want);
-  return levels.filter((level) => LEVEL_ORDER.indexOf(level) <= wantIndex).at(-1) ?? "off";
+  // Nothing at or below the wanted level: take the lowest one the host lists
+  // (off→max, so levels[0]). An empty list still means off.
+  return levels.filter((level) => LEVEL_ORDER.indexOf(level) <= wantIndex).at(-1) ?? levels[0] ?? "off";
 };
 
 export const summaryOf = (
