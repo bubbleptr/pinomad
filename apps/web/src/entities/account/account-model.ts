@@ -492,6 +492,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
 
   /** Save a slot without generating a new key; leaves it queued on failure. */
   const savePending = async (active: AccountClient, host: StoredHost): Promise<boolean> => {
+    const started = epoch;
     if (client !== active) return false;
     if (declinedHost(host)) {
       // The user forgot this host while its save was still failing; retrying
@@ -508,9 +509,14 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       return false;
     }
     if (host.account !== undefined && removedSince(slot, seen)) {
+      // A removal is about the stored key, not the session: the key still
+      // has to be forgotten even when this save outlived its session.
       await forgetAccountHosts(active.origin, host.account.hostId);
       return false;
     }
+    // The save may have outlived its session: it must not clear the new
+    // session's rejection or remove its recovery slot for the same host.
+    if (!live(active, started)) return false;
     clearRejected(host.hostKey);
     forgetUnsaved(host);
     return true;
