@@ -68,7 +68,7 @@ function SubagentCard({
           <Button label="View" variant="secondary" size="sm" onClick={() => openInPanel(pinomad.conversationId)} />
         )}
       </HStack>
-      <div className="text-xs text-muted">
+      <div className="text-xs text-muted tabular-nums">
         {meta.map((part, index) =>
           part === undefined || part === "" ? null : index === 0 ? (
             <span key={index}>{part}</span>
