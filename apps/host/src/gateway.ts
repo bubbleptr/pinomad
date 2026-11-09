@@ -12,6 +12,8 @@ import {
   AgentDoc,
   type CommitPublication,
   type Conversation,
+  type InputSubmissionDraft,
+  type Submission,
   type ConversationDocToken,
   type ConversationId,
   type ConversationRecord,
@@ -100,6 +102,7 @@ import { messageContent } from "./message-content.ts";
 import type { ModelAuth } from "./model-auth.ts";
 import { RoleDoc } from "./role-doc.ts";
 import { SubagentDoc } from "./subagent-doc.ts";
+import { dispatch, inCall, markStop, recordOf } from "./subagents.ts";
 import { attachAutoTitle } from "./auto-title.ts";
 import { TitleDoc } from "./title-doc.ts";
 import { admitDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
@@ -1324,6 +1327,8 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
       if (typeof subagent?.label === "string" && subagent.label !== "") facts.label = subagent.label;
       if (typeof subagent?.role === "string" && subagent.role !== "") facts.role = subagent.role;
       facts.model = modelRefOf(subagent?.model);
+      if (typeof subagent?.name === "string" && subagent.name !== "") facts.name = subagent.name;
+      facts.lifecycle = subagent?.lifecycle === "background" ? "background" : "foreground";
     }
     // Absent is meaningful: a conversation created before RoleDoc existed
     // falls back to the index entry; an explicit null is "no agent".
@@ -1393,10 +1398,12 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
           facts.agent = roleNameOf(value as { name?: unknown } | null);
           touched.add(id);
         } else if (change.record.kind === SubagentDoc.definition.kind) {
-          const subagent = value as { label?: unknown; role?: unknown; model?: unknown } | null;
+          const subagent = value as { label?: unknown; role?: unknown; model?: unknown; name?: unknown; lifecycle?: unknown } | null;
           facts.label = typeof subagent?.label === "string" && subagent.label !== "" ? subagent.label : undefined;
           facts.role = typeof subagent?.role === "string" && subagent.role !== "" ? subagent.role : undefined;
           facts.model = modelRefOf(subagent?.model);
+          facts.name = typeof subagent?.name === "string" && subagent.name !== "" ? subagent.name : undefined;
+          facts.lifecycle = subagent?.lifecycle === "background" ? "background" : "foreground";
           touched.add(id);
         } else if (change.record.kind === TitleDoc.definition.kind) {
           const named = (value as { title?: unknown } | null)?.title;
@@ -1563,6 +1570,10 @@ type ConversationFacts = {
   role?: string;
   /** The subagent's effective model at creation, if the host recorded it. */
   model?: ModelRef;
+  /** The subagent's family-unique name (ADR-0046 §1). */
+  name?: string;
+  /** The subagent's lifecycle class: foreground until it first runs outside its call (ADR-0046 §6). */
+  lifecycle?: "foreground" | "background";
   /** The own RoleDoc's name: a role, explicit null, or undefined when absent. */
   agent?: string | null;
 };
@@ -1632,7 +1643,8 @@ function summaryOf(
   return {
     id: record.id,
     kind: record.owner !== undefined ? "subagent" : record.parent !== undefined ? "fork" : "conversation",
-    ...(record.owner === undefined ? {} : { lifecycle: "foreground" as const }),
+    ...(record.owner === undefined ? {} : { lifecycle: facts.lifecycle ?? "foreground" }),
+    ...(facts.name === undefined ? {} : { name: facts.name }),
     ...(facts.model === undefined ? {} : { model: facts.model }),
     ...(parent === undefined ? {} : { parent }),
     // The client's forkable-entry ids are the string form of EntryId.
@@ -1652,6 +1664,7 @@ function sameSummary(a: ConversationSummary, b: ConversationSummary): boolean {
     a.id === b.id
     && a.kind === b.kind
     && a.lifecycle === b.lifecycle
+    && a.name === b.name
     && a.model?.provider === b.model?.provider
     && a.model?.modelId === b.model?.modelId
     && a.parent === b.parent
@@ -2302,6 +2315,32 @@ class GatewayClient {
     return this.#options.harness.commit((tx) => tx.submissionByRequest(conversationId, requestId), context);
   }
 
+  async #isSubagent(id: ConversationId): Promise<boolean> {
+    return await this.#options.harness.commit(async (tx) => (await tx.conversation(id))?.owner !== undefined, context);
+  }
+
+  /**
+   * A user's message to a subagent (ADR-0046 §6): admitted on the child and
+   * handed to a reporter task of the dispatching conversation in one commit,
+   * so the dispatcher hears about it exactly once. The client's request id
+   * keeps a resend from admitting twice and lets the reporter find it.
+   */
+  async #submitToSubagent(conversation: Conversation, draft: InputSubmissionDraft & { readonly requestId: string }): Promise<Submission> {
+    const id = await this.#options.harness.commit(async (tx) => {
+      const found = await recordOf(tx, conversation.id);
+      if (found === undefined) throw new Error("This subagent cannot take messages: it was started before subagents could be messaged");
+      if (await inCall(tx, found.record)) {
+        throw new Error(`Subagent "${found.name}" is still answering the call that dispatched it`);
+      }
+      const submissionId = await conversation.submit(tx, draft);
+      await dispatch(tx, { root: found.root, name: found.name, sender: found.record.dispatcher, from: "user", requestId: draft.requestId });
+      return submissionId;
+    }, context);
+    const submission = await this.#options.harness.submission(id, context);
+    if (submission === undefined) throw new Error(`Submission ${id} does not exist`);
+    return submission;
+  }
+
   /** Start a manual compaction and report its outcome as a notice once it settles. */
   async #compact(conversation: Conversation, instructions: string | undefined): ReturnType<Conversation["compact"]> {
     const taskId = await conversation.compact(instructions, context);
@@ -2413,15 +2452,15 @@ class GatewayClient {
             // A pending question never blocks the composer (ADR-0011 §4): mark it
             // dismissed so its wait task finishes, then steer regardless.
             const dismissed = await this.#dismissPendingQuestions(conversation.id, context);
-            const submission = await conversation.submit(
-              {
-                type: "input",
-                content: messageContent(text, resolved, attachments),
-                whenBusy: dismissed ? "steer" : input.whenBusy,
-                requestId: input.requestId,
-              },
-              context,
-            );
+            const draft = {
+              type: "input",
+              content: messageContent(text, resolved, attachments),
+              whenBusy: dismissed ? "steer" : input.whenBusy,
+              requestId: input.requestId,
+            } as const;
+            const submission = (await this.#isSubagent(conversation.id))
+              ? await this.#submitToSubagent(conversation, draft)
+              : await conversation.submit(draft, context);
             // Admission is already durable: a failed read only loses the
             // convenience `entry`, never turns the call into `ok:false`.
             let entry: number | undefined;
@@ -2505,6 +2544,10 @@ class GatewayClient {
           this.#hooks.processes?.unseal(subtree);
           throw error;
         }
+        // Stop the subtree's work across background boundaries — background
+        // subagents and their reporters — and wait for it to be idle before
+        // the checkout can be cleaned (ADR-0046 §7).
+        await (await this.#options.harness.conversation(input.conversationId, context))?.abort(context, { background: true });
         // Stop every process of the subtree and wait for its exit before
         // the checkout can be cleaned (ADR-0045 §5, ADR-0040 §5).
         await this.#hooks.processes?.closeOwners(subtree, "archive", context);
@@ -2756,6 +2799,10 @@ class GatewayClient {
         return null;
       }
       case "abort":
+        // A subagent's reporters tell its dispatcher the user stopped it (ADR-0046 §4).
+        if (await this.#isSubagent(conversation.id)) {
+          await this.#options.harness.commit((tx) => markStop(tx, conversation.id, "user"), context);
+        }
         await conversation.abort(context);
         return null;
       case "compact": {

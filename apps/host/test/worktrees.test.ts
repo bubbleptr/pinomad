@@ -505,7 +505,7 @@ describe("worktree checkouts", () => {
       answers: [
         "parent done",
         "fork done",
-        fauxAssistantMessage(fauxToolCall("subagent", { task: "look around" }), { stopReason: "toolUse" }),
+        fauxAssistantMessage(fauxToolCall("subagent", { task: "look around", checkout: "shared" }), { stopReason: "toolUse" }),
         "child answer",
         "parent final",
       ],
@@ -664,7 +664,7 @@ describe("worktree checkouts", () => {
         createSubagent({ models, modelSummaries, exclude: [] }),
       ],
       answers: [
-        fauxAssistantMessage(fauxToolCall("subagent", { task: "look around" }), { stopReason: "toolUse" }),
+        fauxAssistantMessage(fauxToolCall("subagent", { task: "look around", checkout: "shared" }), { stopReason: "toolUse" }),
         capturePrompts(prompts),
         "parent final",
       ],

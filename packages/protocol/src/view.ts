@@ -47,8 +47,14 @@ export interface ConversationSummary {
   readonly kind: "conversation" | "fork" | "subagent";
   /** Fork source conversation, or the conversation owning the subagent's task. */
   readonly parent?: ConversationId;
-  /** Subagents only: their stable lifecycle class. Absent on pre-5.26 hosts means foreground. */
+  /**
+   * Subagents only: their lifecycle class. Absent on pre-5.26 hosts means
+   * foreground. From 5.33 a foreground subagent turns background, once, when it
+   * first runs outside the call that dispatched it (ADR-0046 §6).
+   */
   readonly lifecycle?: "foreground" | "background";
+  /** Subagents only: the family-unique name the subagent tools use (5.33, ADR-0046 §1). */
+  readonly name?: string;
   /** Subagents only: the model they actually started with, when the host recorded it. */
   readonly model?: ModelRef;
   /** Forks only: the parent entry the fork inherits through. */

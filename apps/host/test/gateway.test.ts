@@ -166,7 +166,7 @@ describe("gateway", () => {
         createSubagent({ models, modelSummaries, exclude: [] }),
       ],
       answers: [
-        fauxAssistantMessage(fauxToolCall("subagent", { task: "look around", description: "Check files" }), {
+        fauxAssistantMessage(fauxToolCall("subagent", { task: "look around", description: "Check files", checkout: "shared" }), {
           stopReason: "toolUse",
         }),
         () => childGate,

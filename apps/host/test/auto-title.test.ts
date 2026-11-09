@@ -24,7 +24,7 @@ const allSummaries = (view: DurableView): ConversationSummary[] => {
 const summaryOf = (view: DurableView, id: ConversationId): ConversationSummary | undefined =>
   allSummaries(view).find((summary) => summary.id === id);
 
-const delegates = (args: JsonObject) => fauxAssistantMessage(fauxToolCall("subagent", args), { stopReason: "toolUse" });
+const delegates = (args: JsonObject) => fauxAssistantMessage(fauxToolCall("subagent", { checkout: "shared", ...args }), { stopReason: "toolUse" });
 
 describe("cleanTitle", () => {
   it.each([

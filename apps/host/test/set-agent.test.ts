@@ -156,7 +156,7 @@ const subagents = (provided: {
 ];
 
 const delegates = (args: JsonObject) =>
-  fauxAssistantMessage(fauxToolCall("subagent", args), { stopReason: "toolUse" });
+  fauxAssistantMessage(fauxToolCall("subagent", { checkout: "shared", ...args }), { stopReason: "toolUse" });
 
 describe("setAgent", () => {
   it("applies the role's prompt, model and clamped thinking level", async () => {

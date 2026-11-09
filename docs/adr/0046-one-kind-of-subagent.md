@@ -28,9 +28,11 @@ ADR-0038 给子代理定了 `lifecycle`（foreground / background）和左侧侧
    - 后台派出的子对话由一个立刻结束的后台锚点任务拥有；前台派出的照旧归那次 `subagent` 调用，Esc 照旧能级联停掉它。
    - 之后每条消息，不管是父对话发的还是用户发的，都由一个归父对话所有的后台回报任务投递，并等它的回答。父对话的 Esc 和空闲等待碰不到这些任务。
    - `ConversationRecord.owner.conversationId` 仍然是派出者，ADR-0038 的真实 parent 不变。
-   - 前台子代理在调用结束后还能接着跑，依赖 Durable 允许给 owner task 已经结束的对话再提交。实现时先验证；不成立就修订本条。
+   - 前台子代理在调用结束后还能接着跑：Durable 允许给 owner task 已经结束的对话再提交，父对话这时也不算忙（`apps/host/test/subagent-durable.test.ts` 钉住）。
+   - 实现时发现的修订：owner task 结束后，前台派出的子代理仍在父对话的普通归属范围里，Durable 没有改归属的接口。所以父对话的 Stop 也会停掉它后来的工作，父对话的 `waitForIdle` 也会等它；回报任务看到没有记下停止来源的中止，按用户停的处理，给派出者写一行说明。后台派出的不受影响。
 
-3. **状态记在派出它的对话的 `pinomad.subagents` 文档里**（`history: "latest"`、`fork: "initial"`，fork 不会复制出第二份）。
+3. **状态记在 root 家族根对话的 `pinomad.subagents` 文档里**（`history: "latest"`、`fork: "initial"`，fork 不会复制出第二份）。
+   - 实现时的修订：原来写的是记在派出它的对话上。名字在 root 家族里唯一、上限按家族算，fork 也要能用 `subagent_send` 找到根对话派出的子代理，所以整个家族共用根对话上的一份；每条记录写明派出者，用户直接聊的通知发给派出者，模型用 `subagent_send` 发的消息回报给发送的那条对话。
    - 每个子代理记：子对话、检出、状态（`working` / `idle` / `stopped` / `failed`）、还没结算的回报任务、已经报过的回答、`subagent_read` 读到了哪。
    - 状态由回报任务在结算的那次提交里写，和告诉父对话的那条输入是同一次提交，所以重启后既不漏报也不重报。几条消息合成一个回答时只报一次；其中有父对话发的，就按唤醒的方式报。
 
@@ -67,7 +69,8 @@ ADR-0038 给子代理定了 `lifecycle`（foreground / background）和左侧侧
 ## 后果
 
 - 协议：用户发消息和 Stop 复用现有的 submit 和 abort，`ConversationSummary.lifecycle` 5.26 就有了，可能不需要新的调用。实现时确认是否要升 `PROTOCOL`，并确认旧客户端看到可以交互的子代理时只是显示成只读、不会出错；Rust 核心跟着同步。
-- 两条 Durable 假设还没核实：§2 的"前台子代理在调用结束后还能接着跑"，§4 的"带模型内容的 `write` 在父对话空闲时不会自己开一轮"。
+- 两条 Durable 假设已核实（`apps/host/test/subagent-durable.test.ts`）：§2 的前台子代理在调用结束后能接着跑（附带上面 §2 的修订）；§4 的带模型内容的 `write` 在父对话空闲时不会开一轮，它会立刻追加进 transcript，下一轮运行时进上下文。
+- 用户直接聊的消息靠 request id 认出来：注册表记下用户每条消息的 request id，`subagent_read` 按它标出"User"和父对话派的"Delegated"。
 - 上限 8 个照搬后台进程的数字，用一段时间再看。
 - Web 和 iOS 分开做（AGENTS.md）。iOS 的导航当时由 ADR-0038 留到以后，这次随 iOS 的 issue 一起设计。
 - 计划在 [M12 子代理](https://github.com/bubbleptr/pinomad/milestone/10)：[#675](https://github.com/bubbleptr/pinomad/issues/675) 宿主、[#676](https://github.com/bubbleptr/pinomad/issues/676) worktree、[#677](https://github.com/bubbleptr/pinomad/issues/677) Web/桌面、[#678](https://github.com/bubbleptr/pinomad/issues/678) iOS。

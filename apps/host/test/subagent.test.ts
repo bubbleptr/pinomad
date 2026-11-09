@@ -32,7 +32,7 @@ const extensions = (provided: {
   }),
 ];
 
-const delegates = (args: JsonObject) => fauxAssistantMessage(fauxToolCall("subagent", args), { stopReason: "toolUse" });
+const delegates = (args: JsonObject) => fauxAssistantMessage(fauxToolCall("subagent", { checkout: "shared", ...args }), { stopReason: "toolUse" });
 
 /** The parent's subagent child once the organized list shows one. */
 async function childIdOf(client: RemoteDurable): Promise<ConversationId> {
@@ -113,7 +113,7 @@ describe("subagent tool", () => {
 
     const result = toolResult(client.view.current().conversation!);
     expect(result.isError).not.toBe(true);
-    expect(resultText(result)).toBe("child answer");
+    expect(resultText(result)).toBe("[subagent count-the-lines answered]\n\nchild answer");
     // Model and start time ride the details so clients can label the card.
     const details = result.details as { conversationId: number; model?: string; startedAt?: number };
     expect(details.conversationId).toBe(child!.id);
@@ -153,7 +153,7 @@ describe("subagent tool", () => {
     finishChild(fauxAssistantMessage("child answer"));
     await waitForView(client.view, (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "parent final");
     const details = toolResult(client.view.current().conversation!).details as { model?: string; startedAt?: number };
-    expect(details).toEqual({ conversationId: childId, model: "faux/faux-thinker", startedAt: liveDetails.startedAt });
+    expect(details).toEqual({ conversationId: childId, name: "count-the-lines", model: "faux/faux-thinker", startedAt: liveDetails.startedAt });
   });
 
   it("labels the child with the trimmed description the delegating agent gave", async () => {
@@ -334,7 +334,7 @@ describe("subagent tool", () => {
     });
     const result = toolResult(client.view.current().conversation!);
     expect(result.isError).not.toBe(true);
-    expect(resultText(result)).toBe("child answer after restart");
+    expect(resultText(result)).toBe("[subagent write-a-long-report answered]\n\nchild answer after restart");
     // A rerun after restart reports the same start time the creation recorded.
     expect((result.details as { startedAt?: number }).startedAt).toBe(firstStartedAt);
   });
@@ -374,7 +374,7 @@ describe("subagent with a named agent", () => {
     const state = await host.harness.snapshot(AgentDoc, childId, context);
     expect(state?.model).toEqual({ provider: "faux", modelId: "faux-thinker" });
     expect(state?.thinkingLevel).toBe("high");
-    expect(state?.instructions).toBe(`You are a subagent working on one delegated task. You cannot ask the user questions; if you need a decision or clarification, stop and state exactly what you need in your final answer. Your final message is returned to the delegating agent as the result, so make it a complete, self-contained report.\n\nBe strict.`);
+    expect(state?.instructions).toMatch(/^You are a subagent named "review-this", .*\n\nBe strict\.$/s);
 
     // The summary names the agent the child ran as.
     const child = client.view.current().organized.chats.flatMap((node) => node.children)[0]?.summary;
