@@ -1,6 +1,5 @@
-// jsdom: the marker the marketing site reads before it paints (#354). The
-// cookie is a bare name, so document.cookie carries `pinomad_app=1` alone;
-// a value would no longer match the site's pre-paint check.
+// jsdom: the marker the marketing site reads before it paints (#354). The site
+// checks for the `pinomad_app=1` pair, so the assignment must carry both.
 import { describe, expect, it } from "vitest";
 import { appHintCookie, syncAppHint } from "./app-hint.ts";
 
