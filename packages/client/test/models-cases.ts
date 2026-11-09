@@ -28,8 +28,11 @@ export const CLAMP_CASES: { name: string; levels: ThinkingLevel[]; want: Thinkin
   { name: "clamps-down", levels: ["off", "low", "medium"], want: "xhigh" },
   { name: "skips-unsupported-middle", levels: ["off", "medium"], want: "high" },
   { name: "nothing-below", levels: ["high", "max"], want: "off" },
+  { name: "lowest-supported", levels: ["low", "high"], want: "off" },
+  { name: "only-high", levels: ["high"], want: "off" },
   { name: "empty-levels", levels: [], want: "medium" },
   { name: "unknown-want", levels: ["off", "low"], want: "turbo" as ThinkingLevel },
+  { name: "unknown-want-no-unknown-support", levels: ["low", "high"], want: "turbo" as ThinkingLevel },
 ];
 
 export const MODEL_LABEL_CASES: { name: string; models: ModelSummary[]; selected: ModelPick }[] = [

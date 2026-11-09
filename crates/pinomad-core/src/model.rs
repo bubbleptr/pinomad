@@ -184,9 +184,10 @@ pub fn same_model(a: Option<ModelRef>, b: Option<ModelRef>) -> bool {
 }
 
 /// `clampLevel`: keep `want` when supported, else the highest supported level
-/// not above it, else "off". Unknown levels sort at indexOf -1, like the
-/// reference — an unknown supported level can still be picked when `want` is
-/// itself unknown.
+/// not above it, else the lowest listed level (off→max, so `levels[0]`) —
+/// and "off" when nothing is listed. Unknown levels sort at indexOf -1, like
+/// the reference — an unknown supported level can still be picked when
+/// `want` is itself unknown.
 pub fn clamp_level(levels: &[ThinkingLevel], want: &ThinkingLevel) -> ThinkingLevel {
     if levels.iter().any(|level| level == want) {
         return want.clone();
@@ -197,6 +198,7 @@ pub fn clamp_level(levels: &[ThinkingLevel], want: &ThinkingLevel) -> ThinkingLe
         .rev()
         .find(|level| level.rank() <= want_index)
         .cloned()
+        .or_else(|| levels.first().cloned())
         .unwrap_or(ThinkingLevel::Off)
 }
 
@@ -513,5 +515,46 @@ pub fn resolve_agent_draft(
         send_model: override_model,
         send_level: override_level,
         problem,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ThinkingLevel, clamp_level};
+
+    fn levels(names: &[&str]) -> Vec<ThinkingLevel> {
+        names
+            .iter()
+            .map(|name| ThinkingLevel::from_units(&name.encode_utf16().collect::<Vec<u16>>()))
+            .collect()
+    }
+
+    fn other(name: &str) -> ThinkingLevel {
+        ThinkingLevel::Other(name.to_string())
+    }
+
+    #[test]
+    fn clamp_level_falls_back_to_the_lowest_supported_level() {
+        assert_eq!(clamp_level(&levels(&["low", "high"]), &ThinkingLevel::Off), ThinkingLevel::Low);
+        assert_eq!(clamp_level(&levels(&["high"]), &ThinkingLevel::Off), ThinkingLevel::High);
+        assert_eq!(clamp_level(&levels(&["high", "max"]), &ThinkingLevel::Off), ThinkingLevel::High);
+    }
+
+    #[test]
+    fn clamp_level_keeps_a_supported_want() {
+        assert_eq!(clamp_level(&levels(&["off", "low"]), &ThinkingLevel::Low), ThinkingLevel::Low);
+        assert_eq!(clamp_level(&levels(&["low", "turbo"]), &other("turbo")), other("turbo"));
+    }
+
+    #[test]
+    fn clamp_level_keeps_off_when_the_model_reports_no_levels() {
+        assert_eq!(clamp_level(&[], &ThinkingLevel::Medium), ThinkingLevel::Off);
+    }
+
+    #[test]
+    fn clamp_level_treats_unknown_levels_as_index_minus_one() {
+        // No supported level ranks at or below `turbo`, so the reference's
+        // fallback to levels[0] applies.
+        assert_eq!(clamp_level(&levels(&["low", "high"]), &other("turbo")), ThinkingLevel::Low);
     }
 }

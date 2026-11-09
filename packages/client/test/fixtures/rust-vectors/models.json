@@ -67,7 +67,19 @@
       "name": "nothing-below",
       "levels": "[\"high\",\"max\"]",
       "want": "off",
-      "expect": "\"off\""
+      "expect": "\"high\""
+    },
+    {
+      "name": "lowest-supported",
+      "levels": "[\"low\",\"high\"]",
+      "want": "off",
+      "expect": "\"low\""
+    },
+    {
+      "name": "only-high",
+      "levels": "[\"high\"]",
+      "want": "off",
+      "expect": "\"high\""
     },
     {
       "name": "empty-levels",
@@ -80,6 +92,12 @@
       "levels": "[\"off\",\"low\"]",
       "want": "turbo",
       "expect": "\"off\""
+    },
+    {
+      "name": "unknown-want-no-unknown-support",
+      "levels": "[\"low\",\"high\"]",
+      "want": "turbo",
+      "expect": "\"low\""
     }
   ],
   "summaryOf": [
