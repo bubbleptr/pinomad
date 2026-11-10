@@ -205,6 +205,7 @@ export function useSettingsScreen({
   const picker =
     searching || !choosable || machine === undefined ? null : (
       <Selector
+        className="pigui-nav-lead"
         label="Host"
         isLabelHidden
         size="sm"
@@ -219,6 +220,7 @@ export function useSettingsScreen({
 
   const searchField = (
     <TextInput
+      className="pigui-nav-lead"
       label="Search settings"
       isLabelHidden
       placeholder="Search"
@@ -274,7 +276,7 @@ export function useSettingsScreen({
                   size="sm"
                   icon={<ChevronRight aria-hidden="true" className="size-4 rotate-180" />}
                   onClick={onClose}
-                  className="self-start"
+                  className="pigui-nav-lead self-start"
                 />
               </span>
               {searchField}

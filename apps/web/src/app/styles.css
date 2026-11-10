@@ -310,6 +310,18 @@ body {
   shape-rendering: geometricPrecision;
 }
 
+/* Ghost controls leading a side nav (Settings' back row, its host picker):
+   Astryx pads them 12px, the nav items 8px. Matching the items' padding puts
+   their glyph and label on the items' icon and text columns. */
+.pigui-nav-lead:not(#\#):not(#\#):not(#\#) {
+  padding-inline-start: var(--pigui-sidebar-row-padding-x);
+}
+
+/* A field's 1px border already sits inside that padding. */
+.pigui-nav-lead.astryx-text-input:not(#\#):not(#\#):not(#\#) {
+  padding-inline-start: calc(var(--pigui-sidebar-row-padding-x) - 1px);
+}
+
 /* Fixed-size glyph slot so conversation rows with and without status stay aligned. */
 .pigui-session-glyph {
   display: inline-flex;
