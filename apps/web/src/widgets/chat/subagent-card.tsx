@@ -1,5 +1,5 @@
 // The main-area anchor for a delegated task. The card shows the subagent's
-// name, status, model, elapsed time, and — while running — what the child is
+// name, status, model, worktree branch, elapsed time, and — while running — what the child is
 // doing (the summary's `activity`). The full report lives in the subagent's
 // own conversation: the card only names it.
 //
@@ -85,6 +85,8 @@ function SubagentCard({
     STATUS_TEXT[status],
     summary?.role === undefined ? undefined : `@${summary.role}`,
     pinomad?.model,
+    // Its own worktree (ADR-0046 §5): the branch to merge from.
+    pinomad?.branch,
     elapsed,
   ].filter((part) => part !== undefined && part !== "");
   return (

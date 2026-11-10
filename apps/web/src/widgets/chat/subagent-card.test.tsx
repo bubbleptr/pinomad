@@ -76,4 +76,12 @@ describe("SubagentCards", () => {
     expect(card).toHaveAttribute("data-status", "done");
     expect(card).toHaveTextContent("Done · faux/faux-1 · 1s");
   });
+  it("names the branch of a subagent with its own worktree", () => {
+    const tool = call("output-available", { checkout: "worktree" });
+    const card = renderCard(
+      { ...tool, tool: { ...tool.tool, pinomad: { kind: "subagent", conversationId: CHILD, model: "faux/faux-1", branch: "pinomad/7-ab12" } } },
+      summary({ lifecycle: "foreground" }),
+    );
+    expect(card).toHaveTextContent("Done · faux/faux-1 · pinomad/7-ab12");
+  });
 });
