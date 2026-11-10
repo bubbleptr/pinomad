@@ -91,9 +91,6 @@ function markHostDocument(): void {
     return;
   }
   root.dataset.pinomadPlatform = process.platform;
-  // The macOS window is vibrated (window-chrome.ts); the renderer clears its
-  // own backgrounds under the sidebar only when this marker is present.
-  if (process.platform === "darwin") root.setAttribute("data-pinomad-vibrancy", "");
 }
 
 markHostDocument();

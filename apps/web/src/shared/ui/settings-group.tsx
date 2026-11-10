@@ -1,6 +1,7 @@
 import { Card } from "@astryxdesign/core/Card";
 import { VStack } from "@astryxdesign/core/Layout";
 import { Heading } from "@astryxdesign/core/Heading";
+import { Text } from "@astryxdesign/core/Text";
 import type { ReactNode } from "react";
 
 /**
@@ -35,3 +36,29 @@ export function SettingsGroup({
 
 /** A hand-built row list inside a SettingsGroup: the dividers `List hasDividers` draws. */
 export const GROUP_ROWS = "m-0 flex list-none flex-col p-0 divide-y divide-[var(--color-border)]";
+
+/**
+ * One setting in a SettingsGroup: what it is on the left, its control on the
+ * right. The control names itself (its own label); the row's label is what
+ * the reader scans. Narrow, the control wraps under the text.
+ */
+export function SettingsRow({
+  label,
+  description,
+  children,
+}: {
+  label: string;
+  description?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
+      <div className="flex min-w-0 flex-[1_1_14rem] flex-col gap-0.5">
+        <Text>{label}</Text>
+        {description === undefined ? null : <Text type="supporting">{description}</Text>}
+      </div>
+      {/* Never wider than the row, so the controls wrap instead of being clipped. */}
+      <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">{children}</div>
+    </div>
+  );
+}

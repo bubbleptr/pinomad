@@ -7,13 +7,13 @@ import { describe, expect, it, vi } from "vitest";
 import { AccountContext } from "../../entities/account/account-context.tsx";
 import { HostsContext } from "../../entities/host/host-store.ts";
 import { fakeAccount, fakeHosts, fakeMachines, HOME_HOST, signedIn } from "../../test/story-fixtures.tsx";
-import { SettingsDialog } from "./settings-dialog.tsx";
+import { SettingsPage } from "./settings-page.tsx";
 
 function renderSettings() {
   render(
     <HostsContext.Provider value={fakeHosts()}>
       <AccountContext.Provider value={fakeAccount(signedIn())}>
-        <SettingsDialog machines={fakeMachines()} initialKey={HOME_HOST.hostKey} initialSection="hosts" onClose={vi.fn()} />
+        <SettingsPage machines={fakeMachines()} initialKey={HOME_HOST.hostKey} initialSection="hosts" onClose={vi.fn()} />
       </AccountContext.Provider>
     </HostsContext.Provider>,
   );
@@ -21,7 +21,12 @@ function renderSettings() {
 
 const nav = () => screen.getByRole("navigation", { name: "Settings sections" });
 const search = () => screen.getByRole("textbox", { name: "Search settings" });
-const sections = () => within(nav()).queryAllByRole("button").map((button) => button.textContent);
+// The nav's own way out sits above the sections.
+const sections = () =>
+  within(nav())
+    .queryAllByRole("button")
+    .filter((button) => button.getAttribute("aria-label") !== "Close settings")
+    .map((button) => button.textContent);
 
 describe("Settings search", () => {
   it("narrows the sections to the ones whose name matches", async () => {

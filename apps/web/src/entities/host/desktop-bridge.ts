@@ -104,7 +104,7 @@ export interface DesktopBridge {
     onSetupLines(listener: (lines: readonly string[]) => void): () => void;
   };
   /**
-   * Point the window's native chrome (macOS vibrancy, title bar, scrollbars)
+   * Point the window's native chrome (title bar, scrollbars, menus)
    * at the renderer's appearance. Optional: older bridges keep following the system.
    */
   readonly setAppearance?: (appearance: Appearance) => Promise<void>;

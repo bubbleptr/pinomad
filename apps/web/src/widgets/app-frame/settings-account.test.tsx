@@ -8,14 +8,14 @@ import { AccountContext } from "../../entities/account/account-context.tsx";
 import type { AccountModel, AccountState } from "../../entities/account/account-model.ts";
 import { HostsContext } from "../../entities/host/host-store.ts";
 import { fakeAccount, fakeHosts, fakeMachines, HOME_HOST, signedIn } from "../../test/story-fixtures.tsx";
-import { SettingsDialog, type SectionId } from "./settings-dialog.tsx";
+import { SettingsPage, type SectionId } from "./settings-page.tsx";
 
 function renderSettings(state: AccountState, initialSection?: SectionId, actions: Partial<AccountModel> = {}) {
   const account = { ...fakeAccount(state), ...actions };
   render(
     <HostsContext.Provider value={fakeHosts()}>
       <AccountContext.Provider value={account}>
-        <SettingsDialog
+        <SettingsPage
           machines={fakeMachines()}
           initialKey={HOME_HOST.hostKey}
           {...(initialSection === undefined ? {} : { initialSection })}

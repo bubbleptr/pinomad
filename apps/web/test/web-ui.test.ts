@@ -96,12 +96,15 @@ async function openPage(
   return page;
 }
 
+/** Settings' section nav, in the sidebar's place on wide screens. */
+const settingsNav = (page: Page): Locator => page.getByRole("navigation", { name: "Settings sections" });
+
 /** Opens Settings from the sidebar's user bar and picks a section in its nav (wide screens). */
 async function openSettings(page: Page, section: string): Promise<Locator> {
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Settings" });
-  await dialog.getByRole("button", { name: section, exact: true }).click();
-  return dialog;
+  const settings = page.getByRole("region", { name: "Settings" });
+  await settingsNav(page).getByRole("button", { name: section, exact: true }).click();
+  return settings;
 }
 
 /** Settings → Hosts → Add a host, with a pairing link pasted and connected. */
@@ -270,11 +273,11 @@ it("opens Settings → Devices from the phone drawer", async () => {
 
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  // The drawer closed; only the Settings dialog remains.
-  await expect.poll(() => page.getByRole("dialog").count()).toBe(1);
-  const dialog = page.getByRole("dialog");
-  await dialog.getByText("Devices", { exact: true }).click();
-  await dialog.getByRole("button", { name: "Pair a device", exact: true }).waitFor();
+  // The drawer closed; Settings fills the window.
+  await expect.poll(() => page.getByRole("dialog").count()).toBe(0);
+  const settings = page.getByRole("region", { name: "Settings" });
+  await settings.getByText("Devices", { exact: true }).click();
+  await settings.getByRole("button", { name: "Pair a device", exact: true }).waitFor();
 });
 
 it("drills into a Settings section from the phone drawer and back out", async () => {
@@ -286,13 +289,13 @@ it("drills into a Settings section from the phone drawer and back out", async ()
 
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  // The drawer closed; only the Settings dialog's section list remains.
-  await expect.poll(() => page.getByRole("dialog").count()).toBe(1);
-  const dialog = page.getByRole("dialog");
-  await dialog.getByText("Providers", { exact: true }).waitFor();
+  // The drawer closed; Settings opens on its section list.
+  await expect.poll(() => page.getByRole("dialog").count()).toBe(0);
+  const settings = page.getByRole("region", { name: "Settings" });
+  await settings.getByText("Providers", { exact: true }).waitFor();
 
-  await dialog.getByText("Chats", { exact: true }).click();
-  const followUp = dialog.getByRole("radiogroup", { name: "Follow-up messages", exact: true });
+  await settings.getByText("Chats", { exact: true }).click();
+  const followUp = settings.getByRole("radiogroup", { name: "Follow-up messages", exact: true });
   await followUp.waitFor();
   await followUp.getByRole("radio", { name: "All at once", exact: true }).click();
 
@@ -300,8 +303,8 @@ it("drills into a Settings section from the phone drawer and back out", async ()
   await expect.poll(() => followUp.getByRole("radio", { name: "All at once", checked: true }).count()).toBe(1);
   expect(JSON.parse(await readFile(join(dir.path, "settings.json"), "utf8"))).toMatchObject({ followUpMode: "all" });
 
-  await dialog.getByRole("button", { name: "Back", exact: true }).click();
-  await dialog.getByText("Providers", { exact: true }).waitFor();
+  await settings.getByRole("button", { name: "Back", exact: true }).click();
+  await settings.getByText("Providers", { exact: true }).waitFor();
 });
 
 it("changes a queue-mode setting, then resets it to pi's default", async () => {
@@ -312,21 +315,21 @@ it("changes a queue-mode setting, then resets it to pi's default", async () => {
   const page = await openPage(host, 1280, webOrigin);
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", { name: "Chats", exact: true }).click();
-  const followUp = dialog.getByRole("radiogroup", { name: "Follow-up messages", exact: true });
+  const settings = page.getByRole("region", { name: "Settings" });
+  await settingsNav(page).getByRole("button", { name: "Chats", exact: true }).click();
+  const followUp = settings.getByRole("radiogroup", { name: "Follow-up messages", exact: true });
   await followUp.waitFor();
   await followUp.getByRole("radio", { name: "All at once", exact: true }).click();
 
   // The control only moves once the host's settings stream pushes the change.
   await expect.poll(() => followUp.getByRole("radio", { name: "All at once", checked: true }).count()).toBe(1);
-  const reset = dialog.getByRole("button", { name: "Use pi's default", exact: true });
+  const reset = settings.getByRole("button", { name: "Use pi's default", exact: true });
   await reset.waitFor();
   expect(JSON.parse(await readFile(join(dir.path, "settings.json"), "utf8"))).toMatchObject({ followUpMode: "all" });
 
   await reset.click();
   await expect.poll(() => followUp.getByRole("radio", { name: "One at a time", checked: true }).count()).toBe(1);
-  await expect.poll(() => dialog.getByRole("button", { name: "Use pi's default", exact: true }).count()).toBe(0);
+  await expect.poll(() => settings.getByRole("button", { name: "Use pi's default", exact: true }).count()).toBe(0);
 });
 
 it("opens Settings on Providers and shows host details under About", async () => {
@@ -335,14 +338,14 @@ it("opens Settings on Providers and shows host details under About", async () =>
   const page = await openPage(host, 1280, webOrigin);
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const settings = page.getByRole("region", { name: "Settings" });
   // Providers is the default section — with nothing connected it offers the ways to add one.
-  await dialog.getByText("Connect a model provider", { exact: true }).waitFor();
+  await settings.getByText("Connect a model provider", { exact: true }).waitFor();
 
-  await dialog.getByRole("button", { name: "About", exact: true }).click();
-  await dialog.getByText("Data directory", { exact: true }).waitFor();
-  await dialog.getByText("settings.json", { exact: false }).waitFor();
-  await dialog.getByText("Source checkout", { exact: true }).waitFor();
+  await settingsNav(page).getByRole("button", { name: "About", exact: true }).click();
+  await settings.getByText("Data directory", { exact: true }).waitFor();
+  await settings.getByText("settings.json", { exact: false }).waitFor();
+  await settings.getByText("Source checkout", { exact: true }).waitFor();
 });
 
 it("logs a stored login out from the Providers section", async () => {
@@ -383,13 +386,13 @@ it("logs a stored login out from the Providers section", async () => {
   const page = await openPage(host, 1280, webOrigin);
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const dialog = page.getByRole("dialog");
-  await dialog.getByRole("list", { name: "Connected" }).getByText("Anthropic", { exact: true }).click();
-  await dialog.getByRole("button", { name: "Remove key", exact: true }).click();
+  const settings = page.getByRole("region", { name: "Settings" });
+  await settings.getByRole("list", { name: "Connected" }).getByText("Anthropic", { exact: true }).click();
+  await settings.getByRole("button", { name: "Remove key", exact: true }).click();
   // The first button only arms the confirmation; removing is the second step.
-  await dialog.getByText("Removes the key from this host.", { exact: false }).waitFor();
-  await dialog.getByRole("button", { name: "Remove key", exact: true }).click();
-  await dialog.getByText("Connect a model provider", { exact: true }).waitFor();
+  await settings.getByText("Removes the key from this host.", { exact: false }).waitFor();
+  await settings.getByRole("button", { name: "Remove key", exact: true }).click();
+  await settings.getByText("Connect a model provider", { exact: true }).waitFor();
 });
 
 it("resizes the Terminal side panel from its left edge and keeps its width when reopened", async () => {
@@ -1601,8 +1604,8 @@ it("organizes conversations under projects and chats", async () => {
 
   // Settings → Archived lists it with its home; Restore puts it back in Chats.
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const settings = page.getByRole("dialog", { name: "Settings" });
-  await settings.getByRole("button", { name: "Archived", exact: true }).click();
+  const settings = page.getByRole("region", { name: "Settings" });
+  await settingsNav(page).getByRole("button", { name: "Archived", exact: true }).click();
   const archived = settings.getByRole("region", { name: "Archived" });
   await archived.getByText("Chat · now", { exact: true }).waitFor();
   await archived.getByRole("button", { name: "Restore chat work", exact: true }).click();
@@ -2808,12 +2811,12 @@ it("manages paired devices from Settings → Devices", async () => {
   const tokenClient = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
-  const dialog = await openSettings(page, "Devices");
-  await dialog.getByText("No paired devices", { exact: false }).waitFor();
-  await dialog.getByRole("button", { name: "Pair a device", exact: true }).click();
+  const settings = await openSettings(page, "Devices");
+  await settings.getByText("No paired devices", { exact: false }).waitFor();
+  await settings.getByRole("button", { name: "Pair a device", exact: true }).click();
   await page.getByRole("img", { name: "Pairing QR code" }).waitFor();
-  await dialog.getByText("#pair=", { exact: false }).waitFor();
-  await dialog.getByText("Expires in", { exact: false }).waitFor();
+  await settings.getByText("#pair=", { exact: false }).waitFor();
+  await settings.getByText("Expires in", { exact: false }).waitFor();
 
   // A device paired from another client appears in the list.
   const { url: pairingUrl } = await tokenClient.controller.createPairing();
@@ -2829,14 +2832,14 @@ it("manages paired devices from Settings → Devices", async () => {
     }),
   });
   defer(() => phone.close());
-  await dialog.getByText("QA phone", { exact: true }).waitFor();
+  await settings.getByText("QA phone", { exact: true }).waitFor();
 
-  await dialog.getByRole("button", { name: "Unpair QA phone", exact: true }).click();
-  await dialog
+  await settings.getByRole("button", { name: "Unpair QA phone", exact: true }).click();
+  await settings
     .getByRole("group", { name: "Unpair QA phone?", exact: true })
     .getByRole("button", { name: "Unpair", exact: true })
     .click();
-  await dialog.getByText("No paired devices", { exact: false }).waitFor();
+  await settings.getByText("No paired devices", { exact: false }).waitFor();
 });
 
 it("falls back to the copyable link when an invite is too long for a QR code", async () => {
@@ -2848,12 +2851,12 @@ it("falls back to the copyable link when an invite is too long for a QR code", a
   await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
-  const dialog = await openSettings(page, "Devices");
-  await dialog.getByRole("button", { name: "Pair a device", exact: true }).click();
-  await dialog.getByText("This link is too long for a QR code.", { exact: false }).waitFor();
+  const settings = await openSettings(page, "Devices");
+  await settings.getByRole("button", { name: "Pair a device", exact: true }).click();
+  await settings.getByText("This link is too long for a QR code.", { exact: false }).waitFor();
   expect(await page.getByRole("img", { name: "Pairing QR code" }).count()).toBe(0);
-  await dialog.getByText("#pair=", { exact: false }).waitFor();
-  await dialog.getByText("Expires in", { exact: false }).waitFor();
+  await settings.getByText("#pair=", { exact: false }).waitFor();
+  await settings.getByText("Expires in", { exact: false }).waitFor();
 });
 
 it("registers the desktop bridge's device name and shows the pairing minute", async () => {
@@ -2879,9 +2882,9 @@ it("registers the desktop bridge's device name and shows the pairing minute", as
   expect(tokenClient.view.current().devices[0]!.name).toBe("Linux Desktop (test-box)");
 
   // The Devices row carries the pairing time down to the minute.
-  const dialog = await openSettings(page, "Devices");
-  await dialog.getByText("Linux Desktop (test-box)", { exact: true }).waitFor();
-  await dialog.getByText(/Paired.*\d{1,2}:\d{2}/).waitFor();
+  const settings = await openSettings(page, "Devices");
+  await settings.getByText("Linux Desktop (test-box)", { exact: true }).waitFor();
+  await settings.getByText(/Paired.*\d{1,2}:\d{2}/).waitFor();
 });
 
 it("explains a loopback pairing link instead of drawing an unusable QR", async () => {
@@ -2891,11 +2894,11 @@ it("explains a loopback pairing link instead of drawing an unusable QR", async (
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
   const page = await openPage(host, 1280, webOrigin);
 
-  const dialog = await openSettings(page, "Devices");
-  await dialog.getByRole("button", { name: "Pair a device", exact: true }).click();
-  await dialog.getByText("only works on this machine", { exact: false }).waitFor();
-  expect(await dialog.getByRole("img", { name: "Pairing QR code" }).count()).toBe(0);
-  await expect.poll(() => dialog.getByText(/#pair=/, { exact: false }).count()).toBeGreaterThan(0);
+  const settings = await openSettings(page, "Devices");
+  await settings.getByRole("button", { name: "Pair a device", exact: true }).click();
+  await settings.getByText("only works on this machine", { exact: false }).waitFor();
+  expect(await settings.getByRole("img", { name: "Pairing QR code" }).count()).toBe(0);
+  await expect.poll(() => settings.getByText(/#pair=/, { exact: false }).count()).toBeGreaterThan(0);
 });
 
 it("pairs a device by pasting the loopback link on the no-link screen", async () => {
@@ -3717,8 +3720,8 @@ it("manages named agents from the Agents settings section", async () => {
   const page = await openPage(host, 1280, webOrigin);
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const settings = page.getByRole("dialog", { name: "Settings" });
-  await settings.getByRole("button", { name: "Agents", exact: true }).click();
+  const settings = page.getByRole("region", { name: "Settings" });
+  await settingsNav(page).getByRole("button", { name: "Agents", exact: true }).click();
   await settings.getByText("No named agents yet.", { exact: true }).waitFor();
 
   // Create: name, description, a pinned model and level, a prompt.
@@ -3773,8 +3776,8 @@ it("shows the agent editor's name rule and the host's already-exists error inlin
   const page = await openPage(host, 1280, webOrigin);
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const settings = page.getByRole("dialog", { name: "Settings" });
-  await settings.getByRole("button", { name: "Agents", exact: true }).click();
+  const settings = page.getByRole("region", { name: "Settings" });
+  await settingsNav(page).getByRole("button", { name: "Agents", exact: true }).click();
   await settings.getByRole("button", { name: "New agent", exact: true }).click();
   const editor = page.getByRole("dialog", { name: "New agent" });
 
@@ -3811,8 +3814,8 @@ it("lists a hand-written agent file live and reports a bad one as a problem", as
   const page = await openPage(host, 1280, webOrigin);
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const settings = page.getByRole("dialog", { name: "Settings" });
-  await settings.getByRole("button", { name: "Agents", exact: true }).click();
+  const settings = page.getByRole("region", { name: "Settings" });
+  await settingsNav(page).getByRole("button", { name: "Agents", exact: true }).click();
   await settings.getByText("No named agents yet.", { exact: true }).waitFor();
 
   // Hand-written files stream in without a reload.
@@ -3852,8 +3855,8 @@ it("keeps a pinned thinking level the model no longer supports visible in the ed
   const page = await openPage(host, 1280, webOrigin);
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const settings = page.getByRole("dialog", { name: "Settings" });
-  await settings.getByRole("button", { name: "Agents", exact: true }).click();
+  const settings = page.getByRole("region", { name: "Settings" });
+  await settingsNav(page).getByRole("button", { name: "Agents", exact: true }).click();
   await settings.getByRole("heading", { name: "legacy", exact: true }).waitFor();
 
   await settings.getByRole("button", { name: "legacy actions", exact: true }).click();
@@ -4522,23 +4525,23 @@ it("upgrades the host from Settings: waits for a run, cancels, then restarts (AD
   await followFirst(observer);
   await page.getByRole("button", { name: /stop/i, exact: true }).waitFor();
 
-  const dialog = await openSettings(page, "Upgrade");
-  await dialog.getByText("pinomad 0.14.0 is available", { exact: false }).waitFor();
+  const settings = await openSettings(page, "Upgrade");
+  await settings.getByText("pinomad 0.14.0 is available", { exact: false }).waitFor();
   // The page's own Upgrade, not the sidebar entry of the same name.
-  const upgrade = dialog.getByRole("region", { name: "Upgrade" }).getByRole("button", { name: "Upgrade", exact: true });
+  const upgrade = settings.getByRole("region", { name: "Upgrade" }).getByRole("button", { name: "Upgrade", exact: true });
   await upgrade.click();
   await shot(page, "host-upgrade-confirm");
-  await dialog.getByRole("button", { name: "Upgrade when idle" }).click();
-  await dialog.getByText("once running tasks finish", { exact: false }).waitFor();
-  await dialog.getByRole("button", { name: "Cancel upgrade" }).click();
+  await settings.getByRole("button", { name: "Upgrade when idle" }).click();
+  await settings.getByText("once running tasks finish", { exact: false }).waitFor();
+  await settings.getByRole("button", { name: "Cancel upgrade" }).click();
   await upgrade.waitFor();
 
   // Started again, the wait ends with the run; the install closes the host.
   await upgrade.click();
-  await dialog.getByRole("button", { name: "Upgrade when idle" }).click();
-  await dialog.getByText("once running tasks finish", { exact: false }).waitFor();
+  await settings.getByRole("button", { name: "Upgrade when idle" }).click();
+  await settings.getByText("once running tasks finish", { exact: false }).waitFor();
   gate.resolve();
-  await dialog.getByRole("button", { name: "Close" }).click();
+  await settingsNav(page).getByRole("button", { name: "Close settings" }).click();
   await page.getByText("Host is restarting").waitFor();
   // The client's connection-failure notice is the expected restart: no error toast.
   await page.waitForTimeout(1500);

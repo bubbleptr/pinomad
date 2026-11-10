@@ -1144,7 +1144,7 @@ export function withAccount(state: AccountState = signedIn(), actions?: Partial<
 
 function DesktopBridgeFixture({ parts, children }: { parts: () => Partial<DesktopBridge>; children: ReactNode }) {
   const [bridge] = useState(() => ({ ...window.pinomadDesktop, ...parts() }) as DesktopBridge);
-  // useAppUpdate and the Settings dialog read the bridge during render, so it
+  // useAppUpdate and the Settings page read the bridge during render, so it
   // goes in before the children render; the effect puts the old one back.
   const previous = useState(() => window.pinomadDesktop)[0];
   window.pinomadDesktop = bridge;

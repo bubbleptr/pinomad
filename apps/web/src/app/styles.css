@@ -47,7 +47,8 @@
    popovers and dialogs float lightest. Inset fills (muted: code, chips, the
    tray under the composer) are recessed, so they go darker than the pane
    they sit in, just above the frame. Light mode keeps theme-neutral's
-   values verbatim, where shadows and borders carry the same order.
+   values except the frame, a step lighter (#f8f8f8) so the inset panes
+   read as cards on it; shadows and borders carry the same order.
    Same specificity lift as the font override.
 
    Dark greys are pure neutrals (C 0), about 0.04 L apart so each step
@@ -56,7 +57,7 @@
    10% white, which glows, and sit above the popover so they still draw an
    edge on the top layer. */
 [data-astryx-theme][data-astryx-theme] {
-  --color-background-body: light-dark(#f1f1f1, oklch(0.17 0 0));
+  --color-background-body: light-dark(#f8f8f8, oklch(0.17 0 0));
   --color-background-muted: light-dark(#f1f1f1, oklch(0.185 0 0));
   --color-background-surface: light-dark(#ffffff, oklch(0.215 0 0));
   --color-background-card: light-dark(#ffffff, oklch(0.255 0 0));
@@ -64,6 +65,9 @@
   --color-border: light-dark(#00000014, oklch(0.335 0 0));
   --color-text-primary: light-dark(#171717, oklch(0.94 0 0));
   --color-icon-primary: light-dark(#171717, oklch(0.94 0 0));
+  /* The inset panes' edge: lighter than --color-border, since the fill step
+     from the frame already separates them. */
+  --pigui-pane-ring: light-dark(#00000012, oklch(0.255 0 0));
 }
 
 /* A dialog floats over the pane, but Astryx paints it with the surface color,
@@ -304,6 +308,44 @@ body {
   width: var(--pigui-sidebar-icon-size);
   height: var(--pigui-sidebar-icon-size);
   shape-rendering: geometricPrecision;
+}
+
+/* Settings nav: rows at rest are a step lighter than the open one, and the
+   group titles lighter still, so the open section is the darkest row on
+   its wash. Hover takes a row to the open row's color. */
+.pigui-settings-nav {
+  --pigui-nav-rest: light-dark(#606060, oklch(0.72 0 0));
+  --pigui-nav-group: light-dark(#b5b5b5, oklch(0.52 0 0));
+}
+
+.pigui-settings-nav .astryx-side-nav-item:not([data-selected="selected"]):not(#\#):not(#\#):not(#\#),
+.pigui-settings-nav .astryx-side-nav-item:not([data-selected="selected"]) :is(svg, .astryx-icon):not(#\#):not(#\#):not(#\#),
+.pigui-settings-nav .astryx-selector:not(#\#):not(#\#):not(#\#) {
+  color: var(--pigui-nav-rest);
+}
+
+@media (hover: hover) {
+  .pigui-settings-nav .astryx-side-nav-item:hover:not(#\#):not(#\#):not(#\#),
+  .pigui-settings-nav .astryx-side-nav-item:hover :is(svg, .astryx-icon):not(#\#):not(#\#):not(#\#) {
+    color: var(--foreground);
+  }
+}
+
+.pigui-settings-nav .astryx-side-nav-section > :first-child:not(#\#):not(#\#):not(#\#),
+.pigui-settings-nav .astryx-side-nav-section > :first-child *:not(#\#):not(#\#):not(#\#) {
+  color: var(--pigui-nav-group);
+}
+
+/* Ghost controls leading a side nav (Settings' back row, its host picker):
+   Astryx pads them 12px, the nav items 8px. Matching the items' padding puts
+   their glyph and label on the items' icon and text columns. */
+.pigui-nav-lead:not(#\#):not(#\#):not(#\#) {
+  padding-inline-start: var(--pigui-sidebar-row-padding-x);
+}
+
+/* A field's 1px border already sits inside that padding. */
+.pigui-nav-lead.astryx-text-input:not(#\#):not(#\#):not(#\#) {
+  padding-inline-start: calc(var(--pigui-sidebar-row-padding-x) - 1px);
 }
 
 /* Fixed-size glyph slot so conversation rows with and without status stay aligned. */
@@ -556,13 +598,100 @@ body {
   opacity: 1;
 }
 
-/* The main surface is elevated: content sits on --surface over the wash. */
+/* —— Inset shell ——
+   The window is the frame color (the wash); the sidebar sits straight on it
+   and the work sits on cards inset from the window edge: the main pane, and
+   beside it the side panel as a card of its own. A pane is any
+   `.pigui-pane`, or a Centered screen inside the frame. Narrow windows have
+   no sidebar beside the pane, so the pane goes full-bleed there and the
+   inset is wide-only (`.pigui-inset`, set by AppFrame). */
+.pigui-app-layout {
+  /* From the window edge to a pane. */
+  --pigui-pane-inset: 0.5rem;
+  /* Between two panes side by side: tighter than the inset, so the pair
+     reads as one work area. */
+  --pigui-pane-gap: 0.25rem;
+  --pigui-pane-radius: 0.75rem;
+}
+
 .pigui-app-layout [role="main"] {
   overscroll-behavior: none;
 }
 
 .pigui-app-layout [role="main"]:not(#\#):not(#\#):not(#\#) {
+  background-color: transparent;
+}
+
+.pigui-inset [role="main"]:not(#\#):not(#\#):not(#\#) {
+  padding: var(--pigui-pane-inset);
+  padding-inline-start: 0;
+}
+
+/* Sidebar collapsed: nothing to butt against, so the pane insets on all sides. */
+.pigui-inset--bare [role="main"]:not(#\#):not(#\#):not(#\#) {
+  padding-inline-start: var(--pigui-pane-inset);
+}
+
+.pigui-stage {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+.pigui-stage > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.pigui-app-layout :is(.pigui-pane, .pigui-centered) {
+  min-height: 0;
+  overflow: clip;
   background-color: var(--surface);
+}
+
+/* A hairline border and no shadow: the pane sits on the frame, it does not
+   float over it. */
+.pigui-inset :is(.pigui-pane, .pigui-centered) {
+  border: 1px solid var(--pigui-pane-ring);
+  border-radius: var(--pigui-pane-radius);
+}
+
+.pigui-app-layout .pigui-centered {
+  height: 100%;
+}
+
+.pigui-inset .pigui-split {
+  gap: var(--pigui-pane-gap);
+}
+
+/* Resize handles (sidebar, settings nav, side panel) show no grip: the
+   pane edges already mark where to drag. Keyboard focus still shows it, as
+   the only sign of what is focused. */
+.pigui-app-layout .astryx-resize-handle:not(:focus-visible) .astryx-resize-handle-pill:not(#\#):not(#\#):not(#\#) {
+  visibility: hidden;
+}
+
+/* The side panel's resize grip hangs into the gap, outside the card: the
+   card clips through its inner wrapper instead. */
+.pigui-app-layout .pigui-side-pane {
+  overflow: visible;
+}
+
+.pigui-app-layout .pigui-side-pane > :first-child {
+  border-radius: calc(var(--pigui-pane-radius) - 1px);
+}
+
+/* Without the inset the panel is a column of the same pane again. */
+.pigui-app-layout:not(.pigui-inset) .pigui-side-pane {
+  border-inline-start: 1px solid var(--border);
+}
+
+/* The Centered screens outside the frame (no host yet, pairing) fill the
+   window on the frame color. */
+.pigui-centered {
+  height: 100dvh;
+  background-color: var(--color-background-body);
 }
 
 /* —— Animated icons (shared/ui/animated-icons) —— */
@@ -638,33 +767,6 @@ body {
 }
 [data-pinomad-platform="darwin"] .pinomad-drag :is(button, a, input, select, textarea, [role="button"]) {
   -webkit-app-region: no-drag;
-}
-
-/* macOS desktop only (preload sets data-pinomad-vibrancy): the window is
-   transparent with under-window vibrancy, so clear every layer down to the
-   app shell and give the sidebar panel one translucent wash of the frame
-   color. The main pane keeps its opaque surface so the two columns stay
-   distinct; full-screen pages (Centered) paint their own opaque background.
-   The dark material is lighter than the main pane, which would put the
-   frame above the pane, so in dark mode the wash is heavy enough to keep
-   the sidebar the darkest layer with only a hint of the glass showing.
-   Ported from Pace; Astryx's sidebar panel is the layout panel that holds
-   the side nav. */
-html[data-pinomad-vibrancy],
-html[data-pinomad-vibrancy] body,
-html[data-pinomad-vibrancy] #root {
-  background-color: transparent;
-}
-
-html[data-pinomad-vibrancy] .pigui-app-layout.astryx-app-shell:not(#\#):not(#\#):not(#\#) {
-  background-color: transparent;
-}
-
-html[data-pinomad-vibrancy] .pigui-app-layout .astryx-layout-panel:has(.astryx-side-nav):not(#\#):not(#\#):not(#\#) {
-  background-color: light-dark(
-    color-mix(in srgb, var(--color-background-body) 32%, transparent),
-    color-mix(in srgb, var(--color-background-body) 90%, transparent)
-  );
 }
 
 /* The "N forks" chip under a message that was forked — replaces the Fork

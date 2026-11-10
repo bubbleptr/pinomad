@@ -132,9 +132,9 @@ try {
   const labelB = "Host B";
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const pairDialog = page.getByRole("dialog", { name: "Settings" });
-  await pairDialog.getByRole("button", { name: "Hosts", exact: true }).click();
-  await pairDialog.getByRole("button", { name: "Add a host", exact: true }).click();
+  const settings = page.getByRole("region", { name: "Settings" });
+  await page.getByRole("navigation", { name: "Settings sections" }).getByRole("button", { name: "Hosts", exact: true }).click();
+  await settings.getByRole("button", { name: "Add a host", exact: true }).click();
   const addHost = page.getByRole("dialog", { name: "Add a host" });
   await addHost.getByLabel("Pairing link").fill(pairB);
   await addHost.getByRole("button", { name: "Connect", exact: true }).click();

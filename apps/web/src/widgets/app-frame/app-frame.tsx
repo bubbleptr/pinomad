@@ -28,7 +28,7 @@ import {
   type SidebarLocate,
   type SidebarMachine,
 } from "./sidebar.tsx";
-import { SettingsDialog, type SectionId } from "./settings-dialog.tsx";
+import { useSettingsScreen, type SettingsRequest } from "./settings-page.tsx";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { AccountDialog } from "../account/account-dialog.tsx";
 
@@ -99,12 +99,19 @@ export function AppFrame({
   const [sidebarOpen, setSidebarOpen] = useState(readSidebarOpen);
   const [navOpen, setNavOpen] = useState(false);
   // Open Settings, on a given section or the default one.
-  const [settingsAt, setSettingsAt] = useState<{ section?: SectionId }>();
+  const [settingsAt, setSettingsAt] = useState<SettingsRequest>();
+  // Where focus was when Settings opened, to put it back on close.
+  const settingsOpener = useRef<Element | null>(null);
+  const openSettings = useCallback((request: SettingsRequest): void => {
+    settingsOpener.current = document.activeElement;
+    setSettingsAt(request);
+  }, []);
+  const closeSettings = useCallback((): void => setSettingsAt(undefined), []);
   const [accountOpen, setAccountOpen] = useState(false);
   const account = useAccountModel();
   // Signed in, the account lives in Settings; otherwise the sign-in dialog.
   const openAccount = (): void => {
-    if (account.state.status === "signed-in") setSettingsAt({ section: "account" });
+    if (account.state.status === "signed-in") openSettings({ section: "account" });
     else setAccountOpen(true);
   };
   const [locate, setLocate] = useState<SidebarLocate>();
@@ -112,7 +119,22 @@ export function AppFrame({
   // Under the desktop shell on macOS, the traffic lights own the top-left
   // corner: whichever band sits there reserves the inset and drags the window.
   const chrome = hostWindowChrome();
-  const sidebarOwnsCorner = chrome.reserveMacTrafficLights && !narrow && sidebarOpen;
+  const settingsOpen = settingsAt !== undefined;
+  const sidebarOwnsCorner = chrome.reserveMacTrafficLights && !narrow && (sidebarOpen || settingsOpen);
+  const settings = useSettingsScreen({
+    machines,
+    request: settingsAt,
+    focusKey,
+    narrow,
+    ...(chrome.reserveMacTrafficLights && (narrow || sidebarOwnsCorner) ? { safeLeft: chrome.safeLeft } : {}),
+    onClose: closeSettings,
+  });
+  useEffect(() => {
+    if (settingsOpen) return;
+    const opener = settingsOpener.current;
+    settingsOpener.current = null;
+    if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+  }, [settingsOpen]);
   const toggleSidebar = useCallback((): void => {
     setSidebarOpen((open) => {
       window.localStorage.setItem(SIDEBAR_OPEN_KEY, String(!open));
@@ -144,38 +166,59 @@ export function AppFrame({
     // the same top-layer stack, not Astryx's detached fallback.
     <ToastViewport position="topEnd" inset={{ top: 48 }} isTopLayer>
       <FrameChromeContext.Provider value={{ sidebarOpen, toggleSidebar, openNav }}>
+        {/* In Settings the whole shell is the Settings page: its nav in the
+            sidebar's place, its section in the main pane. The sidebar and the
+            workbench stay mounted underneath, hidden. */}
         <AppShell
-          className="pigui-app-layout text-foreground"
+          className={`pigui-app-layout text-foreground${narrow ? "" : " pigui-inset"}${
+            narrow || sidebarOpen || settingsOpen ? "" : " pigui-inset--bare"
+          }`}
           contentPadding={0}
           mobileNav={false}
           variant="elevated"
           sideNav={
             // Offcanvas on purpose: closed means fully removed — no icon rail.
-            narrow || !sidebarOpen ? undefined : (
-              <SideNav
-                resizable={{ defaultWidth: 260, minWidth: 240, maxWidth: 320, autoSaveId: "pinomad-app-shell" }}
-                header={
-                  <SidebarHeaderBand
-                    onCollapse={toggleSidebar}
-                    safeLeft={sidebarOwnsCorner ? chrome.safeLeft : undefined}
-                  />
-                }
-                footer={
-                  <SidebarFooter
-                    onOpenSettings={() => setSettingsAt({})}
-                    onOpenAccount={openAccount}
-                    onLocateHost={locateHost}
-                  />
-                }
-              >
-                {sidebar}
-              </SideNav>
+            narrow || !(sidebarOpen || settingsOpen) ? undefined : (
+              <>
+                {sidebarOpen ? (
+                  <div className="contents" hidden={settingsOpen}>
+                    <SideNav
+                      resizable={{ defaultWidth: 260, minWidth: 240, maxWidth: 320, autoSaveId: "pinomad-app-shell" }}
+                      header={
+                        <SidebarHeaderBand
+                          onCollapse={toggleSidebar}
+                          safeLeft={sidebarOwnsCorner ? chrome.safeLeft : undefined}
+                        />
+                      }
+                      footer={
+                        <SidebarFooter
+                          onOpenSettings={() => openSettings({})}
+                          onOpenAccount={openAccount}
+                          onLocateHost={locateHost}
+                        />
+                      }
+                    >
+                      {sidebar}
+                    </SideNav>
+                  </div>
+                ) : null}
+                {settings?.nav}
+              </>
             )
           }
         >
-          {children}
+          <div className="pigui-stage" hidden={settingsOpen}>
+            {children}
+          </div>
+          {settings === undefined ? null : (
+            <div className="pigui-stage">
+              <section aria-label="Settings" className="pigui-pane">
+                {settings.content}
+              </section>
+            </div>
+          )}
         </AppShell>
-        {(narrow || !sidebarOpen) && (focused?.view === undefined || focused.view.unauthorized === true) ? (
+        {!settingsOpen && (narrow || !sidebarOpen) && (focused?.view === undefined || focused.view.unauthorized === true) ? (
           // The workbench header (and its navigation button) exists only when
           // it paints the column. A phone, or a desktop with the sidebar
           // collapsed, still needs a way back to it while the focused host is
@@ -205,21 +248,13 @@ export function AppFrame({
           >
             {sidebar}
             <SidebarFooter
-              onOpenSettings={() => setSettingsAt({})}
+              onOpenSettings={() => openSettings({})}
               onOpenAccount={openAccount}
               onLocateHost={locateHost}
               onSelect={() => setNavOpen(false)}
             />
           </MobileNav>
         ) : null}
-        {settingsAt === undefined ? null : (
-          <SettingsDialog
-            machines={machines}
-            {...(focusKey === undefined ? {} : { initialKey: focusKey })}
-            {...(settingsAt.section === undefined ? {} : { initialSection: settingsAt.section })}
-            onClose={() => setSettingsAt(undefined)}
-          />
-        )}
         {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}
         {/* Every notice a machine reports also lands as a toast — rejected
             commands only surface as notices otherwise, and the panel that
@@ -275,7 +310,7 @@ export function FrameHeader({
     chrome.reserveMacTrafficLights && !sidebarOwnsCorner ? chrome.safeLeft : undefined;
   return (
     <div
-      className="pinomad-drag flex h-10 shrink-0 items-center gap-1 border-b border-border px-3"
+      className="pinomad-drag flex h-10 shrink-0 items-center gap-1 px-3"
       style={safeLeft === undefined ? undefined : { paddingLeft: safeLeft }}
     >
       {narrow ? (

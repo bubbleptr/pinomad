@@ -29,6 +29,7 @@ import type { AccountState } from "../../entities/account/account-model.ts";
 import { HostFrame } from "./host-frame.tsx";
 
 const id = (value: number): ConversationId => value as ConversationId;
+const settingsNav = () => screen.getByRole("navigation", { name: "Settings sections" });
 
 beforeEach(() => localStorage.clear());
 afterEach(() => vi.restoreAllMocks());
@@ -296,7 +297,7 @@ describe("the app frame across hosts", () => {
     await waitFor(() => expect(registry.get(DEVBOX_HOST.hostKey)?.phase).toBe("ready"));
 
     await userEvent.click(screen.getByRole("button", { name: "Settings" }));
-    const dialog = await screen.findByRole("dialog", { name: "Settings" });
+    const dialog = await screen.findByRole("region", { name: "Settings" });
     await userEvent.click(within(dialog).getByRole("button", { name: /Custom endpoint/ }));
     const name = within(dialog).getByLabelText("Name");
     await userEvent.type(name, "Host A endpoint");
@@ -305,11 +306,56 @@ describe("the app frame across hosts", () => {
     await waitFor(() => expect(screen.getByTestId("workbench").dataset.host).toBe(DEVBOX_HOST.hostKey));
     expect(within(dialog).getByLabelText("Name")).toHaveValue("Host A endpoint");
 
-    await userEvent.click(within(dialog).getByRole("combobox", { name: "Host" }));
+    await userEvent.click(within(settingsNav()).getByRole("combobox", { name: "Host" }));
     await userEvent.click(await screen.findByRole("option", { name: "omarchy" }));
 
     expect(within(dialog).queryByLabelText("Name")).toBeNull();
     expect(remotes.get(DEVBOX_HOST.hostKey)!.controller.saveCustomProvider).not.toHaveBeenCalled();
+  });
+
+  it("opens Settings in place of the sidebar and main column, and closes back to them", async () => {
+    const registry = createHostRuntimeRegistry();
+    render(
+      <Harness hosts={[HOME_HOST]} initialFocus={{ hostKey: HOME_HOST.hostKey }} connect={connected} registry={registry} />,
+    );
+    await waitFor(() => expect(screen.getByTestId("workbench")).toBeVisible());
+
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const settings = await screen.findByRole("region", { name: "Settings" });
+    expect(settingsNav()).toBeInTheDocument();
+    // The workbench stays mounted (drafts, connections) but out of sight.
+    expect(screen.getByTestId("workbench")).not.toBeVisible();
+    expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
+
+    await userEvent.click(within(settingsNav()).getByRole("button", { name: "Close settings" }));
+    expect(screen.queryByRole("region", { name: "Settings" })).toBeNull();
+    expect(screen.getByTestId("workbench")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Settings" })).toHaveFocus();
+  });
+
+  it("closes Settings on Escape, but not the Escape that closes a dialog over it", async () => {
+    const registry = createHostRuntimeRegistry();
+    const connect = vi.fn(() => new Promise<RemoteDurable>(() => {}));
+    render(
+      <Harness hosts={[HOME_HOST]} initialFocus={{ hostKey: HOME_HOST.hostKey }} connect={connect} registry={registry} />,
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    const settings = await screen.findByRole("region", { name: "Settings" });
+    await userEvent.click(within(settingsNav()).getByRole("button", { name: "Hosts" }));
+    await userEvent.click(within(settings).getByRole("button", { name: "Add a host" }));
+    const addHost = await screen.findByRole("dialog", { name: "Add a host" });
+
+    within(addHost).getAllByRole("button")[0]!.focus();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.getByRole("region", { name: "Settings" })).toBeInTheDocument();
+
+    // A text field keeps its Escape: what was typed is not thrown away.
+    await userEvent.type(screen.getByRole("textbox", { name: "Search settings" }), "ho{Escape}");
+    expect(screen.getByRole("region", { name: "Settings" })).toBeInTheDocument();
+
+    within(settingsNav()).getByRole("button", { name: "Hosts" }).focus();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("region", { name: "Settings" })).toBeNull());
   });
 
   it("toasts a notice from a machine that is not focused, named by its machine", async () => {
@@ -390,10 +436,10 @@ describe("the app frame across hosts", () => {
     expect(screen.getByRole("button", { name: "Hosts" })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Settings" }));
-    const dialog = await screen.findByRole("dialog", { name: "Settings" });
-    expect(within(dialog).getByText("This device")).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "Hosts" })).toBeInTheDocument();
-    expect(within(dialog).queryByRole("button", { name: "Providers" })).toBeNull();
+    const dialog = await screen.findByRole("region", { name: "Settings" });
+    expect(within(settingsNav()).getByText("This device")).toBeInTheDocument();
+    expect(within(settingsNav()).getByRole("button", { name: "Hosts" })).toBeInTheDocument();
+    expect(within(settingsNav()).queryByRole("button", { name: "Providers" })).toBeNull();
     expect(within(dialog).getByRole("button", { name: "Add a host" })).toBeInTheDocument();
   });
 
@@ -408,7 +454,7 @@ describe("the app frame across hosts", () => {
       </AccountContext.Provider>,
     );
     await userEvent.click(await screen.findByRole("button", { name: chip }));
-    const dialog = await screen.findByRole("dialog", { name: dialogName });
+    const dialog = await screen.findByRole(dialogName === "Settings" ? "region" : "dialog", { name: dialogName });
     if (dialogName === "Settings") expect(await within(dialog).findByRole("button", { name: "Sign out" })).toBeInTheDocument();
     else expect(await within(dialog).findByRole("heading", { name: "Sign in" })).toBeInTheDocument();
   });
@@ -432,8 +478,8 @@ describe("the app frame across hosts", () => {
         <Harness hosts={[HOME_HOST]} initialFocus={{ hostKey: HOME_HOST.hostKey }} connect={connect} registry={registry} />,
       );
       await userEvent.click(await screen.findByRole("button", { name: "Settings" }));
-      const dialog = await screen.findByRole("dialog", { name: "Settings" });
-      await userEvent.click(within(dialog).getByRole("button", { name: "Updates" }));
+      const dialog = await screen.findByRole("region", { name: "Settings" });
+      await userEvent.click(within(settingsNav()).getByRole("button", { name: "Updates" }));
       expect(await within(dialog).findByText("Check for updates")).toBeInTheDocument();
       expect(within(dialog).queryByRole("button", { name: "Add a host" })).toBeNull();
     } finally {
