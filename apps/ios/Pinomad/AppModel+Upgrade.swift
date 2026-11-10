@@ -2,7 +2,7 @@ import Foundation
 import PinomadChat
 import PinomadCore
 
-/// Settings → Upgrade (ADR-0043). Start, cancel and check are request-class:
+/// Settings → host → About's Version (ADR-0043). Start, cancel and check are request-class:
 /// the page shows a refusal inline. Their progress arrives in the host's
 /// `upgrade` stream, not in these results, so another device's upgrade shows
 /// here too. Every call, the setting included, is bounded: a host that stays

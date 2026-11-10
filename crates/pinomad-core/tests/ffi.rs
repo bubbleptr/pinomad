@@ -10,7 +10,7 @@ use std::sync::Arc;
 use pinomad_core::ffi::{
     device_public_key, parse_command_input, ApiKeyChange, CallResult, CustomProvider, CustomProviderApi, CustomProviderInput, HostProviders,
     LoginEvent, LoginInput, LoginLink, LoginMethod, LoginOption, LoginPrompt, LoginState, ProviderInfo, ProviderOAuth, StoredCredential, ClientError, CommandEntry, CommandInput, CommandSource, ConnectionState, ConversationChanges, ConversationCheckout,
-    DeviceEntry, DeviceSource, FetchedImage, FfiCall, FfiCommand, FfiEvent, FileScope, HostSettingsState, ImageVariant, MessageImage, ModelRef,
+    DeviceEntry, DeviceSource, FetchedImage, McpServer, McpServerState, McpStatus, QueueDelivery, FfiCall, FfiCommand, FfiEvent, FileScope, HostSettingsState, ImageVariant, MessageImage, ModelRef,
     NewConversationHome, PatchLineKind, PinomadClient, ReadyOutcome, SkillEntry, SkillScope, SkillSource,
     ReorderOutcome, SteerOutcome, StoredHost, SubmissionDraft, SubmissionStatus, SubmitMode, ThinkingLevel,
     WithdrawOutcome, AutoUpgradeMode, AvailableUpgrade, UpgradeBlocker, UpgradeFailure, UpgradePhase,
@@ -1859,7 +1859,14 @@ fn snapshot_settings_carry_the_account_switch_and_whether_the_name_is_custom() {
     let h = Harness::boot(host, "req-1");
     assert_eq!(
         h.client.snapshot().unwrap().settings,
-        Some(HostSettingsState { accept_account_devices: false, host_name_custom: true, auto_upgrade: None })
+        Some(HostSettingsState {
+            accept_account_devices: false,
+            host_name_custom: true,
+            auto_upgrade: None,
+            steering_mode: None,
+            follow_up_mode: None,
+            custom: vec!["steeringMode".to_string(), "hostName".to_string()],
+        })
     );
 
     // The machine's own name: nothing to reset to.
@@ -1871,8 +1878,87 @@ fn snapshot_settings_carry_the_account_switch_and_whether_the_name_is_custom() {
     let h = Harness::boot(host, "req-1");
     assert_eq!(
         h.client.snapshot().unwrap().settings,
-        Some(HostSettingsState { accept_account_devices: true, host_name_custom: false, auto_upgrade: None })
+        Some(HostSettingsState {
+            accept_account_devices: true,
+            host_name_custom: false,
+            auto_upgrade: None,
+            steering_mode: None,
+            follow_up_mode: None,
+            custom: vec![],
+        })
     );
+}
+
+/// The Chats page's two switches and its "Use pi's default" buttons; a
+/// mode this client doesn't know reads as unset rather than a wrong choice.
+#[test]
+fn snapshot_settings_carry_the_queue_modes() {
+    let mut host = ScriptedHost::new();
+    host.snapshots.insert(
+        "settings".to_string(),
+        obj(&[
+            ("steeringMode", Json::from("all")),
+            ("followUpMode", Json::from("sometimes")),
+            ("custom", Json::array(vec![Json::from("steeringMode")])),
+        ]),
+    );
+    let h = Harness::boot(host, "req-1");
+    let settings = h.client.snapshot().unwrap().settings.unwrap();
+    assert_eq!(settings.steering_mode, Some(QueueDelivery::All));
+    assert_eq!(settings.follow_up_mode, None);
+    assert_eq!(settings.custom, vec!["steeringMode".to_string()]);
+}
+
+/// The `mcp` stream's servers and config errors. The config file's path is
+/// left out: no settings page shows it.
+#[test]
+fn snapshot_mcp_lists_servers_and_errors() {
+    let mut host = ScriptedHost::new();
+    host.snapshots.insert(
+        "mcp".to_string(),
+        obj(&[
+            ("configPath", Json::from("/home/k/.pinomad/mcp.json")),
+            ("errors", Json::array(vec![Json::from("servers.bad: command is missing")])),
+            (
+                "servers",
+                Json::array(vec![
+                    obj(&[("name", Json::from("github")), ("state", Json::from("connected")), ("tools", Json::from(12.0))]),
+                    obj(&[
+                        ("name", Json::from("figma")),
+                        ("state", Json::from("failed")),
+                        ("error", Json::from("spawn ENOENT")),
+                        ("tools", Json::from(0.0)),
+                    ]),
+                    obj(&[("name", Json::from("next")), ("state", Json::from("paused")), ("tools", Json::from(0.0))]),
+                ]),
+            ),
+        ]),
+    );
+    let h = Harness::boot(host, "req-1");
+    assert_eq!(
+        h.client.snapshot().unwrap().mcp,
+        Some(McpStatus {
+            errors: vec!["servers.bad: command is missing".to_string()],
+            servers: vec![
+                McpServer { name: "github".to_string(), state: McpServerState::Connected, error: None, tools: 12 },
+                McpServer {
+                    name: "figma".to_string(),
+                    state: McpServerState::Failed,
+                    error: Some("spawn ENOENT".to_string()),
+                    tools: 0,
+                },
+                McpServer { name: "next".to_string(), state: McpServerState::Other, error: None, tools: 0 },
+            ],
+        })
+    );
+}
+
+#[test]
+fn snapshot_mcp_is_none_until_the_stream_has_a_value() {
+    let mut host = ScriptedHost::new();
+    host.snapshots.insert("mcp".to_string(), Json::Null);
+    let h = Harness::boot(host, "req-1");
+    assert_eq!(h.client.snapshot().unwrap().mcp, None);
 }
 
 #[test]
@@ -1900,6 +1986,15 @@ fn device_and_settings_calls_encode_the_reference_frames() {
     h.invoke(2, FfiCall::SetHostName { name: Some("studio".to_string()) });
     h.invoke(3, FfiCall::SetHostName { name: None });
     h.invoke(4, FfiCall::SetAcceptAccountDevices { accept: false });
+    h.invoke(5, FfiCall::SetDefaultModel {
+        model: Some(ModelRef { provider: "openai".to_string(), model_id: "gpt/5".to_string() }),
+    });
+    h.invoke(6, FfiCall::SetDefaultModel { model: None });
+    h.invoke(7, FfiCall::SetDefaultThinkingLevel { level: Some(ThinkingLevel::High) });
+    h.invoke(8, FfiCall::SetDefaultThinkingLevel { level: None });
+    h.invoke(9, FfiCall::SetSteeringMode { mode: Some(QueueDelivery::All) });
+    h.invoke(10, FfiCall::SetFollowUpMode { mode: Some(QueueDelivery::OneAtATime) });
+    h.invoke(11, FfiCall::SetFollowUpMode { mode: None });
     assert_eq!(call_args(&h, "revokeDevice"), vec![obj(&[("publicKey", Json::from("a-key"))])]);
     assert_eq!(
         call_args(&h, "updateSettings"),
@@ -1907,10 +2002,20 @@ fn device_and_settings_calls_encode_the_reference_frames() {
             obj(&[("patch", obj(&[("hostName", Json::from("studio"))]))]),
             obj(&[("patch", obj(&[("hostName", Json::Null)]))]),
             obj(&[("patch", obj(&[("acceptAccountDevices", Json::Bool(false))]))]),
+            obj(&[(
+                "patch",
+                obj(&[("defaultModel", obj(&[("provider", Json::from("openai")), ("modelId", Json::from("gpt/5"))]))]),
+            )]),
+            obj(&[("patch", obj(&[("defaultModel", Json::Null)]))]),
+            obj(&[("patch", obj(&[("defaultThinkingLevel", Json::from("high"))]))]),
+            obj(&[("patch", obj(&[("defaultThinkingLevel", Json::Null)]))]),
+            obj(&[("patch", obj(&[("steeringMode", Json::from("all"))]))]),
+            obj(&[("patch", obj(&[("followUpMode", Json::from("one-at-a-time"))]))]),
+            obj(&[("patch", obj(&[("followUpMode", Json::Null)]))]),
         ]
     );
     // Command-class, like the reference: the op settles as Unit.
-    for op in 1..=4 {
+    for op in 1..=11 {
         assert_eq!(h.ops.get(&op), Some(&Ok(CallResult::Unit)), "op {op}");
     }
 }

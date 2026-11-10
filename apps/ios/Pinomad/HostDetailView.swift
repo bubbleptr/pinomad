@@ -13,7 +13,6 @@ struct HostDetailView: View {
     /// leak the network. The disclosure resets with the page.
     @State private var addressesExpanded = false
 
-    private var host: HostRecord? { model.hostRecord(for: hostKey) }
     private var isCurrent: Bool { hostKey == model.currentHostKey }
     private var isLive: Bool { model.isConnected(hostKey) }
 
@@ -57,7 +56,8 @@ struct HostDetailView: View {
                 }
             }
         }
-        .navigationTitle(host.map(label) ?? "Host")
+        .navigationTitle("Connection")
+        .hostTitle(model, hostKey: hostKey, title: "Connection", page: true)
         .task(id: isLive) {
             guard isLive else { return }
             while !Task.isCancelled {
@@ -72,10 +72,6 @@ struct HostDetailView: View {
             guard next != model.connectionMode(for: hostKey) else { return }
             model.setConnectionMode(next, for: hostKey)
         }
-    }
-
-    private func label(_ host: HostRecord) -> String {
-        model.hostLabels[host.hostKey] ?? host.name ?? hostOf(host.url)
     }
 
     private var status: RtcDiagnostics? {

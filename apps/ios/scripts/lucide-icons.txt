@@ -8,8 +8,8 @@ arrow-big-up-dash
 arrow-right
 arrow-up
 ban
-bot
 bell-check
+bot
 camera
 check
 check-check
@@ -46,6 +46,7 @@ layout-grid-circles
 list-end
 message-circle
 monitor
+network
 pencil
 plus
 qr-code
@@ -53,6 +54,7 @@ rotate-cw
 scan-qr-code
 settings
 share
+smartphone
 sparkles
 square
 square-check

@@ -11,6 +11,7 @@ use crate::ffi::providers::{ApiKeyChange, CustomProviderApi, CustomProviderInput
 use crate::ffi::ResultKind;
 use crate::json::{Json, JsonObject};
 use crate::ffi::upgrade::AutoUpgradeMode;
+use crate::ffi::snapshot::QueueDelivery;
 use crate::remote_durable::{Call, UpgradeWhen};
 use crate::u16str::U16String;
 
@@ -321,6 +322,16 @@ pub enum FfiCall {
     /// Release checks and idle upgrades (ADR-0043 §6). Needs a 5.30 host —
     /// an older one lands a notice.
     SetAutoUpgrade { mode: AutoUpgradeMode },
+    /// The model new conversations start with; `None` goes back to pi's.
+    SetDefaultModel { model: Option<ModelRef> },
+    /// The thinking level new conversations start with; `None` goes back
+    /// to pi's.
+    SetDefaultThinkingLevel { level: Option<ThinkingLevel> },
+    /// How steer messages queued while the agent works are delivered;
+    /// `None` goes back to pi's.
+    SetSteeringMode { mode: Option<QueueDelivery> },
+    /// How queued follow-up messages are delivered; `None` goes back to pi's.
+    SetFollowUpMode { mode: Option<QueueDelivery> },
     /// File candidates under `scope`'s root for `@./path` completion.
     /// Request-class, but sent outside the command queue — a slow scan
     /// must not stall submits or switches. Resolves `CallResult::Files`.
@@ -523,6 +534,21 @@ impl FfiCall {
             },
             FfiCall::SetAutoUpgrade { mode } => Call::UpdateSettings {
                 patch: settings_patch("autoUpgrade", Json::from(mode.as_str())),
+            },
+            FfiCall::SetDefaultModel { model } => Call::UpdateSettings {
+                patch: settings_patch("defaultModel", model.map(|m| m.to_json()).unwrap_or(Json::Null)),
+            },
+            FfiCall::SetDefaultThinkingLevel { level } => Call::UpdateSettings {
+                patch: settings_patch(
+                    "defaultThinkingLevel",
+                    level.map(|l| Json::from(l.as_str())).unwrap_or(Json::Null),
+                ),
+            },
+            FfiCall::SetSteeringMode { mode } => Call::UpdateSettings {
+                patch: settings_patch("steeringMode", mode.map(|m| Json::from(m.as_str())).unwrap_or(Json::Null)),
+            },
+            FfiCall::SetFollowUpMode { mode } => Call::UpdateSettings {
+                patch: settings_patch("followUpMode", mode.map(|m| Json::from(m.as_str())).unwrap_or(Json::Null)),
             },
             FfiCall::ListFiles { scope, query } => Call::ListFiles {
                 scope: scope.to_json(),

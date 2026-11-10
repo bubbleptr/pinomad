@@ -17,6 +17,8 @@ enum Route: Hashable {
     case addProject(hostKey: String)
     /// This device's settings and the paired machines.
     case settings
+    /// This device's look, notifications and the app's version.
+    case general
     /// Every host this device can use: the paired ones, then the account's
     /// others. Settings shows the same list on its own page.
     case hosts
@@ -31,8 +33,17 @@ enum Route: Hashable {
     case host(String)
     /// That machine's providers: what's connected, and ways to add one.
     case providers(String)
-    /// That machine's release and upgrading it (ADR-0043).
-    case upgrade(String)
+    /// That machine's default model and thinking level.
+    case hostModels(String)
+    /// That machine's named agents and MCP servers.
+    case hostAgents(String)
+    /// How that machine delivers queued messages, and its archived
+    /// conversations.
+    case hostChats(String)
+    /// The devices paired with that machine.
+    case hostDevices(String)
+    /// That machine's name, release and upgrading it (ADR-0043).
+    case hostAbout(String)
     // The pages under Providers carry the host they were opened for and act
     // on it only while it is the connected one (`providersPage`).
     /// Providers to sign in to with a subscription or account.
@@ -60,13 +71,18 @@ struct RouteDestination: View {
         case .newConversation: NewConversationView(model: model)
         case .addProject: AddProjectView(model: model)
         case .settings: SettingsView(model: model)
+        case .general: GeneralSettingsView(model: model)
         case .hosts: HostsPage(model: model)
         case .account: AccountPage(model: model)
         case .addHost: AddHostView(model: model)
         case .machine(let hostKey): MachineSettingsView(model: model, hostKey: hostKey)
         case .host(let hostKey): HostDetailView(model: model, hostKey: hostKey)
         case .providers(let hostKey): ProvidersView(model: model, hostKey: hostKey)
-        case .upgrade(let hostKey): HostUpgradeView(model: model, hostKey: hostKey)
+        case .hostModels(let hostKey): HostModelsView(model: model, hostKey: hostKey)
+        case .hostAgents(let hostKey): HostAgentsView(model: model, hostKey: hostKey)
+        case .hostChats(let hostKey): HostChatsView(model: model, hostKey: hostKey)
+        case .hostDevices(let hostKey): HostDevicesView(model: model, hostKey: hostKey)
+        case .hostAbout(let hostKey): HostAboutView(model: model, hostKey: hostKey)
         case .providerSubscriptions(let hostKey):
             ProvidersGate(model: model, hostKey: hostKey) { providers in
                 ProviderGridView(model: model, hostKey: hostKey, all: providers.providers, kind: .subscription)
@@ -95,11 +111,13 @@ extension Route {
         case .conversation(let ref): HostFocus(hostKey: ref.hostKey, conversationId: ref.conversationId)
         case .conversations(let hostKey, _): hostKey.map { HostFocus(hostKey: $0) }
         case .newConversation(let hostKey), .addProject(let hostKey), .machineUnavailable(let hostKey),
-             .machine(let hostKey), .host(let hostKey), .providers(let hostKey), .upgrade(let hostKey),
+             .machine(let hostKey), .host(let hostKey), .providers(let hostKey),
+             .hostModels(let hostKey), .hostAgents(let hostKey), .hostChats(let hostKey),
+             .hostDevices(let hostKey), .hostAbout(let hostKey),
              .providerSubscriptions(let hostKey), .providerKeys(let hostKey),
              .provider(let hostKey, _, _), .customEndpoint(let hostKey, _):
             HostFocus(hostKey: hostKey)
-        case .settings, .addHost, .hosts, .account: nil
+        case .settings, .general, .addHost, .hosts, .account: nil
         }
     }
 }

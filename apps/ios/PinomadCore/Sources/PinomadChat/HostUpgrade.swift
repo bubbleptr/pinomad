@@ -1,6 +1,6 @@
 import PinomadCore
 
-// Settings → Upgrade (ADR-0043): the words and states the page derives from
+// Settings → host → About's Version (ADR-0043): the words and states the page derives from
 // the host's `upgrade` stream, the same as the Web's host-upgrade-section.
 
 /// The refusal agent work gets while the host installs (upgrade.ts `HOST_UPGRADING_ERROR`).

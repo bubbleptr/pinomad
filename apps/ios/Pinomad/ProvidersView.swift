@@ -15,6 +15,7 @@ struct ProvidersView: View {
             ProvidersHomeList(hostKey: hostKey, home: ProvidersHome(providers.providers), connected: model.connected)
         }
         .navigationTitle("Providers")
+        .hostTitle(model, hostKey: hostKey, title: "Providers", page: true)
     }
 }
 

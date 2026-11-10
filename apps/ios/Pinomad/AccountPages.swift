@@ -1,7 +1,7 @@
 import PinomadCore
 import SwiftUI
 
-/// Settings → Account (ADR-0022), one page in groups: who is signed in
+/// The account (ADR-0022), opened from the home's top-left button, one page in groups: who is signed in
 /// where, with Sign out; the email; every sign-in method, one row each;
 /// the signed-in devices; and the two account-wide
 /// actions set apart under Danger Zone. Every change confirms in a sheet or

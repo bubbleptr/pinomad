@@ -2,7 +2,7 @@
 import Foundation
 import PinomadCore
 
-/// `PINOMAD_DEMO_SETTINGS=upgrade-<state>`: the Upgrade page over a 5.30
+/// `PINOMAD_DEMO_SETTINGS=upgrade-<state>`: the About page over a 5.30
 /// demo host. `available`, `crosses` (a new protocol major), `waiting`,
 /// `installing`, `restarting` (installing, connection lost), `failed`,
 /// `check-error`, `current`, `source`, `no-service`, `off` (checks off), and

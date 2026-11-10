@@ -42,7 +42,7 @@ Mac App 里登录后，**Set up this Mac**（在添加第一台宿主的页面�
 
 - **Web**：任何现代浏览器打开 [app.pinomad.si](https://app.pinomad.si/)。
 - **Mac App**（Apple 芯片）：[GitHub Releases](https://github.com/bubbleptr/pinomad/releases) 上签名过的 DMG，会自动更新。
-- **iPhone**：在 Settings 里点 **Sign in**。App 里还不能注册，先在 Web 或 Mac App 上注册。iPhone App 目前只在内部 TestFlight 上。
+- **iPhone**：点首页左上角的账号按钮。App 里还不能注册，先在 Web 或 Mac App 上注册。iPhone App 目前只在内部 TestFlight 上。
 
 配对过的宿主显示 **Connect**。没有自动配上的宿主显示 **Pair**（比如以前在这台设备上删掉过的），点它配对。
 
@@ -50,7 +50,7 @@ Mac App 里登录后，**Set up this Mac**（在添加第一台宿主的页面�
 
 ## 4. 推送通知
 
-对话等你回答、完成或失败时，iPhone App 可以推送通知。在 App 的 Settings → Notifications 里打开（默认关闭，对所有宿主生效）；iPhone 登录的要是宿主加入的同一个账号。推送只带对话标题和事件，不带问题或回复；标题会经过服务端和 Apple。细节见[使用说明](/zh/docs/usage/)。
+对话等你回答、完成或失败时，iPhone App 可以推送通知。在 App 的 Settings → General → Notifications 里打开（默认关闭，对所有宿主生效）；iPhone 登录的要是宿主加入的同一个账号。推送只带对话标题和事件，不带问题或回复；标题会经过服务端和 Apple。细节见[使用说明](/zh/docs/usage/)。
 
 ## 照看宿主
 
@@ -59,7 +59,7 @@ pinomad status      # 加入的账号、局域网端口、服务状态、宿主�
 pinomad upgrade     # 等正在跑的任务结束，装上新版本，重启
 ```
 
-也可以在任一客户端里升级（Web 和 Mac App 在设置 → About，iPhone 在宿主页面 → Upgrade），或者让宿主空闲时自己升级，见[升级宿主](/zh/docs/upgrade/)。`pinomad upgrade` 只升级 pinomad；再跑一次安装脚本会连它自带的 Node 一起更新。服务参数、日志和各平台的注意事项见[常驻运行](/zh/docs/service/)。
+也可以在任一客户端里升级（设置 → About；iPhone 上在设置里点进宿主，再进入 About），或者让宿主空闲时自己升级，见[升级宿主](/zh/docs/upgrade/)。`pinomad upgrade` 只升级 pinomad；再跑一次安装脚本会连它自带的 Node 一起更新。服务参数、日志和各平台的注意事项见[常驻运行](/zh/docs/service/)。
 
 卸载：先 `pinomad service uninstall`，再删掉 `~/.pinomad/runtime`、`~/.local/bin/pinomad`，以及 shell 配置文件里以 `# added by https://pinomad.si/install.sh` 结尾的那一行。`~/.pinomad` 里其余的数据会留着，要删自己删。
 
