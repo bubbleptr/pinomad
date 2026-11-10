@@ -3850,3 +3850,23 @@ fn a_hello_without_the_process_doc_settles_a_waiting_switch() {
         Some(2.0)
     );
 }
+
+#[test]
+fn a_sync_deadline_after_the_reconnect_shell_reports_the_sync_stage() {
+    use pinomad_core::remote_durable::CandidateFailureStage;
+    let mut h = setup();
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    // The host streams answer, so the shell shows; the conversation snapshot
+    // is held, so the sync barrier is still open when the deadline fires.
+    h.host.held.insert("conversation:1".to_string());
+    h.disconnect(1000, None);
+    h.fire_timer();
+    assert_eq!(h.connection(), "connected");
+    assert!(!h.remote.conversation_is_fresh());
+
+    let before = h.failures.len();
+    let (timer, _) = h.deadlines.pop().expect("the sync deadline is still armed");
+    h.handle(Event::TimerFired { timer });
+    assert_eq!(h.failures.len(), before + 1, "the deadline must fail the dial");
+    assert_eq!(h.failures[before].stage, CandidateFailureStage::Sync);
+}

@@ -918,6 +918,31 @@ it("closes the side when the archive removes it or its root", async () => {
   });
 });
 
+describe("RemoteDurable sync deadline after the reconnect shell", () => {
+  it("reports the sync stage", async () => {
+    const { transport, hold, disconnect } = fakeTransport([{}]);
+    const failures: CandidateFailure[] = [];
+    const remote = await connectRemoteDurable({
+      transport,
+      reconnectDelayMs: { min: 20, max: 20 },
+      candidateTimeouts: { socketOpenMs: 1000, noiseMs: 1000, helloMs: 1000, syncMs: 150 },
+      onCandidateFailure: (failure) => failures.push(failure),
+    });
+    try {
+      await remote.controller.switchConversation(id(1));
+      hold("conversation:1" as StreamName);
+      disconnect();
+      await waitForView(remote, (view) => view.connection === "connected");
+      // The disconnect itself already recorded one "closed" failure.
+      const before = failures.length;
+      await expect.poll(() => failures.length, { timeout: 2000 }).toBeGreaterThan(before);
+      expect(failures[before]).toMatchObject({ stage: "sync", reason: "no progress within 150ms" });
+    } finally {
+      remote.close();
+    }
+  });
+});
+
 describe("RemoteDurable image refs", () => {
   const conversationSubscribes = (sent: readonly ClientFrame[]) =>
     sent.filter(
