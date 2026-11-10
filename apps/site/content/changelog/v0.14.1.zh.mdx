@@ -1,0 +1,13 @@
+---
+title: 宿主在 npm 12 下也能检查新版本
+version: v0.14.1
+date: 2026-11-10
+---
+
+**升级前**
+
+- 用 `pinomad upgrade` 升级宿主。Node 自带 npm 12 的 0.14.0 宿主没法在 Settings 里检查新版本，这一次要在终端里升级。
+
+**宿主**
+
+- Node 自带 npm 12 的宿主，Settings → 宿主 → About 不再显示 "Couldn't check for releases: npm view returned no version"，**Check now**、Notify 和 When idle 恢复正常。
