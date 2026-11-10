@@ -222,6 +222,15 @@ export const DERIVE_CHAT_CASES: DeriveChatCase[] = [
     busy: false,
   },
   {
+    name: "subagent-worktree",
+    view: view([
+      user("go"),
+      assistant([call("c1", "subagent", { task: "edit", checkout: "worktree" })], "toolUse"),
+      result("c1", "subagent", "report", false, { conversationId: 9, name: "editor", branch: "pinomad/9-ab12", base: "abc", startedAt: 1000 }, 4000),
+    ]),
+    busy: false,
+  },
+  {
     name: "tool-result-images",
     view: view([
       user("go"),

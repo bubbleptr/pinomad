@@ -162,7 +162,7 @@ public enum ChatAdapter {
         switch tool.pinomad {
         case .diff(let patch):
             output = output.map { $0 + "\n\n" + patch } ?? patch
-        case let .subagent(conversationId, recorded, model, _, _):
+        case let .subagent(conversationId, recorded, model, _, _, _):
             // The detail carries the child's recorded result; it stands in
             // when the call's own output is absent.
             output = output ?? recorded

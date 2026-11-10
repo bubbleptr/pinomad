@@ -47,6 +47,7 @@ fn pinomad(json: &Json) -> Option<PinomadToolDetail> {
             model: text(json.get("model")),
             started_at: num(json.get("startedAt")),
             ended_at: num(json.get("endedAt")),
+            branch: text(json.get("branch")),
         }),
         _ => None,
     }

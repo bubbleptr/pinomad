@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { getCurrentSystemPrompt } from "@earendil-works/pi-ai";
 import type { Models } from "@earendil-works/pi-ai/models";
-import { fauxAssistantMessage, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
+import { fauxAssistantMessage, fauxToolCall, type FauxResponseFactory, type FauxResponseStep } from "@earendil-works/pi-ai/providers/faux";
 import { AgentDoc, type AgentState, type ConversationId, type Harness } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
@@ -18,8 +18,8 @@ import { isBusy, transcript } from "@pinomad/protocol/transcript.ts";
 import { coding } from "../src/extensions/coding.ts";
 import { createContext } from "../src/extensions/context.ts";
 import { createSubagent } from "../src/extensions/subagent.ts";
-import { branchSuffix, worktreeBranch } from "../src/checkout.ts";
-import { checkoutInfo, IndexDoc } from "../src/organization.ts";
+import { branchSuffix, worktreeBranch, worktreePath } from "../src/checkout.ts";
+import { checkoutInfo, IndexDoc, subagentWorktreeBase } from "../src/organization.ts";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { OpenedHost } from "../src/host.ts";
 import { connectTo, startChat, startConversation, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
@@ -818,5 +818,115 @@ describe("worktree checkouts", () => {
     const prompt = prompts.at(-1)!;
     expect(prompt).toContain("git worktree PiNomad created for this conversation");
     expect(prompt).not.toContain("This conversation is a fork");
+  });
+});
+
+// ADR-0046 §5: a subagent can get its own worktree from its dispatcher's HEAD.
+describe("subagent worktrees", () => {
+  const subagentExtensions = (dataDir: string) =>
+    ({ models, modelSummaries }: { models: Models; modelSummaries: () => readonly ModelSummary[] }) => {
+      let harness: Harness | undefined;
+      return {
+        bind: (value: Harness) => (harness = value),
+        extensions: [
+          coding,
+          createSubagent({
+            models,
+            modelSummaries,
+            exclude: [],
+            worktree: {
+              base: (dispatcher, ctx) => subagentWorktreeBase(harness!, dataDir, dispatcher, ctx),
+              path: (child) => worktreePath(dataDir, child),
+            },
+          }),
+        ],
+      };
+    };
+
+  async function setup(answers: readonly (string | FauxResponseStep)[], home: "project" | "chat" = "project") {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const repoDir = join(dir.path, "repo");
+    await initRepo(repoDir);
+    const dataDir = await tempDir();
+    defer(dataDir.remove);
+    let bind!: (harness: Harness) => void;
+    const host = await startFauxHost(defer, {
+      dataDir: dataDir.path,
+      projects: [repoDir],
+      extensions: (provided: { models: Models; modelSummaries: () => readonly ModelSummary[] }) => {
+        const built = subagentExtensions(dataDir.path)(provided);
+        bind = built.bind;
+        return built.extensions;
+      },
+      answers,
+    });
+    bind(host.harness);
+    const client = await connectTo(defer, host);
+    const parent =
+      home === "project"
+        ? await startConversation(client, { kind: "project", path: repoDir }, "delegate")
+        : await startChat(client, "delegate");
+    return { host, client, parent, repoDir, dataDir: dataDir.path };
+  }
+
+  const delegate = (args: Record<string, string | boolean>) =>
+    fauxAssistantMessage(fauxToolCall("subagent", { task: "edit things", name: "editor", checkout: "worktree", ...args }), {
+      stopReason: "toolUse",
+    });
+  const resultOf = (client: RemoteDurable) => {
+    const entry = client.view
+      .current()
+      .conversation!.entries.find((candidate) => candidate.kind === "pi.tool-result" && (candidate.model?.[0] as { toolName?: string }).toolName === "subagent");
+    return entry?.model?.[0] as { content: { type: string; text?: string }[]; isError?: boolean; details?: Record<string, unknown> };
+  };
+
+  it("branches from the dispatcher's HEAD without its uncommitted changes, and the child edits only its worktree", async () => {
+    const { host, client, parent, dataDir } = await setup([
+      fauxAssistantMessage(fauxToolCall("bash", { command: "echo dirty > uncommitted.txt" }), { stopReason: "toolUse" }),
+      delegate({}),
+      fauxAssistantMessage(fauxToolCall("bash", { command: "echo child > made-by-child.txt" }), { stopReason: "toolUse" }),
+      "child done",
+      "parent final",
+    ]);
+    await settled(client, "parent final");
+    const parentCwd = cwdOf(client);
+    const head = await git(parentCwd, ["rev-parse", "HEAD"]);
+
+    const result = resultOf(client);
+    expect(result.isError).not.toBe(true);
+    const details = result.details as { conversationId: ConversationId; branch: string; base: string };
+    expect(details.base).toBe(head);
+    expect(details.branch).toMatch(new RegExp(`^pinomad/${details.conversationId}-[0-9a-f]{4}$`));
+    expect(result.content[0]!.text).toBe(`[subagent editor answered on branch ${details.branch} (from ${head.slice(0, 12)})]\n\nchild done`);
+
+    const childDir = join(dataDir, "worktrees", String(details.conversationId));
+    expect(await realpath((await host.harness.snapshot(AgentDoc, details.conversationId, BACKGROUND_CONTEXT))!.cwd!)).toBe(
+      await realpath(childDir),
+    );
+    expect(await git(childDir, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe(details.branch);
+    expect(await exists(join(childDir, "made-by-child.txt"))).toBe(true);
+    expect(await exists(join(childDir, "uncommitted.txt"))).toBe(false);
+    expect(await exists(join(parentCwd, "made-by-child.txt"))).toBe(false);
+
+    // Changes on the child resolve its own worktree (ADR-0040).
+    const socket = await socketTo(host);
+    const changes = await call(socket, "changes", { conversationId: details.conversationId });
+    expect(changes.ok && changes.value).toMatchObject({ available: true, base: head, branch: details.branch });
+    expect(changes.ok ? (changes.value as { patch: string }).patch : "").toContain("made-by-child.txt");
+
+    // Archiving the parent removes the child's clean worktree and keeps its branch.
+    await rm(join(childDir, "made-by-child.txt"));
+    expect((await call(socket, "archive", { conversationId: parent, archived: true })).ok).toBe(true);
+    await until(async () => !(await exists(childDir)));
+    expect(await git(parentCwd, ["branch", "--list", details.branch])).toContain(details.branch);
+  });
+
+  it("refuses a worktree in a Chat", async () => {
+    const { client } = await setup([delegate({}), "parent final"], "chat");
+    await settled(client, "parent final");
+    const result = resultOf(client);
+    expect(result.isError).toBe(true);
+    expect(result.content.map((block) => block.text ?? "").join("")).toContain('checkout "worktree" needs a project conversation, not a Chat; use "shared"');
   });
 });

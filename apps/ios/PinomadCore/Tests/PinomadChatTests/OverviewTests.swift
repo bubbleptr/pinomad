@@ -16,7 +16,7 @@ private func run(_ id: String, spawning children: [UInt64]) -> ChatEntry {
             state: .outputAvailable, argsText: nil, children: [], diffStat: nil,
             durationMs: nil, images: [], output: nil, toolCallId: "call-\(child)",
             toolName: "subagent",
-            pinomad: .subagent(conversationId: child, output: nil, model: nil, startedAt: nil, endedAt: nil)
+            pinomad: .subagent(conversationId: child, output: nil, model: nil, startedAt: nil, endedAt: nil, branch: nil)
         )
     }
     let cot = CotView(

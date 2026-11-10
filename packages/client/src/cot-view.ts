@@ -130,6 +130,8 @@ export type PinomadToolDetail =
       startedAt?: number;
       /** The tool result's timestamp — the run's end for elapsed time. */
       endedAt?: number;
+      /** Its own worktree's branch, when dispatched with `checkout: "worktree"` (ADR-0046 §5). */
+      branch?: string;
     };
 
 /** A tool item that may carry a `pinomad` render payload; what deriveChat produces. */
@@ -359,7 +361,7 @@ function toolItem(
   if (classified?.type === "pinomad.diff") {
     pinomad = { kind: "diff", patch: classified.value.patch };
   } else if (child !== undefined) {
-    const detail = details as { model?: unknown; startedAt?: unknown };
+    const detail = details as { model?: unknown; startedAt?: unknown; branch?: unknown };
     pinomad = {
       kind: "subagent",
       conversationId: child,
@@ -367,6 +369,7 @@ function toolItem(
       ...(typeof detail.model === "string" ? { model: detail.model } : {}),
       ...(typeof detail.startedAt === "number" ? { startedAt: detail.startedAt } : {}),
       ...(typeof result?.timestamp === "number" ? { endedAt: result.timestamp } : {}),
+      ...(typeof detail.branch === "string" ? { branch: detail.branch } : {}),
     };
   }
   if (toolName === "codemode" && result === undefined) {

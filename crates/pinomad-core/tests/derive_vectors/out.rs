@@ -70,6 +70,7 @@ fn pinomad_json(detail: &PinomadToolDetail) -> Json {
             model,
             started_at,
             ended_at,
+            branch,
         } => obj(&[
             ("kind", Some(s("subagent"))),
             ("conversationId", Some(num(*conversation_id as f64))),
@@ -77,6 +78,7 @@ fn pinomad_json(detail: &PinomadToolDetail) -> Json {
             ("model", model.as_deref().map(s)),
             ("startedAt", started_at.map(num)),
             ("endedAt", ended_at.map(num)),
+            ("branch", branch.as_deref().map(s)),
         ]),
     }
 }

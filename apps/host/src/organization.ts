@@ -2,7 +2,7 @@
 // holds the project registry and every top-level conversation's home. This is core
 // code, not an extension: the document's semantics are part of the host protocol.
 import { mkdir, realpath, stat } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { basename, join, resolve, sep } from "node:path";
 import type { Context } from "@earendil-works/chord";
 import { clampThinkingLevel, type ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { Models } from "@earendil-works/pi-ai/models";
@@ -22,7 +22,7 @@ import type { Home, HostIndex, Project, WorktreeCheckout } from "@pinomad/protoc
 import type { AgentRole, AgentRoles } from "@pinomad/protocol/agents.ts";
 import type { MessageImage } from "@pinomad/protocol/images.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
-import { branchSuffix, checkoutAt, gitBase, removeWorktree, worktreeBranch, worktreePath } from "./checkout.ts";
+import { branchSuffix, checkoutAt, gitBase, type RepoBase, removeWorktree, worktreeBranch, worktreePath } from "./checkout.ts";
 import { messageContent } from "./message-content.ts";
 import { RoleDoc } from "./role-doc.ts";
 
@@ -457,6 +457,29 @@ export async function familyRoot(harness: Harness, id: ConversationId, context: 
     current = parent;
   }
   return current;
+}
+
+/**
+ * Where a subagent's own worktree starts (ADR-0046 §5, ADR-0010): the
+ * repository and subdirectory of the dispatcher's checkout, at that
+ * checkout's current HEAD. Uncommitted changes are not carried over. Chat,
+ * non-Git, and commit-less checkouts have none: those subagents use "shared".
+ */
+export async function subagentWorktreeBase(
+  harness: Harness,
+  dataDir: string,
+  dispatcher: ConversationId,
+  context: Context,
+): Promise<RepoBase> {
+  const unavailable = (why: string) => new Error(`checkout "worktree" needs ${why}; use "shared"`);
+  const cwd = (await harness.snapshot(AgentDoc, dispatcher, context))?.cwd;
+  if (cwd === undefined || cwd.startsWith(join(dataDir, "chats") + sep)) throw unavailable("a project conversation, not a Chat");
+  const head = await gitBase(cwd);
+  if (head === undefined) throw unavailable("a Git repository with at least one commit");
+  // In the dispatcher's own worktree, branch from the main repository so git
+  // work on it serializes on one lock; the HEAD is the worktree's.
+  const record = checkoutAt((await harness.snapshot(IndexDoc, context))?.checkouts, cwd);
+  return record === undefined ? head : { repo: record.repo, subdir: record.subdir, base: head.base };
 }
 
 export async function cleanupArchivedWorktrees(

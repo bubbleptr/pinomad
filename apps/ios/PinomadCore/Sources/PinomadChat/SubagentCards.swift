@@ -114,7 +114,7 @@ extension ChatAdapter {
         var model: String?
         var elapsed: String?
         var recorded: String?
-        if case let .subagent(_, output, modelName, startedAt, endedAt)? = tool.pinomad {
+        if case let .subagent(_, output, modelName, startedAt, endedAt, _)? = tool.pinomad {
             model = modelName
             recorded = output
             elapsed = elapsedText(startedAt: startedAt, endedAt: endedAt)
@@ -148,7 +148,7 @@ extension ChatAdapter {
 
     static func conversationID(of tool: ToolItem) -> UInt64? {
         guard let detail = tool.pinomad,
-              case let .subagent(conversationId, _, _, _, _) = detail
+              case let .subagent(conversationId, _, _, _, _, _) = detail
         else { return nil }
         return conversationId
     }

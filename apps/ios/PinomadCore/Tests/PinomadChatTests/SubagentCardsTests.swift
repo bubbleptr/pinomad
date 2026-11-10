@@ -24,7 +24,7 @@ private func subagentTool(
         toolName: "subagent",
         pinomad: .subagent(
             conversationId: conversationId, output: nil, model: model,
-            startedAt: startedAt, endedAt: endedAt
+            startedAt: startedAt, endedAt: endedAt, branch: nil
         )
     )
 }

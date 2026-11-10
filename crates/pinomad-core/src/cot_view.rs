@@ -400,6 +400,7 @@ fn tool_item(
             model: details.and_then(|d| d.get("model")).and_then(Json::as_str).map(|m| m.to_string_lossy()),
             started_at: details.and_then(|d| d.get("startedAt")).and_then(Json::as_number),
             ended_at: result.and_then(|r| r.get("timestamp")).and_then(Json::as_number),
+            branch: details.and_then(|d| d.get("branch")).and_then(Json::as_str).map(|b| b.to_string_lossy()),
         });
     }
     if tool_name.is_some_and(|n| n.units() == lit("codemode")) && result.is_none() {

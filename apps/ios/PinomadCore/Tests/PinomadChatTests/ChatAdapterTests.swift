@@ -189,7 +189,7 @@ struct FallbackTests {
         let call = ChatAdapter.call(
             tool(output: nil, pinomad: .subagent(
                 conversationId: 42, output: "done", model: "openai/gpt-5",
-                startedAt: nil, endedAt: nil
+                startedAt: nil, endedAt: nil, branch: nil
             )),
             fallbackId: "x"
         )

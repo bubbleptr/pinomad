@@ -32,7 +32,10 @@ export type SubagentRecord = {
   createdBy: TaskId;
   /** Foreground only: the call it is still answering; cleared when the call settles it. */
   call?: TaskId;
-  checkout: "shared";
+  checkout: "shared" | "worktree";
+  /** Worktree only: its own branch and the commit it started at (ADR-0046 §5). */
+  branch?: string;
+  base?: string;
   description?: string;
   status: SubagentStatus;
   /** Reporter tasks not yet settled. */
@@ -281,7 +284,7 @@ async function settle(
     if (input.from === "model" && prior !== "steer") {
       // A message from the model wakes it with the answer, even when a user
       // message ended in the same answer and was only noted.
-      report = steer(`[subagent ${name} answered]\n\n${await answerText(tx, settled.answer)}`);
+      report = steer(`${answeredHeader(name, record)}\n\n${await answerText(tx, settled.answer)}`);
       record.reported[key] = "steer";
     } else if (input.from === "user" && prior === undefined) {
       const turns = (await userMessages(tx, record)).count;
@@ -311,6 +314,13 @@ async function settle(
   }
   if (report !== undefined) await sender.submit(tx, { ...report, requestId: `subagent-report:${reporter}` });
   release(record, reporter, status);
+}
+
+/** The first line of an answer's report: names the subagent, and its branch when it has its own worktree. */
+export function answeredHeader(name: string, record: { readonly branch?: string; readonly base?: string } | undefined): string {
+  return record?.branch === undefined
+    ? `[subagent ${name} answered]`
+    : `[subagent ${name} answered on branch ${record.branch} (from ${record.base?.slice(0, 12) ?? "?"})]`;
 }
 
 /** The text of an assistant entry; pi-ai's assistant content is always a block array. */
