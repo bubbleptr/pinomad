@@ -23,6 +23,14 @@ describe("parseRelease", () => {
     expect(parseRelease(JSON.stringify(VIEW))).not.toHaveProperty("protocolMajor");
   });
 
+  it("reads npm 12's output, which wraps the view in an array", () => {
+    expect(parseRelease(JSON.stringify([{ ...VIEW, pinomad: { protocolMajor: 5 } }]))).toEqual({
+      version: "0.14.0",
+      publishedAt: Date.parse("2026-11-09T10:00:00.000Z"),
+      protocolMajor: 5,
+    });
+  });
+
   it("rejects output without a publish time for the version", () => {
     expect(() => parseRelease(JSON.stringify({ version: "0.14.0", time: {} }))).toThrow(/publish time/);
   });

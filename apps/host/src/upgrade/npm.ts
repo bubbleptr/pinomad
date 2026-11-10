@@ -45,9 +45,13 @@ export function viewCommand(npm: NpmCommand): NpmCommand {
 /**
  * Parses `npm view pinomad@latest version time pinomad --json`. npm reads its
  * own registry and proxy configuration, so the host needs none of its own.
+ * npm 12 wraps the view in an array, one entry per matching version; for
+ * `@latest` that is one entry, the last being the newest either way.
  */
 export function parseRelease(stdout: string): Release {
-  const value = JSON.parse(stdout) as { version?: unknown; time?: unknown; pinomad?: unknown };
+  const parsed = JSON.parse(stdout) as unknown;
+  const value = (Array.isArray(parsed) ? parsed.at(-1) : parsed) as { version?: unknown; time?: unknown; pinomad?: unknown } | undefined;
+  if (value === undefined || value === null) throw new Error("npm view returned no version");
   if (typeof value.version !== "string") throw new Error("npm view returned no version");
   const time = value.time as Record<string, unknown> | undefined;
   const published = typeof time?.[value.version] === "string" ? Date.parse(time[value.version] as string) : Number.NaN;
