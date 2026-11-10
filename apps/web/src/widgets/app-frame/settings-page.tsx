@@ -261,11 +261,11 @@ export function useSettingsScreen({
         <SideNav
           aria-label="Settings sections"
           resizable={{ defaultWidth: 260, minWidth: 240, maxWidth: 320, autoSaveId: "pinomad-settings-nav" }}
-          header={
-            <div
-              className="pinomad-drag flex h-6 items-center"
-              style={safeLeft === undefined ? undefined : { paddingLeft: safeLeft }}
-            >
+          // The macOS traffic lights own the top band: it stays an empty
+          // drag strip and the way back sits below it, over the search.
+          {...(safeLeft === undefined ? {} : { header: <div className="pinomad-drag h-6" /> })}
+          topContent={
+            <VStack gap={2}>
               <span ref={closeSlot} className="contents">
                 <Button
                   label="Settings"
@@ -274,11 +274,12 @@ export function useSettingsScreen({
                   size="sm"
                   icon={<ChevronRight aria-hidden="true" className="size-4 rotate-180" />}
                   onClick={onClose}
+                  className="self-start"
                 />
               </span>
-            </div>
+              {searchField}
+            </VStack>
           }
-          topContent={searchField}
         >
           <VStack gap={3}>
             {noMatch}
