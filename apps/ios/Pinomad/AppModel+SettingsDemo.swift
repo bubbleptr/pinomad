@@ -15,8 +15,9 @@ import PinomadCore
 /// leaves behind, with no session. The addresses are
 /// `.invalid` and the injected hosts block switching and forgetting, so
 /// nothing reaches the keychain or the network. `upgrade-…` opens the first
-/// machine's Upgrade page in one of `applyUpgradeDemo`'s states; `hosts`
-/// opens Settings, where both machines list their routes (#502).
+/// machine's About page in one of `applyUpgradeDemo`'s states; `hosts`
+/// opens Settings, where both machines list their routes (#502), and the
+/// names in `demoPages` open that Settings page.
 extension AppModel {
     func startSettingsDemo(_ mode: String) {
         if mode == "pairing" {
@@ -96,7 +97,9 @@ extension AppModel {
             version: 1, connection: .connected, unauthorized: false,
             protocolMismatch: nil, host: HostInfo(version: "0.9.0", protocol: ProtocolVersion(major: 5, minor: 14)),
             hostName: "studio",
-            settings: HostSettingsState(acceptAccountDevices: true, hostNameCustom: true),
+            settings: HostSettingsState(
+                acceptAccountDevices: true, hostNameCustom: true, steeringMode: .oneAtATime, followUpMode: .all,
+                custom: ["hostName", "defaultModel", "followUpMode"]),
             devices: [
                 DeviceEntry(publicKey: devicePublicKey(privateKey: privateKey) ?? "", name: "iPhone",
                             pairedAt: now - 3 * 86_400_000, source: .qr),
@@ -105,8 +108,21 @@ extension AppModel {
                 DeviceEntry(publicKey: "demo-ipad", name: "iPad", pairedAt: now - 2 * 3_600_000, source: .account),
             ],
             organized: organized,
-            notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
-            agents: nil, conversation: nil
+            notices: [], models: Self.demoModels,
+            defaults: Defaults(model: ModelRef(provider: "anthropic", modelId: "claude-opus-5-5"), thinkingLevel: .high),
+            agents: AgentRoles(
+                roles: [
+                    AgentRole(name: "reviewer", description: "Reads a diff and reports bugs, most severe first.",
+                              model: "anthropic/claude-opus-5-5", thinkingLevel: .high, prompt: ""),
+                    AgentRole(name: "explorer", description: "Finds where something lives in a large codebase.",
+                              model: nil, thinkingLevel: nil, prompt: ""),
+                ],
+                problems: [AgentRoleProblem(file: "Draft.md", reason: "The name must be lowercase letters, digits and dashes.")]),
+            conversation: nil,
+            mcp: McpStatus(errors: [], servers: [
+                McpServer(name: "github", state: .connected, error: nil, tools: 12),
+                McpServer(name: "figma", state: .failed, error: "spawn figma-mcp ENOENT", tools: 0),
+            ])
         )
         if mode.hasPrefix("upgrade") { applyUpgradeDemo(mode, to: &snapshot, now: now) }
         let rejected = mode.hasPrefix("rejected")
@@ -116,13 +132,34 @@ extension AppModel {
             snapshot.unauthorized = true
         }
         publishDevSnapshot(snapshot)
-        if mode.hasPrefix("upgrade") { navPath = [.machine("demo-mbp"), .upgrade("demo-mbp")] }
+        if mode.hasPrefix("upgrade") { navPath = [.settings, .machine("demo-mbp"), .hostAbout("demo-mbp")] }
         if mode == "hosts" { navPath = [.settings] }
+        if let page = Self.demoPages[mode] { navPath = page }
         if rejected {
             failDevHost("demo-mbp", .revoked)
             if mode == "rejected-page" { navPath = [.machineUnavailable("demo-mbp")] }
         }
     }
+
+    /// `PINOMAD_DEMO_SETTINGS=<page>`: one Settings page over the demo hosts.
+    private static let demoPages: [String: [Route]] = [
+        "general": [.settings, .general],
+        "machine": [.settings, .machine("demo-mbp")],
+        "models": [.settings, .machine("demo-mbp"), .hostModels("demo-mbp")],
+        "agents": [.settings, .machine("demo-mbp"), .hostAgents("demo-mbp")],
+        "chats": [.settings, .machine("demo-mbp"), .hostChats("demo-mbp")],
+        "devices": [.settings, .machine("demo-mbp"), .hostDevices("demo-mbp")],
+        "about": [.settings, .machine("demo-mbp"), .hostAbout("demo-mbp")],
+    ]
+
+    private static let demoModels = [
+        ModelSummary(provider: "anthropic", modelId: "claude-opus-5-5", name: "Claude Opus 5.5", contextWindow: 1_000_000,
+                     thinkingLevels: [.off, .low, .medium, .high, .xhigh], images: true),
+        ModelSummary(provider: "anthropic", modelId: "claude-sonnet-5-5", name: "Claude Sonnet 5.5", contextWindow: 1_000_000,
+                     thinkingLevels: [.off, .low, .medium, .high], images: true),
+        ModelSummary(provider: "openai", modelId: "gpt-5.2", name: "GPT-5.2", contextWindow: 400_000,
+                     thinkingLevels: [.off, .minimal, .low, .medium, .high], images: true),
+    ]
 
     /// The host-link demos (#497) over the first-host home: `first-host-confirm`
     /// types a code and opens its confirm page, `first-host-ip` one asked

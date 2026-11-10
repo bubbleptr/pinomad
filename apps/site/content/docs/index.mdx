@@ -50,7 +50,7 @@ Then sign in to a model provider under Settings → Providers: a subscription yo
 
 ## 4. Push notifications
 
-The iPhone app can notify you when a conversation is waiting for your answer, finishes, or fails. Turn it on under Settings → Notifications in the app; it's off by default and covers every host. The iPhone has to be signed in to the same account the host joined. A notification carries only the conversation title and the event, never the question or the reply. The title passes through the server and Apple. More details: [Usage](/zh/docs/usage/) (Chinese).
+The iPhone app can notify you when a conversation is waiting for your answer, finishes, or fails. Turn it on under Settings → General → Notifications in the app; it's off by default and covers every host. The iPhone has to be signed in to the same account the host joined. A notification carries only the conversation title and the event, never the question or the reply. The title passes through the server and Apple. More details: [Usage](/zh/docs/usage/) (Chinese).
 
 ## Look after the host
 
@@ -59,7 +59,7 @@ pinomad status      # the account, LAN port, service, and whether the host answe
 pinomad upgrade     # wait for running tasks, install the new release, restart
 ```
 
-You can also upgrade from any client, under Settings → About on the web and in the Mac app (the host's page → Upgrade on the iPhone), and let the host upgrade itself when idle: [Upgrading the host](/docs/upgrade/). `pinomad upgrade` updates pinomad only; running the install script again updates its Node too. Service flags, logs and platform caveats: [Running as a service](/zh/docs/service/) (Chinese).
+You can also upgrade from any client, under Settings → About (on the iPhone, open the host in Settings, then About), and let the host upgrade itself when idle: [Upgrading the host](/docs/upgrade/). `pinomad upgrade` updates pinomad only; running the install script again updates its Node too. Service flags, logs and platform caveats: [Running as a service](/zh/docs/service/) (Chinese).
 
 To uninstall, run `pinomad service uninstall`, then delete `~/.pinomad/runtime`, `~/.local/bin/pinomad`, and the line in your shell profile that ends in `# added by https://pinomad.si/install.sh`. Your data in the rest of `~/.pinomad` stays until you delete it.
 

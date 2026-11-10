@@ -68,6 +68,9 @@ pub struct ClientSnapshot {
     /// again by the new hello's capability.
     #[uniffi(default = None)]
     pub processes: Option<ProcessesView>,
+    /// The host's MCP servers (the `mcp` stream) — `None` until it lands.
+    #[uniffi(default = None)]
+    pub mcp: Option<McpStatus>,
 }
 
 /// The part of `HostSettings` (settings.ts) the settings page edits.
@@ -81,6 +84,69 @@ pub struct HostSettingsState {
     /// Release checks and idle upgrades (ADR-0043 §6); `None` before 5.30.
     #[uniffi(default = None)]
     pub auto_upgrade: Option<AutoUpgradeMode>,
+    /// How steer messages queued while the agent works are delivered;
+    /// `None` when the host sent a mode this client doesn't know.
+    #[uniffi(default = None)]
+    pub steering_mode: Option<QueueDelivery>,
+    /// The same for follow-up messages.
+    #[uniffi(default = None)]
+    pub follow_up_mode: Option<QueueDelivery>,
+    /// The keys PiNomad's settings set, as opposed to pi's defaults — the
+    /// ones a "Use pi's default" can clear.
+    #[uniffi(default = [])]
+    pub custom: Vec<String>,
+}
+
+/// `QueueMode` (settings.ts): queued messages go one per turn, or all at
+/// the next boundary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum QueueDelivery {
+    OneAtATime,
+    All,
+}
+
+impl QueueDelivery {
+    fn from_str(text: &str) -> Option<Self> {
+        match text {
+            "one-at-a-time" => Some(Self::OneAtATime),
+            "all" => Some(Self::All),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::OneAtATime => "one-at-a-time",
+            Self::All => "all",
+        }
+    }
+}
+
+/// The `mcp` stream (mcp.ts `McpStatus`) without its `configPath`: no page
+/// shows where the file lives.
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct McpStatus {
+    /// Config-level errors: an unreadable file or a malformed server entry.
+    pub errors: Vec<String>,
+    pub servers: Vec<McpServer>,
+}
+
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct McpServer {
+    pub name: String,
+    pub state: McpServerState,
+    pub error: Option<String>,
+    pub tools: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum McpServerState {
+    Connecting,
+    Connected,
+    Failed,
+    Disabled,
+    /// A state this client doesn't know.
+    Other,
 }
 
 /// One paired device (devices.ts `DeviceEntry`).
@@ -293,16 +359,49 @@ fn host_name_of(view: &Json) -> Option<String> {
 
 fn settings_of(view: &Json) -> Option<HostSettingsState> {
     let settings = view.get("settings").filter(|s| !matches!(s, Json::Null))?;
-    let host_name_custom = settings
+    let custom: Vec<String> = settings
         .get("custom")
         .and_then(Json::as_array)
-        .map(|keys| keys.iter().any(|k| k.as_str().map(|s| s.to_string_lossy() == "hostName").unwrap_or(false)))
-        .unwrap_or(false);
+        .map(|keys| keys.iter().filter_map(|k| k.as_str().map(|s| s.to_string_lossy())).collect())
+        .unwrap_or_default();
+    let mode = |key: &str| {
+        settings
+            .get(key)
+            .and_then(Json::as_str)
+            .and_then(|s| QueueDelivery::from_str(&s.to_string_lossy()))
+    };
     Some(HostSettingsState {
         // Defaults on (settings.ts); a host older than the switch omits it.
         accept_account_devices: !matches!(settings.get("acceptAccountDevices"), Some(Json::Bool(false))),
-        host_name_custom,
+        host_name_custom: custom.iter().any(|key| key == "hostName"),
         auto_upgrade: auto_upgrade_of(settings),
+        steering_mode: mode("steeringMode"),
+        follow_up_mode: mode("followUpMode"),
+        custom,
+    })
+}
+
+fn mcp_of(view: &Json) -> Option<McpStatus> {
+    let mcp = view.get("mcp").filter(|m| !matches!(m, Json::Null))?;
+    let text = |entry: &Json, key: &str| entry.get(key).and_then(Json::as_str).map(|s| s.to_string_lossy());
+    let list = |key: &str| mcp.get(key).and_then(Json::as_array).cloned().unwrap_or_default();
+    Some(McpStatus {
+        errors: list("errors").iter().filter_map(|e| e.as_str().map(|s| s.to_string_lossy())).collect(),
+        servers: list("servers")
+            .iter()
+            .map(|entry| McpServer {
+                name: text(entry, "name").unwrap_or_default(),
+                state: match text(entry, "state").as_deref() {
+                    Some("connecting") => McpServerState::Connecting,
+                    Some("connected") => McpServerState::Connected,
+                    Some("failed") => McpServerState::Failed,
+                    Some("disabled") => McpServerState::Disabled,
+                    _ => McpServerState::Other,
+                },
+                error: text(entry, "error"),
+                tools: entry.get("tools").and_then(Json::as_number).filter(|n| *n >= 0.0).map(|n| n as u32).unwrap_or(0),
+            })
+            .collect(),
     })
 }
 
@@ -466,5 +565,6 @@ pub(crate) fn build(remote: &RemoteDurable) -> Option<ClientSnapshot> {
         providers: providers_of(&view),
         upgrade: upgrade_of(&view),
         processes: remote.processes_view(),
+        mcp: mcp_of(&view),
     })
 }
