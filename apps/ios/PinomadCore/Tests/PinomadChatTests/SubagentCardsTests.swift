@@ -76,6 +76,21 @@ struct SubagentCardsTests {
         #expect(card.status == .done)
     }
 
+    /// A fork shows the background call it inherited; the subagent sits under the root.
+    @Test func forkFindsTheRootsSubagentFromTheFamilyRoot() {
+        let child = summary(id: 42, kind: .subagent, parent: 1, title: "Review", status: .running, label: "Audit auth")
+        let fork = summary(id: 2, kind: .fork, parent: 1, title: "Fork")
+        let root = parent(of: child, sibling: fork)
+        let forkChild = summary(id: 43, kind: .subagent, parent: 2, title: "Docs", label: "Docs")
+        let family = ConversationNode(
+            summary: root.summary,
+            children: root.children.map { $0.summary.id == 2 ? ConversationNode(summary: fork, children: [ConversationNode(summary: forkChild, children: [])]) : $0 }
+        )
+        let found = ChatAdapter.subagentSummaries(in: family)
+        #expect(found[42]?.title == "Audit auth")
+        #expect(found[43]?.title == "Docs")
+    }
+
     @Test func ordinarySubagentHasNoRole() {
         let child = summary(id: 7, kind: .subagent, title: "Write the docs", label: "Write the docs")
         let card = ChatAdapter.card(

@@ -69,7 +69,9 @@ struct ConversationView: View {
         let subtitle = self.subtitle(agent: agentPick?.current)
         // Card facts only, so a summary's churn (updatedAt/status/activity)
         // doesn't invalidate the transcript's rows.
-        let subagentSummaries = ChatAdapter.subagentSummaries(in: node)
+        // From the family root: a fork's inherited calls name the parent's subagents.
+        let familyRoot = model.snapshot.flatMap { rootOf(organized: $0.organized, id: conversationId) } ?? node
+        let subagentSummaries = ChatAdapter.subagentSummaries(in: familyRoot)
         let failed = conversation == nil && model.opening.failed == conversationId
         // Skeleton, content and the failure state cross-fade; under Reduce
         // Motion they swap at once.

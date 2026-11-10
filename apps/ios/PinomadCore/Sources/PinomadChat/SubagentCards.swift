@@ -93,15 +93,16 @@ public struct SubagentCard: Sendable, Equatable, Identifiable {
 }
 
 extension ChatAdapter {
-    /// The card facts for one conversation's direct children. A subagent
-    /// sits under the conversation that delegated it — a fork's own
-    /// subagents under the fork — so the shown node's children are the
-    /// whole set for its runs; no cross-branch walk is needed.
+    /// The card facts for every subagent under `node`, forks included.
+    /// Pass the family root: a fork shows the calls it inherited from its
+    /// parent, whose subagents sit under the parent, not the fork.
     public static func subagentSummaries(in node: ConversationNode?) -> [UInt64: SubagentCardSummary] {
         guard let node else { return [:] }
         var summaries: [UInt64: SubagentCardSummary] = [:]
-        for child in node.children where child.summary.kind == .subagent {
-            guard let id = child.summary.id else { continue }
+        var stack = node.children
+        while let child = stack.popLast() {
+            stack.append(contentsOf: child.children)
+            guard child.summary.kind == .subagent, let id = child.summary.id else { continue }
             summaries[id] = SubagentCardSummary(
                 title: conversationName(summary: child.summary),
                 role: child.summary.role,
