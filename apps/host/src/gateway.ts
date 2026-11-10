@@ -1090,6 +1090,9 @@ function secureHandshake(
           session = new SecureSession(admitted.result);
           stage = "settled";
           await carrier.send(admitted.message);
+          // A carrier that closes mid-send still settles the send, and its
+          // close found no client to tell: registering now would never be undone.
+          if (closed) return;
           if (admitted.purpose === "signal") handlers.signal?.(connection, admitted.deviceKey);
           else handlers.client(connection, admitted.deviceKey, admitted.joined);
           handlers.onRegistered?.();

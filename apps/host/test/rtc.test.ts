@@ -23,7 +23,7 @@ import {
   type RtcPeerConnection,
   type RtcTimers,
 } from "../src/rtc.ts";
-import type { RecordCarrier } from "../src/secure-carrier.ts";
+import type { CarrierHandlers, RecordCarrier } from "../src/secure-carrier.ts";
 import {
   connectTo,
   startFauxHost,
@@ -219,6 +219,46 @@ describe("host RTC signal path", () => {
     ).resolves.toEqual({ sdp: SDP });
     expect(factory.connections[0]!.connection.closed).toBe(false);
 
+    business.close();
+    await expect.poll(() => factory.connections[0]!.connection.closed).toBe(true);
+  });
+
+  it("never registers a DataChannel that closed while message 2 was being sent", async () => {
+    const factory = new FakeFactory();
+    const host = await startFauxHost(defer, { rtc: { factory, peerTimeoutMs: 60_000 } });
+    const token = await connectTo(defer, host);
+    const { pairing, device, business } = await pairAndSignal(token);
+    await business.call("rtcOffer", { attempt: "close-mid-handshake", sdp: SDP });
+
+    let handlers: CarrierHandlers | undefined;
+    let releaseSend: (() => void) | undefined;
+    let sendStarted!: () => void;
+    const sending = new Promise<void>((resolve) => (sendStarted = resolve));
+    const carrier: RecordCarrier = {
+      open: true,
+      send: () =>
+        new Promise<void>((resolve) => {
+          releaseSend = resolve;
+          sendStarted();
+        }),
+      close: () => {},
+      handle: (next) => {
+        handlers = next;
+      },
+    };
+    factory.connections[0]!.input.onChannel({ carrier });
+    const ik = initiateIK({ prologue: SECURE_PROLOGUE, static: device, remoteStatic: pairing.hostKey });
+    handlers!.binary(ik.writeMessage1(encodeClientHello({ v: 1 })));
+    await sending;
+
+    // A closing DataChannel settles its queued sends and then reports the
+    // close, so message 2 "completes" on a channel that is already gone.
+    releaseSend!();
+    handlers!.closed();
+    // Let the handshake's continuation after the send run.
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // Not handed off: the peer still belongs to the connection that offered it.
     business.close();
     await expect.poll(() => factory.connections[0]!.connection.closed).toBe(true);
   });
