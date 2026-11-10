@@ -1240,7 +1240,7 @@ it("rolls a subagent's failure up to the family's root row", async () => {
       createSubagent({ models, modelSummaries, exclude: [] }),
     ],
     answers: [
-      fauxAssistantMessage(fauxToolCall("subagent", { task: "count the lines" }), { stopReason: "toolUse" }),
+      fauxAssistantMessage(fauxToolCall("subagent", { task: "count the lines", checkout: "shared" }), { stopReason: "toolUse" }),
       fauxAssistantMessage("boom", { errorMessage: "child blew up", stopReason: "error" }),
       "parent final",
     ],
@@ -1282,7 +1282,7 @@ it("opens a subagent's conversation from its card in the panel's Tasks detail", 
       createSubagent({ models, modelSummaries, exclude: [] }),
     ],
     answers: [
-      fauxAssistantMessage(fauxToolCall("subagent", { task: "count the lines" }), { stopReason: "toolUse" }),
+      fauxAssistantMessage(fauxToolCall("subagent", { task: "count the lines", checkout: "shared" }), { stopReason: "toolUse" }),
       "child answer",
       "parent final",
     ],
@@ -1751,7 +1751,7 @@ it("summarizes changes and subagents in the overview card and links to their det
     answers: [
       async () => {
         await gate.promise;
-        return fauxAssistantMessage(fauxToolCall("subagent", { task: "count the lines" }), { stopReason: "toolUse" });
+        return fauxAssistantMessage(fauxToolCall("subagent", { task: "count the lines", checkout: "shared" }), { stopReason: "toolUse" });
       },
       "child answer",
       "parent final",
@@ -3905,7 +3905,7 @@ it("shows the named agent a subagent ran as on its done card", async () => {
       }),
     ],
     answers: [
-      fauxAssistantMessage(fauxToolCall("subagent", { task: "count the lines", role: "reviewer" }), { stopReason: "toolUse" }),
+      fauxAssistantMessage(fauxToolCall("subagent", { task: "count the lines", role: "reviewer", checkout: "shared" }), { stopReason: "toolUse" }),
       "child answer",
       "parent final",
     ],

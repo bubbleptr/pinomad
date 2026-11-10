@@ -19,7 +19,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 32 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 33 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -278,6 +278,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
         HostFeature::TranscriptPaging => 28,
         HostFeature::AutoUpgrade => 30,
         HostFeature::Processes => 32,
+        HostFeature::SubagentMessages => 33,
     };
     host_minor >= since
 }
@@ -330,6 +331,9 @@ pub enum HostFeature {
     /// `hello.processes`, the `process:` stream, and `stopProcess` (32,
     /// ADR-0045).
     Processes,
+    /// Subagents take `submit` and `abort`, and summaries carry `name` (33,
+    /// ADR-0046); on an older host subagents stay read-only.
+    SubagentMessages,
 }
 
 

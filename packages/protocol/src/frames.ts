@@ -106,7 +106,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 32 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 33 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -542,6 +542,12 @@ export const FEATURE_SINCE = {
   autoUpgrade: 30,
   /** `hello.processes`, the `process:` stream, and the `stopProcess` call (32, ADR-0045). */
   processes: 32,
+  /**
+   * Subagents take `submit` and `abort` (33, ADR-0046): a user's message is
+   * reported to the dispatching conversation, and summaries carry `name`. An
+   * older host has no reporter for them, so clients keep subagents read-only.
+   */
+  subagentMessages: 33,
 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 

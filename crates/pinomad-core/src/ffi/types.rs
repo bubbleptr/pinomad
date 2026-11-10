@@ -725,6 +725,9 @@ pub struct ConversationSummary {
     /// Stable subagent lifecycle; absent on pre-5.26 hosts.
     #[uniffi(default = None)]
     pub lifecycle: Option<SubagentLifecycle>,
+    /// The subagent's family-unique name (5.33, ADR-0046).
+    #[uniffi(default = None)]
+    pub name: Option<String>,
     /// The subagent's actual creation model, when recorded.
     #[uniffi(default = None)]
     pub model: Option<ModelRef>,
@@ -751,6 +754,7 @@ impl ConversationSummary {
             id: core.id,
             kind: core.kind,
             lifecycle: core.lifecycle,
+            name: core.name,
             model: core.model,
             parent: core.parent,
             forked_at: core.forked_at,
@@ -777,6 +781,9 @@ impl ConversationSummary {
         }
         if let Some(lifecycle) = &self.lifecycle {
             set(&mut object, "lifecycle", Json::from(lifecycle.as_str()));
+        }
+        if let Some(name) = &self.name {
+            set(&mut object, "name", Json::from(name.clone()));
         }
         if let Some(model) = &self.model {
             set(&mut object, "model", model.to_json());

@@ -148,6 +148,8 @@ pub struct ConversationSummary {
     pub kind: Option<SummaryKind>,
     /// Subagents only: stable lifecycle class; absent on pre-5.26 hosts.
     pub lifecycle: Option<SubagentLifecycle>,
+    /// Subagents only: the family-unique name (5.33, ADR-0046).
+    pub name: Option<String>,
     /// Subagents only: the model they actually started with.
     pub model: Option<ModelRef>,
     /// Fork source conversation, or the conversation owning the subagent's
@@ -180,6 +182,7 @@ impl ConversationSummary {
             id: num_key(raw.get("id")),
             kind: SummaryKind::from_json(raw.get("kind")),
             lifecycle: SubagentLifecycle::from_json(raw.get("lifecycle")),
+            name: text(raw.get("name")),
             model: raw.get("model").and_then(ModelRef::from_json),
             parent: num_key(raw.get("parent")),
             forked_at: text(raw.get("forkedAt")),
