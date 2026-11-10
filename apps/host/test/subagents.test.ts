@@ -1,6 +1,6 @@
-// One kind of subagent (ADR-0046): background dispatch and reports, messages
-// and Stop from the model and from the user, the working limit, archive, and
-// a restart while a report is pending.
+// One kind of subagent (ADR-0046, ADR-0047): background dispatch and reports,
+// messages from the model, Stop from the model and from the user, the working
+// limit, archive, and a restart while a report is pending.
 import { once } from "node:events";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { Message } from "@earendil-works/pi-ai";
@@ -164,12 +164,11 @@ describe("background subagents", () => {
       .toMatchObject({ lifecycle: "background", name: "counter" });
   });
 
-  it("notes a user's direct messages without waking the parent, and subagent_read shows them", async () => {
+  it("refuses a user's message to a subagent; subagent_read returns its answers", async () => {
     const host = await startFauxHost(defer, {
       extensions,
       answers: scripted([
         ["count files", () => answer("42 files")],
-        ["how many md files?", () => answer("7 md files")],
         ["read it", () => call("subagent_read", { name: "counter" })],
         ["[subagent counter answered]", () => answer("noted")],
         ["go", () => call("subagent", { task: "count files", name: "counter", background: true, checkout: "shared" })],
@@ -182,41 +181,17 @@ describe("background subagents", () => {
     const child = await childNamed(host, parent, "counter");
     await expect.poll(async () => (await registry(host, parent)).counter?.status, { timeout: 15_000 }).toBe("idle");
 
+    // ADR-0047 §2: the user watches and stops a subagent; only its dispatcher messages it.
     const sent = await raw.call("submit", { conversationId: child, text: "how many md files?", whenBusy: "followUp", requestId: "user-1" });
-    expect(sent.ok).toBe(true);
-    const noted = await watchUntil(host, parent, (value) => texts(value).some((text) => text.startsWith("[The user talked")));
-    expect(texts(noted).at(-1)).toBe(
-      "[The user talked with subagent counter directly: 1 message since you last read it. Call subagent_read to see them.]",
-    );
-    // A note wakes nobody.
-    expect(idle(noted)).toBe(true);
-    expect(await host.harness.snapshot(LiveDoc, parent, context)).not.toHaveProperty("run");
+    expect(sent).toMatchObject({ ok: false, error: expect.stringContaining("Subagents take no messages from the user") });
+    const childView = await watchUntil(host, child, idle);
+    expect(texts(childView)).not.toContain("how many md files?");
+    expect((await registry(host, parent)).counter).toMatchObject({ status: "idle", reporters: [] });
 
     await (await host.harness.conversation(parent, context))!.submit({ type: "input", content: "read it" }, context);
-    const read = await watchUntil(host, parent, (value) => idle(value) && texts(value).some((text) => text.startsWith("ack: Delegated") || text.startsWith("ack: User")));
+    const read = await watchUntil(host, parent, (value) => idle(value) && texts(value).some((text) => text.startsWith("ack: counter:")));
     const results = read.entries.filter((entry) => entry.kind === "pi.tool-result").map((entry) => textOf(entry.model![0] as Message));
-    expect(results.at(-1)).toBe("Delegated: count files\n\ncounter: 42 files\n\nUser: how many md files?\n\ncounter: 7 md files");
-  });
-
-  it("takes a user's message to a foreground subagent after its call ended", async () => {
-    const host = await startFauxHost(defer, {
-      extensions,
-      answers: scripted([
-        ["count files", () => answer("42 files")],
-        ["and folders?", () => answer("3 folders")],
-        ["go", () => call("subagent", { task: "count files", name: "counter", checkout: "shared" })],
-      ]),
-    });
-    const client = await connectTo(defer, host);
-    const raw = await rawClient(host);
-    const parent = await startChat(client, "go");
-    await watchUntil(host, parent, (value) => idle(value) && texts(value).at(-1) === "ack: [subagent counter answered]");
-    const child = await childNamed(host, parent, "counter");
-
-    const sent = await raw.call("submit", { conversationId: child, text: "and folders?", whenBusy: "followUp", requestId: "user-1" });
-    expect(sent).toMatchObject({ ok: true });
-    await watchUntil(host, parent, (value) => texts(value).some((text) => text.startsWith("[The user talked with subagent counter")));
-    expect((await host.harness.snapshot(SubagentDoc, child, context))?.lifecycle).toBe("background");
+    expect(results.at(-1)).toBe("counter: 42 files");
   });
 
   it("notes a user's Stop but not the model's", async () => {
@@ -296,7 +271,7 @@ describe("background subagents", () => {
     // A send and a user's Stop land before the reporter runs its delivery.
     await host.harness.commit(async (tx) => {
       const found = (await recordOf(tx, child))!;
-      await dispatch(tx, { root: parent, name: "counter", sender: parent, from: "model", message: "never delivered" });
+      await dispatch(tx, { root: parent, name: "counter", sender: parent, message: "never delivered" });
       stopRecord(found.record, "user");
     }, context);
     await watchUntil(host, parent, (value) => texts(value).includes("[The user stopped subagent counter.]"));

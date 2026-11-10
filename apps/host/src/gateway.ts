@@ -12,8 +12,6 @@ import {
   AgentDoc,
   type CommitPublication,
   type Conversation,
-  type InputSubmissionDraft,
-  type Submission,
   type ConversationDocToken,
   type ConversationId,
   type ConversationRecord,
@@ -102,7 +100,7 @@ import { messageContent } from "./message-content.ts";
 import type { ModelAuth } from "./model-auth.ts";
 import { RoleDoc } from "./role-doc.ts";
 import { SubagentDoc } from "./subagent-doc.ts";
-import { assertDispatchable, dispatch, markStop, recordOf } from "./subagents.ts";
+import { markStop } from "./subagents.ts";
 import { attachAutoTitle } from "./auto-title.ts";
 import { TitleDoc } from "./title-doc.ts";
 import { admitDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
@@ -2319,27 +2317,6 @@ class GatewayClient {
     return await this.#options.harness.commit(async (tx) => (await tx.conversation(id))?.owner !== undefined, context);
   }
 
-  /**
-   * A user's message to a subagent (ADR-0046 §6): admitted on the child and
-   * handed to a reporter task of the dispatching conversation in one commit,
-   * so the dispatcher hears about it exactly once. The client's request id
-   * keeps a resend from admitting twice and lets the reporter find it.
-   */
-  async #submitToSubagent(conversation: Conversation, draft: InputSubmissionDraft & { readonly requestId: string }): Promise<Submission> {
-    const id = await this.#options.harness.commit(async (tx) => {
-      const found = await recordOf(tx, conversation.id);
-      if (found === undefined) throw new Error("This subagent cannot take messages: it was started before subagents could be messaged");
-      // Table reads first: none may follow the admission's writes.
-      await assertDispatchable(tx, found.root, found.name);
-      const submissionId = await conversation.submit(tx, draft);
-      await dispatch(tx, { root: found.root, name: found.name, sender: found.record.dispatcher, from: "user", requestId: draft.requestId });
-      return submissionId;
-    }, context);
-    const submission = await this.#options.harness.submission(id, context);
-    if (submission === undefined) throw new Error(`Submission ${id} does not exist`);
-    return submission;
-  }
-
   /** Start a manual compaction and report its outcome as a notice once it settles. */
   async #compact(conversation: Conversation, instructions: string | undefined): ReturnType<Conversation["compact"]> {
     const taskId = await conversation.compact(instructions, context);
@@ -2441,6 +2418,10 @@ class GatewayClient {
             // attachments used, or fail on image refs the host no longer shows.
             const existing = await this.#submissionByRequest(input.conversationId, input.requestId);
             if (existing !== undefined) return submitResult(existing);
+            // The user watches and stops a subagent; only its dispatcher messages it (ADR-0047 §2).
+            if (await this.#isSubagent(input.conversationId)) {
+              throw new Error("Subagents take no messages from the user: tell the conversation that dispatched it");
+            }
             const resolved = images();
             const conversation = await this.#conversation(input.conversationId);
             // Mark attachments used before the message write (issue #321); the
@@ -2451,15 +2432,15 @@ class GatewayClient {
             // A pending question never blocks the composer (ADR-0011 §4): mark it
             // dismissed so its wait task finishes, then steer regardless.
             const dismissed = await this.#dismissPendingQuestions(conversation.id, context);
-            const draft = {
-              type: "input",
-              content: messageContent(text, resolved, attachments),
-              whenBusy: dismissed ? "steer" : input.whenBusy,
-              requestId: input.requestId,
-            } as const;
-            const submission = (await this.#isSubagent(conversation.id))
-              ? await this.#submitToSubagent(conversation, draft)
-              : await conversation.submit(draft, context);
+            const submission = await conversation.submit(
+              {
+                type: "input",
+                content: messageContent(text, resolved, attachments),
+                whenBusy: dismissed ? "steer" : input.whenBusy,
+                requestId: input.requestId,
+              },
+              context,
+            );
             // Admission is already durable: a failed read only loses the
             // convenience `entry`, never turns the call into `ok:false`.
             let entry: number | undefined;

@@ -543,11 +543,12 @@ export const FEATURE_SINCE = {
   /** `hello.processes`, the `process:` stream, and the `stopProcess` call (32, ADR-0045). */
   processes: 32,
   /**
-   * Subagents take `submit` and `abort` (33, ADR-0046): a user's message is
-   * reported to the dispatching conversation, and summaries carry `name`. An
-   * older host has no reporter for them, so clients keep subagents read-only.
+   * Subagents take the user's `abort` (33, ADR-0046): the dispatching
+   * conversation is told the user stopped it, and summaries carry `name`. The
+   * user cannot message a subagent (ADR-0047 §2): the host refuses `submit`.
+   * Named `subagentMessages` before 5.33 was released (ADR-0047 §5).
    */
-  subagentMessages: 33,
+  subagentStop: 33,
 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 

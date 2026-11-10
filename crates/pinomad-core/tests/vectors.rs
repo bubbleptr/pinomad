@@ -130,7 +130,7 @@ fn feature_of(name: &str) -> HostFeature {
         "transcriptPaging" => HostFeature::TranscriptPaging,
         "autoUpgrade" => HostFeature::AutoUpgrade,
         "processes" => HostFeature::Processes,
-        "subagentMessages" => HostFeature::SubagentMessages,
+        "subagentStop" => HostFeature::SubagentStop,
         other => panic!("unknown feature {other}"),
     }
 }

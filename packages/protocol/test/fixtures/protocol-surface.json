@@ -2514,7 +2514,7 @@
           "liveBranch": 11,
           "processes": 32,
           "rtc": 23,
-          "subagentMessages": 33,
+          "subagentStop": 33,
           "submitEntry": 25,
           "terminals": 27,
           "transcriptPaging": 28

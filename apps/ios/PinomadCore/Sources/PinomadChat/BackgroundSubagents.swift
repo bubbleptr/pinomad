@@ -14,7 +14,7 @@ public func conversationName(summary: ConversationSummary) -> String {
 /// Whether the user can talk to a subagent (ADR-0046 §6), the Web's
 /// `subagentMessaging`.
 public enum SubagentMessaging: Equatable, Sendable {
-    /// A host without `subagentMessages`, or a subagent from before names,
+    /// A host without `subagentStop`, or a subagent from before names,
     /// which the host refuses messages for.
     case readOnly
     /// A foreground subagent still answering the call that dispatched it:
@@ -25,7 +25,7 @@ public enum SubagentMessaging: Equatable, Sendable {
     case open
 
     public init(summary: ConversationSummary, hostMinor: UInt32) {
-        guard hostSupportsFeature(hostMinor: hostMinor, feature: .subagentMessages),
+        guard hostSupportsFeature(hostMinor: hostMinor, feature: .subagentStop),
               summary.name != nil
         else {
             self = .readOnly
