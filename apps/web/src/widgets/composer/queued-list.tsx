@@ -67,8 +67,8 @@ function useReorderTransition(items: readonly QueueItem[]): readonly QueueItem[]
 
 /** A delivery caption for a local row; a host row needs none, it is in the inbox. */
 function localCaption(status: QueueItem["status"]) {
-  if (status === "unknown") return <span className="text-muted">Not confirmed</span>;
-  if (status === "failed") return <span className="text-danger">Failed to send</span>;
+  if (status === "unknown") return <span className="text-muted-foreground">Not confirmed</span>;
+  if (status === "failed") return <span className="text-destructive">Failed to send</span>;
   return undefined;
 }
 

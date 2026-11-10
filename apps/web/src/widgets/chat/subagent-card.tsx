@@ -108,17 +108,17 @@ function SubagentCard({
           <Button label="View" variant="secondary" size="sm" onClick={() => openInPanel(pinomad.conversationId)} />
         )}
       </HStack>
-      <div className="text-xs text-muted tabular-nums">
+      <div className="text-xs text-muted-foreground tabular-nums">
         {meta.map((part, index) => (index === 0 ? <span key={index}>{part}</span> : <span key={index}> · {part}</span>))}
       </div>
       {status === "running" && summary?.activity !== undefined ? (
-        <div className="text-xs text-muted">
+        <div className="text-xs text-muted-foreground">
           → {toolDisplayName(summary.activity.tool) ?? summary.activity.tool}
           {summary.activity.target === undefined ? "" : ` ${summary.activity.target}`}
         </div>
       ) : null}
       {callStatus === "failed" && tool.output !== undefined && tool.output !== "" ? (
-        <div className="text-xs text-muted">{tool.output}</div>
+        <div className="text-xs text-muted-foreground">{tool.output}</div>
       ) : null}
     </VStack>
   );

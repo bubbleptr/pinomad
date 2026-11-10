@@ -164,11 +164,11 @@ export function useAtMentions(
           const Icon = aux?.kind === "file" ? FileIcon : Bot;
           return (
             <span className="flex w-full min-w-0 items-center gap-2">
-              <Icon aria-hidden="true" className="size-4 shrink-0 text-muted" />
+              <Icon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
               <span className="flex min-w-0 flex-1 items-baseline gap-2">
                 <span className={`truncate ${aux?.description === undefined ? "min-w-0" : "max-w-[60%] shrink-0"}`}>{item.label}</span>
                 {aux?.description === undefined ? null : (
-                  <span className="min-w-0 truncate text-xs text-muted">{aux.description}</span>
+                  <span className="min-w-0 truncate text-xs text-muted-foreground">{aux.description}</span>
                 )}
               </span>
             </span>

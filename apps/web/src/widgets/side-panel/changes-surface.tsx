@@ -90,7 +90,7 @@ export function ChangesSurface({
       >
         {branch === undefined ? null : (
           <span className="flex min-w-0 items-center gap-1 text-sm">
-            <GitBranch className="size-4 shrink-0 text-muted" aria-hidden="true" />
+            <GitBranch className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
             <span className="truncate">{branch}</span>
           </span>
         )}
@@ -98,7 +98,7 @@ export function ChangesSurface({
           <span className="shrink-0 text-sm tabular-nums">
             <ChangeFigure stat={stat} />
             {stat.kind === "ready" && stat.files > 0 && (stat.additions > 0 || stat.deletions > 0) ? (
-              <span className="text-muted">
+              <span className="text-muted-foreground">
                 {" "}
                 · {stat.files} file{stat.files === 1 ? "" : "s"}
               </span>

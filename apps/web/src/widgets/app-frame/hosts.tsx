@@ -255,7 +255,7 @@ export function HostsMenu({ onLocate }: { onLocate?: (hostKey: string) => void }
               {paired.label(host)}
               {/* Seen after the name; the hidden copy keeps the accessible
                   name "<host> (<status>)" without reading it twice. */}
-              <span aria-hidden="true" className="ms-2 text-muted">
+              <span aria-hidden="true" className="ms-2 text-muted-foreground">
                 {hostStatusText(paired.info(host))}
               </span>
               <VisuallyHidden>{`(${hostStatusText(paired.info(host)).toLowerCase()})`}</VisuallyHidden>

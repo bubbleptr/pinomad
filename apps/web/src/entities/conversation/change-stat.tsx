@@ -52,21 +52,21 @@ const count = (value: number): string => value.toLocaleString("en-US");
 /** The checkout's +N −M, or why there isn't one yet. */
 export function ChangeFigure({ stat }: { stat: Exclude<ChangeStat, { kind: "unavailable" }> }) {
   return stat.kind === "loading" ? (
-    <span className="text-muted">…</span>
+    <span className="text-muted-foreground">…</span>
   ) : stat.kind === "failed" ? (
-    <span className="text-muted">—</span>
+    <span className="text-muted-foreground">—</span>
   ) : stat.files === 0 ? (
-    <span className="text-muted">None</span>
+    <span className="text-muted-foreground">None</span>
   ) : stat.additions === 0 && stat.deletions === 0 ? (
     // Binary edits, renames and mode changes touch files without text lines.
-    <span className="text-muted">
+    <span className="text-muted-foreground">
       {stat.files} file{stat.files === 1 ? "" : "s"}
     </span>
   ) : (
     // A truncated patch undercounts: "+" marks the numbers as a floor.
     <span aria-label={`${count(stat.additions)} added, ${count(stat.deletions)} removed${stat.truncated ? " at least" : ""}`}>
       <span className="text-success">+{count(stat.additions)}{stat.truncated ? "+" : ""}</span>{" "}
-      <span className="text-danger">−{count(stat.deletions)}{stat.truncated ? "+" : ""}</span>
+      <span className="text-destructive">−{count(stat.deletions)}{stat.truncated ? "+" : ""}</span>
     </span>
   );
 }

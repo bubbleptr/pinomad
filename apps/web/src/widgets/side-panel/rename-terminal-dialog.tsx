@@ -59,7 +59,7 @@ export function RenameTerminalDialog({
               isDisabled={saving}
             />
             {error === undefined ? null : (
-              <Text type="supporting" role="alert" style={{ color: "var(--danger)" }}>
+              <Text type="supporting" role="alert" style={{ color: "var(--destructive)" }}>
                 {error}
               </Text>
             )}

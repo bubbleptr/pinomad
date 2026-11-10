@@ -94,13 +94,13 @@ export function useSlashCommands(
             aria-disabled={command.disabled === undefined ? undefined : true}
             className={`flex w-full min-w-0 items-center gap-2 ${command.disabled === undefined ? "" : "opacity-50"}`}
           >
-            <CommandLine aria-hidden="true" className="size-4 shrink-0 text-muted" />
+            <CommandLine aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
             <span className="flex min-w-0 flex-1 items-baseline gap-2">
               <span className="max-w-[60%] shrink-0 truncate">
                 /{command.name}
-                {command.argumentHint === undefined ? null : <span className="text-muted"> {command.argumentHint}</span>}
+                {command.argumentHint === undefined ? null : <span className="text-muted-foreground"> {command.argumentHint}</span>}
               </span>
-              <span className="min-w-0 truncate text-xs text-muted">{command.disabled ?? command.description}</span>
+              <span className="min-w-0 truncate text-xs text-muted-foreground">{command.disabled ?? command.description}</span>
             </span>
           </span>
         );

@@ -20,7 +20,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | --- | --- |
 | [0002](0002-pi-durable-as-runtime.md) | 以 Pi Durable 的 Harness 为内核，Durable 存储是唯一事实来源 |
 | [0005](0005-structured-presentation-types.md) | 插件状态通过带运行时 schema 的展示类型呈现，不符合时兜底渲染 |
-| [0014](0014-web-client-adopts-pace-design-system.md) | Web 客户端整套采用 Pace 的视觉基础（Tailwind v4、token 桥、Hugeicons；字体后来换成系统字体），搬界面不搬数据模型（思维链组件由 0026 修订） |
+| [0014](0014-web-client-adopts-pace-design-system.md) | Web 客户端整套采用 Pace 的视觉基础（Tailwind v4、token 桥、Hugeicons；字体后来换成系统字体），搬界面不搬数据模型（思维链组件由 0026 修订；§1、§2 由 0048 修订） |
 | [0026](0026-run-process-folds-out-of-transcript.md) | 运行过程在对话里收成一行：Web / 桌面按插话分段成灰色摘要行、原地展开，iOS 每次运行一颗胶囊加 sheet；todo 跟在最新一次运行后面；不加提示词凑插话和 todo |
 | [0034](0034-submission-delivery-and-recovery.md) | 提交的送达状态与断线恢复：只读 `submission` 查询、宿主在预处理前按 `requestId` 去重、`submit` 结果带 `entry`；重连后先查询再决定是否重发，是“断线不重放”的窄例外，“未确认”不等于失败 |
 | [0039](0039-fork-sidebar-conversations.md) | Web/桌面端把 Fork 作为左侧独立对话列在根对话之后，所有入口在主区打开；右侧只保留 Tasks。创建后的 focus 不被父对话抢回（修订 0007 §1/§2、0019 的 thread 呈现、0038 §2；§4 由 0040 修订） |
@@ -29,6 +29,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0045](0045-background-processes.md) | 后台进程由宿主在内存里用 pty 运行，不建 Durable task；工具是独立扩展，运行时是宿主服务；列表存 root 对话的 `pinomad.processes` 文档，在 Tasks 展示，宿主崩溃后记为 `lost`；只有进程自己退出才用 `steer` 回报模型（补充 0040 §1、0041；修订 0040 §6） |
 | [0046](0046-one-kind-of-subagent.md) | 子代理只有一种：都有名字，答完还能接着聊、能停，派出时用 `background` 选等不等它；后台的消息由归父对话所有的后台回报任务投递，父对话派的答完用 `steer` 唤醒，用户直接聊的只写一行通知、靠 `subagent_read` 按需拉；`checkout` 必填（共用或自己的 worktree）；状态记在派出者的 `pinomad.subagents`（修订 0038 §1、§3，0010 §5；§4 的用户通知和 §6 由 0047 修订） |
 | [0047](0047-subagents-in-tasks-read-only.md) | 子代理都在右侧 Tasks、不进侧栏，对用户只读加 Stop，不能发消息；`lifecycle` 只表示归属、不决定位置；去掉用户直接聊的通知和 `subagent_read` 的 User 标记；协议不升版本，没发布过的 5.33 feature `subagentMessages` 改名为 `subagentStop`，三部分都合入后才发版（修订 0038 §2、§3、§5，0046 §4、§6） |
+| [0048](0048-web-client-moves-to-shadcn-base-ui.md) | Web 客户端的基础组件从 Astryx 换成 shadcn 的 Base UI 版，样式仍是 Tailwind v4；token 归自己、颜色用 shadcn 的变量名，迁移期间 Astryx 的 token 名指向同一份值；不再与 Pace 同形（修订 0014 §1、§2） |
 
 ## 宿主能力与工作组织
 
@@ -103,6 +104,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | 0018 §4：单地址下的关闭码规则 | 由 0032 补充多候选作用域：错误只终止当前候选，整轮失败才汇总；只有经认证的协议主版本不兼容全局终止 |
 | 0022 §4：账号 Pair 向宿主要一份邀请 | 由 0032 补充：邀请和配对响应 additive 携带候选，服务端只转发、不持久化 endpoint |
 | 0014 §2：复制来的组件尽量原样保留，便于对照 Pace 同步 | 由 0026 修订：思维链组件改成运行过程收成一行，和 Pace 分叉 |
+| 0014 §1、§2：视觉基础建在 Astryx 上，目录和组件与 Pace 同形 | 由 0048 修订：基础组件换成 shadcn（Base UI 版），token 用 shadcn 的变量名，不再与 Pace 同形 |
 | 0006 §4：Skills 只进系统提示词；#143 的 `$name` 靠提示词规则让模型自己读 | 由 0028 补充：从 `$` 菜单选中的 skill 由宿主把全文展开进消息，提示词规则删掉；`disable-model-invocation` 只从提示词列表去掉 |
 | 0032 §3：长期 WebRTC 的并行建连由 #345 另定 | 由 0033 决定：WebRTC DataChannel 作为第四种载体，宿主作答、客户端 offer；协调器在 #345 后续 PR |
 | 0008 §1：安全通道的传输只有 WebSocket | 由 0033 补充 DataChannel 载体和只走信令的 Noise 连接 |

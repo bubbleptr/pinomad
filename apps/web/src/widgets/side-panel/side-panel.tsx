@@ -240,11 +240,11 @@ function TasksSurface({
   return (
     <VStack className="h-full min-h-0" gap={0}>
       <SurfaceBar start={barStart} end={barEnd}>
-        <span className="truncate text-sm text-muted">{tally.join(" · ")}</span>
+        <span className="truncate text-sm text-muted-foreground">{tally.join(" · ")}</span>
       </SurfaceBar>
       <Scrollable>
           {groups.length === 0 && processRows.length === 0 ? (
-            <Text type="supporting" className="p-3 text-muted">
+            <Text type="supporting" className="p-3 text-muted-foreground">
               No tasks yet
             </Text>
           ) : (
@@ -307,7 +307,7 @@ function SideRow({
       startContent={<StatusGlyph status={summary.status} />}
       endContent={
         summary.updatedAt === undefined ? undefined : (
-          <span aria-hidden="true" className="text-xs text-muted">
+          <span aria-hidden="true" className="text-xs text-muted-foreground">
             {relativeTime(summary.updatedAt, now)}
           </span>
         )
@@ -384,7 +384,7 @@ function ProcessRow({ process, onOpen }: { process: ProcessInfo; onOpen: () => v
       }
       startContent={<ProcessGlyph state={process.state} />}
       endContent={
-        <span aria-hidden="true" className="text-xs text-muted tabular-nums">
+        <span aria-hidden="true" className="text-xs text-muted-foreground tabular-nums">
           {isProcessActive(process.state) ? <ProcessDuration startedAt={process.startedAt} /> : processResultText(process.state)}
         </span>
       }
@@ -477,7 +477,7 @@ function ProcessDetail({
       </SurfaceBar>
       <div className="shrink-0 border-b border-border px-3 py-2">
         <div className="break-all font-mono text-xs">{process.command}</div>
-        <div className="mt-1 text-xs text-muted">{status}</div>
+        <div className="mt-1 text-xs text-muted-foreground">{status}</div>
         {error === undefined ? null : (
           <Text type="supporting" role="alert" className="mt-1">
             {error}
@@ -490,12 +490,12 @@ function ProcessDetail({
             <LazyXtermView processes={remote.processes} processId={process.id} onEnded={setEnded} />
           </Suspense>
         ) : (
-          <Text type="supporting" className="block p-3 text-muted">
+          <Text type="supporting" className="block p-3 text-muted-foreground">
             {unavailable}
           </Text>
         )}
       </div>
-      <div className="shrink-0 border-t border-border p-2 text-center text-xs text-muted">
+      <div className="shrink-0 border-t border-border p-2 text-center text-xs text-muted-foreground">
         Background processes stop when the host restarts.
       </div>
     </VStack>

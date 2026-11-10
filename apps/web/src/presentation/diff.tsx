@@ -108,7 +108,7 @@ function FileToggle({ open, onToggle, children }: { open: boolean; onToggle: () 
       className="flex min-w-0 items-center gap-2 rounded-[var(--radius-sm,6px)] p-1 text-left hover:bg-[var(--color-overlay-hover)] focus-visible:outline-2 focus-visible:outline-[var(--color-border-emphasized)]"
       onClick={onToggle}
     >
-      <ChevronRight className={`size-3.5 shrink-0 text-muted ${open ? "rotate-90" : ""}`} aria-hidden="true" />
+      <ChevronRight className={`size-3.5 shrink-0 text-muted-foreground ${open ? "rotate-90" : ""}`} aria-hidden="true" />
       {children}
     </button>
   );

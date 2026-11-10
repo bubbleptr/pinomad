@@ -1,7 +1,7 @@
 // Light, dark, or the system's choice: a per-device preference, so it lives in
 // this browser's storage rather than in host settings. public/theme-boot.js
 // reads the same key before the app loads so the first paint already matches.
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 
 export type Appearance = "light" | "dark" | "system";
 
@@ -41,4 +41,30 @@ function subscribe(listener: () => void): () => void {
 
 export function useAppearance(): Appearance {
   return useSyncExternalStore(subscribe, readAppearance, () => "system");
+}
+
+const SYSTEM_DARK = "(prefers-color-scheme: dark)";
+
+function subscribeSystemDark(listener: () => void): () => void {
+  const query = window.matchMedia(SYSTEM_DARK);
+  query.addEventListener("change", listener);
+  return () => query.removeEventListener("change", listener);
+}
+
+/**
+ * Keeps `<html class="dark">` in step with the appearance, "system" resolved
+ * against the OS. Tailwind's `dark:` variant keys off this class; the tokens
+ * themselves follow color-scheme and don't need it.
+ */
+export function useDarkClass(): void {
+  const appearance = useAppearance();
+  const systemDark = useSyncExternalStore(
+    subscribeSystemDark,
+    () => window.matchMedia(SYSTEM_DARK).matches,
+    () => false,
+  );
+  const dark = appearance === "dark" || (appearance === "system" && systemDark);
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", dark);
+  }, [dark]);
 }

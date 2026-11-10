@@ -79,7 +79,7 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 
 窗口底色是框架色（`--color-background-body`），侧栏直接放在底色上；工作区是从窗口边缘内缩的圆角卡片（面板，pane）：主区一张，右侧面板（Tasks / Changes / Terminal）打开时是旁边单独的一张，两张之间露出底色间隙。样式只在 `src/app/styles.css` 的 “Inset shell” 一段里定义：
 
-- 面板加 `pigui-pane`，底色 `--surface`，圆角 `--pigui-pane-radius`（12px），边缘是 `--pigui-pane-ring` 的 1px 细边，不加投影。离窗口边缘 `--pigui-pane-inset`（8px），两张面板之间 `--pigui-pane-gap`（4px）。
+- 面板加 `pigui-pane`，底色 `--background`，圆角 `--pigui-pane-radius`（12px），边缘是 `--pigui-pane-ring` 的 1px 细边，不加投影。离窗口边缘 `--pigui-pane-inset`（8px），两张面板之间 `--pigui-pane-gap`（4px）。
 - 内缩只在宽屏（≥1024px，AppFrame 给外壳加 `pigui-inset`）。窄屏没有侧栏，面板贴满窗口，不要圆角和描边。
 - 框架里显示的 `Centered` 屏（连接中、连接失败）自己就是一张面板；框架外的（还没有宿主、配对）铺满窗口，用框架色。
 - 深色模式照样“越上层越亮”：框架最暗，面板高一级，卡片（输入框、设置分组）再高一级。

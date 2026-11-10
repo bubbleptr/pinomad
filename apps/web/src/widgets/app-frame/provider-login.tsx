@@ -240,7 +240,7 @@ function CancelRow({ error, onCancel }: { error?: string; onCancel: () => void }
 
 export function InlineError({ message }: { message: string }) {
   return (
-    <Text type="supporting" role="alert" style={{ color: "var(--danger)" }}>
+    <Text type="supporting" role="alert" style={{ color: "var(--destructive)" }}>
       {message}
     </Text>
   );

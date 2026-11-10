@@ -29,8 +29,8 @@ export function ContextBreakdownList({ breakdown, window }: { breakdown: Context
         <li key={part.key} className="flex h-6 items-center gap-2 text-xs tabular-nums">
           <span aria-hidden className="size-2 shrink-0 rounded-[2px]" style={{ backgroundColor: part.color }} />
           <span className="min-w-0 flex-1 truncate">{part.label}</span>
-          <span className="text-muted">{formatTokens(breakdown[part.key])}</span>
-          <span className="w-8 text-end text-muted">{Math.round((breakdown[part.key] / window) * 100)}%</span>
+          <span className="text-muted-foreground">{formatTokens(breakdown[part.key])}</span>
+          <span className="w-8 text-end text-muted-foreground">{Math.round((breakdown[part.key] / window) * 100)}%</span>
         </li>
       ))}
     </ul>

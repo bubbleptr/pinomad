@@ -102,7 +102,7 @@ export function ModelSelector({
           {agent === undefined ? null : (
             // Same visible heading + role="group" as the Thinking section.
             <div aria-label="Agent" role="group">
-              <p className="px-2 pt-1 text-xs text-muted">
+              <p className="px-2 pt-1 text-xs text-muted-foreground">
                 {agent.kind === "pick" ? "Agent · sets the system prompt" : "Agent · fixed at creation"}
               </p>
               {agent.kind === "pick" ? (
@@ -188,7 +188,7 @@ export function ModelSelector({
             // Astryx List doesn't forward aria-label (0.3.0), so the section
             // gets a visible heading plus a role="group" wrapper.
             <div aria-label="Thinking" role="group">
-              <p className="px-2 pt-1 text-xs text-muted">Thinking</p>
+              <p className="px-2 pt-1 text-xs text-muted-foreground">Thinking</p>
               <List density="compact">
                 {levels.map((level) => (
                   <ListItem
@@ -210,7 +210,7 @@ export function ModelSelector({
       }
     >
       <Button
-        className="min-w-0 max-w-[19rem] flex-nowrap gap-1.5 px-2 text-muted"
+        className="min-w-0 max-w-[19rem] flex-nowrap gap-1.5 px-2 text-muted-foreground"
         data-testid="model-thinking-trigger"
         isDisabled={isDisabled || models.length === 0}
         label="Model and Thinking"
@@ -226,10 +226,10 @@ export function ModelSelector({
               {modelLabel(models, selected)}
             </span>
           ) : (
-            <span className="truncate text-danger">{problem.label}</span>
+            <span className="truncate text-destructive">{problem.label}</span>
           )}
           {sourceHint === undefined || problem !== undefined ? null : (
-            <span className="shrink-0 truncate text-xs text-muted">{sourceHint}</span>
+            <span className="shrink-0 truncate text-xs text-muted-foreground">{sourceHint}</span>
           )}
           {/* Astryx's own glyph, so it matches the draft tray's Selector chevrons. */}
           <Icon icon="chevronDown" size="sm" color="inherit" />

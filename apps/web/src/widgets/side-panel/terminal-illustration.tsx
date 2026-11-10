@@ -13,9 +13,9 @@ export function TerminalIllustration() {
       height="84"
       fill="none"
       aria-hidden="true"
-      className="text-muted"
+      className="text-muted-foreground"
     >
-      <rect x="4.75" y="4.75" width="110.5" height="74.5" rx="10" fill="var(--surface)" />
+      <rect x="4.75" y="4.75" width="110.5" height="74.5" rx="10" fill="var(--background)" />
       <rect x="4.75" y="4.75" width="110.5" height="74.5" rx="10" stroke="currentColor" strokeOpacity="0.45" strokeWidth="1.5" />
       <path d="M5.5 21.25h109" stroke="currentColor" strokeOpacity="0.25" strokeWidth="1.5" />
       <g fill="currentColor" fillOpacity="0.4">

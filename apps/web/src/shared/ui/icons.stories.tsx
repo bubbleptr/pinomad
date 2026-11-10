@@ -8,7 +8,7 @@ const meta = {
       {Object.entries(Icons).map(([name, Icon]) => (
         <div key={name} className="flex flex-col items-center gap-2 rounded-lg border border-border px-2 py-3">
           <Icon size={24} />
-          <span className="text-xs text-muted">{name}</span>
+          <span className="text-xs text-muted-foreground">{name}</span>
         </div>
       ))}
     </div>

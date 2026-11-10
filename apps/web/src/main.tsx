@@ -6,10 +6,11 @@ import { neutralTheme } from "@astryxdesign/theme-neutral/built";
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
-import { useAppearance } from "./entities/appearance/appearance.ts";
+import { useAppearance, useDarkClass } from "./entities/appearance/appearance.ts";
 
 function Root() {
   const appearance = useAppearance();
+  useDarkClass();
   useEffect(() => {
     void window.pinomadDesktop?.setAppearance?.(appearance);
   }, [appearance]);

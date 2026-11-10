@@ -1,6 +1,6 @@
 # PiNomad — Agent 说明
 
-架构总览在 `docs/architecture.md`，架构决策和背景在 `docs/adr/`（0001-0047，索引见 `docs/adr/README.md`），领域术语在 `GLOSSARY.md`，改动前先读。计划和待办记在 GitHub Issues，按 milestone 分组（用法见 `docs/agents/issue-tracker.md`）；`docs/roadmap.md` 只放方向和顺序，阶段或顺序变了才改。PR 用 `Closes #N` 关闭对应的 issue，不往 roadmap 里写进度。
+架构总览在 `docs/architecture.md`，架构决策和背景在 `docs/adr/`（0001-0048，索引见 `docs/adr/README.md`），领域术语在 `GLOSSARY.md`，改动前先读。计划和待办记在 GitHub Issues，按 milestone 分组（用法见 `docs/agents/issue-tracker.md`）；`docs/roadmap.md` 只放方向和顺序，阶段或顺序变了才改。PR 用 `Closes #N` 关闭对应的 issue，不往 roadmap 里写进度。
 
 新 ADR 只在三条都满足时写：难以回退、没有上下文会让人意外、确实有过取舍。分期计划进 milestone 和 issue，用法写进官网文档 `apps/site/content/docs/`（中文文件带 `.zh` 后缀，发布在 pinomad.si/docs），以官网为准；README（中英两份 `README.md` / `README.zh-CN.md` 要同步）只留简介、快速上手和文档入口；`docs/` 下只放开发和运维文档（如 `website.md`），原来的 `usage.md`、`remote-access.md`、`service.md` 只是指向官网的链接，不要再往里写。这些都不写进 ADR。新增 ADR 时同步更新索引。
 
@@ -17,6 +17,8 @@ iOS 客户端是原生的 `apps/ios`（SwiftUI + `crates/pinomad-core`，ADR-002
 Web 界面的设计规则在 `apps/web/DESIGN.md`：按钮只有 `primary` / `secondary` / `ghost` / `destructive` 四档，什么时候用哪档、什么尺寸都在那里，加按钮前先读。
 
 查 Astryx 组件的 props、variants 和 token 时，在 `apps/web` 下跑 `bunx astryx component <Name>`（`component --list` 列全部组件，`docs tokens` 查 token）。CLI 版本跟着 `@astryxdesign/core` 走；在仓库根目录跑会拉到 npm 上同名的无关包。不跑 `astryx init`：它会往 AGENTS.md 灌整段英文组件索引。
+
+Web 的基础组件正在从 Astryx 迁到 shadcn 的 Base UI 版（ADR-0048），迁完之前两套并存。新组件用 shadcn：在 `apps/web` 下跑 `bunx shadcn@latest add <name>`，源码落在 `src/shared/ui/`，归我们所有、可以直接改。设计 token 在 `apps/web/src/app/tokens.css`，颜色用 shadcn 的变量名（`text-muted-foreground`、`bg-card`、`text-destructive`）；不跑 `shadcn init`，它会改写 `styles.css`，那里的 `@layer` 顺序不能动。
 
 Web 组件的 Storybook 在 `apps/web/.storybook`（`bun run storybook`，默认端口 6006，用 `PORT=<端口>` 覆盖，几个会话并行时各用各的端口；新建 story 文件后 class 没生效就重启 Storybook）：story 和组件放在一起（`*.stories.tsx`），装饰器套 Astryx `Theme` 和 `styles.css`，工具栏切明暗；画布默认是对话栏宽度（44rem，居中），整屏的组件在 story 上设 `parameters: { canvasWidth: "full" }`。`src/test/stories.test.tsx` 在 jsdom 里渲染全部 story，进 `bun run test`；组件的 props 变了要同步改它的 story。
 

@@ -7,7 +7,7 @@ const BREAKDOWN = { used: 84_000, system: 6_000, skills: 2_000, tools: 9_000, mc
 describe("ContextFigures", () => {
   it("shows the share and the used/window counts", () => {
     render(<ContextFigures usage={{ used: 84_000, window: 200_000 }} />);
-    expect(screen.getByText("42% · 84k / 200k")).toHaveClass("text-muted");
+    expect(screen.getByText("42% · 84k / 200k")).toHaveClass("text-muted-foreground");
   });
 
   it("turns warning at four fifths of the window", () => {

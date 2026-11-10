@@ -8,7 +8,7 @@ import * as AnimatedIcons from "./animated-icons.tsx";
 const meta = {
   title: "Shared/AnimatedIcons",
   render: () => (
-    <div className="grid w-fit grid-cols-[auto_repeat(3,140px)] items-center gap-x-2 gap-y-3 text-xs text-muted">
+    <div className="grid w-fit grid-cols-[auto_repeat(3,140px)] items-center gap-x-2 gap-y-3 text-xs text-muted-foreground">
       <span />
       {Object.keys(AnimatedIcons).map((name) => (
         <span key={name} className="text-center">{name}</span>

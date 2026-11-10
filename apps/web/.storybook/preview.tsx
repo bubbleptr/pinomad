@@ -3,8 +3,21 @@ import "./preview.css";
 import { Theme } from "@astryxdesign/core";
 import { neutralTheme } from "@astryxdesign/theme-neutral/built";
 import type { Preview } from "@storybook/react-vite";
+import { useEffect } from "react";
 
 type Mode = "system" | "light" | "dark";
+
+/** The class `dark:` styles follow, from the toolbar's mode (the app's useDarkClass reads its own setting). */
+function DarkClass({ mode }: { mode: Mode }) {
+  useEffect(() => {
+    const system = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => document.documentElement.classList.toggle("dark", mode === "dark" || (mode === "system" && system.matches));
+    apply();
+    system.addEventListener("change", apply);
+    return () => system.removeEventListener("change", apply);
+  }, [mode]);
+  return null;
+}
 
 const preview: Preview = {
   globalTypes: {
@@ -28,6 +41,7 @@ const preview: Preview = {
     // painted inside it; Storybook's own body stays unthemed.
     (Story, { globals, parameters }) => (
       <Theme theme={neutralTheme} mode={globals.mode as Mode}>
+        <DarkClass mode={globals.mode as Mode} />
         <div className="sb-pinomad-canvas">
           <div className="sb-pinomad-column" data-width={parameters.canvasWidth ?? "column"}>
             <Story />

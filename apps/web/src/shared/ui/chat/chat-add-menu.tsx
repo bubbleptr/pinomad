@@ -56,11 +56,11 @@ export function ChatAddMenuItem({
 }) {
   return (
     <DropdownMenuItem
-      icon={<Icon aria-hidden="true" className="size-4 text-muted" />}
+      icon={<Icon aria-hidden="true" className="size-4 text-muted-foreground" />}
       label={
         <span className="flex min-w-0 items-baseline gap-3">
           <span className="shrink-0">{label}</span>
-          {hint === undefined ? null : <span className="ml-auto min-w-0 truncate text-xs text-muted">{hint}</span>}
+          {hint === undefined ? null : <span className="ml-auto min-w-0 truncate text-xs text-muted-foreground">{hint}</span>}
         </span>
       }
       isDisabled={isDisabled}

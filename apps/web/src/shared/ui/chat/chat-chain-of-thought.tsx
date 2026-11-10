@@ -1,4 +1,4 @@
-import { Collapsible } from "@base-ui-components/react/collapsible";
+import { Collapsible } from "@base-ui/react/collapsible";
 import { useEffect, useState, type ComponentProps, type ReactNode } from "react";
 import { ChatThoughtStep } from "@/shared/ui/chat/chat-thought-step";
 import type { ChatToolItem } from "@/shared/ui/chat/chat-tool";

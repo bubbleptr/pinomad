@@ -110,7 +110,7 @@ function Section({ section, title, summary, children }: { section: SectionKey; t
           type="button"
           aria-expanded={!collapsed}
           aria-controls={body}
-          className="flex h-7 w-full items-center gap-2 rounded-md px-1.5 text-xs font-medium text-muted hover:bg-surface-hover hover:text-foreground focus-visible:bg-surface-hover"
+          className="flex h-7 w-full items-center gap-2 rounded-md px-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:bg-surface-hover"
           onClick={toggle}
         >
           <span className="shrink-0">{title}</span>
@@ -154,7 +154,7 @@ function Row({
       {icon === undefined ? null : (
         <span
           {...(iconLabel === undefined ? { "aria-hidden": true } : { role: "img", "aria-label": iconLabel })}
-          className="flex size-4 shrink-0 items-center justify-center text-muted"
+          className="flex size-4 shrink-0 items-center justify-center text-muted-foreground"
         >
           {icon}
         </span>
@@ -218,7 +218,7 @@ function WorkspaceSection({
             <span className="min-w-0 truncate">{folderName}</span>
             {/* A path's tail says where it is: an rtl box clips from the left,
                 and the LRM keeps the leading "/" from flipping to the end. */}
-            <span className="min-w-0 flex-1 truncate text-right text-muted [direction:rtl]">{`\u200E${cwd}`}</span>
+            <span className="min-w-0 flex-1 truncate text-right text-muted-foreground [direction:rtl]">{`\u200E${cwd}`}</span>
           </span>
         </Row>
       )}
@@ -251,7 +251,7 @@ function UsageSection({ view, conversation }: { view: DurableView; conversation:
         <ContextBar usage={usage} breakdown={breakdown} />
       </div>
       {usage === undefined || breakdown === undefined ? null : <ContextBreakdownList breakdown={breakdown} window={usage.window} />}
-      {spent > 0 ? <Row end={<span className="text-muted">{formatCost(spent)}</span>}>Spent</Row> : null}
+      {spent > 0 ? <Row end={<span className="text-muted-foreground">{formatCost(spent)}</span>}>Spent</Row> : null}
     </Section>
   );
 }
@@ -289,7 +289,7 @@ function SubagentsSection({
           }
           end={
             task.activity === undefined ? undefined : (
-              <span className="text-xs text-muted">{toolDisplayName(task.activity.tool) ?? task.activity.tool}</span>
+              <span className="text-xs text-muted-foreground">{toolDisplayName(task.activity.tool) ?? task.activity.tool}</span>
             )
           }
           onClick={() => onOpenTasks(task.id)}
@@ -299,7 +299,7 @@ function SubagentsSection({
       ))}
       {summary.length === 0 ? null : (
         <Row icon={null} onClick={() => onOpenTasks()}>
-          <span className="text-muted">{summary.join(" · ")}</span>
+          <span className="text-muted-foreground">{summary.join(" · ")}</span>
         </Row>
       )}
     </Section>
@@ -320,7 +320,7 @@ function SourcesSection({ view }: { view: DurableView }) {
       title="Sources"
       summary={
         problems > 0 ? (
-          <span className="text-danger">
+          <span className="text-destructive">
             {problems} problem{problems === 1 ? "" : "s"}
           </span>
         ) : (
@@ -334,7 +334,7 @@ function SourcesSection({ view }: { view: DurableView }) {
           icon={<StatusDot variant={MCP_VARIANT[server.state]} label={server.state} isPulsing={server.state === "connecting"} />}
           title={server.error}
           end={
-            <span className="text-xs text-muted">
+            <span className="text-xs text-muted-foreground">
               {server.state === "connected" ? `${server.tools} tool${server.tools === 1 ? "" : "s"}` : server.state}
             </span>
           }
@@ -344,7 +344,7 @@ function SourcesSection({ view }: { view: DurableView }) {
       ))}
       {mcp.errors.map((error, index) => (
         <Row key={index} icon={<StatusDot variant="error" label="config error" />} title={error}>
-          <span className="text-danger">{error}</span>
+          <span className="text-destructive">{error}</span>
         </Row>
       ))}
     </Section>

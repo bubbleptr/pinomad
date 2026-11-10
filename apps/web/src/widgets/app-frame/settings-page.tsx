@@ -399,7 +399,7 @@ export function SettingsPage({
   const screen = useSettingsScreen({ machines, request, focusKey: initialKey, narrow, onClose });
   if (screen === undefined) return null;
   return (
-    <div className="flex h-dvh bg-background">
+    <div className="flex h-dvh bg-sidebar">
       {screen.nav}
       <section aria-label="Settings" className="pigui-pane min-w-0 flex-1">
         {screen.content}
@@ -1003,7 +1003,7 @@ function AgentRoleCard({
         </VStack>
       ) : null}
       {error === undefined ? null : (
-        <Text type="supporting" role="alert" style={{ color: "var(--danger)" }}>
+        <Text type="supporting" role="alert" style={{ color: "var(--destructive)" }}>
           {error}
         </Text>
       )}
@@ -1065,7 +1065,7 @@ function AgentProblemCard({
         </VStack>
       ) : null}
       {error === undefined ? null : (
-        <Text type="supporting" role="alert" style={{ color: "var(--danger)" }}>
+        <Text type="supporting" role="alert" style={{ color: "var(--destructive)" }}>
           {error}
         </Text>
       )}

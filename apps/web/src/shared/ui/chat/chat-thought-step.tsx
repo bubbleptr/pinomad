@@ -1,4 +1,4 @@
-import { Collapsible } from "@base-ui-components/react/collapsible";
+import { Collapsible } from "@base-ui/react/collapsible";
 import type { ComponentProps } from "react";
 import { ChatInlinePager } from "@/shared/ui/chat/chat-inline-pager";
 import { ChatThoughtMarkdown } from "@/shared/ui/chat/chat-thought-markdown";

@@ -168,7 +168,7 @@ export function TerminalSurface({
     );
 
   return (
-    <VStack className="h-full min-h-0 bg-surface" gap={0}>
+    <VStack className="h-full min-h-0 bg-background" gap={0}>
       {stacked ? (
         <>
           <SurfaceBar start={barStart} end={barEnd}>
@@ -193,7 +193,7 @@ export function TerminalSurface({
         </SurfaceBar>
       )}
       {!connected && list !== undefined ? (
-        <div className="shrink-0 border-b border-border px-3 py-1 text-xs text-muted" role="status">
+        <div className="shrink-0 border-b border-border px-3 py-1 text-xs text-muted-foreground" role="status">
           Reconnecting…
         </div>
       ) : null}
@@ -327,12 +327,12 @@ function TerminalTabs({
                 <Tab
                   value={terminal.id}
                   label={terminal.name}
-                  className={terminal.exit === undefined ? "pinomad-terminal-tab" : "pinomad-terminal-tab text-muted"}
+                  className={terminal.exit === undefined ? "pinomad-terminal-tab" : "pinomad-terminal-tab text-muted-foreground"}
                   onAuxClick={(event) => {
                     if (event.button === 1 && live) onClose(terminal);
                   }}
                   endContent={
-                    terminal.exit === undefined ? undefined : <span className="text-xs text-muted">{exitLabel(terminal.exit)}</span>
+                    terminal.exit === undefined ? undefined : <span className="text-xs text-muted-foreground">{exitLabel(terminal.exit)}</span>
                   }
                 />
                 <IconButton
