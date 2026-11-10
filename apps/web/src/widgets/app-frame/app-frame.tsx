@@ -310,7 +310,7 @@ export function FrameHeader({
     chrome.reserveMacTrafficLights && !sidebarOwnsCorner ? chrome.safeLeft : undefined;
   return (
     <div
-      className="pinomad-drag flex h-10 shrink-0 items-center gap-1 border-b border-border px-3"
+      className="pinomad-drag flex h-10 shrink-0 items-center gap-1 px-3"
       style={safeLeft === undefined ? undefined : { paddingLeft: safeLeft }}
     >
       {narrow ? (
