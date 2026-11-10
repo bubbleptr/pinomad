@@ -29,6 +29,7 @@ import { SubagentDoc } from "../subagent-doc.ts";
 import {
   answerText,
   assertCapacity,
+  assertDispatchable,
   assertValidName,
   dispatch,
   entriesSince,
@@ -38,6 +39,7 @@ import {
   recordNamed,
   recordOf,
   statusOf,
+  stopRecord,
   SubagentAnchor,
   SubagentReporter,
   SubagentsDoc,
@@ -282,7 +284,7 @@ export function createSubagent(options: {
             found.record.status = answered ? "idle" : settled.status === "unanswered" && settled.reason === "aborted" ? "stopped" : "failed";
           }
           // The call returns this answer; a later report of the same answer is a repeat.
-          if (answered) found.record.reported[String(settled.answer)] = "steer";
+          if (answered) found.record.reported[`${api.conversationId}:${settled.answer}`] = "steer";
         }
         return answered ? await answerText(tx, settled.answer) : undefined;
       }, context);
@@ -308,8 +310,9 @@ export function createSubagent(options: {
     execute: async (args, api, context) => {
       const conversationId = await api.commit(async (tx) => {
         const root = await familyRootIn(tx, api.conversationId);
+        const record = await assertDispatchable(tx, root, args.name);
         await dispatch(tx, { root, name: args.name, sender: api.conversationId, from: "model", message: args.message });
-        return recordNamed((await tx.doc(SubagentsDoc, root)).agents, args.name).conversationId;
+        return record.conversationId;
       }, context);
       return {
         output: [{ type: "text", text: `Sent to subagent "${args.name}". Its answer will be reported to you when it arrives.` }],
@@ -329,7 +332,7 @@ export function createSubagent(options: {
       const conversationId = await api.commit(async (tx) => {
         const root = await familyRootIn(tx, api.conversationId);
         const record = recordNamed((await tx.doc(SubagentsDoc, root)).agents, args.name);
-        record.stop = { by: "model", noted: false };
+        stopRecord(record, "model");
         return record.conversationId;
       }, context);
       const handle = await api.conversation(conversationId, context);

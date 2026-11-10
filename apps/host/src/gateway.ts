@@ -102,7 +102,7 @@ import { messageContent } from "./message-content.ts";
 import type { ModelAuth } from "./model-auth.ts";
 import { RoleDoc } from "./role-doc.ts";
 import { SubagentDoc } from "./subagent-doc.ts";
-import { dispatch, inCall, markStop, recordOf } from "./subagents.ts";
+import { assertDispatchable, dispatch, markStop, recordOf } from "./subagents.ts";
 import { attachAutoTitle } from "./auto-title.ts";
 import { TitleDoc } from "./title-doc.ts";
 import { admitDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
@@ -2329,9 +2329,8 @@ class GatewayClient {
     const id = await this.#options.harness.commit(async (tx) => {
       const found = await recordOf(tx, conversation.id);
       if (found === undefined) throw new Error("This subagent cannot take messages: it was started before subagents could be messaged");
-      if (await inCall(tx, found.record)) {
-        throw new Error(`Subagent "${found.name}" is still answering the call that dispatched it`);
-      }
+      // Table reads first: none may follow the admission's writes.
+      await assertDispatchable(tx, found.root, found.name);
       const submissionId = await conversation.submit(tx, draft);
       await dispatch(tx, { root: found.root, name: found.name, sender: found.record.dispatcher, from: "user", requestId: draft.requestId });
       return submissionId;
@@ -2547,7 +2546,11 @@ class GatewayClient {
         // Stop the subtree's work across background boundaries — background
         // subagents and their reporters — and wait for it to be idle before
         // the checkout can be cleaned (ADR-0046 §7).
-        await (await this.#options.harness.conversation(input.conversationId, context))?.abort(context, { background: true });
+        // Each conversation of the subtree: a fork is ownerless, so the root's
+        // abort does not reach it or its subagents.
+        for (const id of subtree) {
+          await (await this.#options.harness.conversation(id, context))?.abort(context, { background: true });
+        }
         // Stop every process of the subtree and wait for its exit before
         // the checkout can be cleaned (ADR-0045 §5, ADR-0040 §5).
         await this.#hooks.processes?.closeOwners(subtree, "archive", context);

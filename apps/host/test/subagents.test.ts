@@ -15,7 +15,7 @@ import { question } from "../src/extensions/question.ts";
 import { createSubagent } from "../src/extensions/subagent.ts";
 import type { OpenedHost } from "../src/host.ts";
 import { SubagentDoc } from "../src/subagent-doc.ts";
-import { SubagentsDoc } from "../src/subagents.ts";
+import { dispatch, recordOf, stopRecord, SubagentsDoc } from "../src/subagents.ts";
 import { connectTo, freePort, startChat, startFauxHost, tempDir, useCleanups } from "./support.ts";
 
 const defer = useCleanups();
@@ -198,6 +198,27 @@ describe("background subagents", () => {
     expect(results.at(-1)).toBe("Delegated: count files\n\ncounter: 42 files\n\nUser: how many md files?\n\ncounter: 7 md files");
   });
 
+  it("takes a user's message to a foreground subagent after its call ended", async () => {
+    const host = await startFauxHost(defer, {
+      extensions,
+      answers: scripted([
+        ["count files", () => answer("42 files")],
+        ["and folders?", () => answer("3 folders")],
+        ["go", () => call("subagent", { task: "count files", name: "counter", checkout: "shared" })],
+      ]),
+    });
+    const client = await connectTo(defer, host);
+    const raw = await rawClient(host);
+    const parent = await startChat(client, "go");
+    await watchUntil(host, parent, (value) => idle(value) && texts(value).at(-1) === "ack: [subagent counter answered]");
+    const child = await childNamed(host, parent, "counter");
+
+    const sent = await raw.call("submit", { conversationId: child, text: "and folders?", whenBusy: "followUp", requestId: "user-1" });
+    expect(sent).toMatchObject({ ok: true });
+    await watchUntil(host, parent, (value) => texts(value).some((text) => text.startsWith("[The user talked with subagent counter")));
+    expect((await host.harness.snapshot(SubagentDoc, child, context))?.lifecycle).toBe("background");
+  });
+
   it("notes a user's Stop but not the model's", async () => {
     const host = await startFauxHost(defer, {
       extensions,
@@ -255,6 +276,55 @@ describe("background subagents", () => {
       expect(record.status).toBe("stopped");
       expect((await host.harness.snapshot(LiveDoc, record.conversationId, context))?.run).toBeUndefined();
     }
+  });
+
+  it("does not deliver a message that a Stop reached before its reporter admitted it", async () => {
+    const host = await startFauxHost(defer, {
+      extensions,
+      answers: scripted([
+        ["count files", () => answer("42 files")],
+        ["[subagent counter answered]", () => answer("noted")],
+        ["go", () => call("subagent", { task: "count files", name: "counter", background: true, checkout: "shared" })],
+      ]),
+    });
+    const client = await connectTo(defer, host);
+    const parent = await startChat(client, "go");
+    await watchUntil(host, parent, (value) => idle(value) && texts(value).includes("noted"));
+    const child = await childNamed(host, parent, "counter");
+    await expect.poll(async () => (await registry(host, parent)).counter?.status, { timeout: 15_000 }).toBe("idle");
+
+    // A send and a user's Stop land before the reporter runs its delivery.
+    await host.harness.commit(async (tx) => {
+      const found = (await recordOf(tx, child))!;
+      await dispatch(tx, { root: parent, name: "counter", sender: parent, from: "model", message: "never delivered" });
+      stopRecord(found.record, "user");
+    }, context);
+    await watchUntil(host, parent, (value) => texts(value).includes("[The user stopped subagent counter.]"));
+    await expect.poll(async () => (await registry(host, parent)).counter, { timeout: 15_000 }).toMatchObject({ status: "stopped", reporters: [] });
+    const childView = await watchUntil(host, child, idle);
+    expect(texts(childView)).not.toContain("never delivered");
+  });
+
+  it("archiving a root stops the background subagents of its forks", async () => {
+    const host = await startFauxHost(defer, {
+      extensions,
+      answers: scripted([
+        ["write an essay", () => answer(ENDLESS)],
+        ["from the fork", () => call("subagent", { task: "write an essay", name: "essay", background: true, checkout: "shared" })],
+        ["root", () => answer("root ok")],
+      ]),
+    });
+    const client = await connectTo(defer, host);
+    const parent = await startChat(client, "root");
+    const rootView = await watchUntil(host, parent, (value) => idle(value) && texts(value).includes("root ok"));
+    await client.controller.fork(String(rootView.entries.at(-1)!.id), "from the fork");
+    const child = await childNamed(host, parent, "essay");
+    await watchUntil(host, child, (value) => !idle(value));
+
+    const raw = await rawClient(host);
+    expect((await raw.call("archive", { conversationId: parent, archived: true })).ok).toBe(true);
+    expect((await registry(host, parent)).essay?.status).toBe("stopped");
+    expect((await host.harness.snapshot(LiveDoc, child, context))?.run).toBeUndefined();
   });
 
   it("reports an answer exactly once across a restart", async () => {
