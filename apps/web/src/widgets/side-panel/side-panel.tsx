@@ -684,7 +684,7 @@ export function SidePanel({
     // room its header needs.
     <div
       ref={setPanel}
-      className="relative h-full min-w-[360px] border-l border-border"
+      className="pigui-pane pigui-side-pane relative h-full min-w-[360px]"
       style={{ width: resizable.size }}
       aria-label="Side panel"
       role="complementary"
@@ -696,9 +696,9 @@ export function SidePanel({
         direction="horizontal"
         position="overlay"
         // Overlay defaults to the end edge; isReversed only changes drag direction.
-        // Pulled back by half its width (and half the 1px border) so the grip
-        // sits on the divider, half over the chat column.
-        className="start-[calc(-0.5rem-0.5px)]! end-auto!"
+        // Pulled back by half its width plus half the gap between the panes,
+        // so the grip sits in the gap.
+        className="start-[calc(-0.5rem-var(--pigui-pane-gap)/2)]! end-auto!"
         // Centering keeps Astryx's grab zone full-height instead of shifted up by 50%.
         pillPlacement="center"
         isReversed

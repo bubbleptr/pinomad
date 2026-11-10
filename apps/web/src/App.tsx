@@ -1232,9 +1232,9 @@ export function Workbench({
   // The header covers the chat column only; the side panel runs full height
   // beside it, its first row level with the header (ADR-0040).
   const body = (
-    <div className="flex h-full min-h-0 min-w-0">
+    <div className="pigui-split flex h-full min-h-0 min-w-0">
       {/* The chat column keeps room for its header's controls; a wide panel shrinks instead. */}
-      <div className="flex min-h-0 min-w-[20rem] flex-1 flex-col">
+      <div className="pigui-pane flex min-h-0 min-w-[20rem] flex-1 flex-col">
       <FrameHeader
         narrow={narrow}
         title={drafting ? draftLabel : conversationName(shownSummary)}

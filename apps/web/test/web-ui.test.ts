@@ -99,7 +99,7 @@ async function openPage(
 /** Opens Settings from the sidebar's user bar and picks a section in its nav (wide screens). */
 async function openSettings(page: Page, section: string): Promise<Locator> {
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Settings" });
+  const dialog = page.getByRole("region", { name: "Settings" });
   await dialog.getByRole("button", { name: section, exact: true }).click();
   return dialog;
 }
@@ -270,9 +270,9 @@ it("opens Settings → Devices from the phone drawer", async () => {
 
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  // The drawer closed; only the Settings dialog remains.
-  await expect.poll(() => page.getByRole("dialog").count()).toBe(1);
-  const dialog = page.getByRole("dialog");
+  // The drawer closed; Settings fills the window.
+  await expect.poll(() => page.getByRole("dialog").count()).toBe(0);
+  const dialog = page.getByRole("region", { name: "Settings" });
   await dialog.getByText("Devices", { exact: true }).click();
   await dialog.getByRole("button", { name: "Pair a device", exact: true }).waitFor();
 });
@@ -286,9 +286,9 @@ it("drills into a Settings section from the phone drawer and back out", async ()
 
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  // The drawer closed; only the Settings dialog's section list remains.
-  await expect.poll(() => page.getByRole("dialog").count()).toBe(1);
-  const dialog = page.getByRole("dialog");
+  // The drawer closed; Settings opens on its section list.
+  await expect.poll(() => page.getByRole("dialog").count()).toBe(0);
+  const dialog = page.getByRole("region", { name: "Settings" });
   await dialog.getByText("Providers", { exact: true }).waitFor();
 
   await dialog.getByText("Chats", { exact: true }).click();
@@ -312,7 +312,7 @@ it("changes a queue-mode setting, then resets it to pi's default", async () => {
   const page = await openPage(host, 1280, webOrigin);
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = page.getByRole("region", { name: "Settings" });
   await dialog.getByRole("button", { name: "Chats", exact: true }).click();
   const followUp = dialog.getByRole("radiogroup", { name: "Follow-up messages", exact: true });
   await followUp.waitFor();
@@ -335,7 +335,7 @@ it("opens Settings on Providers and shows host details under About", async () =>
   const page = await openPage(host, 1280, webOrigin);
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = page.getByRole("region", { name: "Settings" });
   // Providers is the default section — with nothing connected it offers the ways to add one.
   await dialog.getByText("Connect a model provider", { exact: true }).waitFor();
 
@@ -383,7 +383,7 @@ it("logs a stored login out from the Providers section", async () => {
   const page = await openPage(host, 1280, webOrigin);
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const dialog = page.getByRole("dialog");
+  const dialog = page.getByRole("region", { name: "Settings" });
   await dialog.getByRole("list", { name: "Connected" }).getByText("Anthropic", { exact: true }).click();
   await dialog.getByRole("button", { name: "Remove key", exact: true }).click();
   // The first button only arms the confirmation; removing is the second step.
@@ -1598,7 +1598,7 @@ it("organizes conversations under projects and chats", async () => {
 
   // Settings → Archived lists it with its home; Restore puts it back in Chats.
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const settings = page.getByRole("dialog", { name: "Settings" });
+  const settings = page.getByRole("region", { name: "Settings" });
   await settings.getByRole("button", { name: "Archived", exact: true }).click();
   const archived = settings.getByRole("region", { name: "Archived" });
   await archived.getByText("Chat · now", { exact: true }).waitFor();
@@ -3714,7 +3714,7 @@ it("manages named agents from the Agents settings section", async () => {
   const page = await openPage(host, 1280, webOrigin);
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const settings = page.getByRole("dialog", { name: "Settings" });
+  const settings = page.getByRole("region", { name: "Settings" });
   await settings.getByRole("button", { name: "Agents", exact: true }).click();
   await settings.getByText("No named agents yet.", { exact: true }).waitFor();
 
@@ -3770,7 +3770,7 @@ it("shows the agent editor's name rule and the host's already-exists error inlin
   const page = await openPage(host, 1280, webOrigin);
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const settings = page.getByRole("dialog", { name: "Settings" });
+  const settings = page.getByRole("region", { name: "Settings" });
   await settings.getByRole("button", { name: "Agents", exact: true }).click();
   await settings.getByRole("button", { name: "New agent", exact: true }).click();
   const editor = page.getByRole("dialog", { name: "New agent" });
@@ -3808,7 +3808,7 @@ it("lists a hand-written agent file live and reports a bad one as a problem", as
   const page = await openPage(host, 1280, webOrigin);
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const settings = page.getByRole("dialog", { name: "Settings" });
+  const settings = page.getByRole("region", { name: "Settings" });
   await settings.getByRole("button", { name: "Agents", exact: true }).click();
   await settings.getByText("No named agents yet.", { exact: true }).waitFor();
 
@@ -3849,7 +3849,7 @@ it("keeps a pinned thinking level the model no longer supports visible in the ed
   const page = await openPage(host, 1280, webOrigin);
 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const settings = page.getByRole("dialog", { name: "Settings" });
+  const settings = page.getByRole("region", { name: "Settings" });
   await settings.getByRole("button", { name: "Agents", exact: true }).click();
   await settings.getByRole("heading", { name: "legacy", exact: true }).waitFor();
 

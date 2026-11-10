@@ -11,22 +11,22 @@ import {
   withAccount,
   withHosts,
 } from "../../test/story-fixtures.tsx";
-import { SettingsDialog } from "./settings-dialog.tsx";
+import { SettingsPage } from "./settings-page.tsx";
 
 const meta = {
-  title: "Widgets/AppFrame/SettingsDialog",
-  component: SettingsDialog,
+  title: "Widgets/AppFrame/SettingsPage",
+  component: SettingsPage,
   decorators: [withHosts()],
   parameters: { canvasWidth: "full" },
   args: { machines: fakeMachines(), initialKey: HOME_HOST.hostKey, onClose: fn() },
-} satisfies Meta<typeof SettingsDialog>;
+} satisfies Meta<typeof SettingsPage>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
 
 /**
- * The open section is the dialog's own state: a story picks one by clicking it
- * in the section nav, or, at 640px and below, in the list the dialog opens on.
+ * The open section is the page's own state: a story picks one by clicking it
+ * in the section nav, or, narrow, in the list the page opens on.
  */
 const open = (section: string): Story => ({
   play: async ({ canvasElement }) => {
@@ -36,8 +36,11 @@ const open = (section: string): Story => ({
   },
 });
 
-/** Connected, the dialog lands on the host's providers. */
+/** Connected, the page lands on the host's providers. */
 export const Providers: Story = {};
+
+/** A narrow window: no nav beside the page, which opens on the section list instead. */
+export const Narrow: Story = { args: { narrow: true } };
 
 export const Models: Story = open("Models");
 
@@ -80,7 +83,7 @@ export const ThisMac: Story = {
   ],
 };
 
-/** Disconnected, the host group has nothing live, so the dialog lands on this device's hosts. */
+/** Disconnected, the host group has nothing live, so the page lands on this device's hosts. */
 export const Disconnected: Story = {
   args: { machines: fakeMachines({ home: fakeView({ connection: "reconnecting" }) }).slice(0, 1) },
 };

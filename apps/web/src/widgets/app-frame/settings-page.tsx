@@ -1,11 +1,9 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Heading } from "@astryxdesign/core/Heading";
 import { IconButton } from "@astryxdesign/core/IconButton";
-import { useMediaQuery } from "@astryxdesign/core/hooks";
-import { HStack, Layout, LayoutContent, LayoutPanel, VStack } from "@astryxdesign/core/Layout";
+import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { Link } from "@astryxdesign/core/Link";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
@@ -15,7 +13,7 @@ import { SideNav, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav
 import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Token } from "@astryxdesign/core/Token";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { agentNameProblem, type AgentRole, type AgentRoleProblem } from "@pinomad/protocol/agents.ts";
 import { hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import type { KeyPair } from "@pinomad/protocol/noise.ts";
@@ -29,6 +27,7 @@ import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { Archive, ArchiveRestore, ArrowBigUpDash, ArrowLeft, Bot, Cancel, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, Laptop, MoreHorizontal, Palette, Puzzle, RefreshCw, Sparkles, UserCircle } from "../../shared/ui/icons.tsx";
+import { GROUP_ROWS, SettingsGroup, SettingsRow } from "../../shared/ui/settings-group.tsx";
 import { AccountPanel } from "../account/account-panel.tsx";
 import { AgentEditorDialog } from "./agent-editor-dialog.tsx";
 import { AppearanceSection } from "./appearance-section.tsx";
@@ -86,33 +85,85 @@ const sectionIcon = (Icon: Section["icon"]): ReactNode => (
  * The host group is the connected host's settings and providers
  * (ADR-0021, 0031): everything shown comes from the `settings` / `providers` / `mcp` /
  * devices streams, so a change another device makes appears here the moment
- * the host pushes it. A left section nav on wide screens, an iOS-style
- * drill-in under 640px; the open section is the only local state.
+ * the host pushes it.
+ *
+ * Settings is a page of the app frame, not a dialog over it: on a wide window
+ * its section nav takes the sidebar's place and the open section fills the
+ * main pane; on a narrow one the pane drills in from a section list. The
+ * frame keeps the sidebar and workbench mounted underneath, only hidden.
  */
-export function SettingsDialog({
+export interface SettingsRequest {
+  /** The section to open on instead of the default (the sidebar's account opens Account). */
+  readonly section?: SectionId;
+}
+
+export interface SettingsScreen {
+  /** The section nav for the sidebar slot; absent when narrow, where the page lists the sections itself. */
+  readonly nav: ReactNode | undefined;
+  /** The main pane: the open section, or (narrow) the section list. */
+  readonly content: ReactNode;
+}
+
+/** Escape closes Settings unless it belongs to something open over it (a dialog, menu or listbox). */
+const OWNS_ESCAPE = 'dialog, [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [aria-expanded="true"]';
+
+export function useSettingsScreen({
   machines,
-  initialKey,
-  initialSection,
+  request,
+  focusKey,
+  narrow,
+  safeLeft,
   onClose,
 }: {
   /** Every paired machine; the host group manages one of them at a time. */
   machines: readonly FrameMachine[];
+  /** Open while defined; a new request reopens it on its section, with the search cleared. */
+  request: SettingsRequest | undefined;
   /** The machine to open on — the focused one. */
-  initialKey?: string;
-  /** The section to open on instead of the default (the sidebar's account opens Account). */
-  initialSection?: SectionId;
+  focusKey: string | undefined;
+  narrow: boolean;
+  /** Left inset reserved for the macOS traffic lights when the nav owns the window corner. */
+  safeLeft?: string;
   onClose: () => void;
-}) {
-  const compact = useMediaQuery("(max-width: 640px)");
-  const [section, setSection] = useState<SectionId | undefined>(initialSection);
+}): SettingsScreen | undefined {
+  const [opened, setOpened] = useState(request);
+  const [section, setSection] = useState<SectionId | undefined>(request?.section);
   const [query, setQuery] = useState("");
-  const accountStatus = useAccountModel().state.status;
   // A page the open section opened inside itself (one host's page).
   const [subpage, setSubpage] = useState<SettingsSubpage>();
-  const subpageHost = useMemo(() => ({ ownsBack: compact, set: setSubpage }), [compact]);
   // Picked here, not followed from focus: a form half-filled for one machine
   // must never be saved to another because focus moved underneath it.
-  const [pickedKey, setPickedKey] = useState(initialKey);
+  const [pickedKey, setPickedKey] = useState(focusKey);
+  if (opened !== request) {
+    setOpened(request);
+    setSection(request?.section);
+    setQuery("");
+    setSubpage(undefined);
+    setPickedKey(focusKey);
+  }
+  const subpageHost = useMemo(() => ({ ownsBack: narrow, set: setSubpage }), [narrow]);
+  // Opening moves focus to the way out, the page's first control.
+  const closeSlot = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (request !== undefined) closeSlot.current?.querySelector("button")?.focus();
+  }, [request]);
+  const accountStatus = useAccountModel().state.status;
+  const open = request !== undefined;
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      // Not `defaultPrevented`: SegmentedControl prevents every Escape, open or not.
+      if (event.key !== "Escape") return;
+      if (event.target instanceof Element && event.target.closest(OWNS_ESCAPE) !== null) return;
+      onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
+
+  if (!open) return undefined;
+
   const machine = machines.find((entry) => entry.key === pickedKey) ?? machines[0];
   const view = machine?.view;
   const remote = machine?.remote;
@@ -180,29 +231,78 @@ export function SettingsDialog({
   );
   const noMatch = groups.length === 0 ? <Text type="supporting">No settings match</Text> : null;
 
-  const sectionNav = (
-    <LayoutPanel padding={2} width="calc(var(--spacing-10) * 7)" hasDivider>
-      <SideNav aria-label="Settings sections" style={{ width: "100%" }} topContent={searchField}>
-        <VStack gap={3}>
-          {noMatch}
-          {groups.map((group) => (
-            <SideNavSection key={group.title} title={group.title}>
-              {group.sections[0]?.group === "host" ? picker : null}
-              {group.sections.map((entry) => (
-                <SideNavItem
-                  key={entry.id}
-                  label={entry.title}
-                  icon={sectionIcon(entry.icon)}
-                  isSelected={entry.id === active}
-                  onClick={() => setSection(entry.id)}
-                />
-              ))}
-            </SideNavSection>
-          ))}
-        </VStack>
-      </SideNav>
-    </LayoutPanel>
+  const page = (
+    <SettingsSubpageContext.Provider value={subpageHost}>
+      <SectionPage
+        // Host-scoped pages carry form and navigation state, so a
+        // focus switch must remount them instead of handing A's
+        // half-filled form to B's remote. Device sections stay put.
+        key={isHostSection(active) ? `host:${machine?.key ?? "none"}` : undefined}
+        {...(view === undefined ? {} : { view })}
+        {...(remote === undefined ? {} : { remote })}
+        {...(machine?.device === undefined ? {} : { device: machine.device })}
+        {...(machine?.hostKey === undefined ? {} : { hostKey: machine.hostKey })}
+        connected={connected}
+        {...(machine?.retry === undefined ? {} : { onReconnect: machine.retry })}
+        section={active}
+        showTitle={!narrow}
+        showSupporting={subpage === undefined}
+        onSection={setSection}
+      />
+    </SettingsSubpageContext.Provider>
   );
+
+  if (!narrow) {
+    return {
+      nav: (
+        <SideNav
+          aria-label="Settings sections"
+          resizable={{ defaultWidth: 260, minWidth: 240, maxWidth: 320, autoSaveId: "pinomad-app-shell" }}
+          header={
+            <div
+              className="pinomad-drag flex h-6 items-center"
+              style={safeLeft === undefined ? undefined : { paddingLeft: safeLeft }}
+            >
+              <span ref={closeSlot} className="contents">
+                <Button
+                  label="Settings"
+                  aria-label="Close settings"
+                  variant="ghost"
+                  size="sm"
+                  icon={<ChevronRight aria-hidden="true" className="size-4 rotate-180" />}
+                  onClick={onClose}
+                />
+              </span>
+            </div>
+          }
+          topContent={searchField}
+        >
+          <VStack gap={3}>
+            {noMatch}
+            {groups.map((group) => (
+              <SideNavSection key={group.title} title={group.title}>
+                {group.sections[0]?.group === "host" ? picker : null}
+                {group.sections.map((entry) => (
+                  <SideNavItem
+                    key={entry.id}
+                    label={entry.title}
+                    icon={sectionIcon(entry.icon)}
+                    isSelected={entry.id === active}
+                    onClick={() => setSection(entry.id)}
+                  />
+                ))}
+              </SideNavSection>
+            ))}
+          </VStack>
+        </SideNav>
+      ),
+      content: (
+        <div className="h-full overflow-y-auto">
+          <div className="mx-auto w-full max-w-[46rem] px-6 pt-14 pb-16">{page}</div>
+        </div>
+      ),
+    };
+  }
 
   const sectionList = (
     <VStack gap={4}>
@@ -232,82 +332,68 @@ export function SettingsDialog({
     </VStack>
   );
 
-  return (
-    <Dialog
-      aria-label="Settings"
-      isOpen
-      onOpenChange={(open) => (open ? undefined : onClose())}
-      purpose="form"
-      width="min(calc(var(--spacing-10) * 26), 94vw)"
-      maxHeight="90dvh"
-      variant={compact ? "fullscreen" : "standard"}
-      padding={4}
-    >
-      <Layout
-        padding={4}
-        style={{ height: compact ? "100dvh" : "min(88dvh, calc(var(--spacing-10) * 20))" }}
-        // On a phone the header carries the section title and the way back;
-        // beside the side nav a title row only repeats the selected item.
-        header={
-          compact ? (
-            <DialogHeader
-              title={subpage?.title ?? (section === undefined ? "Settings" : sectionTitle(section))}
-              startContent={
-                section === undefined ? undefined : (
-                  <IconButton
-                    label="Back"
-                    icon={<ArrowLeft />}
-                    variant="ghost"
-                    // DialogHeader pulls its end slot (the close X) up by spacing-2
-                    // to center on the title; the start slot needs the same lift.
-                    style={{ marginBlock: "calc(-1 * var(--spacing-2))" }}
-                    onClick={() => (subpage === undefined ? setSection(undefined) : subpage.back())}
-                  />
-                )
-              }
-              onOpenChange={() => onClose()}
-              hasDivider
+  // Narrow: the header carries the page's title and the way back.
+  return {
+    nav: undefined,
+    content: (
+      <div className="flex h-full min-h-0 flex-col">
+        <div
+          className="pinomad-drag flex h-10 shrink-0 items-center gap-1 px-3"
+          style={safeLeft === undefined ? undefined : { paddingLeft: safeLeft }}
+        >
+          {section === undefined ? null : (
+            <IconButton
+              label="Back"
+              icon={<ArrowLeft className="size-4" />}
+              size="sm"
+              variant="ghost"
+              onClick={() => (subpage === undefined ? setSection(undefined) : subpage.back())}
             />
-          ) : undefined
-        }
-        start={compact ? undefined : sectionNav}
-        content={
-          <LayoutContent padding={compact ? 4 : 6}>
-            {compact && section === undefined ? (
-              sectionList
-            ) : (
-              <SettingsSubpageContext.Provider value={subpageHost}>
-                <SectionPage
-                  // Host-scoped pages carry form and navigation state, so a
-                  // focus switch must remount them instead of handing A's
-                  // half-filled form to B's remote. Device sections stay put.
-                  key={isHostSection(active) ? `host:${machine?.key ?? "none"}` : undefined}
-                  {...(view === undefined ? {} : { view })}
-                  {...(remote === undefined ? {} : { remote })}
-                  {...(machine?.device === undefined ? {} : { device: machine.device })}
-                  {...(machine?.hostKey === undefined ? {} : { hostKey: machine.hostKey })}
-                  connected={connected}
-                  {...(machine?.retry === undefined ? {} : { onReconnect: machine.retry })}
-                  section={active}
-                  showTitle={!compact}
-                  showSupporting={subpage === undefined}
-                  onSection={setSection}
-                />
-              </SettingsSubpageContext.Provider>
-            )}
-          </LayoutContent>
-        }
-      />
-      {compact ? null : (
-        <IconButton
-          label="Close"
-          icon={<Cancel />}
-          variant="ghost"
-          style={{ position: "absolute", insetBlockStart: "var(--spacing-6)", insetInlineEnd: "var(--spacing-6)" }}
-          onClick={onClose}
-        />
-      )}
-    </Dialog>
+          )}
+          <h1 className="min-w-0 flex-1 truncate px-1 text-sm font-semibold">
+            {subpage?.title ?? (section === undefined ? "Settings" : sectionTitle(section))}
+          </h1>
+          <span ref={closeSlot} className="contents">
+            <IconButton
+              label="Close settings"
+              icon={<Cancel className="size-4" />}
+              size="sm"
+              variant="ghost"
+              onClick={onClose}
+            />
+          </span>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">{section === undefined ? sectionList : page}</div>
+      </div>
+    ),
+  };
+}
+
+/**
+ * Settings on its own, nav beside the page: for stories and tests that
+ * exercise Settings without the app frame around it.
+ */
+export function SettingsPage({
+  machines,
+  initialKey,
+  initialSection,
+  narrow = false,
+  onClose,
+}: {
+  machines: readonly FrameMachine[];
+  initialKey?: string;
+  initialSection?: SectionId;
+  narrow?: boolean;
+  onClose: () => void;
+}) {
+  const [request] = useState<SettingsRequest>(() => (initialSection === undefined ? {} : { section: initialSection }));
+  const screen = useSettingsScreen({ machines, request, focusKey: initialKey, narrow, onClose });
+  if (screen === undefined) return null;
+  return (
+    <div role="region" aria-label="Settings" className="flex h-dvh bg-background">
+      {screen.nav}
+      <div className="pigui-pane min-w-0 flex-1">{screen.content}</div>
+    </div>
   );
 }
 
@@ -349,9 +435,9 @@ function SectionPage({
     <VStack
       as="section"
       {...(showTitle ? { "aria-labelledby": headingId } : { "aria-label": title })}
-      gap={3}
+      gap={6}
     >
-      <VStack gap={2}>
+      <VStack gap={1}>
         {showTitle ? <Heading level={2} id={headingId}>{title}</Heading> : null}
         {showSupporting ? supporting : null}
       </VStack>
@@ -474,27 +560,29 @@ function ModelsSection({ view, remote, connected }: { view: DurableView; remote:
     return <Banner status="warning" title="This host is too old for settings" description="Run `pinomad upgrade` on the host." />;
   }
   return (
-    <HStack gap={2} vAlign="center" wrap="wrap">
-      <ModelSelector
-        models={view.models}
-        selected={{
-          model: settings.defaultModel ?? undefined,
-          level: settings.defaultThinkingLevel ?? "off",
-        }}
-        isDisabled={!connected}
-        onModelChange={(model) => void remote.controller.updateSettings({ defaultModel: model })}
-        onLevelChange={(level) => void remote.controller.updateSettings({ defaultThinkingLevel: level })}
-      />
-      {settings.custom.includes("defaultModel") || settings.custom.includes("defaultThinkingLevel") ? (
-        <Button
-          label="Use pi's defaults"
-          variant="secondary"
-          size="sm"
+    <SettingsGroup>
+      <SettingsRow label="Default model">
+        <ModelSelector
+          models={view.models}
+          selected={{
+            model: settings.defaultModel ?? undefined,
+            level: settings.defaultThinkingLevel ?? "off",
+          }}
           isDisabled={!connected}
-          onClick={() => void remote.controller.updateSettings({ defaultModel: null, defaultThinkingLevel: null })}
+          onModelChange={(model) => void remote.controller.updateSettings({ defaultModel: model })}
+          onLevelChange={(level) => void remote.controller.updateSettings({ defaultThinkingLevel: level })}
         />
-      ) : null}
-    </HStack>
+        {settings.custom.includes("defaultModel") || settings.custom.includes("defaultThinkingLevel") ? (
+          <Button
+            label="Use pi's defaults"
+            variant="secondary"
+            size="sm"
+            isDisabled={!connected}
+            onClick={() => void remote.controller.updateSettings({ defaultModel: null, defaultThinkingLevel: null })}
+          />
+        ) : null}
+      </SettingsRow>
+    </SettingsGroup>
   );
 }
 
@@ -504,24 +592,26 @@ function ChatsSection({ view, remote, connected }: { view: DurableView; remote: 
     return <Banner status="warning" title="This host is too old for settings" description="Run `pinomad upgrade` on the host." />;
   }
   return (
-    <VStack gap={4}>
-      <ModeSetting
-        title="Steer messages"
-        value={settings.steeringMode}
-        customized={settings.custom.includes("steeringMode")}
-        disabled={!connected}
-        onChange={(mode) => void remote.controller.updateSettings({ steeringMode: mode })}
-        onReset={() => void remote.controller.updateSettings({ steeringMode: null })}
-      />
-      <ModeSetting
-        title="Follow-up messages"
-        value={settings.followUpMode}
-        customized={settings.custom.includes("followUpMode")}
-        disabled={!connected}
-        onChange={(mode) => void remote.controller.updateSettings({ followUpMode: mode })}
-        onReset={() => void remote.controller.updateSettings({ followUpMode: null })}
-      />
-    </VStack>
+    <SettingsGroup>
+      <div className={GROUP_ROWS}>
+        <ModeSetting
+          title="Steer messages"
+          value={settings.steeringMode}
+          customized={settings.custom.includes("steeringMode")}
+          disabled={!connected}
+          onChange={(mode) => void remote.controller.updateSettings({ steeringMode: mode })}
+          onReset={() => void remote.controller.updateSettings({ steeringMode: null })}
+        />
+        <ModeSetting
+          title="Follow-up messages"
+          value={settings.followUpMode}
+          customized={settings.custom.includes("followUpMode")}
+          disabled={!connected}
+          onChange={(mode) => void remote.controller.updateSettings({ followUpMode: mode })}
+          onReset={() => void remote.controller.updateSettings({ followUpMode: null })}
+        />
+      </div>
+    </SettingsGroup>
   );
 }
 
@@ -531,33 +621,35 @@ function ArchivedSection({ view, remote, connected }: { view: DurableView; remot
   const archived = view.organized.archived;
   if (archived.length === 0) return <Text as="p" type="supporting">No archived conversations.</Text>;
   return (
-    <List density="compact">
-      {archived.map(({ node, project }) => {
-        const title = node.summary.title ?? "New conversation";
-        const updatedAt = familyUpdatedAt(node);
-        return (
-          <ListItem
-            key={node.summary.id}
-            label={title}
-            description={[project?.name ?? "Chat", updatedAt === undefined ? undefined : relativeTime(updatedAt, now)]
-              .filter((part) => part !== undefined)
-              .join(" · ")}
-            endContent={
-              <Button
-                label={`Restore ${title}`}
-                icon={<ArchiveRestore aria-hidden="true" />}
-                variant="secondary"
-                size="sm"
-                isDisabled={!connected}
-                onClick={() => void remote.controller.archive(node.summary.id, false)}
-              >
-                Restore
-              </Button>
-            }
-          />
-        );
-      })}
-    </List>
+    <SettingsGroup>
+      <List hasDividers>
+        {archived.map(({ node, project }) => {
+          const title = node.summary.title ?? "New conversation";
+          const updatedAt = familyUpdatedAt(node);
+          return (
+            <ListItem
+              key={node.summary.id}
+              label={title}
+              description={[project?.name ?? "Chat", updatedAt === undefined ? undefined : relativeTime(updatedAt, now)]
+                .filter((part) => part !== undefined)
+                .join(" · ")}
+              endContent={
+                <Button
+                  label={`Restore ${title}`}
+                  icon={<ArchiveRestore aria-hidden="true" />}
+                  variant="secondary"
+                  size="sm"
+                  isDisabled={!connected}
+                  onClick={() => void remote.controller.archive(node.summary.id, false)}
+                >
+                  Restore
+                </Button>
+              }
+            />
+          );
+        })}
+      </List>
+    </SettingsGroup>
   );
 }
 
@@ -572,15 +664,13 @@ function McpSection({ view }: { view: DurableView }) {
       {mcp.servers.length === 0 ? (
         <Text as="p" type="supporting">No servers configured.</Text>
       ) : (
-        <List density="compact">
-          {mcp.servers.map((server) => (
-            <ListItem
-              key={server.name}
-              label={server.name}
-              endContent={<Token label={server.state} size="sm" />}
-            />
-          ))}
-        </List>
+        <SettingsGroup>
+          <List hasDividers>
+            {mcp.servers.map((server) => (
+              <ListItem key={server.name} label={server.name} endContent={<Token label={server.state} size="sm" />} />
+            ))}
+          </List>
+        </SettingsGroup>
       )}
     </VStack>
   );
@@ -591,35 +681,43 @@ function AboutSection({ view, remote, connected }: { view: DurableView; remote: 
   const settings = view.settings;
   const canRename = settings !== null && hostSupportsFeature(host?.protocol.minor ?? 0, "hostName");
   return (
-    <VStack gap={3}>
-      {canRename ? <HostNameField settings={settings} remote={remote} connected={connected} /> : null}
-      <List density="compact">
-        <ListItem label="Host version" description={host?.version ?? "Source checkout"} />
-        <ListItem
-          label="Protocol"
-          description={host === undefined ? "—" : `${host.protocol.major}.${host.protocol.minor}`}
-        />
-        <ListItem
-          label="Data directory"
-          description={<span style={{ wordBreak: "break-all", userSelect: "all" }}>{view.session.directory}</span>}
-        />
-        <ListItem
-          label="Settings file"
-          description={
-            <span style={{ wordBreak: "break-all", userSelect: "all" }}>{view.session.directory}/settings.json</span>
-          }
-        />
-        <ListItem
-          label="Website"
-          description={
-            // `?home` keeps the site on its home page instead of forwarding
-            // a marked browser back to the app.
-            <Link href="https://pinomad.si/?home" isExternalLink>
-              pinomad.si
-            </Link>
-          }
-        />
-      </List>
+    <VStack gap={6}>
+      {canRename ? (
+        <SettingsGroup>
+          <div className="p-4">
+            <HostNameField settings={settings} remote={remote} connected={connected} />
+          </div>
+        </SettingsGroup>
+      ) : null}
+      <SettingsGroup title="Details">
+        <List hasDividers>
+          <ListItem label="Host version" description={host?.version ?? "Source checkout"} />
+          <ListItem
+            label="Protocol"
+            description={host === undefined ? "—" : `${host.protocol.major}.${host.protocol.minor}`}
+          />
+          <ListItem
+            label="Data directory"
+            description={<span style={{ wordBreak: "break-all", userSelect: "all" }}>{view.session.directory}</span>}
+          />
+          <ListItem
+            label="Settings file"
+            description={
+              <span style={{ wordBreak: "break-all", userSelect: "all" }}>{view.session.directory}/settings.json</span>
+            }
+          />
+          <ListItem
+            label="Website"
+            description={
+              // `?home` keeps the site on its home page instead of forwarding
+              // a marked browser back to the app.
+              <Link href="https://pinomad.si/?home" isExternalLink>
+                pinomad.si
+              </Link>
+            }
+          />
+        </List>
+      </SettingsGroup>
       <Text as="p" type="supporting">Edit the settings file by hand only while the host is stopped.</Text>
     </VStack>
   );
@@ -685,25 +783,21 @@ function ModeSetting({
   onReset: () => void;
 }) {
   return (
-    <VStack gap={1}>
-      <Text>{title}</Text>
-      <HStack gap={2} vAlign="center" wrap="wrap">
-        <SegmentedControl
-          className="shrink-0"
-          value={value}
-          onChange={(next) => onChange(next as QueueMode)}
-          label={title}
-          size="sm"
-          isDisabled={disabled}
-        >
-          <SegmentedControlItem value="one-at-a-time" label="One at a time" />
-          <SegmentedControlItem value="all" label="All at once" />
-        </SegmentedControl>
-        {customized ? (
-          <Button label="Use pi's default" variant="secondary" size="sm" isDisabled={disabled} onClick={onReset} />
-        ) : null}
-      </HStack>
-    </VStack>
+    <SettingsRow label={title}>
+      {customized ? (
+        <Button label="Use pi's default" variant="secondary" size="sm" isDisabled={disabled} onClick={onReset} />
+      ) : null}
+      <SegmentedControl
+        value={value}
+        onChange={(next) => onChange(next as QueueMode)}
+        label={title}
+        size="sm"
+        isDisabled={disabled}
+      >
+        <SegmentedControlItem value="one-at-a-time" label="One at a time" />
+        <SegmentedControlItem value="all" label="All at once" />
+      </SegmentedControl>
+    </SettingsRow>
   );
 }
 

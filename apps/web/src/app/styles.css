@@ -56,7 +56,7 @@
    10% white, which glows, and sit above the popover so they still draw an
    edge on the top layer. */
 [data-astryx-theme][data-astryx-theme] {
-  --color-background-body: light-dark(#f1f1f1, oklch(0.17 0 0));
+  --color-background-body: light-dark(#f5f5f5, oklch(0.17 0 0));
   --color-background-muted: light-dark(#f1f1f1, oklch(0.185 0 0));
   --color-background-surface: light-dark(#ffffff, oklch(0.215 0 0));
   --color-background-card: light-dark(#ffffff, oklch(0.255 0 0));
@@ -64,6 +64,9 @@
   --color-border: light-dark(#00000014, oklch(0.335 0 0));
   --color-text-primary: light-dark(#171717, oklch(0.94 0 0));
   --color-icon-primary: light-dark(#171717, oklch(0.94 0 0));
+  /* The inset panes' edge: lighter than --color-border, since the fill step
+     from the frame already separates them. */
+  --pigui-pane-ring: light-dark(#0000000f, oklch(0.255 0 0));
 }
 
 /* A dialog floats over the pane, but Astryx paints it with the surface color,
@@ -628,13 +631,89 @@ body {
   opacity: 1;
 }
 
-/* The main surface is elevated: content sits on --surface over the wash. */
+/* —— Inset shell ——
+   The window is the frame color (the wash); the sidebar sits straight on it
+   and the work sits on cards inset from the window edge: the main pane, and
+   beside it the side panel as a card of its own. A pane is any
+   `.pigui-pane`, or a Centered screen inside the frame. Narrow windows have
+   no sidebar beside the pane, so the pane goes full-bleed there and the
+   inset is wide-only (`.pigui-inset`, set by AppFrame). */
+.pigui-app-layout {
+  --pigui-pane-gap: 0.5rem;
+  --pigui-pane-radius: 0.75rem;
+}
+
 .pigui-app-layout [role="main"] {
   overscroll-behavior: none;
 }
 
 .pigui-app-layout [role="main"]:not(#\#):not(#\#):not(#\#) {
+  background-color: transparent;
+}
+
+.pigui-inset [role="main"]:not(#\#):not(#\#):not(#\#) {
+  padding: var(--pigui-pane-gap);
+  padding-inline-start: 0;
+}
+
+/* Sidebar collapsed: nothing to butt against, so the pane insets on all sides. */
+.pigui-inset--bare [role="main"]:not(#\#):not(#\#):not(#\#) {
+  padding-inline-start: var(--pigui-pane-gap);
+}
+
+.pigui-stage {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+.pigui-stage > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.pigui-app-layout :is(.pigui-pane, .pigui-centered) {
+  min-height: 0;
+  overflow: clip;
   background-color: var(--surface);
+}
+
+.pigui-inset :is(.pigui-pane, .pigui-centered) {
+  border-radius: var(--pigui-pane-radius);
+  box-shadow:
+    0 0 0 1px var(--pigui-pane-ring),
+    0 1px 2px light-dark(oklch(0 0 0 / 4%), oklch(0 0 0 / 30%));
+}
+
+.pigui-app-layout .pigui-centered {
+  height: 100%;
+}
+
+.pigui-inset .pigui-split {
+  gap: var(--pigui-pane-gap);
+}
+
+/* The side panel's resize grip hangs into the gap, outside the card: the
+   card clips through its inner wrapper instead. */
+.pigui-app-layout .pigui-side-pane {
+  overflow: visible;
+}
+
+.pigui-app-layout .pigui-side-pane > :first-child {
+  border-radius: inherit;
+}
+
+/* Without the inset the panel is a column of the same pane again. */
+.pigui-app-layout:not(.pigui-inset) .pigui-side-pane {
+  border-inline-start: 1px solid var(--border);
+}
+
+/* The Centered screens outside the frame (no host yet, pairing) fill the
+   window on the frame color. */
+.pigui-centered {
+  height: 100dvh;
+  background-color: var(--color-background-body);
 }
 
 /* —— Animated icons (shared/ui/animated-icons) —— */
@@ -714,25 +793,25 @@ body {
 
 /* macOS desktop only (preload sets data-pinomad-vibrancy): the window is
    transparent with under-window vibrancy, so clear every layer down to the
-   app shell and give the sidebar panel one translucent wash of the frame
-   color. The main pane keeps its opaque surface so the two columns stay
-   distinct; full-screen pages (Centered) paint their own opaque background.
+   app shell and give the shell one translucent wash of the frame color,
+   under the sidebar and in the gaps around the inset panes. The panes keep
+   their opaque surface; full-screen pages (Centered) paint their own opaque
+   background.
    The dark material is lighter than the main pane, which would put the
    frame above the pane, so in dark mode the wash is heavy enough to keep
-   the sidebar the darkest layer with only a hint of the glass showing.
-   Ported from Pace; Astryx's sidebar panel is the layout panel that holds
-   the side nav. */
+   the frame the darkest layer with only a hint of the glass showing.
+   Ported from Pace. */
 html[data-pinomad-vibrancy],
 html[data-pinomad-vibrancy] body,
 html[data-pinomad-vibrancy] #root {
   background-color: transparent;
 }
 
-html[data-pinomad-vibrancy] .pigui-app-layout.astryx-app-shell:not(#\#):not(#\#):not(#\#) {
+html[data-pinomad-vibrancy] .pigui-app-layout .astryx-layout-panel:has(.astryx-side-nav):not(#\#):not(#\#):not(#\#) {
   background-color: transparent;
 }
 
-html[data-pinomad-vibrancy] .pigui-app-layout .astryx-layout-panel:has(.astryx-side-nav):not(#\#):not(#\#):not(#\#) {
+html[data-pinomad-vibrancy] .pigui-app-layout.astryx-app-shell:not(#\#):not(#\#):not(#\#) {
   background-color: light-dark(
     color-mix(in srgb, var(--color-background-body) 32%, transparent),
     color-mix(in srgb, var(--color-background-body) 90%, transparent)

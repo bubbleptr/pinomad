@@ -135,7 +135,7 @@ describe("web RTC carrier", () => {
 
       const settings = page.getByRole("button", { name: "Settings", exact: true });
       await settings.click();
-      const dialog = page.getByRole("dialog", { name: "Settings" });
+      const dialog = page.getByRole("region", { name: "Settings" });
       await dialog.getByRole("button", { name: "Hosts", exact: true }).click();
 
       // The coordinator starts the upgrade 1s after the WebSocket is ready;

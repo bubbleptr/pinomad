@@ -15,7 +15,7 @@ interface SettingsSubpageHost {
 export const SettingsSubpageContext = createContext<SettingsSubpageHost | undefined>(undefined);
 
 /**
- * Report an open sub-page to the enclosing Settings dialog, so its header
+ * Report an open sub-page to the enclosing Settings page, so its header
  * names it and its back button closes it before leaving the section. Returns
  * whether the section should leave out its own back button.
  */

@@ -74,3 +74,23 @@ Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。组件来�
 ### iOS 对照
 
 iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.borderedProminent` / `.glassProminent`，`secondary` ↔ `.bordered` / `.glass`，`ghost` ↔ `.plain` / `.borderless`，`destructive` ↔ `role: .destructive`。改 iOS 按钮另开 PR。
+
+## 外框和面板
+
+窗口底色是框架色（`--color-background-body`），侧栏直接放在底色上；工作区是从窗口边缘内缩的圆角卡片（面板，pane）：主区一张，右侧面板（Tasks / Changes / Terminal）打开时是旁边单独的一张，两张之间露出底色间隙。样式只在 `src/app/styles.css` 的 “Inset shell” 一段里定义：
+
+- 面板加 `pigui-pane`，底色 `--surface`，圆角 `--pigui-pane-radius`（12px），边缘是 `--pigui-pane-ring` 的 1px 内描边加 1px 投影。间隙是 `--pigui-pane-gap`（8px）。
+- 内缩只在宽屏（≥1024px，AppFrame 给外壳加 `pigui-inset`）。窄屏没有侧栏，面板贴满窗口，不要圆角和描边。
+- 框架里显示的 `Centered` 屏（连接中、连接失败）自己就是一张面板；框架外的（还没有宿主、配对）铺满窗口，用框架色。
+- 深色模式照样“越上层越亮”：框架最暗，面板高一级，卡片（输入框、设置分组）再高一级。
+- 调用处不要用 `className` 给面板加圆角、边框或底色。
+
+## 设置页
+
+设置是外框里的一页，不是对话框：宽屏时设置导航（顶上是 “‹ Settings” 返回行和搜索框）占侧栏的位置，打开的分区在主区面板里，内容居中、最宽 46rem；窄屏时主区先列出分区，点进去再看，顶栏有返回和关闭。Esc 关闭设置，除非它属于设置上面打开的对话框、菜单或下拉。
+
+分区内容用 `shared/ui/settings-group.tsx`：
+
+- `SettingsGroup`：可选标题，下面一张带描边的卡片，行间有分隔线。
+- `SettingsRow`：一项设置一行，左边是名称（可加一行说明），右边是控件；窄时控件换到下一行。控件自己带无障碍名称（比如 `SegmentedControl` 的 `label`），行的名称只给人看。
+- 现成的列表（`List hasDividers`）直接放进 `SettingsGroup`。
