@@ -1,0 +1,61 @@
+---
+title: Named subagents, background processes, and host upgrades from the app
+version: v0.14.0
+date: 2026-11-10
+---
+
+**Before you upgrade**
+
+- Upgrade the host with `pinomad upgrade`. From 0.14.0 on, you can upgrade the host from Settings instead.
+- Named subagents, background processes, the context breakdown and upgrading from Settings need a 0.14.0 host. With an older host these don't show, and everything else works as before.
+
+**Upgrade the host from the app** (web, Mac app and iPhone)
+
+- Settings → the host → About shows the running version and whether a newer one is out. **Upgrade…** offers **Upgrade when idle** or **Upgrade now**, and you can cancel while it waits for running tasks.
+- A failed install shows npm's output. A host that can't upgrade itself says which command to run on it.
+- Choose **Off**, **Notify** (the default) or **When idle** to let the host upgrade itself once nothing is running.
+
+**Subagents**
+
+- Subagents have names, and can run in the background while the conversation goes on. When a background subagent finishes, it reports back to the conversation that started it.
+- A subagent can work in its own Git worktree on a new branch, so its changes stay apart from yours.
+- Subagent conversations are read-only. While one is working you can stop it. To change what it does, tell the conversation that started it.
+- On the web and in the Mac app, subagents are listed in Tasks, grouped by the conversation that started them, with the working ones first. They no longer show up in the sidebar.
+- On the iPhone, background subagents show in a capsule above the composer.
+
+**Background processes**
+
+- The agent can start long-running commands, like a dev server or a watcher, and keep working while they run.
+- Tasks lists them (Overview on the iPhone) with their status and run time, and you can stop one. On the web and in the Mac app, clicking a process shows its output.
+- Background processes stop when the host restarts.
+
+**Accounts**
+
+- Sign up with an email and a mailed code, and reset a forgotten password the same way.
+- Sign in with Google, GitHub or Apple, and link or remove them under the account's sign-in methods. These options appear only on servers that turn them on.
+- Accounts with a username and no email are asked to add an email on servers that can send mail.
+- Invite codes are gone. A self-hosted server is closed to sign-ups unless you open it, and `pinomad server user add` adds accounts.
+
+**Settings** (web, Mac app and iPhone)
+
+- Settings is grouped by what you change: your account, this device, and the settings of each host (Providers, Models, Agents, Chats, Devices, About).
+- Choose Light, Dark or System appearance.
+- Hosts is one list. Hosts on your account that this device hasn't paired with follow the paired ones, with Pair. Each host has its own page with its connection and the routes that reach it (Account relay, Tailnet, LAN, Internet).
+- A host removed from your account disappears from your other tabs and devices too, instead of retrying forever.
+- On the iPhone, Models, Agents and Chats are new pages: choose the default model and thinking level, see the named agents and MCP servers, and set how queued messages are delivered.
+
+**Conversations**
+
+- The Usage section breaks the context window down into System, Skills, Tools, MCP and Messages.
+- The todo list goes away once its run ends, instead of staying under the answer with unticked items. On the iPhone it unfolds in place when you tap it.
+- The item in progress has a slowly turning dashed ring.
+- Live steps shimmer more calmly and their clock counts whole seconds.
+- Picking a model that doesn't support the current thinking level moves to its lowest supported level instead of leaving none selected.
+- Custom endpoints you save record each model's thinking levels from the endpoint or Pi's catalog.
+
+**Web and Mac app**
+
+- The main column and side panel are rounded cards inset in the window. Settings opens as a page in place of the sidebar instead of a dialog.
+- The terminal matches the chat background. Each tab has its own close button, and Rename, Restart and Close are in the tab's context menu.
+- The side panel can be wider.
+- Timers and changing counts no longer shift sideways as their digits change.
