@@ -29,6 +29,7 @@ import type { AccountState } from "../../entities/account/account-model.ts";
 import { HostFrame } from "./host-frame.tsx";
 
 const id = (value: number): ConversationId => value as ConversationId;
+const settingsNav = () => screen.getByRole("navigation", { name: "Settings sections" });
 
 beforeEach(() => localStorage.clear());
 afterEach(() => vi.restoreAllMocks());
@@ -305,7 +306,7 @@ describe("the app frame across hosts", () => {
     await waitFor(() => expect(screen.getByTestId("workbench").dataset.host).toBe(DEVBOX_HOST.hostKey));
     expect(within(dialog).getByLabelText("Name")).toHaveValue("Host A endpoint");
 
-    await userEvent.click(within(dialog).getByRole("combobox", { name: "Host" }));
+    await userEvent.click(within(settingsNav()).getByRole("combobox", { name: "Host" }));
     await userEvent.click(await screen.findByRole("option", { name: "omarchy" }));
 
     expect(within(dialog).queryByLabelText("Name")).toBeNull();
@@ -321,12 +322,12 @@ describe("the app frame across hosts", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Settings" }));
     const settings = await screen.findByRole("region", { name: "Settings" });
-    expect(within(settings).getByRole("navigation", { name: "Settings sections" })).toBeInTheDocument();
+    expect(settingsNav()).toBeInTheDocument();
     // The workbench stays mounted (drafts, connections) but out of sight.
     expect(screen.getByTestId("workbench")).not.toBeVisible();
     expect(screen.queryByRole("button", { name: "New chat" })).toBeNull();
 
-    await userEvent.click(within(settings).getByRole("button", { name: "Close settings" }));
+    await userEvent.click(within(settingsNav()).getByRole("button", { name: "Close settings" }));
     expect(screen.queryByRole("region", { name: "Settings" })).toBeNull();
     expect(screen.getByTestId("workbench")).toBeVisible();
     expect(screen.getByRole("button", { name: "Settings" })).toHaveFocus();
@@ -340,7 +341,7 @@ describe("the app frame across hosts", () => {
     );
     await userEvent.click(await screen.findByRole("button", { name: "Settings" }));
     const settings = await screen.findByRole("region", { name: "Settings" });
-    await userEvent.click(within(settings).getByRole("button", { name: "Hosts" }));
+    await userEvent.click(within(settingsNav()).getByRole("button", { name: "Hosts" }));
     await userEvent.click(within(settings).getByRole("button", { name: "Add a host" }));
     const addHost = await screen.findByRole("dialog", { name: "Add a host" });
 
@@ -348,7 +349,11 @@ describe("the app frame across hosts", () => {
     await userEvent.keyboard("{Escape}");
     expect(screen.getByRole("region", { name: "Settings" })).toBeInTheDocument();
 
-    within(settings).getByRole("button", { name: "Hosts" }).focus();
+    // A text field keeps its Escape: what was typed is not thrown away.
+    await userEvent.type(screen.getByRole("textbox", { name: "Search settings" }), "ho{Escape}");
+    expect(screen.getByRole("region", { name: "Settings" })).toBeInTheDocument();
+
+    within(settingsNav()).getByRole("button", { name: "Hosts" }).focus();
     await userEvent.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("region", { name: "Settings" })).toBeNull());
   });
@@ -432,9 +437,9 @@ describe("the app frame across hosts", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Settings" }));
     const dialog = await screen.findByRole("region", { name: "Settings" });
-    expect(within(dialog).getByText("This device")).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "Hosts" })).toBeInTheDocument();
-    expect(within(dialog).queryByRole("button", { name: "Providers" })).toBeNull();
+    expect(within(settingsNav()).getByText("This device")).toBeInTheDocument();
+    expect(within(settingsNav()).getByRole("button", { name: "Hosts" })).toBeInTheDocument();
+    expect(within(settingsNav()).queryByRole("button", { name: "Providers" })).toBeNull();
     expect(within(dialog).getByRole("button", { name: "Add a host" })).toBeInTheDocument();
   });
 
@@ -474,7 +479,7 @@ describe("the app frame across hosts", () => {
       );
       await userEvent.click(await screen.findByRole("button", { name: "Settings" }));
       const dialog = await screen.findByRole("region", { name: "Settings" });
-      await userEvent.click(within(dialog).getByRole("button", { name: "Updates" }));
+      await userEvent.click(within(settingsNav()).getByRole("button", { name: "Updates" }));
       expect(await within(dialog).findByText("Check for updates")).toBeInTheDocument();
       expect(within(dialog).queryByRole("button", { name: "Add a host" })).toBeNull();
     } finally {

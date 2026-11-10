@@ -169,51 +169,55 @@ export function AppFrame({
         {/* In Settings the whole shell is the Settings page: its nav in the
             sidebar's place, its section in the main pane. The sidebar and the
             workbench stay mounted underneath, hidden. */}
-        <div className="contents" {...(settingsOpen ? { role: "region", "aria-label": "Settings" } : {})}>
-          <AppShell
-            className={`pigui-app-layout text-foreground${narrow ? "" : " pigui-inset"}${
-              narrow || sidebarOpen || settingsOpen ? "" : " pigui-inset--bare"
-            }`}
-            contentPadding={0}
-            mobileNav={false}
-            variant="elevated"
-            sideNav={
-              // Offcanvas on purpose: closed means fully removed — no icon rail.
-              narrow || !(sidebarOpen || settingsOpen) ? undefined : (
-                <>
-                  {sidebarOpen ? (
-                    <div className="contents" hidden={settingsOpen}>
-                      <SideNav
-                        resizable={{ defaultWidth: 260, minWidth: 240, maxWidth: 320, autoSaveId: "pinomad-app-shell" }}
-                        header={
-                          <SidebarHeaderBand
-                            onCollapse={toggleSidebar}
-                            safeLeft={sidebarOwnsCorner ? chrome.safeLeft : undefined}
-                          />
-                        }
-                        footer={
-                          <SidebarFooter
-                            onOpenSettings={() => openSettings({})}
-                            onOpenAccount={openAccount}
-                            onLocateHost={locateHost}
-                          />
-                        }
-                      >
-                        {sidebar}
-                      </SideNav>
-                    </div>
-                  ) : null}
-                  {settings?.nav}
-                </>
-              )
-            }
-          >
-            <div className="pigui-stage" hidden={settingsOpen}>
-              {children}
+        <AppShell
+          className={`pigui-app-layout text-foreground${narrow ? "" : " pigui-inset"}${
+            narrow || sidebarOpen || settingsOpen ? "" : " pigui-inset--bare"
+          }`}
+          contentPadding={0}
+          mobileNav={false}
+          variant="elevated"
+          sideNav={
+            // Offcanvas on purpose: closed means fully removed — no icon rail.
+            narrow || !(sidebarOpen || settingsOpen) ? undefined : (
+              <>
+                {sidebarOpen ? (
+                  <div className="contents" hidden={settingsOpen}>
+                    <SideNav
+                      resizable={{ defaultWidth: 260, minWidth: 240, maxWidth: 320, autoSaveId: "pinomad-app-shell" }}
+                      header={
+                        <SidebarHeaderBand
+                          onCollapse={toggleSidebar}
+                          safeLeft={sidebarOwnsCorner ? chrome.safeLeft : undefined}
+                        />
+                      }
+                      footer={
+                        <SidebarFooter
+                          onOpenSettings={() => openSettings({})}
+                          onOpenAccount={openAccount}
+                          onLocateHost={locateHost}
+                        />
+                      }
+                    >
+                      {sidebar}
+                    </SideNav>
+                  </div>
+                ) : null}
+                {settings?.nav}
+              </>
+            )
+          }
+        >
+          <div className="pigui-stage" hidden={settingsOpen}>
+            {children}
+          </div>
+          {settings === undefined ? null : (
+            <div className="pigui-stage">
+              <section aria-label="Settings" className="pigui-pane">
+                {settings.content}
+              </section>
             </div>
-            {settings === undefined ? null : <div className="pigui-stage"><div className="pigui-pane">{settings.content}</div></div>}
-          </AppShell>
-        </div>
+          )}
+        </AppShell>
         {!settingsOpen && (narrow || !sidebarOpen) && (focused?.view === undefined || focused.view.unauthorized === true) ? (
           // The workbench header (and its navigation button) exists only when
           // it paints the column. A phone, or a desktop with the sidebar

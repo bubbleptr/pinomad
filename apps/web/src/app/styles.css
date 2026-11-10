@@ -47,7 +47,8 @@
    popovers and dialogs float lightest. Inset fills (muted: code, chips, the
    tray under the composer) are recessed, so they go darker than the pane
    they sit in, just above the frame. Light mode keeps theme-neutral's
-   values verbatim, where shadows and borders carry the same order.
+   values except the frame, a step lighter (#f5f5f5) so the inset panes
+   read as cards on it; shadows and borders carry the same order.
    Same specificity lift as the font override.
 
    Dark greys are pure neutrals (C 0), about 0.04 L apart so each step

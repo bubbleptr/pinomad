@@ -106,6 +106,7 @@ export interface SettingsScreen {
 
 /** Escape closes Settings unless it belongs to something open over it (a dialog, menu or listbox). */
 const OWNS_ESCAPE = 'dialog, [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [aria-expanded="true"]';
+const TEXT_ENTRY = 'textarea, [contenteditable="true"], input:not([type="checkbox"]):not([type="radio"]):not([type="button"])';
 
 export function useSettingsScreen({
   machines,
@@ -156,6 +157,8 @@ export function useSettingsScreen({
       // Not `defaultPrevented`: SegmentedControl prevents every Escape, open or not.
       if (event.key !== "Escape") return;
       if (event.target instanceof Element && event.target.closest(OWNS_ESCAPE) !== null) return;
+      // A text field keeps its own Escape: closing would throw away what was typed.
+      if (event.target instanceof Element && event.target.closest(TEXT_ENTRY) !== null) return;
       onClose();
     };
     document.addEventListener("keydown", onKeyDown);
@@ -257,7 +260,7 @@ export function useSettingsScreen({
       nav: (
         <SideNav
           aria-label="Settings sections"
-          resizable={{ defaultWidth: 260, minWidth: 240, maxWidth: 320, autoSaveId: "pinomad-app-shell" }}
+          resizable={{ defaultWidth: 260, minWidth: 240, maxWidth: 320, autoSaveId: "pinomad-settings-nav" }}
           header={
             <div
               className="pinomad-drag flex h-6 items-center"
@@ -390,9 +393,11 @@ export function SettingsPage({
   const screen = useSettingsScreen({ machines, request, focusKey: initialKey, narrow, onClose });
   if (screen === undefined) return null;
   return (
-    <div role="region" aria-label="Settings" className="flex h-dvh bg-background">
+    <div className="flex h-dvh bg-background">
       {screen.nav}
-      <div className="pigui-pane min-w-0 flex-1">{screen.content}</div>
+      <section aria-label="Settings" className="pigui-pane min-w-0 flex-1">
+        {screen.content}
+      </section>
     </div>
   );
 }

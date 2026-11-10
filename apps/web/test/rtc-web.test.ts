@@ -133,14 +133,13 @@ describe("web RTC carrier", () => {
       await page.getByRole("button", { name: "Pair", exact: true }).click();
       await prompt(page).waitFor({ timeout: 30_000 });
 
-      const settings = page.getByRole("button", { name: "Settings", exact: true });
-      await settings.click();
-      const dialog = page.getByRole("region", { name: "Settings" });
-      await dialog.getByRole("button", { name: "Hosts", exact: true }).click();
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      const settings = page.getByRole("region", { name: "Settings" });
+      await page.getByRole("navigation", { name: "Settings sections" }).getByRole("button", { name: "Hosts", exact: true }).click();
 
       // The coordinator starts the upgrade 1s after the WebSocket is ready;
       // the row description is polled from rtcDiagnostics every second.
-      await dialog.getByText(/^Connected · P2P$/).waitFor({ timeout: 90_000 });
+      await settings.getByText(/^Connected · P2P$/).waitFor({ timeout: 90_000 });
 
       await expect
         .poll(
@@ -154,8 +153,8 @@ describe("web RTC carrier", () => {
         .toBe(true);
 
       // The host's own page carries its connection mode and live path.
-      await dialog.getByRole("button", { name: / details$/ }).click();
-      const panel = dialog;
+      await settings.getByRole("button", { name: / details$/ }).click();
+      const panel = settings;
       await panel.getByRole("radio", { name: "Auto", exact: true }).waitFor();
       expect(await panel.getByRole("radio", { name: "Auto", exact: true }).isChecked()).toBe(true);
       await panel.getByText("Active", { exact: true }).waitFor();
@@ -165,7 +164,7 @@ describe("web RTC carrier", () => {
       await expect
         .poll(
           async () => {
-            const descriptions = await dialog.getByText(/^Connected · /).allTextContents();
+            const descriptions = await settings.getByText(/^Connected · /).allTextContents();
             const description = descriptions[0] ?? "";
             return description !== "" && !description.includes("P2P");
           },
