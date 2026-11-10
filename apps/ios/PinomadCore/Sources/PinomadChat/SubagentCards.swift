@@ -4,16 +4,26 @@ import PinomadCore
 
 /// The fields a subagent card reads from its child summary. Kept apart
 /// from `ConversationSummary` so row equality ignores the fields that churn
-/// on every snapshot (updatedAt, status, activity).
+/// on every snapshot (updatedAt, activity, and a foreground child's status).
 public struct SubagentCardSummary: Sendable, Equatable {
-    /// The name the card shows — the call's label, or the child's task.
+    /// The name the card shows — the subagent's name, else the call's
+    /// label or the child's task.
     public let title: String
     /// The named agent it ran as (ADR-0023), without the leading `@`.
     public let role: String?
+    /// The subagent's family-unique name (ADR-0046); nil before 5.33.
+    public let name: String?
+    /// The child's own status, kept only for a background subagent: a
+    /// background call's card follows it, while a foreground card reads its
+    /// call and must not re-render on the child's churn.
+    public let backgroundStatus: ConversationStatus?
 
-    public init(title: String, role: String?) {
+    public init(title: String, role: String?, name: String? = nil,
+                backgroundStatus: ConversationStatus? = nil) {
         self.title = title
         self.role = role
+        self.name = name
+        self.backgroundStatus = backgroundStatus
     }
 }
 
@@ -25,6 +35,8 @@ public struct SubagentCard: Sendable, Equatable, Identifiable {
         case running
         case done
         case failed
+        /// A background subagent waiting for its next message.
+        case idle
     }
 
     /// The core's card key (step/call), stable across snapshots.
@@ -38,16 +50,21 @@ public struct SubagentCard: Sendable, Equatable, Identifiable {
     /// nil for an ordinary subagent.
     public let role: String?
     public let model: String?
+    /// Its own worktree's branch (`checkout: "worktree"`), to merge from.
+    public let branch: String?
     public let elapsed: String?
     /// The child's recorded result, shown behind the card's disclosure.
     public let output: String?
+    /// Dispatched with `background: true` and handed over: the status is
+    /// the subagent's own, not the call's (ADR-0046 §1).
+    public let background: Bool
 
     public var id: String { key }
 
     /// The muted line after the status, in the web card's order. The view
-    /// prepends the localized status.
+    /// prepends "Background" and the localized status.
     public var meta: [String] {
-        [role, model, elapsed].compactMap { $0 }
+        [role, model, branch, elapsed].compactMap { $0 }
     }
 
     public init(
@@ -57,8 +74,10 @@ public struct SubagentCard: Sendable, Equatable, Identifiable {
         status: Status,
         role: String?,
         model: String?,
+        branch: String? = nil,
         elapsed: String?,
-        output: String?
+        output: String?,
+        background: Bool = false
     ) {
         self.key = key
         self.conversationId = conversationId
@@ -66,8 +85,10 @@ public struct SubagentCard: Sendable, Equatable, Identifiable {
         self.status = status
         self.role = role
         self.model = model
+        self.branch = branch
         self.elapsed = elapsed
         self.output = output
+        self.background = background
     }
 }
 
@@ -82,8 +103,10 @@ extension ChatAdapter {
         for child in node.children where child.summary.kind == .subagent {
             guard let id = child.summary.id else { continue }
             summaries[id] = SubagentCardSummary(
-                title: displayName(summary: child.summary),
-                role: child.summary.role
+                title: conversationName(summary: child.summary),
+                role: child.summary.role,
+                name: child.summary.name,
+                backgroundStatus: child.summary.lifecycle == .background ? child.summary.status : nil
             )
         }
         return summaries
@@ -109,33 +132,38 @@ extension ChatAdapter {
 
     /// One card from a subagent call and its child summary. Without a
     /// summary (the child hasn't reached the organized tree yet) the card
-    /// still names the call by its task, just without a role.
+    /// still names the call by its `name` or task, just without a role.
     public static func card(tool: ToolItem, summary: SubagentCardSummary?, key: String) -> SubagentCard {
         var model: String?
+        var branch: String?
         var elapsed: String?
         var recorded: String?
-        if case let .subagent(_, output, modelName, startedAt, endedAt, _)? = tool.pinomad {
+        if case let .subagent(_, output, modelName, startedAt, endedAt, worktreeBranch)? = tool.pinomad {
             model = modelName
+            branch = worktreeBranch
             recorded = output
             elapsed = elapsedText(startedAt: startedAt, endedAt: endedAt)
         }
-        let title: String
-        if let summary {
-            title = summary.title
-        } else {
-            title = toolTargetFromArgs(argsText: tool.argsText)
-                ?? toolDisplayName(name: tool.toolName)
-                ?? "Subagent"
-        }
+        let args = SubagentArgs(tool.argsText)
+        let title = summary?.name ?? args.name ?? summary?.title
+            ?? toolTargetFromArgs(argsText: tool.argsText)
+            ?? toolDisplayName(name: tool.toolName)
+            ?? "Subagent"
+        let callStatus = status(of: tool.state)
+        // Dispatched to the background and the call went through: the work
+        // is the subagent's now, and the call's end only marks the handover.
+        let background = callStatus == .done && args.background
         return SubagentCard(
             key: key,
             conversationId: conversationID(of: tool),
             title: title,
-            status: status(of: tool.state),
+            status: background ? backgroundStatus(summary?.backgroundStatus) : callStatus,
             role: summary?.role.flatMap { $0.isEmpty ? nil : "@\($0)" },
             model: model,
-            elapsed: elapsed,
-            output: tool.output ?? recorded
+            branch: branch,
+            elapsed: background ? nil : elapsed,
+            output: tool.output ?? recorded,
+            background: background
         )
     }
 
@@ -161,11 +189,39 @@ extension ChatAdapter {
         }
     }
 
+    /// No status means idle; a subagent cannot ask the user (ADR-0046 §8),
+    /// so anything else live is work in progress.
+    private static func backgroundStatus(_ status: ConversationStatus?) -> SubagentCard.Status {
+        switch status {
+        case nil: .idle
+        case .failed?: .failed
+        default: .running
+        }
+    }
+
     /// The web card's duration: "12s" under a minute, else "1m 5s".
     private static func elapsedText(startedAt: Double?, endedAt: Double?) -> String? {
         guard let startedAt, let endedAt, endedAt >= startedAt else { return nil }
         let seconds = Int(((endedAt - startedAt) / 1000).rounded(.down))
         if seconds < 60 { return "\(seconds)s" }
         return "\(seconds / 60)m \(seconds % 60)s"
+    }
+}
+
+/// The `subagent` call arguments the card reads. Arguments still streaming,
+/// or not an object, read as neither.
+private struct SubagentArgs {
+    var name: String?
+    var background = false
+
+    init(_ text: String?) {
+        guard let data = text?.data(using: .utf8),
+              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        else { return }
+        if let name = object["name"] as? String, !name.isEmpty { self.name = name }
+        // Only JSON `true`: a number would bridge to Bool too.
+        if let flag = object["background"] as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() {
+            background = flag.boolValue
+        }
     }
 }

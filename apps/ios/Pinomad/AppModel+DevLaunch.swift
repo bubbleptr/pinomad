@@ -80,11 +80,13 @@ extension AppModel {
             startDemo()
             return true
         }
-        if env["PINOMAD_DEMO_SUBAGENTS"] != nil {
-            // The subagent cards' states: one named agent and one ordinary
-            // call, so their layouts can be compared without a host.
+        if let mode = env["PINOMAD_DEMO_SUBAGENTS"] {
+            // The subagent cards' states (a named agent, an ordinary call,
+            // background calls) and the background bar over the composer;
+            // `child` opens an idle background subagent with its composer,
+            // `incall` a foreground one still inside its call.
             phase = .home
-            startSubagentDemo()
+            startSubagentDemo(mode)
             return true
         }
         if let mode = env["PINOMAD_DEMO_OVERVIEW"] {
@@ -444,79 +446,138 @@ extension AppModel {
         }
     }
 
-    /// A settled run with two delegated tasks — one named agent, one
-    /// ordinary subagent — for the card layout (role line present/absent).
-    private func startSubagentDemo() {
-        navPath = [demoConversationRoute(1)]
+    /// A settled run that delegated five tasks: a named agent and an
+    /// ordinary subagent that answered in the call (role line present and
+    /// absent), and three background ones — one working, one idle in its
+    /// own worktree, one failed — behind the bar over the composer. A
+    /// foreground subagent still inside its call is the `incall` page.
+    private func startSubagentDemo(_ mode: String) {
         let now = Date.now.timeIntervalSince1970 * 1000
+        let gpt = ModelRef(provider: "openai", modelId: "gpt-5")
+        let claude = ModelRef(provider: "anthropic", modelId: "claude-sonnet-4-5")
+        func subagent(
+            _ id: UInt64, _ name: String, _ label: String, lifecycle: SubagentLifecycle,
+            model: ModelRef, status: ConversationStatus? = nil, role: String? = nil, ago: Double = 0
+        ) -> ConversationSummary {
+            ConversationSummary(
+                id: id, kind: .subagent, lifecycle: lifecycle, name: name, model: model,
+                parent: 1, forkedAt: nil, title: label, status: status, updatedAt: now - ago,
+                label: label, role: role, activity: nil
+            )
+        }
         let parent = ConversationSummary(
             id: 1, kind: .conversation, parent: nil, forkedAt: nil,
             title: "Pre-release checks", status: nil, updatedAt: now,
             label: nil, role: nil, activity: nil
         )
-        let reviewed = ConversationSummary(
-            id: 2, kind: .subagent, parent: 1, forkedAt: nil,
-            title: "Review the auth middleware", status: nil, updatedAt: now,
-            label: "Review login middleware", role: "reviewer", activity: nil
-        )
-        let plain = ConversationSummary(
-            id: 3, kind: .subagent, parent: 1, forkedAt: nil,
-            title: "Write the release notes", status: nil, updatedAt: now,
-            label: "Compile release notes", role: nil, activity: nil
-        )
+        let children = [
+            subagent(2, "reviewer", "Review login middleware", lifecycle: .foreground, model: claude, role: "reviewer"),
+            subagent(3, "notes", "Compile release notes", lifecycle: .foreground, model: gpt),
+            subagent(4, "auditor", "Audit the auth middleware for session fixation", lifecycle: .background,
+                     model: gpt, status: .running, ago: 5_000),
+            subagent(5, "migrator", "Migrate the session store", lifecycle: .background,
+                     model: claude, ago: 60_000),
+            subagent(6, "linter", "Fix lint warnings", lifecycle: .background,
+                     model: gpt, status: .failed, ago: 600_000),
+            subagent(7, "tester", "Run the iOS tests", lifecycle: .foreground, model: claude, status: .running),
+        ]
         let organized = Organized(
-            chats: [ConversationNode(summary: parent, children: [
-                ConversationNode(summary: reviewed, children: []),
-                ConversationNode(summary: plain, children: []),
-            ])],
+            chats: [ConversationNode(summary: parent, children: children.map {
+                ConversationNode(summary: $0, children: [])
+            })],
             projects: [], archived: []
         )
         let reviewOutput = "No auth bypass found in the login middleware; suggest moving the session expiry into config."
         let notesOutput = "Release notes are grouped under \"Added / Fixed / Upgrade notes\"."
+        func call(
+            _ id: UInt64, _ args: String, state: ToolPartState = .outputAvailable, output: String?,
+            model: String, ran: Double?, branch: String? = nil
+        ) -> ToolItem {
+            ToolItem(
+                state: state, argsText: args, children: [], diffStat: nil, durationMs: nil, images: [],
+                output: output, toolCallId: "call-\(id)", toolName: "subagent",
+                pinomad: .subagent(
+                    conversationId: id, output: output, model: model,
+                    startedAt: ran.map { now - $0 }, endedAt: ran == nil ? nil : now, branch: branch
+                )
+            )
+        }
         let tools = [
-            ToolItem(
-                state: .outputAvailable,
-                argsText: #"{"task":"Review login middleware","description":"Review login middleware"}"#,
-                children: [], diffStat: nil, durationMs: nil, images: [],
-                output: reviewOutput, toolCallId: "call-review", toolName: "subagent",
-                pinomad: .subagent(
-                    conversationId: 2, output: reviewOutput, model: "anthropic/claude-x",
-                    startedAt: now - 65_000, endedAt: now, branch: nil
-                )
-            ),
-            ToolItem(
-                state: .outputAvailable,
-                argsText: #"{"task":"Compile release notes","description":"Compile release notes"}"#,
-                children: [], diffStat: nil, durationMs: nil, images: [],
-                output: notesOutput, toolCallId: "call-notes", toolName: "subagent",
-                pinomad: .subagent(
-                    conversationId: 3, output: notesOutput, model: "openai/gpt-5",
-                    startedAt: now - 12_000, endedAt: now, branch: nil
-                )
-            ),
+            call(2, #"{"task":"Review login middleware","description":"Review login middleware","name":"reviewer","checkout":"shared"}"#,
+                 output: reviewOutput, model: "anthropic/claude-sonnet-4-5", ran: 65_000),
+            call(3, #"{"task":"Compile release notes","description":"Compile release notes","name":"notes","checkout":"shared"}"#,
+                 output: notesOutput, model: "openai/gpt-5", ran: 12_000),
+            call(4, #"{"task":"Audit the auth middleware","name":"auditor","background":true,"checkout":"shared"}"#,
+                 output: "Dispatched auditor.", model: "openai/gpt-5", ran: 1_000),
+            call(5, #"{"task":"Migrate the session store","name":"migrator","background":true,"checkout":"worktree"}"#,
+                 output: "Dispatched migrator.", model: "anthropic/claude-sonnet-4-5", ran: 1_000,
+                 branch: "pinomad/41-ab12"),
+            call(6, #"{"task":"Fix lint warnings","name":"linter","background":true,"checkout":"worktree"}"#,
+                 output: "Dispatched linter.", model: "openai/gpt-5", ran: 1_000, branch: "pinomad/42-cd34"),
+            call(7, #"{"task":"Run the iOS tests","name":"tester","checkout":"shared"}"#,
+                 state: .inputAvailable, output: nil, model: "anthropic/claude-sonnet-4-5", ran: nil),
         ]
         let cot = CotView(
             phase: .settled, failed: false,
             anchorMs: now - 90_000, elapsedMs: 90_000, todoWrittenAtMs: nil,
             steps: [.tools(id: "s1", tools: tools, live: false, activeToolCallId: nil)],
-            answer: CotAnswer(text: "Both subagents are done: the login middleware looks clean, and the release notes are grouped by category.", streaming: false)
+            answer: CotAnswer(text: "The review and the notes are done. The auditor, migrator and linter carry on in the background; I'll pick up their reports as they come in.", streaming: false)
         )
-        let chat: [ChatEntry] = [
+        let parentChat: [ChatEntry] = [
             .user(id: "u1", text: "Before the release, check the login middleware and put together the release notes.", images: []),
             .run(id: "run-demo", cot: cot, forkEntryId: nil, interrupted: false, failure: nil),
         ]
+        let models = [
+            ModelSummary(provider: "openai", modelId: "gpt-5", name: "GPT-5", contextWindow: nil,
+                         thinkingLevels: [], images: true),
+            ModelSummary(provider: "anthropic", modelId: "claude-sonnet-4-5", name: "Claude Sonnet 4.5",
+                         contextWindow: nil, thinkingLevels: [], images: true),
+        ]
+        // The pushed page shows its own transcript: the subagent's task,
+        // then what it said.
+        let shown: (id: UInt64, chat: [ChatEntry], checkout: WorktreeCheckout?, busy: Bool)
+        switch mode {
+        case "child":
+            let answer = CotView(
+                phase: .settled, failed: false, anchorMs: now - 120_000, elapsedMs: 58_000, todoWrittenAtMs: nil,
+                steps: [], answer: CotAnswer(text: "The session store now writes to SQLite. Sessions created before the switch are read once from the old file and moved over; nothing is dropped.", streaming: false)
+            )
+            shown = (5, [
+                .user(id: "t1", text: "Migrate the session store from the JSON file to SQLite, keeping existing sessions.", images: []),
+                .run(id: "run-child", cot: answer, forkEntryId: nil, interrupted: false, failure: nil),
+            ], WorktreeCheckout(
+                conversationId: 5, path: "/Users/void/.pinomad/worktrees/pinomad/41-ab12", repo: "/Users/void/code/pinomad",
+                subdir: "", branch: "pinomad/41-ab12", base: "4e73cdb9a1f0c2d3", snapshot: nil
+            ), false)
+            navPath = [demoConversationRoute(1), demoConversationRoute(5)]
+        case "incall":
+            let working = CotView(
+                phase: .acting, failed: false, anchorMs: now - 30_000, elapsedMs: nil, todoWrittenAtMs: nil,
+                steps: [], answer: nil
+            )
+            shown = (7, [
+                .user(id: "t1", text: "Run the iOS tests and report any failures.", images: []),
+                .run(id: "run-child", cot: working, forkEntryId: nil, interrupted: false, failure: nil),
+            ], nil, true)
+            navPath = [demoConversationRoute(1), demoConversationRoute(7)]
+        default:
+            shown = (1, parentChat, nil, false)
+            navPath = [demoConversationRoute(1)]
+        }
         let conversation = ConversationSnapshot(
-            id: 1, chat: chat, statusText: "", queueItems: [],
-            agent: AgentState(model: nil, thinkingLevel: nil, instructions: nil, cwd: nil),
-            questions: [], todo: nil, home: nil, checkout: nil, busy: false, contextUsage: nil, contextBreakdown: nil, fresh: true, freshEpoch: 1
+            id: shown.id, chat: shown.chat, statusText: "", queueItems: [],
+            agent: AgentState(model: shown.id == 1 ? gpt : claude, thinkingLevel: nil, instructions: nil, cwd: nil),
+            questions: [], todo: nil, home: nil, checkout: shown.checkout, busy: shown.busy,
+            contextUsage: nil, contextBreakdown: nil, fresh: true, freshEpoch: 1
         )
         publishDevSnapshot(ClientSnapshot(
-            version: 1, connection: .connected, unauthorized: false,
-            protocolMismatch: nil, host: nil, hostName: nil, settings: nil, devices: [], organized: organized,
-            notices: [], models: [], defaults: Defaults(model: nil, thinkingLevel: nil),
+            version: 1, connection: .connected, unauthorized: false, protocolMismatch: nil,
+            host: HostInfo(version: nil, protocol: ProtocolVersion(major: 5, minor: 33)),
+            hostName: nil, settings: nil, devices: [], organized: organized,
+            notices: [], models: models, defaults: Defaults(model: nil, thinkingLevel: nil),
             agents: nil, conversation: conversation
         ))
-        replyStreams.sync(chat: chat)
+        replyStreams.sync(chat: shown.chat)
     }
 
     /// A project conversation in its own worktree that delegated seven

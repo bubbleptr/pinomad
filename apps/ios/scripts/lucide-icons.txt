@@ -8,12 +8,14 @@ arrow-big-up-dash
 arrow-right
 arrow-up
 ban
+bot
 bell-check
 camera
 check
 check-check
 chevron-down
 chevron-right
+chevrons-right
 circle
 circle-alert
 circle-check

@@ -1,3 +1,4 @@
+import PinomadChat
 import PinomadCore
 import SwiftUI
 
@@ -116,7 +117,7 @@ struct ConversationsPage: View {
             roots.filter { familyStatus(node: $0.node) == status }
         } ?? roots
         guard !query.isEmpty else { return filtered }
-        return filtered.filter { displayName(summary: $0.node.summary).localizedCaseInsensitiveContains(query) }
+        return filtered.filter { conversationName(summary: $0.node.summary).localizedCaseInsensitiveContains(query) }
     }
 
     /// A page mixing groups names each row's project (and machine).
@@ -205,7 +206,7 @@ struct ConversationRowLabel: View {
         HStack(spacing: 12) {
             FamilyStatusDot(status: status)
             VStack(alignment: .leading, spacing: 2) {
-                Text(displayName(summary: node.summary))
+                Text(conversationName(summary: node.summary))
                     .lineLimit(1)
                 if let project {
                     Text(project)

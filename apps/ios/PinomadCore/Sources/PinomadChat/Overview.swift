@@ -29,7 +29,7 @@ public struct SubagentOverview: Equatable, Sendable {
         let failed = tasks.filter { $0.status == .failed }.count
         self.active = active.prefix(Self.listed).compactMap { task in
             guard let id = task.id else { return nil }
-            let name = displayName(summary: task)
+            let name = conversationName(summary: task)
             return Row(
                 id: id,
                 name: name,

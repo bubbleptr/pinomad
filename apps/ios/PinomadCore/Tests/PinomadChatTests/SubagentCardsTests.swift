@@ -10,7 +10,8 @@ private func subagentTool(
     output: String? = nil,
     model: String? = "openai/gpt-5",
     startedAt: Double? = 1_000,
-    endedAt: Double? = 66_000
+    endedAt: Double? = 66_000,
+    branch: String? = nil
 ) -> ToolItem {
     ToolItem(
         state: state,
@@ -24,7 +25,7 @@ private func subagentTool(
         toolName: "subagent",
         pinomad: .subagent(
             conversationId: conversationId, output: nil, model: model,
-            startedAt: startedAt, endedAt: endedAt, branch: nil
+            startedAt: startedAt, endedAt: endedAt, branch: branch
         )
     )
 }
@@ -32,6 +33,8 @@ private func subagentTool(
 private func summary(
     id: UInt64,
     kind: SummaryKind,
+    lifecycle: SubagentLifecycle? = nil,
+    name: String? = nil,
     parent: UInt64? = nil,
     title: String? = nil,
     status: ConversationStatus? = nil,
@@ -41,7 +44,7 @@ private func summary(
     activity: SummaryActivity? = nil
 ) -> ConversationSummary {
     ConversationSummary(
-        id: id, kind: kind, parent: parent, forkedAt: nil,
+        id: id, kind: kind, lifecycle: lifecycle, name: name, parent: parent, forkedAt: nil,
         title: title, status: status, updatedAt: updatedAt,
         label: label, role: role, activity: activity
     )
@@ -151,5 +154,72 @@ struct SubagentCardsTests {
         let split = ChatAdapter.splitRun(cot, summaries: summaries(of: child))
         #expect(split.cards.map(\.role) == ["@reviewer"])
         #expect(split.trace.steps.isEmpty)
+    }
+
+    // MARK: ADR-0046
+
+    /// A background call returns as soon as the subagent is dispatched, so
+    /// the card follows the subagent's own status, with no elapsed time.
+    @Test(arguments: [
+        (ConversationStatus?.some(.running), SubagentCard.Status.running),
+        (nil, .idle),
+        (.failed, .failed),
+    ])
+    func backgroundCallFollowsTheSubagent(status: ConversationStatus?, expected: SubagentCard.Status) {
+        let child = summary(id: 42, kind: .subagent, lifecycle: .background, name: "reviewer",
+                            status: status, label: "Audit auth")
+        let tool = subagentTool(
+            args: #"{"task":"review","name":"reviewer","background":true,"checkout":"worktree"}"#,
+            branch: "pinomad/42-ab12")
+        let card = ChatAdapter.card(tool: tool, summary: summaries(of: child)[42], key: "s1/call-1")
+        #expect(card.background)
+        #expect(card.status == expected)
+        #expect(card.elapsed == nil)
+        #expect(card.meta == ["openai/gpt-5", "pinomad/42-ab12"])
+    }
+
+    /// Before the child's summary arrives a background card reads as idle.
+    @Test func backgroundCallWithoutASummaryIsIdle() {
+        let tool = subagentTool(args: #"{"task":"review","name":"reviewer","background":true}"#)
+        let card = ChatAdapter.card(tool: tool, summary: nil, key: "s1/call-1")
+        #expect(card.background)
+        #expect(card.status == .idle)
+        #expect(card.title == "reviewer")
+    }
+
+    /// A background call that failed failed to dispatch: that is the call's.
+    @Test func backgroundCallThatFailedIsTheCallsFailure() {
+        let tool = subagentTool(state: .outputError, args: #"{"task":"review","background":true}"#)
+        let card = ChatAdapter.card(tool: tool, summary: nil, key: "s1/call-1")
+        #expect(!card.background)
+        #expect(card.status == .failed)
+    }
+
+    @Test func foregroundCallKeepsItsOwnStatusAndTime() {
+        let child = summary(id: 42, kind: .subagent, lifecycle: .foreground, name: "reviewer",
+                            status: .running, label: "Audit auth")
+        let card = ChatAdapter.card(tool: subagentTool(), summary: summaries(of: child)[42], key: "s1/call-1")
+        #expect(!card.background)
+        #expect(card.status == .done)
+        #expect(card.elapsed == "1m 5s")
+    }
+
+    /// The name wins over the call's label; a summary without one falls
+    /// back to the call's `name`, then the label.
+    @Test func cardPrefersTheSubagentsName() {
+        let named = summary(id: 42, kind: .subagent, name: "reviewer", label: "Audit auth")
+        #expect(ChatAdapter.card(tool: subagentTool(), summary: summaries(of: named)[42], key: "k").title == "reviewer")
+        let unnamed = summary(id: 42, kind: .subagent, label: "Audit auth")
+        let withArg = subagentTool(args: #"{"task":"review","name":"auditor"}"#)
+        #expect(ChatAdapter.card(tool: withArg, summary: summaries(of: unnamed)[42], key: "k").title == "auditor")
+        #expect(ChatAdapter.card(tool: subagentTool(), summary: summaries(of: unnamed)[42], key: "k").title == "Audit auth")
+    }
+
+    /// A background child's status is what its card shows, so its change
+    /// must reach the row; a foreground child's still must not.
+    @Test func backgroundChildStatusMovesTheSummaryMap() {
+        let running = summary(id: 42, kind: .subagent, lifecycle: .background, name: "r", status: .running)
+        let idle = summary(id: 42, kind: .subagent, lifecycle: .background, name: "r", status: nil)
+        #expect(summaries(of: running) != summaries(of: idle))
     }
 }

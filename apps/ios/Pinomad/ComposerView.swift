@@ -19,6 +19,13 @@ struct ConversationComposer: View {
     /// still change (ADR-0023, protocol 5.18). Not `conversation.agent`,
     /// which is the model/thinking config.
     let agentPick: ConversationAgent?
+    /// A subagent's composer (ADR-0046 §6): messages and Stop only. Its
+    /// model, agent, `/` commands and queued rows stay as dispatched — a
+    /// command or a withdrawn message would bypass the report to its
+    /// dispatcher — and it cannot delegate, so `@` offers files only.
+    var subagent = false
+    /// The family's background subagents, on the card's top edge.
+    var backgroundBar: BackgroundSubagentBar?
 
     @State private var showModels = false
     @State private var showPhotos = false
@@ -59,7 +66,10 @@ struct ConversationComposer: View {
         )
     }
 
-    private var roles: [AgentRole] { model.snapshot?.agents?.roles ?? [] }
+    private var roles: [AgentRole] { subagent ? [] : model.snapshot?.agents?.roles ?? [] }
+
+    /// The `/` menu's host: off in a subagent.
+    private var listsCommands: Bool { !subagent && model.hostSupports("listCommands") }
 
     /// The model sheet's Agent section: pickable on a 5.18+ host, read-only
     /// on an older one or a subagent, hidden when there is no agent to name.
@@ -95,8 +105,11 @@ struct ConversationComposer: View {
     private var skillEntries: [SkillEntry]? { model.skills(for: skillScope) }
 
     /// The host's `/` commands for this conversation; nil before 5.17,
-    /// offline, or until the first answer.
-    private var commandEntries: [CommandEntry]? { model.commands(for: conversation.id) }
+    /// offline, or until the first answer; always nil in a subagent, so
+    /// nothing typed there is a command.
+    private var commandEntries: [CommandEntry]? {
+        subagent ? nil : model.commands(for: conversation.id)
+    }
 
     /// What tapping send does with the current draft.
     private var submit: ComposerSubmit {
@@ -113,7 +126,7 @@ struct ConversationComposer: View {
     /// The 5.14 queued-input calls: live connection plus a host that knows
     /// them. Older hosts and offline rows keep their plain display.
     private var canActOnQueue: Bool {
-        connected && model.hostSupports("withdrawQueued")
+        !subagent && connected && model.hostSupports("withdrawQueued")
     }
 
     /// 5.29's reorderQueued; older hosts show no handle.
@@ -196,6 +209,9 @@ struct ConversationComposer: View {
             } else if mentions.menu.isShowing {
                 MentionMenuView(menu: mentions.menu, choose: chooseMention)
             }
+            if let backgroundBar {
+                backgroundBar
+            }
             card
         }
         .padding(.horizontal, 12)
@@ -211,7 +227,7 @@ struct ConversationComposer: View {
             // Until the reader places the caret, an add entry goes at the end.
             selection = NSRange(location: (draft.wrappedValue as NSString).length, length: 0)
             // Known before the first `/`, so a typed command is recognised.
-            model.requestCommands(for: conversation.id)
+            if !subagent { model.requestCommands(for: conversation.id) }
         }
         .onChange(of: draft.wrappedValue) { _, _ in
             model.syncChips(conversation.id)
@@ -225,7 +241,7 @@ struct ConversationComposer: View {
         .onChange(of: model.connected) { _, connected in
             if connected {
                 model.requestSkills(for: skillScope, force: true)
-                model.requestCommands(for: conversation.id, force: true)
+                if !subagent { model.requestCommands(for: conversation.id, force: true) }
             }
             refreshMentions()
         }
@@ -286,7 +302,7 @@ struct ConversationComposer: View {
                 focused: $focused,
                 placeholder: conversation.busy ? "Add a follow-up…" : ComposerPlaceholder.text(
                     lead: "Ask", agents: !roles.isEmpty, files: mentionScope != nil,
-                    commands: model.hostSupports("listCommands"), skills: skillScope != nil),
+                    commands: listsCommands, skills: skillScope != nil),
                 chips: model.chips(for: conversation.id).ranges,
                 expandDeletion: { model.chips(for: conversation.id).deletion(expanding: $0) },
                 enabled: connected && !editLocked,
@@ -312,7 +328,7 @@ struct ConversationComposer: View {
                     logo: conversation.agent.model,
                     short: ModelCapsule.short(models: model.snapshot?.models ?? [], pick: modelPick),
                     prefix: agentPick?.current.map { "@\($0)" },
-                    enabled: connected && sheetHasContent
+                    enabled: connected && sheetHasContent && !subagent
                 ) {
                     focused = false
                     showModels = true
@@ -329,13 +345,13 @@ struct ConversationComposer: View {
     }
 
     private var plusMenu: some View {
-        let commands = model.hostSupports("listCommands")
+        let commands = listsCommands
         let useSkill: (() -> Void)? = skillScope == nil ? nil : { insertTrigger("$") }
         let mentionAgent: (() -> Void)? = roles.isEmpty ? nil : { insertTrigger("@") }
         let camera: (() -> Void)? = UIImagePickerController.isSourceTypeAvailable(.camera)
             ? { presentAfterMenu { showCamera = true } } : nil
-        // Before 5.17 there is no `/` menu, only Compact.
-        let compact: (() -> Void)? = commands ? nil : { model.compact() }
+        // Before 5.17 there is no `/` menu, only Compact; a subagent has neither.
+        let compact: (() -> Void)? = commands || subagent ? nil : { model.compact() }
         // A command starts the message, so `/` replaces a blank draft.
         let runCommand: (() -> Void)? = !commands ? nil : {
             insertTrigger("/", selection: NSRange(location: 0, length: draft.wrappedValue.utf16.count))
@@ -364,7 +380,7 @@ struct ConversationComposer: View {
             runCommand: runCommand,
             runCommandBlocked: runCommandBlocked,
             compact: compact,
-            onOpen: { model.requestCommands(for: conversation.id) }
+            onOpen: subagent ? nil : { model.requestCommands(for: conversation.id) }
         )
     }
 
@@ -375,7 +391,7 @@ struct ConversationComposer: View {
         }
         // Cheap when fresh; a stale entry refetches as the menu opens.
         model.requestSkills(for: skillScope)
-        model.requestCommands(for: conversation.id)
+        if !subagent { model.requestCommands(for: conversation.id) }
         mentions.refresh(
             text: draft.wrappedValue,
             caret: selection.location,

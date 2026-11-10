@@ -381,7 +381,7 @@ struct MachineSettingsView: View {
     private func archivedRow(_ entry: ArchivedConversation) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text(displayName(summary: entry.node.summary)).lineLimit(1)
+                Text(conversationName(summary: entry.node.summary)).lineLimit(1)
                 if let name = entry.project?.name ?? entry.project?.path {
                     Text(name).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
