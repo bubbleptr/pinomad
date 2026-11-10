@@ -53,7 +53,7 @@ export function ConversationTranscript({
    * Resubmits the user message the newest run answered, when that run failed —
    * its images and picked skills go back too. The retry carries a requestId derived from the
    * failed run, so a second click or another client's retry admits once on
-   * the host. Absent on read-only transcripts (subagent conversations).
+   * the host. Absent on subagent transcripts: their runs belong to whoever sent each message.
    */
   onRetry?: (retry: {
     text: string;

@@ -14,13 +14,14 @@ function subagent(
   description: string,
   timing: { startedAt: number; endedAt?: number },
   output?: string,
+  background = false,
 ): { key: string; tool: ConversationToolItem } {
   return {
     key: `tools-${n}`,
     tool: {
       toolName: "subagent",
       toolCallId: `call-${n}`,
-      argsText: JSON.stringify({ description, prompt: "…" }),
+      argsText: JSON.stringify({ description, task: "…", checkout: "shared", ...(background ? { background: true } : {}) }),
       state,
       ...(output === undefined ? {} : { output }),
       pinomad: { kind: "subagent", conversationId: id(n), model: "anthropic/claude-opus-5-5", ...timing },
@@ -39,6 +40,16 @@ const summaries: Record<number, ConversationSummary> = {
   },
   2: { id: id(2), kind: "subagent", label: "Write migration tests", role: "tester" },
   3: { id: id(3), kind: "subagent", label: "Profile the transcript scroll", status: "failed" },
+  4: {
+    id: id(4),
+    kind: "subagent",
+    lifecycle: "background",
+    name: "relay-audit",
+    label: "Audit the relay's reconnect path",
+    status: "running",
+    activity: { tool: "grep", target: "reconnect" },
+  },
+  5: { id: id(5), kind: "subagent", lifecycle: "background", name: "docs-pass", label: "Proofread the usage docs" },
 };
 
 const running = subagent(1, "input-available", "Audit the relay's reconnect path", { startedAt: now - 42_000 });
@@ -67,6 +78,12 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {};
 
 export const Running: Story = { args: { tools: [running] } };
+
+// Background calls return at once; the card follows the subagent itself:
+// still working, then idle once it answered.
+const backgroundRunning = subagent(4, "output-available", "Audit the relay's reconnect path", { startedAt: now - 60_000, endedAt: now - 59_000 }, undefined, true);
+const backgroundIdle = subagent(5, "output-available", "Proofread the usage docs", { startedAt: now - 300_000, endedAt: now - 299_000 }, undefined, true);
+export const Background: Story = { args: { tools: [backgroundRunning, backgroundIdle] } };
 
 // Before the child's summary arrives the card falls back to the call's own arguments.
 export const WithoutSummaries: Story = { args: { summaryOf: undefined } };

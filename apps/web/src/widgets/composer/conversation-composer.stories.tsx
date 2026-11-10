@@ -43,6 +43,14 @@ export const AddMenu: Story = {
 /** A conversation created with a named agent: `@tester` leads the model capsule, read-only. */
 export const WithRole: Story = { args: { conversation: subagentConversation() } };
 
+/** A running subagent (ADR-0046 §6): messages and Stop only — its model, commands and queued rows stay as dispatched. */
+export const Subagent: Story = {
+  args: { conversation: subagentConversation(), busy: true, subagent: true },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "More actions" }));
+  },
+};
+
 /** A leading `/` opens the host's commands. */
 export const CommandMenu: Story = {
   play: async ({ canvasElement }) => {

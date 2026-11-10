@@ -46,7 +46,7 @@ export const Fork: Story = {
   args: { conversation: forkConversation(), canFork: false, docs: [] },
 };
 
-/** A subagent's transcript is read-only: no forking, no retry. */
+/** A subagent's transcript: no forking, no retry. */
 export const Subagent: Story = {
   args: { conversation: subagentConversation(), canFork: false, onRetry: undefined, docs: [] },
 };

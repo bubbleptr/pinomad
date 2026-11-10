@@ -13,7 +13,8 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { agentOf, usageRows } from "@pinomad/client/chat.ts";
 import { contextUsage } from "@pinomad/client/context-usage.ts";
-import { displayName, rootOf, taskGroupsOf } from "@pinomad/client/family.ts";
+import { rootOf, taskGroupsOf } from "@pinomad/client/family.ts";
+import { conversationName } from "../../entities/conversation/subagent.ts";
 import { summaryOf } from "@pinomad/client/model.ts";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ContextBreakdownList, matchingBreakdown } from "../../entities/conversation/context-breakdown.tsx";
@@ -293,7 +294,7 @@ function SubagentsSection({
           }
           onClick={() => onOpenTasks(task.id)}
         >
-          {displayName(task)}
+          {conversationName(task)}
         </Row>
       ))}
       {summary.length === 0 ? null : (

@@ -197,6 +197,23 @@ export function withBackgroundSubagents(
   };
 }
 
+/** The same view with one conversation's summary changed, wherever it sits in the tree. */
+export function withSummary(view: DurableView, conversationId: ConversationId, patch: Partial<ConversationSummary>): DurableView {
+  const visit = (node: ConversationNode): ConversationNode => ({
+    summary: node.summary.id === conversationId ? { ...node.summary, ...patch } : node.summary,
+    children: node.children.map(visit),
+  });
+  return {
+    ...view,
+    organized: {
+      ...view.organized,
+      chats: view.organized.chats.map(visit),
+      projects: view.organized.projects.map((project) => ({ ...project, conversations: project.conversations.map(visit) })),
+      archived: view.organized.archived.map((entry) => ({ ...entry, node: visit(entry.node) })),
+    },
+  };
+}
+
 // --- Conversation entries (shapes as packages/client/test/cot-view-cases.ts) ---
 
 let nextEntryId = 1;
