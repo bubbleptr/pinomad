@@ -310,6 +310,32 @@ body {
   shape-rendering: geometricPrecision;
 }
 
+/* Settings nav: rows at rest are a step lighter than the open one, and the
+   group titles lighter still, so the open section is the darkest row on
+   its wash. Hover takes a row to the open row's color. */
+.pigui-settings-nav {
+  --pigui-nav-rest: light-dark(#606060, oklch(0.72 0 0));
+  --pigui-nav-group: light-dark(#b5b5b5, oklch(0.52 0 0));
+}
+
+.pigui-settings-nav .astryx-side-nav-item:not([data-selected="selected"]):not(#\#):not(#\#):not(#\#),
+.pigui-settings-nav .astryx-side-nav-item:not([data-selected="selected"]) :is(svg, .astryx-icon):not(#\#):not(#\#):not(#\#),
+.pigui-settings-nav .astryx-selector:not(#\#):not(#\#):not(#\#) {
+  color: var(--pigui-nav-rest);
+}
+
+@media (hover: hover) {
+  .pigui-settings-nav .astryx-side-nav-item:hover:not(#\#):not(#\#):not(#\#),
+  .pigui-settings-nav .astryx-side-nav-item:hover :is(svg, .astryx-icon):not(#\#):not(#\#):not(#\#) {
+    color: var(--foreground);
+  }
+}
+
+.pigui-settings-nav .astryx-side-nav-section > :first-child:not(#\#):not(#\#):not(#\#),
+.pigui-settings-nav .astryx-side-nav-section > :first-child *:not(#\#):not(#\#):not(#\#) {
+  color: var(--pigui-nav-group);
+}
+
 /* Ghost controls leading a side nav (Settings' back row, its host picker):
    Astryx pads them 12px, the nav items 8px. Matching the items' padding puts
    their glyph and label on the items' icon and text columns. */

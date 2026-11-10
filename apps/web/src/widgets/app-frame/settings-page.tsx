@@ -261,6 +261,7 @@ export function useSettingsScreen({
     return {
       nav: (
         <SideNav
+          className="pigui-settings-nav"
           aria-label="Settings sections"
           resizable={{ defaultWidth: 260, minWidth: 240, maxWidth: 320, autoSaveId: "pinomad-settings-nav" }}
           // The macOS traffic lights own the top band: it stays an empty
