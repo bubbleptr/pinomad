@@ -211,7 +211,7 @@ function usePairedHosts() {
  * the status into the accessible name themselves, so the dot's own label
  * doesn't leak into it.
  */
-function HostStatusDot({ connected }: { connected: boolean }) {
+export function HostStatusDot({ connected }: { connected: boolean }) {
   return (
     <span aria-hidden="true" className="inline-flex">
       {connected ? (

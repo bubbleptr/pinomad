@@ -20,11 +20,11 @@ import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { cleanHostName, type HostSettings, type QueueMode } from "@pinomad/protocol/settings.ts";
 import type { ModelRef } from "@earendil-works/pi-durable";
-import type { DurableView } from "@pinomad/protocol/view.ts";
+import type { DurableView, ThinkingLevel } from "@pinomad/protocol/view.ts";
 import { familyUpdatedAt, relativeTime } from "@pinomad/client/family.ts";
-import { summaryOf, thinkingLevelLabels } from "@pinomad/client/model.ts";
+import { sameModel, summaryOf, thinkingLevelLabels } from "@pinomad/client/model.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
-import { ModelSelector } from "../../entities/model/model-selector.tsx";
+import { ModelLogo } from "../../entities/model/model-logo.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { ArchiveRestore, ArrowLeft, Bot, Cancel, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, MoreHorizontal, SlidersHorizontal, Sparkles, UserCircle } from "../../shared/ui/icons.tsx";
 import { GROUP_ROWS, SettingsGroup, SettingsRow } from "../../shared/ui/settings-group.tsx";
@@ -34,7 +34,7 @@ import { AppearanceSection } from "./appearance-section.tsx";
 import type { FrameMachine } from "./app-frame.tsx";
 import { DevicesSection } from "./devices-section.tsx";
 import { HostUpgradeSection } from "./host-upgrade-section.tsx";
-import { HostsSection } from "./hosts.tsx";
+import { HostStatusDot, HostsSection } from "./hosts.tsx";
 import { LocalHostSection } from "./local-host-section.tsx";
 import { ProvidersSection } from "./providers-section.tsx";
 import { SettingsSubpageContext, type SettingsSubpage } from "./settings-subpage.ts";
@@ -200,14 +200,18 @@ export function useSettingsScreen({
       size="sm"
       variant="ghost"
       placement="below"
-      startIcon={<Computer aria-hidden="true" className="size-4 shrink-0 text-muted" />}
+      startIcon={<HostStatusDot connected={connected} />}
       value={machine.key}
-      options={machines.map((entry) => ({ value: entry.key, label: entry.label }))}
+      options={machines.map((entry) => ({
+        value: entry.key,
+        label: entry.label,
+        icon: <HostStatusDot connected={entry.view?.connection === "connected"} />,
+      }))}
       onChange={setPickedKey}
     />
   ) : (
     <HStack gap={2} vAlign="center">
-      <Computer aria-hidden="true" className="size-4 shrink-0 text-muted" />
+      <HostStatusDot connected={connected} />
       <Text type="supporting">{hostName}</Text>
     </HStack>
   );
@@ -585,29 +589,68 @@ function ModelsSection({ view, remote, connected }: { view: DurableView; remote:
   if (settings === null) {
     return <Banner status="warning" title="This host is too old for settings" description="Run `pinomad upgrade` on the host." />;
   }
+  const model = view.models.find((each) => sameModel(each, settings.defaultModel ?? undefined));
+  // Option values are indexes: a model id may itself contain `/`.
+  const providers = [...new Set(view.models.map((each) => each.provider))];
+  const levels = model?.thinkingLevels ?? [];
+  const customized = settings.custom.includes("defaultModel") || settings.custom.includes("defaultThinkingLevel");
   return (
     <SettingsGroup>
-      <SettingsRow label="Default model">
-        <ModelSelector
-          models={view.models}
-          selected={{
-            model: settings.defaultModel ?? undefined,
-            level: settings.defaultThinkingLevel ?? "off",
-          }}
-          isDisabled={!connected}
-          onModelChange={(model) => void remote.controller.updateSettings({ defaultModel: model })}
-          onLevelChange={(level) => void remote.controller.updateSettings({ defaultThinkingLevel: level })}
-        />
-        {settings.custom.includes("defaultModel") || settings.custom.includes("defaultThinkingLevel") ? (
-          <Button
-            label="Use pi's defaults"
-            variant="secondary"
+      <div className={GROUP_ROWS}>
+        <SettingsRow label="Default model">
+          <Selector
+            label="Default model"
+            isLabelHidden
             size="sm"
-            isDisabled={!connected}
-            onClick={() => void remote.controller.updateSettings({ defaultModel: null, defaultThinkingLevel: null })}
+            hasSearch
+            searchPlaceholder="Search models"
+            placeholder="Pi's default"
+            isDisabled={!connected || view.models.length === 0}
+            {...(model === undefined ? {} : { startIcon: <ModelLogo model={model} size={14} /> })}
+            {...(model === undefined ? {} : { value: String(view.models.indexOf(model)) })}
+            options={providers.map((provider) => ({
+              type: "section" as const,
+              title: provider,
+              options: view.models.flatMap((each, index) =>
+                each.provider === provider
+                  ? [{ value: String(index), label: each.name, icon: <ModelLogo model={each} size={14} reserve /> }]
+                  : [],
+              ),
+            }))}
+            onChange={(value) => {
+              const picked = view.models[Number(value)];
+              if (picked !== undefined) {
+                void remote.controller.updateSettings({ defaultModel: { provider: picked.provider, modelId: picked.modelId } });
+              }
+            }}
           />
+        </SettingsRow>
+        {/* A model that can't reason has nothing to pick here. */}
+        {levels.length > 1 ? (
+          <SettingsRow label="Thinking" description="How long the model reasons before it answers">
+            <Selector
+              label="Thinking"
+              isLabelHidden
+              size="sm"
+              isDisabled={!connected}
+              value={settings.defaultThinkingLevel ?? "off"}
+              options={levels.map((level) => ({ value: level, label: thinkingLevelLabels[level] }))}
+              onChange={(level) => void remote.controller.updateSettings({ defaultThinkingLevel: level as ThinkingLevel })}
+            />
+          </SettingsRow>
         ) : null}
-      </SettingsRow>
+        {customized ? (
+          <div className="flex justify-end px-4 py-3">
+            <Button
+              label="Use pi's defaults"
+              variant="secondary"
+              size="sm"
+              isDisabled={!connected}
+              onClick={() => void remote.controller.updateSettings({ defaultModel: null, defaultThinkingLevel: null })}
+            />
+          </div>
+        ) : null}
+      </div>
     </SettingsGroup>
   );
 }
