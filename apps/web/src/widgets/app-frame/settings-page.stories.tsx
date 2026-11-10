@@ -46,13 +46,9 @@ export const Models: Story = open("Models");
 
 export const Agents: Story = open("Agents");
 
-export const Mcp: Story = open("MCP");
-
 export const Chats: Story = open("Chats");
 
 export const Devices: Story = open("Devices");
-
-export const Archived: Story = open("Archived");
 
 export const About: Story = open("About");
 
@@ -61,23 +57,23 @@ export const Hosts: Story = open("Hosts");
 /** Signed in: the account's own group, opened from the sidebar's account. */
 export const Account: Story = { decorators: [withAccount(signedIn())], args: { initialSection: "account" } };
 
-
-
 /** Signed out, the group is only the sign-in form. */
 export const AccountSignedOut: Story = {
   decorators: [withAccount({ status: "signed-out", mode: "cookie" })],
   args: { initialSection: "account" },
 };
 
-/** The desktop app adds Updates under "This device". */
-export const Updates: Story = {
-  ...open("Updates"),
+export const General: Story = open("General");
+
+/** The desktop app adds its updates to General. */
+export const GeneralWithUpdates: Story = {
+  ...open("General"),
   decorators: [withDesktopUpdates({ state: "ready", currentVersion: "0.9.0", availableVersion: "0.10.0" })],
 };
 
-/** The Mac app adds This Mac, the switch over the host installed here (#501). */
-export const ThisMac: Story = {
-  ...open("This Mac"),
+/** The Mac app puts This Mac, the switch over the host installed here (#501), over the hosts. */
+export const HostsOnMac: Story = {
+  ...open("Hosts"),
   decorators: [
     withDesktopLocalHost({ state: { kind: "installed", running: true, stopped: false, stopping: false, detail: "running (pid 4242)" } }),
   ],
@@ -91,7 +87,7 @@ export const Disconnected: Story = {
 /** The only host is still connecting: only "This device" exists, so it opens there. */
 export const HostNotReady: Story = { args: { machines: fakeMachines().slice(2), initialKey: NAS_HOST.hostKey } };
 
-/** With several machines the host group picks one; one that isn't connected explains itself. */
+/** With several machines the host page picks one; one that isn't connected explains itself. */
 export const PickedMachineNotReady: Story = { ...open("Models"), args: { initialKey: NAS_HOST.hostKey } };
 
 /** A pre-5.1 host has no settings, auth or providers streams. */

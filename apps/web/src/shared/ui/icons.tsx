@@ -61,6 +61,7 @@ import {
   Settings02Icon,
   SidebarLeftIcon,
   ShieldKeyIcon,
+  SlidersHorizontalIcon,
   SparklesIcon,
   StopIcon as HugeStopIcon,
   ThumbsDownIcon,
@@ -147,6 +148,7 @@ export const RefreshCw = iconComponent(RefreshIcon);
 export const SearchVisual = iconComponent(SearchVisualIcon);
 export const Settings = iconComponent(Settings01Icon);
 export const Settings2 = iconComponent(Settings02Icon);
+export const SlidersHorizontal = iconComponent(SlidersHorizontalIcon);
 export const SidebarLeft = iconComponent(SidebarLeftIcon);
 export const Sparkles = iconComponent(SparklesIcon);
 export const Stop = iconComponent(HugeStopIcon);
