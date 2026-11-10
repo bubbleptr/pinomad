@@ -145,6 +145,8 @@ extension AppModel {
     private static let demoPages: [String: [Route]] = [
         "general": [.settings, .general],
         "machine": [.settings, .machine("demo-mbp")],
+        "connection": [.settings, .machine("demo-mbp"), .host("demo-mbp")],
+        "providers": [.settings, .machine("demo-mbp"), .providers("demo-mbp")],
         "models": [.settings, .machine("demo-mbp"), .hostModels("demo-mbp")],
         "agents": [.settings, .machine("demo-mbp"), .hostAgents("demo-mbp")],
         "chats": [.settings, .machine("demo-mbp"), .hostChats("demo-mbp")],
