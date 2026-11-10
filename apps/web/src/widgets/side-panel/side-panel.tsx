@@ -697,8 +697,9 @@ export function SidePanel({
         position="overlay"
         // Overlay defaults to the end edge; isReversed only changes drag direction.
         // Pulled back by half its width plus half the gap between the panes,
-        // so the grip sits in the gap.
-        className="start-[calc(-0.5rem-var(--pigui-pane-gap)/2)]! end-auto!"
+        // so the grip sits in the gap; the extra 1px is the pane's border,
+        // since an absolute offset starts inside it.
+        className="start-[calc(-0.5rem-var(--pigui-pane-gap)/2-1px)]! end-auto!"
         // Centering keeps Astryx's grab zone full-height instead of shifted up by 50%.
         pillPlacement="center"
         isReversed
