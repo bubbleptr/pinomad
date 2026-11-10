@@ -1146,7 +1146,9 @@ mark.chat-skill-mention {
 
 /* The footer is a tray: a muted layer inset under the card, its top tucked
    behind the card's bottom corners so it reads as one piece pulled out from
-   underneath. The card paints above it inside the isolated stack. */
+   underneath. The card paints above it inside the isolated stack. In dark
+   mode lightness is elevation, so the tray sits a step below the card but
+   above the pane; the recessed muted fill read as a hole under the card. */
 .prompt-input:has(> .prompt-input__footer) {
   --_prompt-tray-tuck: var(--spacing-6);
   isolation: isolate;
@@ -1166,7 +1168,7 @@ mark.chat-skill-mention {
   padding: calc(var(--_prompt-tray-tuck) + var(--spacing-1)) var(--spacing-3) var(--spacing-1-5);
   /* The tuck equals the card's corner radius; the tray's bottom corners match it. */
   border-radius: 0 0 var(--_prompt-tray-tuck) var(--_prompt-tray-tuck);
-  background: var(--color-background-muted);
+  background: light-dark(var(--color-background-muted), oklch(0.235 0 0));
   color: var(--color-text-secondary);
   font-size: var(--font-size-sm);
 }
