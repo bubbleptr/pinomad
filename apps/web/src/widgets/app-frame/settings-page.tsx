@@ -307,7 +307,7 @@ export function useSettingsScreen({
         </SideNav>
       ),
       content: (
-        <div className="h-full overflow-y-auto">
+        <div className="pigui-settings h-full overflow-y-auto">
           <div className="mx-auto w-full max-w-[46rem] px-6 pt-14 pb-16">{page}</div>
         </div>
       ),
@@ -345,7 +345,7 @@ export function useSettingsScreen({
   return {
     nav: undefined,
     content: (
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="pigui-settings flex h-full min-h-0 flex-col">
         <div
           className="pinomad-drag flex h-10 shrink-0 items-center gap-1 px-3"
           style={safeLeft === undefined ? undefined : { paddingLeft: safeLeft }}
