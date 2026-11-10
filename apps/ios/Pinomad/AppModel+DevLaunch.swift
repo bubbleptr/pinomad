@@ -481,7 +481,7 @@ extension AppModel {
                 output: reviewOutput, toolCallId: "call-review", toolName: "subagent",
                 pinomad: .subagent(
                     conversationId: 2, output: reviewOutput, model: "anthropic/claude-x",
-                    startedAt: now - 65_000, endedAt: now
+                    startedAt: now - 65_000, endedAt: now, branch: nil
                 )
             ),
             ToolItem(
@@ -491,7 +491,7 @@ extension AppModel {
                 output: notesOutput, toolCallId: "call-notes", toolName: "subagent",
                 pinomad: .subagent(
                     conversationId: 3, output: notesOutput, model: "openai/gpt-5",
-                    startedAt: now - 12_000, endedAt: now
+                    startedAt: now - 12_000, endedAt: now, branch: nil
                 )
             ),
         ]
@@ -573,7 +573,7 @@ extension AppModel {
                 output: nil, toolCallId: "call-\(task.id ?? 0)", toolName: "subagent",
                 pinomad: .subagent(
                     conversationId: task.id ?? 0, output: nil, model: nil,
-                    startedAt: now - 120_000, endedAt: nil
+                    startedAt: now - 120_000, endedAt: nil, branch: nil
                 )
             )
         }

@@ -109,6 +109,9 @@ pub enum PinomadToolDetail {
         started_at: Option<f64>,
         /// The tool result's timestamp — the run's end for elapsed time.
         ended_at: Option<f64>,
+        /// Its own worktree's branch, when dispatched with
+        /// `checkout: "worktree"` (ADR-0046 §5).
+        branch: Option<String>,
     },
 }
 
