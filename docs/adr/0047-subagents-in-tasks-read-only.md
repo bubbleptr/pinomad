@@ -52,7 +52,8 @@ ADR-0038 否决过"Background 也留在右侧 Tasks"，理由是父对话空闲�
 ## 后果
 
 - 失去的能力：绕过派出者直接纠正某个子代理。
-- [#683](https://github.com/bubbleptr/pinomad/pull/683)、[#684](https://github.com/bubbleptr/pinomad/pull/684) 刚做的主内容区输入框、Web 侧栏的 Background 行、iOS 输入框上方的后台子代理条都要撤掉。iOS 没有 Tasks 面板，子代理和后台进程一样列在 Overview 里（ADR-0045 §6），点开是只读加 Stop。
+- [#683](https://github.com/bubbleptr/pinomad/pull/683)、[#684](https://github.com/bubbleptr/pinomad/pull/684) 刚做的主内容区输入框和 Web 侧栏的 Background 行要撤掉。iOS 没有 Tasks 面板：输入框上方的后台子代理条留着，它就是 iOS 上列出后台子代理的地方（看、Stop、点开），不是侧栏条目也不是输入框；点开的子代理页只读加 Stop。Overview 照旧按名字列出正在工作的子代理（ADR-0045 §6 的后台进程也在那里）。
+  - 修订：这一条原来写的是连子代理条一起撤掉，[#695](https://github.com/bubbleptr/pinomad/pull/695) 照做了。那不是从上面的决策推出来的，条又恢复了。
 - 客户端的 `backgroundSubagentsOf`（左侧投影）去掉，`taskGroupsOf` 改成返回全部子代理；`crates/pinomad-core` 的 `family.rs` 和 FFI 跟着改，重新生成对照向量。
 - 用户停掉一个空闲的子代理时没有回报任务在场，派出者不会收到说明；这是现状，停一个没在干活的子代理本来也没有可说的。
 - 官网文档 `usage.zh.md`、`features`、`background-processes` 里关于侧栏位置和"接着聊"的说法随实现的 PR 一起改。

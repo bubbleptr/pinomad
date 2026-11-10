@@ -82,8 +82,9 @@ extension AppModel {
         }
         if let mode = env["PINOMAD_DEMO_SUBAGENTS"] {
             // The subagent cards' states (a named agent, an ordinary call,
-            // background calls); `child` opens an idle background subagent
-            // (read-only), `incall` a foreground one at work (Stop only).
+            // background calls) and the background bar over the composer;
+            // `child` opens an idle background subagent (read-only),
+            // `incall` a foreground one at work (Stop only).
             phase = .home
             startSubagentDemo(mode)
             return true
@@ -448,8 +449,8 @@ extension AppModel {
     /// A settled run that delegated five tasks: a named agent and an
     /// ordinary subagent that answered in the call (role line present and
     /// absent), and three background ones — one working, one idle in its
-    /// own worktree, one failed. A foreground subagent still inside its
-    /// call is the `incall` page.
+    /// own worktree, one failed — behind the bar over the composer. A
+    /// foreground subagent still inside its call is the `incall` page.
     private func startSubagentDemo(_ mode: String) {
         let now = Date.now.timeIntervalSince1970 * 1000
         let gpt = ModelRef(provider: "openai", modelId: "gpt-5")

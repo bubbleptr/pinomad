@@ -19,6 +19,8 @@ struct ConversationComposer: View {
     /// still change (ADR-0023, protocol 5.18). Not `conversation.agent`,
     /// which is the model/thinking config.
     let agentPick: ConversationAgent?
+    /// The family's background subagents, on the card's top edge.
+    var backgroundBar: BackgroundSubagentBar?
 
     @State private var showModels = false
     @State private var showPhotos = false
@@ -197,6 +199,9 @@ struct ConversationComposer: View {
                 SkillMenuView(menu: mentions.skillMenu, choose: chooseSkill)
             } else if mentions.menu.isShowing {
                 MentionMenuView(menu: mentions.menu, choose: chooseMention)
+            }
+            if let backgroundBar {
+                backgroundBar
             }
             card
         }

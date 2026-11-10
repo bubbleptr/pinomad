@@ -176,7 +176,10 @@ struct ConversationView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
                 } else if let conversation {
-                    ConversationComposer(model: model, conversation: conversation, agentPick: agentPick)
+                    ConversationComposer(
+                        model: model, conversation: conversation, agentPick: agentPick,
+                        backgroundBar: backgroundBar(conversation, node: node)
+                    )
                         // The agent at work, in the empty strip under the card:
                         // hung from the bar's bottom edge down past the home
                         // indicator; with the keyboard up, the keyboard covers it.
@@ -315,6 +318,22 @@ struct ConversationView: View {
         guard let hostKey = model.currentHostKey else { return }
         model.navPath.append(.conversation(
             ConversationRef(hostKey: hostKey, conversationId: child)))
+    }
+
+    /// The family's background subagents over the composer; none inside a
+    /// subagent, which cannot dispatch, and no bar while there are none.
+    /// Takes the node already read for this version, not a fresh lookup.
+    private func backgroundBar(_ conversation: ConversationSnapshot, node: ConversationNode?) -> BackgroundSubagentBar? {
+        guard let node, let snapshot = model.snapshot else { return nil }
+        let items = BackgroundSubagents.of(
+            shown: node, organized: snapshot.organized,
+            calls: ChatAdapter.subagentCalls(in: conversation.chat), models: snapshot.models)
+        guard !items.isEmpty else { return nil }
+        return BackgroundSubagentBar(
+            items: items, connected: connected,
+            open: { child in openSubagent(child, from: ChatAdapter.runSpawning(child, in: conversation.chat)) },
+            stop: { child in model.stop(conversation: child) }
+        )
     }
 
     /// The newest run: the todo line ends it and no other. Not simply the
