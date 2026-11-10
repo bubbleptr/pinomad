@@ -702,9 +702,6 @@ export function SidePanel({
         className="start-[calc(-0.5rem-var(--pigui-pane-gap)/2-1px)]! end-auto!"
         // Centering keeps Astryx's grab zone full-height instead of shifted up by 50%.
         pillPlacement="center"
-        // The gap between the panes already reads as the edge; the grip
-        // appears only while it is hovered or dragged.
-        isAlwaysVisible={false}
         isReversed
         label="Resize side panel"
         resizable={resizable.props}

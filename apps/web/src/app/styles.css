@@ -711,6 +711,13 @@ body {
   gap: var(--pigui-pane-gap);
 }
 
+/* Resize handles (sidebar, settings nav, side panel) show no grip: the
+   pane edges already mark where to drag. Keyboard focus still shows it, as
+   the only sign of what is focused. */
+.pigui-app-layout .astryx-resize-handle:not(:focus-visible) .astryx-resize-handle-pill:not(#\#):not(#\#):not(#\#) {
+  visibility: hidden;
+}
+
 /* The side panel's resize grip hangs into the gap, outside the card: the
    card clips through its inner wrapper instead. */
 .pigui-app-layout .pigui-side-pane {
