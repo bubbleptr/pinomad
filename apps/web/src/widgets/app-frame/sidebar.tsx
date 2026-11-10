@@ -12,11 +12,9 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import type { ConversationNode, Home, Project } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
-import { backgroundSubagentsOf, familyStatus, threadsOf, type FamilyStatus } from "@pinomad/client/family.ts";
-import { conversationName } from "../../entities/conversation/subagent.ts";
+import { familyStatus, threadsOf, type FamilyStatus } from "@pinomad/client/family.ts";
 import { useAppUpdate } from "../../entities/app-update/use-app-update.ts";
-import { ModelLogo } from "../../entities/model/model-logo.tsx";
-import { ArchiveArrowDown, Bot, ChatBubble, FolderAdd, FolderClosed, FolderOpenState, MoreHorizontal, Pencil, Plus, Settings, Trash2, UserCircle } from "../../shared/ui/icons.tsx";
+import { ArchiveArrowDown, ChatBubble, FolderAdd, FolderClosed, FolderOpenState, MoreHorizontal, Pencil, Plus, Settings, Trash2, UserCircle } from "../../shared/ui/icons.tsx";
 import { AnimatedNewChat, AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
 import { AddProjectDialog, RemoveProjectDialog } from "./project-dialogs.tsx";
 import { RenameConversationDialog } from "./rename-dialog.tsx";
@@ -25,10 +23,6 @@ import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { clientDeviceName } from "../../address.ts";
 
 const PROJECT_EXPANDED_KEY = "pinomad.projectSidebar.expanded";
-const CONVERSATION_EXPANDED_KEY = "pinomad.conversationSidebar.expanded";
-
-const conversationExpandedKey = (machineKey: string, id: ConversationId): string =>
-  `${CONVERSATION_EXPANDED_KEY}.${machineKey}.${id}`;
 
 /** Project folds belong to one host: the same path may exist on both. */
 const projectExpandedKey = (machineKey: string): string => `${PROJECT_EXPANDED_KEY}.${machineKey}`;
@@ -269,46 +263,12 @@ function FoldIndicator({
   );
 }
 
-/** A background subagent row: the model's actual logo, its own status and selection. */
-function BackgroundSubagentRow({
-  node,
-  shown,
-  disabled,
-  onOpen,
-  onSelect,
-}: {
-  node: ConversationNode;
-  shown: ConversationId | undefined;
-  disabled: boolean;
-  onOpen: (id: ConversationId) => void;
-  onSelect?: () => void;
-}) {
-  const { summary } = node;
-  return (
-    <div className="pigui-background-tree-child">
-      <SideNavItem
-        icon={<ModelLogo model={summary.model ?? { provider: "unknown", modelId: "unknown" }} reserve />}
-        label={conversationName(summary)}
-        isSelected={summary.id === shown}
-        isDisabled={disabled}
-        endContent={summary.status === undefined ? undefined : <FamilyStatusGlyph status={summary.status} />}
-        onClick={() => {
-          onOpen(summary.id);
-          onSelect?.();
-        }}
-      />
-    </div>
-  );
-}
-
 /**
- * One conversation row: a root with its visible background descendants, or a
- * fork. Both are independently navigable; the root still aggregates the whole
- * family's status, while only the background projection gets child rows. The
- * fork row has no children — background work belongs to the root, once.
+ * One conversation row: a root or a fork. Both are independently navigable;
+ * the root aggregates the whole family's status. Subagents get no rows here:
+ * they are the model's tools and live in the side panel's Tasks (ADR-0047 §1).
  */
 function ConversationRow({
-  machineKey,
   node,
   shown,
   disabled,
@@ -317,100 +277,46 @@ function ConversationRow({
   onOpen,
   onSelect,
 }: {
-  machineKey: string;
   node: ConversationNode;
   shown: ConversationId | undefined;
   disabled: boolean;
   remote: RemoteDurable;
-  /** A fork is an independent conversation; only a root owns Background rows. */
+  /** A fork is an independent conversation with its own status and selection. */
   kind?: "root" | "fork";
   onOpen: (id: ConversationId) => void;
   onSelect?: () => void;
 }) {
   const { summary } = node;
   const fork = kind === "fork";
-  // Family status includes forks and background work; a fork's own row carries
-  // only its own status.
+  // Family status includes forks and subagents; a fork's own row carries only
+  // its own status.
   const status = fork ? summary.status : familyStatus(node);
-  const backgrounds = fork ? [] : backgroundSubagentsOf(node);
-  const shownBackground = shown !== undefined && backgrounds.some((each) => each.summary.id === shown);
-  // A fork row owns its selection. The root represents hidden descendants
-  // (foreground work) but never a visible background or fork row.
+  // A fork row owns its selection. The root represents its hidden
+  // descendants (subagents) but never a visible fork row.
   const forkShown = !fork && threadsOf(node).some((each) => each.summary.id === shown);
   const selected = fork
     ? summary.id === shown
-    : summary.id === shown
-      || (shown !== undefined && !shownBackground && !forkShown && flattenNodes([node]).some((each) => each.summary.id === shown));
-  const storageKey = conversationExpandedKey(machineKey, summary.id);
-  const [expanded, setExpanded] = useState(() => window.localStorage.getItem(storageKey) !== "false");
+    : summary.id === shown || (shown !== undefined && !forkShown && flattenNodes([node]).some((each) => each.summary.id === shown));
   const [renaming, setRenaming] = useState(false);
-  const rowRef = useRef<HTMLDivElement>(null);
-  const changeExpanded = (next: boolean): void => {
-    window.localStorage.setItem(storageKey, String(next));
-    setExpanded(next);
-  };
-  useEffect(() => {
-    if (!shownBackground) return;
-    setExpanded((current) => {
-      if (current) return current;
-      window.localStorage.setItem(storageKey, "true");
-      return true;
-    });
-    rowRef.current?.scrollIntoView?.({ block: "nearest" });
-  }, [shownBackground, storageKey]);
   const item = (
     <SideNavItem
-      {...(backgrounds.length === 0
-        ? {}
-        : {
-            collapsible: {
-              isCollapsed: !expanded,
-              onCollapsedChange: (collapsed: boolean) => changeExpanded(!collapsed),
-            },
-          })}
       icon={status === undefined ? <SessionGlyphSlot /> : <FamilyStatusGlyph status={status} />}
       label={summary.title ?? "New conversation"}
       isSelected={selected}
       isDisabled={disabled}
       // A <button> row cannot contain the interactive … overlay; the spacer
-      // reserves its single-button width so the title truncates first, and
-      // shows the visible background count until the … takes the slot.
-      endContent={
-        <span aria-hidden="true" className="pigui-sidenav-actions-spacer pigui-sidenav-actions-spacer--single">
-          {backgrounds.length === 0 || expanded ? null : (
-            <span className="pigui-sidenav-subagent-count">
-              <Bot className="size-3" />
-              {backgrounds.length}
-            </span>
-          )}
-        </span>
-      }
+      // reserves its single-button width so the title truncates first.
+      endContent={<span aria-hidden="true" className="pigui-sidenav-actions-spacer pigui-sidenav-actions-spacer--single" />}
       onClick={() => {
         onOpen(summary.id);
         onSelect?.();
       }}
-    >
-      {backgrounds.length === 0 ? null : (
-        <div className="pigui-background-tree-children">
-          {backgrounds.map((background) => (
-            <BackgroundSubagentRow
-              key={background.summary.id}
-              node={background}
-              shown={shown}
-              disabled={disabled}
-              onOpen={onOpen}
-              onSelect={onSelect}
-            />
-          ))}
-        </div>
-      )}
-    </SideNavItem>
+    />
   );
   // Same overlay-sibling pattern as the project row: the actions menu cannot
   // live inside the SideNavItem <button>.
   return (
     <div
-      ref={rowRef}
       className="pigui-sidenav-row-with-actions pigui-sidenav-session-row"
       data-kind={fork ? "fork" : "root"}
       {...(status === undefined ? {} : { "data-status": status })}
@@ -627,7 +533,6 @@ function MachineSection({
     remote === undefined ? null : (
       <Fragment key={node.summary.id}>
         <ConversationRow
-          machineKey={key}
           node={node}
           shown={shownId}
           disabled={disabled}
@@ -638,7 +543,6 @@ function MachineSection({
         {threadsOf(node).map((fork) => (
           <ConversationRow
             key={fork.summary.id}
-            machineKey={key}
             node={fork}
             shown={shownId}
             disabled={disabled}

@@ -3,20 +3,18 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  BACKGROUND_SUBAGENT_ID,
   fakeMachines,
   fakeView,
   FORK_ID,
   HOME_HOST,
   NESTED_FORK_ID,
-  PARSER_ID,
   SECOND_FORK_ID,
   SUBAGENT_ID,
   withSummary,
 } from "../../test/story-fixtures.tsx";
 import * as stories from "./sidebar.stories.tsx";
 
-const { BackgroundSubagents, BackgroundSubagentsCollapsed, Default, ForkRows, ForkSelected, LegacyNestedForks } =
+const { Default, ForkRows, ForkSelected, LegacyNestedForks, SubagentShown } =
   composeStories(stories);
 
 afterEach(() => {
@@ -26,60 +24,27 @@ afterEach(() => {
 
 const row = (name: string) => screen.getByRole("button", { name }).closest<HTMLElement>(".pigui-sidenav-session-row");
 
-describe("background subagent sidebar", () => {
-  it("shows both background parents, but not the foreground task or a second selection", () => {
-    render(<BackgroundSubagents />);
+describe("subagents in the sidebar (ADR-0047 §1)", () => {
+  it("gives subagents no rows; the root stays selected while its subagent is shown", () => {
+    render(<SubagentShown />);
 
-    expect(screen.getByRole("button", { name: "Inspect socket owner" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("button", { name: "Verify retry on device" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Fix the parser's trailing-comma bug" })).not.toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    expect(screen.queryByRole("button", { name: "Inspect socket owner" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Verify retry on device" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Write regression tests" })).toBeNull();
-    expect(document.querySelectorAll(".pigui-background-tree-child .model-logo")).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Fix the parser's trailing-comma bug" })).toHaveAttribute("aria-current", "page");
+    // The fork is its own row and takes no selection from the root's subagent.
+    expect(screen.getByRole("button", { name: "Try a recursive-descent rewrite" })).not.toHaveAttribute("aria-current", "page");
   });
 
-  it("keeps disclosure independent from opening and counts only visible background rows", async () => {
-    const user = userEvent.setup();
-    render(<BackgroundSubagentsCollapsed />);
-
-    const group = document.querySelector(".pigui-background-tree-children")?.closest("[role=group]");
-    expect(group).toHaveAttribute("aria-hidden", "true");
-    expect(document.querySelector(".pigui-sidenav-subagent-count")).toHaveTextContent("2");
-
-    await user.click(screen.getByRole("button", { name: "Expand Fix the parser's trailing-comma bug" }));
-    expect(group).toHaveAttribute("aria-hidden", "false");
-    expect(BackgroundSubagentsCollapsed.args.onOpen).not.toHaveBeenCalled();
-
-    await user.click(screen.getByRole("button", { name: "Inspect socket owner" }));
-    expect(BackgroundSubagentsCollapsed.args.onOpen).toHaveBeenCalledWith(HOME_HOST.hostKey, BACKGROUND_SUBAGENT_ID);
-
-    await user.click(screen.getByRole("button", { name: "Fix the parser's trailing-comma bug" }));
-    expect(BackgroundSubagentsCollapsed.args.onOpen).toHaveBeenCalledWith(HOME_HOST.hostKey, PARSER_ID);
-  });
-
-  it("does not repeat a fork's background child under its own row", () => {
-    render(<BackgroundSubagents />);
-
-    // Both background rows belong to the root's Background projection.
-    expect(document.querySelectorAll('[data-kind="root"] .pigui-background-tree-child')).toHaveLength(2);
-    expect(document.querySelectorAll('[data-kind="fork"] .pigui-background-tree-child')).toHaveLength(0);
-    expect(screen.getByRole("button", { name: "Try a recursive-descent rewrite" })).toBeInTheDocument();
-  });
-});
-
-describe("a subagent that turns background", () => {
-  it("appears under its root by name once its lifecycle changes", () => {
+  it("adds no row when a subagent turns background", () => {
     const before = fakeView();
     const { rerender } = render(<Default machines={fakeMachines({ home: before })} />);
-    expect(document.querySelector(".pigui-background-tree-child")).toBeNull();
+    const rows = document.querySelectorAll(".pigui-sidenav-session-row").length;
 
-    // ADR-0046 §6: the first message outside its call turns it background, once.
     const after = withSummary(before, SUBAGENT_ID, { lifecycle: "background", name: "parser-tests" });
     rerender(<Default machines={fakeMachines({ home: after })} />);
-    const child = document.querySelector<HTMLElement>(".pigui-background-tree-child")!;
-    expect(within(child).getByRole("button", { name: "parser-tests" })).toBeInTheDocument();
+    expect(document.querySelectorAll(".pigui-sidenav-session-row")).toHaveLength(rows);
+    expect(screen.queryByRole("button", { name: "parser-tests" })).toBeNull();
   });
 });
 

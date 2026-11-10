@@ -18,7 +18,6 @@ function setup(options: {
   controller?: Partial<DurableController>;
   submissions?: readonly LogicalSubmission[];
   store?: HostComposerStore;
-  subagent?: boolean;
 } = {}) {
   const base = fakeView({
     ...(options.minor === undefined ? {} : { host: { version: "0.8.0", protocol: { major: 5, minor: options.minor } } }),
@@ -45,7 +44,6 @@ function setup(options: {
       conversation={view.conversation!}
       busy={false}
       narrow={false}
-      subagent={options.subagent}
     />
   );
   const rendered = render(
@@ -101,19 +99,6 @@ describe("ConversationComposer commands", () => {
     await act(async () => {});
     expect(screen.getByRole("menuitem", { name: /^Run a command/, hidden: true })).not.toHaveAttribute("aria-disabled", "true");
     expect(screen.queryByRole("menuitem", { name: /^Compact conversation/, hidden: true })).toBeNull();
-  });
-
-  it("keeps commands out of a subagent's composer and sends /text as its message", async () => {
-    // A command would bypass the report to the subagent's dispatcher (ADR-0046 §4).
-    const { remote, editable, type } = setup({ subagent: true });
-    await act(async () => {});
-    expect(screen.queryByRole("menuitem", { name: /^Run a command/, hidden: true })).toBeNull();
-    expect(screen.queryByRole("menuitem", { name: /^Compact conversation/, hidden: true })).toBeNull();
-    expect(remote.controller.listCommands).not.toHaveBeenCalled();
-    type("/compact");
-    fireEvent.keyDown(editable, { key: "Enter" });
-    expect(remote.controller.runCommand).not.toHaveBeenCalled();
-    expect(remote.controller.submit).toHaveBeenCalledWith("/compact", "steer", { images: [], skills: [] });
   });
 
   it("shows Run a command disabled while the list loads", async () => {

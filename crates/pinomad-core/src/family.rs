@@ -239,19 +239,31 @@ pub struct TaskGroup {
     pub tasks: Vec<ConversationNode>,
 }
 
-/// `taskGroupsOf`: the family's subagents grouped by owner — the root first,
-/// then each fork that has any.
-pub fn task_groups_of(root: &ConversationNode) -> Vec<TaskGroup> {
-    let mut groups = Vec::new();
-    let own: Vec<ConversationNode> = root
+/// An owner's subagents in display order: the ones at work (or waiting on
+/// the user) first, each part in creation order.
+fn tasks_of(owner: &ConversationNode) -> Vec<ConversationNode> {
+    let at_work = |node: &&ConversationNode| {
+        matches!(
+            node.summary.status,
+            Some(ConversationStatus::Running) | Some(ConversationStatus::NeedsAnswer)
+        )
+    };
+    let tasks: Vec<&ConversationNode> = owner
         .children
         .iter()
-        .filter(|child| {
-            child.summary.kind == Some(SummaryKind::Subagent)
-                && child.summary.lifecycle != Some(SubagentLifecycle::Background)
-        })
-        .cloned()
+        .filter(|child| child.summary.kind == Some(SummaryKind::Subagent))
         .collect();
+    let (working, rest): (Vec<&ConversationNode>, Vec<&ConversationNode>) =
+        tasks.into_iter().partition(at_work);
+    working.into_iter().chain(rest).cloned().collect()
+}
+
+/// `taskGroupsOf`: the family's subagents grouped by owner — the root first,
+/// then each fork that has any. Every subagent is a task, whatever its
+/// lifecycle (ADR-0047 §1).
+pub fn task_groups_of(root: &ConversationNode) -> Vec<TaskGroup> {
+    let mut groups = Vec::new();
+    let own = tasks_of(root);
     if !own.is_empty() {
         groups.push(TaskGroup {
             owner: root.summary.clone(),
@@ -260,15 +272,7 @@ pub fn task_groups_of(root: &ConversationNode) -> Vec<TaskGroup> {
         });
     }
     for fork in threads_of(root) {
-        let tasks: Vec<ConversationNode> = fork
-            .children
-            .iter()
-            .filter(|child| {
-                child.summary.kind == Some(SummaryKind::Subagent)
-                    && child.summary.lifecycle != Some(SubagentLifecycle::Background)
-            })
-            .cloned()
-            .collect();
+        let tasks = tasks_of(&fork);
         if !tasks.is_empty() {
             groups.push(TaskGroup {
                 owner: fork.summary.clone(),

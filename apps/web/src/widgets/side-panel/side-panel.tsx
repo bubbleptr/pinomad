@@ -1,8 +1,8 @@
 // The right-side panel holds fixed surfaces (ADR-0040), switched from their
 // icons at the right of the chat header. Each surface owns the panel's first
 // row, level with that header, for its status and actions. Tasks is the
-// family's Foreground subagents grouped by owner, opening their transcript via
-// `view.side`; Background subagents open in main and never repeat here.
+// family's subagents grouped by owner (ADR-0047 §1), opening their transcript
+// via `view.side`, next to its background processes.
 // Changes is the shown conversation's checkout diff (changes-surface.tsx);
 // Terminal is the terminals' owner's shells (terminal-surface.tsx).
 import { Button } from "@astryxdesign/core/Button";
@@ -20,7 +20,7 @@ import type { ProcessListState, RemoteDurable } from "@pinomad/protocol/remote-d
 import { isProcessActive, type ProcessId, type ProcessInfo, type ProcessState } from "@pinomad/protocol/processes.ts";
 import type { ConversationSummary, DurableView, SideConversationView } from "@pinomad/protocol/view.ts";
 import { forksAt, relativeTime, rootOf, taskGroupsOf } from "@pinomad/client/family.ts";
-import { conversationName, subagentMessaging, type SubagentMessaging } from "../../entities/conversation/subagent.ts";
+import { canStopSubagent, conversationName } from "../../entities/conversation/subagent.ts";
 import { orderedProcesses, processStatusText } from "@pinomad/client/processes.ts";
 import { useNow } from "../../shared/use-now.ts";
 import { taskTally } from "../../entities/conversation/task-tally.ts";
@@ -132,10 +132,9 @@ function StatusGlyph({ status }: { status: ConversationSummary["status"] }) {
 }
 
 /**
- * The Tasks surface: the shown family's Foreground Tasks, grouped by owner, or
- * the open subagent's transcript. Background subagents are promoted to
- * main rather than rendered as a second Tasks entry point. The bar's `start`
- * and `end` hold the phone dialog's switch and close button.
+ * The Tasks surface: the shown family's subagents, grouped by owner, or the
+ * open subagent's transcript. The bar's `start` and `end` hold the phone
+ * dialog's switch and close button.
  */
 function TasksSurface({
   view,
@@ -189,14 +188,7 @@ function TasksSurface({
     if (view.side !== undefined) void remote.controller.showSide(undefined);
     setSelectedProcess({ rootId, id });
   };
-  const backgroundSideId = sideSummary?.kind === "subagent" && sideSummary.lifecycle === "background" ? sideSummary.id : undefined;
-  // Older links may still name a background detail explicitly. Promote rather
-  // than rendering a second Tasks entry point for the same conversation.
-  useEffect(() => {
-    if (backgroundSideId !== undefined) onOpenInMain(backgroundSideId);
-  }, [backgroundSideId, onOpenInMain]);
-
-  if (side !== undefined && sideSummary?.kind === "subagent" && sideSummary.lifecycle !== "background") {
+  if (side !== undefined && sideSummary?.kind === "subagent") {
     return (
       <VStack className="h-full min-h-0" gap={0}>
         <SurfaceBar start={barStart} end={barEnd}>
@@ -207,7 +199,11 @@ function TasksSurface({
         <TaskDetail
           view={view}
           side={side}
-          messaging={subagentMessaging(sideSummary, view.host?.protocol.minor ?? 0)}
+          onStop={
+            canStopSubagent(sideSummary, view.host?.protocol.minor ?? 0) && view.connection === "connected"
+              ? () => void remote.controller.abort(side.id)
+              : undefined
+          }
           openInPanel={openInPanel}
           onOpenInMain={onOpenInMain}
           onLoadEarlier={() => remote.controller.loadEarlier(side.id)}
@@ -507,20 +503,21 @@ function ProcessDetail({
 }
 
 /**
- * A Foreground subagent in the panel: its transcript. Talking to it or
- * stopping it happens in main (ADR-0046 §6), one click away.
+ * A subagent in the panel: its transcript, read-only, with Stop while it is
+ * at work (ADR-0047 §2). Main shows the same thing with more room.
  */
 function TaskDetail({
   view,
   side,
-  messaging,
+  onStop,
   openInPanel,
   onOpenInMain,
   onLoadEarlier,
 }: {
   view: DurableView;
   side: SideConversationView;
-  messaging: SubagentMessaging;
+  /** Present while the subagent can be stopped. */
+  onStop: (() => void) | undefined;
   openInPanel: (id: ConversationId) => void;
   onOpenInMain: (id: ConversationId) => void;
   onLoadEarlier: () => Promise<void>;
@@ -548,13 +545,10 @@ function TaskDetail({
           />
         )}
       </div>
-      {messaging === "read-only" ? (
-        <div className="shrink-0 border-t border-border p-2 text-center text-xs text-muted">Read-only · subagent</div>
-      ) : (
-        <HStack gap={2} hAlign="center" className="shrink-0 border-t border-border p-2">
-          <Button label="Open in main" variant="secondary" size="sm" onClick={() => onOpenInMain(side.id)} />
-        </HStack>
-      )}
+      <HStack gap={2} hAlign="center" className="shrink-0 border-t border-border p-2">
+        {onStop === undefined ? null : <Button label="Stop" variant="secondary" size="sm" onClick={onStop} />}
+        <Button label="Open in main" variant="ghost" size="sm" onClick={() => onOpenInMain(side.id)} />
+      </HStack>
     </div>
   );
 }

@@ -46,16 +46,16 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Foreground work, grouped by its owner. */
+/** The family's subagents, grouped by their owner. */
 export const Tasks: Story = {};
 
-/** A pre-ADR-0046 subagent's transcript (no name): read-only. */
+/** A subagent's transcript: read-only, one click from main. No Stop for one from before names. */
 const withSubagent = fakeView({ side: { id: SUBAGENT_ID, conversation: subagentConversation(), docs: [] } });
 export const TaskDetail: Story = { args: { view: withSubagent, remote: fakeRemote(withSubagent) } };
 
-/** A named subagent: messages and Stop are in main, one click away. */
+/** A named subagent at work: Stop sits next to Open in main (ADR-0047 §2). */
 const withNamedSubagent = withSummary(withSubagent, SUBAGENT_ID, { name: "parser-tests" });
-export const TaskDetailMessageable: Story = { args: { view: withNamedSubagent, remote: fakeRemote(withNamedSubagent) } };
+export const TaskDetailStoppable: Story = { args: { view: withNamedSubagent, remote: fakeRemote(withNamedSubagent) } };
 
 /** The detail keeps its header and back button while the snapshot loads. */
 const loadingSubagent = fakeView({ side: { id: SUBAGENT_ID, docs: [] } });

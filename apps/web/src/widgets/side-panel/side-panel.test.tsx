@@ -4,7 +4,6 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import {
-  BACKGROUND_SUBAGENT_ID,
   DARK_MODE_ID,
   fakeProcesses,
   fakeRemote,
@@ -15,7 +14,6 @@ import {
   PROCESSES,
   SUBAGENT_ID,
   subagentConversation,
-  withBackgroundSubagents,
   withSummary,
 } from "../../test/story-fixtures.tsx";
 import { SidePanel } from "./side-panel.tsx";
@@ -72,7 +70,7 @@ describe("SidePanel family", () => {
     renderPanel(PARSER_ID, loading);
     expect(screen.getByRole("button", { name: "Back to tasks" })).toBeInTheDocument();
     expect(screen.getByText("Loading conversation…")).toBeInTheDocument();
-    expect(screen.getByText("Read-only · subagent")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open in main" })).toBeInTheDocument();
   });
 
   it("hides a task of another family the moment that family is shown", () => {
@@ -83,7 +81,7 @@ describe("SidePanel family", () => {
   });
 });
 
-describe("SidePanel subagents (ADR-0046 §6)", () => {
+describe("SidePanel subagents (ADR-0047)", () => {
   const tasksPanel = (panelView: typeof view, onOpenInMain = vi.fn()) => (
     <SidePanel
       view={panelView}
@@ -103,38 +101,58 @@ describe("SidePanel subagents (ADR-0046 §6)", () => {
   const moved = (panelView: typeof view) =>
     withSummary(panelView, SUBAGENT_ID, { lifecycle: "background", name: "parser-tests", status: undefined });
 
-  it("drops a subagent from Tasks once it turns background, for good", () => {
+  it("keeps a subagent in Tasks when it turns background", () => {
     const list = fakeView();
     const { rerender } = render(tasksPanel(list));
     expect(screen.getByText("Write regression tests")).toBeInTheDocument();
 
     rerender(tasksPanel(moved(list)));
-    expect(screen.queryByText("Write regression tests")).toBeNull();
-    expect(screen.queryByText("parser-tests")).toBeNull();
-    expect(screen.getByText("No tasks yet")).toBeInTheDocument();
+    expect(screen.getByText("parser-tests")).toBeInTheDocument();
+    expect(screen.queryByText("No tasks yet")).toBeNull();
   });
 
-  it("hands an open detail to main when its subagent turns background", () => {
+  it("keeps an open detail in the panel when its subagent turns background", () => {
     const openInMain = vi.fn();
     const { rerender } = render(tasksPanel(view, openInMain));
-    expect(openInMain).not.toHaveBeenCalled();
-
     rerender(tasksPanel(moved(view), openInMain));
+
+    expect(openInMain).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Back to tasks" })).toBeInTheDocument();
+  });
+
+  it("stops a named subagent at work from its detail, and opens it in main", () => {
+    const openInMain = vi.fn();
+    const named = withSummary(view, SUBAGENT_ID, { name: "parser-tests" });
+    const remote = fakeRemote(named);
+    render(
+      <SidePanel
+        view={named}
+        remote={remote}
+        shownId={PARSER_ID}
+        narrow={false}
+        open
+        surface="tasks"
+        busy={false}
+        liveActivity={false}
+        onOpenChange={vi.fn()}
+        onSelectSurface={vi.fn()}
+        openInPanel={vi.fn()}
+        onOpenInMain={openInMain}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    expect(remote.controller.abort).toHaveBeenCalledWith(SUBAGENT_ID);
+    fireEvent.click(screen.getByRole("button", { name: "Open in main" }));
     expect(openInMain).toHaveBeenCalledWith(SUBAGENT_ID);
   });
 
-  it("opens a named subagent in main to talk to it; an unnamed one stays read-only", () => {
-    const openInMain = vi.fn();
-    const named = withSummary(view, SUBAGENT_ID, { name: "parser-tests" });
-    const { rerender } = render(tasksPanel(named, openInMain));
-    expect(screen.getByText("parser-tests")).toBeInTheDocument();
-    expect(screen.queryByText("Read-only · subagent")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Open in main" }));
-    expect(openInMain).toHaveBeenCalledWith(SUBAGENT_ID);
+  it("offers no Stop for an idle subagent or one from before names", () => {
+    const { rerender } = render(tasksPanel(moved(view)));
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
 
-    rerender(tasksPanel(view, openInMain));
-    expect(screen.getByText("Read-only · subagent")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Open in main" })).toBeNull();
+    rerender(tasksPanel(view));
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Open in main" })).toBeInTheDocument();
   });
 });
 
@@ -228,17 +246,12 @@ describe("SidePanel processes", () => {
     expect(screen.getByText("dev server")).toBeInTheDocument();
   });
 
-  it("closes a shown side detail when a process is opened", async () => {
-    const withSide = withBackgroundSubagents(fakeView(), { includeForkChild: false });
-    const side = {
-      id: BACKGROUND_SUBAGENT_ID,
-      conversation: subagentConversation(BACKGROUND_SUBAGENT_ID),
-      docs: [],
-    };
-    const panelView = { ...withSide, side };
-    const processes = fakeProcesses({ lists: { [PARSER_ID]: PROCESSES } });
+  it("closes another family's lingering side when a process is opened", async () => {
+    // The side still names the parser family's subagent while this family's list shows.
+    const panelView = fakeView({ side: { id: SUBAGENT_ID, conversation: subagentConversation(), docs: [] } });
+    const processes = fakeProcesses({ lists: { [DARK_MODE_ID]: PROCESSES } });
     const remote = fakeRemote(panelView, {}, processes);
-    renderPanel(PARSER_ID, panelView, remote);
+    renderPanel(DARK_MODE_ID, panelView, remote);
     fireEvent.click(await screen.findByRole("button", { name: /dev server/ }));
     expect(remote.controller.showSide).toHaveBeenCalledWith(undefined);
   });

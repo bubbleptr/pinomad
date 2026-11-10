@@ -1,5 +1,5 @@
-// How the web names a subagent and whether the user can talk to it
-// (ADR-0046 §1, §6).
+// How the web names a subagent and whether the user can stop it
+// (ADR-0046 §1, ADR-0047 §2).
 import { hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 import { displayName } from "@pinomad/client/family.ts";
@@ -15,19 +15,11 @@ export function conversationName(summary: ConversationSummary | undefined): stri
 }
 
 /**
- * - `read-only`: a host without `subagentStop`, or a subagent from before
- *   ADR-0046 (no name), which the host refuses messages for.
- * - `in-call`: a foreground subagent that is running is still answering the
- *   call that dispatched it; the host refuses messages until the call ends,
- *   but Stop works (the call then fails, like Esc).
- * - `open`: messages and Stop.
+ * Whether the user can stop this subagent now (ADR-0047 §2): it is at work,
+ * and the host tells its dispatcher who stopped it — a 5.33 host, for a
+ * subagent it has a record of (it has a name). The user never messages a
+ * subagent; an idle one has nothing to stop.
  */
-export type SubagentMessaging = "read-only" | "in-call" | "open";
-
-export function subagentMessaging(summary: ConversationSummary, hostMinor: number): SubagentMessaging {
-  if (!hostSupportsFeature(hostMinor, "subagentStop") || summary.name === undefined) return "read-only";
-  // Running outside its call turns a subagent background in the same commit
-  // (ADR-0046 §6), so a running foreground one is necessarily inside it.
-  if (summary.lifecycle !== "background" && summary.status === "running") return "in-call";
-  return "open";
+export function canStopSubagent(summary: ConversationSummary, hostMinor: number): boolean {
+  return hostSupportsFeature(hostMinor, "subagentStop") && summary.name !== undefined && summary.status === "running";
 }

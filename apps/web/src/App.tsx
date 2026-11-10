@@ -22,7 +22,7 @@ import {
 import { outgoingImage, type ImageVariant } from "@pinomad/protocol/images.ts";
 import { findConversation, type ConversationNode, type Home } from "@pinomad/protocol/organization.ts";
 import { currentAgentOf } from "./entities/conversation/current-agent.ts";
-import { conversationName, subagentMessaging } from "./entities/conversation/subagent.ts";
+import { canStopSubagent, conversationName } from "./entities/conversation/subagent.ts";
 import { forksAt, rootOf, taskGroupsOf } from "@pinomad/client/family.ts";
 import { hostLabels, mergeStoredHost, updateStoredHostConnection, updateStoredHostEndpoints } from "@pinomad/client/stored-host.ts";
 import { candidatePlan, preferredLegacyUrl } from "@pinomad/protocol/remote-candidates.ts";
@@ -1129,17 +1129,11 @@ export function Workbench({
   );
   const openInPanel = useCallback(
     (id: ConversationId) => {
-      const summary = findConversation(view.organized, id)?.summary;
-      // Every subagent entry follows its lifecycle: background belongs in the
-      // main view, foreground stays in the right-hand Tasks detail.
-      if (summary?.kind === "subagent" && summary.lifecycle === "background") {
-        openInMain(id);
-        return;
-      }
+      // Every subagent opens in the Tasks detail, whatever its lifecycle (ADR-0047 §1).
       openSurface("tasks");
       void remote.controller.showSide(id);
     },
-    [remote, view.organized, openInMain, openSurface],
+    [remote, openSurface],
   );
   const openTasks = (id?: ConversationId): void => {
     if (id !== undefined) return openInPanel(id);
@@ -1169,9 +1163,9 @@ export function Workbench({
   // Any conversation with a parent — fork or subagent — offers a breadcrumb
   // back to the conversation it belongs to.
   const shownSummary = shownId === undefined ? undefined : findConversation(view.organized, shownId)?.summary;
-  // A subagent takes messages and Stop on a 5.33 host (ADR-0046 §6).
-  const messaging =
-    shownSummary?.kind === "subagent" ? subagentMessaging(shownSummary, view.host?.protocol.minor ?? 0) : undefined;
+  // A subagent in main is read-only; the user can only stop it (ADR-0047 §2).
+  const shownSubagent = shownSummary?.kind === "subagent" ? shownSummary : undefined;
+  const canStopShown = shownSubagent !== undefined && canStopSubagent(shownSubagent, view.host?.protocol.minor ?? 0);
   // A subagent's role comes from the delegating call; a top-level conversation
   // or fork shows the agent it currently runs as.
   const headerAgent =
@@ -1180,12 +1174,12 @@ export function Workbench({
       : shownSummary.kind === "subagent"
         ? shownSummary.role
         : currentAgentOf(shownSummary);
-  // The Tasks icon's dot only mirrors Foreground work that Tasks can
-  // show; a fork running where the panel has no row must not light it.
+  // The Tasks icon's dot only mirrors the subagents Tasks can show; a fork
+  // running where the panel has no row must not light it.
   const liveRoot = shownId === undefined ? undefined : rootOf(view.organized, shownId);
   const liveTasks = liveRoot === undefined ? [] : taskGroupsOf(liveRoot).flatMap((group) => group.tasks);
   const liveProcesses = useProcessList(remote.processes, liveRoot?.summary.id);
-  // ADR-0045 §6: the dot means Foreground work or a live background process.
+  // ADR-0045 §6: the dot means a subagent at work or a live background process.
   const liveActivity = anyAtWork(liveTasks) || (liveProcesses?.processes.some((process) => isProcessActive(process.state)) ?? false);
   const parentId = shownSummary?.parent;
   const parentSummary =
@@ -1310,24 +1304,20 @@ export function Workbench({
               // Same 44rem centered column as the message list, so the
               // composer lines up with the conversation at every width.
               <div className="mx-auto w-full max-w-[44rem]">
-                {messaging === "read-only" ? (
-                  <div className="border-t border-border py-2 text-center text-xs text-muted">Read-only · subagent</div>
-                ) : messaging === "in-call" ? (
-                  // The host refuses messages until the dispatching call ends;
-                  // Stop fails that call, as Esc in the parent would.
+                {shownSubagent !== undefined ? (
                   <HStack gap={2} vAlign="center" className="border-t border-border py-2">
-                    <span className="min-w-0 flex-1 text-xs text-muted">Working on its task · you can message it when it's done</span>
-                    <Button
-                      label="Stop"
-                      variant="secondary"
-                      size="sm"
-                      isDisabled={view.connection !== "connected" || shownId === undefined}
-                      // Named explicitly: until a pending switch lands, the
-                      // controller's current conversation may still be the parent.
-                      onClick={() => {
-                        if (shownId !== undefined) void remote.controller.abort(shownId);
-                      }}
-                    />
+                    <span className="min-w-0 flex-1 text-center text-xs text-muted">Read-only · subagent</span>
+                    {!canStopShown ? null : (
+                      <Button
+                        label="Stop"
+                        variant="secondary"
+                        size="sm"
+                        isDisabled={view.connection !== "connected"}
+                        // Named explicitly: until a pending switch lands, the
+                        // controller's current conversation may still be the parent.
+                        onClick={() => void remote.controller.abort(shownSubagent.id)}
+                      />
+                    )}
                   </HStack>
                 ) : conversation === undefined ? (
                   failed ? null : <ComposerSkeleton />
@@ -1344,7 +1334,6 @@ export function Workbench({
                       externalEditLocked={takingBackHere}
                       onEditorStateChange={setEditorState}
                       source={hostKey}
-                      subagent={messaging !== undefined}
                       onTakeBack={() => {
                         setTakeBack(undefined);
                         setTakingBack(undefined);

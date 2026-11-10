@@ -99,6 +99,19 @@ export const FAMILY_TREE: FamilyInput = {
   ],
 };
 
+/** Subagents in every state: the ones at work lead their group (ADR-0047 §1). */
+export const TASKS_AT_WORK: FamilyInput = {
+  name: "tasks-at-work",
+  index: indexOf([chatEntry(1)]),
+  summaries: [
+    sum(1),
+    sum(2, { kind: "subagent", parent: 1 }),
+    sum(3, { kind: "subagent", parent: 1, lifecycle: "background", status: "running" }),
+    sum(4, { kind: "subagent", parent: 1, status: "failed" }),
+    sum(5, { kind: "subagent", parent: 1, status: "needs-answer" }),
+  ],
+};
+
 /** Pre-ADR-0019 data: several forks per message and forks nested in forks. */
 export const LEGACY_FORKS: FamilyInput = {
   name: "legacy-nested-forks",
@@ -138,6 +151,7 @@ export const FAMILY_CASES: FamilyInput[] = [
   UNKNOWN_STATUS_WINS,
   UPDATED_AT,
   FAMILY_TREE,
+  TASKS_AT_WORK,
   LEGACY_FORKS,
   FORK_ANCHORS,
   SUB_IN_FORK,
@@ -155,6 +169,7 @@ export const NODE_QUERIES = [
   { name: "updated-at", family: "updated-at", id: 1 },
   { name: "updated-at-none", family: "idle", id: 1 },
   { name: "family-tree", family: "family-tree", id: 1 },
+  { name: "tasks-at-work", family: "tasks-at-work", id: 1 },
   { name: "legacy-nested-forks", family: "legacy-nested-forks", id: 7 },
   { name: "fork-anchors", family: "fork-anchors", id: 2 },
 ];
