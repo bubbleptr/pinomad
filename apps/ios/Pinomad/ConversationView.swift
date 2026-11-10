@@ -55,8 +55,12 @@ struct ConversationView: View {
         // Read the node once per version: the title, agent, retry rule and
         // card facts all derive from it.
         let node = self.node
-        let title = node.map { displayName(summary: $0.summary) } ?? "Conversation"
+        let title = node.map { conversationName(summary: $0.summary) } ?? "Conversation"
         let isSubagent = node?.summary.kind == .subagent
+        // Whether the user can talk to the subagent shown (ADR-0046 §6).
+        let messaging = isSubagent
+            ? node.map { SubagentMessaging(summary: $0.summary, hostMinor: model.hostMinor) }
+            : nil
         let agentPick = node.map {
             ConversationAgent(summary: $0.summary, isSubagent: isSubagent,
                               hostMinor: model.hostMinor,
@@ -65,7 +69,9 @@ struct ConversationView: View {
         let subtitle = self.subtitle(agent: agentPick?.current)
         // Card facts only, so a summary's churn (updatedAt/status/activity)
         // doesn't invalidate the transcript's rows.
-        let subagentSummaries = ChatAdapter.subagentSummaries(in: node)
+        // From the family root: a fork's inherited calls name the parent's subagents.
+        let familyRoot = model.snapshot.flatMap { rootOf(organized: $0.organized, id: conversationId) } ?? node
+        let subagentSummaries = ChatAdapter.subagentSummaries(in: familyRoot)
         let failed = conversation == nil && model.opening.failed == conversationId
         // Skeleton, content and the failure state cross-fade; under Reduce
         // Motion they swap at once.
@@ -153,17 +159,29 @@ struct ConversationView: View {
         // the system's soft edge instead of a hard cut at the card.
         .safeAreaBar(edge: .bottom) {
             ZStack {
-                if isSubagent {
-                    // A subagent belongs to its delegating task; the reader only
-                    // observes it. No composer, so nothing here can submit,
-                    // stop, compact, or change its model.
+                if messaging == .readOnly {
+                    // An older host, or a subagent from before names: the
+                    // host refuses its messages. No composer, so nothing
+                    // here can submit, stop, compact, or change its model.
                     Text("Subagent conversations are read-only")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
+                } else if messaging == .inCall {
+                    // Still answering the call that dispatched it: messages
+                    // wait for the call to end; Stop fails the call, as Esc
+                    // in the parent would.
+                    SubagentInCallBar(connected: connected) {
+                        model.stop(conversation: conversationId)
+                    }
+                    .transition(.opacity)
                 } else if let conversation {
-                    ConversationComposer(model: model, conversation: conversation, agentPick: agentPick)
+                    ConversationComposer(
+                        model: model, conversation: conversation, agentPick: agentPick,
+                        subagent: isSubagent,
+                        backgroundBar: backgroundBar(conversation, node: node)
+                    )
                         // The agent at work, in the empty strip under the card:
                         // hung from the bar's bottom edge down past the home
                         // indicator; with the keyboard up, the keyboard covers it.
@@ -302,6 +320,22 @@ struct ConversationView: View {
         guard let hostKey = model.currentHostKey else { return }
         model.navPath.append(.conversation(
             ConversationRef(hostKey: hostKey, conversationId: child)))
+    }
+
+    /// The family's background subagents over the composer; none inside a
+    /// subagent, which cannot dispatch, and no bar while there are none.
+    /// Takes the node already read for this version, not a fresh lookup.
+    private func backgroundBar(_ conversation: ConversationSnapshot, node: ConversationNode?) -> BackgroundSubagentBar? {
+        guard let node, let snapshot = model.snapshot else { return nil }
+        let items = BackgroundSubagents.of(
+            shown: node, organized: snapshot.organized,
+            calls: ChatAdapter.subagentCalls(in: conversation.chat), models: snapshot.models)
+        guard !items.isEmpty else { return nil }
+        return BackgroundSubagentBar(
+            items: items, connected: connected,
+            open: { child in openSubagent(child, from: ChatAdapter.runSpawning(child, in: conversation.chat)) },
+            stop: { child in model.stop(conversation: child) }
+        )
     }
 
     /// The newest run: the todo line ends it and no other. Not simply the
@@ -697,6 +731,36 @@ private struct RunFailureView: View {
                 }
             }
         }
+    }
+}
+
+/// A foreground subagent still inside the call that dispatched it: why the
+/// composer is not there yet, and Stop, on the composer's glass.
+private struct SubagentInCallBar: View {
+    let connected: Bool
+    let stop: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text("Working on its task · you can message it when it's done")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button(action: stop) {
+                SlotIcon(.stop)
+            }
+            .buttonStyle(.press)
+            .disabled(!connected)
+            .accessibilityLabel("Stop")
+            .accessibilityHint("Stops the subagent; the call that dispatched it fails")
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, 10)
+        .padding(.vertical, 10)
+        .frame(minHeight: 56)
+        .glassEffect(.regular, in: .rect(cornerRadius: ConversationComposer.cardCornerRadius))
+        .padding(.horizontal, 12)
+        .padding(.bottom, ConversationComposer.bottomInset)
     }
 }
 

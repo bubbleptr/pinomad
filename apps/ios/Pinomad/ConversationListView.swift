@@ -1,3 +1,4 @@
+import PinomadChat
 import PinomadCore
 import SwiftUI
 
@@ -117,7 +118,7 @@ struct ConversationListView: View {
     }
 
     private func matches(_ node: ConversationNode) -> Bool {
-        displayName(summary: node.summary).localizedCaseInsensitiveContains(query)
+        conversationName(summary: node.summary).localizedCaseInsensitiveContains(query)
     }
 }
 

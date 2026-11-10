@@ -24,19 +24,21 @@ struct SubagentCardView: View {
         case .running: "Running"
         case .done: "Done"
         case .failed: "Failed"
+        case .idle: "Idle"
         }
     }
 
     private var statusStyle: AnyShapeStyle {
         switch card.status {
         case .running: AnyShapeStyle(.green)
-        case .done: AnyShapeStyle(.tertiary)
+        case .done, .idle: AnyShapeStyle(.tertiary)
         case .failed: AnyShapeStyle(.red)
         }
     }
 
+    /// A background card's status is the subagent's own (ADR-0046 §1).
     private var meta: String {
-        ([statusText] + card.meta).joined(separator: " · ")
+        ((card.background ? ["Background"] : []) + [statusText] + card.meta).joined(separator: " · ")
     }
 
     /// A target only exists when the call recorded a child and the view has
@@ -56,7 +58,8 @@ struct SubagentCardView: View {
                         .contentShape(.rect)
                 }
                 .buttonStyle(.press)
-                .accessibilityLabel("\(card.title), \(statusText)")
+                .accessibilityLabel(card.background
+                    ? "\(card.title), background, \(statusText)" : "\(card.title), \(statusText)")
                 .accessibilityHint("Opens the subagent conversation")
             } else {
                 summary
