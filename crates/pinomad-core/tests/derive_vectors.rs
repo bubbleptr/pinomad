@@ -369,7 +369,7 @@ expect_text(case), "{name}");
 fn family_replays() {
     let file = load("family");
     // node cases: organize the input, find the node by id, derive.
-    for section in ["familyStatus", "familyUpdatedAt", "threadsOf", "taskGroupsOf", "backgroundSubagentsOf"] {
+    for section in ["familyStatus", "familyUpdatedAt", "threadsOf", "taskGroupsOf"] {
         for case in cases(&file, section) {
             let name = as_text(field(case, "name"));
             let (index, summaries) = index_summaries(case);
@@ -384,7 +384,6 @@ fn family_replays() {
                 ),
                 "familyUpdatedAt" => opt_json(pinomad_core::family::family_updated_at(&node).map(Json::Number)),
                 "threadsOf" => derive_vectors::out::threads_json(&pinomad_core::family::threads_of(&node)),
-                "backgroundSubagentsOf" => derive_vectors::out::threads_json(&pinomad_core::family::background_subagents_of(&node)),
                 _ => derive_vectors::out::task_groups_json(&pinomad_core::family::task_groups_of(&node)),
             };
             assert_eq!(

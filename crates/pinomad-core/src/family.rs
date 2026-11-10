@@ -3,7 +3,7 @@
 // tree; sidebar/right-panel projections filter subagents by lifecycle.
 use crate::json::Json;
 use crate::organization::{
-    find_conversation, ConversationNode, ConversationStatus, ConversationSummary, Organized, SubagentLifecycle,
+    find_conversation, ConversationNode, ConversationStatus, ConversationSummary, Organized,
     SummaryKind,
 };
 use crate::text;
@@ -210,25 +210,6 @@ pub fn threads_of(root: &ConversationNode) -> Vec<ConversationNode> {
     }
     walk(root, &mut threads);
     threads
-}
-
-/// `backgroundSubagentsOf`: all background descendants, flattened under the
-/// root in creation order. Missing/unknown lifecycle values stay foreground.
-pub fn background_subagents_of(root: &ConversationNode) -> Vec<ConversationNode> {
-    fn walk(node: &ConversationNode, out: &mut Vec<ConversationNode>) {
-        for child in &node.children {
-            if child.summary.kind == Some(SummaryKind::Subagent)
-                && child.summary.lifecycle == Some(SubagentLifecycle::Background)
-            {
-                out.push(child.clone());
-            }
-            walk(child, out);
-        }
-    }
-    let mut tasks = Vec::new();
-    walk(root, &mut tasks);
-    tasks.sort_by_key(|node| node.summary.id);
-    tasks
 }
 
 /// One row of `taskGroupsOf`: the owner summary, its label, its subagents.

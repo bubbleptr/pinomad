@@ -91,9 +91,10 @@ fn ffi_roundtrip_keeps_lifecycle_and_model() {
             children: vec![],
         }],
     };
-    let tasks = pinomad_core::ffi::background_subagents_of(root);
-    assert_eq!(tasks.len(), 1);
-    let child = &tasks[0].summary;
+    let groups = pinomad_core::ffi::task_groups_of(root);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].tasks.len(), 1);
+    let child = &groups[0].tasks[0].summary;
     assert_eq!(
         child.lifecycle,
         Some(pinomad_core::ffi::SubagentLifecycle::Background)

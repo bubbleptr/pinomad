@@ -86,28 +86,6 @@ export function threadsOf(root: ConversationNode): readonly ConversationNode[] {
   return threads;
 }
 
-/** A subagent's stable lifecycle class; absent/unknown values stay foreground. */
-export function subagentLifecycleOf(summary: ConversationSummary): "foreground" | "background" {
-  return summary.lifecycle === "background" ? "background" : "foreground";
-}
-
-/**
- * Background subagents in the whole family, flattened under its root in
- * creation order. No web surface uses it any more (ADR-0047 §1); it stays
- * while iOS still reads its Rust mirror (#688).
- */
-export function backgroundSubagentsOf(root: ConversationNode): readonly ConversationNode[] {
-  const tasks: ConversationNode[] = [];
-  const visit = (node: ConversationNode): void => {
-    for (const child of node.children) {
-      if (child.summary.kind === "subagent" && subagentLifecycleOf(child.summary) === "background") tasks.push(child);
-      visit(child);
-    }
-  };
-  visit(root);
-  return tasks.sort((a, b) => a.summary.id - b.summary.id);
-}
-
 /** A subagent's tasks in display order: the ones at work (or waiting on the user) first, each part in creation order. */
 function tasksOf(owner: ConversationNode): ConversationNode[] {
   const tasks = owner.children.filter((child) => child.summary.kind === "subagent");

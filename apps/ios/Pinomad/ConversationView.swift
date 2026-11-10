@@ -57,10 +57,9 @@ struct ConversationView: View {
         let node = self.node
         let title = node.map { conversationName(summary: $0.summary) } ?? "Conversation"
         let isSubagent = node?.summary.kind == .subagent
-        // Whether the user can talk to the subagent shown (ADR-0046 §6).
-        let messaging = isSubagent
-            ? node.map { SubagentMessaging(summary: $0.summary, hostMinor: model.hostMinor) }
-            : nil
+        // A subagent is read-only; the user can only stop it (ADR-0047 §2).
+        let canStop = isSubagent
+            && (node.map { canStopSubagent(summary: $0.summary, hostMinor: model.hostMinor) } ?? false)
         let agentPick = node.map {
             ConversationAgent(summary: $0.summary, isSubagent: isSubagent,
                               hostMinor: model.hostMinor,
@@ -159,29 +158,25 @@ struct ConversationView: View {
         // the system's soft edge instead of a hard cut at the card.
         .safeAreaBar(edge: .bottom) {
             ZStack {
-                if messaging == .readOnly {
-                    // An older host, or a subagent from before names: the
-                    // host refuses its messages. No composer, so nothing
-                    // here can submit, stop, compact, or change its model.
+                if isSubagent, canStop {
+                    // At work: Stop is the one thing the user can do here.
+                    // Inside its dispatching call that fails the call, as
+                    // Esc in the parent would.
+                    SubagentWorkingBar(connected: connected) {
+                        model.stop(conversation: conversationId)
+                    }
+                    .transition(.opacity)
+                } else if isSubagent {
+                    // No composer: nothing here can submit, compact, or
+                    // change its model. To direct it, talk to the
+                    // conversation that dispatched it.
                     Text("Subagent conversations are read-only")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
-                } else if messaging == .inCall {
-                    // Still answering the call that dispatched it: messages
-                    // wait for the call to end; Stop fails the call, as Esc
-                    // in the parent would.
-                    SubagentInCallBar(connected: connected) {
-                        model.stop(conversation: conversationId)
-                    }
-                    .transition(.opacity)
                 } else if let conversation {
-                    ConversationComposer(
-                        model: model, conversation: conversation, agentPick: agentPick,
-                        subagent: isSubagent,
-                        backgroundBar: backgroundBar(conversation, node: node)
-                    )
+                    ConversationComposer(model: model, conversation: conversation, agentPick: agentPick)
                         // The agent at work, in the empty strip under the card:
                         // hung from the bar's bottom edge down past the home
                         // indicator; with the keyboard up, the keyboard covers it.
@@ -320,22 +315,6 @@ struct ConversationView: View {
         guard let hostKey = model.currentHostKey else { return }
         model.navPath.append(.conversation(
             ConversationRef(hostKey: hostKey, conversationId: child)))
-    }
-
-    /// The family's background subagents over the composer; none inside a
-    /// subagent, which cannot dispatch, and no bar while there are none.
-    /// Takes the node already read for this version, not a fresh lookup.
-    private func backgroundBar(_ conversation: ConversationSnapshot, node: ConversationNode?) -> BackgroundSubagentBar? {
-        guard let node, let snapshot = model.snapshot else { return nil }
-        let items = BackgroundSubagents.of(
-            shown: node, organized: snapshot.organized,
-            calls: ChatAdapter.subagentCalls(in: conversation.chat), models: snapshot.models)
-        guard !items.isEmpty else { return nil }
-        return BackgroundSubagentBar(
-            items: items, connected: connected,
-            open: { child in openSubagent(child, from: ChatAdapter.runSpawning(child, in: conversation.chat)) },
-            stop: { child in model.stop(conversation: child) }
-        )
     }
 
     /// The newest run: the todo line ends it and no other. Not simply the
@@ -736,13 +715,13 @@ private struct RunFailureView: View {
 
 /// A foreground subagent still inside the call that dispatched it: why the
 /// composer is not there yet, and Stop, on the composer's glass.
-private struct SubagentInCallBar: View {
+private struct SubagentWorkingBar: View {
     let connected: Bool
     let stop: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
-            Text("Working on its task · you can message it when it's done")
+            Text("Working on its task · read-only")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -752,7 +731,7 @@ private struct SubagentInCallBar: View {
             .buttonStyle(.press)
             .disabled(!connected)
             .accessibilityLabel("Stop")
-            .accessibilityHint("Stops the subagent; the call that dispatched it fails")
+            .accessibilityHint("Stops what the subagent is doing")
         }
         .padding(.leading, 16)
         .padding(.trailing, 10)
