@@ -1,7 +1,7 @@
 // One kind of subagent (ADR-0046): named, idle after answering, messageable
-// and stoppable later. Core holds the family registry and the two task kinds
-// so both the subagent tools (extensions/subagent.ts registers the tasks) and
-// the gateway (a user's message or Stop) use one path. Ownership follows
+// by the model and stoppable later. Core holds the family registry and the two
+// task kinds so both the subagent tools (extensions/subagent.ts registers the
+// tasks) and the gateway (a user's Stop; ADR-0047) use one path. Ownership follows
 // pi-durable's example 22: a background-dispatched child is owned by an
 // anchor task that ends at once; every message after the first call is
 // delivered by a background reporter task of the sending conversation, which
@@ -26,7 +26,7 @@ export type SubagentStatus = "working" | "idle" | "stopped" | "failed";
 
 export type SubagentRecord = {
   conversationId: ConversationId;
-  /** The conversation whose model dispatched it; user messages are reported there. */
+  /** The conversation whose model dispatched it. */
   dispatcher: ConversationId;
   /** The `subagent` call that created it: a rerun of that call finds it by this. */
   createdBy: TaskId;
@@ -40,12 +40,13 @@ export type SubagentRecord = {
   status: SubagentStatus;
   /** Reporter tasks not yet settled. */
   reporters: TaskId[];
-  /** Answers already reported, keyed `<receiving conversation>:<answer entry>`: several messages can end in one answer. */
+  /**
+   * Answers already reported, keyed `<receiving conversation>:<answer entry>`: several messages can end in one answer.
+   * "write" is left from when a user's own messages were only noted (before ADR-0047).
+   */
   reported: Record<string, "steer" | "write">;
   /** The newest child entry `subagent_read` returned. */
   readUpTo?: EntryId;
-  /** Request ids of the user's own messages that `subagent_read` has not returned yet. */
-  userRequests?: string[];
   /** Who stopped its current work, recorded before the abort; cleared by the next message. */
   stop?: { by: "user" | "model"; noted: boolean };
   /** Reporters a Stop reached before they delivered their message: they must not deliver it. */
@@ -168,11 +169,8 @@ type ReporterInput = {
   readonly root: ConversationId;
   readonly name: string;
   readonly conversationId: ConversationId;
-  readonly from: "model" | "user";
-  /** From the model: the message to deliver. */
+  /** Absent on a reporter left from when the user could message a subagent (before ADR-0047): it delivers nothing. */
   readonly message?: string;
-  /** From the user: the request id the gateway admitted the message under, in the same commit. */
-  readonly requestId?: string;
 };
 
 /** Owns a background-dispatched child and ends at once; a background task is a boundary for Esc and idle waits. */
@@ -193,22 +191,26 @@ export const SubagentReporter = defineTask<ReporterInput, { phase: "deliver" } |
   version: 1,
   initial: () => ({ phase: "deliver" }),
   phases: {
-    // The model's message is admitted in a commit that first checks for a
-    // Stop that reached this reporter, so a stopped subagent never restarts
-    // on a message sent before the Stop. A user's message was admitted with
-    // the reporter, in the gateway's commit.
+    // The message is admitted in a commit that first checks for a Stop that
+    // reached this reporter, so a stopped subagent never restarts on a
+    // message sent before the Stop.
     deliver: async (reporter, runtime, context) => {
       const input = reporter.input;
       const child = await runtime.conversation(input.conversationId, context);
       const sender = (await runtime.conversation(runtime.conversationId, context))!;
       await runtime.commit(async (tx) => {
         const record = (await tx.doc(SubagentsDoc, input.root)).agents[input.name];
-        if (input.from === "model" && child !== undefined) {
+        if (input.message === undefined) {
+          if (record !== undefined) release(record, reporter.id, "idle");
+          return { status: "terminal", outcome: { status: "completed", result: null } };
+        }
+        const message = input.message;
+        if (child !== undefined) {
           if (record?.cancelled?.includes(reporter.id) === true) {
             await settle(tx, sender, reporter.id, input, "cancelled", runtime.now());
             return { status: "terminal", outcome: { status: "completed", result: null } };
           }
-          await child.submit(tx, draftOf(reporter.id, input));
+          await child.submit(tx, draftOf(reporter.id, message));
         }
         return { status: "running", checkpoint: { phase: "wait" } };
       }, context);
@@ -217,10 +219,17 @@ export const SubagentReporter = defineTask<ReporterInput, { phase: "deliver" } |
       const input = reporter.input;
       const child = await runtime.conversation(input.conversationId, context);
       // The request id finds the admission made earlier, also after a restart.
-      const settled = child === undefined ? undefined : await (await child.submit(draftOf(reporter.id, input), context)).wait(context);
+      const message = input.message;
+      const settled =
+        child === undefined || message === undefined ? undefined : await (await child.submit(draftOf(reporter.id, message), context)).wait(context);
       const sender = (await runtime.conversation(runtime.conversationId, context))!;
       await runtime.commit(async (tx) => {
-        await settle(tx, sender, reporter.id, input, settled, runtime.now());
+        if (message === undefined) {
+          const record = (await tx.doc(SubagentsDoc, input.root)).agents[input.name];
+          if (record !== undefined) release(record, reporter.id, "idle");
+        } else {
+          await settle(tx, sender, reporter.id, input, settled, runtime.now());
+        }
         return { status: "terminal", outcome: { status: "completed", result: null } };
       }, context);
     },
@@ -233,11 +242,9 @@ export const SubagentReporter = defineTask<ReporterInput, { phase: "deliver" } |
     }, context),
 });
 
-/** The reporter's message as admitted; a user's is found by its request id only, so its content is not read again. */
-function draftOf(reporter: TaskId, input: ReporterInput): SubmissionDraft {
-  return input.from === "user"
-    ? { type: "input", content: "", requestId: input.requestId! }
-    : { type: "input", content: input.message!, whenBusy: "steer", requestId: `subagent:${reporter}` };
+/** The reporter's message as admitted; the request id finds the admission again. */
+function draftOf(reporter: TaskId, message: string): SubmissionDraft {
+  return { type: "input", content: message, whenBusy: "steer", requestId: `subagent:${reporter}` };
 }
 
 function release(record: SubagentRecord, reporter: TaskId, status: SubagentStatus): void {
@@ -280,19 +287,9 @@ async function settle(
     status = "idle";
     // Per receiving conversation: the root and a fork may both wait on one answer.
     const key = `${sender.id}:${settled.answer}`;
-    const prior = record.reported[key];
-    if (input.from === "model" && prior !== "steer") {
-      // A message from the model wakes it with the answer, even when a user
-      // message ended in the same answer and was only noted.
+    if (record.reported[key] !== "steer") {
       report = steer(`${answeredHeader(name, record)}\n\n${await answerText(tx, settled.answer)}`);
       record.reported[key] = "steer";
-    } else if (input.from === "user" && prior === undefined) {
-      const turns = (await userMessages(tx, record)).count;
-      report = note(
-        `[The user talked with subagent ${name} directly: ${turns} message${turns === 1 ? "" : "s"} since you last read it. Call subagent_read to see them.]`,
-        now,
-      );
-      record.reported[key] = "write";
     }
   } else if (settled === "cancelled" || (settled?.status === "unanswered" && settled.reason === "aborted")) {
     status = "stopped";
@@ -307,10 +304,7 @@ async function settle(
   } else {
     status = "failed";
     const reason = settled === undefined ? "its conversation no longer exists" : settled.status === "unanswered" ? settled.reason : "no answer";
-    report =
-      input.from === "model"
-        ? steer(`[subagent ${name} failed: ${reason}]`)
-        : note(`[The user's message to subagent ${name} failed: ${reason}]`, now);
+    report = steer(`[subagent ${name} failed: ${reason}]`);
   }
   if (report !== undefined) await sender.submit(tx, { ...report, requestId: `subagent-report:${reporter}` });
   release(record, reporter, status);
@@ -350,29 +344,6 @@ export async function entriesSince(tx: Tx, record: SubagentRecord): Promise<Entr
   return entries;
 }
 
-/** The user's own messages since the read cursor: their entries once placed, and how many there are. */
-export async function userMessages(tx: Tx, record: SubagentRecord): Promise<{ entries: Set<EntryId>; count: number }> {
-  const entries = new Set<EntryId>();
-  let count = 0;
-  for (const requestId of record.userRequests ?? []) {
-    const entry = (await tx.submissionByRequest(record.conversationId, requestId))?.entry;
-    if (entry !== undefined) entries.add(entry);
-    if (entry === undefined || record.readUpTo === undefined || entry > record.readUpTo) count++;
-  }
-  return { entries, count };
-}
-
-/** Advance the read cursor and drop the user requests it now covers. */
-export async function markRead(tx: Tx, record: SubagentRecord, upTo: EntryId): Promise<void> {
-  record.readUpTo = upTo;
-  const left: string[] = [];
-  for (const requestId of record.userRequests ?? []) {
-    const entry = (await tx.submissionByRequest(record.conversationId, requestId))?.entry;
-    if (entry === undefined || entry > upTo) left.push(requestId);
-  }
-  record.userRequests = left;
-}
-
 /**
  * Check that `name` can take a message now: it exists, is not inside the
  * foreground call that dispatched it, and the family has room. Reads tables,
@@ -391,8 +362,7 @@ export async function assertDispatchable(tx: Tx, root: ConversationId, name: str
 /**
  * Record the dispatch of one message inside a commit: a reporter task owned
  * by `sender` (background, so its Esc and idle waits skip it), and the
- * subagent marked working. It writes only — check with `assertDispatchable`
- * first — so it may follow an admission in the same commit.
+ * subagent marked working. Check with `assertDispatchable` first.
  */
 export async function dispatch(
   tx: Tx,
@@ -400,9 +370,7 @@ export async function dispatch(
     readonly root: ConversationId;
     readonly name: string;
     readonly sender: ConversationId;
-    readonly from: "model" | "user";
-    readonly message?: string;
-    readonly requestId?: string;
+    readonly message: string;
   },
 ): Promise<TaskId> {
   const record = recordNamed((await tx.doc(SubagentsDoc, options.root)).agents, options.name);
@@ -412,15 +380,11 @@ export async function dispatch(
       root: options.root,
       name: options.name,
       conversationId: record.conversationId,
-      from: options.from,
-      ...(options.message === undefined ? {} : { message: options.message }),
-      ...(options.requestId === undefined ? {} : { requestId: options.requestId }),
+      message: options.message,
     },
     { ownership: { kind: "conversation" }, conversationId: options.sender, background: true },
   );
   record.reporters.push(reporter);
-  // Assign a new array: a document proxy stores a copy of an assigned value.
-  if (options.from === "user" && options.requestId !== undefined) record.userRequests = [...(record.userRequests ?? []), options.requestId];
   record.status = "working";
   delete record.stop;
   delete record.call;

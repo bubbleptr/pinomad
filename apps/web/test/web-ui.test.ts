@@ -1285,7 +1285,6 @@ it("opens a subagent's conversation from its card in the panel's Tasks detail", 
       fauxAssistantMessage(fauxToolCall("subagent", { task: "count the lines", checkout: "shared" }), { stopReason: "toolUse" }),
       "child answer",
       "parent final",
-      "child again",
     ],
   });
   const page = await openPage(host, 1280, webOrigin);
@@ -1303,8 +1302,7 @@ it("opens a subagent's conversation from its card in the panel's Tasks detail", 
   await card.getByText(/Done · faux\/faux-1 · \d+s/, { exact: false }).waitFor();
   await card.getByRole("button", { name: "View", exact: true }).click();
 
-  // It opens beside the main column in the panel — no composer there; talking
-  // to it happens in main.
+  // It opens beside the main column in the panel — no composer there.
   const panel = page.getByRole("complementary", { name: "Side panel" });
   await panel.getByText("child answer", { exact: true }).waitFor();
   expect(await prompt(panel).count()).toBe(0);
@@ -1316,35 +1314,23 @@ it("opens a subagent's conversation from its card in the panel's Tasks detail", 
   await panel.getByText("This conversation", { exact: true }).waitFor();
   await panel.getByRole("button", { name: /count-the-lines/, exact: false }).click();
 
-  // Its call is over, so main gives it a composer (ADR-0046 §6). The first
-  // message outside the call turns it background: it leaves Tasks for the
-  // sidebar, under its root, and does not come back.
   await shot(page, "subagent-task-detail");
   await panel.getByRole("button", { name: "Open in main", exact: true }).click();
   await expect.poll(() => page.locator("h1").textContent()).toBe("delegate›count-the-lines");
-  await prompt(page).fill("and again");
-  await prompt(page).press("Enter");
-  await page.getByText("child again", { exact: true }).waitFor();
-  const chats = page.getByRole("group", { name: "Chats" });
-  await chats.locator(".pigui-background-tree-child").getByRole("button", { name: "count-the-lines", exact: true }).waitFor();
-  // The panel stayed open on its Tasks list, which no longer has it.
-  await panel.getByText("No tasks yet", { exact: true }).waitFor();
+  await page.getByText("child answer", { exact: true }).first().waitFor();
 });
 
-it("talks to a background subagent from the main area and stops it", async () => {
+it("stops a background subagent from the main area", async () => {
   const webOrigin = await startWeb(defer);
   // Each request is answered by its last message, so the parent and the
   // subagent can run at the same time without racing for a scripted turn.
   const answer = (text: string) => fauxAssistantMessage(text);
   const rules: readonly (readonly [string, () => ReturnType<typeof answer>])[] = [
-    ["count the lines", () => answer("42 lines")],
-    ["and the words?", () => answer("7 words")],
     ["write an essay", () => answer(Array.from({ length: 3000 }, (_, i) => `word-${i}`).join(" "))],
-    ["[subagent counter answered]", () => answer("noted 42")],
     [
       "delegate",
       () => fauxAssistantMessage(
-        fauxToolCall("subagent", { task: "count the lines", name: "counter", background: true, checkout: "shared" }),
+        fauxToolCall("subagent", { task: "write an essay", name: "counter", background: true, checkout: "shared" }),
         { stopReason: "toolUse" },
       ),
     ],
@@ -1367,29 +1353,18 @@ it("talks to a background subagent from the main area and stops it", async () =>
   const page = await openPage(host, 1280, webOrigin);
   await prompt(page).fill("delegate");
   await prompt(page).press("Enter");
-  // The report wakes the parent once the subagent answered.
-  await page.getByText("noted 42", { exact: true }).waitFor();
-
   // The call returned at once; the card follows the subagent, not the call.
+  await page.getByText("dispatched", { exact: true }).waitFor();
   const card = page.locator('[data-slot="subagent-card"][data-background]');
   await card.getByText("counter", { exact: true }).waitFor();
-  await card.getByText(/^Background · Idle · faux\/faux-1$/).waitFor();
   await shot(page, "subagent-background-card");
 
   // It lives in the sidebar under its root, by name.
   const chats = page.getByRole("group", { name: "Chats" });
   await chats.locator(".pigui-background-tree-child").getByRole("button", { name: "counter", exact: true }).click();
   await expect.poll(() => page.locator("h1").textContent()).toBe("delegate›counter");
-  await page.getByText("42 lines", { exact: true }).waitFor();
 
-  // Main gives it a composer, and the parent hears about the talk as a note.
-  await prompt(page).fill("and the words?");
-  await prompt(page).press("Enter");
-  await page.getByText("7 words", { exact: true }).waitFor();
-
-  // Stop interrupts its current work; the parent gets a note for that too.
-  await prompt(page).fill("write an essay");
-  await prompt(page).press("Enter");
+  // Stop interrupts its current work; the parent gets a note for it.
   await page.getByText(/word-1 /).first().waitFor();
   await shot(page, "subagent-main-running");
   await page.getByRole("button", { name: "Stop", exact: true }).click();
@@ -1398,9 +1373,6 @@ it("talks to a background subagent from the main area and stops it", async () =>
   await page.getByRole("button", { name: "Back to delegate", exact: true }).click();
   await expect.poll(() => page.locator("h1").textContent()).toBe("delegate");
   // Reports are plain input text in the parent (ADR-0046 §4; no special rendering yet).
-  await page
-    .getByText("[The user talked with subagent counter directly: 1 message since you last read it. Call subagent_read to see them.]", { exact: true })
-    .waitFor();
   await page.getByText("[The user stopped subagent counter.]", { exact: true }).waitFor();
   await shot(page, "subagent-reports-in-parent");
 });

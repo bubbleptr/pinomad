@@ -40,7 +40,6 @@ import {
   dispatch,
   entriesSince,
   familyRootIn,
-  markRead,
   nameFromDescription,
   recordNamed,
   recordOf,
@@ -50,11 +49,10 @@ import {
   SubagentReporter,
   SubagentsDoc,
   uniqueName,
-  userMessages,
 } from "../subagents.ts";
 
 const instructions = (name: string): string =>
-  `You are a subagent named "${name}", working on tasks delegated to you. You cannot ask the user questions; if you need a decision or clarification, stop and state exactly what you need in your final answer. Each final answer is returned to whoever sent the message, so make it a complete, self-contained report. You may get more messages later, from the delegating agent or from the user.`;
+  `You are a subagent named "${name}", working on tasks delegated to you. You cannot ask the user questions; if you need a decision or clarification, stop and state exactly what you need in your final answer. Each final answer is returned to whoever sent the message, so make it a complete, self-contained report. You may get more messages later from the delegating agent.`;
 
 /** `subagent_read` returns at most this many characters, the newest. */
 const READ_LIMIT = 16_000;
@@ -103,7 +101,7 @@ export function createSubagent(options: {
     description:
       "Delegate a self-contained task to a named subagent that runs in its own conversation. " +
       "Without `background` the call blocks until the subagent answers and returns its answer; with `background: true` it returns at once, you keep working, and the answer is reported to you when it arrives. " +
-      "Either way the subagent stays available afterwards: continue with subagent_send, stop it with subagent_stop, see what the user said to it with subagent_read, and list subagents with subagent_list. " +
+      "Either way the subagent stays available afterwards: continue with subagent_send, stop it with subagent_stop, read its answers again with subagent_read, and list subagents with subagent_list. " +
       "The subagent starts with none of this conversation's context, so put everything it needs in `task`. " +
       '`checkout` is required: "shared" works in your files (use it for read-only work; parallel subagents must not edit the same files), "worktree" gets its own Git worktree for work that edits files. ' +
       "It cannot ask the user questions. `model` and `thinkingLevel` override what it inherits from you; `role` delegates to a named agent; a model or thinking level it pins cannot be overridden. " +
@@ -277,7 +275,7 @@ export function createSubagent(options: {
           reported: {},
         };
         if (background) {
-          await dispatch(tx, { root, name, sender: api.conversationId, from: "model", message: args.task });
+          await dispatch(tx, { root, name, sender: api.conversationId, message: args.task });
         }
         return {
           id: created.id,
@@ -352,7 +350,7 @@ export function createSubagent(options: {
       const conversationId = await api.commit(async (tx) => {
         const root = await familyRootIn(tx, api.conversationId);
         const record = await assertDispatchable(tx, root, args.name);
-        await dispatch(tx, { root, name: args.name, sender: api.conversationId, from: "model", message: args.message });
+        await dispatch(tx, { root, name: args.name, sender: api.conversationId, message: args.message });
         return record.conversationId;
       }, context);
       return {
@@ -390,7 +388,7 @@ export function createSubagent(options: {
     name: "subagent_read",
     callers: ["model"],
     description:
-      "Read what was said in one of your subagents' conversations since you last read it — the user may talk to subagents directly. Returns the messages and answers, without tool calls.",
+      "Read the answers one of your subagents gave since you last read it, without its tool calls — for example after your own context was compacted.",
     parameters: Type.Object({ name: Type.String({ description: "The subagent's name." }) }),
     // Each read advances the cursor; a rerun would return nothing new.
     replay: "unsafe",
@@ -399,22 +397,18 @@ export function createSubagent(options: {
         const root = await familyRootIn(tx, api.conversationId);
         const record = recordNamed((await tx.doc(SubagentsDoc, root)).agents, args.name);
         const entries = await entriesSince(tx, record);
-        const fromUser = (await userMessages(tx, record)).entries;
         const lines: string[] = [];
         for (const entry of entries) {
           const message = entry.model?.[0];
-          if (entry.kind === "pi.user" && message?.role === "user") {
-            lines.push(`${fromUser.has(entry.id) ? "User" : "Delegated"}: ${contentText(message.content)}`);
-          } else if (entry.kind === "pi.assistant" && message?.role === "assistant") {
-            const said = contentText(message.content);
-            if (said !== "") lines.push(`${args.name}: ${said}`);
-          }
+          if (entry.kind !== "pi.assistant" || message?.role !== "assistant") continue;
+          const said = contentText(message.content);
+          if (said !== "") lines.push(`${args.name}: ${said}`);
         }
         const last = entries.at(-1);
-        if (last !== undefined) await markRead(tx, record, last.id);
+        if (last !== undefined) record.readUpTo = last.id;
         if (lines.length === 0) return `Nothing new in subagent "${args.name}" since you last read it.`;
         const joined = lines.join("\n\n");
-        return joined.length <= READ_LIMIT ? joined : `(Earlier messages omitted.)\n\n${joined.slice(-READ_LIMIT)}`;
+        return joined.length <= READ_LIMIT ? joined : `(Earlier answers omitted.)\n\n${joined.slice(-READ_LIMIT)}`;
       }, context);
       return { output: [{ type: "text", text }] } satisfies ToolExecutionResult;
     },

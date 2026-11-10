@@ -568,7 +568,7 @@
         "since": 23
       },
       {
-        "name": "subagentMessages",
+        "name": "subagentStop",
         "since": 33
       },
       {
@@ -1295,15 +1295,15 @@
       "expect": false
     },
     {
-      "name": "subagentMessages@33",
+      "name": "subagentStop@33",
       "minor": 33,
-      "feature": "subagentMessages",
+      "feature": "subagentStop",
       "expect": true
     },
     {
-      "name": "subagentMessages@32",
+      "name": "subagentStop@32",
       "minor": 32,
-      "feature": "subagentMessages",
+      "feature": "subagentStop",
       "expect": false
     },
     {

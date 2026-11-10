@@ -278,7 +278,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
         HostFeature::TranscriptPaging => 28,
         HostFeature::AutoUpgrade => 30,
         HostFeature::Processes => 32,
-        HostFeature::SubagentMessages => 33,
+        HostFeature::SubagentStop => 33,
     };
     host_minor >= since
 }
@@ -331,9 +331,9 @@ pub enum HostFeature {
     /// `hello.processes`, the `process:` stream, and `stopProcess` (32,
     /// ADR-0045).
     Processes,
-    /// Subagents take `submit` and `abort`, and summaries carry `name` (33,
-    /// ADR-0046); on an older host subagents stay read-only.
-    SubagentMessages,
+    /// Subagents take the user's `abort`, and summaries carry `name` (33,
+    /// ADR-0046). The host refuses the user's `submit` to one (ADR-0047 §2).
+    SubagentStop,
 }
 
 

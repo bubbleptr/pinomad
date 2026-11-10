@@ -15,7 +15,7 @@ export function conversationName(summary: ConversationSummary | undefined): stri
 }
 
 /**
- * - `read-only`: a host without `subagentMessages`, or a subagent from before
+ * - `read-only`: a host without `subagentStop`, or a subagent from before
  *   ADR-0046 (no name), which the host refuses messages for.
  * - `in-call`: a foreground subagent that is running is still answering the
  *   call that dispatched it; the host refuses messages until the call ends,
@@ -25,7 +25,7 @@ export function conversationName(summary: ConversationSummary | undefined): stri
 export type SubagentMessaging = "read-only" | "in-call" | "open";
 
 export function subagentMessaging(summary: ConversationSummary, hostMinor: number): SubagentMessaging {
-  if (!hostSupportsFeature(hostMinor, "subagentMessages") || summary.name === undefined) return "read-only";
+  if (!hostSupportsFeature(hostMinor, "subagentStop") || summary.name === undefined) return "read-only";
   // Running outside its call turns a subagent background in the same commit
   // (ADR-0046 §6), so a running foreground one is necessarily inside it.
   if (summary.lifecycle !== "background" && summary.status === "running") return "in-call";
