@@ -5,6 +5,7 @@ import {
   connectRemoteDurable,
   DisconnectedError,
   UnauthorizedError,
+  type CandidateFailure,
   type RemoteDurable,
 } from "../src/remote-durable.ts";
 import type { FrameConnection, FrameHandlers, FrameTransport } from "../src/transport.ts";
