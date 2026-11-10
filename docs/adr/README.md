@@ -27,7 +27,8 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0040](0040-side-panel-surfaces.md) | 侧面板是 Tasks、Changes、Terminal 三个固定 Surface 的容器，Tasks 跟着 root 家族、Changes 跟着实际执行检出走；页切换是聊天区头部的图标，面板通高、首行放当前 Surface 的状态和操作；终端归 root 对话所有（有自己 worktree 的旧 Fork 例外）、可开多个（修订 0039 §4；§6 由 0045 修订） |
 | [0041](0041-host-terminals.md) | 终端由宿主在内存里运行（`@lydell/node-pty` 懒加载，缺了宿主照常运行），断线不停、宿主停止或根对话归档时关掉；输出进每个终端一个有上限的缓冲，按位置回放，掉出缓冲就整个重发；不按设备限制（补充 0040 §5） |
 | [0045](0045-background-processes.md) | 后台进程由宿主在内存里用 pty 运行，不建 Durable task；工具是独立扩展，运行时是宿主服务；列表存 root 对话的 `pinomad.processes` 文档，在 Tasks 展示，宿主崩溃后记为 `lost`；只有进程自己退出才用 `steer` 回报模型（补充 0040 §1、0041；修订 0040 §6） |
-| [0046](0046-one-kind-of-subagent.md) | 子代理只有一种：都有名字，答完还能接着聊、能停，派出时用 `background` 选等不等它；后台的消息由归父对话所有的后台回报任务投递，父对话派的答完用 `steer` 唤醒，用户直接聊的只写一行通知、靠 `subagent_read` 按需拉；`checkout` 必填（共用或自己的 worktree）；状态记在派出者的 `pinomad.subagents`（修订 0038 §1、§3，0010 §5） |
+| [0046](0046-one-kind-of-subagent.md) | 子代理只有一种：都有名字，答完还能接着聊、能停，派出时用 `background` 选等不等它；后台的消息由归父对话所有的后台回报任务投递，父对话派的答完用 `steer` 唤醒，用户直接聊的只写一行通知、靠 `subagent_read` 按需拉；`checkout` 必填（共用或自己的 worktree）；状态记在派出者的 `pinomad.subagents`（修订 0038 §1、§3，0010 §5；§4 的用户通知和 §6 由 0047 修订） |
+| [0047](0047-subagents-in-tasks-read-only.md) | 子代理都在右侧 Tasks、不进侧栏，对用户只读加 Stop，不能发消息；`lifecycle` 只表示归属、不决定位置；去掉用户直接聊的通知和 `subagent_read` 的 User 标记；协议不升版本，没发布过的 5.33 feature `subagentMessages` 改名为 `subagentStop`，三部分都合入后才发版（修订 0038 §2、§3、§5，0046 §4、§6） |
 
 ## 宿主能力与工作组织
 
@@ -61,7 +62,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0025](0025-push-via-server-apns.md) | 推送直连 APNs，按环境分开的密钥只放在服务端；宿主经控制连接请服务端发，服务端只转发不保存；开放注册前要先让服务端核对 token 归属（§5 由 0036 修订） |
 | [0036](0036-server-checks-push-token-ownership.md) | 设备登录后向服务端登记推送 token，服务端记下它属于哪个账号，推送时核对和发起宿主同一账号；不引入句柄，协议不变；没登录账号的设备没有推送 |
 | [0037](0037-account-devices-and-remote-revocation.md) | 账号设备：客户端登录时带本机生成的设备 ID，服务端记下它经账号进了哪些宿主（宿主报告公钥），账号页可以一键请所有宿主吊销，退出登录时也可以这样撤销本机（§3 修订，#494）；宿主仍是最终裁决的一方，老宿主上只能在宿主上吊销（§3 的再输密码由 0044 修订） |
-| [0038](0038-background-subagent-sidebar.md) | Background Subagent 按 root 家族压平进入左侧，Foreground 留在右侧 Tasks；真实 parent 和完整家族聚合不变，主区子代理只读（修订 0007 的展示位置；§2 的 Fork 部分由 0039 修订；§1、§3 由 0046 修订） |
+| [0038](0038-background-subagent-sidebar.md) | Background Subagent 按 root 家族压平进入左侧，Foreground 留在右侧 Tasks；真实 parent 和完整家族聚合不变，主区子代理只读（修订 0007 的展示位置；§2 的 Fork 部分由 0039 修订；§1、§3 由 0046 修订；§2、§3、§5 由 0047 修订） |
 | [0027](0027-image-refs-on-the-wire.md) | 图片在线上按内容引用传：订阅时声明 `images: "ref"`，快照和 ops 里只带绑定类型和字节的 sha256 引用，字节用 `image` 调用按当前视图取，发送时可回传引用；存储仍内联在 SQLite |
 | [0022](0022-server-accounts-and-vouching.md) | 宿主、客户端、服务端三个部分：账号在服务端（§2 的注册方式由 0044 修订），宿主用 `pinomad join` 加入账号，服务端为新设备向宿主要邀请担保；信任服务端，Noise 防被动泄露，吊销仍在宿主上（§6 广播由 0035 修订，§8 由 0035 补充；§3 由 #495 补充：不带令牌时经浏览器确认短码） |
 | [0032](0032-multi-endpoint-pairing-and-failover.md) | 远程访问携带多候选：配对邀请和 hello 发布 remote endpoint 集合，loopback 保持 client-local，Auto relay 优先、direct 兜底，候选级失败、整轮汇总，paired 与 ready 分离；不做服务端地址目录 |
@@ -123,4 +124,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | 0010 §5：子代理和发起它的对话共用检出 | 由 0046 修订：派出时用必填的 `checkout` 选共用或自己的 worktree |
 | 0038 §1：`lifecycle` 创建时确定，之后不变 | 由 0046 修订：前台派出的子代理第一次在原调用之外运行时单向变成 background，挪到左侧 |
 | 0038 §3：主区的子代理只读 | 由 0046 修订：主区可以给子代理发消息和 Stop；fork、重试、取回编辑、改模型仍然不开 |
+| 0038 §2、§5：Background 子代理在左侧按 root 家族压成一层 | 由 0047 修订：所有子代理都在右侧 Tasks，侧栏只放顶层对话和 fork |
+| 0046 §6：主区可以给子代理发消息；被接着聊的前台子代理挪到左侧 | 由 0047 修订：子代理对用户只读加 Stop；`lifecycle` 不再决定位置 |
+| 0046 §4：用户直接聊的只给父对话写一行通知 | 由 0047 修订：用户不能给子代理发消息，这条通知去掉；"用户停了它"的说明保留 |
 | 其余"以后再做" | 统一收在 GitHub Issues，带 `later` 标签 |
