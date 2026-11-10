@@ -3,11 +3,11 @@ title: Background processes
 description: Dev servers and monitor commands the agent starts, tracked by the host; view their output or stop them in Tasks.
 ---
 
-Background processes are long-running commands that the agent starts in a conversation's checkout and the host tracks, such as a dev server or a log monitor. They are not terminals you can type into, nor Background subagents with a conversation of their own.
+Background processes are long-running commands that the agent starts in a conversation's checkout and the host tracks, such as a dev server or a log monitor. They are not terminals you can type into, nor subagents, which have a conversation of their own.
 
 ## Where to see them
 
-In the web and desktop apps, open **Tasks** in the side panel beside the chat. Background processes are listed under **Processes**, beside Foreground subagents. Each row shows the name (the command's first line by default), a status dot and how long it has run; ended ones show the exit code, `Stopped`, `Failed` or `Lost`. Click a row to see its read-only output, or click **Stop** at the top right to stop it.
+In the web and desktop apps, open **Tasks** in the side panel beside the chat. Background processes are listed under **Processes**, beside the subagents. Each row shows the name (the command's first line by default), a status dot and how long it has run; ended ones show the exit code, `Stopped`, `Failed` or `Lost`. Click a row to see its read-only output, or click **Stop** at the top right to stop it.
 
 The count in the **Tasks** panel's first row includes running background processes (for example `1 process running`). When the **Tasks** panel is closed, the activity dot on the **Tasks** icon in the chat header counts running background processes too.
 

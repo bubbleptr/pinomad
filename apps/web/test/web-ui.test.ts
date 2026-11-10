@@ -1268,10 +1268,6 @@ it("rolls a subagent's failure up to the family's root row", async () => {
   await expect.poll(() =>
     row.getByRole("button", { name: "delegate", exact: true }).count(),
   ).toBe(1);
-
-  // Foreground work stays in Tasks and does not contribute to the left's
-  // background-subagent count.
-  await expect.poll(() => row.locator(".pigui-sidenav-subagent-count").count()).toBe(0);
 });
 
 it("opens a subagent's conversation from its card in the panel's Tasks detail", async () => {
@@ -1320,7 +1316,7 @@ it("opens a subagent's conversation from its card in the panel's Tasks detail", 
   await page.getByText("child answer", { exact: true }).first().waitFor();
 });
 
-it("stops a background subagent from the main area", async () => {
+it("stops a background subagent from Tasks and from the main area", async () => {
   const webOrigin = await startWeb(defer);
   // Each request is answered by its last message, so the parent and the
   // subagent can run at the same time without racing for a scripted turn.
@@ -1359,9 +1355,16 @@ it("stops a background subagent from the main area", async () => {
   await card.getByText("counter", { exact: true }).waitFor();
   await shot(page, "subagent-background-card");
 
-  // It lives in the sidebar under its root, by name.
+  // It gets no sidebar row: it lives in Tasks, by name, with Stop while it
+  // works (ADR-0047 §1, §2).
   const chats = page.getByRole("group", { name: "Chats" });
-  await chats.locator(".pigui-background-tree-child").getByRole("button", { name: "counter", exact: true }).click();
+  expect(await chats.getByRole("button", { name: "counter", exact: true }).count()).toBe(0);
+  await card.getByRole("button", { name: "View", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  await panel.getByRole("button", { name: "Back to tasks", exact: true }).waitFor();
+  await panel.getByRole("button", { name: "Stop", exact: true }).waitFor();
+  await shot(page, "subagent-task-detail-running");
+  await panel.getByRole("button", { name: "Open in main", exact: true }).click();
   await expect.poll(() => page.locator("h1").textContent()).toBe("delegate›counter");
 
   // Stop interrupts its current work; the parent gets a note for it.

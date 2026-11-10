@@ -2,7 +2,7 @@ import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 
 const ACTIVE_STATUS = new Set<ConversationSummary["status"]>(["running", "needs-answer"]);
 
-/** A family's Foreground Tasks by state: still working (or waiting on you), finished, failed. */
+/** A family's subagents by state: still working (or waiting on you), finished, failed. */
 export function taskTally(tasks: readonly ConversationSummary[]): {
   readonly active: readonly ConversationSummary[];
   readonly done: number;

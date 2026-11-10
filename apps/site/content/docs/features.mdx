@@ -11,7 +11,7 @@ The agent has pi's four tools (read, bash, edit, write) plus:
 | Terminals | Open shells in the conversation's checkout from the Terminal page of the Web/desktop side panel. A family shares its terminals; they keep running while you are away and replay when you come back, but end when the host stops |
 | Background processes | Long-running commands the agent starts, such as a dev server or a log monitor, tracked by the host; see their output or stop them in Tasks in the side panel (on the iPhone, list and stop them in Overview), and a process that exits on its own reports back to the conversation. See [Background processes](/docs/background-processes/) |
 | Forks | Branch off from a message into its own conversation, listed after its parent in the sidebar and opened in the main column; both lines keep going |
-| Subagents | Hand self-contained tasks to named subagents: wait for the answer, or let them work in the background and report back; keep talking to them afterwards |
+| Subagents | Hand self-contained tasks to named subagents: wait for the answer, or let them work in the background and report back; the agent can keep messaging them afterwards, and you can watch and stop them in Tasks |
 | Named agents | Reusable roles in `<data dir>/agents/<name>.md` — a `subagent` call or an `@name` mention delegates to one, optionally pinning its model and thinking level |
 | Questions, not approvals | Tools run without approval prompts; when the direction is unclear, the agent asks 1–4 multiple-choice questions |
 | codemode | The model writes JavaScript that calls other tools in a QuickJS sandbox; only the script's output enters the context |

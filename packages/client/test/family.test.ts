@@ -105,11 +105,17 @@ describe("threadsOf / taskGroupsOf", () => {
     expect(threadsOf(root).map((n) => n.summary.id)).toEqual([2, 5]);
     const groups = taskGroupsOf(root);
     expect(groups.map((group) => group.label)).toEqual(["This conversation", "worktree fork"]);
-    expect(groups[0]!.tasks.map((n) => n.summary.id)).toEqual([4, 12]);
-    expect(groups[1]!.tasks.map((n) => n.summary.id)).toEqual([6]);
+    // Every subagent is a task, whatever its lifecycle (ADR-0047 §1).
+    expect(groups[0]!.tasks.map((n) => n.summary.id)).toEqual([4, 10, 12]);
+    expect(groups[1]!.tasks.map((n) => n.summary.id)).toEqual([6, 11]);
     // Background descendants flatten under the root without changing the real parent tree.
     expect(backgroundSubagentsOf(root).map((n) => n.summary.id)).toEqual([10, 11]);
     expect(backgroundSubagentsOf(root)[1]!.summary.parent).toBe(5);
+  });
+
+  it("puts the subagents at work first, the rest in creation order", () => {
+    const [group] = taskGroupsOf(nodeOf("tasks-at-work", 1));
+    expect(group!.tasks.map((n) => n.summary.id)).toEqual([3, 5, 2, 4]);
   });
 
   it("is empty for a conversation with no children", () => {

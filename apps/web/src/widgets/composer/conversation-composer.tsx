@@ -61,7 +61,6 @@ export function ConversationComposer({
   externalEditLocked = false,
   onEditorStateChange,
   source,
-  subagent = false,
 }: {
   view: DurableView;
   remote: RemoteDurable;
@@ -77,12 +76,6 @@ export function ConversationComposer({
   onEditorStateChange?: (state: { occupied: boolean; locked: boolean }) => void;
   /** The hostKey answering image requests, so its in-flight work stays separate. */
   source?: string;
-  /**
-   * A subagent's composer (ADR-0046 §6): messages only. Its model, agent,
-   * commands and queued rows stay as dispatched — a command or a withdrawn
-   * message would bypass the report to its dispatcher.
-   */
-  subagent?: boolean;
 }) {
   // The host-scoped slot keeps the draft and its uploads alive when focus
   // moves to another host.
@@ -116,8 +109,7 @@ export function ConversationComposer({
             ),
         }
       : undefined;
-  // A subagent cannot delegate (ADR-0046 §8): its `@` offers files only.
-  const atMentions = useAtMentions(subagent ? null : view.agents, inputRef, fileSource);
+  const atMentions = useAtMentions(view.agents, inputRef, fileSource);
   // `$` skill mentions (issue #143): the conversation's own scope — a Chat
   // conversation still lists the user's skills.
   const skills = useSkillMentions(
@@ -131,14 +123,14 @@ export function ConversationComposer({
   // `/` commands (ADR-0027) need a 5.15 host; an older one keeps the + menu's
   // Compact conversation and shows no `/` menu.
   const listsCommands = hostSupportsCall(view.host?.protocol.minor ?? 0, "listCommands");
-  const slash = useSlashCommands(remote, conversation.conversation.id, inputRef, !subagent && !disconnected && listsCommands, value);
+  const slash = useSlashCommands(remote, conversation.conversation.id, inputRef, !disconnected && listsCommands, value);
   const triggers = [
     ...(atMentions ?? []),
     ...(skills.trigger === undefined ? [] : [skills.trigger]),
     ...(slash.trigger === undefined ? [] : [slash.trigger]),
   ];
   const queue = queueItems(conversation, view.submissions ?? []);
-  const roles = subagent ? [] : (view.agents?.roles ?? []);
+  const roles = view.agents?.roles ?? [];
   const summary = findConversation(view.organized, conversation.conversation.id)?.summary;
   // The creation agent is all a pre-5.18 host knows; 5.18 adds currentAgent.
   const role = summary?.role;
@@ -221,8 +213,8 @@ export function ConversationComposer({
   useEffect(() => {
     onEditorStateChange?.({ occupied: composerOccupied, locked: editInFlight || awaitingEdit || localEditInFlight });
   }, [composerOccupied, editInFlight, awaitingEdit, localEditInFlight, onEditorStateChange]);
-  const canAct = !subagent && !disconnected && hostSupportsCall(view.host?.protocol.minor ?? 0, "withdrawQueued");
-  const canReorder = !subagent && !disconnected && hostSupportsCall(view.host?.protocol.minor ?? 0, "reorderQueued");
+  const canAct = !disconnected && hostSupportsCall(view.host?.protocol.minor ?? 0, "withdrawQueued");
+  const canReorder = !disconnected && hostSupportsCall(view.host?.protocol.minor ?? 0, "reorderQueued");
   const showError = (error: unknown): void => {
     toast({ body: error instanceof Error ? error.message : String(error), type: "error" });
   };
@@ -495,7 +487,7 @@ export function ConversationComposer({
             : composerPlaceholder("Ask", {
                 agents: roles.length > 0,
                 files: fileSource !== undefined,
-                commands: !subagent && listsCommands,
+                commands: listsCommands,
                 skills: skills.trigger !== undefined,
               })
         }
@@ -562,7 +554,7 @@ export function ConversationComposer({
               {roles.length === 0 ? null : (
                 <ChatAddMenuItem icon={Bot} label="Mention an agent" hint="Or type @" onClick={() => inputRef.current?.openTrigger("@")} />
               )}
-              {subagent ? null : !listsCommands ? (
+              {!listsCommands ? (
                 <ChatAddMenuItem
                   icon={ArchiveArrowDown}
                   label="Compact conversation"
@@ -583,7 +575,7 @@ export function ConversationComposer({
             <ModelSelector
               models={view.models}
               selected={{ model: agent.model, level: agent.thinkingLevel ?? "off" }}
-              isDisabled={disconnected || subagent}
+              isDisabled={disconnected}
               agent={
                 canSwitchAgent
                   ? {
