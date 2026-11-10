@@ -247,7 +247,7 @@ function Overview({
  */
 function DangerAction({ title, description, action }: { title: string; description: string; action: ReactNode }) {
   return (
-    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 px-2 py-2">
+    <li className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
       <VStack gap={0} className="min-w-[14rem] flex-1">
         <Text>{title}</Text>
         <Text type="supporting">{description}</Text>

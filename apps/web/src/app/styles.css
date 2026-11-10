@@ -219,6 +219,19 @@ body {
   }
 }
 
+/* One inset for every row in a Settings card, the SettingsRow's spacing-4:
+   Astryx's Item pads 8px, so list rows (hosts, account, archived, details)
+   sat closer to the edge than the setting rows beside them. A trailing
+   icon-only button keeps 6px of hit area around its glyph; pulled out by that
+   much, the glyph lines up with the right inset as the text does with the
+   left. "Trailing" ignores the tooltip and menu popovers rendered after it. */
+.pigui-settings .astryx-card .astryx-item:not(#\#):not(#\#):not(#\#) {
+  padding-inline: var(--spacing-4);
+}
+.pigui-settings .astryx-card .astryx-button.ghost[data-size="sm"]:has(> span:first-child > span:only-child > svg:only-child):not(:has(~ :not([popover]))):not(#\#):not(#\#):not(#\#) {
+  margin-inline-end: -6px;
+}
+
 /* —— Segmented control ——
    Astryx paints the selected segment with the surface color under a two-layer
    drop shadow. In dark mode the surface is a step below the card the control
