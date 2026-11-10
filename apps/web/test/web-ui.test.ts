@@ -343,9 +343,9 @@ it("opens Settings on Providers and shows host details under About", async () =>
   await settings.getByText("Connect a model provider", { exact: true }).waitFor();
 
   await settingsNav(page).getByRole("button", { name: "About", exact: true }).click();
-  await settings.getByText("Data directory", { exact: true }).waitFor();
-  await settings.getByText("settings.json", { exact: false }).waitFor();
   await settings.getByText("Source checkout", { exact: true }).waitFor();
+  // No file paths on the page: where the host keeps things is for the docs.
+  expect(await settings.getByText("settings.json", { exact: false }).count()).toBe(0);
 });
 
 it("logs a stored login out from the Providers section", async () => {
@@ -1602,10 +1602,10 @@ it("organizes conversations under projects and chats", async () => {
   await page.getByRole("menuitem", { name: "Archive", exact: true }).click();
   await expect.poll(() => chats.getByRole("button", { name: "chat work", exact: true }).count()).toBe(0);
 
-  // Settings → Archived lists it with its home; Restore puts it back in Chats.
+  // Settings → Chats lists it under Archived with its home; Restore puts it back in Chats.
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const settings = page.getByRole("region", { name: "Settings" });
-  await settingsNav(page).getByRole("button", { name: "Archived", exact: true }).click();
+  await settingsNav(page).getByRole("button", { name: "Chats", exact: true }).click();
   const archived = settings.getByRole("region", { name: "Archived" });
   await archived.getByText("Chat · now", { exact: true }).waitFor();
   await archived.getByRole("button", { name: "Restore chat work", exact: true }).click();
@@ -3620,7 +3620,7 @@ it("marks Settings when the desktop bridge has an update downloaded and restarts
   await page.getByRole("img", { name: "Update ready" }).waitFor();
   expect(await page.getByText("Restart to update", { exact: true }).count()).toBe(0);
   await shot(page, "update-ready-sidebar");
-  const settings = await openSettings(page, "Updates");
+  const settings = await openSettings(page, "General");
   await settings.getByText("PiNomad 0.1.0", { exact: true }).waitFor();
   await settings.getByRole("button", { name: "Restart to update", exact: true }).click();
   await expect.poll(() => page.evaluate(() => (window as unknown as { __updateCalls: string[] }).__updateCalls)).toContain(
@@ -4525,10 +4525,10 @@ it("upgrades the host from Settings: waits for a run, cancels, then restarts (AD
   await followFirst(observer);
   await page.getByRole("button", { name: /stop/i, exact: true }).waitFor();
 
-  const settings = await openSettings(page, "Upgrade");
+  const settings = await openSettings(page, "About");
   await settings.getByText("pinomad 0.14.0 is available", { exact: false }).waitFor();
   // The page's own Upgrade, not the sidebar entry of the same name.
-  const upgrade = settings.getByRole("region", { name: "Upgrade" }).getByRole("button", { name: "Upgrade", exact: true });
+  const upgrade = settings.getByRole("region", { name: "Version" }).getByRole("button", { name: "Upgrade", exact: true });
   await upgrade.click();
   await shot(page, "host-upgrade-confirm");
   await settings.getByRole("button", { name: "Upgrade when idle" }).click();

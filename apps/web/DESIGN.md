@@ -94,3 +94,7 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 - `SettingsGroup`：可选标题，下面一张带描边的卡片，行间有分隔线。
 - `SettingsRow`：一项设置一行，左边是名称（可加一行说明），右边是控件；窄时控件换到下一行。控件自己带无障碍名称（比如 `SegmentedControl` 的 `label`），行的名称只给人看。
 - 现成的列表（`List hasDividers`）直接放进 `SettingsGroup`。
+
+设置页里的 `secondary` 按钮和 `Selector` 是平的：透明底，只留一圈 `--color-border` 描边，没有投影（`styles.css` 里 `.pigui-settings` 一段）。深色下表面色比卡片暗一级，按钮放在卡片里会像个洞。`SegmentedControl` 也是平的：凹下去的轨道，选中的那段比下面所有层都亮一级，没有投影；深色下 Astryx 原版的选中段比卡片还暗。
+
+分区按用户要调整的事分组，不按存在哪里分：This device 下是 General、Hosts；Host settings 下是 Providers、Models、Agents、Chats、Devices、About。合并进来的旧分区名写进 `SECTIONS` 的 keywords，搜索还能找到。选宿主的选择器在每个宿主分区的标题上方，不在导航里。页面上不显示文件路径。

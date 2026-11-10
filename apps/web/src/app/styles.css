@@ -44,9 +44,9 @@
    each layer above another is lighter than it. The window frame (body,
    behind the sidebar) is the darkest layer, the main pane sits one step up,
    raised surfaces (card: the composer, settings groups) another, and
-   popovers and dialogs float lightest. Inset fills (muted: code, chips, the
-   tray under the composer) are recessed, so they go darker than the pane
-   they sit in, just above the frame. Light mode keeps theme-neutral's
+   popovers and dialogs float lightest. Inset fills (muted: code, chips) are
+   recessed, so they go darker than the pane they sit in, just above the
+   frame; the tray under the composer is not one (chat.css). Light mode keeps theme-neutral's
    values except the frame, a step lighter (#f8f8f8) so the inset panes
    read as cards on it; shadows and borders carry the same order.
    Same specificity lift as the font override.
@@ -201,6 +201,52 @@ body {
     box-shadow:
       inset 0 0 0 1px var(--color-border),
       0 1px 2px light-dark(oklch(0 0 0 / 6%), oklch(0 0 0 / 30%));
+  }
+}
+
+/* Settings is a page of flat rows: its secondary buttons keep the hairline
+   but drop the 1px drop, which stood out against the bordered groups, and the
+   surface fill, which in dark mode is a step below the card they sit on. */
+@layer astryx-theme {
+  .pigui-settings .astryx-button.secondary {
+    background-color: transparent;
+    box-shadow: inset 0 0 0 1px var(--color-border);
+  }
+  /* Its dropdowns are pickers on the same rows, so they match the buttons. */
+  .pigui-settings .astryx-selector[data-variant="input"] {
+    background-color: transparent;
+    border-color: var(--color-border);
+  }
+}
+
+/* One inset for every row in a Settings card, the SettingsRow's spacing-4:
+   Astryx's Item pads 8px, so list rows (hosts, account, archived, details)
+   sat closer to the edge than the setting rows beside them. A trailing
+   icon-only button keeps 6px of hit area around its glyph; pulled out by that
+   much, the glyph lines up with the right inset as the text does with the
+   left. "Trailing" ignores the tooltip and menu popovers rendered after it. */
+.pigui-settings .astryx-card .astryx-item:not(#\#):not(#\#):not(#\#) {
+  padding-inline: var(--spacing-4);
+}
+.pigui-settings .astryx-card .astryx-button.ghost[data-size="sm"]:has(> span:first-child > span:only-child > svg:only-child):not(:has(~ :not([popover]))):not(#\#):not(#\#):not(#\#) {
+  margin-inline-end: -6px;
+}
+
+/* —— Segmented control ——
+   Astryx paints the selected segment with the surface color under a two-layer
+   drop shadow. In dark mode the surface is a step below the card the control
+   sits on, so the pick read as a hole. Flat instead, in both modes: a recessed
+   track and a selected segment one step lighter than anything under it, with
+   the hairline the buttons use. The sliding indicator is the track's unclassed
+   div; the checked item paints over it, so both get the fill. */
+@layer astryx-theme {
+  .astryx-segmented-control {
+    background-color: light-dark(oklch(0 0 0 / 5%), oklch(0 0 0 / 22%));
+  }
+  .astryx-segmented-control > div:not([class*="astryx-segmented-control-item"]),
+  .astryx-segmented-control-item[aria-checked="true"] {
+    background-color: light-dark(#ffffff, oklch(0.335 0 0));
+    box-shadow: inset 0 0 0 1px light-dark(oklch(0 0 0 / 8%), oklch(1 0 0 / 6%));
   }
 }
 

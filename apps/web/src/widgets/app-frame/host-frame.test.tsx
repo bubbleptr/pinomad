@@ -306,7 +306,9 @@ describe("the app frame across hosts", () => {
     await waitFor(() => expect(screen.getByTestId("workbench").dataset.host).toBe(DEVBOX_HOST.hostKey));
     expect(within(dialog).getByLabelText("Name")).toHaveValue("Host A endpoint");
 
-    await userEvent.click(within(settingsNav()).getByRole("combobox", { name: "Host" }));
+    // The picker sits on the host page, over its title.
+    expect(within(settingsNav()).queryByRole("combobox", { name: "Host" })).toBeNull();
+    await userEvent.click(within(dialog).getByRole("combobox", { name: "Host" }));
     await userEvent.click(await screen.findByRole("option", { name: "omarchy" }));
 
     expect(within(dialog).queryByLabelText("Name")).toBeNull();
@@ -459,7 +461,7 @@ describe("the app frame across hosts", () => {
     else expect(await within(dialog).findByRole("heading", { name: "Sign in" })).toBeInTheDocument();
   });
 
-  it("keeps the device Updates section while the focused host is connecting", async () => {
+  it("keeps the device's updates under General while the focused host is connecting", async () => {
     const previous = window.pinomadDesktop;
     const status = { state: "idle" as const, currentVersion: "0.1.0" };
     window.pinomadDesktop = {
@@ -479,7 +481,7 @@ describe("the app frame across hosts", () => {
       );
       await userEvent.click(await screen.findByRole("button", { name: "Settings" }));
       const dialog = await screen.findByRole("region", { name: "Settings" });
-      await userEvent.click(within(settingsNav()).getByRole("button", { name: "Updates" }));
+      await userEvent.click(within(settingsNav()).getByRole("button", { name: "General" }));
       expect(await within(dialog).findByText("Check for updates")).toBeInTheDocument();
       expect(within(dialog).queryByRole("button", { name: "Add a host" })).toBeNull();
     } finally {

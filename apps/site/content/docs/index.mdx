@@ -28,7 +28,7 @@ The first line installs pinomad with its own Node. If the script says so (it doe
 
 When no browser can open on that machine (over SSH, or on a Linux server without a desktop), or you run `pinomad up --code`, it prints a page to open and a code like `WDJB-MJHT` instead. Open the page on any device, sign in, and enter the code; **Add a host** in the web or Mac app has the same field. Only enter a code that your own terminal is showing.
 
-In the Mac app, signed in, **Set up this Mac** (on the first-host page, and in Settings → **This Mac**) runs the same install in the background and joins this Mac to your account, with no terminal and no code to type. If it fails, the app shows the command to run in a terminal yourself. Settings → **This Mac** then turns that host on and off. Off, it stays off after a restart until you turn it back on, other devices can't reach this Mac, and running tasks finish first. `pinomad service stop` and `pinomad service start` do the same from a terminal.
+In the Mac app, signed in, **Set up this Mac** (on the first-host page, and under This Mac in Settings → **Hosts**) runs the same install in the background and joins this Mac to your account, with no terminal and no code to type. If it fails, the app shows the command to run in a terminal yourself. The This Mac switch in Settings → **Hosts** then turns that host on and off. Off, it stays off after a restart until you turn it back on, other devices can't reach this Mac, and running tasks finish first. `pinomad service stop` and `pinomad service start` do the same from a terminal.
 
 A host set up this way runs through a small helper inside the Mac app, so when something on the host (a terminal, the agent) first opens your Documents or Desktop folder, macOS asks on behalf of **PiNomad** instead of `node`. The host then needs the app to stay in Applications. If you remove the app, run `pinomad service install` in a terminal and the host runs on its own again. A host set up before the app had this helper keeps asking as `node`; to move it over, run `pinomad up --yes --launcher "/Applications/PiNomad.app/Contents/Helpers/PiNomad Host.app/Contents/MacOS/pinomad-host"` (it restarts the host once running tasks finish).
 
@@ -59,7 +59,7 @@ pinomad status      # the account, LAN port, service, and whether the host answe
 pinomad upgrade     # wait for running tasks, install the new release, restart
 ```
 
-You can also upgrade from any client, under Settings → the host → Upgrade, and let the host upgrade itself when idle: [Upgrading the host](/docs/upgrade/). `pinomad upgrade` updates pinomad only; running the install script again updates its Node too. Service flags, logs and platform caveats: [Running as a service](/zh/docs/service/) (Chinese).
+You can also upgrade from any client, under Settings → About on the web and in the Mac app (the host's page → Upgrade on the iPhone), and let the host upgrade itself when idle: [Upgrading the host](/docs/upgrade/). `pinomad upgrade` updates pinomad only; running the install script again updates its Node too. Service flags, logs and platform caveats: [Running as a service](/zh/docs/service/) (Chinese).
 
 To uninstall, run `pinomad service uninstall`, then delete `~/.pinomad/runtime`, `~/.local/bin/pinomad`, and the line in your shell profile that ends in `# added by https://pinomad.si/install.sh`. Your data in the rest of `~/.pinomad` stays until you delete it.
 

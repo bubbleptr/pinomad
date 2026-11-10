@@ -13,7 +13,7 @@ import { useToast } from "@astryxdesign/core/Toast";
 import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { hostLabels, type StoredHost } from "@pinomad/client/stored-host.ts";
 import { hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import type { ConnectionMode } from "@pinomad/protocol/connection-mode.ts";
@@ -211,7 +211,7 @@ function usePairedHosts() {
  * the status into the accessible name themselves, so the dot's own label
  * doesn't leak into it.
  */
-function HostStatusDot({ connected }: { connected: boolean }) {
+export function HostStatusDot({ connected }: { connected: boolean }) {
   return (
     <span aria-hidden="true" className="inline-flex">
       {connected ? (
@@ -280,6 +280,7 @@ export function HostsMenu({ onLocate }: { onLocate?: (hostKey: string) => void }
 export function HostsSection({
   rtcAvailable = browserRtcAvailable(),
   canSwitch = false,
+  thisMac,
 }: {
   /** Test/story seam; production reads the real browser capability. */
   rtcAvailable?: boolean;
@@ -288,6 +289,8 @@ export function HostsSection({
    * sidebar to leave it by. Inside the frame focus moves from the sidebar.
    */
   canSwitch?: boolean;
+  /** The switch over the host installed on this Mac, above the list (desktop on macOS only). */
+  thisMac?: ReactNode;
 }) {
   const paired = usePairedHosts();
   const { focus } = useHosts();
@@ -335,6 +338,7 @@ export function HostsSection({
   const others = accountState === undefined ? [] : unpairedAccountHosts(accountState, paired.hosts);
   return (
     <VStack gap={4}>
+      {thisMac}
       <HStack hAlign="end">
         <Button label="Add a host" variant="secondary" size="sm" onClick={() => setAdding(true)} />
       </HStack>
@@ -342,7 +346,7 @@ export function HostsSection({
       {paired.hosts.length === 0 ? (
         <Text type="supporting">No paired hosts.</Text>
       ) : (
-        <SettingsGroup {...(others.length === 0 ? {} : { title: "Paired with this device" })}>
+        <SettingsGroup {...(others.length === 0 && thisMac === undefined ? {} : { title: "Paired with this device" })}>
           <ul aria-label="Paired with this device" className={GROUP_ROWS}>
             {paired.hosts.map((host) => (
               <PairedHostRow

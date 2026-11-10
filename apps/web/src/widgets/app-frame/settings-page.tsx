@@ -20,13 +20,13 @@ import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { cleanHostName, type HostSettings, type QueueMode } from "@pinomad/protocol/settings.ts";
 import type { ModelRef } from "@earendil-works/pi-durable";
-import type { DurableView } from "@pinomad/protocol/view.ts";
+import type { DurableView, ThinkingLevel } from "@pinomad/protocol/view.ts";
 import { familyUpdatedAt, relativeTime } from "@pinomad/client/family.ts";
-import { summaryOf, thinkingLevelLabels } from "@pinomad/client/model.ts";
+import { sameModel, summaryOf, thinkingLevelLabels } from "@pinomad/client/model.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
-import { ModelSelector } from "../../entities/model/model-selector.tsx";
+import { ModelLogo } from "../../entities/model/model-logo.tsx";
 import { useNow } from "../../shared/use-now.ts";
-import { Archive, ArchiveRestore, ArrowBigUpDash, ArrowLeft, Bot, Cancel, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, Laptop, MoreHorizontal, Palette, Puzzle, RefreshCw, Sparkles, UserCircle } from "../../shared/ui/icons.tsx";
+import { ArchiveRestore, ArrowLeft, Bot, Cancel, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, MoreHorizontal, SlidersHorizontal, Sparkles, UserCircle } from "../../shared/ui/icons.tsx";
 import { GROUP_ROWS, SettingsGroup, SettingsRow } from "../../shared/ui/settings-group.tsx";
 import { AccountPanel } from "../account/account-panel.tsx";
 import { AgentEditorDialog } from "./agent-editor-dialog.tsx";
@@ -34,27 +34,24 @@ import { AppearanceSection } from "./appearance-section.tsx";
 import type { FrameMachine } from "./app-frame.tsx";
 import { DevicesSection } from "./devices-section.tsx";
 import { HostUpgradeSection } from "./host-upgrade-section.tsx";
-import { HostsSection } from "./hosts.tsx";
+import { HostStatusDot, HostsSection } from "./hosts.tsx";
 import { LocalHostSection } from "./local-host-section.tsx";
 import { ProvidersSection } from "./providers-section.tsx";
 import { SettingsSubpageContext, type SettingsSubpage } from "./settings-subpage.ts";
 import { UpdatesSection } from "./updates-section.tsx";
 
+// Grouped by what the user wants to change, not by where it is stored: each
+// section's keywords name the sections it absorbed, so search still finds them.
 const SECTIONS = [
   { id: "account", title: "Account", icon: UserCircle, group: "account", keywords: "profile email password sign-in methods github google apple signed-in devices sessions sign out delete" },
-  { id: "hosts", title: "Hosts", icon: Computer, group: "device", keywords: "pair unpair add connection relay peer-to-peer join" },
-  { id: "this-mac", title: "This Mac", icon: Laptop, group: "device", keywords: "local host install" },
-  { id: "updates", title: "Updates", icon: RefreshCw, group: "device", keywords: "version download" },
-  { id: "appearance", title: "Appearance", icon: Palette, group: "device", keywords: "theme light dark system color" },
-  { id: "providers", title: "Providers", icon: KeyRound, group: "host", keywords: "api key login subscription" },
+  { id: "general", title: "General", icon: SlidersHorizontal, group: "device", keywords: "appearance theme light dark system color updates app version download" },
+  { id: "hosts", title: "Hosts", icon: Computer, group: "device", keywords: "pair unpair add connection relay peer-to-peer join this mac local host install run" },
+  { id: "providers", title: "Providers", icon: KeyRound, group: "host", keywords: "api key login subscription custom endpoint" },
   { id: "models", title: "Models", icon: Sparkles, group: "host", keywords: "default model thinking" },
-  { id: "agents", title: "Agents", icon: Bot, group: "host", keywords: "roles subagents" },
-  { id: "mcp", title: "MCP", icon: Puzzle, group: "host", keywords: "servers tools" },
-  { id: "chats", title: "Chats", icon: ChatBubble, group: "host", keywords: "conversations history" },
+  { id: "agents", title: "Agents", icon: Bot, group: "host", keywords: "roles subagents named agents mcp servers tools" },
+  { id: "chats", title: "Chats", icon: ChatBubble, group: "host", keywords: "conversations queue steer follow-up messages archived archive restore history" },
   { id: "devices", title: "Devices", icon: Devices, group: "host", keywords: "paired revoke" },
-  { id: "archived", title: "Archived", icon: Archive, group: "host", keywords: "archive restore" },
-  { id: "upgrade", title: "Upgrade", icon: ArrowBigUpDash, group: "host", keywords: "update version pinomad" },
-  { id: "about", title: "About", icon: Info, group: "host", keywords: "version info" },
+  { id: "about", title: "About", icon: Info, group: "host", keywords: "host name rename version upgrade update automatic protocol website" },
 ] as const;
 
 type Section = (typeof SECTIONS)[number];
@@ -79,13 +76,13 @@ const sectionIcon = (Icon: Section["icon"]): ReactNode => (
 );
 
 /**
- * Settings in two groups. "This device" belongs to the client — the paired
- * hosts and, on the desktop, its updates and (macOS) the switch over the host
+ * Settings in two groups. "This device" belongs to the client — its look and
+ * (desktop) updates, the paired hosts and (macOS) the switch over the host
  * installed on this Mac — and works while disconnected.
- * The host group is the connected host's settings and providers
- * (ADR-0021, 0031): everything shown comes from the `settings` / `providers` / `mcp` /
- * devices streams, so a change another device makes appears here the moment
- * the host pushes it.
+ * The host group is one host's settings and providers (ADR-0021, 0031),
+ * picked on the page itself: everything shown comes from the `settings` /
+ * `providers` / `mcp` / devices streams, so a change another device makes
+ * appears here the moment the host pushes it.
  *
  * Settings is a page of the app frame, not a dialog over it: on a wide window
  * its section nav takes the sidebar's place and the open section fills the
@@ -185,38 +182,39 @@ export function useSettingsScreen({
     accountStatus === "signed-in" || accountStatus === "signed-out" ? SECTIONS.filter((entry) => entry.group === "account") : [];
   const allGroups = [
     ...(accountSections.length === 0 ? [] : [{ title: "Account", sections: accountSections }]),
-    {
-      title: "This device",
-      sections: SECTIONS.filter(
-        (entry) =>
-          entry.group === "device" && (entry.id !== "updates" || hasUpdater) && (entry.id !== "this-mac" || hasLocalHost),
-      ),
-    },
-    // With a picker the machine's name is on the picker; the title just names the group.
+    { title: "This device", sections: SECTIONS.filter((entry) => entry.group === "device") },
     ...(hostAvailable || choosable
-      ? [{ title: choosable ? "Host" : hostName, sections: SECTIONS.filter((entry) => entry.group === "host") }]
+      ? [{ title: "Host settings", sections: SECTIONS.filter((entry) => entry.group === "host") }]
       : []),
   ];
-  const searching = query.trim() !== "";
   const groups = allGroups
     .map((group) => ({ ...group, sections: group.sections.filter((entry) => matchesQuery(entry, query)) }))
     .filter((group) => group.sections.length > 0);
-  // Searching looks for a section, not for another host: the picker waits.
-  const picker =
-    searching || !choosable || machine === undefined ? null : (
-      <Selector
-        className="pigui-nav-lead"
-        label="Host"
-        isLabelHidden
-        size="sm"
-        variant="ghost"
-        placement="below"
-        startIcon={<Computer aria-hidden="true" className="size-4 shrink-0 text-muted" />}
-        value={machine.key}
-        options={machines.map((entry) => ({ value: entry.key, label: entry.label }))}
-        onChange={setPickedKey}
-      />
-    );
+  // Which host a host page manages, over its title: a choice with several,
+  // the name with one.
+  const hostLine = !isHostSection(active) || machine === undefined ? null : choosable ? (
+    <Selector
+      className="-ms-2 self-start"
+      label="Host"
+      isLabelHidden
+      size="sm"
+      variant="ghost"
+      placement="below"
+      startIcon={<HostStatusDot connected={connected} />}
+      value={machine.key}
+      options={machines.map((entry) => ({
+        value: entry.key,
+        label: entry.label,
+        icon: <HostStatusDot connected={entry.view?.connection === "connected"} />,
+      }))}
+      onChange={setPickedKey}
+    />
+  ) : (
+    <HStack gap={2} vAlign="center">
+      <HostStatusDot connected={connected} />
+      <Text type="supporting">{hostName}</Text>
+    </HStack>
+  );
 
   const searchField = (
     <TextInput
@@ -238,22 +236,28 @@ export function useSettingsScreen({
 
   const page = (
     <SettingsSubpageContext.Provider value={subpageHost}>
-      <SectionPage
-        // Host-scoped pages carry form and navigation state, so a
-        // focus switch must remount them instead of handing A's
-        // half-filled form to B's remote. Device sections stay put.
-        key={isHostSection(active) ? `host:${machine?.key ?? "none"}` : undefined}
-        {...(view === undefined ? {} : { view })}
-        {...(remote === undefined ? {} : { remote })}
-        {...(machine?.device === undefined ? {} : { device: machine.device })}
-        {...(machine?.hostKey === undefined ? {} : { hostKey: machine.hostKey })}
-        connected={connected}
-        {...(machine?.retry === undefined ? {} : { onReconnect: machine.retry })}
-        section={active}
-        showTitle={!narrow}
-        showSupporting={subpage === undefined}
-        onSection={setSection}
-      />
+      {/* Outside the keyed page: switching hosts remounts the page, not the picker that switched. */}
+      <VStack gap={2}>
+        {hostLine}
+        <SectionPage
+          // Host-scoped pages carry form and navigation state, so a
+          // focus switch must remount them instead of handing A's
+          // half-filled form to B's remote. Device sections stay put.
+          key={isHostSection(active) ? `host:${machine?.key ?? "none"}` : undefined}
+          {...(view === undefined ? {} : { view })}
+          {...(remote === undefined ? {} : { remote })}
+          {...(machine?.device === undefined ? {} : { device: machine.device })}
+          {...(machine?.hostKey === undefined ? {} : { hostKey: machine.hostKey })}
+          connected={connected}
+          {...(machine?.retry === undefined ? {} : { onReconnect: machine.retry })}
+          section={active}
+          hasUpdater={hasUpdater}
+          hasLocalHost={hasLocalHost}
+          showTitle={!narrow}
+          showSupporting={subpage === undefined}
+          onSection={setSection}
+        />
+      </VStack>
     </SettingsSubpageContext.Provider>
   );
 
@@ -288,7 +292,6 @@ export function useSettingsScreen({
             {noMatch}
             {groups.map((group) => (
               <SideNavSection key={group.title} title={group.title}>
-                {group.sections[0]?.group === "host" ? picker : null}
                 {group.sections.map((entry) => (
                   <SideNavItem
                     key={entry.id}
@@ -304,7 +307,7 @@ export function useSettingsScreen({
         </SideNav>
       ),
       content: (
-        <div className="h-full overflow-y-auto">
+        <div className="pigui-settings h-full overflow-y-auto">
           <div className="mx-auto w-full max-w-[46rem] px-6 pt-14 pb-16">{page}</div>
         </div>
       ),
@@ -320,7 +323,6 @@ export function useSettingsScreen({
           <Text type="supporting" weight="semibold">
             {group.title}
           </Text>
-          {group.sections[0]?.group === "host" ? picker : null}
           <List density="compact" aria-label={group.title}>
             {group.sections.map((entry) => (
               <ListItem
@@ -343,7 +345,7 @@ export function useSettingsScreen({
   return {
     nav: undefined,
     content: (
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="pigui-settings flex h-full min-h-0 flex-col">
         <div
           className="pinomad-drag flex h-10 shrink-0 items-center gap-1 px-3"
           style={safeLeft === undefined ? undefined : { paddingLeft: safeLeft }}
@@ -414,6 +416,8 @@ function SectionPage({
   connected,
   onReconnect,
   section,
+  hasUpdater,
+  hasLocalHost,
   showTitle,
   showSupporting,
   onSection,
@@ -425,6 +429,8 @@ function SectionPage({
   connected: boolean;
   onReconnect?: () => void;
   section: SectionId;
+  hasUpdater: boolean;
+  hasLocalHost: boolean;
   showTitle: boolean;
   /** Off while the section shows a page of its own, which the supporting line doesn't describe. */
   showSupporting: boolean;
@@ -438,7 +444,7 @@ function SectionPage({
           <AccountPanel page="overview" />
         ),
       }
-    : sectionBody(view, remote, device, hostKey, connected, onReconnect, section);
+    : sectionBody(view, remote, device, hostKey, connected, onReconnect, section, { hasUpdater, hasLocalHost });
   const headingId = `settings-${section}-heading`;
   return (
     <VStack
@@ -463,29 +469,44 @@ function sectionBody(
   connected: boolean,
   onReconnect: (() => void) | undefined,
   section: Exclude<SectionId, AccountSectionId>,
+  { hasUpdater, hasLocalHost }: { hasUpdater: boolean; hasLocalHost: boolean },
 ): { title: string; supporting?: ReactNode; body: ReactNode } {
   if (section === "hosts") {
     return {
       title: "Hosts",
       supporting: <Text as="p" type="supporting">The machines this device can use. It stays connected to every one paired here.</Text>,
-      body: <HostsSection />,
+      body: (
+        <HostsSection
+          {...(hasLocalHost
+            ? {
+                thisMac: (
+                  <SettingsGroup title="This Mac">
+                    <div className="p-4">
+                      <LocalHostSection />
+                    </div>
+                  </SettingsGroup>
+                ),
+              }
+            : {})}
+        />
+      ),
     };
   }
-  if (section === "updates") {
-    return { title: "Updates", body: <UpdatesSection /> };
-  }
-  if (section === "appearance") {
-    return { title: "Appearance", body: <AppearanceSection /> };
-  }
-  if (section === "this-mac") {
+  if (section === "general") {
     return {
-      title: "This Mac",
-      supporting: (
-        <Text as="p" type="supporting">
-          Run a PiNomad host here so your other devices can use this Mac. It runs on its own: quitting the app doesn't stop it.
-        </Text>
+      title: "General",
+      body: (
+        <VStack gap={6}>
+          <AppearanceSection />
+          {hasUpdater ? (
+            <SettingsGroup title="Updates">
+              <div className="p-4">
+                <UpdatesSection />
+              </div>
+            </SettingsGroup>
+          ) : null}
+        </VStack>
       ),
-      body: <LocalHostSection />,
     };
   }
   if (view === undefined || remote === undefined) {
@@ -507,9 +528,7 @@ function sectionBody(
         title: "Providers",
         supporting: (
           <Text as="p" type="supporting">
-            Credentials are stored on the host in{" "}
-            <span style={{ wordBreak: "break-all", userSelect: "all" }}>{view.session.directory}/auth.json</span> and
-            shared by every paired device.
+            The subscriptions and API keys this host reaches models with, shared by every paired device.
           </Text>
         ),
         body: <ProvidersSection view={view} remote={remote} />,
@@ -525,41 +544,43 @@ function sectionBody(
         title: "Agents",
         supporting: (
           <Text as="p" type="supporting">
-            Named agents the model can delegate to with <code>subagent</code> — mention one with <code>@name</code>.{" "}
-            Each is a Markdown file in{" "}
-            <span style={{ wordBreak: "break-all", userSelect: "all" }}>{view.session.directory}/agents/</span>; edits
-            to those files apply immediately.
+            Named agents the model can delegate to with <code>subagent</code> — mention one with <code>@name</code>.
           </Text>
         ),
-        body: <AgentsSection view={view} remote={remote} connected={connected} />,
+        body: (
+          <VStack gap={6}>
+            <AgentsSection view={view} remote={remote} connected={connected} />
+            <McpSection view={view} />
+          </VStack>
+        ),
       };
-    case "mcp":
-      return { title: "MCP", body: <McpSection view={view} /> };
     case "chats":
       return {
         title: "Chats",
-        supporting: (
-          <Text as="p" type="supporting">
-            How queued messages are delivered when the agent reaches the next turn.
-          </Text>
+        body: (
+          <VStack gap={6}>
+            <ChatsSection view={view} remote={remote} connected={connected} />
+            <ArchivedSection view={view} remote={remote} connected={connected} />
+          </VStack>
         ),
-        body: <ChatsSection view={view} remote={remote} connected={connected} />,
       };
-    case "archived":
-      return {
-        title: "Archived",
-        supporting: (
-          <Text as="p" type="supporting">
-            Archived conversations are hidden from the sidebar. Restoring one brings it back with its forks and
-            subagents; a worktree removed on archive is checked out again from its branch.
-          </Text>
-        ),
-        body: <ArchivedSection view={view} remote={remote} connected={connected} />,
-      };
-    case "upgrade":
-      return { title: "Upgrade", body: <HostUpgradeSection view={view} remote={remote} /> };
     case "about":
-      return { title: "About", body: <AboutSection view={view} remote={remote} connected={connected} /> };
+      return {
+        title: "About",
+        body: (
+          <VStack gap={6}>
+            <HostNameGroup view={view} remote={remote} connected={connected} />
+            <section aria-label="Version">
+              <SettingsGroup title="Version">
+                <div className="p-4">
+                  <HostUpgradeSection view={view} remote={remote} />
+                </div>
+              </SettingsGroup>
+            </section>
+            <AboutDetails view={view} />
+          </VStack>
+        ),
+      };
   }
 }
 
@@ -568,29 +589,68 @@ function ModelsSection({ view, remote, connected }: { view: DurableView; remote:
   if (settings === null) {
     return <Banner status="warning" title="This host is too old for settings" description="Run `pinomad upgrade` on the host." />;
   }
+  const model = view.models.find((each) => sameModel(each, settings.defaultModel ?? undefined));
+  // Option values are indexes: a model id may itself contain `/`.
+  const providers = [...new Set(view.models.map((each) => each.provider))];
+  const levels = model?.thinkingLevels ?? [];
+  const customized = settings.custom.includes("defaultModel") || settings.custom.includes("defaultThinkingLevel");
   return (
     <SettingsGroup>
-      <SettingsRow label="Default model">
-        <ModelSelector
-          models={view.models}
-          selected={{
-            model: settings.defaultModel ?? undefined,
-            level: settings.defaultThinkingLevel ?? "off",
-          }}
-          isDisabled={!connected}
-          onModelChange={(model) => void remote.controller.updateSettings({ defaultModel: model })}
-          onLevelChange={(level) => void remote.controller.updateSettings({ defaultThinkingLevel: level })}
-        />
-        {settings.custom.includes("defaultModel") || settings.custom.includes("defaultThinkingLevel") ? (
-          <Button
-            label="Use pi's defaults"
-            variant="secondary"
+      <div className={GROUP_ROWS}>
+        <SettingsRow label="Default model">
+          <Selector
+            label="Default model"
+            isLabelHidden
             size="sm"
-            isDisabled={!connected}
-            onClick={() => void remote.controller.updateSettings({ defaultModel: null, defaultThinkingLevel: null })}
+            hasSearch
+            searchPlaceholder="Search models"
+            placeholder="Pi's default"
+            isDisabled={!connected || view.models.length === 0}
+            {...(model === undefined ? {} : { startIcon: <ModelLogo model={model} size={14} /> })}
+            {...(model === undefined ? {} : { value: String(view.models.indexOf(model)) })}
+            options={providers.map((provider) => ({
+              type: "section" as const,
+              title: provider,
+              options: view.models.flatMap((each, index) =>
+                each.provider === provider
+                  ? [{ value: String(index), label: each.name, icon: <ModelLogo model={each} size={14} reserve /> }]
+                  : [],
+              ),
+            }))}
+            onChange={(value) => {
+              const picked = view.models[Number(value)];
+              if (picked !== undefined) {
+                void remote.controller.updateSettings({ defaultModel: { provider: picked.provider, modelId: picked.modelId } });
+              }
+            }}
           />
+        </SettingsRow>
+        {/* A model that can't reason has nothing to pick here. */}
+        {levels.length > 1 ? (
+          <SettingsRow label="Thinking" description="How long the model reasons before it answers">
+            <Selector
+              label="Thinking"
+              isLabelHidden
+              size="sm"
+              isDisabled={!connected}
+              value={settings.defaultThinkingLevel ?? "off"}
+              options={levels.map((level) => ({ value: level, label: thinkingLevelLabels[level] }))}
+              onChange={(level) => void remote.controller.updateSettings({ defaultThinkingLevel: level as ThinkingLevel })}
+            />
+          </SettingsRow>
         ) : null}
-      </SettingsRow>
+        {customized ? (
+          <div className="flex justify-end px-4 py-3">
+            <Button
+              label="Use pi's defaults"
+              variant="secondary"
+              size="sm"
+              isDisabled={!connected}
+              onClick={() => void remote.controller.updateSettings({ defaultModel: null, defaultThinkingLevel: null })}
+            />
+          </div>
+        ) : null}
+      </div>
     </SettingsGroup>
   );
 }
@@ -601,10 +661,11 @@ function ChatsSection({ view, remote, connected }: { view: DurableView; remote: 
     return <Banner status="warning" title="This host is too old for settings" description="Run `pinomad upgrade` on the host." />;
   }
   return (
-    <SettingsGroup>
+    <SettingsGroup title="Messages sent while the agent works">
       <div className={GROUP_ROWS}>
         <ModeSetting
           title="Steer messages"
+          description="Delivered at the next turn"
           value={settings.steeringMode}
           customized={settings.custom.includes("steeringMode")}
           disabled={!connected}
@@ -613,6 +674,7 @@ function ChatsSection({ view, remote, connected }: { view: DurableView; remote: 
         />
         <ModeSetting
           title="Follow-up messages"
+          description="Delivered once the agent finishes"
           value={settings.followUpMode}
           customized={settings.custom.includes("followUpMode")}
           disabled={!connected}
@@ -628,49 +690,57 @@ function ChatsSection({ view, remote, connected }: { view: DurableView; remote: 
 function ArchivedSection({ view, remote, connected }: { view: DurableView; remote: RemoteDurable; connected: boolean }) {
   const now = useNow(60_000);
   const archived = view.organized.archived;
-  if (archived.length === 0) return <Text as="p" type="supporting">No archived conversations.</Text>;
   return (
-    <SettingsGroup>
-      <List hasDividers>
-        {archived.map(({ node, project }) => {
-          const title = node.summary.title ?? "New conversation";
-          const updatedAt = familyUpdatedAt(node);
-          return (
-            <ListItem
-              key={node.summary.id}
-              label={title}
-              description={[project?.name ?? "Chat", updatedAt === undefined ? undefined : relativeTime(updatedAt, now)]
-                .filter((part) => part !== undefined)
-                .join(" · ")}
-              endContent={
-                <Button
-                  label={`Restore ${title}`}
-                  icon={<ArchiveRestore aria-hidden="true" />}
-                  variant="secondary"
-                  size="sm"
-                  isDisabled={!connected}
-                  onClick={() => void remote.controller.archive(node.summary.id, false)}
-                >
-                  Restore
-                </Button>
-              }
-            />
-          );
-        })}
-      </List>
-    </SettingsGroup>
+    <VStack as="section" aria-label="Archived" gap={2}>
+      <Heading level={4}>Archived</Heading>
+      <Text as="p" type="supporting">
+        Hidden from the sidebar. Restoring one brings back its forks and subagents.
+      </Text>
+      {archived.length === 0 ? (
+        <Text as="p" type="supporting">No archived conversations.</Text>
+      ) : (
+        <SettingsGroup>
+          <List hasDividers>
+            {archived.map(({ node, project }) => {
+              const title = node.summary.title ?? "New conversation";
+              const updatedAt = familyUpdatedAt(node);
+              return (
+                <ListItem
+                  key={node.summary.id}
+                  label={title}
+                  description={[project?.name ?? "Chat", updatedAt === undefined ? undefined : relativeTime(updatedAt, now)]
+                    .filter((part) => part !== undefined)
+                    .join(" · ")}
+                  endContent={
+                    <Button
+                      label={`Restore ${title}`}
+                      icon={<ArchiveRestore aria-hidden="true" />}
+                      variant="secondary"
+                      size="sm"
+                      isDisabled={!connected}
+                      onClick={() => void remote.controller.archive(node.summary.id, false)}
+                    >
+                      Restore
+                    </Button>
+                  }
+                />
+              );
+            })}
+          </List>
+        </SettingsGroup>
+      )}
+    </VStack>
   );
 }
 
 function McpSection({ view }: { view: DurableView }) {
   const mcp = view.mcp;
-  if (mcp === null) return <Text as="p" type="supporting">Loading…</Text>;
   return (
-    <VStack gap={3}>
-      <Text as="p" type="supporting" style={{ userSelect: "all" }}>
-        {mcp.configPath}
-      </Text>
-      {mcp.servers.length === 0 ? (
+    <VStack as="section" aria-label="MCP servers" gap={2}>
+      <Heading level={4}>MCP servers</Heading>
+      {mcp === null ? (
+        <Text as="p" type="supporting">Loading…</Text>
+      ) : mcp.servers.length === 0 ? (
         <Text as="p" type="supporting">No servers configured.</Text>
       ) : (
         <SettingsGroup>
@@ -685,50 +755,41 @@ function McpSection({ view }: { view: DurableView }) {
   );
 }
 
-function AboutSection({ view, remote, connected }: { view: DurableView; remote: RemoteDurable; connected: boolean }) {
-  const host = view.host;
+function HostNameGroup({ view, remote, connected }: { view: DurableView; remote: RemoteDurable; connected: boolean }) {
   const settings = view.settings;
-  const canRename = settings !== null && hostSupportsFeature(host?.protocol.minor ?? 0, "hostName");
+  if (settings === null || !hostSupportsFeature(view.host?.protocol.minor ?? 0, "hostName")) return null;
   return (
-    <VStack gap={6}>
-      {canRename ? (
-        <SettingsGroup>
-          <div className="p-4">
-            <HostNameField settings={settings} remote={remote} connected={connected} />
-          </div>
-        </SettingsGroup>
-      ) : null}
-      <SettingsGroup title="Details">
-        <List hasDividers>
-          <ListItem label="Host version" description={host?.version ?? "Source checkout"} />
-          <ListItem
-            label="Protocol"
-            description={host === undefined ? "—" : `${host.protocol.major}.${host.protocol.minor}`}
-          />
-          <ListItem
-            label="Data directory"
-            description={<span style={{ wordBreak: "break-all", userSelect: "all" }}>{view.session.directory}</span>}
-          />
-          <ListItem
-            label="Settings file"
-            description={
-              <span style={{ wordBreak: "break-all", userSelect: "all" }}>{view.session.directory}/settings.json</span>
-            }
-          />
-          <ListItem
-            label="Website"
-            description={
-              // `?home` keeps the site on its home page instead of forwarding
-              // a marked browser back to the app.
-              <Link href="https://pinomad.si/?home" isExternalLink>
-                pinomad.si
-              </Link>
-            }
-          />
-        </List>
-      </SettingsGroup>
-      <Text as="p" type="supporting">Edit the settings file by hand only while the host is stopped.</Text>
-    </VStack>
+    <SettingsGroup>
+      <div className="p-4">
+        <HostNameField settings={settings} remote={remote} connected={connected} />
+      </div>
+    </SettingsGroup>
+  );
+}
+
+function AboutDetails({ view }: { view: DurableView }) {
+  const host = view.host;
+  return (
+    <SettingsGroup title="Details">
+      <List hasDividers>
+        {/* A host with the upgrade stream names its release under Version. */}
+        {view.upgrade === null ? <ListItem label="Host version" description={host?.version ?? "Source checkout"} /> : null}
+        <ListItem
+          label="Protocol"
+          description={host === undefined ? "—" : `${host.protocol.major}.${host.protocol.minor}`}
+        />
+        <ListItem
+          label="Website"
+          description={
+            // `?home` keeps the site on its home page instead of forwarding
+            // a marked browser back to the app.
+            <Link href="https://pinomad.si/?home" isExternalLink>
+              pinomad.si
+            </Link>
+          }
+        />
+      </List>
+    </SettingsGroup>
   );
 }
 
@@ -778,6 +839,7 @@ function HostNameField({ settings, remote, connected }: { settings: HostSettings
 
 function ModeSetting({
   title,
+  description,
   value,
   customized,
   disabled,
@@ -785,6 +847,7 @@ function ModeSetting({
   onReset,
 }: {
   title: string;
+  description: string;
   value: QueueMode;
   customized: boolean;
   disabled: boolean;
@@ -792,7 +855,7 @@ function ModeSetting({
   onReset: () => void;
 }) {
   return (
-    <SettingsRow label={title}>
+    <SettingsRow label={title} description={description}>
       {customized ? (
         <Button label="Use pi's default" variant="secondary" size="sm" isDisabled={disabled} onClick={onReset} />
       ) : null}
