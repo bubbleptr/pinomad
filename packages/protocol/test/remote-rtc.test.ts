@@ -851,6 +851,8 @@ describe("RTC standby handoff", () => {
       const selected = remote.rtcDiagnostics().selectedPair;
       expect(selected?.remote.scope).toBe("tailnet");
       expect(remote.rtcDiagnostics().lastFailure).toBeUndefined();
+      // Installed, sync barrier still closed: the switch is not finished.
+      expect(remote.rtcDiagnostics().phase).toBe("warm");
 
       dc.close("closed during sync");
       await flush();

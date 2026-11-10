@@ -941,6 +941,11 @@ fn rtc_close_during_handoff_sync_records_a_commit_failure_with_the_pair() {
         .cloned()
         .expect("the new carrier picked a pair before sync");
     assert!(h.remote.rtc_diagnostics().get("lastFailure").is_none());
+    // Installed, sync barrier still closed: the switch is not finished.
+    assert_eq!(
+        h.remote.rtc_diagnostics().get("phase").and_then(Json::as_str).map(|s| s.to_string_lossy()).as_deref(),
+        Some("warm")
+    );
 
     // The carrier is installed, but the held index snapshot keeps the sync
     // barrier closed. Losing the DC is a commit failure, not a liveness one.

@@ -1557,11 +1557,10 @@ impl RemoteDurable {
         if let Some(dial) = &mut self.dial {
             dial.timer = None;
         }
-        self.fail_current(
-            phase.stage(),
-            None,
-            Some(format!("no progress within {ms}ms")),
-        );
+        // A dial is already `Ready` once the reconnect shell shows, but the
+        // deadline still armed then is the sync one.
+        let stage = if phase == Phase::Ready { CandidateFailureStage::Sync } else { phase.stage() };
+        self.fail_current(stage, None, Some(format!("no progress within {ms}ms")));
     }
 
     fn timeout_for(&self, phase: Phase) -> u64 {
@@ -3010,6 +3009,9 @@ impl RemoteDurable {
             standby.carrier.phase.as_str()
         } else if self.active_rtc.is_some() && self.dial.as_ref().map(|dial| dial.phase) == Some(Phase::Ready) {
             "active"
+        } else if self.handoff.is_some() {
+            // Installed, but the sync barrier is still closed.
+            "warm"
         } else if self.cooldown_remaining() > 0 {
             "cooldown"
         } else if self.upgrade_timer.is_some() {
