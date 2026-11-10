@@ -190,7 +190,7 @@ function installUpdateIpc(updater: AppUpdater): void {
  */
 /**
  * The renderer's light / dark / system choice, applied to the native chrome
- * so the vibrancy under the sidebar matches the page painted over it. Main
+ * so native controls and menus match the page painted over it. Main
  * keeps no copy: the renderer sends its stored choice each time it loads.
  */
 function installAppearanceIpc(): void {

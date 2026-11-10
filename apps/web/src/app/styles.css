@@ -796,33 +796,6 @@ body {
   -webkit-app-region: no-drag;
 }
 
-/* macOS desktop only (preload sets data-pinomad-vibrancy): the window is
-   transparent with under-window vibrancy, so clear every layer down to the
-   app shell and give the shell one translucent wash of the frame color,
-   under the sidebar and in the gaps around the inset panes. The panes keep
-   their opaque surface; full-screen pages (Centered) paint their own opaque
-   background.
-   The dark material is lighter than the main pane, which would put the
-   frame above the pane, so in dark mode the wash is heavy enough to keep
-   the frame the darkest layer with only a hint of the glass showing.
-   Ported from Pace. */
-html[data-pinomad-vibrancy],
-html[data-pinomad-vibrancy] body,
-html[data-pinomad-vibrancy] #root {
-  background-color: transparent;
-}
-
-html[data-pinomad-vibrancy] .pigui-app-layout .astryx-layout-panel:has(.astryx-side-nav):not(#\#):not(#\#):not(#\#) {
-  background-color: transparent;
-}
-
-html[data-pinomad-vibrancy] .pigui-app-layout.astryx-app-shell:not(#\#):not(#\#):not(#\#) {
-  background-color: light-dark(
-    color-mix(in srgb, var(--color-background-body) 32%, transparent),
-    color-mix(in srgb, var(--color-background-body) 90%, transparent)
-  );
-}
-
 /* The "N forks" chip under a message that was forked — replaces the Fork
    action once a fork exists. Ported from the family prototype (proto-fork-chip). */
 .pigui-fork-chip {

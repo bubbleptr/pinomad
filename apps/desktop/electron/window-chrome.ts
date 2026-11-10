@@ -1,17 +1,12 @@
 /**
- * Native window chrome per OS — copied from Pace's electron/window-chrome.ts.
- * On macOS the window is transparent with under-window vibrancy so the
- * sidebar reads as glass; the renderer keeps the main pane opaque (see the
- * data-pinomad-vibrancy rules in apps/web/src/app/styles.css).
+ * Native window chrome per OS — adapted from Pace's electron/window-chrome.ts.
+ * The window is opaque everywhere: the renderer paints the frame color behind
+ * the sidebar and the inset panes (no macOS vibrancy).
  */
 export type WindowChromeOptions = {
   frame?: boolean;
   titleBarStyle?: "hidden";
   trafficLightPosition?: { x: number; y: number };
-  transparent?: boolean;
-  vibrancy?: "under-window";
-  visualEffectState?: "followWindow";
-  backgroundColor?: string;
 };
 
 export function platformWindowChrome(platform: NodeJS.Platform): WindowChromeOptions {
@@ -21,12 +16,6 @@ export function platformWindowChrome(platform: NodeJS.Platform): WindowChromeOpt
     return {
       titleBarStyle: "hidden",
       trafficLightPosition: { x: 16, y: 13 },
-      // Transparent web contents are required for vibrancy to show through
-      // CSS; the `sidebar` material is too dense to read as glass.
-      transparent: true,
-      vibrancy: "under-window",
-      visualEffectState: "followWindow",
-      backgroundColor: "#00000000",
     };
   }
   if (platform === "linux") {
