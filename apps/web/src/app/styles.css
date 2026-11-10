@@ -47,7 +47,7 @@
    popovers and dialogs float lightest. Inset fills (muted: code, chips, the
    tray under the composer) are recessed, so they go darker than the pane
    they sit in, just above the frame. Light mode keeps theme-neutral's
-   values except the frame, a step lighter (#f5f5f5) so the inset panes
+   values except the frame, a step lighter (#f8f8f8) so the inset panes
    read as cards on it; shadows and borders carry the same order.
    Same specificity lift as the font override.
 
@@ -57,7 +57,7 @@
    10% white, which glows, and sit above the popover so they still draw an
    edge on the top layer. */
 [data-astryx-theme][data-astryx-theme] {
-  --color-background-body: light-dark(#f5f5f5, oklch(0.17 0 0));
+  --color-background-body: light-dark(#f8f8f8, oklch(0.17 0 0));
   --color-background-muted: light-dark(#f1f1f1, oklch(0.185 0 0));
   --color-background-surface: light-dark(#ffffff, oklch(0.215 0 0));
   --color-background-card: light-dark(#ffffff, oklch(0.255 0 0));
@@ -67,7 +67,7 @@
   --color-icon-primary: light-dark(#171717, oklch(0.94 0 0));
   /* The inset panes' edge: lighter than --color-border, since the fill step
      from the frame already separates them. */
-  --pigui-pane-ring: light-dark(#0000000f, oklch(0.255 0 0));
+  --pigui-pane-ring: light-dark(#00000012, oklch(0.255 0 0));
 }
 
 /* A dialog floats over the pane, but Astryx paints it with the surface color,
@@ -640,7 +640,11 @@ body {
    no sidebar beside the pane, so the pane goes full-bleed there and the
    inset is wide-only (`.pigui-inset`, set by AppFrame). */
 .pigui-app-layout {
-  --pigui-pane-gap: 0.5rem;
+  /* From the window edge to a pane. */
+  --pigui-pane-inset: 0.5rem;
+  /* Between two panes side by side: tighter than the inset, so the pair
+     reads as one work area. */
+  --pigui-pane-gap: 0.25rem;
   --pigui-pane-radius: 0.75rem;
 }
 
@@ -653,13 +657,13 @@ body {
 }
 
 .pigui-inset [role="main"]:not(#\#):not(#\#):not(#\#) {
-  padding: var(--pigui-pane-gap);
+  padding: var(--pigui-pane-inset);
   padding-inline-start: 0;
 }
 
 /* Sidebar collapsed: nothing to butt against, so the pane insets on all sides. */
 .pigui-inset--bare [role="main"]:not(#\#):not(#\#):not(#\#) {
-  padding-inline-start: var(--pigui-pane-gap);
+  padding-inline-start: var(--pigui-pane-inset);
 }
 
 .pigui-stage {
@@ -680,11 +684,11 @@ body {
   background-color: var(--surface);
 }
 
+/* A hairline border and no shadow: the pane sits on the frame, it does not
+   float over it. */
 .pigui-inset :is(.pigui-pane, .pigui-centered) {
+  border: 1px solid var(--pigui-pane-ring);
   border-radius: var(--pigui-pane-radius);
-  box-shadow:
-    0 0 0 1px var(--pigui-pane-ring),
-    0 1px 2px light-dark(oklch(0 0 0 / 4%), oklch(0 0 0 / 30%));
 }
 
 .pigui-app-layout .pigui-centered {
@@ -702,7 +706,7 @@ body {
 }
 
 .pigui-app-layout .pigui-side-pane > :first-child {
-  border-radius: inherit;
+  border-radius: calc(var(--pigui-pane-radius) - 1px);
 }
 
 /* Without the inset the panel is a column of the same pane again. */
