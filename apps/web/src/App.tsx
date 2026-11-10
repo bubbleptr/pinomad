@@ -1321,8 +1321,12 @@ export function Workbench({
                       label="Stop"
                       variant="secondary"
                       size="sm"
-                      isDisabled={view.connection !== "connected"}
-                      onClick={() => void remote.controller.abort()}
+                      isDisabled={view.connection !== "connected" || shownId === undefined}
+                      // Named explicitly: until a pending switch lands, the
+                      // controller's current conversation may still be the parent.
+                      onClick={() => {
+                        if (shownId !== undefined) void remote.controller.abort(shownId);
+                      }}
                     />
                   </HStack>
                 ) : conversation === undefined ? (

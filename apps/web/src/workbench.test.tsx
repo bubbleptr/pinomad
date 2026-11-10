@@ -74,6 +74,7 @@ describe("subagent workbench", () => {
     expect(promptInput()).toBeNull();
     expect(screen.getByText(/you can message it when it's done/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
-    expect(remote.controller.abort).toHaveBeenCalled();
+    // The shown subagent by id, not whatever the controller still has current.
+    expect(remote.controller.abort).toHaveBeenCalledWith(SUBAGENT_ID);
   });
 });
