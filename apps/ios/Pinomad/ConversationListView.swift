@@ -65,8 +65,8 @@ struct ConversationListView: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button {
-                    // Signed in, the account is a Settings page; the
-                    // sign-in form is a sheet of its own.
+                    // The only way to the account: signed in, its page;
+                    // otherwise the sign-in form, a sheet of its own.
                     if model.accountSession != nil, !model.accountNeedsEmail {
                         model.navPath.append(.account)
                     } else {

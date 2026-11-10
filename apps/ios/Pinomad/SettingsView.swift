@@ -3,10 +3,10 @@ import PinomadCore
 import SwiftUI
 import UIKit
 
-/// Settings, grouped by what the reader wants to change: the account,
-/// this iPhone's own General page, and every host this device can use —
-/// each paired one opening its own settings. Pushed from the list; needs
-/// no connection.
+/// Settings, grouped by what the reader wants to change: this iPhone's own
+/// General page, and every host this device can use — each paired one
+/// opening its own settings. The account is the home's top-left button, not
+/// a row here. Pushed from the list; needs no connection.
 struct SettingsView: View {
     let model: AppModel
 
@@ -16,8 +16,6 @@ struct SettingsView: View {
 
     var body: some View {
         List {
-            if shows(accountKeywords) { accountSection }
-
             if shows(GeneralSettingsView.keywords) {
                 Section {
                     NavigationLink(value: Route.general) {
@@ -30,7 +28,7 @@ struct SettingsView: View {
                 HostsSections(model: model, asking: $asking, removing: $removing)
             }
 
-            if !query.isEmpty, !shows(accountKeywords + GeneralSettingsView.keywords + hostKeywords) {
+            if !query.isEmpty, !shows(GeneralSettingsView.keywords + hostKeywords) {
                 ContentUnavailableView.search(text: query)
             }
         }
@@ -45,53 +43,12 @@ struct SettingsView: View {
         return needle.isEmpty || keywords.contains { $0.localizedCaseInsensitiveContains(needle) }
     }
 
-    private var accountKeywords: [String] {
-        ["Account", "Sign in", "Sign out", "Email", "Password", "Sign-in methods", "Signed-in devices",
-         "Delete account", "GitHub", "Google", "Apple"]
-            + [model.accountSession?.displayName].compactMap { $0 }
-    }
-
     /// The hosts, and what each one's page holds: a search for a host
     /// setting finds the list it is a tap under.
     private var hostKeywords: [String] {
         ["Hosts", "Add Host", "Pair", "Unpair", "Connection", "Routes"]
             + MachineSettingsView.keywords
             + model.machines.map { model.machineLabel($0.hostKey) } + model.accountRows.map(\.name)
-    }
-
-    /// Signed in, the account's page; signed out, only the way in, which
-    /// stays a sheet of its own.
-    @ViewBuilder
-    private var accountSection: some View {
-        Section {
-            if let session = model.accountSession, !model.accountNeedsEmail {
-                NavigationLink(value: Route.account) {
-                    Label {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(session.displayName)
-                            Text(hostOf(session.serverOrigin))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    } icon: {
-                        Image(.userRound)
-                    }
-                }
-            } else {
-                Button {
-                    model.present(.account)
-                } label: {
-                    Label(model.accountSession == nil ? "Sign In" : "Finish Signing In", image: .userRound)
-                }
-                .tint(.primary)
-            }
-        } header: {
-            Text("Account")
-        } footer: {
-            if model.accountSession == nil {
-                Text("Sign in to pair the hosts on your account.")
-            }
-        }
     }
 }
 
