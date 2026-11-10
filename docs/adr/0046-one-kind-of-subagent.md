@@ -3,6 +3,7 @@
 - 状态：Accepted
 - 日期：2026-11-10
 - 修订：ADR-0038 §1（`lifecycle` 可以从 foreground 单向变成 background）、§3（主内容区可以给子代理发消息和 Stop）；ADR-0010 §5（子代理可以有自己的 worktree）
+- 部分修订：[ADR-0047](0047-subagents-in-tasks-read-only.md)（§4 去掉用户直接聊的通知；§6 去掉主内容区的输入框和按 `lifecycle` 挪位置）
 - 设计讨论：[子代理设计](https://claude.ai/artifact/PH32TaXxXqTuxNqVYAAtFy)
 
 ## 背景

@@ -5,6 +5,7 @@
 - 修订 ADR-0007 §1（子代理的展示位置）
 - 部分修订：ADR-0039 §2（Fork 进入左侧独立导航；Background 的展示与家族聚合不变）
 - 部分修订：[ADR-0046](0046-one-kind-of-subagent.md) §6（§1 的 `lifecycle` 可以从 foreground 单向变成 background；§3 主内容区可以给子代理发消息和 Stop）
+- 部分修订：[ADR-0047](0047-subagents-in-tasks-read-only.md)（§2、§3、§5：Background 不再进左侧，所有子代理都在右侧 Tasks，对用户只读加 Stop）
 
 ## 背景
 
