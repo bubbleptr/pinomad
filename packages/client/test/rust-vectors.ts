@@ -30,7 +30,7 @@ import { fileURLToPath } from "node:url";
 import { deriveChat, retryOf, splitSubagentCalls } from "../src/cot-view.ts";
 import { agentOf, queueItems, queuedInput, statusText, taskRows, usageRows } from "../src/chat.ts";
 import { contextUsage } from "../src/context-usage.ts";
-import { backgroundSubagentsOf, displayName, familyStatus, familyUpdatedAt, forksAt, relativeTime, rootOf, taskGroupsOf, threadsOf } from "../src/family.ts";
+import { displayName, familyStatus, familyUpdatedAt, forksAt, relativeTime, rootOf, taskGroupsOf, threadsOf } from "../src/family.ts";
 import { folderCrumbs, parentFolder } from "../src/folder-path.ts";
 import {
   clampLevel,
@@ -351,7 +351,6 @@ function familyVector(): VectorFile {
     familyUpdatedAt: nodeCases((node) => familyUpdatedAt(node) ?? null),
     threadsOf: nodeCases((node) => threadsOf(node)),
     taskGroupsOf: nodeCases((node) => taskGroupsOf(node)),
-    backgroundSubagentsOf: nodeCases((node) => backgroundSubagentsOf(node)),
     displayName: DISPLAY_NAME_CASES.map((c) => ({
       name: c.name,
       summary: wire(c.summary ?? null),
