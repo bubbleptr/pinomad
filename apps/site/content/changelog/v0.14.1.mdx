@@ -1,0 +1,13 @@
+---
+title: Checking for host releases works with npm 12
+version: v0.14.1
+date: 2026-11-10
+---
+
+**Before you upgrade**
+
+- Upgrade the host with `pinomad upgrade`. A 0.14.0 host whose Node ships npm 12 can't check for releases from Settings, so it needs this one upgrade from the terminal.
+
+**Host**
+
+- Settings → the host → About no longer says "Couldn't check for releases: npm view returned no version" on hosts whose Node ships npm 12. **Check now**, Notify and When idle work there again.
