@@ -4,8 +4,7 @@ import { ChatLayout } from "@astryxdesign/core/Chat";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { useMediaQuery } from "@astryxdesign/core/hooks";
-import { HStack, Layout, LayoutContent, LayoutFooter, VStack } from "@astryxdesign/core/Layout";
-import { Text } from "@astryxdesign/core/Text";
+import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { ToastViewport, useToast } from "@astryxdesign/core/Toast";
 import type { ConversationId } from "@earendil-works/pi-durable";
@@ -538,16 +537,16 @@ function PairConfirm({
   const target = new URL(address.url);
   return (
     <Centered>
-      <VStack gap={4} hAlign="center" style={{ maxWidth: 420 }}>
+      <div className="flex flex-col items-center gap-4" style={{ maxWidth: 420 }}>
         <EmptyState title="Pair with this host?" description={`This device will pair with ${target.host}.`} />
-        <Text type="supporting" style={{ wordBreak: "break-all" }}>
+        <span className="text-xs/5 text-muted-foreground" style={{ wordBreak: "break-all" }}>
           {address.url}
-        </Text>
-        <HStack gap={2}>
+        </span>
+        <div className="flex gap-2">
           <Button label="Cancel" variant="secondary" onClick={cancel} />
           <Button label="Pair" variant="primary" onClick={() => setConfirmed(true)} />
-        </HStack>
-      </VStack>
+        </div>
+      </div>
     </Centered>
   );
 }
@@ -667,7 +666,7 @@ export function SecureClient({
     address.kind === "pair" ? (
       // A pairing offer is single-use; a rejected one is the offer's problem,
       // not this device's — never offer to wipe a saved pairing from here.
-      <VStack gap={4} hAlign="center">
+      <div className="flex flex-col items-center gap-4">
         <EmptyState
           title="This pairing code was used or has expired"
           description="Generate a new QR on the host: run pinomad pair, or open Settings → Devices → Pair a device."
@@ -685,7 +684,7 @@ export function SecureClient({
             }}
           />
         )}
-      </VStack>
+      </div>
     ) : (
       <DeviceRejected hostKey={address.hostKey} />
     );
@@ -783,7 +782,7 @@ export function RemoteWorkbench({
         ) : rejected !== undefined && state.unauthorized ? (
           rejected
         ) : (
-          <VStack gap={4} hAlign="center">
+          <div className="flex flex-col items-center gap-4">
             <Banner
               status="error"
               title={state.direct === undefined ? "Could not connect to the host" : "Direct connection unavailable"}
@@ -794,17 +793,17 @@ export function RemoteWorkbench({
               }
             />
             {state.direct === undefined ? null : (
-              <Text type="supporting" style={{ textAlign: "center" }}>
+              <span className="text-xs/5 text-muted-foreground" style={{ textAlign: "center" }}>
                 {`Details: ${state.direct.reason}`}
-              </Text>
+              </span>
             )}
             {state.direct === undefined ? null : (
-              <Text type="supporting" style={{ textAlign: "center" }}>
+              <span className="text-xs/5 text-muted-foreground" style={{ textAlign: "center" }}>
                 Change this host's connection mode under Hosts below, then retry.
-              </Text>
+              </span>
             )}
             <Button label="Retry" variant="secondary" onClick={() => setAttempt(attempt + 1)} />
-          </VStack>
+          </div>
         )}
         {rejected !== undefined && state.unauthorized ? null : <HostsFallback canSwitch />}
       </Centered>
@@ -1305,7 +1304,7 @@ export function Workbench({
               // composer lines up with the conversation at every width.
               <div className="mx-auto w-full max-w-[44rem]">
                 {shownSubagent !== undefined ? (
-                  <HStack gap={2} vAlign="center" className="border-t border-border py-2">
+                  <div className="flex items-center gap-2 border-t border-border py-2">
                     <span className="min-w-0 flex-1 text-center text-xs text-muted-foreground">Read-only · subagent</span>
                     {!canStopShown ? null : (
                       <Button
@@ -1318,11 +1317,11 @@ export function Workbench({
                         onClick={() => void remote.controller.abort(shownSubagent.id)}
                       />
                     )}
-                  </HStack>
+                  </div>
                 ) : conversation === undefined ? (
                   failed ? null : <ComposerSkeleton />
                 ) : (
-                  <VStack gap={1}>
+                  <div className="flex flex-col gap-1">
                     <PendingQuestions docs={view.docs} remote={remote} connected={view.connection === "connected"} />
                     <ConversationComposer
                       view={view}
@@ -1339,7 +1338,7 @@ export function Workbench({
                         setTakingBack(undefined);
                       }}
                     />
-                  </VStack>
+                  </div>
                 )}
               </div>
             }
@@ -1560,7 +1559,7 @@ function ForkDialog({
         }
         footer={
           <LayoutFooter>
-            <HStack gap={2} hAlign="end">
+            <div className="flex justify-end gap-2">
               <Button label="Cancel" variant="secondary" onClick={onClose} />
               <Button
                 label={busy ? "Forking…" : "Fork"}
@@ -1568,7 +1567,7 @@ function ForkDialog({
                 isDisabled={!connected || busy || prompt.trim() === ""}
                 onClick={fork}
               />
-            </HStack>
+            </div>
           </LayoutFooter>
         }
       />

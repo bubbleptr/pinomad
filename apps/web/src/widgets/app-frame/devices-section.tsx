@@ -1,9 +1,7 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Switch } from "@astryxdesign/core/Switch";
-import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
 import { Token } from "@astryxdesign/core/Token";
 import { useEffect, useMemo, useState } from "react";
@@ -46,9 +44,9 @@ export function DevicesSection({
     });
   };
   return (
-    <VStack gap={4}>
+    <div className="flex flex-col gap-4">
       {view.devices.length === 0 ? (
-        <Text type="supporting">No paired devices.</Text>
+        <span className="text-xs/5 text-muted-foreground">No paired devices.</span>
       ) : (
         <List density="compact">
           {view.devices.map((device) => (
@@ -89,7 +87,7 @@ export function DevicesSection({
       ) : (
         <PairingOffer url={offer.url} expiresAt={offer.expiresAt} onRenew={pair} />
       )}
-    </VStack>
+    </div>
   );
 }
 
@@ -142,7 +140,7 @@ function DeviceRow({
       label={device.name}
       description={`Paired ${PAIRED_AT.format(device.pairedAt)}${source}`}
       endContent={
-        <HStack gap={2} vAlign="center">
+        <div className="flex items-center gap-2">
           {isSelf ? <Token label="This device" size="sm" /> : null}
           <Button
             label="Unpair"
@@ -152,7 +150,7 @@ function DeviceRow({
             isDisabled={!connected}
             onClick={onUnpair}
           />
-        </HStack>
+        </div>
       }
     />
   );
@@ -171,18 +169,18 @@ function UnpairDeviceConfirm({
 }) {
   const title = isSelf ? "Unpair this device?" : `Unpair ${device.name}?`;
   return (
-    <VStack gap={2} role="group" aria-label={title}>
-      <Text weight="semibold">{title}</Text>
-      <Text type="supporting">
+    <div className="flex flex-col gap-2" role="group" aria-label={title}>
+      <span className="text-sm/5 font-semibold">{title}</span>
+      <span className="text-xs/5 text-muted-foreground">
         {isSelf
           ? "This host will stop accepting this device, and this device forgets the host. Connecting again needs a new pairing link."
           : "This host will stop accepting it. It can pair again with a new pairing link."}
-      </Text>
-      <HStack gap={2} hAlign="end">
+      </span>
+      <div className="flex justify-end gap-2">
         <Button label="Cancel" variant="secondary" size="sm" onClick={onCancel} />
         <Button label="Unpair" variant="destructive" size="sm" onClick={onConfirm} />
-      </HStack>
-    </VStack>
+      </div>
+    </div>
   );
 }
 
@@ -195,31 +193,31 @@ function PairingOffer({ url, expiresAt, onRenew }: { url: string; expiresAt: num
   const seconds = Math.max(0, Math.ceil((expiresAt - now) / 1000));
   if (seconds === 0) {
     return (
-      <HStack gap={2} vAlign="center">
-        <Text type="supporting">Expired</Text>
+      <div className="flex items-center gap-2">
+        <span className="text-xs/5 text-muted-foreground">Expired</span>
         <Button label="New code" variant="secondary" size="sm" onClick={onRenew} />
-      </HStack>
+      </div>
     );
   }
   // A loopback link only reaches clients on this machine: the QR would send a
   // phone to an address it cannot open (ADR-0020 §4), so show the hint instead.
   const loopback = isLoopbackUrl(url);
   return (
-    <VStack gap={3} hAlign="center">
+    <div className="flex flex-col items-center gap-3">
       {loopback ? null : <QrImage text={url} />}
-      <Text type="supporting" style={{ wordBreak: "break-all", userSelect: "all" }}>
+      <span className="text-xs/5 text-muted-foreground" style={{ wordBreak: "break-all", userSelect: "all" }}>
         {url}
-      </Text>
+      </span>
       {loopback ? (
-        <Text type="supporting">
+        <span className="text-xs/5 text-muted-foreground">
           This link only works on this machine — paste it into the desktop app. To pair a phone, start the host with
           --remote-port or --relay.
-        </Text>
+        </span>
       ) : null}
-      <Text type="supporting">
+      <span className="text-xs/5 text-muted-foreground">
         Expires in {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
-      </Text>
-    </VStack>
+      </span>
+    </div>
   );
 }
 
@@ -237,9 +235,9 @@ function QrImage({ text }: { text: string }) {
   }, [text]);
   if (qr === undefined) {
     return (
-      <Text type="supporting">
+      <span className="text-xs/5 text-muted-foreground">
         This link is too long for a QR code. Copy it below and paste it into the app instead.
-      </Text>
+      </span>
     );
   }
   const size = qr.size + QR_QUIET * 2;

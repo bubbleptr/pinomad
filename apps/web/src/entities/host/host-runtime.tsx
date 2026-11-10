@@ -3,8 +3,6 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { Text } from "@astryxdesign/core/Text";
-import { VStack } from "@astryxdesign/core/Layout";
 import {
   type ReactNode,
   useCallback,
@@ -226,9 +224,9 @@ function HostFailure({
   }
   return (
     <Centered>
-      <VStack gap={4} hAlign="center">
+      <div className="flex flex-col items-center gap-4">
         <BannerForFailure state={state} retry={retry} />
-      </VStack>
+      </div>
       <HostsFallback />
     </Centered>
   );
@@ -253,9 +251,9 @@ function BannerForFailure({
         }
       />
       {state.direct === undefined ? null : (
-        <Text type="supporting" style={{ textAlign: "center" }}>
+        <span className="text-xs/5 text-muted-foreground" style={{ textAlign: "center" }}>
           {`Details: ${state.direct.reason}`}
-        </Text>
+        </span>
       )}
       <Button label="Retry" variant="secondary" onClick={retry} />
     </>

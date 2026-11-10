@@ -7,7 +7,6 @@
 // dispatched, so its tool state says nothing about the work: once it went
 // through, the card follows the subagent's own summary instead.
 import { Button } from "@astryxdesign/core/Button";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
@@ -90,14 +89,13 @@ function SubagentCard({
     elapsed,
   ].filter((part) => part !== undefined && part !== "");
   return (
-    <VStack
-      className="pigui-subagent-card rounded-lg border border-border p-3"
-      gap={1}
+    <div
+      className="flex flex-col gap-1 p-3 pigui-subagent-card rounded-lg border border-border"
       data-slot="subagent-card"
       data-status={status}
       {...(background ? { "data-background": "" } : {})}
     >
-      <HStack gap={2} vAlign="center">
+      <div className="flex items-center gap-2">
         <StatusDot
           variant={status === "failed" ? "error" : status === "running" ? "success" : "neutral"}
           label={STATUS_TEXT[status]}
@@ -107,7 +105,7 @@ function SubagentCard({
         {pinomad === undefined ? null : (
           <Button label="View" variant="secondary" size="sm" onClick={() => openInPanel(pinomad.conversationId)} />
         )}
-      </HStack>
+      </div>
       <div className="text-xs text-muted-foreground tabular-nums">
         {meta.map((part, index) => (index === 0 ? <span key={index}>{part}</span> : <span key={index}> · {part}</span>))}
       </div>
@@ -120,7 +118,7 @@ function SubagentCard({
       {callStatus === "failed" && tool.output !== undefined && tool.output !== "" ? (
         <div className="text-xs text-muted-foreground">{tool.output}</div>
       ) : null}
-    </VStack>
+    </div>
   );
 }
 
@@ -136,7 +134,7 @@ export function SubagentCards({
 }) {
   if (tools.length === 0) return null;
   return (
-    <VStack gap={2} className="pigui-subagent-cards">
+    <div className="flex flex-col gap-2 pigui-subagent-cards">
       {tools.map(({ key, tool }) => {
         const pinomad = pinomadOf(tool);
         return (
@@ -148,6 +146,6 @@ export function SubagentCards({
           />
         );
       })}
-    </VStack>
+    </div>
   );
 }

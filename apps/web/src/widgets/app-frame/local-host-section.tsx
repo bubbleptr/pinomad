@@ -1,10 +1,8 @@
 import { AlertDialog } from "@astryxdesign/core/AlertDialog";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { Switch } from "@astryxdesign/core/Switch";
-import { Text } from "@astryxdesign/core/Text";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import type { LocalHostStopResult } from "../../entities/local-host/local-host-protocol.ts";
@@ -79,10 +77,10 @@ function LocalHostControls({ bridge, pollIntervalMs }: { bridge: LocalHostBridge
 
   if (state === undefined) {
     return (
-      <HStack gap={2} vAlign="center">
+      <div className="flex items-center gap-2">
         <Spinner size="sm" />
-        <Text type="supporting">Checking this Mac…</Text>
-      </HStack>
+        <span className="text-xs/5 text-muted-foreground">Checking this Mac…</span>
+      </div>
     );
   }
 
@@ -103,15 +101,15 @@ function LocalHostControls({ bridge, pollIntervalMs }: { bridge: LocalHostBridge
       );
     case "too-old":
       return (
-        <Text as="p" type="supporting">
+        <p className="text-xs/5 text-muted-foreground">
           The PiNomad host on this Mac is too old for this switch. Run pinomad upgrade in Terminal, then come back here.
-        </Text>
+        </p>
       );
     case "not-installed":
       return <NotInstalled bridge={bridge} onFinished={pollUntilInstalled} />;
     case "installed":
       return (
-        <VStack gap={3}>
+        <div className="flex flex-col gap-3">
           <Switch
             label="Run the host on this Mac"
             description={state.detail}
@@ -126,10 +124,10 @@ function LocalHostControls({ bridge, pollIntervalMs }: { bridge: LocalHostBridge
             onChange={(checked) => (checked ? start() : setConfirming(true))}
           />
           {busy?.kind === "stopping" ? (
-            <VStack gap={2}>
-              <Text as="p" type="supporting">
+            <div className="flex flex-col gap-2">
+              <p className="text-xs/5 text-muted-foreground">
                 Stopping…
-              </Text>
+              </p>
               {busy.lines.length === 0 ? null : (
                 // The CLI's own lines, indentation kept: which tasks it is waiting for.
                 <div role="log" aria-label="Stop progress" style={STOP_LOG}>
@@ -138,11 +136,11 @@ function LocalHostControls({ bridge, pollIntervalMs }: { bridge: LocalHostBridge
                   ))}
                 </div>
               )}
-              <HStack>
+              <div className="flex">
                 {/* Interrupts the CLI's wait: the service stays on. */}
                 <Button label="Cancel" variant="secondary" size="sm" onClick={() => void bridge.cancelStop()} />
-              </HStack>
-            </VStack>
+              </div>
+            </div>
           ) : null}
           {banner}
           <AlertDialog
@@ -153,7 +151,7 @@ function LocalHostControls({ bridge, pollIntervalMs }: { bridge: LocalHostBridge
             actionLabel="Turn off"
             onAction={stop}
           />
-        </VStack>
+        </div>
       );
   }
 }
@@ -163,19 +161,19 @@ function NotInstalled({ bridge, onFinished }: { bridge: LocalHostBridge; onFinis
   const account = useAccountModel();
   if (account.state.status !== "signed-in") {
     return (
-      <Text as="p" type="supporting">
+      <p className="text-xs/5 text-muted-foreground">
         The PiNomad host isn't installed on this Mac. Sign in to your account first: the host joins it while it installs.
-      </Text>
+      </p>
     );
   }
   return (
-    <VStack gap={3}>
-      <Text as="p" type="supporting">
+    <div className="flex flex-col gap-3">
+      <p className="text-xs/5 text-muted-foreground">
         The PiNomad host isn't installed on this Mac. Setting it up downloads PiNomad with its own Node, joins it to your
         account, and adds the pinomad command to your shell profile.
-      </Text>
+      </p>
       <LocalHostSetup bridge={bridge} serverOrigin={account.state.serverOrigin} onFinished={onFinished} />
-    </VStack>
+    </div>
   );
 }
 

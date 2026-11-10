@@ -6,8 +6,6 @@
 // folds a long patch's files so opening it stays cheap.
 import { parsePatch } from "@pinomad/client/patch.ts";
 import { lazy, Suspense, useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
-import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { ChevronRight } from "../shared/ui/icons.tsx";
 
@@ -41,25 +39,26 @@ export function DiffView({ patch, collapsible = false }: { patch: string; collap
   const folded = collapsible && files.reduce((sum, file) => sum + file.lines.length, 0) > FOLD_LINES;
   // What the reader chose per path; files they never touched follow the threshold.
   const [chosen, setChosen] = useState<ReadonlyMap<string, boolean>>(new Map());
-  if (files.length === 0) return <Text type="supporting">No changes.</Text>;
+  if (files.length === 0) return <span className="text-xs/5 text-muted-foreground">No changes.</span>;
   return (
-    <VStack gap={2}>
+    <div className="flex flex-col gap-2">
       {files.map((file, index) => {
         const open = chosen.get(file.path) ?? !folded;
+        const title = file.oldPath !== undefined && file.oldPath !== file.path ? `${file.oldPath} → ${file.path}` : file.path;
         const heading = (
           <>
-            <Text type="supporting" weight="semibold" maxLines={1}>
-              {file.oldPath !== undefined && file.oldPath !== file.path ? `${file.oldPath} → ${file.path}` : file.path}
-            </Text>
+            <span className="block truncate text-xs/5 font-semibold text-muted-foreground" title={title}>
+              {title}
+            </span>
             {file.isNew ? <Token label="new" color="green" size="sm" /> : null}
             {file.isDeleted ? <Token label="deleted" color="red" size="sm" /> : null}
-            <Text type="supporting">
+            <span className="text-xs/5 text-muted-foreground">
               +{file.additions} −{file.deletions}
-            </Text>
+            </span>
           </>
         );
         return (
-          <VStack key={`${file.path}-${index}`} gap={0}>
+          <div className="flex flex-col" key={`${file.path}-${index}`}>
             {collapsible ? (
               <FileToggle
                 open={open}
@@ -68,21 +67,21 @@ export function DiffView({ patch, collapsible = false }: { patch: string; collap
                 {heading}
               </FileToggle>
             ) : (
-              <HStack gap={2} vAlign="center" padding={1}>
+              <div className="flex items-center gap-2 p-1">
                 {heading}
-              </HStack>
+              </div>
             )}
             {!open ? null : file.binary === true ? (
-              <Text type="supporting">Binary file</Text>
+              <span className="text-xs/5 text-muted-foreground">Binary file</span>
             ) : file.lines.length === 0 ? null : (
               <Suspense fallback={<PlainLines lines={file.lines} />}>
                 <HighlightedFile patch={patch} path={file.path} fallback={<PlainLines lines={file.lines} />} />
               </Suspense>
             )}
-          </VStack>
+          </div>
         );
       })}
-    </VStack>
+    </div>
   );
 }
 

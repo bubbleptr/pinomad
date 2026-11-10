@@ -1,7 +1,5 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
-import { Text } from "@astryxdesign/core/Text";
 import type { Decorator, Meta, StoryObj } from "@storybook/react-vite";
 import { userEvent, within } from "storybook/test";
 import type { RtcDiagnostics } from "@pinomad/protocol/remote-durable.ts";
@@ -306,22 +304,22 @@ export const DirectOnlyFailure: Story = {
   parameters: { canvasWidth: "full" },
   render: () => (
     <div className="flex min-h-[70vh] flex-col items-center justify-center gap-6 p-6">
-      <VStack gap={4} hAlign="center" style={{ maxWidth: 420 }}>
+      <div className="flex flex-col items-center gap-4" style={{ maxWidth: 420 }}>
         <Banner
           status="error"
           title="Direct connection unavailable"
           description="This host can't be reached without the relay, and the peer-to-peer link didn't connect."
         />
-        <Text type="supporting" style={{ textAlign: "center" }}>
+        <span className="text-xs/5 text-muted-foreground" style={{ textAlign: "center" }}>
           Details: the ICE connection failed
-        </Text>
-        <Text type="supporting" style={{ textAlign: "center" }}>
+        </span>
+        <span className="text-xs/5 text-muted-foreground" style={{ textAlign: "center" }}>
           Change this host's connection mode under Hosts below, then retry.
-        </Text>
-        <HStack gap={2}>
+        </span>
+        <div className="flex gap-2">
           <Button label="Retry" variant="secondary" />
-        </HStack>
-      </VStack>
+        </div>
+      </div>
       <HostsFallback canSwitch />
     </div>
   ),

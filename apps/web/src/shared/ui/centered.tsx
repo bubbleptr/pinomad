@@ -1,4 +1,3 @@
-import { VStack } from "@astryxdesign/core/Layout";
 import type { CSSProperties, ReactNode } from "react";
 import { hostWindowChrome } from "../host-chrome.ts";
 
@@ -16,11 +15,9 @@ export function Centered({ children }: { children: ReactNode }) {
   // These screens have no header to drag the hidden-title-bar window by.
   const reserveStrip = hostWindowChrome().reserveMacTrafficLights;
   return (
-    <VStack className="pigui-centered" style={page} isScrollable>
+    <div className="pigui-centered flex flex-col overflow-auto" style={page}>
       {reserveStrip ? <div aria-hidden="true" className="pinomad-drag fixed inset-x-0 top-0 h-10" /> : null}
-      <VStack minHeight="100%" style={{ flexShrink: 0 }} hAlign="center" vAlign="center" padding={6}>
-        {children}
-      </VStack>
-    </VStack>
+      <div className="flex flex-col items-center justify-center p-6 min-h-full shrink-0">{children}</div>
+    </div>
   );
 }

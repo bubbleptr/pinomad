@@ -3,9 +3,8 @@ import { Button } from "@astryxdesign/core/Button";
 import { CodeBlock } from "@astryxdesign/core/CodeBlock";
 import { Collapsible } from "@astryxdesign/core/Collapsible";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { HStack, Layout, LayoutContent, LayoutFooter, VStack } from "@astryxdesign/core/Layout";
+import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
 import { Spinner } from "@astryxdesign/core/Spinner";
-import { Text } from "@astryxdesign/core/Text";
 import { useState } from "react";
 import type { AccountError, JoinToken } from "@pinomad/client/account.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
@@ -29,28 +28,28 @@ export function AddHostSteps({ serverOrigin }: { serverOrigin: string }) {
   const localHost = localHostBridge();
   const { state: localState, pollUntilInstalled } = useLocalHostState(localHost);
   return (
-    <VStack gap={4} style={{ width: "100%" }}>
-      <VStack gap={2}>
-        <Text type="supporting">On the computer you want to add, open a terminal and run:</Text>
+    <div className="flex flex-col gap-4" style={{ width: "100%" }}>
+      <div className="flex flex-col gap-2">
+        <span className="text-xs/5 text-muted-foreground">On the computer you want to add, open a terminal and run:</span>
         {/* No language: shell highlighting splits the server address into colors. */}
         <CodeBlock code={joinCommand(serverOrigin)} hasCopyButton isWrapped width="100%" />
-      </VStack>
+      </div>
       {localHost !== undefined && localState?.kind === "not-installed" ? (
-        <VStack gap={2}>
-          <Text type="supporting">Or set up this Mac, with no terminal:</Text>
+        <div className="flex flex-col gap-2">
+          <span className="text-xs/5 text-muted-foreground">Or set up this Mac, with no terminal:</span>
           <LocalHostSetup bridge={localHost} serverOrigin={serverOrigin} onFinished={pollUntilInstalled} />
-        </VStack>
+        </div>
       ) : null}
-      <VStack gap={2}>
-        <Text type="supporting">
+      <div className="flex flex-col gap-2">
+        <span className="text-xs/5 text-muted-foreground">
           It asks how your other devices should reach the host; press Enter to go through this server. Then it opens a
           page to confirm the host, or, on a computer without a browser, prints a code. Enter that code here:
-        </Text>
+        </span>
         {/* A host confirmed here may be this Mac, run from a terminal: Set up this Mac goes once it has installed. */}
         <HostLinkEntry onSettled={(outcome) => outcome === "confirmed" && pollUntilInstalled()} />
-      </VStack>
+      </div>
       <TokenCommand />
-    </VStack>
+    </div>
   );
 }
 
@@ -76,18 +75,18 @@ function TokenCommand() {
   };
   return (
     <Collapsible
-      trigger={<Text type="supporting">Advanced: join with a one-time token</Text>}
+      trigger={<span className="text-xs/5 font-normal text-muted-foreground">Advanced: join with a one-time token</span>}
       isOpen={open}
       onOpenChange={toggle}
     >
-      <VStack gap={2}>
-        <Text type="supporting">For scripts: this command joins without a code to confirm. Anyone who has it can add a host.</Text>
+      <div className="flex flex-col gap-2">
+        <span className="text-xs/5 text-muted-foreground">For scripts: this command joins without a code to confirm. Anyone who has it can add a host.</span>
         {token === undefined ? (
           error === undefined ? (
-            <HStack gap={2} vAlign="center">
+            <div className="flex items-center gap-2">
               <Spinner size="sm" />
-              <Text type="supporting">Creating a command…</Text>
-            </HStack>
+              <span className="text-xs/5 text-muted-foreground">Creating a command…</span>
+            </div>
           ) : (
             <Banner
               status="error"
@@ -102,7 +101,7 @@ function TokenCommand() {
         {token !== undefined && error !== undefined ? (
           <Banner status="error" title="Couldn't create a new command" description={accountErrorMessage(error)} />
         ) : null}
-      </VStack>
+      </div>
     </Collapsible>
   );
 }
@@ -112,20 +111,20 @@ export function JoinCommand({ token, onRenew }: { token: JoinToken; onRenew: () 
   const now = useNow(1000);
   const seconds = Math.max(0, Math.ceil((token.expiresAt - now) / 1000));
   return (
-    <VStack gap={2}>
+    <div className="flex flex-col gap-2">
       {/* No language: shell highlighting splits the server address and token into colors. */}
       <CodeBlock code={token.command} hasCopyButton isWrapped width="100%" />
       {seconds === 0 ? (
-        <HStack gap={2} vAlign="center">
-          <Text type="supporting">Expired</Text>
+        <div className="flex items-center gap-2">
+          <span className="text-xs/5 text-muted-foreground">Expired</span>
           <Button label="New command" variant="secondary" size="sm" onClick={onRenew} />
-        </HStack>
+        </div>
       ) : (
-        <Text type="supporting" hasTabularNumbers>
+        <span className="text-xs/5 text-muted-foreground tabular-nums">
           Works once · expires in {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
-        </Text>
+        </span>
       )}
-    </VStack>
+    </div>
   );
 }
 
@@ -143,10 +142,10 @@ export function AddHostDialog({ onClose }: { onClose: () => void }) {
     onClose();
   };
   const linkForm = (
-    <VStack gap={2}>
-      <Text type="supporting">Paste a pairing link from pinomad pair or Settings → Devices → Pair a device.</Text>
+    <div className="flex flex-col gap-2">
+      <span className="text-xs/5 text-muted-foreground">Paste a pairing link from pinomad pair or Settings → Devices → Pair a device.</span>
       <PairingLinkForm />
-    </VStack>
+    </div>
   );
   return (
     <Dialog aria-label="Add a host" isOpen onOpenChange={(open) => (open ? undefined : close())} purpose="form" width={520}>
@@ -158,25 +157,25 @@ export function AddHostDialog({ onClose }: { onClose: () => void }) {
               {state.status !== "signed-in" ? (
                 linkForm
               ) : (
-                <VStack gap={4}>
+                <div className="flex flex-col gap-4">
                   <AddHostSteps serverOrigin={state.serverOrigin} />
                   {pastingLink ? (
                     linkForm
                   ) : (
-                    <HStack>
+                    <div className="flex">
                       <Button label="Have a pairing link?" variant="ghost" size="sm" onClick={() => setPastingLink(true)} />
-                    </HStack>
+                    </div>
                   )}
-                </VStack>
+                </div>
               )}
             </div>
           </LayoutContent>
         }
         footer={
           <LayoutFooter>
-            <HStack gap={2} hAlign="end">
+            <div className="flex justify-end gap-2">
               <Button label="Done" variant="secondary" onClick={close} />
-            </HStack>
+            </div>
           </LayoutFooter>
         }
       />

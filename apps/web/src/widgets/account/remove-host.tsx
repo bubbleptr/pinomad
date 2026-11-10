@@ -1,8 +1,7 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { HStack, Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
-import { Text } from "@astryxdesign/core/Text";
+import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { useState } from "react";
 import type { AccountError } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
@@ -44,20 +43,20 @@ export function RemoveHost({ account, hostId, name, serverOrigin, onClose }: Rem
   };
   const identity = useConfirmIdentity(account, submit);
   return (
-    <VStack gap={2}>
-      <Text type="supporting">
+    <div className="flex flex-col gap-2">
+      <span className="text-xs/5 text-muted-foreground">
         {name} leaves your account and stops connecting through {new URL(serverOrigin).host}. Only running pinomad up on
         that machine brings it back. This device forgets it too, unless you paired it with a QR code.
-      </Text>
+      </span>
       {identity.field}
       {error === undefined ? null : (
         <Banner status="error" title="Couldn't remove the host" description={accountErrorMessage(error)} />
       )}
-      <HStack gap={2}>
+      <div className="flex gap-2">
         <Button label="Remove host" variant="destructive" isLoading={busy} isDisabled={!identity.ready} onClick={submit} />
         <Button label="Cancel" variant="secondary" onClick={() => onClose(false)} />
-      </HStack>
-    </VStack>
+      </div>
+    </div>
   );
 }
 

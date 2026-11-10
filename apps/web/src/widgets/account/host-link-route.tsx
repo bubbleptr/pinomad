@@ -1,8 +1,7 @@
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { HStack, Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
+import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { Spinner } from "@astryxdesign/core/Spinner";
-import { Text } from "@astryxdesign/core/Text";
 import { useState } from "react";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { AccountPanel } from "./account-panel.tsx";
@@ -70,40 +69,40 @@ function HostLinkSteps({
   switch (state.status) {
     case "checking":
       return (
-        <HStack gap={2} vAlign="center">
+        <div className="flex items-center gap-2">
           <Spinner size="sm" />
-          <Text type="supporting">Checking for an account…</Text>
-        </HStack>
+          <span className="text-xs/5 text-muted-foreground">Checking for an account…</span>
+        </div>
       );
     case "unavailable":
       return (
-        <VStack gap={3}>
-          <Text>Confirm a host on the server it's joining: open the address its terminal printed.</Text>
-          <HStack>
+        <div className="flex flex-col gap-3">
+          <span className="text-sm/5">Confirm a host on the server it's joining: open the address its terminal printed.</span>
+          <div className="flex">
             <Button label="Close" variant="secondary" onClick={onClose} />
-          </HStack>
-        </VStack>
+          </div>
+        </div>
       );
     case "signed-out":
       return (
-        <VStack gap={3}>
-          <Text type="supporting">
+        <div className="flex flex-col gap-3">
+          <span className="text-xs/5 text-muted-foreground">
             {requestId === undefined
               ? "Sign in to the account the host is joining, then enter the code from its terminal."
               : "Sign in to the account the host is joining to confirm it."}
-          </Text>
+          </span>
           <AccountPanel />
-        </VStack>
+        </div>
       );
     case "signed-in":
       if (requestId !== undefined) {
         return <HostLinkRequestEntry requestId={requestId} navigate={navigate} onSettled={onSettled} onClose={onClose} />;
       }
       return (
-        <VStack gap={3}>
-          <Text type="supporting">Enter the code the host's terminal shows to add it to {state.user}'s account.</Text>
+        <div className="flex flex-col gap-3">
+          <span className="text-xs/5 text-muted-foreground">Enter the code the host's terminal shows to add it to {state.user}'s account.</span>
           <HostLinkEntry onSettled={onSettled} onClose={onClose} />
-        </VStack>
+        </div>
       );
   }
 }

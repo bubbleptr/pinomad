@@ -2,8 +2,7 @@
 // the tab follows the shell's window title again.
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { HStack, Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
-import { Text } from "@astryxdesign/core/Text";
+import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useEffect, useRef, useState } from "react";
 import type { RemoteTerminals } from "@pinomad/protocol/remote-durable.ts";
@@ -59,18 +58,18 @@ export function RenameTerminalDialog({
               isDisabled={saving}
             />
             {error === undefined ? null : (
-              <Text type="supporting" role="alert" style={{ color: "var(--destructive)" }}>
+              <span className="text-xs/5 text-muted-foreground" role="alert" style={{ color: "var(--destructive)" }}>
                 {error}
-              </Text>
+              </span>
             )}
           </LayoutContent>
         }
         footer={
           <LayoutFooter>
-            <HStack gap={2} hAlign="end">
+            <div className="flex justify-end gap-2">
               <Button label="Cancel" variant="secondary" onClick={onClose} />
               <Button label="Save" variant="primary" isDisabled={!connected || saving || name === initial} onClick={save} />
-            </HStack>
+            </div>
           </LayoutFooter>
         }
       />

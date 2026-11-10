@@ -1,9 +1,4 @@
-// ADR-0005: extension documents render through `classify` — typed views for
-// conforming values, a key-value fallback for everything else so an unknown or
-// malformed document is still inspectable.
-import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
-import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import type { JsonValue } from "@earendil-works/chord";
 import { classify, type QuestionRequest, type QuestionState } from "@pinomad/protocol/presentation.ts";
@@ -26,10 +21,10 @@ export function DocumentView({ doc }: { doc: ExtensionDocView; remote: RemoteDur
       <FallbackDoc value={classified.value} />
     );
   return (
-    <VStack gap={1}>
-      <Text type="label" weight="semibold">{heading}</Text>
+    <div className="flex flex-col gap-1">
+      <span className="text-sm/5 font-semibold">{heading}</span>
       {content}
-    </VStack>
+    </div>
   );
 }
 

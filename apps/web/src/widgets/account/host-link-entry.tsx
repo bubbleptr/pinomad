@@ -1,10 +1,7 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { Heading } from "@astryxdesign/core/Heading";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { MetadataList, MetadataListItem } from "@astryxdesign/core/MetadataList";
 import { Spinner } from "@astryxdesign/core/Spinner";
-import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Tooltip } from "@astryxdesign/core/Tooltip";
 import { useEffect, useState, type CSSProperties } from "react";
@@ -189,14 +186,14 @@ export function HostLinkRequestEntry({
     case "looking":
     case "leaving":
       return (
-        <HStack gap={2} vAlign="center">
+        <div className="flex items-center gap-2">
           <Spinner size="sm" />
-          <Text type="supporting">{step.kind === "looking" ? "Looking up the host…" : "Handing the answer back to the host…"}</Text>
-        </HStack>
+          <span className="text-xs/5 text-muted-foreground">{step.kind === "looking" ? "Looking up the host…" : "Handing the answer back to the host…"}</span>
+        </div>
       );
     case "missing":
       return (
-        <VStack gap={3} style={{ width: "100%" }}>
+        <div className="flex flex-col gap-3" style={{ width: "100%" }}>
           <Banner
             status="error"
             title="Couldn't find this host"
@@ -207,11 +204,11 @@ export function HostLinkRequestEntry({
             }
           />
           {onClose === undefined ? null : (
-            <HStack>
+            <div className="flex">
               <Button label="Close" variant="secondary" onClick={onClose} />
-            </HStack>
+            </div>
           )}
-        </VStack>
+        </div>
       );
     case "confirm":
       return (
@@ -244,7 +241,7 @@ export function HostLinkCodeForm({
   onCancel?: () => void;
 }) {
   return (
-    <VStack gap={3} style={{ width: "100%" }}>
+    <div className="flex flex-col gap-3" style={{ width: "100%" }}>
       <TextInput
         label="Code from the host"
         description="The host's terminal shows it, like KXHN-BWCV."
@@ -257,11 +254,11 @@ export function HostLinkCodeForm({
       {error === undefined ? null : (
         <Banner status="error" title="Couldn't find that host" description={hostLinkErrorMessage(error, "lookup")} />
       )}
-      <HStack gap={2} vAlign="center">
+      <div className="flex items-center gap-2">
         <Button label="Continue" variant="primary" isLoading={isBusy} isDisabled={!isCompleteUserCode(code)} onClick={onSubmit} />
         {onCancel === undefined ? null : <Button label="Cancel" variant="secondary" onClick={onCancel} />}
-      </HStack>
-    </VStack>
+      </div>
+    </div>
   );
 }
 
@@ -292,11 +289,11 @@ export function HostLinkConfirm({
   const seconds = Math.max(0, Math.ceil((request.expiresAt - now) / 1000));
   const expired = seconds === 0;
   return (
-    <VStack gap={4} style={{ width: "100%" }}>
-      <VStack gap={1}>
-        <Heading level={3}>Add this host to your account?</Heading>
-        <Text type="supporting">Only confirm a computer you are setting up yourself right now.</Text>
-      </VStack>
+    <div className="flex flex-col gap-4" style={{ width: "100%" }}>
+      <div className="flex flex-col gap-1">
+        <h3 className="text-[1.0625rem]/6 font-bold">Add this host to your account?</h3>
+        <span className="text-xs/5 text-muted-foreground">Only confirm a computer you are setting up yourself right now.</span>
+      </div>
       {request.ipDiffers ? (
         <Banner
           status="warning"
@@ -306,20 +303,20 @@ export function HostLinkConfirm({
       ) : null}
       <MetadataList>
         <MetadataListItem label="Name">
-          <Text weight="semibold">{request.name}</Text>
+          <span className="text-sm/5 font-semibold">{request.name}</span>
         </MetadataListItem>
         <MetadataListItem label="System">
-          <Text>{request.os}</Text>
+          <span className="text-sm/5">{request.os}</span>
         </MetadataListItem>
         <MetadataListItem label="Asked from">
-          <Text type="code">{request.sourceIp}</Text>
+          <span className="font-mono text-sm/5">{request.sourceIp}</span>
         </MetadataListItem>
         <MetadataListItem label="Host ID">
-          <HStack gap={2} vAlign="center" wrap="wrap">
+          <div className="flex flex-wrap items-center gap-2">
             <Tooltip content={request.hostId}>
               {/* Focusable so keyboard users reach the full id too. */}
               <span tabIndex={0} aria-label={`Host ID ${request.hostId}`}>
-                <Text type="code">{shortHostId(request.hostId)}</Text>
+                <span className="font-mono text-sm/5">{shortHostId(request.hostId)}</span>
               </span>
             </Tooltip>
             <Button
@@ -331,22 +328,22 @@ export function HostLinkConfirm({
                 void navigator.clipboard?.writeText(request.hostId).then(() => setCopied(true), () => undefined);
               }}
             />
-          </HStack>
+          </div>
         </MetadataListItem>
       </MetadataList>
       {expired ? (
         <Banner status="warning" title="This request has expired" description="Run pinomad up on the host again." />
       ) : (
-        <Text type="supporting" hasTabularNumbers>
+        <span className="text-xs/5 text-muted-foreground tabular-nums">
           The host's terminal should show the same name and ID. Expires in {Math.floor(seconds / 60)}:
           {String(seconds % 60).padStart(2, "0")}
-        </Text>
+        </span>
       )}
       {error === undefined ? null : (
         <Banner status="error" title="Couldn't answer the host" description={hostLinkErrorMessage(error, "answer")} />
       )}
-      <HStack gap={2} vAlign="center" hAlign="between" wrap="wrap">
-        <HStack gap={2}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex gap-2">
           <Button
             label="Confirm"
             variant="primary"
@@ -355,12 +352,12 @@ export function HostLinkConfirm({
             onClick={onConfirm}
           />
           <Button label="Deny" variant="secondary" isLoading={busy === "deny"} isDisabled={busy === "confirm"} onClick={onDeny} />
-        </HStack>
+        </div>
         {onBack === undefined ? null : (
           <Button label="Enter another code" variant="ghost" isDisabled={busy !== undefined} onClick={onBack} />
         )}
-      </HStack>
-    </VStack>
+      </div>
+    </div>
   );
 }
 
@@ -375,7 +372,7 @@ export function HostLinkOutcome({
   onDone: () => void;
 }) {
   return (
-    <VStack gap={3} style={{ width: "100%" }}>
+    <div className="flex flex-col gap-3" style={{ width: "100%" }}>
       {outcome === "confirmed" ? (
         <Banner
           status="success"
@@ -385,9 +382,9 @@ export function HostLinkOutcome({
       ) : (
         <Banner status="info" title={`Turned ${name} away`} description="Its terminal will say the join was denied." />
       )}
-      <HStack>
+      <div className="flex">
         <Button label="Done" variant="secondary" onClick={onDone} />
-      </HStack>
-    </VStack>
+      </div>
+    </div>
   );
 }

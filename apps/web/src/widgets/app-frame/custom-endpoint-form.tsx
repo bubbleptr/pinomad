@@ -2,7 +2,6 @@ import { AlertDialog } from "@astryxdesign/core/AlertDialog";
 import { Button } from "@astryxdesign/core/Button";
 import { FieldStatus } from "@astryxdesign/core/FieldStatus";
 import { IconButton } from "@astryxdesign/core/IconButton";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { MultiSelector } from "@astryxdesign/core/MultiSelector";
 import { Selector } from "@astryxdesign/core/Selector";
 import { TextInput } from "@astryxdesign/core/TextInput";
@@ -203,7 +202,7 @@ export function CustomEndpointForm({
 
   return (
     <form onSubmit={(event) => void submit(event)} autoComplete="off">
-      <VStack gap={3}>
+      <div className="flex flex-col gap-3">
         <TextInput
           label="Name"
           value={name}
@@ -295,13 +294,13 @@ export function CustomEndpointForm({
           </div>
           <IconButton label="Add model" icon={<Plus />} isDisabled={!connected || draft.trim() === ""} onClick={addDraft} />
         </div>
-        <HStack gap={2} vAlign="center" wrap="wrap">
+        <div className="flex flex-wrap items-center gap-2">
           {existing === undefined ? null : (
             <Button label="Remove endpoint" variant="secondary" isDisabled={!connected} onClick={() => setConfirmingRemove(true)} />
           )}
           {removeError === undefined ? null : <InlineError message={removeError} />}
           <div style={{ marginInlineStart: "auto" }}>
-            <HStack gap={2} vAlign="center" wrap="wrap">
+            <div className="flex flex-wrap items-center gap-2">
               {saveError === undefined ? null : <InlineError message={saveError} />}
               <Button label="Cancel" variant="secondary" onClick={onCancel} />
               <Button
@@ -311,10 +310,10 @@ export function CustomEndpointForm({
                 isLoading={saving}
                 isDisabled={!connected}
               />
-            </HStack>
+            </div>
           </div>
-        </HStack>
-      </VStack>
+        </div>
+      </div>
       {existing === undefined ? null : (
         <AlertDialog
           isOpen={confirmingRemove}

@@ -1,7 +1,4 @@
 import { Button } from "@astryxdesign/core/Button";
-import { Heading } from "@astryxdesign/core/Heading";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
-import { Text } from "@astryxdesign/core/Text";
 import { useState } from "react";
 import { hostLabels } from "@pinomad/client/stored-host.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
@@ -23,22 +20,22 @@ export function DeviceRejected({ hostKey }: { hostKey: string }) {
   const label = hostLabels(hosts).get(hostKey);
   const viaAccount = accountHostFor(account.state, hostKey) !== undefined;
   return (
-    <VStack gap={6} className="w-full max-w-md">
-      <VStack gap={2}>
-        <Heading level={2}>{`${label ?? "This host"} no longer accepts this device`}</Heading>
-        <Text type="supporting">
+    <div className="flex flex-col gap-6 w-full max-w-md">
+      <div className="flex flex-col gap-2">
+        <h2 className="text-xl/7 font-semibold">{`${label ?? "This host"} no longer accepts this device`}</h2>
+        <span className="text-xs/5 text-muted-foreground">
           This device was unpaired from it, or its pairing was never accepted. Pair again to keep using it.
-        </Text>
-      </VStack>
+        </span>
+      </div>
       <RepairViaAccount hostKey={hostKey} />
-      <VStack gap={2}>
-        <Text weight="semibold">{viaAccount ? "Or pair with a link" : "Pair with a link"}</Text>
-        <Text type="supporting">
+      <div className="flex flex-col gap-2">
+        <span className="text-sm/5 font-semibold">{viaAccount ? "Or pair with a link" : "Pair with a link"}</span>
+        <span className="text-xs/5 text-muted-foreground">
           {`Run pinomad pair on ${label ?? "the host"}, or open Settings → Devices → Pair a device on a device still paired with it.`}
-        </Text>
+        </span>
         <PairingLinkForm connectVariant={viaAccount ? "secondary" : "primary"} />
-      </VStack>
-      <HStack gap={2} hAlign="between" vAlign="center">
+      </div>
+      <div className="flex items-center justify-between gap-2">
         {account.state.status === "signed-out" ? (
           <Button label="Sign in to pair through your account" variant="ghost" size="sm" onClick={() => setAccountOpen(true)} />
         ) : (
@@ -50,8 +47,8 @@ export function DeviceRejected({ hostKey }: { hostKey: string }) {
           size="sm"
           onClick={() => void forget(hostKey)}
         />
-      </HStack>
+      </div>
       {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}
-    </VStack>
+    </div>
   );
 }

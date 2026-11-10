@@ -1,9 +1,6 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { Divider } from "@astryxdesign/core/Divider";
-import { Heading } from "@astryxdesign/core/Heading";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
-import { Text } from "@astryxdesign/core/Text";
+import { Separator } from "../../shared/ui/separator.tsx";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useEffect, useState } from "react";
 import { isSecureServerOrigin, type AccountError, type AccountResult, type AuthMethods } from "@pinomad/client/account.ts";
@@ -90,13 +87,13 @@ export function SignInScreen({
   };
   const heading = { "sign-in": "Sign in", create: "Create an account", reset: "Reset your password" }[step];
   return (
-    <VStack gap={3} style={{ width: "100%" }}>
-      <VStack gap={1}>
-        <Heading level={3}>{heading}</Heading>
+    <div className="flex flex-col gap-3" style={{ width: "100%" }}>
+      <div className="flex flex-col gap-1">
+        <h3 className="text-[1.0625rem]/6 font-bold">{heading}</h3>
         {step === "sign-in" ? (
-          <Text type="supporting">See the hosts on your account and connect without a QR code.</Text>
+          <span className="text-xs/5 text-muted-foreground">See the hosts on your account and connect without a QR code.</span>
         ) : null}
-      </VStack>
+      </div>
       {notice === undefined ? null : <Banner status={notice.status} title={notice.title} description={notice.description} />}
       {server === undefined ? null : (
         <TextInput
@@ -143,7 +140,7 @@ export function SignInScreen({
           onBack={() => go("sign-in")}
         />
       )}
-    </VStack>
+    </div>
   );
 }
 
@@ -186,9 +183,9 @@ function SignInStep({
     void account.providerSignIn({ provider, ...target }).then(settle);
   };
   return (
-    <VStack gap={3}>
+    <div className="flex flex-col gap-3">
       {providers.length === 0 ? null : (
-        <VStack gap={2}>
+        <div className="flex flex-col gap-2">
           {providers.map((provider) => (
             <Button
               key={provider.id}
@@ -201,8 +198,12 @@ function SignInStep({
               onClick={() => withProvider(provider.id)}
             />
           ))}
-          <Divider label="or" />
-        </VStack>
+          <div className="flex items-center w-full text-xs/5 text-muted-foreground">
+            <Separator className="flex-1" />
+            <span className="shrink-0 px-3">or</span>
+            <Separator className="flex-1" />
+          </div>
+        </div>
       )}
       <TextInput label="Email" value={email} onChange={onEmail} onEnter={submit} width="100%" {...{ autoComplete: "username" }} />
       <TextInput
@@ -216,14 +217,14 @@ function SignInStep({
       />
       <Button label="Sign in" variant="primary" width="100%" isLoading={busy === "password"} isDisabled={!ready} onClick={submit} />
       {methods?.email !== true ? null : (
-        <HStack gap={2} hAlign="between">
+        <div className="flex justify-between gap-2">
           <Button label="Forgot password?" variant="ghost" size="sm" onClick={() => onStep("reset")} />
           {methods.registration ? (
             <Button label="Create an account" variant="ghost" size="sm" onClick={() => onStep("create")} />
           ) : null}
-        </HStack>
+        </div>
       )}
-    </VStack>
+    </div>
   );
 }
 
@@ -294,7 +295,7 @@ function CodeFlow({
     );
   if (sentTo === undefined) {
     return (
-      <VStack gap={3}>
+      <div className="flex flex-col gap-3">
         <TextInput
           label="Email"
           type="email"
@@ -306,15 +307,15 @@ function CodeFlow({
         />
         {errorBanner}
         <Button label="Send code" variant="primary" width="100%" isLoading={busy} isDisabled={email.trim() === ""} onClick={() => sendCode(email.trim())} />
-        <HStack>
+        <div className="flex">
           <Button label="Sign in instead" variant="ghost" size="sm" onClick={onBack} />
-        </HStack>
-      </VStack>
+        </div>
+      </div>
     );
   }
   return (
-    <VStack gap={3}>
-      <Text>Enter the 6-digit code we sent to {sentTo}.</Text>
+    <div className="flex flex-col gap-3">
+      <span className="text-sm/5">Enter the 6-digit code we sent to {sentTo}.</span>
       <TextInput label="Code" value={code} onChange={setCode} onEnter={submit} width="100%" {...CODE_INPUT} />
       <TextInput
         label="New password"
@@ -334,7 +335,7 @@ function CodeFlow({
         isDisabled={code.trim() === "" || password === ""}
         onClick={submit}
       />
-      <HStack gap={2} hAlign="between">
+      <div className="flex justify-between gap-2">
         <Button
           label={wait > 0 ? `Resend code (${wait}s)` : "Resend code"}
           variant="ghost"
@@ -352,8 +353,8 @@ function CodeFlow({
             setError(undefined);
           }}
         />
-      </HStack>
-    </VStack>
+      </div>
+    </div>
   );
 }
 

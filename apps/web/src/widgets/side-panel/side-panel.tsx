@@ -8,11 +8,10 @@
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog } from "@astryxdesign/core/Dialog";
 import { IconButton } from "@astryxdesign/core/IconButton";
-import { HStack, Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
+import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
-import { Text } from "@astryxdesign/core/Text";
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { findConversation } from "@pinomad/protocol/organization.ts";
@@ -190,7 +189,7 @@ function TasksSurface({
   };
   if (side !== undefined && sideSummary?.kind === "subagent") {
     return (
-      <VStack className="h-full min-h-0" gap={0}>
+      <div className="flex flex-col h-full min-h-0">
         <SurfaceBar start={barStart} end={barEnd}>
           <IconButton icon={<ArrowLeft className="size-4" aria-hidden="true" />} label="Back to tasks" size="sm" variant="ghost" onClick={closeSide} />
           <StatusGlyph status={sideSummary.status} />
@@ -208,7 +207,7 @@ function TasksSurface({
           onOpenInMain={onOpenInMain}
           onLoadEarlier={() => remote.controller.loadEarlier(side.id)}
         />
-      </VStack>
+      </div>
     );
   }
 
@@ -238,15 +237,15 @@ function TasksSurface({
       : undefined,
   ].filter((part) => part !== undefined);
   return (
-    <VStack className="h-full min-h-0" gap={0}>
+    <div className="flex flex-col h-full min-h-0">
       <SurfaceBar start={barStart} end={barEnd}>
         <span className="truncate text-sm text-muted-foreground">{tally.join(" · ")}</span>
       </SurfaceBar>
       <Scrollable>
           {groups.length === 0 && processRows.length === 0 ? (
-            <Text type="supporting" className="p-3 text-muted-foreground">
+            <span className="text-xs/5 text-muted-foreground p-3 text-muted-foreground">
               No tasks yet
-            </Text>
+            </span>
           ) : (
             <>
               {groups.map((group) => (
@@ -256,9 +255,9 @@ function TasksSurface({
                   header={
                     // List renders headers bare — pad to sit on the rows' text edge.
                     <div className="px-3 pt-2">
-                      <Text type="label" weight="semibold">
+                      <span className="text-sm/5 font-semibold">
                         {group.label}
-                      </Text>
+                      </span>
                     </div>
                   }
                 >
@@ -278,7 +277,7 @@ function TasksSurface({
             </>
           )}
       </Scrollable>
-    </VStack>
+    </div>
   );
 }
 
@@ -400,9 +399,9 @@ function ProcessGroup({ processes, onOpen }: { processes: readonly ProcessInfo[]
       density="compact"
       header={
         <div className="px-3 pt-2">
-          <Text type="label" weight="semibold">
+          <span className="text-sm/5 font-semibold">
             Processes
-          </Text>
+          </span>
         </div>
       }
     >
@@ -455,7 +454,7 @@ function ProcessDetail({
     );
   };
   return (
-    <VStack className="h-full min-h-0" gap={0}>
+    <div className="flex flex-col h-full min-h-0">
       <SurfaceBar
         start={barStart}
         end={
@@ -479,9 +478,9 @@ function ProcessDetail({
         <div className="break-all font-mono text-xs">{process.command}</div>
         <div className="mt-1 text-xs text-muted-foreground">{status}</div>
         {error === undefined ? null : (
-          <Text type="supporting" role="alert" className="mt-1">
+          <span role="alert" className="text-xs/5 text-muted-foreground mt-1">
             {error}
-          </Text>
+          </span>
         )}
       </div>
       <div className="min-h-0 flex-1">
@@ -490,15 +489,15 @@ function ProcessDetail({
             <LazyXtermView processes={remote.processes} processId={process.id} onEnded={setEnded} />
           </Suspense>
         ) : (
-          <Text type="supporting" className="block p-3 text-muted-foreground">
+          <span className="text-xs/5 text-muted-foreground block p-3 text-muted-foreground">
             {unavailable}
-          </Text>
+          </span>
         )}
       </div>
       <div className="shrink-0 border-t border-border p-2 text-center text-xs text-muted-foreground">
         Background processes stop when the host restarts.
       </div>
-    </VStack>
+    </div>
   );
 }
 
@@ -545,10 +544,10 @@ function TaskDetail({
           />
         )}
       </div>
-      <HStack gap={2} hAlign="center" className="shrink-0 border-t border-border p-2">
+      <div className="flex justify-center gap-2 p-2 shrink-0 border-t border-border">
         {onStop === undefined ? null : <Button label="Stop" variant="secondary" size="sm" onClick={onStop} />}
         <Button label="Open in main" variant="ghost" size="sm" onClick={() => onOpenInMain(side.id)} />
-      </HStack>
+      </div>
     </div>
   );
 }

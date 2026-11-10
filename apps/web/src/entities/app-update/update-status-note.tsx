@@ -1,32 +1,30 @@
 import { Button } from "@astryxdesign/core/Button";
-import { HStack } from "@astryxdesign/core/Layout";
-import { Text } from "@astryxdesign/core/Text";
 import type { AppUpdate } from "./use-app-update.ts";
 
 /** Live update status, desktop only: under the client-out-of-date banner and in Settings → Updates. */
 export function UpdateStatusNote({ update }: { update: AppUpdate | undefined }) {
-  if (update === undefined) return <Text type="supporting">Checking for updates…</Text>;
+  if (update === undefined) return <span className="text-xs/5 text-muted-foreground">Checking for updates…</span>;
   const { status } = update;
   switch (status.state) {
     case "checking":
-      return <Text type="supporting">Checking for updates…</Text>;
+      return <span className="text-xs/5 text-muted-foreground">Checking for updates…</span>;
     case "available":
     case "downloading": {
       const percent = status.progressPercent === undefined ? "" : ` ${Math.round(status.progressPercent)}%`;
-      return <Text type="supporting" className="tabular-nums">{`Downloading PiNomad ${status.availableVersion ?? ""}…${percent}`}</Text>;
+      return <span className="text-xs/5 text-muted-foreground tabular-nums">{`Downloading PiNomad ${status.availableVersion ?? ""}…${percent}`}</span>;
     }
     case "ready":
       return <Button label="Restart to update" variant="primary" onClick={() => update.install()} />;
     case "error":
       return (
-        <HStack gap={2} vAlign="center">
-          <Text type="supporting">{status.message}</Text>
+        <div className="flex items-center gap-2">
+          <span className="text-xs/5 text-muted-foreground">{status.message}</span>
           <Button label="Retry" variant="secondary" onClick={() => update.check()} />
-        </HStack>
+        </div>
       );
     case "disabled":
-      return <Text type="supporting">{status.reason ?? "Updates are unavailable in this build."}</Text>;
+      return <span className="text-xs/5 text-muted-foreground">{status.reason ?? "Updates are unavailable in this build."}</span>;
     default:
-      return <Text type="supporting">{`PiNomad ${status.currentVersion} is up to date; no newer release found.`}</Text>;
+      return <span className="text-xs/5 text-muted-foreground">{`PiNomad ${status.currentVersion} is up to date; no newer release found.`}</span>;
   }
 }

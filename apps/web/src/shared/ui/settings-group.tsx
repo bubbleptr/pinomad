@@ -1,7 +1,4 @@
 import { Card } from "@astryxdesign/core/Card";
-import { VStack } from "@astryxdesign/core/Layout";
-import { Heading } from "@astryxdesign/core/Heading";
-import { Text } from "@astryxdesign/core/Text";
 import type { ReactNode } from "react";
 
 /**
@@ -19,18 +16,18 @@ export function SettingsGroup({
   children: ReactNode;
 }) {
   return (
-    <VStack gap={2} style={{ width: "100%" }}>
+    <div className="flex flex-col gap-2" style={{ width: "100%" }}>
       {title === undefined ? null : tone === "danger" ? (
-        <Heading level={4} color="inherit" style={{ color: "var(--color-error)" }}>
+        <h4 className="text-sm/5 font-bold" style={{ color: "var(--color-error)" }}>
           {title}
-        </Heading>
+        </h4>
       ) : (
-        <Heading level={4}>{title}</Heading>
+        <h4 className="text-sm/5 font-bold">{title}</h4>
       )}
       <Card padding={0} style={{ overflow: "hidden" }}>
         {children}
       </Card>
-    </VStack>
+    </div>
   );
 }
 
@@ -54,8 +51,8 @@ export function SettingsRow({
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
       <div className="flex min-w-0 flex-[1_1_14rem] flex-col gap-0.5">
-        <Text>{label}</Text>
-        {description === undefined ? null : <Text type="supporting">{description}</Text>}
+        <span className="text-sm/5">{label}</span>
+        {description === undefined ? null : <span className="text-xs/5 text-muted-foreground">{description}</span>}
       </div>
       {/* Never wider than the row, so the controls wrap instead of being clipped. */}
       <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">{children}</div>

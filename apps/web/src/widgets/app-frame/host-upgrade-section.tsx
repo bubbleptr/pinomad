@@ -1,8 +1,6 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
-import { Text } from "@astryxdesign/core/Text";
 import { useState } from "react";
 import { relativeTime } from "@pinomad/client/family.ts";
 import { hostSupportsCall, hostSupportsFeature } from "@pinomad/protocol/frames.ts";
@@ -77,7 +75,7 @@ export function HostUpgradeSection({ view, remote }: { view: DurableView; remote
   const connected = view.connection === "connected";
   const mode = view.settings?.autoUpgrade;
   return (
-    <VStack gap={4}>
+    <div className="flex flex-col gap-4">
       <UpgradeStatus upgrade={upgrade} remote={remote} connected={connected} checksOff={mode === "off"} />
       {mode === undefined || !hostSupportsFeature(minor, "autoUpgrade") ? null : (
         <AutoUpgradeSetting
@@ -86,7 +84,7 @@ export function HostUpgradeSection({ view, remote }: { view: DurableView; remote
           onChange={(next) => void remote.controller.updateSettings({ autoUpgrade: next })}
         />
       )}
-    </VStack>
+    </div>
   );
 }
 
@@ -130,14 +128,14 @@ function UpgradeStatus({
 
   const canStart = connected && blocked === null && phase === "idle" && available !== null;
   return (
-    <VStack gap={3}>
-      <VStack gap={1}>
-        <Text weight="semibold">{running}</Text>
-        <Text type="supporting">{summary}</Text>
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1">
+        <span className="text-sm/5 font-semibold">{running}</span>
+        <span className="text-xs/5 text-muted-foreground">{summary}</span>
         {available !== null && available.crossesMajor && phase === "idle" ? (
-          <Text type="supporting">Apps that haven't updated yet can't connect to this release.</Text>
+          <span className="text-xs/5 text-muted-foreground">Apps that haven't updated yet can't connect to this release.</span>
         ) : null}
-      </VStack>
+      </div>
       {upgrade.checkError === null ? null : (
         <Banner status="warning" title="Couldn't check for releases" description={upgrade.checkError} />
       )}
@@ -161,7 +159,7 @@ function UpgradeStatus({
           onStart={start}
         />
       ) : (
-        <HStack gap={2} wrap="wrap">
+        <div className="flex flex-wrap gap-2">
           {phase === "waiting" ? (
             <Button
               label="Cancel upgrade"
@@ -186,9 +184,9 @@ function UpgradeStatus({
               onClick={() => act("check", () => remote.controller.checkUpgrade())}
             />
           ) : null}
-        </HStack>
+        </div>
       )}
-    </VStack>
+    </div>
   );
 }
 
@@ -208,14 +206,14 @@ function UpgradeConfirm({
 }) {
   const title = `Upgrade the host to pinomad ${version}?`;
   return (
-    <VStack gap={2} role="group" aria-label={title}>
-      <Text weight="semibold">{title}</Text>
-      <Text type="supporting">
+    <div className="flex flex-col gap-2" role="group" aria-label={title}>
+      <span className="text-sm/5 font-semibold">{title}</span>
+      <span className="text-xs/5 text-muted-foreground">
         The host restarts after installing, and every device reconnects. Open terminals close.
         {crossesMajor ? " Apps that haven't updated yet can't connect to this release." : ""}
-      </Text>
-      <Text type="supporting">Upgrading now interrupts running tasks; they continue after the restart.</Text>
-      <HStack gap={2} hAlign="end" wrap="wrap">
+      </span>
+      <span className="text-xs/5 text-muted-foreground">Upgrading now interrupts running tasks; they continue after the restart.</span>
+      <div className="flex flex-wrap justify-end gap-2">
         <Button label="Cancel" variant="secondary" size="sm" isDisabled={pending !== undefined} onClick={onCancel} />
         <Button
           label="Upgrade now"
@@ -233,8 +231,8 @@ function UpgradeConfirm({
           isLoading={pending === "idle"}
           onClick={() => onStart("idle")}
         />
-      </HStack>
-    </VStack>
+      </div>
+    </div>
   );
 }
 
@@ -248,10 +246,10 @@ function AutoUpgradeSetting({
   onChange: (mode: AutoUpgradeMode) => void;
 }) {
   return (
-    <VStack gap={1}>
-      <Text>Automatic upgrades</Text>
+    <div className="flex flex-col gap-1">
+      <span className="text-sm/5">Automatic upgrades</span>
       {/* In an HStack the control hugs its items; a VStack would stretch it across the page. */}
-      <HStack>
+      <div className="flex">
         <SegmentedControl
           className="shrink-0"
           value={mode}
@@ -264,8 +262,8 @@ function AutoUpgradeSetting({
           <SegmentedControlItem value="notify" label="Notify" />
           <SegmentedControlItem value="auto" label="When idle" />
         </SegmentedControl>
-      </HStack>
-      <Text type="supporting">{AUTO_DESCRIPTIONS[mode]}</Text>
-    </VStack>
+      </div>
+      <span className="text-xs/5 text-muted-foreground">{AUTO_DESCRIPTIONS[mode]}</span>
+    </div>
   );
 }

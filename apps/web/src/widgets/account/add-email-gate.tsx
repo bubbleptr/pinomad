@@ -1,7 +1,4 @@
 import { Button } from "@astryxdesign/core/Button";
-import { Heading } from "@astryxdesign/core/Heading";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
-import { Text } from "@astryxdesign/core/Text";
 import type { ReactNode } from "react";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import type { AccountModel } from "../../entities/account/account-model.ts";
@@ -25,15 +22,15 @@ export function AddEmailGate({ children }: { children: ReactNode }) {
 
 export function AddEmailCard({ account }: { account: AccountModel }) {
   return (
-    <VStack gap={4} style={{ width: "100%", maxWidth: 420 }}>
-      <VStack gap={1}>
-        <Heading level={3}>Add an email to your account</Heading>
-        <Text type="supporting">You'll sign in with it from now on, and sign-in codes go there.</Text>
-      </VStack>
+    <div className="flex flex-col gap-4" style={{ width: "100%", maxWidth: 420 }}>
+      <div className="flex flex-col gap-1">
+        <h3 className="text-[1.0625rem]/6 font-bold">Add an email to your account</h3>
+        <span className="text-xs/5 text-muted-foreground">You'll sign in with it from now on, and sign-in codes go there.</span>
+      </div>
       <EmailForm account={account} submitLabel="Save" onSaved={() => {}} />
-      <HStack>
+      <div className="flex">
         <Button label="Sign out" variant="secondary" onClick={() => void account.logout()} />
-      </HStack>
-    </VStack>
+      </div>
+    </div>
   );
 }

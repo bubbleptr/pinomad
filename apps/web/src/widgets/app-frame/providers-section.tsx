@@ -1,12 +1,9 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
-import { Heading } from "@astryxdesign/core/Heading";
 import { IconButton } from "@astryxdesign/core/IconButton";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
-import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Token } from "@astryxdesign/core/Token";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -79,16 +76,16 @@ export function ProvidersSection({ view, remote }: { view: DurableView; remote: 
     return <Banner status="warning" title="This host is too old for logins" description="Run `pinomad upgrade` on the host." />;
   }
   // A 5.21 host sends the providers snapshot right after connecting.
-  if (hostSupportsCall(view.host?.protocol.minor ?? 0, "beginLogin")) return <Text as="p" type="supporting">Loading…</Text>;
+  if (hostSupportsCall(view.host?.protocol.minor ?? 0, "beginLogin")) return <p className="text-xs/5 text-muted-foreground">Loading…</p>;
   return (
-    <VStack gap={3}>
+    <div className="flex flex-col gap-3">
       <Banner status="warning" title="Run `pinomad upgrade` on the host to add providers here" />
       {view.auth.logins.length === 0 ? (
-        <Text as="p" type="supporting">No stored logins.</Text>
+        <p className="text-xs/5 text-muted-foreground">No stored logins.</p>
       ) : (
         view.auth.logins.map((login) => <StoredLoginCard key={login.providerId} login={login} connected={connected} remote={remote} />)
       )}
-    </VStack>
+    </div>
   );
 }
 
@@ -172,13 +169,13 @@ function ProviderPages({ providers, remote, connected }: { providers: HostProvid
 
 function SubPage({ title, onBack, children }: { title: string; onBack: () => void; children: ReactNode }) {
   return (
-    <VStack gap={4}>
-      <HStack gap={2} vAlign="center">
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-2">
         <IconButton label="Back" icon={<ArrowLeft />} variant="ghost" size="sm" onClick={onBack} />
-        <Heading level={3}>{title}</Heading>
-      </HStack>
+        <h3 className="text-[1.0625rem]/6 font-bold">{title}</h3>
+      </div>
       {children}
-    </VStack>
+    </div>
   );
 }
 
@@ -191,14 +188,14 @@ function Home({ providers, connected, go }: { providers: readonly ProviderInfo[]
     .filter((provider) => provider !== undefined);
   const keyLogos = featured.length > 0 ? featured : keyed.slice(0, 5);
   return (
-    <VStack gap={6}>
+    <div className="flex flex-col gap-6">
       {linked.length > 0 ? (
         <List
           density="compact"
           header={
-            <Text type="supporting" weight="semibold">
+            <span className="text-xs/5 font-semibold text-muted-foreground">
               Connected
-            </Text>
+            </span>
           }
         >
             {linked.map((provider) => (
@@ -215,10 +212,10 @@ function Home({ providers, connected, go }: { providers: readonly ProviderInfo[]
           ))}
         </List>
       ) : null}
-      <VStack gap={2}>
-        <Text type="supporting" weight="semibold">
+      <div className="flex flex-col gap-2">
+        <span className="text-xs/5 font-semibold text-muted-foreground">
           {linked.length > 0 ? "Add another" : "Connect a model provider"}
-        </Text>
+        </span>
         <div className="providers-paths">
           <PathCard
             title="Subscription"
@@ -252,8 +249,8 @@ function Home({ providers, connected, go }: { providers: readonly ProviderInfo[]
             onClick={() => go({ at: "custom" })}
           />
         </div>
-      </VStack>
-    </VStack>
+      </div>
+    </div>
   );
 }
 
@@ -326,9 +323,9 @@ function SubscriptionPage({
   const ordered = [...withOAuth.filter((provider) => provider.oauth!.subscription), ...withOAuth.filter((provider) => !provider.oauth!.subscription)];
   return (
     <SubPage title="Sign in with an account" onBack={onBack}>
-      <Text as="p" type="supporting">
+      <p className="text-xs/5 text-muted-foreground">
         Use a plan you already pay for. Requests count against the plan instead of per-token billing.
-      </Text>
+      </p>
       <div className="providers-tiles">
         {ordered.map((provider) => (
           <Tile
@@ -372,9 +369,9 @@ function KeyPage({
         width="100%"
       />
       {shown.length === 0 ? (
-        <Text as="p" type="supporting">
+        <p className="text-xs/5 text-muted-foreground">
           {`No provider matches “${query.trim()}”. If it speaks an OpenAI- or Anthropic-compatible API, add it as a custom endpoint.`}
-        </Text>
+        </p>
       ) : (
         <div className="providers-tiles">
           {shown.map((provider) => (
@@ -416,19 +413,19 @@ function ProviderPage({
   // Back from a login started on this page returns to the provider, not the list.
   const leaveLogin = method === undefined ? () => setLogin(undefined) : onBack;
   return (
-    <VStack gap={5}>
-      <HStack gap={3} vAlign="center">
+    <div className="flex flex-col gap-5">
+      <div className="flex items-center gap-3">
         <IconButton label="Back" icon={<ArrowLeft />} variant="ghost" size="sm" onClick={onBack} />
         <ProviderLogo providerId={provider.id} name={provider.name} size={40} />
-        <VStack gap={0} style={{ minInlineSize: 0 }}>
-          <Heading level={3}>{provider.name}</Heading>
-          <Text type="supporting">{login === undefined ? credentialLine(provider) : methodLabel(provider, login)}</Text>
-        </VStack>
-      </HStack>
+        <div className="flex flex-col" style={{ minInlineSize: 0 }}>
+          <h3 className="text-[1.0625rem]/6 font-bold">{provider.name}</h3>
+          <span className="text-xs/5 text-muted-foreground">{login === undefined ? credentialLine(provider) : methodLabel(provider, login)}</span>
+        </div>
+      </div>
       {login === undefined ? (
         <Connection provider={provider} remote={remote} connected={connected} onLogin={setLogin} onRemoved={onHome} />
       ) : (
-        <VStack gap={4}>
+        <div className="flex flex-col gap-4">
           <ReplaceNote provider={provider} method={login} />
           <LoginPanel
             key={login}
@@ -437,14 +434,14 @@ function ProviderPage({
             logins={providers.logins}
             remote={remote}
             connected={connected}
-            intro={login === "oauth" ? <Text as="p">{oauthIntro(provider.oauth)}</Text> : undefined}
+            intro={login === "oauth" ? <p className="text-sm/5">{oauthIntro(provider.oauth)}</p> : undefined}
             signIn={provider.oauth?.loginLabel ?? (provider.oauth === undefined ? undefined : `Sign in with ${planOf(provider.oauth)}`)}
             onDone={onHome}
             onCancel={leaveLogin}
           />
-        </VStack>
+        </div>
       )}
-    </VStack>
+    </div>
   );
 }
 
@@ -461,16 +458,16 @@ function ReplaceNote({ provider, method }: { provider: ProviderInfo; method: Log
   if (stored === undefined) {
     if (provider.ambient === undefined) return null;
     return (
-      <Text as="p" type="supporting">
+      <p className="text-xs/5 text-muted-foreground">
         {`${provider.ambient} is set in the host's environment. A credential saved here takes precedence over it.`}
-      </Text>
+      </p>
     );
   }
   const what = stored.kind === "api_key" ? "the stored API key" : "the stored sign-in";
   return (
-    <Text as="p" type="supporting">
+    <p className="text-xs/5 text-muted-foreground">
       {stored.kind === method ? `Replaces ${what}.` : `Replaces ${what}; a provider keeps one credential.`}
-    </Text>
+    </p>
   );
 }
 
@@ -495,32 +492,32 @@ function Connection({
 
   if (stored === undefined) {
     return (
-      <VStack gap={3}>
-        <Text as="p" type="supporting">
+      <div className="flex flex-col gap-3">
+        <p className="text-xs/5 text-muted-foreground">
           {`Set as ${provider.ambient ?? "an environment variable"} where the host runs. Remove it there, or save a credential here to override it.`}
-        </Text>
-        <HStack gap={2} wrap="wrap">
+        </p>
+        <div className="flex flex-wrap gap-2">
           {provider.apiKey === undefined ? null : (
             <Button label="Save a key here" size="sm" isDisabled={!connected} onClick={() => onLogin("api_key")} />
           )}
           {oauth === undefined ? null : (
             <Button label={useOAuthLabel(oauth)} variant="secondary" size="sm" isDisabled={!connected} onClick={() => onLogin("oauth")} />
           )}
-        </HStack>
-      </VStack>
+        </div>
+      </div>
     );
   }
 
   const isKey = stored.kind === "api_key";
   if (confirming) {
     return (
-      <VStack gap={2}>
-        <Text as="p" type="supporting">
+      <div className="flex flex-col gap-2">
+        <p className="text-xs/5 text-muted-foreground">
           {isKey
             ? `Removes the key from this host. Conversations using ${provider.name} models stop until you add another.`
             : `Signs this host out of ${provider.name}. Conversations using its models stop until you sign in again.`}
-        </Text>
-        <HStack gap={2} vAlign="center" wrap="wrap">
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             label={isKey ? "Remove key" : "Log out"}
             variant="destructive"
@@ -534,24 +531,24 @@ function Connection({
           />
           <Button label="Cancel" variant="secondary" size="sm" onClick={() => setConfirming(false)} />
           {error === undefined ? null : <InlineError message={error} />}
-        </HStack>
-      </VStack>
+        </div>
+      </div>
     );
   }
 
   const other: LoginMethod = isKey ? "oauth" : "api_key";
   const hasOther = other === "oauth" ? oauth !== undefined : provider.apiKey !== undefined;
   return (
-    <VStack gap={3}>
+    <div className="flex flex-col gap-3">
       {provider.ambient === undefined ? null : (
-        <Text as="p" type="supporting">
+        <p className="text-xs/5 text-muted-foreground">
           {`${provider.ambient} is also set where the host runs; the stored credential takes precedence.`}
-        </Text>
+        </p>
       )}
-      <HStack gap={2} wrap="wrap">
+      <div className="flex flex-wrap gap-2">
         <Button label={isKey ? "Replace key" : "Sign in again"} size="sm" isDisabled={!connected} onClick={() => onLogin(stored.kind)} />
         <Button label={isKey ? "Remove key" : "Log out"} variant="secondary" size="sm" isDisabled={!connected} onClick={() => setConfirming(true)} />
-      </HStack>
+      </div>
       {hasOther ? (
         <div>
           <Button
@@ -563,7 +560,7 @@ function Connection({
           />
         </div>
       ) : null}
-    </VStack>
+    </div>
   );
 }
 
@@ -575,12 +572,12 @@ function StoredLoginCard({ login, connected, remote }: { login: StoredLogin; con
   const [confirming, setConfirming] = useState(false);
   return (
     <Card padding={4}>
-      <HStack gap={3} vAlign="start">
+      <div className="flex items-start gap-3">
         <ProviderLogo providerId={login.providerId} name={login.name} />
-        <VStack gap={1} style={{ flex: 1, minInlineSize: 0 }}>
-          <Heading level={3}>{login.name}</Heading>
-          <Text as="p" type="supporting">{storedLoginLine(login)}</Text>
-        </VStack>
+        <div className="flex flex-col gap-1" style={{ flex: 1, minInlineSize: 0 }}>
+          <h3 className="text-[1.0625rem]/6 font-bold">{login.name}</h3>
+          <p className="text-xs/5 text-muted-foreground">{storedLoginLine(login)}</p>
+        </div>
         {confirming ? null : (
           <MoreMenu
             icon={<MoreHorizontal aria-hidden="true" />}
@@ -591,11 +588,11 @@ function StoredLoginCard({ login, connected, remote }: { login: StoredLogin; con
             items={[{ label: "Log out", onClick: () => setConfirming(true) }]}
           />
         )}
-      </HStack>
+      </div>
       {confirming ? (
-        <VStack gap={2} style={{ marginBlockStart: "var(--spacing-4)" }}>
-          <Text as="p" type="supporting">{`Removes the stored ${login.name} credential from the host.`}</Text>
-          <HStack gap={2} vAlign="center">
+        <div className="flex flex-col gap-2" style={{ marginBlockStart: "var(--spacing-4)" }}>
+          <p className="text-xs/5 text-muted-foreground">{`Removes the stored ${login.name} credential from the host.`}</p>
+          <div className="flex items-center gap-2">
             <Button
               label="Log out"
               variant="destructive"
@@ -604,8 +601,8 @@ function StoredLoginCard({ login, connected, remote }: { login: StoredLogin; con
               onClick={() => void remote.controller.logout(login.providerId)}
             />
             <Button label="Cancel" variant="secondary" size="sm" onClick={() => setConfirming(false)} />
-          </HStack>
-        </VStack>
+          </div>
+        </div>
       ) : null}
     </Card>
   );

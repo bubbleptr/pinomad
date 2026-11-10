@@ -1,6 +1,4 @@
 import { Button } from "@astryxdesign/core/Button";
-import { VStack } from "@astryxdesign/core/Layout";
-import { Text } from "@astryxdesign/core/Text";
 import { UpdateStatusNote } from "../../entities/app-update/update-status-note.tsx";
 import { useAppUpdate } from "../../entities/app-update/use-app-update.ts";
 
@@ -13,8 +11,8 @@ export function UpdatesSection() {
   const update = useAppUpdate();
   if (update === undefined) return null;
   return (
-    <VStack gap={3}>
-      <Text>{`PiNomad ${update.status.currentVersion}`}</Text>
+    <div className="flex flex-col gap-3">
+      <span className="text-sm/5">{`PiNomad ${update.status.currentVersion}`}</span>
       {update.status.state === "idle" ? (
         <div>
           <Button label="Check for updates" variant="secondary" onClick={() => update.check()} />
@@ -22,6 +20,6 @@ export function UpdatesSection() {
       ) : (
         <UpdateStatusNote update={update} />
       )}
-    </VStack>
+    </div>
   );
 }

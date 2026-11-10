@@ -1,6 +1,5 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { VStack } from "@astryxdesign/core/Layout";
 import { useEffect, useState } from "react";
 import type { AccountError } from "@pinomad/client/account.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
@@ -31,7 +30,7 @@ export function RepairViaAccount({ hostKey }: { hostKey: string }) {
     });
   };
   return (
-    <VStack gap={2} hAlign="start">
+    <div className="flex flex-col items-start gap-2">
       <Button
         label="Pair again with your account"
         variant="primary"
@@ -40,7 +39,7 @@ export function RepairViaAccount({ hostKey }: { hostKey: string }) {
         onClick={pair}
       />
       {error === undefined ? null : <Banner status="error" title="Couldn't pair" description={accountErrorMessage(error)} />}
-    </VStack>
+    </div>
   );
 }
 

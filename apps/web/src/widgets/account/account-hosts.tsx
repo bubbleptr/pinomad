@@ -1,7 +1,6 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Item } from "@astryxdesign/core/Item";
-import { HStack } from "@astryxdesign/core/Layout";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { useState } from "react";
@@ -165,7 +164,7 @@ export function AccountHostList({
                 descriptionLines={2}
                 description={pairable ? presence : `${presence} · ${UNPAIRABLE[host.pairing as keyof typeof UNPAIRABLE]}`}
                 endContent={
-                  <HStack gap={1} vAlign="center">
+                  <div className="flex items-center gap-1">
                     {pairable ? (
                       <Button
                         label="Pair"
@@ -182,7 +181,7 @@ export function AccountHostList({
                       isDisabled={removing !== undefined || pairing.pairing === host.hostId}
                       items={[{ label: "Remove from account", onClick: () => setRemoving(host) }]}
                     />
-                  </HStack>
+                  </div>
                 }
               />
             </li>

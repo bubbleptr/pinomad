@@ -2,8 +2,7 @@ import { useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Collapsible } from "@astryxdesign/core/Collapsible";
-import { HStack, VStack } from "@astryxdesign/core/Stack";
-import { Text } from "@astryxdesign/core/Text";
+import { cn } from "cn";
 import { classifyProviderFailure } from "@pinomad/client/provider-failure.ts";
 
 function describeFailure(error: string) {
@@ -42,8 +41,8 @@ type ChatRunFailureOwnProps = {
 };
 
 export type ChatRunFailureProps = Omit<
-  ComponentProps<typeof VStack>,
-  keyof ChatRunFailureOwnProps | "children" | "gap"
+  ComponentProps<"div">,
+  keyof ChatRunFailureOwnProps | "children"
 > &
   ChatRunFailureOwnProps;
 
@@ -76,9 +75,9 @@ export function ChatRunFailure({
   };
 
   return (
-    <VStack className={className} gap={2} {...rest}>
+    <div className={cn("flex flex-col gap-2", className)} {...rest}>
       <Banner status="error" title={summary.title} description={summary.description} />
-      <HStack gap={2} wrap="wrap">
+      <div className="flex flex-wrap gap-2">
         {onOpenProviderSettings ? (
           <Button label="Provider settings" size="sm" variant="secondary" onClick={onOpenProviderSettings} />
         ) : null}
@@ -86,21 +85,21 @@ export function ChatRunFailure({
         {onRetry ? (
           <Button label="Retry request" size="sm" variant="secondary" isDisabled={retrying} onClick={() => void retry()} />
         ) : null}
-      </HStack>
+      </div>
       {retryError ? (
-        <Text role="alert" style={{ color: "var(--destructive)" }}>{retryError}</Text>
+        <span className="text-sm/5" role="alert" style={{ color: "var(--destructive)" }}>{retryError}</span>
       ) : null}
       <Collapsible
-        trigger={<Text type="body" size="sm" color="secondary">Error details</Text>}
+        trigger={<span className="text-xs leading-[1.4286] font-normal text-muted-foreground">Error details</span>}
         isOpen={detailsOpen}
         onOpenChange={setDetailsOpen}
       >
         {detailsOpen ? (
-          <Text as="div" type="body" size="sm" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+          <div className="text-xs leading-[1.4286]" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
             {error}
-          </Text>
+          </div>
         ) : null}
       </Collapsible>
-    </VStack>
+    </div>
   );
 }

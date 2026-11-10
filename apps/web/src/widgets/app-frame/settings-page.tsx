@@ -1,16 +1,13 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Card } from "@astryxdesign/core/Card";
-import { Heading } from "@astryxdesign/core/Heading";
 import { IconButton } from "@astryxdesign/core/IconButton";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
-import { Link } from "@astryxdesign/core/Link";
+import { Link } from "../../shared/ui/link.tsx";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
 import { Selector } from "@astryxdesign/core/Selector";
 import { SideNav, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
-import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { Token } from "@astryxdesign/core/Token";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -210,10 +207,10 @@ export function useSettingsScreen({
       onChange={setPickedKey}
     />
   ) : (
-    <HStack gap={2} vAlign="center">
+    <div className="flex items-center gap-2">
       <HostStatusDot connected={connected} />
-      <Text type="supporting">{hostName}</Text>
-    </HStack>
+      <span className="text-xs/5 text-muted-foreground">{hostName}</span>
+    </div>
   );
 
   const searchField = (
@@ -232,12 +229,12 @@ export function useSettingsScreen({
       }}
     />
   );
-  const noMatch = groups.length === 0 ? <Text type="supporting">No settings match</Text> : null;
+  const noMatch = groups.length === 0 ? <span className="text-xs/5 text-muted-foreground">No settings match</span> : null;
 
   const page = (
     <SettingsSubpageContext.Provider value={subpageHost}>
       {/* Outside the keyed page: switching hosts remounts the page, not the picker that switched. */}
-      <VStack gap={2}>
+      <div className="flex flex-col gap-2">
         {hostLine}
         <SectionPage
           // Host-scoped pages carry form and navigation state, so a
@@ -257,7 +254,7 @@ export function useSettingsScreen({
           showSupporting={subpage === undefined}
           onSection={setSection}
         />
-      </VStack>
+      </div>
     </SettingsSubpageContext.Provider>
   );
 
@@ -272,7 +269,7 @@ export function useSettingsScreen({
           // drag strip and the way back sits below it, over the search.
           {...(safeLeft === undefined ? {} : { header: <div className="pinomad-drag h-6" /> })}
           topContent={
-            <VStack gap={2}>
+            <div className="flex flex-col gap-2">
               <span ref={closeSlot} className="contents">
                 <Button
                   label="Settings"
@@ -285,10 +282,10 @@ export function useSettingsScreen({
                 />
               </span>
               {searchField}
-            </VStack>
+            </div>
           }
         >
-          <VStack gap={3}>
+          <div className="flex flex-col gap-3">
             {noMatch}
             {groups.map((group) => (
               <SideNavSection key={group.title} title={group.title}>
@@ -303,7 +300,7 @@ export function useSettingsScreen({
                 ))}
               </SideNavSection>
             ))}
-          </VStack>
+          </div>
         </SideNav>
       ),
       content: (
@@ -315,14 +312,14 @@ export function useSettingsScreen({
   }
 
   const sectionList = (
-    <VStack gap={4}>
+    <div className="flex flex-col gap-4">
       {searchField}
       {noMatch}
       {groups.map((group) => (
-        <VStack key={group.title} gap={1}>
-          <Text type="supporting" weight="semibold">
+        <div className="flex flex-col gap-1" key={group.title}>
+          <span className="text-xs/5 font-semibold text-muted-foreground">
             {group.title}
-          </Text>
+          </span>
           <List density="compact" aria-label={group.title}>
             {group.sections.map((entry) => (
               <ListItem
@@ -336,9 +333,9 @@ export function useSettingsScreen({
               />
             ))}
           </List>
-        </VStack>
+        </div>
       ))}
-    </VStack>
+    </div>
   );
 
   // Narrow: the header carries the page's title and the way back.
@@ -447,17 +444,15 @@ function SectionPage({
     : sectionBody(view, remote, device, hostKey, connected, onReconnect, section, { hasUpdater, hasLocalHost });
   const headingId = `settings-${section}-heading`;
   return (
-    <VStack
-      as="section"
+    <section className="flex flex-col gap-6"
       {...(showTitle ? { "aria-labelledby": headingId } : { "aria-label": title })}
-      gap={6}
     >
-      <VStack gap={1}>
-        {showTitle ? <Heading level={2} id={headingId}>{title}</Heading> : null}
+      <div className="flex flex-col gap-1">
+        {showTitle ? <h2 className="text-xl/7 font-semibold" id={headingId}>{title}</h2> : null}
         {showSupporting ? supporting : null}
-      </VStack>
+      </div>
       {body}
-    </VStack>
+    </section>
   );
 }
 
@@ -474,7 +469,7 @@ function sectionBody(
   if (section === "hosts") {
     return {
       title: "Hosts",
-      supporting: <Text as="p" type="supporting">The machines this device can use. It stays connected to every one paired here.</Text>,
+      supporting: <p className="text-xs/5 text-muted-foreground">The machines this device can use. It stays connected to every one paired here.</p>,
       body: (
         <HostsSection
           {...(hasLocalHost
@@ -496,7 +491,7 @@ function sectionBody(
     return {
       title: "General",
       body: (
-        <VStack gap={6}>
+        <div className="flex flex-col gap-6">
           <AppearanceSection />
           {hasUpdater ? (
             <SettingsGroup title="Updates">
@@ -505,7 +500,7 @@ function sectionBody(
               </div>
             </SettingsGroup>
           ) : null}
-        </VStack>
+        </div>
       ),
     };
   }
@@ -513,62 +508,62 @@ function sectionBody(
     // The picked machine has no settings streams until it connects.
     return {
       title: sectionTitle(section),
-      body: <Text as="p" type="supporting">This host isn't connected. Its settings appear once it is.</Text>,
+      body: <p className="text-xs/5 text-muted-foreground">This host isn't connected. Its settings appear once it is.</p>,
     };
   }
   switch (section) {
     case "devices":
       return {
         title: "Devices",
-        supporting: <Text as="p" type="supporting">Paired devices can reach this host over the secure channel.</Text>,
+        supporting: <p className="text-xs/5 text-muted-foreground">Paired devices can reach this host over the secure channel.</p>,
         body: <DevicesSection view={view} remote={remote} self={device} {...(hostKey === undefined ? {} : { hostKey })} />,
       };
     case "providers":
       return {
         title: "Providers",
         supporting: (
-          <Text as="p" type="supporting">
+          <p className="text-xs/5 text-muted-foreground">
             The subscriptions and API keys this host reaches models with, shared by every paired device.
-          </Text>
+          </p>
         ),
         body: <ProvidersSection view={view} remote={remote} />,
       };
     case "models":
       return {
         title: "Models",
-        supporting: <Text as="p" type="supporting">Used when a new conversation doesn't pick its own model.</Text>,
+        supporting: <p className="text-xs/5 text-muted-foreground">Used when a new conversation doesn't pick its own model.</p>,
         body: <ModelsSection view={view} remote={remote} connected={connected} />,
       };
     case "agents":
       return {
         title: "Agents",
         supporting: (
-          <Text as="p" type="supporting">
+          <p className="text-xs/5 text-muted-foreground">
             Named agents the model can delegate to with <code>subagent</code> — mention one with <code>@name</code>.
-          </Text>
+          </p>
         ),
         body: (
-          <VStack gap={6}>
+          <div className="flex flex-col gap-6">
             <AgentsSection view={view} remote={remote} connected={connected} />
             <McpSection view={view} />
-          </VStack>
+          </div>
         ),
       };
     case "chats":
       return {
         title: "Chats",
         body: (
-          <VStack gap={6}>
+          <div className="flex flex-col gap-6">
             <ChatsSection view={view} remote={remote} connected={connected} />
             <ArchivedSection view={view} remote={remote} connected={connected} />
-          </VStack>
+          </div>
         ),
       };
     case "about":
       return {
         title: "About",
         body: (
-          <VStack gap={6}>
+          <div className="flex flex-col gap-6">
             <HostNameGroup view={view} remote={remote} connected={connected} />
             <section aria-label="Version">
               <SettingsGroup title="Version">
@@ -578,7 +573,7 @@ function sectionBody(
               </SettingsGroup>
             </section>
             <AboutDetails view={view} />
-          </VStack>
+          </div>
         ),
       };
   }
@@ -691,13 +686,13 @@ function ArchivedSection({ view, remote, connected }: { view: DurableView; remot
   const now = useNow(60_000);
   const archived = view.organized.archived;
   return (
-    <VStack as="section" aria-label="Archived" gap={2}>
-      <Heading level={4}>Archived</Heading>
-      <Text as="p" type="supporting">
+    <section className="flex flex-col gap-2" aria-label="Archived">
+      <h4 className="text-sm/5 font-bold">Archived</h4>
+      <p className="text-xs/5 text-muted-foreground">
         Hidden from the sidebar. Restoring one brings back its forks and subagents.
-      </Text>
+      </p>
       {archived.length === 0 ? (
-        <Text as="p" type="supporting">No archived conversations.</Text>
+        <p className="text-xs/5 text-muted-foreground">No archived conversations.</p>
       ) : (
         <SettingsGroup>
           <List hasDividers>
@@ -729,19 +724,19 @@ function ArchivedSection({ view, remote, connected }: { view: DurableView; remot
           </List>
         </SettingsGroup>
       )}
-    </VStack>
+    </section>
   );
 }
 
 function McpSection({ view }: { view: DurableView }) {
   const mcp = view.mcp;
   return (
-    <VStack as="section" aria-label="MCP servers" gap={2}>
-      <Heading level={4}>MCP servers</Heading>
+    <section className="flex flex-col gap-2" aria-label="MCP servers">
+      <h4 className="text-sm/5 font-bold">MCP servers</h4>
       {mcp === null ? (
-        <Text as="p" type="supporting">Loading…</Text>
+        <p className="text-xs/5 text-muted-foreground">Loading…</p>
       ) : mcp.servers.length === 0 ? (
-        <Text as="p" type="supporting">No servers configured.</Text>
+        <p className="text-xs/5 text-muted-foreground">No servers configured.</p>
       ) : (
         <SettingsGroup>
           <List hasDividers>
@@ -751,7 +746,7 @@ function McpSection({ view }: { view: DurableView }) {
           </List>
         </SettingsGroup>
       )}
-    </VStack>
+    </section>
   );
 }
 
@@ -783,7 +778,7 @@ function AboutDetails({ view }: { view: DurableView }) {
           description={
             // `?home` keeps the site on its home page instead of forwarding
             // a marked browser back to the app.
-            <Link href="https://pinomad.si/?home" isExternalLink>
+            <Link href="https://pinomad.si/?home" external className="text-sm/5">
               pinomad.si
             </Link>
           }
@@ -806,7 +801,7 @@ function HostNameField({ settings, remote, connected }: { settings: HostSettings
   const canSave = connected && cleaned !== "" && cleaned !== current;
   const save = (): void => void remote.controller.updateSettings({ hostName: cleaned });
   return (
-    <VStack gap={1}>
+    <div className="flex flex-col gap-1">
       <TextInput
         label="Host name"
         value={draft}
@@ -821,7 +816,7 @@ function HostNameField({ settings, remote, connected }: { settings: HostSettings
         }
         width="100%"
       />
-      <HStack gap={2} hAlign="end">
+      <div className="flex justify-end gap-2">
         {settings.custom.includes("hostName") ? (
           <Button
             label="Use machine name"
@@ -832,8 +827,8 @@ function HostNameField({ settings, remote, connected }: { settings: HostSettings
           />
         ) : null}
         <Button label="Save" variant="secondary" size="sm" isDisabled={!canSave} onClick={save} />
-      </HStack>
-    </VStack>
+      </div>
+    </div>
   );
 }
 
@@ -891,8 +886,8 @@ function AgentsSection({ view, remote, connected }: { view: DurableView; remote:
     );
   }
   return (
-    <VStack gap={3}>
-      <HStack gap={2} vAlign="center">
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2">
         <Button
           label="New agent"
           variant="secondary"
@@ -900,9 +895,9 @@ function AgentsSection({ view, remote, connected }: { view: DurableView; remote:
           isDisabled={!connected}
           onClick={() => setEditor({ mode: "create" })}
         />
-      </HStack>
+      </div>
       {agents.roles.length === 0 && agents.problems.length === 0 ? (
-        <Text as="p" type="supporting">No named agents yet.</Text>
+        <p className="text-xs/5 text-muted-foreground">No named agents yet.</p>
       ) : null}
       {agents.roles.map((role) => (
         <AgentRoleCard
@@ -926,7 +921,7 @@ function AgentsSection({ view, remote, connected }: { view: DurableView; remote:
           onClose={() => setEditor(undefined)}
         />
       )}
-    </VStack>
+    </div>
   );
 }
 
@@ -959,12 +954,12 @@ function AgentRoleCard({
   };
   return (
     <Card padding={4}>
-      <HStack gap={3} vAlign="start">
-        <VStack gap={1} style={{ flex: 1, minInlineSize: 0 }}>
-          <Heading level={3}>{role.name}</Heading>
-          <Text as="p" type="supporting">{role.description}</Text>
+      <div className="flex items-start gap-3">
+        <div className="flex flex-col gap-1" style={{ flex: 1, minInlineSize: 0 }}>
+          <h3 className="text-[1.0625rem]/6 font-bold">{role.name}</h3>
+          <p className="text-xs/5 text-muted-foreground">{role.description}</p>
           {role.model === undefined && role.thinkingLevel === undefined ? null : (
-            <HStack gap={1} wrap="wrap">
+            <div className="flex flex-wrap gap-1">
               {role.model === undefined ? null : (
                 <Token label={modelSummary?.name ?? role.model} size="sm" />
               )}
@@ -974,11 +969,11 @@ function AgentRoleCard({
               {role.model !== undefined && modelSummary === undefined ? (
                 <Token label="Model not available" color="orange" size="sm" />
               ) : null}
-            </HStack>
+            </div>
           )}
-        </VStack>
+        </div>
         {confirming ? null : (
-          <HStack gap={1} vAlign="center">
+          <div className="flex items-center gap-1">
             <MoreMenu
               icon={<MoreHorizontal aria-hidden="true" />}
               label={`${role.name} actions`}
@@ -990,22 +985,22 @@ function AgentRoleCard({
                 { label: "Delete", onClick: () => setConfirming(true) },
               ]}
             />
-          </HStack>
+          </div>
         )}
-      </HStack>
+      </div>
       {confirming ? (
-        <VStack gap={2} style={{ marginBlockStart: "var(--spacing-4)" }}>
-          <Text as="p" type="supporting">Conversations already using this agent keep their copy.</Text>
-          <HStack gap={2} vAlign="center">
+        <div className="flex flex-col gap-2" style={{ marginBlockStart: "var(--spacing-4)" }}>
+          <p className="text-xs/5 text-muted-foreground">Conversations already using this agent keep their copy.</p>
+          <div className="flex items-center gap-2">
             <Button label="Delete" variant="destructive" size="sm" isDisabled={!connected} onClick={remove} />
             <Button label="Cancel" variant="secondary" size="sm" onClick={() => setConfirming(false)} />
-          </HStack>
-        </VStack>
+          </div>
+        </div>
       ) : null}
       {error === undefined ? null : (
-        <Text type="supporting" role="alert" style={{ color: "var(--destructive)" }}>
+        <span className="text-xs/5 text-muted-foreground" role="alert" style={{ color: "var(--destructive)" }}>
           {error}
-        </Text>
+        </span>
       )}
     </Card>
   );
@@ -1034,17 +1029,17 @@ function AgentProblemCard({
   };
   return (
     <Card padding={4}>
-      <HStack gap={3} vAlign="start">
-        <VStack gap={1} style={{ flex: 1, minInlineSize: 0 }}>
-          <Heading level={3}>{problem.file}</Heading>
-          <HStack gap={1} wrap="wrap">
+      <div className="flex items-start gap-3">
+        <div className="flex flex-col gap-1" style={{ flex: 1, minInlineSize: 0 }}>
+          <h3 className="text-[1.0625rem]/6 font-bold">{problem.file}</h3>
+          <div className="flex flex-wrap gap-1">
             <Token label="Not loaded" color="orange" size="sm" />
-          </HStack>
-          <Text as="p" type="supporting">{problem.reason}</Text>
-          <Text as="p" type="supporting">Fix this file on the host.</Text>
-        </VStack>
+          </div>
+          <p className="text-xs/5 text-muted-foreground">{problem.reason}</p>
+          <p className="text-xs/5 text-muted-foreground">Fix this file on the host.</p>
+        </div>
         {confirming || !deletable ? null : (
-          <HStack gap={1} vAlign="center">
+          <div className="flex items-center gap-1">
             <MoreMenu
               icon={<MoreHorizontal aria-hidden="true" />}
               label={`${problem.file} actions`}
@@ -1053,21 +1048,21 @@ function AgentProblemCard({
               isDisabled={!connected}
               items={[{ label: "Delete", onClick: () => setConfirming(true) }]}
             />
-          </HStack>
+          </div>
         )}
-      </HStack>
+      </div>
       {confirming ? (
-        <VStack gap={2} style={{ marginBlockStart: "var(--spacing-4)" }}>
-          <HStack gap={2} vAlign="center">
+        <div className="flex flex-col gap-2" style={{ marginBlockStart: "var(--spacing-4)" }}>
+          <div className="flex items-center gap-2">
             <Button label="Delete" variant="destructive" size="sm" isDisabled={!connected} onClick={remove} />
             <Button label="Cancel" variant="secondary" size="sm" onClick={() => setConfirming(false)} />
-          </HStack>
-        </VStack>
+          </div>
+        </div>
       ) : null}
       {error === undefined ? null : (
-        <Text type="supporting" role="alert" style={{ color: "var(--destructive)" }}>
+        <span className="text-xs/5 text-muted-foreground" role="alert" style={{ color: "var(--destructive)" }}>
           {error}
-        </Text>
+        </span>
       )}
     </Card>
   );
