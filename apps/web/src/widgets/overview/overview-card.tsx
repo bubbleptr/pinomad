@@ -10,14 +10,14 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import { classify } from "@pinomad/protocol/presentation.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
-import { agentOf, usageRows } from "@pinomad/client/chat.ts";
+import { agentOf } from "@pinomad/client/chat.ts";
 import { contextUsage } from "@pinomad/client/context-usage.ts";
 import { rootOf, taskGroupsOf } from "@pinomad/client/family.ts";
 import { conversationName } from "../../entities/conversation/subagent.ts";
 import { summaryOf } from "@pinomad/client/model.ts";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ContextBreakdownList, matchingBreakdown } from "../../entities/conversation/context-breakdown.tsx";
-import { ContextBar, ContextFigures, formatCost } from "../../entities/conversation/context-meter.tsx";
+import { ContextBar, ContextFigures } from "../../entities/conversation/context-meter.tsx";
 import { branchOf, ChangeFigure, changeStatOf, type ChangeStat } from "../../entities/conversation/change-stat.tsx";
 import { taskTally } from "../../entities/conversation/task-tally.ts";
 import { DocumentView } from "../../presentation/documents.tsx";
@@ -237,21 +237,19 @@ function ChangesRow({ stat, onOpen }: { stat: ChangeStat; onOpen: () => void }) 
   );
 }
 
-/** How full the context window is, against the shown model, and what the conversation has spent. */
+/** How full the context window is, against the shown model. */
 function UsageSection({ view, conversation }: { view: DurableView; conversation: NonNullable<DurableView["conversation"]> }) {
   const model = summaryOf(view.models, agentOf(conversation).model);
   const usage = contextUsage(conversation, model?.contextWindow);
   const breakdown = matchingBreakdown(view.docs, usage);
-  const spent = usageRows(conversation).reduce((sum, row) => sum + row.cost, 0);
   const percent = usage === undefined ? "—" : `${Math.round((usage.used / usage.window) * 100)}%`;
   return (
-    <Section section="usage" title="Usage" summary={spent > 0 ? `${percent} · ${formatCost(spent)}` : percent}>
-      <Row end={<ContextFigures usage={usage} />}>Context</Row>
+    <Section section="usage" title="Context" summary={percent}>
+      <Row end={<ContextFigures usage={usage} />}>Used</Row>
       <div className="pb-1.5">
         <ContextBar usage={usage} breakdown={breakdown} />
       </div>
       {usage === undefined ? null : <ContextBreakdownList usage={usage} breakdown={breakdown} />}
-      {spent > 0 ? <Row end={<span className="text-muted-foreground">{formatCost(spent)}</span>}>Spent</Row> : null}
     </Section>
   );
 }
@@ -354,7 +352,7 @@ function SourcesSection({ view }: { view: DurableView }) {
 /**
  * Extension documents the transcript does not already show: the todo list
  * has its card under the run, questions sit above the composer, and the
- * context breakdown belongs to the Usage section, so only other kinds —
+ * context breakdown belongs to the Context section, so only other kinds —
  * including a malformed todo, inspected through the fallback — land here.
  */
 function DocumentsSection({ view, remote }: { view: DurableView; remote: RemoteDurable }) {

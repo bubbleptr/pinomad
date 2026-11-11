@@ -11,9 +11,6 @@ export const formatTokens = (tokens: number): string =>
       ? `${Math.round(tokens / 1000)}k`
       : `${Math.round(tokens)}`;
 
-/** Spend to the cent; a fraction of a cent still reads as spent. */
-export const formatCost = (cost: number): string => (cost < 0.01 ? "<$0.01" : `$${cost.toFixed(2)}`);
-
 const percentOf = (usage: ContextUsage): number => Math.round((usage.used / usage.window) * 100);
 const isWarning = (usage: ContextUsage | undefined): boolean => usage !== undefined && percentOf(usage) >= WARNING_PERCENT;
 

@@ -171,7 +171,7 @@ describe("OverviewCard context breakdown", () => {
     expect(screen.queryByText("context.breakdown")).toBeNull();
   });
 
-  it("keeps the meter alone when the breakdown is from another reply", () => {
+  it("hides the parts when the breakdown is from another reply", () => {
     withBreakdown(-1_000);
     expect(screen.queryByText("Tools")).toBeNull();
     expect(screen.getByRole("meter")).toBeVisible();

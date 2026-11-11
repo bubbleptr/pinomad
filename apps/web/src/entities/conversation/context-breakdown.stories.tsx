@@ -5,7 +5,7 @@ const meta = {
   title: "Entities/Conversation/ContextBreakdownList",
   component: ContextBreakdownList,
   decorators: [
-    // The Usage section's width inside the overview card.
+    // The Context section's width inside the overview card.
     (Story) => (
       <div className="w-72">
         <Story />
