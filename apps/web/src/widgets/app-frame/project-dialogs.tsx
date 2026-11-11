@@ -1,4 +1,4 @@
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
 import { Spinner } from "@astryxdesign/core/Spinner";
@@ -256,7 +256,7 @@ export function AddProjectDialog({
                 ) : (
                   <div className="flex flex-col items-center gap-2">
                     <span className="text-xs/5 text-muted-foreground">{start.message}</span>
-                    <Button label="Try again" variant="secondary" onClick={begin} />
+                    <Button variant="secondary" onClick={begin}>Try again</Button>
                   </div>
                 )}
               </div>
@@ -332,13 +332,14 @@ export function AddProjectDialog({
                 )}
               </div>
               <div className="flex justify-end gap-2">
-                <Button label="Cancel" variant="secondary" onClick={onClose} />
+                <Button variant="secondary" onClick={onClose}>Cancel</Button>
                 <Button
-                  label={adding ? "Adding…" : "Add project"}
                   variant="primary"
-                  isDisabled={!connected || selected === undefined || adding}
+                  disabled={!connected || selected === undefined || adding}
                   onClick={add}
-                />
+                >
+                  {adding ? "Adding…" : "Add project"}
+                </Button>
               </div>
             </div>
           </LayoutFooter>
@@ -388,7 +389,7 @@ function FolderColumn({
       ) : listing.status === "error" ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 px-2 text-center">
           <span className="text-xs/5 text-muted-foreground">{listing.message}</span>
-          <Button label="Try again" size="sm" variant="secondary" isDisabled={disabled} onClick={onRetry} />
+          <Button size="sm" variant="secondary" disabled={disabled} onClick={onRetry}>Try again</Button>
         </div>
       ) : listing.folders.length === 0 ? (
         <div className="flex flex-1 items-center justify-center">
@@ -456,8 +457,8 @@ export function RemoveProjectDialog({
         footer={
           <LayoutFooter>
             <div className="flex justify-end gap-2">
-              <Button label="Cancel" variant="secondary" onClick={onClose} />
-              <Button label="Remove project" variant="primary" isDisabled={!connected} onClick={remove} />
+              <Button variant="secondary" onClick={onClose}>Cancel</Button>
+              <Button variant="primary" disabled={!connected} onClick={remove}>Remove project</Button>
             </div>
           </LayoutFooter>
         }

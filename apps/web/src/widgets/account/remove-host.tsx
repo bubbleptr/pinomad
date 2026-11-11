@@ -1,5 +1,5 @@
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { useState } from "react";
@@ -53,8 +53,8 @@ export function RemoveHost({ account, hostId, name, serverOrigin, onClose }: Rem
         <Banner status="error" title="Couldn't remove the host" description={accountErrorMessage(error)} />
       )}
       <div className="flex gap-2">
-        <Button label="Remove host" variant="destructive" isLoading={busy} isDisabled={!identity.ready} onClick={submit} />
-        <Button label="Cancel" variant="secondary" onClick={() => onClose(false)} />
+        <Button variant="destructive" loading={busy} disabled={!identity.ready} onClick={submit}>Remove host</Button>
+        <Button variant="secondary" onClick={() => onClose(false)}>Cancel</Button>
       </div>
     </div>
   );

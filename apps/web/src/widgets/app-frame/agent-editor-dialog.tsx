@@ -1,12 +1,13 @@
 // The named-agent editor (ADR-0023 §2): one dialog for create and edit over the
 // agents stream — the row appears only once the host pushes the change, never
 // from local state.
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
-import { Selector } from "@astryxdesign/core/Selector";
-import { TextArea } from "@astryxdesign/core/TextArea";
-import { TextInput } from "@astryxdesign/core/TextInput";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../shared/ui/select.tsx";
+import { Field, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
+import { Input } from "../../shared/ui/input.tsx";
+import { Textarea } from "../../shared/ui/textarea.tsx";
 import { useState } from "react";
 import type { ModelRef } from "@earendil-works/pi-durable";
 import { agentRoleProblem, type AgentRole } from "@pinomad/protocol/agents.ts";
@@ -126,31 +127,71 @@ export function AgentEditorDialog({
           <LayoutContent>
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-1">
-                <TextInput
-                  label="Name"
-                  value={name}
-                  onChange={setName}
-                  isDisabled={saving || editing}
-                  hasAutoFocus={!editing}
-                  description={editing ? "The name is the file name and can't be changed." : undefined}
-                />
+                <Field disabled={saving || editing}>
+                  <FieldLabel>Name</FieldLabel>
+                  <FieldDescription>{editing ? "The name is the file name and can't be changed." : undefined}</FieldDescription>
+                  <Input
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    autoFocus={!editing}
+                    data-autofocus={!editing || undefined}
+                  />
+                </Field>
               </div>
-              <TextInput label="Description" value={description} onChange={setDescription} isDisabled={saving} />
-              <Selector
-                label="Model"
-                value={model}
-                options={modelOptions}
-                onChange={changeModel}
-                isDisabled={saving}
-              />
-              <Selector
-                label="Thinking level"
-                value={level}
-                options={levelOptions}
-                onChange={(next) => setLevel(next as ThinkingLevel | typeof UNPINNED)}
-                isDisabled={saving}
-              />
-              <TextArea label="Prompt" value={prompt} onChange={setPrompt} isDisabled={saving} rows={4} />
+              <Field disabled={saving}>
+                <FieldLabel>Description</FieldLabel>
+                <Input
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                />
+              </Field>
+              <Field disabled={saving}>
+                <FieldLabel>Model</FieldLabel>
+                <Select
+                  items={modelOptions}
+                  value={model}
+                  onValueChange={(next: string | null) => {
+                    if (next !== null) changeModel(next);
+                  }}
+                >
+                  {/* UNPINNED is "", which Base UI styles as a placeholder; here it is a real choice. */}
+                  <SelectTrigger className="w-full data-placeholder:text-foreground">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {modelOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field disabled={saving}>
+                <FieldLabel>Thinking level</FieldLabel>
+                <Select
+                  items={levelOptions}
+                  value={level}
+                  onValueChange={(next: string | null) => {
+                    if (next !== null) setLevel(next as ThinkingLevel | typeof UNPINNED);
+                  }}
+                >
+                  <SelectTrigger className="w-full data-placeholder:text-foreground">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {levelOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field disabled={saving}>
+                <FieldLabel>Prompt</FieldLabel>
+                <Textarea
+                  value={prompt}
+                  onChange={(event) => setPrompt(event.target.value)}
+                  rows={4}
+                />
+              </Field>
               {error === undefined ? null : (
                 <span className="text-xs/5 text-muted-foreground" role="alert" style={{ color: "var(--destructive)" }}>
                   {error}
@@ -162,13 +203,14 @@ export function AgentEditorDialog({
         footer={
           <LayoutFooter>
             <div className="flex justify-end gap-2">
-              <Button label="Cancel" variant="secondary" onClick={onClose} />
+              <Button variant="secondary" onClick={onClose}>Cancel</Button>
               <Button
-                label="Save"
                 variant="primary"
-                isDisabled={!connected || saving}
+                disabled={!connected || saving}
                 onClick={save}
-              />
+              >
+                Save
+              </Button>
             </div>
           </LayoutFooter>
         }

@@ -1,4 +1,4 @@
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
 
@@ -72,7 +72,7 @@ export function ConversationUnavailable({
     <EmptyState
       title="Couldn't open this conversation"
       description={connected ? "The host didn't send it." : "The connection dropped before it arrived."}
-      actions={<Button label="Try again" variant="secondary" onClick={onRetry} isDisabled={!connected} />}
+      actions={<Button variant="secondary" onClick={onRetry} disabled={!connected}>Try again</Button>}
     />
   );
 }

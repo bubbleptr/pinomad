@@ -1,4 +1,4 @@
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { Spinner } from "@astryxdesign/core/Spinner";
@@ -79,7 +79,7 @@ function HostLinkSteps({
         <div className="flex flex-col gap-3">
           <span className="text-sm/5">Confirm a host on the server it's joining: open the address its terminal printed.</span>
           <div className="flex">
-            <Button label="Close" variant="secondary" onClick={onClose} />
+            <Button variant="secondary" onClick={onClose}>Close</Button>
           </div>
         </div>
       );

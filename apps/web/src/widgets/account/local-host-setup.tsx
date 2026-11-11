@@ -1,5 +1,5 @@
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { CodeBlock } from "@astryxdesign/core/CodeBlock";
 import { Spinner } from "@astryxdesign/core/Spinner";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
@@ -51,7 +51,7 @@ export function LocalHostSetup({
         <Progress label="Starting the host…" />
       ) : (
         <div className="flex">
-          <Button label="Set up this Mac" variant="secondary" onClick={run} />
+          <Button variant="secondary" onClick={run}>Set up this Mac</Button>
         </div>
       );
     case "installing":
@@ -60,7 +60,7 @@ export function LocalHostSetup({
           <Progress label="Installing PiNomad…" />
           <InstallLog lines={phase.lines} />
           <div className="flex">
-            <Button label="Cancel" variant="secondary" size="sm" onClick={cancel} />
+            <Button variant="secondary" size="sm" onClick={cancel}>Cancel</Button>
           </div>
         </div>
       );
@@ -73,7 +73,7 @@ export function LocalHostSetup({
             status="error"
             title={phase.step === "install" ? "Couldn't install PiNomad" : "Couldn't add this Mac to your account"}
             description={phase.message}
-            endContent={<Button label="Try again" variant="secondary" onClick={run} />}
+            endContent={<Button variant="secondary" onClick={run}>Try again</Button>}
           />
           <InstallLog lines={phase.lines} />
           <div className="flex flex-col gap-2">

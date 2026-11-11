@@ -77,6 +77,11 @@ export const UpdateReady: Story = {
 /** Without an account, the user chip shows the device's own name. */
 export const NoAccount: Story = { decorators: [withAccount({ status: "unavailable" })] };
 
+/** A long account email is cut off with an ellipsis instead of overflowing the sidebar. */
+export const LongAccountEmail: Story = {
+  decorators: [withAccount(signedIn({ user: "first.middle.lastname.with.a.long.alias@example-company.example" }))],
+};
+
 /** A machine that dropped keeps its last list, greyed and read-only. */
 export const OfflineMachine: Story = {
   args: { machines: fakeMachines({ devbox: devboxView({ connection: "reconnecting" }) }) },

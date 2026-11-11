@@ -1,4 +1,4 @@
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../button.tsx";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { ChatInlinePager } from "./chat-inline-pager.tsx";
@@ -32,7 +32,7 @@ export const FlipOnClick: Story = {
         <ChatInlinePager {...args} pageKey={page.key}>
           {page.key === "settled" ? page.label : <TextShimmer>{page.label}</TextShimmer>}
         </ChatInlinePager>
-        <Button label="Next page" size="sm" variant="secondary" onClick={() => setIndex((each) => each + 1)} />
+        <Button size="sm" variant="secondary" onClick={() => setIndex((each) => each + 1)}>Next page</Button>
       </div>
     );
   },

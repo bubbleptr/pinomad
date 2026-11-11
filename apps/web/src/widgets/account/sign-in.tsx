@@ -1,7 +1,8 @@
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { Separator } from "../../shared/ui/separator.tsx";
-import { TextInput } from "@astryxdesign/core/TextInput";
+import { Field, FieldLabel } from "../../shared/ui/field.tsx";
+import { Input } from "../../shared/ui/input.tsx";
 import { useEffect, useState } from "react";
 import { isSecureServerOrigin, type AccountError, type AccountResult, type AuthMethods } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
@@ -96,14 +97,15 @@ export function SignInScreen({
       </div>
       {notice === undefined ? null : <Banner status={notice.status} title={notice.title} description={notice.description} />}
       {server === undefined ? null : (
-        <TextInput
-          label="Server"
-          placeholder="https://nomad.example.com"
-          value={server.origin}
-          onChange={server.setOrigin}
-          width="100%"
-          {...{ autoComplete: "url" }}
-        />
+        <Field>
+          <FieldLabel>Server</FieldLabel>
+          <Input
+            placeholder="https://nomad.example.com"
+            value={server.origin}
+            onChange={(event) => server.setOrigin(event.target.value)}
+            {...{ autoComplete: "url" }}
+          />
+        </Field>
       )}
       {step === "sign-in" ? (
         <SignInStep
@@ -189,14 +191,15 @@ function SignInStep({
           {providers.map((provider) => (
             <Button
               key={provider.id}
-              label={`Continue with ${provider.name}`}
               variant="secondary"
-              width="100%"
-              icon={<SignInProviderMark provider={provider.id} />}
-              isLoading={busy === provider.id}
-              isDisabled={busy !== undefined && busy !== provider.id}
+              className="w-full"
+              loading={busy === provider.id}
+              disabled={busy !== undefined && busy !== provider.id}
               onClick={() => withProvider(provider.id)}
-            />
+            >
+              <SignInProviderMark provider={provider.id} />
+              {`Continue with ${provider.name}`}
+            </Button>
           ))}
           <div className="flex items-center w-full text-xs/5 text-muted-foreground">
             <Separator className="flex-1" />
@@ -205,22 +208,35 @@ function SignInStep({
           </div>
         </div>
       )}
-      <TextInput label="Email" value={email} onChange={onEmail} onEnter={submit} width="100%" {...{ autoComplete: "username" }} />
-      <TextInput
-        label="Password"
-        type="password"
-        value={password}
-        onChange={setPassword}
-        onEnter={submit}
-        width="100%"
-        {...{ autoComplete: "current-password" }}
-      />
-      <Button label="Sign in" variant="primary" width="100%" isLoading={busy === "password"} isDisabled={!ready} onClick={submit} />
+      <Field>
+        <FieldLabel>Email</FieldLabel>
+        <Input
+          value={email}
+          onChange={(event) => onEmail(event.target.value)}
+          {...{ autoComplete: "username" }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") submit();
+          }}
+        />
+      </Field>
+      <Field>
+        <FieldLabel>Password</FieldLabel>
+        <Input
+          type="password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          {...{ autoComplete: "current-password" }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") submit();
+          }}
+        />
+      </Field>
+      <Button variant="primary" className="w-full" loading={busy === "password"} disabled={!ready} onClick={submit}>Sign in</Button>
       {methods?.email !== true ? null : (
         <div className="flex justify-between gap-2">
-          <Button label="Forgot password?" variant="ghost" size="sm" onClick={() => onStep("reset")} />
+          <Button variant="ghost" size="sm" onClick={() => onStep("reset")}>Forgot password?</Button>
           {methods.registration ? (
-            <Button label="Create an account" variant="ghost" size="sm" onClick={() => onStep("create")} />
+            <Button variant="ghost" size="sm" onClick={() => onStep("create")}>Create an account</Button>
           ) : null}
         </div>
       )}
@@ -296,19 +312,22 @@ function CodeFlow({
   if (sentTo === undefined) {
     return (
       <div className="flex flex-col gap-3">
-        <TextInput
-          label="Email"
-          type="email"
-          value={email}
-          onChange={onEmail}
-          onEnter={() => sendCode(email.trim())}
-          width="100%"
-          {...{ autoComplete: "email" }}
-        />
+        <Field>
+          <FieldLabel>Email</FieldLabel>
+          <Input
+            type="email"
+            value={email}
+            onChange={(event) => onEmail(event.target.value)}
+            {...{ autoComplete: "email" }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") sendCode(email.trim());
+            }}
+          />
+        </Field>
         {errorBanner}
-        <Button label="Send code" variant="primary" width="100%" isLoading={busy} isDisabled={email.trim() === ""} onClick={() => sendCode(email.trim())} />
+        <Button variant="primary" className="w-full" loading={busy} disabled={email.trim() === ""} onClick={() => sendCode(email.trim())}>Send code</Button>
         <div className="flex">
-          <Button label="Sign in instead" variant="ghost" size="sm" onClick={onBack} />
+          <Button variant="ghost" size="sm" onClick={onBack}>Sign in instead</Button>
         </div>
       </div>
     );
@@ -316,35 +335,49 @@ function CodeFlow({
   return (
     <div className="flex flex-col gap-3">
       <span className="text-sm/5">Enter the 6-digit code we sent to {sentTo}.</span>
-      <TextInput label="Code" value={code} onChange={setCode} onEnter={submit} width="100%" {...CODE_INPUT} />
-      <TextInput
-        label="New password"
-        type="password"
-        value={password}
-        onChange={setPassword}
-        onEnter={submit}
-        width="100%"
-        {...NEW_PASSWORD_INPUT}
-      />
+      <Field>
+        <FieldLabel>Code</FieldLabel>
+        <Input
+          value={code}
+          onChange={(event) => setCode(event.target.value)}
+          {...CODE_INPUT}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") submit();
+          }}
+        />
+      </Field>
+      <Field>
+        <FieldLabel>New password</FieldLabel>
+        <Input
+          type="password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          {...NEW_PASSWORD_INPUT}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") submit();
+          }}
+        />
+      </Field>
       {errorBanner}
       <Button
-        label={kind === "create" ? "Create account" : "Reset password"}
         variant="primary"
-        width="100%"
-        isLoading={busy}
-        isDisabled={code.trim() === "" || password === ""}
+        className="w-full"
+        loading={busy}
+        disabled={code.trim() === "" || password === ""}
         onClick={submit}
-      />
+      >
+        {kind === "create" ? "Create account" : "Reset password"}
+      </Button>
       <div className="flex justify-between gap-2">
         <Button
-          label={wait > 0 ? `Resend code (${wait}s)` : "Resend code"}
           variant="ghost"
           size="sm"
-          isDisabled={wait > 0 || busy}
+          disabled={wait > 0 || busy}
           onClick={() => sendCode(sentTo)}
-        />
+        >
+          {wait > 0 ? `Resend code (${wait}s)` : "Resend code"}
+        </Button>
         <Button
-          label="Use a different email"
           variant="ghost"
           size="sm"
           onClick={() => {
@@ -352,7 +385,9 @@ function CodeFlow({
             setCode("");
             setError(undefined);
           }}
-        />
+        >
+          Use a different email
+        </Button>
       </div>
     </div>
   );

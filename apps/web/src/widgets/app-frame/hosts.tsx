@@ -1,12 +1,12 @@
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { Collapsible } from "@astryxdesign/core/Collapsible";
 import { DropdownMenu, DropdownMenuItem } from "@astryxdesign/core/DropdownMenu";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { IconButton } from "@astryxdesign/core/IconButton";
+import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { Item } from "@astryxdesign/core/Item";
 import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
-import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
+import { SegmentedControl, SegmentedControlItem } from "../../shared/ui/segmented-control.tsx";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { useToast } from "@astryxdesign/core/Toast";
 import { Token } from "@astryxdesign/core/Token";
@@ -334,7 +334,7 @@ export function HostsSection({
     <div className="flex flex-col gap-4">
       {thisMac}
       <div className="flex justify-end">
-        <Button label="Add a host" variant="secondary" size="sm" onClick={() => setAdding(true)} />
+        <Button variant="secondary" size="sm" onClick={() => setAdding(true)}>Add a host</Button>
       </div>
       {accountState === undefined ? null : <AccountPairingBanners state={accountState} pairing={pairing} />}
       {paired.hosts.length === 0 ? (
@@ -396,15 +396,16 @@ function PairedHostRow({
   const action =
     issue !== undefined ? (
       <Button
-        label="Pair again"
         variant="secondary"
         size="sm"
-        isLoading={pairing.pairing === hostId}
-        isDisabled={issue.match.host.pairing !== "available" || pairing.pairing !== undefined}
+        loading={pairing.pairing === hostId}
+        disabled={issue.match.host.pairing !== "available" || pairing.pairing !== undefined}
         onClick={() => pairing.pair(issue.match.host.hostId)}
-      />
+      >
+        Pair again
+      </Button>
     ) : onSwitch !== undefined ? (
-      <Button label="Switch" aria-label={`Switch to ${label}`} variant="secondary" size="sm" onClick={onSwitch} />
+      <Button aria-label={`Switch to ${label}`} variant="secondary" size="sm" onClick={onSwitch}>Switch</Button>
     ) : isCurrent ? (
       <Token label="Current" size="sm" />
     ) : null;
@@ -516,13 +517,12 @@ function HostDetail({
           <SegmentedControl
             className="shrink-0"
             value={mode}
-            onChange={(next) => changeMode(next as ConnectionMode)}
-            label="Connection mode"
-            size="sm"
+            onValueChange={(next) => changeMode(next as ConnectionMode)}
+            aria-label="Connection mode"
           >
-            <SegmentedControlItem value="auto" label="Auto" />
-            <SegmentedControlItem value="directOnly" label="Direct only" />
-            <SegmentedControlItem value="relayOnly" label="Relay only" />
+            <SegmentedControlItem value="auto">Auto</SegmentedControlItem>
+            <SegmentedControlItem value="directOnly">Direct only</SegmentedControlItem>
+            <SegmentedControlItem value="relayOnly">Relay only</SegmentedControlItem>
           </SegmentedControl>
         </div>
         <span className="text-xs/5 text-muted-foreground">{MODE_HELP[mode]}</span>
@@ -585,9 +585,9 @@ function HostDetail({
         <HostRouteList host={host} routes={hostRoutes(host, { pageProtocol: window.location.protocol })} />
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button label="Unpair" variant="secondary" size="sm" onClick={() => setUnpairing(true)} />
+        <Button variant="secondary" size="sm" onClick={() => setUnpairing(true)}>Unpair</Button>
         {accountMatch === undefined ? null : (
-          <Button label="Remove from account" variant="secondary" size="sm" onClick={() => setRemoving(true)} />
+          <Button variant="secondary" size="sm" onClick={() => setRemoving(true)}>Remove from account</Button>
         )}
       </div>
       {unpairing ? (
@@ -650,8 +650,8 @@ function UnpairHostDialog({
         footer={
           <LayoutFooter>
             <div className="flex justify-end gap-2">
-              <Button label="Cancel" variant="secondary" onClick={() => onClose(false)} />
-              <Button label="Unpair" variant="destructive" onClick={unpair} />
+              <Button variant="secondary" onClick={() => onClose(false)}>Cancel</Button>
+              <Button variant="destructive" onClick={unpair}>Unpair</Button>
             </div>
           </LayoutFooter>
         }
@@ -684,7 +684,7 @@ export function HostsFallback({ canSwitch = false }: { canSwitch?: boolean }) {
       <HostsSection canSwitch={canSwitch} />
       {account.state.status === "unavailable" ? null : (
         <div>
-          <Button label="Account" variant="secondary" size="sm" onClick={() => setAccountOpen(true)} />
+          <Button variant="secondary" size="sm" onClick={() => setAccountOpen(true)}>Account</Button>
         </div>
       )}
       {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}

@@ -1,11 +1,12 @@
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "./shared/ui/button.tsx";
 import { ChatLayout } from "@astryxdesign/core/Chat";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { useMediaQuery } from "@astryxdesign/core/hooks";
 import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
-import { TextInput } from "@astryxdesign/core/TextInput";
+import { Field, FieldLabel } from "./shared/ui/field.tsx";
+import { Input } from "./shared/ui/input.tsx";
 import { ToastViewport, useToast } from "@astryxdesign/core/Toast";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import {
@@ -543,8 +544,8 @@ function PairConfirm({
           {address.url}
         </span>
         <div className="flex gap-2">
-          <Button label="Cancel" variant="secondary" onClick={cancel} />
-          <Button label="Pair" variant="primary" onClick={() => setConfirmed(true)} />
+          <Button variant="secondary" onClick={cancel}>Cancel</Button>
+          <Button variant="primary" onClick={() => setConfirmed(true)}>Pair</Button>
         </div>
       </div>
     </Centered>
@@ -676,13 +677,14 @@ export function SecureClient({
         </div>
         {hosts.length === 0 ? null : (
           <Button
-            label="Use saved pairing"
             variant="secondary"
             onClick={() => {
               history.replaceState(null, "", window.location.pathname + window.location.search);
               window.location.reload();
             }}
-          />
+          >
+            Use saved pairing
+          </Button>
         )}
       </div>
     ) : (
@@ -697,7 +699,6 @@ export function SecureClient({
         description="It will be lost when the app restarts."
         endContent={
           <Button
-            label="Retry"
             variant="secondary"
             onClick={() => {
               void paired(unsaved).then(
@@ -708,7 +709,9 @@ export function SecureClient({
                 (error: unknown) => console.error("Could not save the paired host", error),
               );
             }}
-          />
+          >
+            Retry
+          </Button>
         }
       />
     );
@@ -802,7 +805,7 @@ export function RemoteWorkbench({
                 Change this host's connection mode under Hosts below, then retry.
               </span>
             )}
-            <Button label="Retry" variant="secondary" onClick={() => setAttempt(attempt + 1)} />
+            <Button variant="secondary" onClick={() => setAttempt(attempt + 1)}>Retry</Button>
           </div>
         )}
         {rejected !== undefined && state.unauthorized ? null : <HostsFallback canSwitch />}
@@ -1308,14 +1311,13 @@ export function Workbench({
                     <span className="min-w-0 flex-1 text-center text-xs text-muted-foreground">Read-only · subagent</span>
                     {!canStopShown ? null : (
                       <Button
-                        label="Stop"
                         variant="secondary"
                         size="sm"
-                        isDisabled={view.connection !== "connected"}
-                        // Named explicitly: until a pending switch lands, the
-                        // controller's current conversation may still be the parent.
+                        disabled={view.connection !== "connected"}
                         onClick={() => void remote.controller.abort(shownSubagent.id)}
-                      />
+                      >
+                        Stop
+                      </Button>
                     )}
                   </div>
                 ) : conversation === undefined ? (
@@ -1554,19 +1556,26 @@ function ForkDialog({
         }
         content={
           <LayoutContent>
-            <TextInput label="First message" value={prompt} onChange={setPrompt} />
+            <Field>
+              <FieldLabel>First message</FieldLabel>
+              <Input
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+              />
+            </Field>
           </LayoutContent>
         }
         footer={
           <LayoutFooter>
             <div className="flex justify-end gap-2">
-              <Button label="Cancel" variant="secondary" onClick={onClose} />
+              <Button variant="secondary" onClick={onClose}>Cancel</Button>
               <Button
-                label={busy ? "Forking…" : "Fork"}
                 variant="primary"
-                isDisabled={!connected || busy || prompt.trim() === ""}
+                disabled={!connected || busy || prompt.trim() === ""}
                 onClick={fork}
-              />
+              >
+                {busy ? "Forking…" : "Fork"}
+              </Button>
             </div>
           </LayoutFooter>
         }

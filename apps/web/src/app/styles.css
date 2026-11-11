@@ -45,6 +45,8 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-muted: var(--destructive-muted);
+  --color-destructive-strong: var(--destructive-strong);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -124,6 +126,15 @@
     @slot;
   }
 }
+/* Hover and press for buttons: an overlay painted over whatever fill the
+   button has, so one pair serves every tier. */
+@utility overlay-hover {
+  background-image: linear-gradient(var(--color-overlay-hover), var(--color-overlay-hover));
+}
+@utility overlay-pressed {
+  background-image: linear-gradient(var(--color-overlay-pressed), var(--color-overlay-pressed));
+}
+
 @custom-variant data-vertical {
   &:where([data-orientation="vertical"]) {
     @slot;
@@ -186,39 +197,6 @@ body {
   -moz-osx-font-smoothing: auto;
 }
 
-/* —— Button tiers (apps/web/DESIGN.md) ——
-   Astryx's secondary is a 6% wash with no edge, which reads as text beside a
-   field and vanishes on the dark surface. Give it a surface fill, a hairline
-   and a 1px drop so a standalone action looks pressable. The ring is an inset
-   shadow, not a border, so the box keeps its size. Same layer as the neutral
-   theme's own button overrides, which outrank Astryx's atomic variant classes
-   without specificity hacks; hover and press still paint background-image.
-   The composer's stop button is Astryx's secondary too, but it sits on the
-   composer fill, where a surface fill reads as a hole in dark mode. */
-@layer astryx-theme {
-  .astryx-button.secondary:not(.astryx-chat-composer *) {
-    background-color: var(--color-background-surface);
-    box-shadow:
-      inset 0 0 0 1px var(--color-border),
-      0 1px 2px light-dark(oklch(0 0 0 / 6%), oklch(0 0 0 / 30%));
-  }
-}
-
-/* Settings is a page of flat rows: its secondary buttons keep the hairline
-   but drop the 1px drop, which stood out against the bordered groups, and the
-   surface fill, which in dark mode is a step below the card they sit on. */
-@layer astryx-theme {
-  .pigui-settings .astryx-button.secondary {
-    background-color: transparent;
-    box-shadow: inset 0 0 0 1px var(--color-border);
-  }
-  /* Its dropdowns are pickers on the same rows, so they match the buttons. */
-  .pigui-settings .astryx-selector[data-variant="input"] {
-    background-color: transparent;
-    border-color: var(--color-border);
-  }
-}
-
 /* One inset for every row in a Settings card, the SettingsRow's spacing-4:
    Astryx's Item pads 8px, so list rows (hosts, account, archived, details)
    sat closer to the edge than the setting rows beside them. A trailing
@@ -228,26 +206,9 @@ body {
 .pigui-settings .astryx-card .astryx-item:not(#\#):not(#\#):not(#\#) {
   padding-inline: var(--spacing-4);
 }
-.pigui-settings .astryx-card .astryx-button.ghost[data-size="sm"]:has(> span:first-child > span:only-child > svg:only-child):not(:has(~ :not([popover]))):not(#\#):not(#\#):not(#\#) {
+.pigui-settings .astryx-card .astryx-button.ghost[data-size="sm"]:has(> span:first-child > span:only-child > svg:only-child):not(:has(~ :not([popover]))):not(#\#):not(#\#):not(#\#),
+.pigui-settings .astryx-card [data-slot="button"][data-variant="ghost"][data-size="icon-sm"]:not(:has(~ :not([popover]))) {
   margin-inline-end: -6px;
-}
-
-/* —— Segmented control ——
-   Astryx paints the selected segment with the surface color under a two-layer
-   drop shadow. In dark mode the surface is a step below the card the control
-   sits on, so the pick read as a hole. Flat instead, in both modes: a recessed
-   track and a selected segment one step lighter than anything under it, with
-   the hairline the buttons use. The sliding indicator is the track's unclassed
-   div; the checked item paints over it, so both get the fill. */
-@layer astryx-theme {
-  .astryx-segmented-control {
-    background-color: light-dark(oklch(0 0 0 / 5%), oklch(0 0 0 / 22%));
-  }
-  .astryx-segmented-control > div:not([class*="astryx-segmented-control-item"]),
-  .astryx-segmented-control-item[aria-checked="true"] {
-    background-color: light-dark(#ffffff, oklch(0.335 0 0));
-    box-shadow: inset 0 0 0 1px light-dark(oklch(0 0 0 / 8%), oklch(1 0 0 / 6%));
-  }
 }
 
 /* Low-frequency action buttons (send, steer/withdraw, refresh).
@@ -365,8 +326,7 @@ body {
 }
 
 .pigui-settings-nav .astryx-side-nav-item:not([data-selected="selected"]):not(#\#):not(#\#):not(#\#),
-.pigui-settings-nav .astryx-side-nav-item:not([data-selected="selected"]) :is(svg, .astryx-icon):not(#\#):not(#\#):not(#\#),
-.pigui-settings-nav .astryx-selector:not(#\#):not(#\#):not(#\#) {
+.pigui-settings-nav .astryx-side-nav-item:not([data-selected="selected"]) :is(svg, .astryx-icon):not(#\#):not(#\#):not(#\#) {
   color: var(--pigui-nav-rest);
 }
 
@@ -390,7 +350,7 @@ body {
 }
 
 /* A field's 1px border already sits inside that padding. */
-.pigui-nav-lead.astryx-text-input:not(#\#):not(#\#):not(#\#) {
+.pigui-nav-lead[data-slot="input-group"]:not(#\#):not(#\#):not(#\#) {
   padding-inline-start: calc(var(--pigui-sidebar-row-padding-x) - 1px);
 }
 
@@ -422,7 +382,7 @@ body {
 
 /* Row actions share the row surface; only the glyph gains emphasis.
    Match StyleX specificity without changing the built-in focus outline. */
-.pigui-sidenav-hover-actions .astryx-button:not(#\#):not(#\#):not(#\#) {
+.pigui-sidenav-hover-actions :is(.astryx-button, [data-slot="button"]):not(#\#):not(#\#):not(#\#) {
   background-color: transparent;
   background-image: none;
   box-shadow: none;
@@ -431,12 +391,12 @@ body {
   transition-property: color;
 }
 
-.pigui-sidenav-hover-actions .astryx-button:not(:disabled):not([aria-disabled="true"]):is(:focus-visible, :active, [aria-expanded="true"]):not(#\#):not(#\#):not(#\#) {
+.pigui-sidenav-hover-actions :is(.astryx-button, [data-slot="button"]):not(:disabled):not([aria-disabled="true"]):is(:focus-visible, :active, [aria-expanded="true"]):not(#\#):not(#\#):not(#\#) {
   color: var(--foreground);
 }
 
 @media (hover: hover) {
-  .pigui-sidenav-hover-actions .astryx-button:not(:disabled):not([aria-disabled="true"]):hover:not(#\#):not(#\#):not(#\#) {
+  .pigui-sidenav-hover-actions :is(.astryx-button, [data-slot="button"]):not(:disabled):not([aria-disabled="true"]):hover:not(#\#):not(#\#):not(#\#) {
     color: var(--foreground);
   }
 
@@ -614,7 +574,7 @@ body {
 
 /* The draft footer's ghost selectors sit side by side in one capsule; their
    default 12px inline padding left wide gaps between them. */
-.pigui-draft-footer .astryx-selector[data-variant="ghost"]:not(#\#):not(#\#):not(#\#) {
+.pigui-draft-footer [data-slot="select-trigger"][data-variant="ghost"] {
   padding-inline: var(--spacing-1-5);
 }
 

@@ -1,10 +1,10 @@
 import { AlertDialog } from "@astryxdesign/core/AlertDialog";
-import { Button } from "@astryxdesign/core/Button";
-import { FieldStatus } from "@astryxdesign/core/FieldStatus";
-import { IconButton } from "@astryxdesign/core/IconButton";
+import { Button } from "../../shared/ui/button.tsx";
+import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { MultiSelector } from "@astryxdesign/core/MultiSelector";
-import { Selector } from "@astryxdesign/core/Selector";
-import { TextInput } from "@astryxdesign/core/TextInput";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../shared/ui/select.tsx";
+import { Field, FieldDescription, FieldError, FieldLabel } from "../../shared/ui/field.tsx";
+import { Input } from "../../shared/ui/input.tsx";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { CUSTOM_PROVIDER_APIS, type CustomProviderApi, type ProviderInfo } from "@pinomad/protocol/auth.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -203,47 +203,63 @@ export function CustomEndpointForm({
   return (
     <form onSubmit={(event) => void submit(event)} autoComplete="off">
       <div className="flex flex-col gap-3">
-        <TextInput
-          label="Name"
-          value={name}
-          onChange={setName}
-          placeholder="Ollama on studio"
-          hasAutoFocus={existing === undefined}
-          isDisabled={!connected}
-          width="100%"
-          status={nameProblem === undefined ? undefined : { type: "error", message: nameProblem }}
-        />
-        <Selector
-          label="API format"
-          options={CUSTOM_PROVIDER_APIS.map((value) => ({ value, label: API_LABELS[value] }))}
-          value={api}
-          onChange={(value) => setApi(value as CustomProviderApi)}
-          description="Ollama, LM Studio, vLLM and most gateways speak OpenAI Chat Completions."
-          isDisabled={!connected}
-          width="100%"
-        />
+        <Field disabled={!connected} invalid={nameProblem !== undefined}>
+          <FieldLabel>Name</FieldLabel>
+          <Input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Ollama on studio"
+            autoFocus={existing === undefined}
+            data-autofocus={existing === undefined || undefined}
+          />
+          <FieldError>{nameProblem}</FieldError>
+        </Field>
+        <Field disabled={!connected}>
+          <FieldLabel>API format</FieldLabel>
+          <FieldDescription>Ollama, LM Studio, vLLM and most gateways speak OpenAI Chat Completions.</FieldDescription>
+          <Select
+            items={API_LABELS}
+            value={api}
+            onValueChange={(value: string | null) => {
+              if (value !== null) setApi(value as CustomProviderApi);
+            }}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {CUSTOM_PROVIDER_APIS.map((value) => (
+                <SelectItem key={value} value={value}>{API_LABELS[value]}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
         {/* Validated on blur: a half-typed URL isn't an error yet. */}
         <div onBlur={() => setUrlTouched(true)}>
-          <TextInput
-            label="Base URL"
-            value={baseUrl}
-            onChange={setBaseUrl}
-            placeholder="http://localhost:11434/v1"
-            isDisabled={!connected}
-            width="100%"
-            status={urlTouched && urlProblem !== undefined ? { type: "error", message: urlProblem } : undefined}
-          />
+          <Field disabled={!connected} invalid={urlTouched && urlProblem !== undefined}>
+            <FieldLabel>Base URL</FieldLabel>
+            <Input
+              value={baseUrl}
+              onChange={(event) => setBaseUrl(event.target.value)}
+              placeholder="http://localhost:11434/v1"
+            />
+            <FieldError>{urlTouched ? urlProblem : undefined}</FieldError>
+          </Field>
         </div>
-        <TextInput
-          label="API key"
-          type="password"
-          isOptional
-          value={apiKey}
-          onChange={setApiKey}
-          placeholder={existing?.stored === undefined ? "Not needed for local servers" : "Leave empty to keep the stored key"}
-          isDisabled={!connected}
-          width="100%"
-        />
+        <Field disabled={!connected}>
+          <FieldLabel>
+            API key
+            <span className="-ms-2 text-xs font-normal text-muted-foreground">
+              <span aria-hidden="true">{" ∙ "}</span>Optional
+            </span>
+          </FieldLabel>
+          <Input
+            type="password"
+            value={apiKey}
+            onChange={(event) => setApiKey(event.target.value)}
+            placeholder={existing?.stored === undefined ? "Not needed for local servers" : "Leave empty to keep the stored key"}
+          />
+        </Field>
         {/* The status message sits outside the dropdown so the buttons line up with the controls. */}
         <div className="endpoint-models">
           <MultiSelector
@@ -261,16 +277,21 @@ export function CustomEndpointForm({
             status={modelsStatus === undefined ? undefined : { type: modelsStatus.type }}
           />
           <IconButton
+            variant="secondary"
             label="Fetch models"
             tooltip="Fetch models from the endpoint"
             icon={<RefreshCw />}
-            isLoading={fetching}
-            isDisabled={!connected}
+            loading={fetching}
+            disabled={!connected}
             onClick={() => void fetchModels(true)}
           />
           {modelsStatus === undefined ? null : (
             <div className="endpoint-models__status">
-              <FieldStatus type={modelsStatus.type} message={modelsStatus.message} />
+              {modelsStatus.type === "error" ? (
+                <p role="alert" className="text-xs/5 text-destructive">{modelsStatus.message}</p>
+              ) : (
+                <p role="status" className="text-xs/5 text-warning">{modelsStatus.message}</p>
+              )}
             </div>
           )}
           {/* Enter adds the ID instead of submitting the form. */}
@@ -282,34 +303,34 @@ export function CustomEndpointForm({
               addDraft();
             }}
           >
-            <TextInput
-              label="Add model ID"
-              isLabelHidden
-              value={draft}
-              onChange={setDraft}
-              placeholder="Add a model ID the endpoint doesn't list"
-              isDisabled={!connected}
-              width="100%"
-            />
+            <Field disabled={!connected}>
+              <FieldLabel className="sr-only">Add model ID</FieldLabel>
+              <Input
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                placeholder="Add a model ID the endpoint doesn't list"
+              />
+            </Field>
           </div>
-          <IconButton label="Add model" icon={<Plus />} isDisabled={!connected || draft.trim() === ""} onClick={addDraft} />
+          <IconButton variant="secondary" label="Add model" icon={<Plus />} disabled={!connected || draft.trim() === ""} onClick={addDraft} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {existing === undefined ? null : (
-            <Button label="Remove endpoint" variant="secondary" isDisabled={!connected} onClick={() => setConfirmingRemove(true)} />
+            <Button variant="secondary" disabled={!connected} onClick={() => setConfirmingRemove(true)}>Remove endpoint</Button>
           )}
           {removeError === undefined ? null : <InlineError message={removeError} />}
           <div style={{ marginInlineStart: "auto" }}>
             <div className="flex flex-wrap items-center gap-2">
               {saveError === undefined ? null : <InlineError message={saveError} />}
-              <Button label="Cancel" variant="secondary" onClick={onCancel} />
+              <Button variant="secondary" onClick={onCancel}>Cancel</Button>
               <Button
-                label={existing === undefined ? "Add endpoint" : "Save changes"}
                 variant="primary"
                 type="submit"
-                isLoading={saving}
-                isDisabled={!connected}
-              />
+                loading={saving}
+                disabled={!connected}
+              >
+                {existing === undefined ? "Add endpoint" : "Save changes"}
+              </Button>
             </div>
           </div>
         </div>

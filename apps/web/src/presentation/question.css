@@ -1,8 +1,5 @@
-/* The pending question card (question.tsx). Astryx tokens only; unlayered on
-   purpose, like chat.css, so these rules win over layered framework CSS.
-   Rules reaching into RadioList/CheckboxList markup (`.astryx-list`,
-   `.astryx-item`, the description span) follow @astryxdesign/core 0.3.0;
-   question.test.tsx checks those selectors still match. */
+/* The pending question card (question.tsx). Unlayered on purpose, like
+   chat.css, so these rules win over layered framework CSS. */
 
 /* The composer's 24px corners; 16px padding keeps the option rows' 8px
    corners roughly concentric (24 − 16 = 8). */
@@ -50,24 +47,19 @@
   text-wrap: pretty;
 }
 
-/* Descriptions stay visible but tighter: Astryx sets 12px description text
-   on a 20px line with 8px between rows. */
+/* Descriptions stay visible but tight: 12px text on a 16px line, 4px
+   between rows. */
 .question-card__options [role="radiogroup"],
 .question-card__options [role="group"] {
   gap: 4px;
 }
-.question-card__options .astryx-item > span:nth-child(2) > :nth-child(2) {
+.question-card__options [data-slot="field-description"] {
   line-height: 16px;
-  text-wrap: pretty;
 }
-/* Checkbox rows carry 8px side padding (radio rows none): pull the list out so
-   its boxes line up with the question and with the radios on other pages. */
-.question-card__options .astryx-list {
-  margin-inline: -8px;
-}
-/* Other's field opens under its row, aligned with the option labels. */
+/* Other's field opens under its row, aligned with the option labels
+   (a 16px box and the row's 8px gap). */
 .question-card__other {
-  padding-left: 28px;
+  padding-left: 24px;
 }
 
 .question-card__footer {

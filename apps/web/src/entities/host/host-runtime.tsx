@@ -1,7 +1,7 @@
 // The multi-host composition root: one RemoteDurable per stored host, one
 // focused conversation, and a composer store that outlives focus changes.
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { EmptyState } from "@astryxdesign/core/EmptyState";
 import {
   type ReactNode,
@@ -255,7 +255,7 @@ function BannerForFailure({
           {`Details: ${state.direct.reason}`}
         </span>
       )}
-      <Button label="Retry" variant="secondary" onClick={retry} />
+      <Button variant="secondary" onClick={retry}>Retry</Button>
     </>
   );
 }

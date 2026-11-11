@@ -1,4 +1,4 @@
-import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
+import { SegmentedControl, SegmentedControlItem } from "../../shared/ui/segmented-control.tsx";
 import { SettingsGroup, SettingsRow } from "../../shared/ui/settings-group.tsx";
 import { setAppearance, useAppearance, type Appearance } from "../../entities/appearance/appearance.ts";
 
@@ -8,10 +8,10 @@ export function AppearanceSection() {
   return (
     <SettingsGroup>
       <SettingsRow label="Theme" description="Remembered on this device only">
-        <SegmentedControl label="Theme" size="sm" value={appearance} onChange={(next) => setAppearance(next as Appearance)}>
-          <SegmentedControlItem value="light" label="Light" />
-          <SegmentedControlItem value="dark" label="Dark" />
-          <SegmentedControlItem value="system" label="System" />
+        <SegmentedControl aria-label="Theme" value={appearance} onValueChange={(next) => setAppearance(next as Appearance)}>
+          <SegmentedControlItem value="light">Light</SegmentedControlItem>
+          <SegmentedControlItem value="dark">Dark</SegmentedControlItem>
+          <SegmentedControlItem value="system">System</SegmentedControlItem>
         </SegmentedControl>
       </SettingsRow>
     </SettingsGroup>

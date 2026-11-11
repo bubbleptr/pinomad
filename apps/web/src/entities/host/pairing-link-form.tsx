@@ -1,6 +1,7 @@
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
-import { TextInput } from "@astryxdesign/core/TextInput";
+import { Button } from "../../shared/ui/button.tsx";
+import { Field, FieldLabel } from "../../shared/ui/field.tsx";
+import { Input } from "../../shared/ui/input.tsx";
 import { useState } from "react";
 import { pairingFragment } from "../../address.ts";
 
@@ -35,20 +36,22 @@ export function PairingLinkForm({
     <>
       <div className="flex items-end gap-2" style={{ width: "100%" }}>
         <div className="min-w-0 flex-1">
-          <TextInput
-            label="Pairing link"
-            isLabelHidden
-            placeholder="http://…/#pair=… or pinomad://pair#…"
-            value={pasted}
-            onChange={(value) => {
-              setError(undefined);
-              setPasted(value);
-            }}
-            onEnter={connect}
-            width="100%"
-          />
+          <Field>
+            <FieldLabel className="sr-only">Pairing link</FieldLabel>
+            <Input
+              placeholder="http://…/#pair=… or pinomad://pair#…"
+              value={pasted}
+              onChange={(event) => {
+                setError(undefined);
+                setPasted(event.target.value);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") connect();
+              }}
+            />
+          </Field>
         </div>
-        <Button label="Connect" variant={connectVariant} isDisabled={pasted.trim() === ""} onClick={connect} />
+        <Button variant={connectVariant} disabled={pasted.trim() === ""} onClick={connect}>Connect</Button>
       </div>
       {error === undefined ? null : <Banner status="error" title="Not a pairing link" description={error} />}
     </>

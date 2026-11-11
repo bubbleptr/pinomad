@@ -1,5 +1,5 @@
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import type { Decorator, Meta, StoryObj } from "@storybook/react-vite";
 import { userEvent, within } from "storybook/test";
 import type { RtcDiagnostics } from "@pinomad/protocol/remote-durable.ts";
@@ -317,7 +317,7 @@ export const DirectOnlyFailure: Story = {
           Change this host's connection mode under Hosts below, then retry.
         </span>
         <div className="flex gap-2">
-          <Button label="Retry" variant="secondary" />
+          <Button variant="secondary">Retry</Button>
         </div>
       </div>
       <HostsFallback canSwitch />

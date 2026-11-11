@@ -1,6 +1,6 @@
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
-import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
+import { Button } from "../../shared/ui/button.tsx";
+import { SegmentedControl, SegmentedControlItem } from "../../shared/ui/segmented-control.tsx";
 import { useState } from "react";
 import { relativeTime } from "@pinomad/client/family.ts";
 import { hostSupportsCall, hostSupportsFeature } from "@pinomad/protocol/frames.ts";
@@ -162,27 +162,29 @@ function UpgradeStatus({
         <div className="flex flex-wrap gap-2">
           {phase === "waiting" ? (
             <Button
-              label="Cancel upgrade"
               variant="secondary"
               size="sm"
-              isDisabled={!connected || pending !== undefined}
-              isLoading={pending === "cancel"}
+              disabled={!connected || pending !== undefined}
+              loading={pending === "cancel"}
               onClick={() => act("cancel", () => remote.controller.cancelUpgrade())}
-            />
+            >
+              Cancel upgrade
+            </Button>
           ) : null}
           {canStart ? (
-            <Button label="Upgrade" variant="secondary" size="sm" onClick={() => setConfirming(true)} />
+            <Button variant="secondary" size="sm" onClick={() => setConfirming(true)}>Upgrade</Button>
           ) : null}
           {/* A source checkout has no upgrader to ask. */}
           {phase === "idle" && blocked !== "source" ? (
             <Button
-              label="Check now"
               variant="secondary"
               size="sm"
-              isDisabled={!connected || checksOff || upgrade.checking || pending !== undefined}
-              isLoading={upgrade.checking || pending === "check"}
+              disabled={!connected || checksOff || upgrade.checking || pending !== undefined}
+              loading={upgrade.checking || pending === "check"}
               onClick={() => act("check", () => remote.controller.checkUpgrade())}
-            />
+            >
+              Check now
+            </Button>
           ) : null}
         </div>
       )}
@@ -214,23 +216,25 @@ function UpgradeConfirm({
       </span>
       <span className="text-xs/5 text-muted-foreground">Upgrading now interrupts running tasks; they continue after the restart.</span>
       <div className="flex flex-wrap justify-end gap-2">
-        <Button label="Cancel" variant="secondary" size="sm" isDisabled={pending !== undefined} onClick={onCancel} />
+        <Button variant="secondary" size="sm" disabled={pending !== undefined} onClick={onCancel}>Cancel</Button>
         <Button
-          label="Upgrade now"
           variant="secondary"
           size="sm"
-          isDisabled={pending !== undefined}
-          isLoading={pending === "now"}
+          disabled={pending !== undefined}
+          loading={pending === "now"}
           onClick={() => onStart("now")}
-        />
+        >
+          Upgrade now
+        </Button>
         <Button
-          label="Upgrade when idle"
           variant="primary"
           size="sm"
-          isDisabled={pending !== undefined}
-          isLoading={pending === "idle"}
+          disabled={pending !== undefined}
+          loading={pending === "idle"}
           onClick={() => onStart("idle")}
-        />
+        >
+          Upgrade when idle
+        </Button>
       </div>
     </div>
   );
@@ -253,14 +257,13 @@ function AutoUpgradeSetting({
         <SegmentedControl
           className="shrink-0"
           value={mode}
-          onChange={(next) => onChange(next as AutoUpgradeMode)}
-          label="Automatic upgrades"
-          size="sm"
-          isDisabled={disabled}
+          onValueChange={(next) => onChange(next as AutoUpgradeMode)}
+          aria-label="Automatic upgrades"
+          disabled={disabled}
         >
-          <SegmentedControlItem value="off" label="Off" />
-          <SegmentedControlItem value="notify" label="Notify" />
-          <SegmentedControlItem value="auto" label="When idle" />
+          <SegmentedControlItem value="off">Off</SegmentedControlItem>
+          <SegmentedControlItem value="notify">Notify</SegmentedControlItem>
+          <SegmentedControlItem value="auto">When idle</SegmentedControlItem>
         </SegmentedControl>
       </div>
       <span className="text-xs/5 text-muted-foreground">{AUTO_DESCRIPTIONS[mode]}</span>

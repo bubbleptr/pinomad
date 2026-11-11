@@ -1,9 +1,10 @@
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { Spinner } from "@astryxdesign/core/Spinner";
-import { TextInput } from "@astryxdesign/core/TextInput";
+import { Field, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
+import { Input } from "../../shared/ui/input.tsx";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { AccountConfirmation, AccountError, AccountIdentities, AccountResult } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
@@ -92,12 +93,13 @@ export function SignInMethods({
           description={identities.hasPassword ? "Set" : "Not set"}
           endContent={
             <Button
-              label={identities.hasPassword ? "Change password" : "Set password"}
               variant="secondary"
               size="sm"
-              isDisabled={busy}
+              disabled={busy}
               onClick={() => start({ kind: "password" })}
-            />
+            >
+              {identities.hasPassword ? "Change password" : "Set password"}
+            </Button>
           }
         />
         {identities.identities.map((identity) => (
@@ -132,13 +134,14 @@ export function SignInMethods({
             }
             endContent={
               <Button
-                label="Link"
                 aria-label={`Link ${provider.name}`}
                 variant="secondary"
                 size="sm"
-                isDisabled={busy}
+                disabled={busy}
                 onClick={() => start({ kind: "link", provider: provider.id })}
-              />
+              >
+                Link
+              </Button>
             }
           />
         ))}
@@ -249,7 +252,7 @@ function ConfirmedAction({
       title={title}
       {...(description === undefined ? {} : { description })}
       onClose={onCancel}
-      action={<Button label={label} variant={variant} isLoading={busy} isDisabled={!identity.ready || !isReady} onClick={submit} />}
+      action={<Button variant={variant} loading={busy} disabled={!identity.ready || !isReady} onClick={submit}>{label}</Button>}
     >
       {identity.field}
       {extra?.(submit)}
@@ -286,16 +289,19 @@ function PasswordForm({
       onDone={() => onClose(hasPassword ? "Password changed. Your other devices were signed out." : "Password set.")}
       onCancel={() => onClose()}
       extra={(submit) => (
-        <TextInput
-          label="New password"
-          description="Your other devices will be signed out."
-          type="password"
-          value={next}
-          onChange={setNext}
-          onEnter={submit}
-          width="100%"
-          {...NEW_PASSWORD_INPUT}
-        />
+        <Field>
+          <FieldLabel>New password</FieldLabel>
+          <FieldDescription>Your other devices will be signed out.</FieldDescription>
+          <Input
+            type="password"
+            value={next}
+            onChange={(event) => setNext(event.target.value)}
+            {...NEW_PASSWORD_INPUT}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") submit();
+            }}
+          />
+        </Field>
       )}
     />
   );
@@ -321,14 +327,15 @@ function ChangePasswordOnly({ account }: { account: AccountModel }) {
     <div className="flex flex-col gap-1">
       <div className="flex gap-2">
         <Button
-          label="Change password"
           variant="secondary"
           size="sm"
           onClick={() => {
             setDone(undefined);
             setOpen(true);
           }}
-        />
+        >
+          Change password
+        </Button>
       </div>
       {done === undefined ? null : <span className="text-xs/5 text-muted-foreground">{done}</span>}
     </div>

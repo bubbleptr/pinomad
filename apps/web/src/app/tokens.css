@@ -33,6 +33,11 @@
   --accent: light-dark(oklch(0.97 0 0), oklch(1 0 0 / 8%));
   --accent-foreground: var(--foreground);
   --destructive: light-dark(oklch(0.577 0.245 27.325), oklch(0.704 0.191 22.216));
+  /* The red wash a destructive button sits on, and the text that reads on
+     it. --destructive is tuned for text on the page ground and is only about
+     3.4:1 on the wash. */
+  --destructive-muted: light-dark(#facecb, #ff9e973d);
+  --destructive-strong: light-dark(#a50c25, #ffc6c1);
   --border: light-dark(oklch(0.922 0 0), oklch(0.335 0 0));
   --input: light-dark(oklch(0.922 0 0), oklch(1 0 0 / 15%));
   --ring: light-dark(oklch(0.708 0 0), oklch(0.556 0 0));
@@ -89,11 +94,9 @@
   --color-neutral: var(--default);
   --color-overlay-hover: var(--surface-hover);
   --color-overlay-pressed: light-dark(oklch(0 0 0 / 10%), oklch(1 0 0 / 10%));
-  /* Astryx paints error text on --color-error-muted (destructive buttons,
-     error banners). --destructive is tuned for text on the page ground and
-     is only about 3.4:1 on that fill, so Astryx keeps its own darker pair. */
-  --color-error: light-dark(#a50c25, #ffc6c1);
-  --color-error-muted: light-dark(#facecb, #ff9e973d);
+  /* Astryx paints error text on --color-error-muted (error banners). */
+  --color-error: var(--destructive-strong);
+  --color-error-muted: var(--destructive-muted);
   --color-success: var(--success);
   --color-success-muted: light-dark(#c5e5c0, #84c9803d);
   --color-warning: var(--warning);

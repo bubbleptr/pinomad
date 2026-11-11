@@ -1,9 +1,9 @@
 import { cn } from "cn";
 import { Avatar } from "@astryxdesign/core/Avatar";
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { Icon } from "@astryxdesign/core/Icon";
-import { IconButton } from "@astryxdesign/core/IconButton";
+import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
@@ -153,16 +153,18 @@ function UserChip({ onOpenAccount }: { onOpenAccount: () => void }) {
     const { user } = account.state;
     return (
       <Button
-        label={user}
-        icon={<Avatar name={user} size="xsm" tooltip={false} />}
         variant="ghost"
         size="sm"
+        className="max-w-full"
         onClick={onOpenAccount}
-      />
+      >
+        <Avatar name={user} size="xsm" tooltip={false} />
+        <span className="truncate">{user}</span>
+      </Button>
     );
   }
   if (status === "signed-out") {
-    return <Button label="Sign in" icon={<UserCircle aria-hidden="true" />} variant="ghost" size="sm" onClick={onOpenAccount} />;
+    return <Button variant="ghost" size="sm" onClick={onOpenAccount}><UserCircle aria-hidden="true" />Sign in</Button>;
   }
   return <span className="block truncate px-2 text-sm text-muted-foreground">{deviceName}</span>;
 }
@@ -572,7 +574,7 @@ function MachineSection({
                 tooltip="New chat"
                 size="sm"
                 variant="ghost"
-                isDisabled={disabled}
+                disabled={disabled}
                 onClick={() => start({ kind: "chat" })}
               />
               <IconButton
@@ -581,7 +583,7 @@ function MachineSection({
                 tooltip="Add project"
                 size="sm"
                 variant="ghost"
-                isDisabled={disabled}
+                disabled={disabled}
                 onClick={() => setAddOpen(true)}
               />
             </>
@@ -644,7 +646,7 @@ function MachineSection({
                         label={`New conversation in ${project.name}`}
                         size="sm"
                         variant="ghost"
-                        isDisabled={disabled}
+                        disabled={disabled}
                         onClick={() => start({ kind: "project", path: project.path })}
                       />
                       <DropdownMenu

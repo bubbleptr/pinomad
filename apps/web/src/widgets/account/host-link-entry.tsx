@@ -1,8 +1,9 @@
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { MetadataList, MetadataListItem } from "@astryxdesign/core/MetadataList";
 import { Spinner } from "@astryxdesign/core/Spinner";
-import { TextInput } from "@astryxdesign/core/TextInput";
+import { Field, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
+import { Input } from "../../shared/ui/input.tsx";
 import { Tooltip } from "@astryxdesign/core/Tooltip";
 import { useEffect, useState, type CSSProperties } from "react";
 import type { AccountError, HostLinkRequest } from "@pinomad/client/account.ts";
@@ -205,7 +206,7 @@ export function HostLinkRequestEntry({
           />
           {onClose === undefined ? null : (
             <div className="flex">
-              <Button label="Close" variant="secondary" onClick={onClose} />
+              <Button variant="secondary" onClick={onClose}>Close</Button>
             </div>
           )}
         </div>
@@ -242,21 +243,24 @@ export function HostLinkCodeForm({
 }) {
   return (
     <div className="flex flex-col gap-3" style={{ width: "100%" }}>
-      <TextInput
-        label="Code from the host"
-        description="The host's terminal shows it, like KXHN-BWCV."
-        placeholder="XXXX-XXXX"
-        value={formatUserCode(code)}
-        onChange={onChange}
-        onEnter={onSubmit}
-        width="100%"
-      />
+      <Field>
+        <FieldLabel>Code from the host</FieldLabel>
+        <FieldDescription>The host's terminal shows it, like KXHN-BWCV.</FieldDescription>
+        <Input
+          placeholder="XXXX-XXXX"
+          value={formatUserCode(code)}
+          onChange={(event) => onChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") onSubmit();
+          }}
+        />
+      </Field>
       {error === undefined ? null : (
         <Banner status="error" title="Couldn't find that host" description={hostLinkErrorMessage(error, "lookup")} />
       )}
       <div className="flex items-center gap-2">
-        <Button label="Continue" variant="primary" isLoading={isBusy} isDisabled={!isCompleteUserCode(code)} onClick={onSubmit} />
-        {onCancel === undefined ? null : <Button label="Cancel" variant="secondary" onClick={onCancel} />}
+        <Button variant="primary" loading={isBusy} disabled={!isCompleteUserCode(code)} onClick={onSubmit}>Continue</Button>
+        {onCancel === undefined ? null : <Button variant="secondary" onClick={onCancel}>Cancel</Button>}
       </div>
     </div>
   );
@@ -320,14 +324,15 @@ export function HostLinkConfirm({
               </span>
             </Tooltip>
             <Button
-              label={copied ? "Copied" : "Copy"}
               variant="secondary"
               size="sm"
-              icon={copied ? <Check aria-hidden="true" style={iconSize} /> : <Copy aria-hidden="true" style={iconSize} />}
               onClick={() => {
                 void navigator.clipboard?.writeText(request.hostId).then(() => setCopied(true), () => undefined);
               }}
-            />
+            >
+              {copied ? <Check aria-hidden="true" style={iconSize} /> : <Copy aria-hidden="true" style={iconSize} />}
+              {copied ? "Copied" : "Copy"}
+            </Button>
           </div>
         </MetadataListItem>
       </MetadataList>
@@ -345,16 +350,17 @@ export function HostLinkConfirm({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex gap-2">
           <Button
-            label="Confirm"
             variant="primary"
-            isLoading={busy === "confirm"}
-            isDisabled={expired || busy === "deny"}
+            loading={busy === "confirm"}
+            disabled={expired || busy === "deny"}
             onClick={onConfirm}
-          />
-          <Button label="Deny" variant="secondary" isLoading={busy === "deny"} isDisabled={busy === "confirm"} onClick={onDeny} />
+          >
+            Confirm
+          </Button>
+          <Button variant="secondary" loading={busy === "deny"} disabled={busy === "confirm"} onClick={onDeny}>Deny</Button>
         </div>
         {onBack === undefined ? null : (
-          <Button label="Enter another code" variant="ghost" isDisabled={busy !== undefined} onClick={onBack} />
+          <Button variant="ghost" disabled={busy !== undefined} onClick={onBack}>Enter another code</Button>
         )}
       </div>
     </div>
@@ -383,7 +389,7 @@ export function HostLinkOutcome({
         <Banner status="info" title={`Turned ${name} away`} description="Its terminal will say the join was denied." />
       )}
       <div className="flex">
-        <Button label="Done" variant="secondary" onClick={onDone} />
+        <Button variant="secondary" onClick={onDone}>Done</Button>
       </div>
     </div>
   );

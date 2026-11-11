@@ -2,7 +2,7 @@
 // a user bubble, then one Assistant message per run — its folded process and
 // Interim Output, the answer, the settled actions row (time, Copy + Fork, no
 // thumbs), and on the newest run the todo card (ADR-0026).
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { ChatMessageMetadata, ChatSystemMessage } from "@astryxdesign/core/Chat";
 import { Icon } from "@astryxdesign/core/Icon";
 import { InternationalizationProvider } from "@astryxdesign/core/i18n";
@@ -216,23 +216,25 @@ function UserEntry({
           )}
           {local === undefined || !canRetry || onRetrySubmission === undefined ? null : (
             <Button
-              label="Retry"
               variant="ghost"
               size="sm"
               className="chat-message__local-action"
               onClick={() => onRetrySubmission(local.requestId)}
-            />
+            >
+              Retry
+            </Button>
           )}
           {local === undefined || !canEdit || onEditSubmission === undefined ? null : (
             <Button
-              label="Edit"
               variant="ghost"
               size="sm"
               className="chat-message__local-action"
-              isDisabled={editDisabled}
+              disabled={editDisabled}
               {...(editDisabled && submissionEditTooltip !== undefined ? { tooltip: submissionEditTooltip } : {})}
               onClick={() => onEditSubmission(local.requestId)}
-            />
+            >
+              Edit
+            </Button>
           )}
         </div>
       </div>

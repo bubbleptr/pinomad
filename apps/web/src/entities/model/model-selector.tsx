@@ -6,16 +6,16 @@
 // is part of the same pick (issue #254): a role is a model-level preset —
 // model, thinking level and system prompt — so it lives in this popover too.
 import { useRef, useState } from "react";
-import { Button } from "@astryxdesign/core/Button";
-import { Icon } from "@astryxdesign/core/Icon";
+import { Button } from "../../shared/ui/button.tsx";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Popover } from "@astryxdesign/core/Popover";
-import { TextInput } from "@astryxdesign/core/TextInput";
+import { Field, FieldLabel } from "../../shared/ui/field.tsx";
+import { Input } from "../../shared/ui/input.tsx";
 import type { ModelRef } from "@earendil-works/pi-durable";
 import type { AgentRole } from "@pinomad/protocol/agents.ts";
 import type { ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";
 import { filterModels, modelLabel, sameModel, thinkingLevelLabels } from "@pinomad/client/model.ts";
-import { Check } from "@/shared/ui/icons";
+import { Check, ChevronDown } from "@/shared/ui/icons";
 import { ModelLogo } from "./model-logo.tsx";
 
 /**
@@ -156,16 +156,16 @@ export function ModelSelector({
               )}
             </div>
           )}
-          <TextInput
-            isLabelHidden
-            label="Search models"
-            placeholder="Search models"
-            ref={searchRef}
-            size="sm"
-            value={query}
-            width="100%"
-            onChange={(value: string) => setQuery(value)}
-          />
+          <Field>
+            <FieldLabel className="sr-only">Search models</FieldLabel>
+            <Input
+              className="h-7"
+              placeholder="Search models"
+              ref={searchRef}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </Field>
           <List aria-label="Model" className="max-h-72 overflow-y-auto" density="compact">
             {filtered.map((model) => (
               <ListItem
@@ -212,8 +212,8 @@ export function ModelSelector({
       <Button
         className="min-w-0 max-w-[19rem] flex-nowrap gap-1.5 px-2 text-muted-foreground"
         data-testid="model-thinking-trigger"
-        isDisabled={isDisabled || models.length === 0}
-        label="Model and Thinking"
+        disabled={isDisabled || models.length === 0}
+        aria-label="Model and Thinking"
         size="sm"
         variant="ghost"
         {...(problem === undefined ? {} : { tooltip: problem.title })}
@@ -231,8 +231,8 @@ export function ModelSelector({
           {sourceHint === undefined || problem !== undefined ? null : (
             <span className="shrink-0 truncate text-xs text-muted-foreground">{sourceHint}</span>
           )}
-          {/* Astryx's own glyph, so it matches the draft tray's Selector chevrons. */}
-          <Icon icon="chevronDown" size="sm" color="inherit" />
+          {/* The Select trigger's glyph, so it matches the draft tray's pickers. */}
+          <ChevronDown aria-hidden="true" strokeWidth={2} className="size-4" />
         </span>
       </Button>
     </Popover>

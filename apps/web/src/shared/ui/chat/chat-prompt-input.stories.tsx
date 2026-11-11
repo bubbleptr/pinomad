@@ -1,4 +1,5 @@
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../button.tsx";
+import { IconButton } from "../icon-button.tsx";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { fn } from "storybook/test";
@@ -50,20 +51,20 @@ export const StreamingSteerDraft: Story = {
     status: "streaming",
     placeholder: "Steer the running turn…",
     value: "Skip the e2e tests for now.",
-    endActions: <Button label="Follow-up" variant="ghost" size="sm" onClick={fn()} />,
+    endActions: <Button variant="ghost" size="sm" onClick={fn()}>Follow-up</Button>,
   },
 };
 
 export const WithActionsAndFooter: Story = {
   args: {
     startActions: (
-      <Button label="More actions" variant="ghost" size="sm" isIconOnly icon={<Plus aria-hidden="true" />} />
+      <IconButton label="More actions" size="sm" icon={<Plus aria-hidden="true" />} />
     ),
     // The draft's tray: where the conversation will run.
     footer: (
       <span className="flex items-center gap-2">
-        <Button label="pinomad" variant="ghost" size="sm" icon={<FolderClosed aria-hidden="true" />} />
-        <Button label="Git worktree" variant="ghost" size="sm" icon={<FolderGitTwo aria-hidden="true" />} />
+        <Button variant="ghost" size="sm"><FolderClosed aria-hidden="true" />pinomad</Button>
+        <Button variant="ghost" size="sm"><FolderGitTwo aria-hidden="true" />Git worktree</Button>
       </span>
     ),
   },

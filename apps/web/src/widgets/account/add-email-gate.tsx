@@ -1,4 +1,4 @@
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import type { ReactNode } from "react";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import type { AccountModel } from "../../entities/account/account-model.ts";
@@ -29,7 +29,7 @@ export function AddEmailCard({ account }: { account: AccountModel }) {
       </div>
       <EmailForm account={account} submitLabel="Save" onSaved={() => {}} />
       <div className="flex">
-        <Button label="Sign out" variant="secondary" onClick={() => void account.logout()} />
+        <Button variant="secondary" onClick={() => void account.logout()}>Sign out</Button>
       </div>
     </div>
   );
