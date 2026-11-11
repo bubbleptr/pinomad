@@ -45,7 +45,6 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
       <div className="hero-stage">
         <HeroApp lang={lang} label={t.shotAlt} />
       </div>
-      {/* The spec line, then the models. */}
       <div className="hero-meta">
         <div className="wrap">
           <dl className="specs">
@@ -57,27 +56,8 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
             ))}
           </dl>
         </div>
-        <div className="models">
-          <p className="models-label">{t.modelsLabel}</p>
-          {/* Two copies of the list scroll as one band; the second is decoration. */}
-          <div className="ticker">
-            <ModelList t={t} />
-            <ModelList t={t} hidden />
-          </div>
-        </div>
       </div>
     </section>
-  );
-}
-
-function ModelList({ t, hidden }: { t: LandingCopy["hero"]; hidden?: boolean }) {
-  return (
-    <ul aria-hidden={hidden || undefined}>
-      {t.models.map((model) => (
-        <li key={model}>{model}</li>
-      ))}
-      <li className="models-more">{t.modelsMore}</li>
-    </ul>
   );
 }
 

@@ -483,65 +483,9 @@ html[lang="zh-CN"] .eyebrow {
   color: var(--fg-2);
 }
 
-/* Under the stage: the spec line, then the models. The label sits close to its
-   ticker, further from the specs. */
+/* Under the stage. */
 .hero-meta {
   margin-top: clamp(3rem, 6vw, 4.5rem);
-}
-
-.models {
-  margin-top: clamp(2.5rem, 5vw, 3.5rem);
-}
-
-.models-label {
-  margin-bottom: 0.9rem;
-  color: var(--fg-3);
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-html[lang="zh-CN"] .models-label {
-  letter-spacing: 0.06em;
-}
-
-/* Model providers drift past as one band, fading out at both edges. */
-.ticker {
-  display: flex;
-  width: max-content;
-}
-
-.models {
-  overflow: hidden;
-  mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
-}
-
-.ticker ul {
-  display: flex;
-  flex: none;
-  align-items: baseline;
-}
-
-.ticker li {
-  display: flex;
-  align-items: baseline;
-  color: var(--fg-2);
-  font-family: var(--font-display);
-  font-size: clamp(1.4rem, 2.6vw, 2rem);
-  white-space: nowrap;
-}
-
-.ticker li::after {
-  content: "✦";
-  margin-inline: 1.4em;
-  color: var(--fg-3);
-  font-size: 0.45em;
-  translate: 0 -0.35em;
-}
-
-.models-more {
-  font-style: italic;
 }
 
 /* The app stands on a plate of silver contour lines over Abyss Blue. The picture is
@@ -598,14 +542,6 @@ html[lang="zh-CN"] .models-label {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .ticker {
-    animation: drift 60s linear infinite;
-  }
-
-  .models:hover .ticker {
-    animation-play-state: paused;
-  }
-
   /* The app tips up off its stage as it scrolls in. */
   @supports (animation-timeline: view()) {
     .hero-shot {
@@ -614,12 +550,6 @@ html[lang="zh-CN"] .models-label {
       animation-timeline: view();
       animation-range: entry 0% cover 40%;
     }
-  }
-}
-
-@keyframes drift {
-  to {
-    translate: -50% 0;
   }
 }
 
@@ -1482,29 +1412,6 @@ html[lang="zh-CN"] .split h2 {
 @keyframes intro-fade {
   from {
     opacity: 0;
-  }
-}
-
-/* Without the drift, the band would cut the list off: show one copy, wrapped. */
-@media (prefers-reduced-motion: reduce) {
-  .models {
-    mask-image: none;
-  }
-
-  .ticker {
-    width: auto;
-  }
-
-  .ticker ul {
-    flex: 1;
-    flex-wrap: wrap;
-    justify-content: center;
-    row-gap: 0.4rem;
-  }
-
-  .ticker ul[aria-hidden],
-  .ticker li:last-child::after {
-    display: none;
   }
 }
 
