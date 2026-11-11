@@ -1,0 +1,68 @@
+/* Syntax colors for CodeBlock, the Astryx neutral theme's palette. Defined on
+   the block so the light-dark() pairs follow the color-scheme it sits in.
+   Range mode paints tokens through the CSS Custom Highlight API (registered
+   as pinomad-<type> by highlight-ranges.ts); span mode, used where that API
+   is missing or broken (Safari, jsdom), wraps each token in a class. */
+@layer components {
+  [data-slot="code-block"] {
+    --syntax-background: light-dark(#fafafa, #0a0a0a);
+    --syntax-keyword: light-dark(#700084, #efa8ff);
+    --syntax-string: light-dark(#005600, #a6d2a2);
+    --syntax-comment: light-dark(#737373, #a3a3a3);
+    --syntax-number: light-dark(#6e3500, #ffb37f);
+    --syntax-function: light-dark(#00458c, #a0caff);
+    --syntax-type: light-dark(#700084, #efa8ff);
+    --syntax-tag: light-dark(#89001a, #ffaeaa);
+    --syntax-attribute: light-dark(#584400, #eec12f);
+    --syntax-property: light-dark(#005348, #83dac9);
+    --syntax-operator: light-dark(#737373, #a3a3a3);
+    --syntax-constant: light-dark(#6e3500, #ffb37f);
+    --syntax-punctuation: light-dark(#a3a3a3, #525252);
+    --syntax-variable: light-dark(#171717, #e5e5e5);
+  }
+
+  /* Separate rule sets: a browser that can't parse ::highlight() drops the
+     whole rule, and the span fallback exists for exactly those browsers. */
+  [data-slot="code-block"] code::highlight(pinomad-keyword) { color: var(--syntax-keyword); }
+  [data-slot="code-block"] code::highlight(pinomad-string) { color: var(--syntax-string); }
+  [data-slot="code-block"] code::highlight(pinomad-comment) { color: var(--syntax-comment); }
+  [data-slot="code-block"] code::highlight(pinomad-number) { color: var(--syntax-number); }
+  [data-slot="code-block"] code::highlight(pinomad-function) { color: var(--syntax-function); }
+  [data-slot="code-block"] code::highlight(pinomad-type) { color: var(--syntax-type); }
+  [data-slot="code-block"] code::highlight(pinomad-tag) { color: var(--syntax-tag); }
+  [data-slot="code-block"] code::highlight(pinomad-attribute) { color: var(--syntax-attribute); }
+  [data-slot="code-block"] code::highlight(pinomad-property) { color: var(--syntax-property); }
+  [data-slot="code-block"] code::highlight(pinomad-operator) { color: var(--syntax-operator); }
+  [data-slot="code-block"] code::highlight(pinomad-constant) { color: var(--syntax-constant); }
+  [data-slot="code-block"] code::highlight(pinomad-punctuation) { color: var(--syntax-punctuation); }
+  [data-slot="code-block"] code::highlight(pinomad-variable) { color: var(--syntax-variable); }
+
+  [data-slot="code-block"] .token-keyword { color: var(--syntax-keyword); }
+  [data-slot="code-block"] .token-string { color: var(--syntax-string); }
+  [data-slot="code-block"] .token-comment { color: var(--syntax-comment); }
+  [data-slot="code-block"] .token-number { color: var(--syntax-number); }
+  [data-slot="code-block"] .token-function { color: var(--syntax-function); }
+  [data-slot="code-block"] .token-type { color: var(--syntax-type); }
+  [data-slot="code-block"] .token-tag { color: var(--syntax-tag); }
+  [data-slot="code-block"] .token-attribute { color: var(--syntax-attribute); }
+  [data-slot="code-block"] .token-property { color: var(--syntax-property); }
+  [data-slot="code-block"] .token-operator { color: var(--syntax-operator); }
+  [data-slot="code-block"] .token-constant { color: var(--syntax-constant); }
+  [data-slot="code-block"] .token-punctuation { color: var(--syntax-punctuation); }
+  [data-slot="code-block"] .token-variable { color: var(--syntax-variable); }
+}
+
+/* The collapse chevron grows its own footprint from zero so the title slides
+   over instead of snapping. */
+@keyframes code-block-chevron-reveal {
+  from {
+    width: 0;
+    margin-inline-end: 0;
+    opacity: 0;
+  }
+  to {
+    width: 14px;
+    margin-inline-end: var(--spacing-1);
+    opacity: 1;
+  }
+}
