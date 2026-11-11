@@ -3,9 +3,8 @@
 // the lightbox only fetches the image it is showing.
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
+import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { Lightbox } from "@astryxdesign/core/Lightbox";
-import { Text } from "@astryxdesign/core/Text";
 import { Thumbnail } from "@astryxdesign/core/Thumbnail";
 import { useState } from "react";
 import type { ViewImage } from "@pinomad/protocol/images.ts";
@@ -90,14 +89,14 @@ export function MessageLightbox({
           header={<DialogHeader title="Image unavailable" onOpenChange={() => onClose()} />}
           content={
             <LayoutContent>
-              <VStack gap={3} padding={3}>
+              <div className="flex flex-col gap-3 p-3">
                 <div role="alert">
-                  <Text>Couldn't load the original image.</Text>
+                  <span className="text-sm/5">Couldn't load the original image.</span>
                 </div>
                 <div>
                   <Button label="Try again" onClick={() => setAttempt((value) => value + 1)} />
                 </div>
-              </VStack>
+              </div>
             </LayoutContent>
           }
         />

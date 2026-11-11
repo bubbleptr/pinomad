@@ -1,10 +1,8 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
-import { Link } from "@astryxdesign/core/Link";
+import { Link } from "../../shared/ui/link.tsx";
 import { RadioList, RadioListItem } from "@astryxdesign/core/RadioList";
 import { Spinner } from "@astryxdesign/core/Spinner";
-import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import type { LoginEvent, LoginFlow, LoginMethod, LoginPrompt } from "@pinomad/protocol/auth.ts";
@@ -157,10 +155,10 @@ export function LoginPanel({
   if (loginId === undefined) {
     if (method === "api_key" && startError === undefined) return <Status label="Starting…" />;
     return (
-      <VStack gap={3}>
+      <div className="flex flex-col gap-3">
         {intro}
         {startError === undefined ? null : <Banner status="error" title="Couldn't start the login" description={startError} />}
-        <HStack gap={2} wrap="wrap">
+        <div className="flex flex-wrap gap-2">
           <Button
             label={method === "api_key" ? "Try again" : (signIn ?? "Sign in")}
             variant="primary"
@@ -169,8 +167,8 @@ export function LoginPanel({
             onClick={start}
           />
           <Button label="Cancel" variant="secondary" onClick={onCancel} />
-        </HStack>
-      </VStack>
+        </div>
+      </div>
     );
   }
 
@@ -190,13 +188,13 @@ export function LoginPanel({
   if (flow.state !== "running") return <Status label={flow.state === "succeeded" ? "Saved" : "Cancelled"} />;
 
   return (
-    <VStack gap={4}>
+    <div className="flex flex-col gap-4">
       <LoginEvents events={flow.events} />
       {flow.prompt === undefined ? (
-        <VStack gap={3}>
+        <div className="flex flex-col gap-3">
           <Status label={waitingLabel(flow.events)} />
           <CancelRow error={cancelError} onCancel={cancel} />
-        </VStack>
+        </div>
       ) : (
         <PromptForm
           key={flow.prompt.id}
@@ -207,7 +205,7 @@ export function LoginPanel({
           onCancel={cancel}
         />
       )}
-    </VStack>
+    </div>
   );
 }
 
@@ -220,29 +218,29 @@ const waitingLabel = (events: readonly LoginEvent[]): string => {
 
 function Status({ label }: { label: string }) {
   return (
-    <HStack gap={2} vAlign="center">
+    <div className="flex items-center gap-2">
       <Spinner size="sm" />
-      <Text type="supporting" role="status">
+      <span className="text-xs/5 text-muted-foreground" role="status">
         {label}
-      </Text>
-    </HStack>
+      </span>
+    </div>
   );
 }
 
 function CancelRow({ error, onCancel }: { error?: string; onCancel: () => void }) {
   return (
-    <HStack gap={2} vAlign="center" wrap="wrap">
+    <div className="flex flex-wrap items-center gap-2">
       <Button label="Cancel" variant="secondary" onClick={onCancel} />
       {error === undefined ? null : <InlineError message={error} />}
-    </HStack>
+    </div>
   );
 }
 
 export function InlineError({ message }: { message: string }) {
   return (
-    <Text type="supporting" role="alert" style={{ color: "var(--destructive)" }}>
+    <span className="text-xs/5 text-muted-foreground" role="alert" style={{ color: "var(--destructive)" }}>
       {message}
-    </Text>
+    </span>
   );
 }
 
@@ -264,11 +262,11 @@ function LoginEvents({ events }: { events: readonly LoginEvent[] }) {
     );
   if (shown.length === 0) return null;
   return (
-    <VStack gap={4}>
+    <div className="flex flex-col gap-4">
       {shown.map(({ event, index }) => (
         <LoginEventView key={index} event={event} />
       ))}
-    </VStack>
+    </div>
   );
 }
 
@@ -276,34 +274,34 @@ function LoginEventView({ event }: { event: LoginEvent }) {
   switch (event.type) {
     case "info":
       return (
-        <VStack gap={1}>
-          <Text as="p" type="supporting">
+        <div className="flex flex-col gap-1">
+          <p className="text-xs/5 text-muted-foreground">
             {event.message}
-          </Text>
+          </p>
           {event.links === undefined || event.links.length === 0 ? null : (
-            <HStack gap={3} wrap="wrap">
+            <div className="flex flex-wrap gap-3">
               {event.links.map((link) => (
-                <Link key={link.url} href={link.url} isExternalLink>
+                <Link key={link.url} href={link.url} external className="text-sm/5">
                   {link.label ?? link.url}
                 </Link>
               ))}
-            </HStack>
+            </div>
           )}
-        </VStack>
+        </div>
       );
     case "auth_url":
       return (
-        <VStack gap={2}>
-          <Text as="p">{event.instructions ?? "Open the sign-in page and approve access."}</Text>
-          <HStack gap={2}>
+        <div className="flex flex-col gap-2">
+          <p className="text-sm/5">{event.instructions ?? "Open the sign-in page and approve access."}</p>
+          <div className="flex gap-2">
             <Button
               label="Open sign-in page"
               icon={<LinkExternal aria-hidden="true" style={iconSize} />}
               size="sm"
               onClick={() => openInNewTab(event.url)}
             />
-          </HStack>
-        </VStack>
+          </div>
+        </div>
       );
     case "device_code":
       return <DeviceCode code={event.userCode} url={event.verificationUri} />;
@@ -327,9 +325,9 @@ function DeviceCode({ code, url }: { code: string; url: string }) {
   return (
     <ol className="providers-steps">
       <li>
-        <VStack gap={2}>
-          <Text>Copy this code.</Text>
-          <HStack gap={3} vAlign="center" wrap="wrap">
+        <div className="flex flex-col gap-2">
+          <span className="text-sm/5">Copy this code.</span>
+          <div className="flex flex-wrap items-center gap-3">
             <span className="providers-code">{code}</span>
             <Button
               label={copied ? "Copied" : "Copy"}
@@ -339,23 +337,23 @@ function DeviceCode({ code, url }: { code: string; url: string }) {
                 void navigator.clipboard?.writeText(code).then(() => setCopied(true), () => undefined);
               }}
             />
-          </HStack>
-        </VStack>
+          </div>
+        </div>
       </li>
       <li>
-        <VStack gap={2}>
-          <Text>
+        <div className="flex flex-col gap-2">
+          <span className="text-sm/5">
             Enter it at <span className="providers-mono">{display}</span>
-          </Text>
-          <HStack gap={2}>
+          </span>
+          <div className="flex gap-2">
             <Button
               label={`Open ${host}`}
               icon={<LinkExternal aria-hidden="true" style={iconSize} />}
               size="sm"
               onClick={() => openInNewTab(url)}
             />
-          </HStack>
-        </VStack>
+          </div>
+        </div>
       </li>
     </ol>
   );
@@ -402,7 +400,7 @@ function PromptForm({
   const status = error === undefined ? undefined : { type: "error" as const, message: error };
   return (
     <form onSubmit={submit} autoComplete="off">
-      <VStack gap={3}>
+      <div className="flex flex-col gap-3">
         {prompt.type === "select" ? (
           <RadioList label={labelOf(prompt)} value={value} onChange={setValue} isDisabled={!connected} status={status}>
             {prompt.options.map((option) => (
@@ -425,12 +423,12 @@ function PromptForm({
             width="100%"
           />
         )}
-        <HStack gap={2} vAlign="center" wrap="wrap">
+        <div className="flex flex-wrap items-center gap-2">
           <Button label="Continue" variant="primary" type="submit" isLoading={sending} isDisabled={!canSubmit} />
           <Button label="Cancel" variant="secondary" onClick={onCancel} />
           {cancelError === undefined ? null : <InlineError message={cancelError} />}
-        </HStack>
-      </VStack>
+        </div>
+      </div>
     </form>
   );
 }

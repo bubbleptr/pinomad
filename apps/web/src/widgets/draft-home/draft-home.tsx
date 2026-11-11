@@ -1,5 +1,4 @@
 import { Selector } from "@astryxdesign/core/Selector";
-import { Text } from "@astryxdesign/core/Text";
 import { useRef, useState } from "react";
 import { hostSupportsCall, hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import type { Home } from "@pinomad/protocol/organization.ts";
@@ -178,7 +177,7 @@ export function DraftHome({
         <div className="flex w-full flex-col gap-3">
           <ImageFileInput inputRef={fileInput} onFiles={add} />
           <FilePickerInput inputRef={attachInput} onFiles={addFiles} />
-          {files.uploading ? <Text type="supporting">Uploading files…</Text> : null}
+          {files.uploading ? <span className="text-xs/5 text-muted-foreground">Uploading files…</span> : null}
           <ChatPromptInput
             value={value}
             inputRef={inputRef}

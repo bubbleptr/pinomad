@@ -3,9 +3,8 @@
 // from local state.
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { HStack, Layout, LayoutContent, LayoutFooter, VStack } from "@astryxdesign/core/Layout";
+import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
 import { Selector } from "@astryxdesign/core/Selector";
-import { Text } from "@astryxdesign/core/Text";
 import { TextArea } from "@astryxdesign/core/TextArea";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useState } from "react";
@@ -125,8 +124,8 @@ export function AgentEditorDialog({
         }
         content={
           <LayoutContent>
-            <VStack gap={4}>
-              <VStack gap={1}>
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1">
                 <TextInput
                   label="Name"
                   value={name}
@@ -135,7 +134,7 @@ export function AgentEditorDialog({
                   hasAutoFocus={!editing}
                   description={editing ? "The name is the file name and can't be changed." : undefined}
                 />
-              </VStack>
+              </div>
               <TextInput label="Description" value={description} onChange={setDescription} isDisabled={saving} />
               <Selector
                 label="Model"
@@ -153,16 +152,16 @@ export function AgentEditorDialog({
               />
               <TextArea label="Prompt" value={prompt} onChange={setPrompt} isDisabled={saving} rows={4} />
               {error === undefined ? null : (
-                <Text type="supporting" role="alert" style={{ color: "var(--destructive)" }}>
+                <span className="text-xs/5 text-muted-foreground" role="alert" style={{ color: "var(--destructive)" }}>
                   {error}
-                </Text>
+                </span>
               )}
-            </VStack>
+            </div>
           </LayoutContent>
         }
         footer={
           <LayoutFooter>
-            <HStack gap={2} hAlign="end">
+            <div className="flex justify-end gap-2">
               <Button label="Cancel" variant="secondary" onClick={onClose} />
               <Button
                 label="Save"
@@ -170,7 +169,7 @@ export function AgentEditorDialog({
                 isDisabled={!connected || saving}
                 onClick={save}
               />
-            </HStack>
+            </div>
           </LayoutFooter>
         }
       />

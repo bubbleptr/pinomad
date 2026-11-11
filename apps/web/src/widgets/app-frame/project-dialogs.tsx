@@ -1,8 +1,7 @@
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Layout, LayoutContent, LayoutFooter, HStack, VStack } from "@astryxdesign/core/Layout";
+import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
 import { Spinner } from "@astryxdesign/core/Spinner";
-import { Text } from "@astryxdesign/core/Text";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FolderListing, Project } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -255,10 +254,10 @@ export function AddProjectDialog({
                 {start.status === "loading" ? (
                   <Spinner aria-label="Loading folders" />
                 ) : (
-                  <VStack gap={2} hAlign="center">
-                    <Text type="supporting">{start.message}</Text>
+                  <div className="flex flex-col items-center gap-2">
+                    <span className="text-xs/5 text-muted-foreground">{start.message}</span>
                     <Button label="Try again" variant="secondary" onClick={begin} />
-                  </VStack>
+                  </div>
                 )}
               </div>
             ) : (
@@ -319,22 +318,20 @@ export function AddProjectDialog({
         }
         footer={
           <LayoutFooter>
-            <HStack gap={2} vAlign="center" hAlign="between">
+            <div className="flex items-center justify-between gap-2">
               <div className="min-w-0 flex-1">
                 {addError !== undefined ? (
-                  <Text type="supporting" role="alert" maxLines={1} style={{ color: "var(--destructive)" }}>
+                  <span className="block truncate text-xs/5 text-destructive" role="alert" title={addError}>
                     {addError}
-                  </Text>
+                  </span>
                 ) : (
                   // Touch has no arrow keys to advertise.
                   <div className="hidden pointer-fine:block">
-                    <Text type="supporting" maxLines={1}>
-                      Arrow keys to browse, Enter to add
-                    </Text>
+                    <span className="block truncate text-xs/5 text-muted-foreground">Arrow keys to browse, Enter to add</span>
                   </div>
                 )}
               </div>
-              <HStack gap={2} hAlign="end">
+              <div className="flex justify-end gap-2">
                 <Button label="Cancel" variant="secondary" onClick={onClose} />
                 <Button
                   label={adding ? "Adding…" : "Add project"}
@@ -342,8 +339,8 @@ export function AddProjectDialog({
                   isDisabled={!connected || selected === undefined || adding}
                   onClick={add}
                 />
-              </HStack>
-            </HStack>
+              </div>
+            </div>
           </LayoutFooter>
         }
       />
@@ -390,12 +387,12 @@ function FolderColumn({
         </div>
       ) : listing.status === "error" ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 px-2 text-center">
-          <Text type="supporting">{listing.message}</Text>
+          <span className="text-xs/5 text-muted-foreground">{listing.message}</span>
           <Button label="Try again" size="sm" variant="secondary" isDisabled={disabled} onClick={onRetry} />
         </div>
       ) : listing.folders.length === 0 ? (
         <div className="flex flex-1 items-center justify-center">
-          <Text type="supporting">No subfolders</Text>
+          <span className="text-xs/5 text-muted-foreground">No subfolders</span>
         </div>
       ) : (
         listing.folders.map((folder) => {
@@ -458,10 +455,10 @@ export function RemoveProjectDialog({
         content={<LayoutContent />}
         footer={
           <LayoutFooter>
-            <HStack gap={2} hAlign="end">
+            <div className="flex justify-end gap-2">
               <Button label="Cancel" variant="secondary" onClick={onClose} />
               <Button label="Remove project" variant="primary" isDisabled={!connected} onClick={remove} />
-            </HStack>
+            </div>
           </LayoutFooter>
         }
       />

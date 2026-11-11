@@ -1,6 +1,6 @@
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { HStack, Layout, LayoutContent, LayoutFooter, VStack } from "@astryxdesign/core/Layout";
+import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
 import type { ReactNode } from "react";
 
 /**
@@ -35,18 +35,18 @@ export function ConfirmDialog({
         content={
           <LayoutContent>
             {children === undefined ? null : (
-              <VStack gap={3} style={{ padding: "var(--spacing-2)" }}>
+              <div className="flex flex-col gap-3" style={{ padding: "var(--spacing-2)" }}>
                 {children}
-              </VStack>
+              </div>
             )}
           </LayoutContent>
         }
         footer={
           <LayoutFooter>
-            <HStack gap={2} hAlign="end">
+            <div className="flex justify-end gap-2">
               <Button label="Cancel" variant="secondary" onClick={onClose} />
               {action}
-            </HStack>
+            </div>
           </LayoutFooter>
         }
       />

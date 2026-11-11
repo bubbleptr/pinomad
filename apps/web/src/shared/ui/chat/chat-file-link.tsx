@@ -1,4 +1,4 @@
-import { Link } from "@astryxdesign/core/Link";
+import { Link } from "../link.tsx";
 import { createContext, type ReactNode } from "react";
 import { FileIcon } from "@/shared/ui/icons";
 
@@ -73,13 +73,7 @@ export function ChatFileLink({
   if (!file) {
     const external = /^https?:\/\//.test(href);
     return (
-      <Link
-        color="accent"
-        hasUnderline
-        href={href}
-        type="inherit"
-        {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
-      >
+      <Link className="underline" href={href} {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}>
         <chatInsideLinkContext.Provider value={true}>
           {children}
         </chatInsideLinkContext.Provider>

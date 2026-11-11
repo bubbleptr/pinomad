@@ -1,8 +1,6 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { Spinner } from "@astryxdesign/core/Spinner";
-import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import type { AccountConfirmation, AccountError, AccountResult } from "@pinomad/client/account.ts";
@@ -140,17 +138,17 @@ export function ConfirmIdentity({
     );
   }
   return (
-    <VStack gap={2}>
-      <Text type="supporting">We'll email a code to {email ?? "your account's email"}.</Text>
+    <div className="flex flex-col gap-2">
+      <span className="text-xs/5 text-muted-foreground">We'll email a code to {email ?? "your account's email"}.</span>
       {sent ? (
         <TextInput label="Confirmation code" value={code} onChange={onCode} onEnter={onEnter} width="100%" {...CODE_INPUT} />
       ) : null}
       {sendError === undefined ? null : (
         <Banner status="error" title="Couldn't send the code" description={accountErrorMessage(sendError)} />
       )}
-      <HStack gap={2}>
+      <div className="flex gap-2">
         <Button label={sent ? "Resend code" : "Send code"} variant="secondary" size="sm" isLoading={sending} onClick={onSend} />
-      </HStack>
-    </VStack>
+      </div>
+    </div>
   );
 }

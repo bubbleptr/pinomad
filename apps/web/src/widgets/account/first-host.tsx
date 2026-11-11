@@ -1,9 +1,6 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { Heading } from "@astryxdesign/core/Heading";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
-import { Link } from "@astryxdesign/core/Link";
-import { Text } from "@astryxdesign/core/Text";
+import { Link } from "../../shared/ui/link.tsx";
 import { useState } from "react";
 import type { AccountState } from "../../entities/account/account-model.ts";
 import { PairingLinkForm } from "../../entities/host/pairing-link-form.tsx";
@@ -26,44 +23,44 @@ export function FirstHost({ state }: { state: Extract<AccountState, { status: "s
   const [accountOpen, setAccountOpen] = useState(false);
   const [pastingLink, setPastingLink] = useState(false);
   return (
-    <VStack gap={6} style={{ width: "100%", maxWidth: 520 }}>
-      <VStack gap={2}>
-        <Heading level={2}>Add your first host</Heading>
-        <Text type="supporting">
+    <div className="flex flex-col gap-6" style={{ width: "100%", maxWidth: 520 }}>
+      <div className="flex flex-col gap-2">
+        <h2 className="text-xl/7 font-semibold">Add your first host</h2>
+        <span className="text-xs/5 text-muted-foreground">
           A host is the computer that runs your agents: a Mac or Linux machine. The command installs PiNomad with its
           own Node, joins the host to your account and keeps it running as a service. The host then shows up here and
           connects on its own.
-        </Text>
-      </VStack>
+        </span>
+      </div>
       <AddHostSteps serverOrigin={state.serverOrigin} />
       {state.hostsError === undefined ? null : (
         <Banner status="warning" title="Couldn't check for new hosts" description={accountErrorMessage(state.hostsError)} />
       )}
-      <VStack gap={2}>
-        <Text type="supporting">
+      <div className="flex flex-col gap-2">
+        <span className="text-xs/5 text-muted-foreground">
           Not using an account?{" "}
-          <Link href={NO_ACCOUNT_DOCS} isExternalLink>
+          <Link href={NO_ACCOUNT_DOCS} external>
             Pair a host directly
           </Link>
-        </Text>
+        </span>
         {pastingLink ? (
-          <VStack gap={2}>
-            <Text type="supporting">Paste a pairing link from pinomad pair or Settings → Devices → Pair a device.</Text>
+          <div className="flex flex-col gap-2">
+            <span className="text-xs/5 text-muted-foreground">Paste a pairing link from pinomad pair or Settings → Devices → Pair a device.</span>
             <PairingLinkForm />
-          </VStack>
+          </div>
         ) : (
-          <HStack>
+          <div className="flex">
             <Button label="Have a pairing link?" variant="ghost" size="sm" onClick={() => setPastingLink(true)} />
-          </HStack>
+          </div>
         )}
-        <HStack gap={2} vAlign="center">
-          <Text type="supporting">
+        <div className="flex items-center gap-2">
+          <span className="text-xs/5 text-muted-foreground">
             Signed in as {state.user} on {new URL(state.serverOrigin).host}
-          </Text>
+          </span>
           <Button label="Account" variant="secondary" size="sm" onClick={() => setAccountOpen(true)} />
-        </HStack>
-      </VStack>
+        </div>
+      </div>
       {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}
-    </VStack>
+    </div>
   );
 }

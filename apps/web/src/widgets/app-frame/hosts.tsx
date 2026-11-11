@@ -2,15 +2,13 @@ import { Button } from "@astryxdesign/core/Button";
 import { Collapsible } from "@astryxdesign/core/Collapsible";
 import { DropdownMenu, DropdownMenuItem } from "@astryxdesign/core/DropdownMenu";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Heading } from "@astryxdesign/core/Heading";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { Item } from "@astryxdesign/core/Item";
-import { HStack, Layout, LayoutContent, LayoutFooter, VStack } from "@astryxdesign/core/Layout";
+import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { useToast } from "@astryxdesign/core/Toast";
-import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -123,20 +121,16 @@ function p2pStatus({
 
 function AddressRow({ label, end }: { label: string; end: RtcCandidateEnd }) {
   return (
-    <HStack gap={2} style={{ alignItems: "baseline" }}>
-      <Text type="supporting" className="w-20 shrink-0">
+    <div className="flex gap-2" style={{ alignItems: "baseline" }}>
+      <span className="text-xs/5 text-muted-foreground w-20 shrink-0">
         {label}
-      </Text>
-      <Text
-        type="code"
-        size="sm"
-        color="secondary"
-        hasTabularNumbers
+      </span>
+      <span className="font-mono text-xs leading-[1.4286] text-muted-foreground tabular-nums"
         style={{ wordBreak: "break-all", userSelect: "all" }}
       >
         {candidateEndLabel(end)}
-      </Text>
-    </HStack>
+      </span>
+    </div>
   );
 }
 
@@ -156,9 +150,9 @@ function routeNote(route: HostRoute, mode: ConnectionMode): string | undefined {
 function HostRouteList({ host, routes }: { host: StoredHost; routes: readonly HostRoute[] }) {
   if (routes.length === 0) {
     return (
-      <Text type="supporting">
+      <span className="text-xs/5 text-muted-foreground">
         No published address
-      </Text>
+      </span>
     );
   }
   return (
@@ -167,16 +161,16 @@ function HostRouteList({ host, routes }: { host: StoredHost; routes: readonly Ho
         const note = routeNote(route, host.connectionMode ?? "auto");
         return (
           <li key={route.url} className={route.state === "available" ? "flex gap-2" : "flex gap-2 opacity-60"}>
-            <Text type="supporting" className="w-24 shrink-0">
+            <span className="text-xs/5 text-muted-foreground w-24 shrink-0">
               {route.label}
-            </Text>
-            <Text type="code" size="sm" color="secondary" className="min-w-0" style={{ wordBreak: "break-all" }}>
+            </span>
+            <span className="font-mono text-xs leading-[1.4286] text-muted-foreground min-w-0" style={{ wordBreak: "break-all" }}>
               {route.address}
-            </Text>
+            </span>
             {note === undefined ? null : (
-              <Text type="supporting" className="shrink-0">
+              <span className="text-xs/5 text-muted-foreground shrink-0">
                 {note}
-              </Text>
+              </span>
             )}
           </li>
         );
@@ -337,14 +331,14 @@ export function HostsSection({
   const accountState = account.state.status === "signed-in" ? account.state : undefined;
   const others = accountState === undefined ? [] : unpairedAccountHosts(accountState, paired.hosts);
   return (
-    <VStack gap={4}>
+    <div className="flex flex-col gap-4">
       {thisMac}
-      <HStack hAlign="end">
+      <div className="flex justify-end">
         <Button label="Add a host" variant="secondary" size="sm" onClick={() => setAdding(true)} />
-      </HStack>
+      </div>
       {accountState === undefined ? null : <AccountPairingBanners state={accountState} pairing={pairing} />}
       {paired.hosts.length === 0 ? (
-        <Text type="supporting">No paired hosts.</Text>
+        <span className="text-xs/5 text-muted-foreground">No paired hosts.</span>
       ) : (
         <SettingsGroup {...(others.length === 0 && thisMac === undefined ? {} : { title: "Paired with this device" })}>
           <ul aria-label="Paired with this device" className={GROUP_ROWS}>
@@ -370,7 +364,7 @@ export function HostsSection({
         </SettingsGroup>
       )}
       {adding ? <AddHostDialog onClose={() => setAdding(false)} /> : null}
-    </VStack>
+    </div>
   );
 }
 
@@ -423,7 +417,7 @@ function PairedHostRow({
         label={label}
         description={issue === undefined ? status : ACCOUNT_HOST_ISSUE[issue.kind]}
         endContent={
-          <HStack gap={1} vAlign="center">
+          <div className="flex items-center gap-1">
             {action}
             <IconButton
               label={`${label} details`}
@@ -432,7 +426,7 @@ function PairedHostRow({
               size="sm"
               onClick={onDetails}
             />
-          </HStack>
+          </div>
         }
       />
     </li>
@@ -504,21 +498,21 @@ function HostDetail({
   };
 
   return (
-    <VStack gap={5} role="group" aria-label={label}>
-      <HStack gap={2} vAlign="center">
+    <div className="flex flex-col gap-5" role="group" aria-label={label}>
+      <div className="flex items-center gap-2">
         {hasBack ? (
           <IconButton label="Back to hosts" icon={<ArrowLeft aria-hidden="true" />} variant="ghost" size="sm" onClick={onBack} />
         ) : null}
         <HostStatusDot connected={connected} />
-        <VStack gap={0} className="min-w-0">
+        <div className="flex flex-col min-w-0">
           {/* The Settings header names the host where it carries the way back. */}
-          {hasBack ? <Heading level={3}>{label}</Heading> : null}
-          <Text type="supporting">{status}</Text>
-        </VStack>
-      </HStack>
-      <VStack gap={1}>
-        <Text weight="semibold">Connection</Text>
-        <HStack gap={2} vAlign="center" wrap="wrap">
+          {hasBack ? <h3 className="text-[1.0625rem]/6 font-bold">{label}</h3> : null}
+          <span className="text-xs/5 text-muted-foreground">{status}</span>
+        </div>
+      </div>
+      <div className="flex flex-col gap-1">
+        <span className="text-sm/5 font-semibold">Connection</span>
+        <div className="flex flex-wrap items-center gap-2">
           <SegmentedControl
             className="shrink-0"
             value={mode}
@@ -530,36 +524,36 @@ function HostDetail({
             <SegmentedControlItem value="directOnly" label="Direct only" />
             <SegmentedControlItem value="relayOnly" label="Relay only" />
           </SegmentedControl>
-        </HStack>
-        <Text type="supporting">{MODE_HELP[mode]}</Text>
+        </div>
+        <span className="text-xs/5 text-muted-foreground">{MODE_HELP[mode]}</span>
         {modeError === undefined ? null : (
-          <Text type="supporting">{`Could not save the connection mode: ${modeError}`}</Text>
+          <span className="text-xs/5 text-muted-foreground">{`Could not save the connection mode: ${modeError}`}</span>
         )}
-      </VStack>
+      </div>
       {connected ? (
         <SettingsGroup title="Status">
           <List hasDividers aria-label="Status">
             <ListItem
               label="Path"
               description={
-                <VStack gap={1}>
-                  <Text type="inherit">{diagnostics === undefined ? "—" : pathLabel(diagnostics)}</Text>
+                <div className="flex flex-col gap-1">
+                  <span>{diagnostics === undefined ? "—" : pathLabel(diagnostics)}</span>
                   {diagnostics?.path === "p2p" && diagnostics.selectedPair !== undefined ? (
                     <Collapsible
                       defaultIsOpen={false}
                       trigger={
-                        <Text type="body" size="sm" color="secondary" className="block min-h-11 py-3">
+                        <span className="block min-h-11 py-3 text-xs leading-[1.4286] font-normal text-muted-foreground">
                           Show addresses
-                        </Text>
+                        </span>
                       }
                     >
-                      <VStack gap={1}>
+                      <div className="flex flex-col gap-1">
                         <AddressRow label="This device" end={diagnostics.selectedPair.local} />
                         <AddressRow label="Host" end={diagnostics.selectedPair.remote} />
-                      </VStack>
+                      </div>
                     </Collapsible>
                   ) : null}
-                </VStack>
+                </div>
               }
             />
             <ListItem
@@ -577,25 +571,25 @@ function HostDetail({
                 label="Last failure"
                 // A node wraps instead of truncating; the age ticks every second.
                 description={
-                  <Text type="inherit" hasTabularNumbers>
+                  <span className="tabular-nums">
                     {failureLabel(diagnostics.lastFailure)}
-                  </Text>
+                  </span>
                 }
               />
             )}
           </List>
         </SettingsGroup>
       ) : null}
-      <VStack gap={1}>
-        <Text weight="semibold">Routes</Text>
+      <div className="flex flex-col gap-1">
+        <span className="text-sm/5 font-semibold">Routes</span>
         <HostRouteList host={host} routes={hostRoutes(host, { pageProtocol: window.location.protocol })} />
-      </VStack>
-      <HStack gap={2} wrap="wrap">
+      </div>
+      <div className="flex flex-wrap gap-2">
         <Button label="Unpair" variant="secondary" size="sm" onClick={() => setUnpairing(true)} />
         {accountMatch === undefined ? null : (
           <Button label="Remove from account" variant="secondary" size="sm" onClick={() => setRemoving(true)} />
         )}
-      </HStack>
+      </div>
       {unpairing ? (
         <UnpairHostDialog
           host={host}
@@ -619,7 +613,7 @@ function HostDetail({
           }}
         />
       ) : null}
-    </VStack>
+    </div>
   );
 }
 
@@ -655,10 +649,10 @@ function UnpairHostDialog({
         content={<LayoutContent />}
         footer={
           <LayoutFooter>
-            <HStack gap={2} hAlign="end">
+            <div className="flex justify-end gap-2">
               <Button label="Cancel" variant="secondary" onClick={() => onClose(false)} />
               <Button label="Unpair" variant="destructive" onClick={unpair} />
-            </HStack>
+            </div>
           </LayoutFooter>
         }
       />
@@ -686,7 +680,7 @@ export function HostsFallback({ canSwitch = false }: { canSwitch?: boolean }) {
   const account = useAccountModel();
   const [accountOpen, setAccountOpen] = useState(false);
   return (
-    <VStack gap={3} className="mt-4 w-full max-w-md">
+    <div className="flex flex-col gap-3 mt-4 w-full max-w-md">
       <HostsSection canSwitch={canSwitch} />
       {account.state.status === "unavailable" ? null : (
         <div>
@@ -694,6 +688,6 @@ export function HostsFallback({ canSwitch = false }: { canSwitch?: boolean }) {
         </div>
       )}
       {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}
-    </VStack>
+    </div>
   );
 }

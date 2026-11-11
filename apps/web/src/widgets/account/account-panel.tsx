@@ -2,13 +2,10 @@ import { Avatar } from "@astryxdesign/core/Avatar";
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { CheckboxInput } from "@astryxdesign/core/CheckboxInput";
-import { Heading } from "@astryxdesign/core/Heading";
 import { IconButton } from "@astryxdesign/core/IconButton";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { Spinner } from "@astryxdesign/core/Spinner";
-import { Text } from "@astryxdesign/core/Text";
 import { Token } from "@astryxdesign/core/Token";
 import { type ReactNode, useEffect, useState } from "react";
 import type {
@@ -76,17 +73,17 @@ export function AccountPanel({
       return null;
     case "checking":
       return (
-        <HStack gap={2} vAlign="center">
+        <div className="flex items-center gap-2">
           <Spinner size="sm" />
-          <Text type="supporting">Checking for an account…</Text>
-        </HStack>
+          <span className="text-xs/5 text-muted-foreground">Checking for an account…</span>
+        </div>
       );
     case "signed-out":
       return (
-        <VStack gap={3} style={{ width: "100%" }}>
+        <div className="flex flex-col gap-3" style={{ width: "100%" }}>
           {notice === undefined ? null : <Banner {...notice} />}
           <SignedOut account={account} state={state} />
-        </VStack>
+        </div>
       );
     case "signed-in": {
       const current = page ?? ownPage;
@@ -100,8 +97,8 @@ export function AccountPanel({
       );
       if (page !== undefined || current === "overview") return body;
       return (
-        <VStack gap={4} style={{ width: "100%" }}>
-          <HStack gap={2} vAlign="center">
+        <div className="flex flex-col gap-4" style={{ width: "100%" }}>
+          <div className="flex items-center gap-2">
             <IconButton
               label="Back to account"
               icon={<ArrowLeft aria-hidden="true" />}
@@ -109,10 +106,10 @@ export function AccountPanel({
               size="sm"
               onClick={() => setOwnPage("overview")}
             />
-            <Heading level={3}>{PAGE_TITLE[current]}</Heading>
-          </HStack>
+            <h3 className="text-[1.0625rem]/6 font-bold">{PAGE_TITLE[current]}</h3>
+          </div>
           {body}
-        </VStack>
+        </div>
       );
     }
   }
@@ -200,19 +197,19 @@ function Overview({
   const server = new URL(state.serverOrigin).host;
   const [open, setOpen] = useState<"sign-out" | "everywhere" | "delete">();
   return (
-    <VStack gap={6} style={{ width: "100%" }}>
+    <div className="flex flex-col gap-6" style={{ width: "100%" }}>
       <ProviderLinkReturn />
-      <HStack gap={3} vAlign="center">
+      <div className="flex items-center gap-3">
         <Avatar name={state.user} size="lg" tooltip={false} />
-        <VStack gap={0} className="min-w-0 flex-1">
+        <div className="flex flex-col min-w-0 flex-1">
           {/* An email has no spaces to wrap at; break it rather than run under the button. */}
-          <Heading level={3} style={{ overflowWrap: "anywhere" }}>
+          <h3 className="text-[1.0625rem]/6 font-bold" style={{ overflowWrap: "anywhere" }}>
             {state.user}
-          </Heading>
-          <Text type="supporting">{server}</Text>
-        </VStack>
+          </h3>
+          <span className="text-xs/5 text-muted-foreground">{server}</span>
+        </div>
         <Button label="Sign out" variant="secondary" size="sm" onClick={() => setOpen("sign-out")} />
-      </HStack>
+      </div>
       <AccountEmail account={account} email={state.email} />
       <SignInMethods account={account} />
       <Devices account={account} hosts={state.hosts} />
@@ -237,7 +234,7 @@ function Overview({
       ) : open === "delete" ? (
         <DeleteAccountDialog account={account} server={server} onNotice={onNotice} onClose={() => setOpen(undefined)} />
       ) : null}
-    </VStack>
+    </div>
   );
 }
 
@@ -248,10 +245,10 @@ function Overview({
 function DangerAction({ title, description, action }: { title: string; description: string; action: ReactNode }) {
   return (
     <li className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
-      <VStack gap={0} className="min-w-[14rem] flex-1">
-        <Text>{title}</Text>
-        <Text type="supporting">{description}</Text>
-      </VStack>
+      <div className="flex flex-col min-w-[14rem] flex-1">
+        <span className="text-sm/5">{title}</span>
+        <span className="text-xs/5 text-muted-foreground">{description}</span>
+      </div>
       {action}
     </li>
   );
@@ -414,24 +411,24 @@ function AccountHosts({ state }: { state: SignedInState }) {
   const { hosts } = useHosts();
   const others = unpairedAccountHosts(state, hosts);
   return (
-    <VStack gap={3} style={{ width: "100%" }}>
+    <div className="flex flex-col gap-3" style={{ width: "100%" }}>
       {/* The no-host screen opens here, and App leaves a link's result to it (dureview #642). */}
       <ProviderLinkReturn />
       <AccountPairingBanners state={state} pairing={pairing} />
       {state.hosts.length === 0 ? (
-        <Text type="supporting">No hosts yet.</Text>
+        <span className="text-xs/5 text-muted-foreground">No hosts yet.</span>
       ) : others.length === 0 ? (
-        <Text type="supporting">Every host on your account is paired with this device.</Text>
+        <span className="text-xs/5 text-muted-foreground">Every host on your account is paired with this device.</span>
       ) : (
         <SettingsGroup>
           <AccountHostList state={state} hosts={others} pairing={pairing} label="Hosts on your account" />
         </SettingsGroup>
       )}
-      <HStack>
+      <div className="flex">
         <Button label="Add a host" variant="secondary" size="sm" onClick={() => setAdding(true)} />
-      </HStack>
+      </div>
       {adding ? <AddHostDialog onClose={() => setAdding(false)} /> : null}
-    </VStack>
+    </div>
   );
 }
 
@@ -474,7 +471,7 @@ function Devices({ account, hosts }: { account: AccountModel; hosts: readonly Ac
   // A server from before the list: the group isn't there at all.
   if (unsupported) return null;
   return (
-    <VStack gap={2} style={{ width: "100%" }}>
+    <div className="flex flex-col gap-2" style={{ width: "100%" }}>
       {error === undefined ? null : (
         <Banner
           status="warning"
@@ -486,9 +483,9 @@ function Devices({ account, hosts }: { account: AccountModel; hosts: readonly Ac
       {devices === undefined ? (
         error === undefined ? (
           <SettingsGroup title="Signed-in devices">
-            <HStack style={{ padding: "var(--spacing-3)" }}>
+            <div className="flex" style={{ padding: "var(--spacing-3)" }}>
               <Spinner size="sm" />
-            </HStack>
+            </div>
           </SettingsGroup>
         ) : null
       ) : (
@@ -517,7 +514,7 @@ function Devices({ account, hosts }: { account: AccountModel; hosts: readonly Ac
           }}
         />
       )}
-    </VStack>
+    </div>
   );
 }
 
@@ -545,16 +542,16 @@ function DeviceRow({
     <ListItem
       label={name}
       description={
-        <VStack gap={0}>
-          <Text type="inherit">
+        <div className="flex flex-col">
+          <span>
             {device.kickedAt === undefined ? signIn : `${signIn} · removed ${ago(device.kickedAt, now)}`}
-          </Text>
+          </span>
           {device.hosts.length === 0 ? null : (
-            <Text type="inherit">
+            <span>
               {device.hosts.map((host) => `${host.name}: ${DEVICE_HOST_STATE[host.state]}`).join(" · ")}
-            </Text>
+            </span>
           )}
-        </VStack>
+        </div>
       }
       endContent={end}
     />

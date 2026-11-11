@@ -1,10 +1,8 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Heading } from "@astryxdesign/core/Heading";
-import { HStack, Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
+import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { Spinner } from "@astryxdesign/core/Spinner";
-import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useEffect, useState } from "react";
 import type { AccountError, AccountResult, PendingSignIn } from "@pinomad/client/account.ts";
@@ -101,26 +99,26 @@ export function PendingSignInSteps({
   if (pending === undefined) return <Spinner size="sm" />;
   if (pending === "expired") {
     return (
-      <VStack gap={3}>
-        <Text>This sign-in expired. Start again.</Text>
-        <HStack>
+      <div className="flex flex-col gap-3">
+        <span className="text-sm/5">This sign-in expired. Start again.</span>
+        <div className="flex">
           <Button label="Back to sign-in" variant="secondary" onClick={onDone} />
-        </HStack>
-      </VStack>
+        </div>
+      </div>
     );
   }
   const provider = signInProviderName(pending.provider);
   return (
-    <VStack gap={4}>
+    <div className="flex flex-col gap-4">
       {/* Whose identity this is, before anything gets attached to it. */}
-      <HStack gap={3} vAlign="center">
+      <div className="flex items-center gap-3">
         <SignInProviderMark provider={pending.provider} size={28} />
-        <VStack gap={0}>
-          <Text weight="semibold">{provider}</Text>
-          <Text type="supporting">{pending.email ?? pending.name ?? "No email shared"}</Text>
-        </VStack>
-      </HStack>
-      <Heading level={3}>No PiNomad account for {pending.email ?? `this ${provider} account`} yet</Heading>
+        <div className="flex flex-col">
+          <span className="text-sm/5 font-semibold">{provider}</span>
+          <span className="text-xs/5 text-muted-foreground">{pending.email ?? pending.name ?? "No email shared"}</span>
+        </div>
+      </div>
+      <h3 className="text-[1.0625rem]/6 font-bold">No PiNomad account for {pending.email ?? `this ${provider} account`} yet</h3>
       {choice === "create" ? (
         <CreateFromPending
           account={account}
@@ -143,7 +141,7 @@ export function PendingSignInSteps({
       ) : (
         <SignInAndLink account={account} id={id} provider={provider} navigate={navigate} onDone={onDone} onBack={() => setChoice("create")} />
       )}
-    </VStack>
+    </div>
   );
 }
 
@@ -189,7 +187,7 @@ function CreateFromPending({
     });
   };
   return (
-    <VStack gap={3}>
+    <div className="flex flex-col gap-3">
       {asksPassword ? (
         <TextInput
           label="New password"
@@ -211,7 +209,7 @@ function CreateFromPending({
         onClick={create}
       />
       <Button label="I already have an account" variant="secondary" width="100%" isDisabled={busy} onClick={onLink} />
-    </VStack>
+    </div>
   );
 }
 
@@ -248,17 +246,17 @@ function LinkToCurrent({
   };
   const identity = useConfirmIdentity(account, submit);
   return (
-    <VStack gap={3}>
-      <Text>
+    <div className="flex flex-col gap-3">
+      <span className="text-sm/5">
         Link {provider} to {current}
-      </Text>
+      </span>
       {identity.field}
       {error === undefined ? null : <Banner status="error" title={`Couldn't link ${provider}`} description={accountErrorMessage(error)} />}
-      <HStack gap={2}>
+      <div className="flex gap-2">
         <Button label={`Link ${provider}`} variant="primary" isLoading={busy} isDisabled={!identity.ready} onClick={submit} />
         <Button label="Back" variant="secondary" onClick={onBack} />
-      </HStack>
-    </VStack>
+      </div>
+    </div>
   );
 }
 
@@ -293,7 +291,7 @@ function SignInAndLink({
     });
   };
   return (
-    <VStack gap={3}>
+    <div className="flex flex-col gap-3">
       <TextInput label="Email" value={email} onChange={setEmail} onEnter={submit} width="100%" {...{ autoComplete: "username" }} />
       <TextInput
         label="Password"
@@ -305,11 +303,11 @@ function SignInAndLink({
         {...{ autoComplete: "current-password" }}
       />
       {error === undefined ? null : <Banner status="error" title={`Couldn't link ${provider}`} description={accountErrorMessage(error)} />}
-      <HStack gap={2}>
+      <div className="flex gap-2">
         <Button label={`Sign in and link ${provider}`} variant="primary" isLoading={busy} isDisabled={!ready} onClick={submit} />
         <Button label="Back" variant="secondary" onClick={onBack} />
-      </HStack>
-      <Text type="supporting">Signed up with Google, GitHub or Apple? Sign in with it first, then link this one in Settings.</Text>
-    </VStack>
+      </div>
+      <span className="text-xs/5 text-muted-foreground">Signed up with Google, GitHub or Apple? Sign in with it first, then link this one in Settings.</span>
+    </div>
   );
 }

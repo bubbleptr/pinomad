@@ -1,9 +1,7 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { CodeBlock } from "@astryxdesign/core/CodeBlock";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { Spinner } from "@astryxdesign/core/Spinner";
-import { Text } from "@astryxdesign/core/Text";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { useSetupRun, type MintToken } from "../../entities/local-host/setup-run.ts";
@@ -52,25 +50,25 @@ export function LocalHostSetup({
       return starting ? (
         <Progress label="Starting the host…" />
       ) : (
-        <HStack>
+        <div className="flex">
           <Button label="Set up this Mac" variant="secondary" onClick={run} />
-        </HStack>
+        </div>
       );
     case "installing":
       return (
-        <VStack gap={2}>
+        <div className="flex flex-col gap-2">
           <Progress label="Installing PiNomad…" />
           <InstallLog lines={phase.lines} />
-          <HStack>
+          <div className="flex">
             <Button label="Cancel" variant="secondary" size="sm" onClick={cancel} />
-          </HStack>
-        </VStack>
+          </div>
+        </div>
       );
     case "joining":
       return <Progress label="Adding this Mac to your account…" />;
     case "failed":
       return (
-        <VStack gap={3}>
+        <div className="flex flex-col gap-3">
           <Banner
             status="error"
             title={phase.step === "install" ? "Couldn't install PiNomad" : "Couldn't add this Mac to your account"}
@@ -78,22 +76,22 @@ export function LocalHostSetup({
             endContent={<Button label="Try again" variant="secondary" onClick={run} />}
           />
           <InstallLog lines={phase.lines} />
-          <VStack gap={2}>
-            <Text type="supporting">Or run it in your own terminal:</Text>
+          <div className="flex flex-col gap-2">
+            <span className="text-xs/5 text-muted-foreground">Or run it in your own terminal:</span>
             {/* No language: shell highlighting splits the server address into colors. */}
             <CodeBlock code={joinCommand(serverOrigin)} hasCopyButton isWrapped width="100%" />
-          </VStack>
-        </VStack>
+          </div>
+        </div>
       );
   }
 }
 
 function Progress({ label }: { label: string }) {
   return (
-    <HStack gap={2} vAlign="center">
+    <div className="flex items-center gap-2">
       <Spinner size="sm" />
-      <Text type="supporting">{label}</Text>
-    </HStack>
+      <span className="text-xs/5 text-muted-foreground">{label}</span>
+    </div>
   );
 }
 

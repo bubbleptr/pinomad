@@ -52,10 +52,10 @@ Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。组件来�
   endContent={<Button label="Unpair" variant="secondary" size="sm" onClick={onUnpair} />}
 />
 
-<HStack gap={2}>
+<div className="flex gap-2">
   <Button label="Delete account" variant="destructive" isLoading={busy} onClick={submit} />
   <Button label="Cancel" variant="secondary" onClick={close} />
-</HStack>
+</div>
 ```
 
 错的：独立动作用 `ghost`（读成纯文字），打开确认的按钮就用 `destructive`（还没确认就在报警）。
@@ -74,6 +74,20 @@ Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。组件来�
 ### iOS 对照
 
 iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.borderedProminent` / `.glassProminent`，`secondary` ↔ `.bordered` / `.glass`，`ghost` ↔ `.plain` / `.borderless`，`destructive` ↔ `role: .destructive`。改 iOS 按钮另开 PR。
+
+## 文字和布局
+
+布局用 Tailwind 的 flex 类（`flex flex-col gap-2`），文字用原生元素加类，不再用 Astryx 的 `VStack` / `HStack` / `Text` / `Heading`（ADR-0048）。字号和行高固定这几档：
+
+| 用途 | 类 |
+| --- | --- |
+| 正文、行名称 | `text-sm/5` |
+| 说明、次要信息 | `text-xs/5 text-muted-foreground` |
+| 分组标题（`h4`） | `text-sm/5 font-bold` |
+| 页内标题（`h3`） | `text-[1.0625rem]/6 font-bold` |
+| 屏标题（`h2`） | `text-xl/7 font-semibold` |
+
+文字颜色默认继承，只有需要和周围不同时才写（`text-muted-foreground`、`text-destructive`）。链接用 `shared/ui/link.tsx`，站外链接加 `external`；分隔线用 `shared/ui/separator.tsx`。
 
 ## 外框和面板
 

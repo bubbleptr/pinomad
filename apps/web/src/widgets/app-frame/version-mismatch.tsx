@@ -1,5 +1,4 @@
 import { Banner } from "@astryxdesign/core/Banner";
-import { VStack } from "@astryxdesign/core/Layout";
 import { useEffect, useState } from "react";
 import type { ProtocolMismatch } from "@pinomad/protocol/view.ts";
 import { servedByHost } from "../../address.ts";
@@ -51,7 +50,7 @@ export function VersionMismatch({
   const version = mismatch.hostVersion === undefined ? "" : ` Host version: ${mismatch.hostVersion}.`;
   return mismatch.direction === "client-older" ? (
     // Same gap the Centered screens use between the banner and the switcher.
-    <VStack gap={4}>
+    <div className="flex flex-col gap-4">
       <Banner
         status="error"
         container="section"
@@ -59,7 +58,7 @@ export function VersionMismatch({
         description={`The host speaks a newer protocol. ${hasUpdater ? "Update the app." : "Reload the page, or update the app."}${version}`}
       />
       {hasUpdater ? <UpdateStatusNote update={update} /> : null}
-    </VStack>
+    </div>
   ) : (
     <Banner
       status="error"

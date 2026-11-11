@@ -1,5 +1,4 @@
 import { Button } from "@astryxdesign/core/Button";
-import { Text } from "@astryxdesign/core/Text";
 import { useToast } from "@astryxdesign/core/Toast";
 import { useEffect, useRef, useState } from "react";
 import { hostSupportsCall, hostSupportsFeature } from "@pinomad/protocol/frames.ts";
@@ -453,7 +452,7 @@ export function ConversationComposer({
   return (
     <>
       {status === "" && !files.uploading ? null : (
-        <Text type="supporting">{files.uploading ? "Uploading files…" : status}</Text>
+        <span className="text-xs/5 text-muted-foreground">{files.uploading ? "Uploading files…" : status}</span>
       )}
       <QueuedList
         items={queue}

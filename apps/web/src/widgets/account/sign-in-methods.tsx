@@ -1,10 +1,8 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { Spinner } from "@astryxdesign/core/Spinner";
-import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { AccountConfirmation, AccountError, AccountIdentities, AccountResult } from "@pinomad/client/account.ts";
@@ -62,10 +60,10 @@ export function SignInMethods({
   if (unsupported) return <ChangePasswordOnly account={account} />;
   if (identities === undefined) {
     return (
-      <VStack gap={2}>
-        <Text weight="semibold">Sign-in methods</Text>
+      <div className="flex flex-col gap-2">
+        <span className="text-sm/5 font-semibold">Sign-in methods</span>
         <Spinner size="sm" />
-      </VStack>
+      </div>
     );
   }
   const linked = new Set(identities.identities.map((identity) => identity.provider));
@@ -81,7 +79,7 @@ export function SignInMethods({
     setOpen(next);
   };
   return (
-    <VStack gap={2}>
+    <div className="flex flex-col gap-2">
       <SettingsGroup title="Sign-in methods">
       <List hasDividers aria-label="Sign-in methods">
         <ListItem
@@ -146,7 +144,7 @@ export function SignInMethods({
         ))}
       </List>
       </SettingsGroup>
-      {done === undefined ? null : <Text type="supporting">{done}</Text>}
+      {done === undefined ? null : <span className="text-xs/5 text-muted-foreground">{done}</span>}
       {open?.kind === "password" ? (
         <PasswordForm account={account} hasPassword={identities.hasPassword} onClose={close} />
       ) : open?.kind === "remove" ? (
@@ -184,7 +182,7 @@ export function SignInMethods({
           onCancel={() => close()}
         />
       ) : null}
-    </VStack>
+    </div>
   );
 }
 
@@ -320,8 +318,8 @@ function ChangePasswordOnly({ account }: { account: AccountModel }) {
     );
   }
   return (
-    <VStack gap={1}>
-      <HStack gap={2}>
+    <div className="flex flex-col gap-1">
+      <div className="flex gap-2">
         <Button
           label="Change password"
           variant="secondary"
@@ -331,9 +329,9 @@ function ChangePasswordOnly({ account }: { account: AccountModel }) {
             setOpen(true);
           }}
         />
-      </HStack>
-      {done === undefined ? null : <Text type="supporting">{done}</Text>}
-    </VStack>
+      </div>
+      {done === undefined ? null : <span className="text-xs/5 text-muted-foreground">{done}</span>}
+    </div>
   );
 }
 

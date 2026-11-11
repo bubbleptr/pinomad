@@ -7,9 +7,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Button } from "@astryxdesign/core/Button";
 import { CheckboxList, CheckboxListItem } from "@astryxdesign/core/CheckboxList";
-import { VStack } from "@astryxdesign/core/Layout";
 import { RadioList, RadioListItem } from "@astryxdesign/core/RadioList";
-import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { QuestionItem, QuestionRequest } from "@pinomad/protocol/presentation.ts";
@@ -42,11 +40,11 @@ export function PendingQuestions({
   const pending = pendingQuestions(docs);
   if (pending.length === 0) return null;
   return (
-    <VStack gap={2} padding={2} data-testid="pending-questions">
+    <div className="flex flex-col gap-2 p-2" data-testid="pending-questions">
       {pending.map(({ kind, request }) => (
         <QuestionCard key={request.id} kind={kind} request={request} remote={remote} connected={connected} target={target} />
       ))}
-    </VStack>
+    </div>
   );
 }
 
@@ -261,10 +259,10 @@ function QuestionPage({
     option.description === undefined || option.description === "" ? {} : { description: option.description };
 
   return (
-    <VStack gap={1}>
-      <Text type="body" weight="medium" className="question-card__question">
+    <div className="flex flex-col gap-1">
+      <span className="text-sm/5 font-medium question-card__question">
         {question.question}
-      </Text>
+      </span>
       <div
         className="question-card__options"
         // Arrow keys move a radio group's pick by synthesizing clicks, and a
@@ -340,7 +338,7 @@ function QuestionPage({
           <TextInput label="Other answer" isLabelHidden value={other} onChange={onOther} placeholder="Your answer…" />
         </div>
       ) : null}
-    </VStack>
+    </div>
   );
 }
 

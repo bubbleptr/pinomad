@@ -7,9 +7,7 @@
 import { Button } from "@astryxdesign/core/Button";
 import { ContextMenu, type ContextMenuOption } from "@astryxdesign/core/ContextMenu";
 import { IconButton } from "@astryxdesign/core/IconButton";
-import { VStack } from "@astryxdesign/core/Layout";
 import { Tab, TabList, TabMenu } from "@astryxdesign/core/TabList";
-import { Text } from "@astryxdesign/core/Text";
 import { Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { RemoteTerminals, TerminalsState } from "@pinomad/protocol/remote-durable.ts";
@@ -168,7 +166,7 @@ export function TerminalSurface({
     );
 
   return (
-    <VStack className="h-full min-h-0 bg-background" gap={0}>
+    <div className="flex flex-col h-full min-h-0 bg-background">
       {stacked ? (
         <>
           <SurfaceBar start={barStart} end={barEnd}>
@@ -198,9 +196,9 @@ export function TerminalSurface({
         </div>
       ) : null}
       {error === undefined ? null : (
-        <Text type="supporting" className="shrink-0 px-3 py-2" role="alert">
+        <span className="text-xs/5 text-muted-foreground shrink-0 px-3 py-2" role="alert">
           {error}
-        </Text>
+        </span>
       )}
       <div className="flex min-h-0 flex-1 flex-col">
         {conversationId === undefined ? (
@@ -211,10 +209,10 @@ export function TerminalSurface({
           <Message>{state.reason}</Message>
         ) : selected === undefined ? (
           <div className="flex flex-1 items-center justify-center p-6">
-            <VStack gap={5} hAlign="center">
+            <div className="flex flex-col items-center gap-5">
               <TerminalIllustration />
               <Button label="New terminal" variant="secondary" isDisabled={!live} onClick={openTerminal} />
-            </VStack>
+            </div>
           </div>
         ) : (
           <>
@@ -230,9 +228,9 @@ export function TerminalSurface({
             </div>
             {selected.exit === undefined ? null : (
               <div className="flex shrink-0 items-center gap-2 border-t border-border px-3 py-2">
-                <Text type="supporting" className="min-w-0 flex-1">
+                <span className="text-xs/5 text-muted-foreground min-w-0 flex-1">
                   {selected.exit.code === null ? "The process exited." : `The process exited with code ${selected.exit.code}.`}
-                </Text>
+                </span>
                 <Button
                   label="Restart"
                   variant="secondary"
@@ -253,15 +251,15 @@ export function TerminalSurface({
           onClose={() => setRenaming(undefined)}
         />
       )}
-    </VStack>
+    </div>
   );
 }
 
 function Message({ children }: { children: ReactNode }) {
   return (
-    <Text type="supporting" className="p-3">
+    <span className="text-xs/5 text-muted-foreground p-3">
       {children}
-    </Text>
+    </span>
   );
 }
 

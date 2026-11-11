@@ -1,6 +1,5 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
-import { HStack } from "@astryxdesign/core/Layout";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useState } from "react";
 import { pairingFragment } from "../../address.ts";
@@ -34,7 +33,7 @@ export function PairingLinkForm({
   };
   return (
     <>
-      <HStack gap={2} vAlign="end" style={{ width: "100%" }}>
+      <div className="flex items-end gap-2" style={{ width: "100%" }}>
         <div className="min-w-0 flex-1">
           <TextInput
             label="Pairing link"
@@ -50,7 +49,7 @@ export function PairingLinkForm({
           />
         </div>
         <Button label="Connect" variant={connectVariant} isDisabled={pasted.trim() === ""} onClick={connect} />
-      </HStack>
+      </div>
       {error === undefined ? null : <Banner status="error" title="Not a pairing link" description={error} />}
     </>
   );

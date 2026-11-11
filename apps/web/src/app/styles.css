@@ -29,6 +29,7 @@
    used. The color and radius names are the ones shadcn's components expect. */
 @theme inline {
   --font-sans: var(--font-family-body);
+  --font-mono: var(--font-family-code);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -72,6 +73,62 @@
 /* `dark:` follows the app's appearance setting (the `dark` class on <html>),
    not only the system's. */
 @custom-variant dark (&:is(.dark *));
+
+/* The state variants that shadcn's Base UI components are written against
+   (`data-horizontal:`, `data-open:` …). `shadcn init` would import them from
+   the `shadcn` package's tailwind.css; copied here instead, since that
+   package is the CLI and pulls in ~200 dependencies for one file. */
+@custom-variant data-open {
+  &:where([data-state="open"]),
+  &:where([data-open]:not([data-open="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-closed {
+  &:where([data-state="closed"]),
+  &:where([data-closed]:not([data-closed="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-checked {
+  &:where([data-state="checked"]),
+  &:where([data-checked]:not([data-checked="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-unchecked {
+  &:where([data-state="unchecked"]),
+  &:where([data-unchecked]:not([data-unchecked="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-selected {
+  &:where([data-selected="true"]) {
+    @slot;
+  }
+}
+@custom-variant data-disabled {
+  &:where([data-disabled="true"]),
+  &:where([data-disabled]:not([data-disabled="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-active {
+  &:where([data-state="active"]),
+  &:where([data-active]:not([data-active="false"])) {
+    @slot;
+  }
+}
+@custom-variant data-horizontal {
+  &:where([data-orientation="horizontal"]) {
+    @slot;
+  }
+}
+@custom-variant data-vertical {
+  &:where([data-orientation="vertical"]) {
+    @slot;
+  }
+}
 
 :root {
   --pigui-icon-motion-duration: 800ms;

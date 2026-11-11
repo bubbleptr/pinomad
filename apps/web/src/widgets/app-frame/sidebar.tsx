@@ -1,7 +1,7 @@
+import { cn } from "cn";
 import { Avatar } from "@astryxdesign/core/Avatar";
 import { Button } from "@astryxdesign/core/Button";
 import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
-import { HStack, VStack } from "@astryxdesign/core/Layout";
 import { Icon } from "@astryxdesign/core/Icon";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
@@ -207,9 +207,9 @@ function SidebarSectionHeader({
           <Icon icon="chevronRight" size="sm" color="inherit" />
         </span>
       </button>
-      <HStack className={pinnedActions ? undefined : "pigui-sidenav-hover-actions"} gap={0.5} vAlign="center">
+      <div className={cn("flex items-center gap-0.5", !pinnedActions && "pigui-sidenav-hover-actions")}>
         {actions}
-      </HStack>
+      </div>
     </div>
   );
 }
@@ -328,7 +328,7 @@ function ConversationRow({
         // reading order while the button's name stays exactly the title.
         <VisuallyHidden>{FAMILY_STATUS_TEXT[status]}</VisuallyHidden>
       )}
-      <HStack className="pigui-sidenav-row-actions pigui-sidenav-hover-actions" gap={0.5} vAlign="center">
+      <div className="flex items-center gap-0.5 pigui-sidenav-row-actions pigui-sidenav-hover-actions">
         <DropdownMenu
           hasChevron={false}
           button={{
@@ -358,7 +358,7 @@ function ConversationRow({
                 ]),
           ]}
         />
-      </HStack>
+      </div>
       {renaming ? (
         <RenameConversationDialog
           summary={summary}
@@ -588,7 +588,7 @@ function MachineSection({
           }
         />
       </div>
-      <VStack id={contentId} gap={0.5}>
+      <div className="flex flex-col gap-0.5" id={contentId}>
         {!expanded ? null : organized === undefined ? (
           <SideNavItem
             icon={<SessionGlyphSlot />}
@@ -637,8 +637,8 @@ function MachineSection({
                       conversations.map(familyRows)
                     )}
                   </SideNavItem>
-                  <HStack className="pigui-sidenav-row-actions" gap={0.5} vAlign="center">
-                    <HStack className="pigui-sidenav-hover-actions" gap={0.5} vAlign="center">
+                  <div className="flex items-center gap-0.5 pigui-sidenav-row-actions">
+                    <div className="flex items-center gap-0.5 pigui-sidenav-hover-actions">
                       <IconButton
                         icon={<Plus aria-hidden="true" />}
                         label={`New conversation in ${project.name}`}
@@ -665,14 +665,14 @@ function MachineSection({
                           },
                         ]}
                       />
-                    </HStack>
-                  </HStack>
+                    </div>
+                  </div>
                 </div>
               );
             })}
           </>
         )}
-      </VStack>
+      </div>
       {addOpen && remote !== undefined ? (
         <AddProjectDialog
           remote={remote}

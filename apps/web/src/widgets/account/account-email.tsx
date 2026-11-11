@@ -1,9 +1,8 @@
 import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "@astryxdesign/core/Button";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { HStack, Layout, LayoutContent, VStack } from "@astryxdesign/core/Layout";
+import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
-import { Text } from "@astryxdesign/core/Text";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import { useEffect, useRef, useState } from "react";
 import type { AccountConfirmation, AccountError, EmailConfirmation } from "@pinomad/client/account.ts";
@@ -82,24 +81,24 @@ export function EmailForm({
   const cancel = onCancel === undefined ? null : <Button label="Cancel" variant="secondary" onClick={onCancel} />;
   if (sentTo === undefined) {
     return (
-      <VStack gap={2}>
+      <div className="flex flex-col gap-2">
         <TextInput label="Email" type="email" value={email} onChange={setEmail} onEnter={send} width="100%" {...{ autoComplete: "email" }} />
         {identity.field}
         {error === undefined ? null : <Banner status="error" title="Couldn't send the code" description={accountErrorMessage(error)} />}
-        <HStack gap={2}>
+        <div className="flex gap-2">
           <Button label="Send code to new email" variant="primary" isLoading={busy} isDisabled={email.trim() === "" || !identity.ready} onClick={send} />
           {cancel}
-        </HStack>
-      </VStack>
+        </div>
+      </div>
     );
   }
   return (
-    <VStack gap={2}>
-      <Text>Enter the 6-digit code we sent to {sentTo}.</Text>
+    <div className="flex flex-col gap-2">
+      <span className="text-sm/5">Enter the 6-digit code we sent to {sentTo}.</span>
       <TextInput label="Code" value={code} onChange={setCode} onEnter={save} width="100%" {...CODE_INPUT} />
       {reconfirm ? identity.field : null}
       {error === undefined ? null : <Banner status="error" title="Couldn't save the email" description={accountErrorMessage(error)} />}
-      <HStack gap={2}>
+      <div className="flex gap-2">
         <Button label={submitLabel} variant="primary" isLoading={busy} isDisabled={code.trim() === "" || !identity.ready} onClick={save} />
         <Button
           label="Use a different email"
@@ -111,8 +110,8 @@ export function EmailForm({
             setReconfirm(false);
           }}
         />
-      </HStack>
-    </VStack>
+      </div>
+    </div>
   );
 }
 
@@ -122,7 +121,7 @@ export function AccountEmail({ account, email }: { account: AccountModel; email:
   const [changed, setChanged] = useState(false);
   const title = email === undefined ? "Add email" : "Change email";
   return (
-    <VStack gap={2}>
+    <div className="flex flex-col gap-2">
       <SettingsGroup title="Email">
       <List aria-label="Email">
         <ListItem
@@ -165,6 +164,6 @@ export function AccountEmail({ account, email }: { account: AccountModel; email:
           />
         </Dialog>
       ) : null}
-    </VStack>
+    </div>
   );
 }

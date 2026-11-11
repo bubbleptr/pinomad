@@ -3,8 +3,6 @@
 // fork may own its worktree — and fetches only while shown: on show, on every
 // conversation change, when the connection returns and once a run settles.
 import { IconButton } from "@astryxdesign/core/IconButton";
-import { VStack } from "@astryxdesign/core/Layout";
-import { Text } from "@astryxdesign/core/Text";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -71,7 +69,7 @@ export function ChangesSurface({
     result === undefined ? { kind: "loading" } : result === "failed" ? { kind: "failed" } : changeStatOf(result);
   const branch = branchOf(view, stat);
   return (
-    <VStack className="h-full min-h-0" gap={0}>
+    <div className="flex flex-col h-full min-h-0">
       <SurfaceBar
         start={barStart}
         end={
@@ -107,28 +105,28 @@ export function ChangesSurface({
         )}
       </SurfaceBar>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <VStack gap={2} padding={3}>
+        <div className="flex flex-col gap-2 p-3">
           {shownId === undefined ? (
-            <Text type="supporting">Open a conversation to see what it changed.</Text>
+            <span className="text-xs/5 text-muted-foreground">Open a conversation to see what it changed.</span>
           ) : conversationId === undefined || result === undefined ? (
-            <Text type="supporting">Loading…</Text>
+            <span className="text-xs/5 text-muted-foreground">Loading…</span>
           ) : result === "failed" ? (
-            <Text type="supporting">Couldn't load the changes. Refresh to try again.</Text>
+            <span className="text-xs/5 text-muted-foreground">Couldn't load the changes. Refresh to try again.</span>
           ) : !result.available ? (
-            <Text type="supporting">{result.reason}</Text>
+            <span className="text-xs/5 text-muted-foreground">{result.reason}</span>
           ) : (
             <>
               {view.checkout === undefined ? (
-                <Text type="supporting">
+                <span className="text-xs/5 text-muted-foreground">
                   These are the project directory's uncommitted changes, shared with other conversations working there.
-                </Text>
+                </span>
               ) : null}
-              {result.truncated ? <Text type="supporting">The diff is truncated; the rest is not shown.</Text> : null}
+              {result.truncated ? <span className="text-xs/5 text-muted-foreground">The diff is truncated; the rest is not shown.</span> : null}
               <DiffView patch={result.patch} collapsible />
             </>
           )}
-        </VStack>
+        </div>
       </div>
-    </VStack>
+    </div>
   );
 }

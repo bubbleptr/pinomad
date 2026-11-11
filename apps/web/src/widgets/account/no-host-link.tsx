@@ -1,6 +1,4 @@
 import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { VStack } from "@astryxdesign/core/Layout";
-import { Text } from "@astryxdesign/core/Text";
 import { useEffect } from "react";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { PairingLinkForm } from "../../entities/host/pairing-link-form.tsx";
@@ -39,22 +37,22 @@ export function NoHostLink() {
   }
   if (account.state.status === "unavailable") {
     return (
-      <VStack gap={4} hAlign="center" style={{ width: "100%", maxWidth: 420 }}>
+      <div className="flex flex-col items-center gap-4" style={{ width: "100%", maxWidth: 420 }}>
         <EmptyState
           title="No host link"
           description="Paste a pairing link from pinomad pair or Settings → Devices → Pair a device."
         />
         <PairingLinkForm />
-      </VStack>
+      </div>
     );
   }
   return (
-    <VStack gap={6} style={{ width: "100%", maxWidth: 420 }}>
+    <div className="flex flex-col gap-6" style={{ width: "100%", maxWidth: 420 }}>
       <AccountPanel initialPage="hosts" />
-      <VStack gap={2}>
-        <Text type="supporting">Or paste a pairing link from pinomad pair or Settings → Devices → Pair a device.</Text>
+      <div className="flex flex-col gap-2">
+        <span className="text-xs/5 text-muted-foreground">Or paste a pairing link from pinomad pair or Settings → Devices → Pair a device.</span>
         <PairingLinkForm />
-      </VStack>
-    </VStack>
+      </div>
+    </div>
   );
 }
