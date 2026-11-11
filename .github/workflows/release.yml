@@ -34,8 +34,15 @@ jobs:
       - run: bun install --frozen-lockfile
       # Run from apps/web so bunx uses its locked @playwright/test; at the root
       # bunx fetches the latest playwright and installs a mismatched browser build.
-      - run: bunx playwright install --with-deps chromium
+      - run: bunx playwright install chromium
         working-directory: apps/web
+      # System libraries come from apt, whose mirrors can be unreachable from
+      # the runner; the hosted image usually carries what Chromium needs, so a failed
+      # install here only warns instead of holding the job for ten minutes.
+      - run: bunx playwright install-deps chromium
+        working-directory: apps/web
+        timeout-minutes: 3
+        continue-on-error: true
       - run: bun run typecheck
       - run: bun run test
       - run: bun run build
