@@ -46,10 +46,9 @@ export function Landing({ lang, latest }: { lang: Lang; latest?: LatestRelease }
 }
 
 /**
- * The first screen's entrance (page.css) plays once per tab. Once it has finished
- * (or isn't running: reduced motion, or it ended before hydration) the page is marked
- * seen: the attribute stops a client-side return from the docs or blog playing it
- * again, and app-hint.js reads the stored flag on a full page load.
+ * The first screen's entrance (page.css) plays on every full load. Once it has
+ * finished (or isn't running: reduced motion, or it ended before hydration) the page
+ * is marked seen, so a client-side return from the docs or blog doesn't play it again.
  */
 function useIntroOnce() {
   useEffect(() => {
@@ -58,13 +57,7 @@ function useIntroOnce() {
       .getAnimations()
       .filter((animation) => animation instanceof CSSAnimation && animation.animationName.startsWith("intro-"));
     void Promise.allSettled(entering.map((animation) => animation.finished)).then(() => {
-      if (!live) return;
-      document.documentElement.setAttribute("data-intro-seen", "");
-      try {
-        sessionStorage.setItem("pinomad_intro", "1");
-      } catch {
-        // Private mode or blocked site data: it plays again on the next load.
-      }
+      if (live) document.documentElement.setAttribute("data-intro-seen", "");
     });
     return () => {
       live = false;

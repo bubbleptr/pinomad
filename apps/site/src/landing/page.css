@@ -1430,8 +1430,8 @@ html[lang="zh-CN"] .split h2 {
    the stage fades up behind them and the app window, dark at first, lights up last.
    Nothing moves, and nothing below the first screen animates on scroll. Plain
    keyframes, so it plays from the prerendered HTML without waiting for scripts.
-   Landing sets data-intro-seen once the entrance has finished and app-hint.js sets it
-   on a later load in the same tab, so coming back from the docs doesn't replay it.
+   It plays on every full load; Landing sets data-intro-seen once it has finished, so
+   coming back from the docs without a reload doesn't replay it.
    useIntroOnce finds these animations by the intro- prefix. —— */
 @media screen and (prefers-reduced-motion: no-preference) {
   :root:not([data-intro-seen]) .hero :is(h1 .line, .lead, .actions) {
