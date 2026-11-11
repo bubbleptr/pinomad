@@ -62,49 +62,47 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
 }
 
 /**
- * The blue stretch's opening, and the first half of the page's claim: a statement
- * across the page, then the phone with what you do from it on one side and what
- * stays at home on the other.
+ * The blue stretch's opening, and the first half of the page's claim. Text beside the
+ * phone, sized to be read in one screen: the statement, then what you do from the
+ * phone (the two steps, which switch it) next to what stays at home.
  */
 export function Anywhere({ lang, t }: { lang: Lang; t: LandingCopy["anywhere"] }) {
   const [step, setStep] = useState<Step>("start");
   return (
     <section className="section chapter" id="anywhere" aria-labelledby="anywhere-title">
-      <div className="wrap">
-        <div className="section-head chapter-head">
+      <div className="wrap split">
+        <div className="section-head">
           <SectionHead id="anywhere-title" eyebrow={t.eyebrow} title={t.title} lead={t.lead} />
-        </div>
-        <div className="chapter-stage">
-          <div className="chapter-phone">
-            <AnywherePhone lang={lang} step={step} label={t.shotAlt} />
-          </div>
-          <div className="chapter-side chapter-steps">
-            <p className="chapter-label">{t.stepsLabel}</p>
-            {STEPS.map((each, index) => (
-              <button
-                key={each}
-                type="button"
-                className="chapter-note chapter-step"
-                aria-pressed={each === step}
-                onClick={() => setStep(each)}
-              >
-                <strong>{t.steps[index]!.title}</strong>
-                <span>{t.steps[index]!.body}</span>
-              </button>
-            ))}
-          </div>
-          <div className="chapter-side chapter-home">
-            <p className="chapter-label">{t.homeLabel}</p>
-            <ul>
-              {t.home.map((note) => (
-                <li key={note.title} className="chapter-note">
-                  <strong>{note.title}</strong>
-                  <span>{note.body}</span>
-                </li>
+          <div className="chapter-lists">
+            <div className="chapter-side">
+              <p className="chapter-label">{t.stepsLabel}</p>
+              {STEPS.map((each, index) => (
+                <button
+                  key={each}
+                  type="button"
+                  className="chapter-note chapter-step"
+                  aria-pressed={each === step}
+                  onClick={() => setStep(each)}
+                >
+                  <strong>{t.steps[index]!.title}</strong>
+                  <span>{t.steps[index]!.body}</span>
+                </button>
               ))}
-            </ul>
+            </div>
+            <div className="chapter-side">
+              <p className="chapter-label">{t.homeLabel}</p>
+              <ul>
+                {t.home.map((note) => (
+                  <li key={note.title} className="chapter-note">
+                    <strong>{note.title}</strong>
+                    <span>{note.body}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         </div>
+        <AnywherePhone lang={lang} step={step} label={t.shotAlt} />
       </div>
     </section>
   );
