@@ -608,31 +608,6 @@ html[lang="zh-CN"] .eyebrow {
       animation-range: entry 0% cover 40%;
     }
 
-    /* The ghost comes out from behind the phone as the phone scrolls in. */
-    .chapter-ghost {
-      animation:
-        peek linear both,
-        bob 5s ease-in-out infinite alternate;
-      animation-timeline: view(), auto;
-      animation-range: entry 20% cover 45%, normal;
-    }
-  }
-}
-
-@keyframes peek {
-  from {
-    translate: 0 48%;
-  }
-}
-
-/* It hovers. On its own property, so it adds to the peek instead of replacing it. */
-@keyframes bob {
-  from {
-    transform: translateY(3%) rotate(-3deg);
-  }
-
-  to {
-    transform: translateY(-5%) rotate(4deg);
   }
 }
 
@@ -736,15 +711,12 @@ html[lang="zh-CN"] .chapter-head h2 {
   display: grid;
   gap: 2.5rem;
   justify-items: center;
-  margin-top: clamp(2rem, 4vw, 3rem);
+  margin-top: clamp(3rem, 6vw, 5rem);
 }
 
 .chapter-phone {
   position: relative;
   width: var(--phone);
-  /* The ghost stands a share of the phone's size above it, so the room above follows
-     the phone's width, whatever comes before it. */
-  margin-top: calc(var(--phone) * 0.42);
 }
 
 /* The steps switch the phone, so on a narrow screen they come right before it. */
@@ -830,20 +802,6 @@ html[lang="zh-CN"] .chapter-head h2 {
   .chapter-home {
     justify-self: start;
   }
-}
-
-/* The ghost from the logo, risen from behind the top of the phone: the agent itself
-   stays on the host, and this is where it shows up. It comes before the phone in the
-   markup, so the phone covers its lower part. The hat and outline are a deep navy, not
-   the logo's black, which sits too hard on the blue. */
-.chapter-ghost {
-  position: absolute;
-  top: -19%;
-  left: 22%;
-  width: 60%;
-  color: oklch(0.22 0.07 270);
-  --mark-body: var(--mist);
-  pointer-events: none;
 }
 
 /* Text beside a picture; stacks on phones. */

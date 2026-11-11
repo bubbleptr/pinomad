@@ -1,7 +1,6 @@
 import { type ReactNode, useState } from "react";
 import { localized, type Lang } from "@/lib/i18n.ts";
 import { githubUrl } from "@/lib/nav.ts";
-import { BrandMark } from "@/components/brand-mark.tsx";
 import { blogUrl, type LandingCopy } from "./copy.tsx";
 import { AgentsDiagram, ConnectionDiagram, EnvironmentsDiagram } from "./diagrams.tsx";
 import { DurableDiagram } from "./durable.tsx";
@@ -64,8 +63,8 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
 
 /**
  * The blue stretch's opening, and the first half of the page's claim: a statement
- * across the page, then the phone on its own with the ghost looking over it. The
- * agent stays on the host; the phone is where it shows up.
+ * across the page, then the phone with what you do from it on one side and what
+ * stays at home on the other.
  */
 export function Anywhere({ lang, t }: { lang: Lang; t: LandingCopy["anywhere"] }) {
   const [step, setStep] = useState<Step>("start");
@@ -77,7 +76,6 @@ export function Anywhere({ lang, t }: { lang: Lang; t: LandingCopy["anywhere"] }
         </div>
         <div className="chapter-stage">
           <div className="chapter-phone">
-            <BrandMark className="brand-mark chapter-ghost" />
             <AnywherePhone lang={lang} step={step} label={t.shotAlt} />
           </div>
           <div className="chapter-side chapter-steps">
