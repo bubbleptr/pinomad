@@ -485,6 +485,11 @@ html[lang="zh-CN"] .eyebrow {
   text-align: center;
 }
 
+/* A step smaller at phone width than other h1s, so "The coding agent" stays on one line. */
+.hero h1 {
+  font-size: clamp(2.6rem, 6.4vw, 5.6rem);
+}
+
 .hero h1 .line {
   display: block;
 }
@@ -602,10 +607,25 @@ html[lang="zh-CN"] .eyebrow {
       animation-timeline: view();
       animation-range: entry 0% cover 40%;
     }
+
+    /* The ghost comes out from behind the phone as the phone scrolls in. */
+    .chapter-ghost {
+      animation: peek linear both;
+      animation-timeline: view();
+      animation-range: entry 20% cover 45%;
+    }
+  }
+}
+
+@keyframes peek {
+  from {
+    translate: -18% 42%;
+    rotate: 0deg;
   }
 }
 
 /* No fade: the window's top is on the first screen at rest, and shouldn't sit there dimmed. */
+
 @keyframes rise {
   from {
     transform: perspective(1800px) rotateX(10deg) scale(0.96);
@@ -668,6 +688,67 @@ html[lang="zh-CN"] .eyebrow {
 
 html[lang="zh-CN"] .split h2 {
   font-size: clamp(2rem, 3.6vw, 3rem);
+}
+
+/* —— The chapter opening (the blue stretch's first section): the statement at full
+   size across the page, centred, and under it the phone on its own. —— */
+.chapter-head {
+  max-width: 56rem;
+  margin-inline: auto;
+  text-align: center;
+}
+
+.chapter-head .eyebrow,
+.chapter-head .chips {
+  justify-content: center;
+}
+
+.chapter-head h2 {
+  font-size: clamp(3rem, 9vw, 7.5rem);
+  line-height: 0.96;
+}
+
+html[lang="zh-CN"] .chapter-head h2 {
+  font-size: clamp(2.6rem, 8vw, 6.5rem);
+  line-height: 1.08;
+}
+
+.chapter-head .section-lead {
+  margin-inline: auto;
+}
+
+.chapter-stage {
+  position: relative;
+  display: grid;
+  width: fit-content;
+  /* Room above for the ghost, clear of the buttons. */
+  margin: clamp(6.5rem, 9vw, 7.5rem) auto 0;
+}
+
+.chapter-stage .phone {
+  width: min(21rem, 72vw);
+}
+
+/* The ghost from the logo, looking over the phone's shoulder: the agent itself stays
+   on the host, and this is where it shows up. White body and dark hat, as in the app
+   icon. It comes before the phone in the markup, so the phone covers its lower half. */
+.chapter-ghost {
+  position: absolute;
+  top: -22%;
+  right: -24%;
+  width: 62%;
+  color: var(--void);
+  --mark-body: var(--mist);
+  rotate: 9deg;
+}
+
+/* On a phone there is no room beside the phone, so it leans in less. */
+@media (max-width: 40rem) {
+  .chapter-ghost {
+    top: -19%;
+    right: -9%;
+    width: 54%;
+  }
 }
 
 /* Text beside a picture; stacks on phones. */

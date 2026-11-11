@@ -1,6 +1,7 @@
 import { type ReactNode, useState } from "react";
 import { localized, type Lang } from "@/lib/i18n.ts";
 import { githubUrl } from "@/lib/nav.ts";
+import { BrandMark } from "@/components/brand-mark.tsx";
 import { blogUrl, type LandingCopy } from "./copy.tsx";
 import { AgentsDiagram, ConnectionDiagram, EnvironmentsDiagram } from "./diagrams.tsx";
 import { DurableDiagram } from "./durable.tsx";
@@ -61,13 +62,17 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
   );
 }
 
-/** Away from your desk: two phone screens, and the steps that switch the one in front. */
+/**
+ * The blue stretch's opening, and the first half of the page's claim: a statement
+ * across the page, then the phone on its own with the ghost looking over it. The
+ * agent stays on the host; the phone is where it shows up.
+ */
 export function Anywhere({ lang, t }: { lang: Lang; t: LandingCopy["anywhere"] }) {
   const [step, setStep] = useState<Step>("start");
   return (
-    <section className="section section-showcase" id="anywhere" aria-labelledby="anywhere-title">
-      <div className="wrap split">
-        <div className="section-head">
+    <section className="section chapter" id="anywhere" aria-labelledby="anywhere-title">
+      <div className="wrap">
+        <div className="section-head chapter-head">
           <SectionHead id="anywhere-title" eyebrow={t.eyebrow} title={t.title} lead={t.lead} />
           <div className="chips">
             {STEPS.map((each, index) => (
@@ -83,7 +88,10 @@ export function Anywhere({ lang, t }: { lang: Lang; t: LandingCopy["anywhere"] }
             ))}
           </div>
         </div>
-        <AnywherePhone lang={lang} step={step} label={t.shotAlt} />
+        <div className="chapter-stage">
+          <BrandMark className="brand-mark chapter-ghost" />
+          <AnywherePhone lang={lang} step={step} label={t.shotAlt} />
+        </div>
       </div>
     </section>
   );
