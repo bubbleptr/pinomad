@@ -156,26 +156,6 @@ struct HostStoreTests {
         session.close()
     }
 
-    @Test func storeSaveFailureRidesOnPaired() async throws {
-        let (session, _, _, store) = try makeSession()
-        let reader = UpdateReader(session)
-        store.saveError = FakeError.storeBroken
-        await session.waitForIdle()
-
-        session.enqueue(.commands([.paired(host: StoredHost(
-            url: "ws://10.0.0.1:7420/",
-            hostKey: String(repeating: "D", count: 43),
-            privateKey: String(repeating: "E", count: 43)
-        ))]))
-        await session.waitForIdle()
-
-        guard case .paired(_, .some) = await reader.next(timeout: .seconds(5)) else {
-            Issue.record("expected paired with a save error for the failed save")
-            return
-        }
-        session.close()
-    }
-
     /// A failed keychain write is reported on the paired update, but it
     /// neither erases the paired identity nor blocks the ready update from
     /// the same round.

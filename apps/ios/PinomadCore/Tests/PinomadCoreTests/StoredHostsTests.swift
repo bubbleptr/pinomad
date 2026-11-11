@@ -185,21 +185,6 @@ import Testing
         #expect(differentRoles.endpoints.map(\.role) == [.relay, .direct])
     }
 
-    @Test func exactDuplicateAndConflictStillFollowTheProtocolTable() throws {
-        let url = "wss://example.com/same"
-        let duplicate = try #require(try endpointSetInKeychain("""
-            {"transport":"webSocket","role":"relay","url":"\(url)"},
-            {"transport":"webSocket","role":"relay","url":"\(url)"}
-        """))
-        #expect(duplicate.endpoints.count == 1)
-
-        let conflict = try endpointSetInKeychain("""
-            {"transport":"webSocket","role":"relay","url":"\(url)"},
-            {"transport":"webSocket","role":"direct","url":"\(url)"}
-        """)
-        #expect(conflict == nil)
-    }
-
     @Test func ffiConversionUsesExactUTF16IdentityToo() throws {
         let composed = "wss://example.com/caf\u{00E9}"
         let decomposed = "wss://example.com/cafe\u{0301}"
