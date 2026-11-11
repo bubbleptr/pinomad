@@ -10,8 +10,8 @@ const SIZES = {
   md: { diameter: 14, border: 3 },
 } as const;
 
-/** How much of the circle the active arc covers. */
-const SPREAD = 0.75;
+/** How much of the circle the active arc covers: Astryx draws 1.5π to 0.25π. */
+const SPREAD = 0.375;
 
 const shades = {
   default: "text-[var(--color-accent)]",
