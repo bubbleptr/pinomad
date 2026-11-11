@@ -84,19 +84,21 @@
   padding-bottom: var(--section-space);
 }
 
-/* The blue stretch has shores, not straight edges: the plate's band of silver contour
-   lines lies along its top and, mirrored, along its bottom. It is the same picture as
-   the plates', which makes the whole stretch one large plate. Each shore reaches a
-   third of its height out over the mist and is masked to nothing at both ends, so the
-   lines come up out of the page (grain and all, since the page shows through) and
-   sink into the flat blue; the stretch's own straight edge lies under the opaque
-   middle. The picture never shrinks below 56rem wide, or a phone would get a hairline. */
+/* The blue stretch has shores, not straight edges. shore.svg (drawn by
+   scripts/shore.ts) is one height field: mist above a wavy coast, blue below, and
+   contour lines running across both, close at the coast and opening out. It lies
+   along the top of the stretch and, mirrored and shifted, along the bottom. The tile
+   repeats sideways at a fixed size, so a wider screen shows more shore, not a
+   stretched one. Each shore reaches out over the mist above the stretch and is masked
+   to nothing at both ends; the stretch's own straight edge lies under the tile's
+   mist, at 22.5% of its height. The mist's grain goes on top, or that part would be a
+   smooth strip under a grained page. */
 .zone-abyss {
-  --shore: clamp(9rem, 20vw, 17rem);
+  --shore: clamp(15rem, 26vw, 22rem);
 
   position: relative;
   isolation: isolate;
-  padding-block: calc(var(--shore) * 0.3) calc(var(--section-space) + var(--shore) * 0.3);
+  padding-block: calc(var(--shore) * 0.32) calc(var(--section-space) + var(--shore) * 0.32);
   background: var(--grain), var(--abyss);
 }
 
@@ -106,28 +108,24 @@
   position: absolute;
   inset-inline: 0;
   z-index: -1;
-  height: calc(var(--shore) * 1.35);
-  background: image-set(url("./hero-stage-1000.webp") 1x, url("./hero-stage.webp") 2x) center top /
-    max(100%, 56rem) auto no-repeat;
-  /* Opaque from 26%: that is 0.35 of a shore down, exactly where the stretch begins. */
-  mask-image: linear-gradient(transparent, #000 26%, #000 62%, transparent);
+  height: var(--shore);
+  background:
+    var(--grain-light),
+    url("./shore.svg") 0 0 / auto 100% repeat-x;
+  mask-image: linear-gradient(transparent, #000 22.5%, #000 72%, transparent);
   pointer-events: none;
 }
 
 .zone-abyss::before {
-  top: calc(var(--shore) * -0.35);
+  top: calc(var(--shore) * -0.225);
 }
 
 .zone-abyss::after {
-  bottom: calc(var(--shore) * -0.35);
+  bottom: calc(var(--shore) * -0.225);
+  background-position:
+    0 0,
+    38% 0;
   scale: 1 -1;
-}
-
-@media (min-width: 64rem) {
-  .zone-abyss::before,
-  .zone-abyss::after {
-    background-image: url("./hero-stage.webp");
-  }
 }
 
 *,
