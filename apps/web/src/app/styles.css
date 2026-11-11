@@ -703,8 +703,13 @@ body {
   border-radius: var(--pigui-pane-radius);
 }
 
+/* A Centered screen in the frame has no inner scroller, so it scrolls itself
+   when a short window leaves it taller than the pane. It has to be set here:
+   the clip above is unlayered and beats any overflow class on the element.
+   auto still clips to the rounded corners. */
 .pigui-app-layout .pigui-centered {
   height: 100%;
+  overflow-y: auto;
 }
 
 .pigui-inset .pigui-split {

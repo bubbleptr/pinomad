@@ -3146,6 +3146,39 @@ it("keeps a rejected pairing's recovery button reachable by scrolling on a short
   expect(messageBox!.y).toBeGreaterThanOrEqual(0);
 });
 
+it("keeps a revoked device's Unpair button reachable by scrolling in a short app window", async () => {
+  const webOrigin = await startWeb(defer);
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], remote: { port: 0 } });
+  const tokenClient = await connectTo(defer, host);
+  const { url: pairingUrl } = await tokenClient.controller.createPairing();
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  // Wide enough for the inset frame; too short for the rejected screen, which
+  // is then the main pane inside the frame rather than a full-window page.
+  const page = await browser.newPage({ viewport: { width: 1280, height: 320 } });
+  await page.goto(`${webOrigin}/#pair=${pairOf(pairingUrl)}&url=${encodeURIComponent(host.remote!.url)}`);
+  await page.getByRole("button", { name: "Pair", exact: true }).click();
+  await prompt(page).waitFor();
+  await waitForView(tokenClient.view, (view) => view.devices.length === 1);
+
+  await tokenClient.controller.revokeDevice(tokenClient.view.current().devices[0]!.publicKey);
+  await page.getByText("no longer accepts this device", { exact: false }).waitFor();
+  const unpair = page.getByRole("button", { name: /^Unpair/ });
+  const inView = async (): Promise<boolean> => {
+    const box = await unpair.boundingBox();
+    return box !== null && box.y >= 0 && box.y + box.height <= 320;
+  };
+  expect(await inView()).toBe(false);
+
+  await page.mouse.move(800, 160);
+  for (let step = 0; step < 20 && !(await inView()); step++) {
+    await page.mouse.wheel(0, 60);
+    await page.waitForTimeout(50);
+  }
+  expect(await inView()).toBe(true);
+});
+
 // The element that clips and scrolls the messages: the nearest ancestor of a
 // rendered message that actually overflows (scrollHeight > clientHeight).
 const scrollerOf = async (page: Page, text: string) =>
