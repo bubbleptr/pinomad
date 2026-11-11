@@ -560,17 +560,6 @@ html[lang="zh-CN"] .models-label {
      timeline would follow this box, which never scrolls, instead of the page. */
   overflow: clip;
   border-radius: calc(var(--radius) * 1.75);
-  /* Its own stacking context, so the plate below can sit behind the window. */
-  position: relative;
-  isolation: isolate;
-}
-
-/* The plate is a layer of its own, so the entrance can bring it up after the window. */
-.hero-stage::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: -1;
   background: var(--abyss)
     image-set(url("./hero-stage-1000.webp") 1x, url("./hero-stage.webp") 2x)
     center bottom / cover no-repeat;
@@ -585,7 +574,7 @@ html[lang="zh-CN"] .models-label {
 
 /* Past 1000px wide the small copy would be stretched even at 1x. */
 @media (min-width: 64rem) {
-  .hero-stage::before {
+  .hero-stage {
     background-image: url("./hero-stage.webp");
   }
 }
@@ -1438,8 +1427,7 @@ html[lang="zh-CN"] .split h2 {
 
 /* —— Entrance. Played on every full load, in the order a lens finds focus: each line
    of the headline, then the intro and the buttons, rises a little out of a blur; the
-   app window shows first as a faint empty frame, then its plate comes up behind it
-   and its contents fade in last. Nothing below the first screen animates on scroll.
+   stage then fades up, plate and window as one, and the window's contents last. Nothing below the first screen animates on scroll.
    Plain keyframes, so it plays from the prerendered HTML without waiting for scripts.
    Landing sets data-intro-seen once it has finished, so coming back from the docs
    without a reload doesn't replay it; useIntroOnce finds these by the intro- prefix. —— */
@@ -1467,21 +1455,19 @@ html[lang="zh-CN"] .split h2 {
     animation-delay: 0.7s;
   }
 
-  :root:not([data-intro-seen]) .hero-stage .mock-app {
-    animation: intro-frame 1.6s cubic-bezier(0.455, 0.03, 0.515, 0.955) 0.2s both;
-  }
-
-  :root:not([data-intro-seen]) .hero-stage::before {
-    animation: intro-plate 1.5s cubic-bezier(0.455, 0.03, 0.515, 0.955) 1.3s both;
+  /* The stage comes up as one piece, plate and window together: on a light page a
+     dark window arriving before its plate reads as a glitch. Its contents follow. */
+  :root:not([data-intro-seen]) .hero-stage {
+    animation: intro-fade 1.2s cubic-bezier(0.455, 0.03, 0.515, 0.955) 0.7s both;
   }
 
   :root:not([data-intro-seen]) .hero-stage .mock-app > * {
-    animation: intro-fade 1.5s cubic-bezier(0.455, 0.03, 0.515, 0.955) 1.3s both;
+    animation: intro-fade 1.2s cubic-bezier(0.455, 0.03, 0.515, 0.955) 1.5s both;
   }
 
   /* The second window rises once the first has its contents. */
   :root:not([data-intro-seen]) .hero-stage .mock-browser {
-    animation-delay: 2.4s;
+    animation-delay: 2.5s;
   }
 }
 
@@ -1490,28 +1476,6 @@ html[lang="zh-CN"] .split h2 {
     opacity: 0;
     filter: blur(10px);
     translate: 0 var(--intro-rise, 20%);
-  }
-}
-
-/* A ghost of the window by 0.7s, held until the plate starts at 1.3s, solid by 1.8s. */
-@keyframes intro-frame {
-  from {
-    opacity: 0;
-  }
-
-  31%,
-  69% {
-    opacity: 0.14;
-  }
-}
-
-@keyframes intro-plate {
-  from {
-    opacity: 0;
-  }
-
-  20% {
-    opacity: 0.85;
   }
 }
 
