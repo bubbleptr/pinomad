@@ -3156,7 +3156,7 @@ it("keeps a revoked device's Unpair button reachable by scrolling in a short app
   defer(() => browser.close());
   // Wide enough for the inset frame; too short for the rejected screen, which
   // is then the main pane inside the frame rather than a full-window page.
-  const page = await browser.newPage({ viewport: { width: 1280, height: 320 } });
+  const page = await browser.newPage({ viewport: { width: 1280, height: 200 } });
   await page.goto(`${webOrigin}/#pair=${pairOf(pairingUrl)}&url=${encodeURIComponent(host.remote!.url)}`);
   await page.getByRole("button", { name: "Pair", exact: true }).click();
   await prompt(page).waitFor();
@@ -3167,11 +3167,11 @@ it("keeps a revoked device's Unpair button reachable by scrolling in a short app
   const unpair = page.getByRole("button", { name: /^Unpair/ });
   const inView = async (): Promise<boolean> => {
     const box = await unpair.boundingBox();
-    return box !== null && box.y >= 0 && box.y + box.height <= 320;
+    return box !== null && box.y >= 0 && box.y + box.height <= 200;
   };
   expect(await inView()).toBe(false);
 
-  await page.mouse.move(800, 160);
+  await page.mouse.move(800, 100);
   for (let step = 0; step < 20 && !(await inView()); step++) {
     await page.mouse.wheel(0, 60);
     await page.waitForTimeout(50);
