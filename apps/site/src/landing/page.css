@@ -1,5 +1,5 @@
 /* Silver Mist ground, Void Eclipse ink, Abyss Blue for what you act on. One stretch of
-   the page (.zone-abyss) and the hero's stage are solid blue; there the accent flips to
+   the page (.zone-abyss) and the plates the product stands on are solid blue; there the accent flips to
    mist, so a button is never blue on blue. Zones only redefine the colour tokens, so
    components read --bg, --fg, --accent and friends. Film grain lies over the grounds.
 
@@ -57,7 +57,7 @@
 
 /* —— Zones —— */
 .zone-abyss,
-.hero-stage {
+.plate {
   color-scheme: dark;
   --bg: var(--abyss);
   --surface: rgb(228 228 228 / 0.06);
@@ -488,25 +488,36 @@ html[lang="zh-CN"] .eyebrow {
   margin-top: clamp(3rem, 6vw, 4.5rem);
 }
 
-/* The app stands on a plate of silver contour lines over Abyss Blue. The picture is
+/* —— The plate: what the product stands on where the page is light (the hero's
+   window, the screenshot). The phone has none: it sits on the blue stretch, which is
+   the same ground already, and a plate there would be a frame around nothing. Silver contour lines over Abyss Blue; the picture is
    gradient-mapped onto the palette, so its ground is Abyss itself. It is anchored at
-   the bottom, which trims the top of its silver band to about the padding above the
-   window, so the plate shows a strip of silver and then the app, not a field of blue.
-   The padding is in vw, not %: a percentage would follow the section's width, which
-   keeps growing after the plate stops at 90rem. */
-/* Wider than the text column, so the window reads at close to its real size. */
-.hero-stage {
-  width: min(100% - 2 * var(--gutter), 90rem);
-  /* Close enough to the buttons that the app shows on the first screen. */
-  margin: clamp(2.5rem, 5vw, 4rem) auto 0;
-  padding-top: clamp(2.5rem, 7vw, 6.5rem);
-  /* clip, not hidden: hidden makes a scroll container, and the app's view()
+   the bottom, so a plate of any shape shows a strip of silver and then blue. —— */
+.plate {
+  /* clip, not hidden: hidden makes a scroll container, and the hero app's view()
      timeline would follow this box, which never scrolls, instead of the page. */
   overflow: clip;
   border-radius: calc(var(--radius) * 1.75);
   background: var(--abyss)
     image-set(url("./hero-stage-1000.webp") 1x, url("./hero-stage.webp") 2x)
     center bottom / cover no-repeat;
+}
+
+/* Past 1000px wide the small copy would be stretched even at 1x. */
+@media (min-width: 64rem) {
+  .hero-stage {
+    background-image: url("./hero-stage.webp");
+  }
+}
+
+/* The hero's plate is wider than the text column, so the window reads at close to its
+   real size. The padding is in vw, not %: a percentage would follow the section's
+   width, which keeps growing after the plate stops at 90rem. */
+.hero-stage {
+  width: min(100% - 2 * var(--gutter), 90rem);
+  /* Close enough to the buttons that the app shows on the first screen. */
+  margin: clamp(2.5rem, 5vw, 4rem) auto 0;
+  padding-top: clamp(2.5rem, 7vw, 6.5rem);
 }
 
 /* On a short laptop screen the full silver band would push the window below the fold. */
@@ -516,11 +527,17 @@ html[lang="zh-CN"] .eyebrow {
   }
 }
 
-/* Past 1000px wide the small copy would be stretched even at 1x. */
-@media (min-width: 64rem) {
-  .hero-stage {
-    background-image: url("./hero-stage.webp");
-  }
+/* A screenshot stands on its plate the way the hero's window does: top corners
+   rounded, running off the bottom edge, with the window's long soft shadow. */
+.plate-shot {
+  padding: clamp(1.75rem, 5vw, 3rem) clamp(1.25rem, 4vw, 2.5rem) 0;
+}
+
+.plate-shot .shot {
+  border-radius: var(--radius) var(--radius) 0 0;
+  box-shadow:
+    0 -0.5rem 3rem -0.5rem rgb(0 0 0 / 0.45),
+    0 2rem 5rem -1.5rem rgb(4 8 28 / 0.6);
 }
 
 .hero-shot {

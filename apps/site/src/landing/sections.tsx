@@ -42,7 +42,7 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
           </a>
         </div>
       </div>
-      <div className="hero-stage">
+      <div className="plate hero-stage">
         <HeroApp lang={lang} label={t.shotAlt} />
       </div>
       <div className="hero-meta">
@@ -136,18 +136,20 @@ export function Agents({ lang, t }: { lang: Lang; t: LandingCopy["agents"] }) {
           </p>
         </div>
         <div className="stack">
-          <figure className="shot shot-crop">
-            <img
-              src={image.src}
-              srcSet={image.srcSet}
-              sizes="(min-width: 56rem) 35rem, 100vw"
-              width="1120"
-              height="840"
-              alt={t.shotAlt}
-              loading="lazy"
-              decoding="async"
-            />
-          </figure>
+          <div className="plate plate-shot">
+            <figure className="shot shot-crop">
+              <img
+                src={image.src}
+                srcSet={image.srcSet}
+                sizes="(min-width: 56rem) 35rem, 100vw"
+                width="1120"
+                height="840"
+                alt={t.shotAlt}
+                loading="lazy"
+                decoding="async"
+              />
+            </figure>
+          </div>
           <AgentsDiagram t={t.diagram} roles={t.roles.map((role) => role.name)} />
         </div>
       </div>
