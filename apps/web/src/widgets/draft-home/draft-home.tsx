@@ -351,7 +351,8 @@ export function DraftHome({
                     {draft.kind === "chat"
                       ? <ChatAdd aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
                       : <FolderClosed aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />}
-                    <SelectValue placeholder="No project" />
+                    {/* A removed project's path stays picked; it reads as no project. */}
+                    <SelectValue>{(value: string) => projectItems.find((item) => item.value === value)?.label ?? "No project"}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {projectItems.map((item) => (

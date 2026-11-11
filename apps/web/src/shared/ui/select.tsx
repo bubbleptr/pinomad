@@ -4,7 +4,31 @@ import { cn } from "cn"
 import { useDialogPortal } from "@/shared/ui/dialog-portal"
 import { Check, ChevronDown, ChevronUp } from "@/shared/ui/icons"
 
-const Select = SelectPrimitive.Root
+/**
+ * Base UI's Root, except that a controlled value stays put when its item
+ * disappears from `items`: Base UI would reset it to the initial value, and a
+ * draft must keep a removed project's path so sending it fails visibly.
+ */
+function Select<Value, Multiple extends boolean | undefined = false>({
+  onValueChange,
+  ...props
+}: SelectPrimitive.Root.Props<Value, Multiple>) {
+  const items = props.items
+  const listed = (value: unknown) =>
+    items === undefined ||
+    (Array.isArray(items)
+      ? items.some((item: { value: unknown }) => item.value === value)
+      : Object.hasOwn(items as object, String(value)))
+  return (
+    <SelectPrimitive.Root<Value, Multiple>
+      {...props}
+      onValueChange={(value, details) => {
+        if (details.reason === "none" && details.event.type === "base-ui" && props.value !== undefined && !listed(props.value)) return
+        onValueChange?.(value, details)
+      }}
+    />
+  )
+}
 
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (
