@@ -6,9 +6,19 @@ import type { ContextBreakdown } from "@pinomad/protocol/presentation.ts";
 
 export type RequestEstimate = Pick<ContextBreakdown, "system" | "skills" | "tools" | "mcp">;
 
-/** The same ratio pi uses for its own prompt-size estimates. */
+/** The ratio pi uses for its own prompt-size estimates; it fits Latin text and code. */
 const CHARS_PER_TOKEN = 4;
-const tokensOf = (text: string): number => Math.ceil(text.length / CHARS_PER_TOKEN);
+/** Han, kana, Hangul, and CJK and fullwidth punctuation: about a token per character. */
+const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}　-〿＀-￯]/gu;
+
+function tokensOf(text: string): number {
+  let cjk = 0;
+  const rest = text.replace(CJK, () => {
+    cjk += 1;
+    return "";
+  });
+  return cjk + Math.ceil(rest.length / CHARS_PER_TOKEN);
+}
 
 /** The `mcp` bridge's direct-exposure tool names (`mcp__<server>__<tool>`). */
 const MCP_TOOL = /^mcp__/;
@@ -134,7 +144,7 @@ export function estimateRequest(payload: unknown, namespaces: readonly CodemodeN
 /**
  * The breakdown of a reply that reported `used` context tokens: messages take
  * the remainder. Estimates that overshoot the real count (a short conversation
- * on a tokenizer denser than 4 chars/token) are scaled down to fit, so the
+ * on a tokenizer denser than the estimate assumes) are scaled down to fit, so the
  * parts always sum to `used`.
  */
 export function breakdownOf(estimate: RequestEstimate, used: number): ContextBreakdown {
