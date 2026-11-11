@@ -72,6 +72,7 @@ import {
   ThumbsDownIcon,
   ThumbsUpIcon,
   Tick02Icon,
+  TickDouble02Icon,
   UnfoldMoreIcon,
   UserCircleIcon,
 } from "@hugeicons/core-free-icons";
@@ -117,6 +118,7 @@ export const ChevronUp = iconComponent(ArrowUp01Icon);
 export const ChevronsUpDown = iconComponent(UnfoldMoreIcon);
 export const Check = iconComponent(Tick02Icon);
 export const CheckCircle = iconComponent(CheckmarkCircle02Icon);
+export const CheckDouble = iconComponent(TickDouble02Icon);
 export const Circle = iconComponent(CircleIcon);
 export const Command = iconComponent(CommandIcon);
 export const CommandLine = iconComponent(CommandLineIcon);

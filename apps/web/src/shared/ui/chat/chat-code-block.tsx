@@ -1,10 +1,10 @@
-import { CodeBlock } from "@astryxdesign/core/CodeBlock";
+import { CodeBlock } from "@/shared/ui/code-block/code-block";
 import type { ComponentProps } from "react";
 
 /**
- * Thin wrapper over Astryx CodeBlock for non-markdown surfaces (session
- * logs, gallery). Highlighting, language label, and the copy button are
- * Astryx built-ins; unknown languages degrade to plain text.
+ * Thin wrapper over CodeBlock for non-markdown surfaces (session logs,
+ * gallery). Highlighting, language label, and the copy button are
+ * CodeBlock's; unknown languages degrade to plain text.
  */
 type ChatCodeBlockOwnProps = {
   code: string;

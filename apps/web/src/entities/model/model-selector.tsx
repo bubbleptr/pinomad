@@ -5,9 +5,9 @@
 // fast mode, image badge or Settings management. The named agent (ADR-0023)
 // is part of the same pick (issue #254): a role is a model-level preset —
 // model, thinking level and system prompt — so it lives in this popover too.
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Button } from "../../shared/ui/button.tsx";
-import { List, ListItem } from "@astryxdesign/core/List";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "../../shared/ui/item.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "../../shared/ui/popover.tsx";
 import { Field, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
@@ -134,53 +134,32 @@ export function ModelSelector({
                 {agent.kind === "pick" ? "Agent · sets the system prompt" : "Agent · fixed at creation"}
               </p>
               {agent.kind === "pick" ? (
-                <List className="max-h-48 overflow-y-auto" density="compact">
+                <ItemGroup className="max-h-48 overflow-y-auto">
                   {missingAgent === undefined ? null : (
-                    <ListItem
-                      description="No longer available"
-                      endContent={<Check aria-hidden="true" className="size-4 shrink-0 text-foreground" />}
-                      isDisabled
-                      isSelected
-                      label={missingAgent}
-                    />
+                    <PickRow title={missingAgent} description="No longer available" selected disabled />
                   )}
-                  <ListItem
+                  <PickRow
+                    title="No agent"
                     description="Default system prompt"
-                    endContent={
-                      agent.value === undefined
-                        ? <Check aria-hidden="true" className="size-4 shrink-0 text-foreground" />
-                        : undefined
-                    }
-                    isDisabled={isDisabled}
-                    isSelected={agent.value === undefined}
-                    label="No agent"
-                    onClick={() => agent.onChange(undefined)}
+                    selected={agent.value === undefined}
+                    disabled={isDisabled}
+                    onPick={() => agent.onChange(undefined)}
                   />
                   {agent.roles.map((role) => (
-                    <ListItem
-                      description={role.description}
-                      endContent={
-                        agent.value === role.name
-                          ? <Check aria-hidden="true" className="size-4 shrink-0 text-foreground" />
-                          : undefined
-                      }
-                      isDisabled={isDisabled}
-                      isSelected={agent.value === role.name}
+                    <PickRow
                       key={role.name}
-                      label={role.name}
-                      onClick={() => agent.onChange(role.name)}
+                      title={role.name}
+                      description={role.description}
+                      selected={agent.value === role.name}
+                      disabled={isDisabled}
+                      onPick={() => agent.onChange(role.name)}
                     />
                   ))}
-                </List>
+                </ItemGroup>
               ) : (
-                <List density="compact">
-                  <ListItem
-                    {...(agent.description === undefined ? {} : { description: agent.description })}
-                    endContent={<Check aria-hidden="true" className="size-4 shrink-0 text-foreground" />}
-                    isSelected
-                    label={agent.name}
-                  />
-                </List>
+                <ItemGroup>
+                  <PickRow title={agent.name} description={agent.description} selected />
+                </ItemGroup>
               )}
             </div>
           )}
@@ -194,48 +173,77 @@ export function ModelSelector({
               onChange={(event) => setQuery(event.target.value)}
             />
           </Field>
-          <List aria-label="Model" className="max-h-72 overflow-y-auto" density="compact">
+          <ItemGroup aria-label="Model" className="max-h-72 overflow-y-auto">
             {filtered.map((model) => (
-              <ListItem
-                description={model.provider}
-                startContent={<ModelLogo model={model} reserve />}
-                endContent={
-                  sameModel(model, selected.model)
-                    ? <Check aria-hidden="true" className="size-4 shrink-0 text-foreground" />
-                    : undefined
-                }
-                isDisabled={isDisabled}
-                isSelected={sameModel(model, selected.model)}
+              <PickRow
                 key={`${model.provider}/${model.modelId}`}
-                label={model.name}
-                onClick={() => onModelChange({ provider: model.provider, modelId: model.modelId })}
+                media={<ModelLogo model={model} reserve />}
+                title={model.name}
+                description={model.provider}
+                selected={sameModel(model, selected.model)}
+                disabled={isDisabled}
+                onPick={() => onModelChange({ provider: model.provider, modelId: model.modelId })}
               />
             ))}
-          </List>
+          </ItemGroup>
           {levels.length > 1 ? (
-            // Astryx List doesn't forward aria-label (0.3.0), so the section
-            // gets a visible heading plus a role="group" wrapper.
+            // A visible heading plus a role="group" wrapper, like the Agent section.
             <div aria-label="Thinking" role="group">
               <p className="px-2 pt-1 text-xs text-muted-foreground">Thinking</p>
-              <List density="compact">
+              <ItemGroup>
                 {levels.map((level) => (
-                  <ListItem
-                    endContent={
-                      level === selected.level
-                        ? <Check aria-hidden="true" className="size-4 shrink-0 text-foreground" />
-                        : undefined
-                    }
-                    isDisabled={isDisabled}
+                  <PickRow
                     key={level}
-                    label={thinkingLevelLabels[level]}
-                    onClick={() => onLevelChange(level)}
+                    title={thinkingLevelLabels[level]}
+                    // The level list shows its pick by the check alone.
+                    check={level === selected.level}
+                    disabled={isDisabled}
+                    onPick={() => onLevelChange(level)}
                   />
                 ))}
-              </List>
+              </ItemGroup>
             </div>
           ) : null}
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+/**
+ * One choice in the popover. A selected row is tinted and marked
+ * aria-current with a trailing check (`check` alone shows only the mark); a
+ * row without `onPick` is read-only and has no button.
+ */
+function PickRow({
+  title,
+  description,
+  media,
+  selected = false,
+  check = selected,
+  disabled = false,
+  onPick,
+}: {
+  title: string;
+  description?: string | undefined;
+  media?: ReactNode;
+  selected?: boolean;
+  check?: boolean;
+  disabled?: boolean;
+  onPick?: () => void;
+}) {
+  return (
+    <Item size="sm" render={<li />} aria-current={selected || undefined} aria-disabled={disabled || undefined}>
+      {media === undefined ? null : <ItemMedia>{media}</ItemMedia>}
+      <ItemContent render={onPick === undefined ? undefined : <button type="button" disabled={disabled} onClick={onPick} />}>
+        <ItemTitle>{title}</ItemTitle>
+        {description === undefined ? null : <ItemDescription>{description}</ItemDescription>}
+      </ItemContent>
+      {check ? (
+        <ItemActions>
+          <Check aria-hidden="true" className="size-4 shrink-0 text-foreground" />
+        </ItemActions>
+      ) : null}
+    </Item>
   );
 }

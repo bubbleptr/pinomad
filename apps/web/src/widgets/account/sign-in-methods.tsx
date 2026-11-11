@@ -1,5 +1,5 @@
 import { Button } from "../../shared/ui/button.tsx";
-import { List, ListItem } from "@astryxdesign/core/List";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "../../shared/ui/item.tsx";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
 import { Field, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
@@ -9,7 +9,7 @@ import type { AccountConfirmation, AccountError, AccountIdentities, AccountResul
 import type { AccountModel } from "../../entities/account/account-model.ts";
 import { knownSignInProviders, signInProviderName, SignInProviderMark } from "../../entities/provider/sign-in-provider.tsx";
 import { KeyRound, MoreHorizontal } from "../../shared/ui/icons.tsx";
-import { SettingsGroup } from "../../shared/ui/settings-group.tsx";
+import { GROUP_ROWS, SettingsGroup } from "../../shared/ui/settings-group.tsx";
 import { accountErrorMessage } from "./account-error.ts";
 import { ConfirmDialog } from "./confirm-dialog.tsx";
 import { MIN_PASSWORD_LENGTH, NEW_PASSWORD_INPUT, passwordLength } from "./code-input.ts";
@@ -83,16 +83,18 @@ export function SignInMethods({
   return (
     <div className="flex flex-col gap-2">
       <SettingsGroup title="Sign-in methods">
-      <List hasDividers aria-label="Sign-in methods">
-        <ListItem
-          label="Password"
-          startContent={
+      <ItemGroup aria-label="Sign-in methods" className={GROUP_ROWS}>
+        <Item render={<li />}>
+          <ItemMedia>
             <MethodMark>
               <KeyRound aria-hidden="true" style={{ width: 18, height: 18 }} />
             </MethodMark>
-          }
-          description={identities.hasPassword ? "Set" : "Not set"}
-          endContent={
+          </ItemMedia>
+          <ItemContent>
+            <ItemTitle>Password</ItemTitle>
+            <ItemDescription>{identities.hasPassword ? "Set" : "Not set"}</ItemDescription>
+          </ItemContent>
+          <ItemActions>
             <Button
               variant="secondary"
               size="sm"
@@ -101,19 +103,20 @@ export function SignInMethods({
             >
               {identities.hasPassword ? "Change password" : "Set password"}
             </Button>
-          }
-        />
+          </ItemActions>
+        </Item>
         {identities.identities.map((identity) => (
-          <ListItem
-            key={identity.provider}
-            label={signInProviderName(identity.provider)}
-            description={identity.email}
-            startContent={
+          <Item key={identity.provider} render={<li />}>
+            <ItemMedia>
               <MethodMark>
                 <SignInProviderMark provider={identity.provider} size={20} />
               </MethodMark>
-            }
-            endContent={
+            </ItemMedia>
+            <ItemContent>
+              <ItemTitle>{signInProviderName(identity.provider)}</ItemTitle>
+              <ItemDescription>{identity.email}</ItemDescription>
+            </ItemContent>
+            <ItemActions>
               <DropdownMenu>
                 <DropdownMenuTrigger
                   disabled={busy}
@@ -123,20 +126,21 @@ export function SignInMethods({
                   <DropdownMenuItem onClick={() => start({ kind: "remove", provider: identity.provider })}>Remove</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-            }
-          />
+            </ItemActions>
+          </Item>
         ))}
         {linkable.map((provider) => (
-          <ListItem
-            key={provider.id}
-            label={provider.name}
-            description="Not linked"
-            startContent={
+          <Item key={provider.id} render={<li />}>
+            <ItemMedia>
               <MethodMark>
                 <SignInProviderMark provider={provider.id} size={20} />
               </MethodMark>
-            }
-            endContent={
+            </ItemMedia>
+            <ItemContent>
+              <ItemTitle>{provider.name}</ItemTitle>
+              <ItemDescription>Not linked</ItemDescription>
+            </ItemContent>
+            <ItemActions>
               <Button
                 aria-label={`Link ${provider.name}`}
                 variant="secondary"
@@ -146,10 +150,10 @@ export function SignInMethods({
               >
                 Link
               </Button>
-            }
-          />
+            </ItemActions>
+          </Item>
         ))}
-      </List>
+      </ItemGroup>
       </SettingsGroup>
       {done === undefined ? null : <span className="text-xs/5 text-muted-foreground">{done}</span>}
       {open?.kind === "password" ? (

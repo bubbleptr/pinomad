@@ -1,5 +1,5 @@
-import { Code } from "@astryxdesign/core/Code";
-import { Markdown } from "@astryxdesign/core/Markdown";
+import { Code } from "@/shared/ui/code-block/code";
+import { Markdown } from "@/shared/ui/markdown/markdown";
 import { createContext, useContext, type ComponentProps } from "react";
 import {
   ChatFileLink,
@@ -14,7 +14,7 @@ const chatHeadingLevelStart = 3;
 
 /**
  * Inline-code spans confirmed to be real files in the Session checkout. A
- * context because the Astryx components map is a module constant — ChatInlineCode
+ * context because the Markdown components map is a module constant — ChatInlineCode
  * cannot take the set as a prop without breaking that identity.
  */
 const linkedInlineCodeContext = createContext<ReadonlySet<string> | undefined>(
@@ -22,7 +22,7 @@ const linkedInlineCodeContext = createContext<ReadonlySet<string> | undefined>(
 );
 
 /**
- * Astryx's default inline code sits at body size with zero vertical padding,
+ * The default inline code sits at body size with zero vertical padding,
  * so its 18px chip fills a 20px line box and adjacent code-bearing lines
  * touch. Chat routes inline code through this override so chat.css can size
  * the chip against the chat prose leading; other Code usages stay default.
@@ -66,9 +66,9 @@ const chatMarkdownFileLinkComponents = {
 };
 
 /**
- * Chat prose renders through Astryx Markdown (compact density, per the
- * official ai-chat template). Fenced code uses the Astryx built-in code
- * block; ChatCodeBlock stays only for non-markdown surfaces.
+ * Chat prose renders through Markdown at compact density. Fenced code uses
+ * Markdown's own CodeBlock; ChatCodeBlock stays only for non-markdown
+ * surfaces.
  */
 type ChatMarkdownOwnProps = {
   children: string;
@@ -123,7 +123,7 @@ export function ChatMarkdown({
 }
 
 /**
- * Streaming variant: Astryx isStreaming does incremental parsing with a
+ * Streaming variant: Markdown's isStreaming does incremental parsing with a
  * fade-in on new chunks — that animation is the in-progress affordance, so
  * there is no separate caret.
  */

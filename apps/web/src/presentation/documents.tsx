@@ -1,9 +1,9 @@
-import { List, ListItem } from "@astryxdesign/core/List";
 import type { JsonValue } from "@earendil-works/chord";
 import { classify, type QuestionRequest, type QuestionState } from "@pinomad/protocol/presentation.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { ExtensionDocView } from "@pinomad/protocol/view.ts";
 import { Badge } from "../shared/ui/badge.tsx";
+import { Item, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "../shared/ui/item.tsx";
 
 const STATUS_LABEL = { pending: "pending", in_progress: "in progress", completed: "completed" } as const;
 
@@ -30,15 +30,22 @@ export function DocumentView({ doc }: { doc: ExtensionDocView; remote: RemoteDur
 
 function TodoDoc({ doc }: { doc: { items: readonly { text: string; status: "pending" | "in_progress" | "completed" }[] } }) {
   return (
-    <List density="compact">
+    <ItemGroup>
       {doc.items.length === 0 ? (
-        <ListItem label="Empty" />
+        <EmptyRow />
       ) : (
         doc.items.map((item, index) => (
-          <ListItem key={index} label={item.text} startContent={<Badge>{STATUS_LABEL[item.status]}</Badge>} />
+          <Item key={index} size="sm" render={<li />}>
+            <ItemMedia>
+              <Badge>{STATUS_LABEL[item.status]}</Badge>
+            </ItemMedia>
+            <ItemContent>
+              <ItemTitle>{item.text}</ItemTitle>
+            </ItemContent>
+          </Item>
         ))
       )}
-    </List>
+    </ItemGroup>
   );
 }
 
@@ -58,25 +65,28 @@ function statusOf(request: QuestionRequest, index: number): { label: string; col
 
 function QuestionDoc({ doc }: { doc: QuestionState }) {
   return (
-    <List density="compact">
+    <ItemGroup>
       {doc.requests.length === 0 ? (
-        <ListItem label="Empty" />
+        <EmptyRow />
       ) : (
         doc.requests.flatMap((request) =>
           request.questions.map((question, index) => {
             const status = statusOf(request, index);
             return (
-              <ListItem
-                key={`${request.id}-${index}`}
-                label={question.question}
-                description={status.label}
-                startContent={<Badge>{question.header}</Badge>}
-              />
+              <Item key={`${request.id}-${index}`} size="sm" render={<li />}>
+                <ItemMedia>
+                  <Badge>{question.header}</Badge>
+                </ItemMedia>
+                <ItemContent>
+                  <ItemTitle>{question.question}</ItemTitle>
+                  <ItemDescription>{status.label}</ItemDescription>
+                </ItemContent>
+              </Item>
             );
           }),
         )
       )}
-    </List>
+    </ItemGroup>
   );
 }
 
@@ -85,11 +95,26 @@ function FallbackDoc({ value }: { value: unknown }) {
   const entries: [string, unknown][] =
     typeof value === "object" && value !== null && !Array.isArray(value) ? Object.entries(value) : [["value", value]];
   return (
-    <List density="compact">
+    <ItemGroup>
       {entries.map(([key, entry]) => (
-        <ListItem key={key} label={key} description={compact(entry)} />
+        <Item key={key} size="sm" render={<li />}>
+          <ItemContent>
+            <ItemTitle>{key}</ItemTitle>
+            <ItemDescription>{compact(entry)}</ItemDescription>
+          </ItemContent>
+        </Item>
       ))}
-    </List>
+    </ItemGroup>
+  );
+}
+
+function EmptyRow() {
+  return (
+    <Item size="sm" render={<li />}>
+      <ItemContent>
+        <ItemTitle>Empty</ItemTitle>
+      </ItemContent>
+    </Item>
   );
 }
 

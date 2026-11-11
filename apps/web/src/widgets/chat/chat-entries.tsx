@@ -4,7 +4,6 @@
 // thumbs), and on the newest run the todo card (ADR-0026).
 import { Button } from "../../shared/ui/button.tsx";
 import { ChatMessageMetadata, ChatSystemMessage } from "@astryxdesign/core/Chat";
-import { Icon } from "@astryxdesign/core/Icon";
 import { InternationalizationProvider } from "@astryxdesign/core/i18n";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { TodoState } from "@pinomad/protocol/presentation.ts";
@@ -23,7 +22,7 @@ import { ChatMessage, ChatMessageActions } from "@/shared/ui/chat/chat-message";
 import { ChatRunFailure } from "@/shared/ui/chat/chat-run-failure";
 import { MessageAttachments } from "../../entities/attachment/file-attachments.tsx";
 import { MessageImages } from "../../entities/image/message-images.tsx";
-import { GitFork } from "@/shared/ui/icons";
+import { CheckDouble, GitFork } from "@/shared/ui/icons";
 import { SkillMentionText } from "../../entities/agent/skill-mentions.tsx";
 import { messageTime } from "./chat-time.ts";
 import { SubagentCards } from "./subagent-card.tsx";
@@ -164,7 +163,7 @@ function UserEntry({
       footer={
         status === "delivered" ? (
           <span title="Delivered">
-            <Icon icon="checkDouble" size="xsm" label="Delivered" />
+            <CheckDouble role="img" aria-label="Delivered" className="size-3" />
           </span>
         ) : undefined
       }

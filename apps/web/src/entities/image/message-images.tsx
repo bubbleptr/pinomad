@@ -4,7 +4,7 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { Lightbox } from "@/shared/ui/lightbox";
-import { Thumbnail } from "@astryxdesign/core/Thumbnail";
+import { Thumbnail } from "@/shared/ui/thumbnail";
 import { useState } from "react";
 import type { ViewImage } from "@pinomad/protocol/images.ts";
 import { cachedImageSrc, useImageSrc, useNearViewport } from "./image-source.tsx";
@@ -55,7 +55,7 @@ function MessageThumbnail({
     <div ref={observe}>
       <Thumbnail
         src={state.status === "ready" ? state.src : undefined}
-        isLoading={state.status === "loading"}
+        loading={state.status === "loading"}
         alt={`Image ${index + 1}`}
         onClick={onOpen}
       />

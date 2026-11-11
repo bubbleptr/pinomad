@@ -1,5 +1,5 @@
 import { Button } from "../../shared/ui/button.tsx";
-import { Item } from "@astryxdesign/core/Item";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "../../shared/ui/item.tsx";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { MoreHorizontal } from "../../shared/ui/icons.tsx";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
@@ -149,51 +149,47 @@ export function AccountHostList({
   const account = useAccountModel();
   return (
     <>
-      <ul aria-label={label} className={GROUP_ROWS}>
+      <ItemGroup aria-label={label} className={GROUP_ROWS}>
         {hosts.map(({ host }) => {
           const presence = host.online ? "Online" : `Last seen ${relativeTime(host.lastSeenAt, now)}`;
           const pairable = host.pairing === "available";
           return (
-            <li key={host.hostId}>
-              <Item
-                as="div"
-                startContent={
-                  <span aria-hidden="true" className="inline-flex">
-                    <StatusDot variant={host.online ? "success" : "neutral"} label={host.online ? "Online" : "Offline"} />
-                  </span>
-                }
-                label={host.name}
-                descriptionLines={2}
-                description={pairable ? presence : `${presence} · ${UNPAIRABLE[host.pairing as keyof typeof UNPAIRABLE]}`}
-                endContent={
-                  <div className="flex items-center gap-1">
-                    {pairable ? (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        loading={pairing.pairing === host.hostId}
-                        disabled={pairing.pairing !== undefined}
-                        onClick={() => pairing.pair(host.hostId)}
-                      >
-                        Pair
-                      </Button>
-                    ) : null}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        disabled={removing !== undefined || pairing.pairing === host.hostId}
-                        render={<IconButton icon={<MoreHorizontal aria-hidden="true" />} label={`More for ${host.name}`} tooltip={`More for ${host.name}`} size="sm" />}
-                      />
-                      <DropdownMenuContent>
-                        <DropdownMenuItem onClick={() => setRemoving(host)}>Remove from account</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                }
-              />
-            </li>
+            <Item key={host.hostId} render={<li />}>
+              <ItemMedia aria-hidden="true">
+                <StatusDot variant={host.online ? "success" : "neutral"} label={host.online ? "Online" : "Offline"} />
+              </ItemMedia>
+              <ItemContent>
+                <ItemTitle>{host.name}</ItemTitle>
+                <ItemDescription className="line-clamp-2 whitespace-normal">
+                  {pairable ? presence : `${presence} · ${UNPAIRABLE[host.pairing as keyof typeof UNPAIRABLE]}`}
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions className="gap-1">
+                {pairable ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    loading={pairing.pairing === host.hostId}
+                    disabled={pairing.pairing !== undefined}
+                    onClick={() => pairing.pair(host.hostId)}
+                  >
+                    Pair
+                  </Button>
+                ) : null}
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    disabled={removing !== undefined || pairing.pairing === host.hostId}
+                    render={<IconButton icon={<MoreHorizontal aria-hidden="true" />} label={`More for ${host.name}`} tooltip={`More for ${host.name}`} size="sm" />}
+                  />
+                  <DropdownMenuContent>
+                    <DropdownMenuItem onClick={() => setRemoving(host)}>Remove from account</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </ItemActions>
+            </Item>
           );
         })}
-      </ul>
+      </ItemGroup>
       {removing === undefined ? null : (
         <RemoveHostDialog
           account={account}

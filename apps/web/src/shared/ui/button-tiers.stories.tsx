@@ -1,6 +1,6 @@
 import { Button } from "./button.tsx";
 import { IconButton } from "./icon-button.tsx";
-import { List, ListItem } from "@astryxdesign/core/List";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "./item.tsx";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { ArrowLeft, MoreHorizontal } from "./icons.tsx";
 
@@ -24,18 +24,18 @@ export const InContext: Story = {
       </div>
       <div className="flex flex-col gap-2">
         <span className="text-sm/5 font-semibold">Settings rows: secondary, sm</span>
-        <List>
-          <ListItem
-            label="MacBook Pro"
-            description="Paired Oct 12"
-            endContent={
-              <div className="flex gap-2">
-                <Button variant="secondary" size="sm">Connection</Button>
-                <Button variant="secondary" size="sm">Unpair</Button>
-              </div>
-            }
-          />
-        </List>
+        <ItemGroup>
+          <Item render={<li />}>
+            <ItemContent>
+              <ItemTitle>MacBook Pro</ItemTitle>
+              <ItemDescription>Paired Oct 12</ItemDescription>
+            </ItemContent>
+            <ItemActions>
+              <Button variant="secondary" size="sm">Connection</Button>
+              <Button variant="secondary" size="sm">Unpair</Button>
+            </ItemActions>
+          </Item>
+        </ItemGroup>
       </div>
       <div className="flex flex-col gap-2">
         <span className="text-sm/5 font-semibold">Confirming an irreversible action: destructive + secondary</span>

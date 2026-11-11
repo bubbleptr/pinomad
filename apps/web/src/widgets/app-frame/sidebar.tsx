@@ -1,7 +1,6 @@
 import { cn } from "cn";
 import { Button } from "../../shared/ui/button.tsx";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
-import { Icon } from "@astryxdesign/core/Icon";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
@@ -11,7 +10,7 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { familyStatus, threadsOf, type FamilyStatus } from "@pinomad/client/family.ts";
 import { useAppUpdate } from "../../entities/app-update/use-app-update.ts";
-import { ArchiveArrowDown, ChatBubble, FolderAdd, FolderClosed, FolderOpenState, MoreHorizontal, Pencil, Plus, Settings, Trash2, UserCircle } from "../../shared/ui/icons.tsx";
+import { ArchiveArrowDown, ChatBubble, ChevronRight, FolderAdd, FolderClosed, FolderOpenState, MoreHorizontal, Pencil, Plus, Settings, Trash2, UserCircle } from "../../shared/ui/icons.tsx";
 import { AnimatedNewChat, AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
 import { AddProjectDialog, RemoveProjectDialog } from "./project-dialogs.tsx";
 import { RenameConversationDialog } from "./rename-dialog.tsx";
@@ -207,7 +206,7 @@ function SidebarSectionHeader({
           className="pigui-sidenav-section-toggle__chevron"
           data-expanded={expanded ? "true" : "false"}
         >
-          <Icon icon="chevronRight" size="sm" color="inherit" />
+          <ChevronRight aria-hidden="true" className="size-4" />
         </span>
       </button>
       <div className={cn("flex items-center gap-0.5", !pinnedActions && "pigui-sidenav-hover-actions")}>
@@ -260,7 +259,7 @@ function FoldIndicator({
     >
       <StateIcon className="pigui-project-expansion-indicator__state" />
       <span className="pigui-project-expansion-indicator__chevron">
-        <Icon icon="chevronRight" size="sm" color="inherit" />
+        <ChevronRight aria-hidden="true" className="size-4" />
       </span>
     </span>
   );

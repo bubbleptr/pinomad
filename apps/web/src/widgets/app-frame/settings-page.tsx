@@ -1,8 +1,8 @@
 import { Button } from "../../shared/ui/button.tsx";
-import { Card } from "@astryxdesign/core/Card";
+import { Card, CardContent } from "../../shared/ui/card.tsx";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { Link } from "../../shared/ui/link.tsx";
-import { List, ListItem } from "@astryxdesign/core/List";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "../../shared/ui/item.tsx";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
 import { SegmentedControl, SegmentedControlItem } from "../../shared/ui/segmented-control.tsx";
 import {
@@ -343,19 +343,19 @@ export function useSettingsScreen({
           <span className="text-xs/5 font-semibold text-muted-foreground">
             {group.title}
           </span>
-          <List density="compact" aria-label={group.title}>
+          <ItemGroup aria-label={group.title}>
             {group.sections.map((entry) => (
-              <ListItem
-                key={entry.id}
-                label={entry.title}
-                startContent={sectionIcon(entry.icon)}
-                endContent={
+              <Item key={entry.id} size="sm" render={<li />}>
+                <ItemMedia>{sectionIcon(entry.icon)}</ItemMedia>
+                <ItemContent render={<button type="button" onClick={() => setSection(entry.id)} />}>
+                  <ItemTitle>{entry.title}</ItemTitle>
+                </ItemContent>
+                <ItemActions>
                   <ChevronRight aria-hidden="true" style={{ width: "var(--spacing-4)", height: "var(--spacing-4)" }} />
-                }
-                onClick={() => setSection(entry.id)}
-              />
+                </ItemActions>
+              </Item>
             ))}
-          </List>
+          </ItemGroup>
         </div>
       ))}
     </div>
@@ -749,18 +749,21 @@ function ArchivedSection({ view, remote, connected }: { view: DurableView; remot
         <p className="text-xs/5 text-muted-foreground">No archived conversations.</p>
       ) : (
         <SettingsGroup>
-          <List hasDividers>
+          <ItemGroup className={GROUP_ROWS}>
             {archived.map(({ node, project }) => {
               const title = node.summary.title ?? "New conversation";
               const updatedAt = familyUpdatedAt(node);
               return (
-                <ListItem
-                  key={node.summary.id}
-                  label={title}
-                  description={[project?.name ?? "Chat", updatedAt === undefined ? undefined : relativeTime(updatedAt, now)]
-                    .filter((part) => part !== undefined)
-                    .join(" · ")}
-                  endContent={
+                <Item key={node.summary.id} render={<li />}>
+                  <ItemContent>
+                    <ItemTitle>{title}</ItemTitle>
+                    <ItemDescription>
+                      {[project?.name ?? "Chat", updatedAt === undefined ? undefined : relativeTime(updatedAt, now)]
+                        .filter((part) => part !== undefined)
+                        .join(" · ")}
+                    </ItemDescription>
+                  </ItemContent>
+                  <ItemActions>
                     <Button
                       aria-label={`Restore ${title}`}
                       variant="secondary"
@@ -771,11 +774,11 @@ function ArchivedSection({ view, remote, connected }: { view: DurableView; remot
                       <ArchiveRestore aria-hidden="true" />
                       Restore
                     </Button>
-                  }
-                />
+                  </ItemActions>
+                </Item>
               );
             })}
-          </List>
+          </ItemGroup>
         </SettingsGroup>
       )}
     </section>
@@ -793,11 +796,18 @@ function McpSection({ view }: { view: DurableView }) {
         <p className="text-xs/5 text-muted-foreground">No servers configured.</p>
       ) : (
         <SettingsGroup>
-          <List hasDividers>
+          <ItemGroup className={GROUP_ROWS}>
             {mcp.servers.map((server) => (
-              <ListItem key={server.name} label={server.name} endContent={<Badge>{server.state}</Badge>} />
+              <Item key={server.name} render={<li />}>
+                <ItemContent>
+                  <ItemTitle>{server.name}</ItemTitle>
+                </ItemContent>
+                <ItemActions>
+                  <Badge>{server.state}</Badge>
+                </ItemActions>
+              </Item>
             ))}
-          </List>
+          </ItemGroup>
         </SettingsGroup>
       )}
     </section>
@@ -820,24 +830,35 @@ function AboutDetails({ view }: { view: DurableView }) {
   const host = view.host;
   return (
     <SettingsGroup title="Details">
-      <List hasDividers>
+      <ItemGroup className={GROUP_ROWS}>
         {/* A host with the upgrade stream names its release under Version. */}
-        {view.upgrade === null ? <ListItem label="Host version" description={host?.version ?? "Source checkout"} /> : null}
-        <ListItem
-          label="Protocol"
-          description={host === undefined ? "—" : `${host.protocol.major}.${host.protocol.minor}`}
-        />
-        <ListItem
-          label="Website"
-          description={
-            // `?home` keeps the site on its home page instead of forwarding
-            // a marked browser back to the app.
-            <Link href="https://pinomad.si/?home" external className="text-sm/5">
-              pinomad.si
-            </Link>
-          }
-        />
-      </List>
+        {view.upgrade === null ? (
+          <Item render={<li />}>
+            <ItemContent>
+              <ItemTitle>Host version</ItemTitle>
+              <ItemDescription>{host?.version ?? "Source checkout"}</ItemDescription>
+            </ItemContent>
+          </Item>
+        ) : null}
+        <Item render={<li />}>
+          <ItemContent>
+            <ItemTitle>Protocol</ItemTitle>
+            <ItemDescription>{host === undefined ? "—" : `${host.protocol.major}.${host.protocol.minor}`}</ItemDescription>
+          </ItemContent>
+        </Item>
+        <Item render={<li />}>
+          <ItemContent>
+            <ItemTitle>Website</ItemTitle>
+            <ItemDescription className="overflow-visible whitespace-normal">
+              {/* `?home` keeps the site on its home page instead of forwarding
+                  a marked browser back to the app. */}
+              <Link href="https://pinomad.si/?home" external className="text-sm/5">
+                pinomad.si
+              </Link>
+            </ItemDescription>
+          </ItemContent>
+        </Item>
+      </ItemGroup>
     </SettingsGroup>
   );
 }
@@ -1005,54 +1026,56 @@ function AgentRoleCard({
     });
   };
   return (
-    <Card padding={4}>
-      <div className="flex items-start gap-3">
-        <div className="flex flex-col gap-1" style={{ flex: 1, minInlineSize: 0 }}>
-          <h3 className="text-[1.0625rem]/6 font-bold">{role.name}</h3>
-          <p className="text-xs/5 text-muted-foreground">{role.description}</p>
-          {role.model === undefined && role.thinkingLevel === undefined ? null : (
-            <div className="flex flex-wrap gap-1">
-              {role.model === undefined ? null : (
-                <Badge>{modelSummary?.name ?? role.model}</Badge>
-              )}
-              {role.thinkingLevel === undefined ? null : (
-                <Badge>{thinkingLevelLabels[role.thinkingLevel]}</Badge>
-              )}
-              {role.model !== undefined && modelSummary === undefined ? (
-                <Badge variant="warning">Model not available</Badge>
-              ) : null}
+    <Card>
+      <CardContent>
+        <div className="flex items-start gap-3">
+          <div className="flex flex-col gap-1" style={{ flex: 1, minInlineSize: 0 }}>
+            <h3 className="text-[1.0625rem]/6 font-bold">{role.name}</h3>
+            <p className="text-xs/5 text-muted-foreground">{role.description}</p>
+            {role.model === undefined && role.thinkingLevel === undefined ? null : (
+              <div className="flex flex-wrap gap-1">
+                {role.model === undefined ? null : (
+                  <Badge>{modelSummary?.name ?? role.model}</Badge>
+                )}
+                {role.thinkingLevel === undefined ? null : (
+                  <Badge>{thinkingLevelLabels[role.thinkingLevel]}</Badge>
+                )}
+                {role.model !== undefined && modelSummary === undefined ? (
+                  <Badge variant="warning">Model not available</Badge>
+                ) : null}
+              </div>
+            )}
+          </div>
+          {confirming ? null : (
+            <div className="flex items-center gap-1">
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  disabled={!connected}
+                  render={<IconButton icon={<MoreHorizontal aria-hidden="true" />} label={`${role.name} actions`} tooltip={`${role.name} actions`} size="sm" />}
+                />
+                <DropdownMenuContent>
+                  <DropdownMenuItem onClick={onEdit}>Edit</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setConfirming(true)}>Delete</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           )}
         </div>
-        {confirming ? null : (
-          <div className="flex items-center gap-1">
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                disabled={!connected}
-                render={<IconButton icon={<MoreHorizontal aria-hidden="true" />} label={`${role.name} actions`} tooltip={`${role.name} actions`} size="sm" />}
-              />
-              <DropdownMenuContent>
-                <DropdownMenuItem onClick={onEdit}>Edit</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setConfirming(true)}>Delete</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+        {confirming ? (
+          <div className="flex flex-col gap-2" style={{ marginBlockStart: "var(--spacing-4)" }}>
+            <p className="text-xs/5 text-muted-foreground">Conversations already using this agent keep their copy.</p>
+            <div className="flex items-center gap-2">
+              <Button variant="destructive" size="sm" disabled={!connected} onClick={remove}>Delete</Button>
+              <Button variant="secondary" size="sm" onClick={() => setConfirming(false)}>Cancel</Button>
+            </div>
           </div>
+        ) : null}
+        {error === undefined ? null : (
+          <span className="text-xs/5 text-muted-foreground" role="alert" style={{ color: "var(--destructive)" }}>
+            {error}
+          </span>
         )}
-      </div>
-      {confirming ? (
-        <div className="flex flex-col gap-2" style={{ marginBlockStart: "var(--spacing-4)" }}>
-          <p className="text-xs/5 text-muted-foreground">Conversations already using this agent keep their copy.</p>
-          <div className="flex items-center gap-2">
-            <Button variant="destructive" size="sm" disabled={!connected} onClick={remove}>Delete</Button>
-            <Button variant="secondary" size="sm" onClick={() => setConfirming(false)}>Cancel</Button>
-          </div>
-        </div>
-      ) : null}
-      {error === undefined ? null : (
-        <span className="text-xs/5 text-muted-foreground" role="alert" style={{ color: "var(--destructive)" }}>
-          {error}
-        </span>
-      )}
+      </CardContent>
     </Card>
   );
 }
@@ -1079,43 +1102,45 @@ function AgentProblemCard({
     });
   };
   return (
-    <Card padding={4}>
-      <div className="flex items-start gap-3">
-        <div className="flex flex-col gap-1" style={{ flex: 1, minInlineSize: 0 }}>
-          <h3 className="text-[1.0625rem]/6 font-bold">{problem.file}</h3>
-          <div className="flex flex-wrap gap-1">
-            <Badge variant="warning">Not loaded</Badge>
+    <Card>
+      <CardContent>
+        <div className="flex items-start gap-3">
+          <div className="flex flex-col gap-1" style={{ flex: 1, minInlineSize: 0 }}>
+            <h3 className="text-[1.0625rem]/6 font-bold">{problem.file}</h3>
+            <div className="flex flex-wrap gap-1">
+              <Badge variant="warning">Not loaded</Badge>
+            </div>
+            <p className="text-xs/5 text-muted-foreground">{problem.reason}</p>
+            <p className="text-xs/5 text-muted-foreground">Fix this file on the host.</p>
           </div>
-          <p className="text-xs/5 text-muted-foreground">{problem.reason}</p>
-          <p className="text-xs/5 text-muted-foreground">Fix this file on the host.</p>
+          {confirming || !deletable ? null : (
+            <div className="flex items-center gap-1">
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  disabled={!connected}
+                  render={<IconButton icon={<MoreHorizontal aria-hidden="true" />} label={`${problem.file} actions`} tooltip={`${problem.file} actions`} size="sm" />}
+                />
+                <DropdownMenuContent>
+                  <DropdownMenuItem onClick={() => setConfirming(true)}>Delete</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
         </div>
-        {confirming || !deletable ? null : (
-          <div className="flex items-center gap-1">
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                disabled={!connected}
-                render={<IconButton icon={<MoreHorizontal aria-hidden="true" />} label={`${problem.file} actions`} tooltip={`${problem.file} actions`} size="sm" />}
-              />
-              <DropdownMenuContent>
-                <DropdownMenuItem onClick={() => setConfirming(true)}>Delete</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+        {confirming ? (
+          <div className="flex flex-col gap-2" style={{ marginBlockStart: "var(--spacing-4)" }}>
+            <div className="flex items-center gap-2">
+              <Button variant="destructive" size="sm" disabled={!connected} onClick={remove}>Delete</Button>
+              <Button variant="secondary" size="sm" onClick={() => setConfirming(false)}>Cancel</Button>
+            </div>
           </div>
+        ) : null}
+        {error === undefined ? null : (
+          <span className="text-xs/5 text-muted-foreground" role="alert" style={{ color: "var(--destructive)" }}>
+            {error}
+          </span>
         )}
-      </div>
-      {confirming ? (
-        <div className="flex flex-col gap-2" style={{ marginBlockStart: "var(--spacing-4)" }}>
-          <div className="flex items-center gap-2">
-            <Button variant="destructive" size="sm" disabled={!connected} onClick={remove}>Delete</Button>
-            <Button variant="secondary" size="sm" onClick={() => setConfirming(false)}>Cancel</Button>
-          </div>
-        </div>
-      ) : null}
-      {error === undefined ? null : (
-        <span className="text-xs/5 text-muted-foreground" role="alert" style={{ color: "var(--destructive)" }}>
-          {error}
-        </span>
-      )}
+      </CardContent>
     </Card>
   );
 }

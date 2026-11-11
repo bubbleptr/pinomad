@@ -1,6 +1,6 @@
 # Web 界面设计规则
 
-Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。按钮、表单控件、反馈组件（提示条、徽标、toast 等）和浮层（对话框、菜单、弹出层）是 `src/shared/ui/` 里的 shadcn（Base UI 版）组件；其余组件还来自 Astryx（`@astryxdesign/core`，迁移中，ADR-0048），它们的 props 用 `bunx astryx component <Name>` 查（在 `apps/web` 下跑）。
+Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。按钮、表单控件、反馈组件（提示条、徽标、toast 等）、浮层（对话框、菜单、弹出层）和列表、卡片、代码块、Markdown 是 `src/shared/ui/` 里的 shadcn（Base UI 版）组件或我们自己的移植；其余组件还来自 Astryx（`@astryxdesign/core`，迁移中，ADR-0048），它们的 props 用 `bunx astryx component <Name>` 查（在 `apps/web` 下跑）。
 
 ## 按钮
 
@@ -40,7 +40,7 @@ Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。按钮、�
 
 ### 尺寸
 
-- 列表行（`ListItem` 的 `endContent`）、行内表单、卡片里：`size="sm"`（28px）。
+- 列表行（`Item` 的 `ItemActions`）、行内表单、卡片里：`size="sm"`（28px）。
 - 对话框页脚、整屏的表单提交：默认的 `md`（32px）。
 - `IconButton` 也是 `md` / `sm` 两档。
 - 同一行的按钮用同一个尺寸。
@@ -50,10 +50,10 @@ Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。按钮、�
 对的：设置行里的独立动作有边框，危险操作先开确认、确认时才用 `destructive`。
 
 ```tsx
-<ListItem
-  label={device.name}
-  endContent={<Button variant="secondary" size="sm" onClick={onUnpair}>Unpair</Button>}
-/>
+<Item render={<li />}>
+  <ItemContent><ItemTitle>{device.name}</ItemTitle></ItemContent>
+  <ItemActions><Button variant="secondary" size="sm" onClick={onUnpair}>Unpair</Button></ItemActions>
+</Item>
 
 <div className="flex gap-2">
   <Button variant="destructive" loading={busy} onClick={submit}>Delete account</Button>
@@ -64,7 +64,7 @@ Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。按钮、�
 错的：独立动作用 `ghost`（读成纯文字），打开确认的按钮就用 `destructive`（还没确认就在报警）。
 
 ```tsx
-<ListItem label={device.name} endContent={<Button variant="ghost" size="sm">Unpair</Button>} />
+<ItemActions><Button variant="ghost" size="sm">Unpair</Button></ItemActions>
 <Button variant="destructive" onClick={() => setOpen(true)}>Delete account</Button>
 ```
 
@@ -118,6 +118,17 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 
 窄屏的导航抽屉还是 Astryx 的 `MobileNav`，它是 `showModal()` 打开的 `<dialog>`，在顶层，抽屉外的页面都不能点。`AppFrame` 用 `portal-container.tsx` 的 `PortalContainer` 让抽屉里打开的菜单、对话框和提示渲染进抽屉，别处不用管；抽屉换成 Base UI 后（ADR-0048 第 7 步）删掉它。
 
+## 列表、卡片和内容
+
+| 组件 | 用在哪 |
+| --- | --- |
+| `item.tsx` | 一行一项：设置里的设备、宿主、登录方式，侧面板的任务，模型选择。`ItemGroup`（`ul role="list"`，用 `aria-label` 或 `aria-labelledby` 命名）里放 `Item render={<li />}`，依次是可选的 `ItemMedia`（图标、状态灯、logo）、`ItemContent`（`ItemTitle` 一行截断，`ItemDescription` 默认一行截断，两行用 `line-clamp-2 whitespace-normal`，自由换行的富内容用 `overflow-visible whitespace-normal`）、`ItemActions`（行尾的按钮、徽标、时间）。紧凑的行用 `size="sm"`。整行可点时写 `<ItemContent render={<button type="button" onClick={…} />}>`：按钮铺满整行，名称只有标题和说明，`ItemActions` 里就不要再放可点的东西。选中写在 `Item` 上：`aria-current`（底色变深），禁用写 `aria-disabled`。 |
+| `card.tsx` | 一块带 1px 描边和 12px 圆角的卡片：Agents、旧版登录这类一张一项的内容，内容放 `CardContent`。成组的设置行用 `SettingsGroup`，不要自己拼 `Card`。 |
+| `collapsible.tsx` | 默认收起的细节（错误详情、地址、一次性令牌）：`Collapsible` 里放 `CollapsibleTrigger`（整行宽，右边的箭头自带，文字自己写样式，通常 `text-xs/5 text-muted-foreground`）和 `CollapsibleContent`（收起时不渲染）。 |
+| `thumbnail.tsx` | 64px 的图片预览：待发送的附件（`onRemove`）和消息里的图（`onClick` 打开大图），`alt` 同时是整块的名称。 |
+| `code-block/` | `CodeBlock` 带高亮和复制按钮的代码块（要复制的命令用 `isWrapped width="100%"`），`Code` 行内代码。 |
+| `markdown/` | `Markdown` 渲染模型输出；对话里用 `shared/ui/chat/chat-markdown.tsx` 的 `ChatMarkdown`，它定好了密度、标题层级和文件链接。各块带 `data-slot="markdown-…"`，`chat.css` 按它调样式。 |
+
 ## 文字和布局
 
 布局用 Tailwind 的 flex 类（`flex flex-col gap-2`），文字用原生元素加类，不再用 Astryx 的 `VStack` / `HStack` / `Text` / `Heading`（ADR-0048）。字号和行高固定这几档：
@@ -150,7 +161,7 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 
 - `SettingsGroup`：可选标题，下面一张带描边的卡片，行间有分隔线。
 - `SettingsRow`：一项设置一行，左边是名称（可加一行说明），右边是控件；窄时控件换到下一行。控件自己带无障碍名称（比如 `SegmentedControl` 的 `aria-label`），行的名称只给人看。
-- 现成的列表（`List hasDividers`）直接放进 `SettingsGroup`。
+- 列表直接放进 `SettingsGroup`：`<ItemGroup className={GROUP_ROWS}>`，行间画分隔线、行不带圆角；卡片里的行左右内边距统一成 16px（`styles.css`）。
 
 设置页里的 `secondary` 按钮和 `Select` 是平的：透明底，只留一圈 `--border` 描边，没有投影（写在各自组件里的 `in-[.pigui-settings]:` 类）。深色下表面色比卡片暗一级，按钮放在卡片里会像个洞。`SegmentedControl` 也是平的：凹下去的轨道，选中的那段比下面所有层都亮一级，没有投影。
 
