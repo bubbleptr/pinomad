@@ -49,8 +49,8 @@ public struct ContextMeterReading: Equatable, Sendable {
             && window.isFinite && window >= 1 && window < maxTokens
     }
 
-    /// Matches the web's `formatTokens`: whole thousands below a million,
-    /// one decimal at or above it, trailing ".0" dropped.
+    /// Whole thousands below a million ("8k"), one decimal at or above it
+    /// with a trailing ".0" dropped ("1M", "1.2M").
     public static func formatTokens(_ tokens: Double) -> String {
         // The initializer already bounds its inputs, but this is public and
         // must not trap when handed an unvalidated count.
