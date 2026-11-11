@@ -4,7 +4,7 @@
 import { act, renderHook } from "@testing-library/react";
 import type { RefObject } from "react";
 import { describe, expect, it } from "vitest";
-import type { ChatComposerTrigger, ChatComposerTriggerItem } from "@astryxdesign/core/Chat";
+import type { ChatComposerTrigger, ChatComposerTriggerItem } from "@/shared/ui/chat-kit";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { CommandListing } from "@pinomad/protocol/commands.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";

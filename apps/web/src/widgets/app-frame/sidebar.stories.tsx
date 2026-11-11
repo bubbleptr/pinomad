@@ -1,4 +1,4 @@
-import { SideNav } from "@astryxdesign/core/SideNav";
+import { SideNav } from "../../shared/ui/side-nav.tsx";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import {

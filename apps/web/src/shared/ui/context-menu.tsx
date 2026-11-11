@@ -2,7 +2,6 @@ import { ContextMenu as ContextMenuPrimitive } from "@base-ui/react/context-menu
 import { cn } from "cn"
 
 import { menuItemClassName, menuPopupClassName } from "@/shared/ui/dropdown-menu"
-import { usePortalContainer } from "@/shared/ui/portal-container"
 
 /** Opens on right click or a long press over its trigger; `disabled` turns both off. */
 function ContextMenu({ ...props }: ContextMenuPrimitive.Root.Props) {
@@ -30,7 +29,7 @@ function ContextMenuContent({
   ...props
 }: ContextMenuPrimitive.Popup.Props & Pick<ContextMenuPrimitive.Positioner.Props, "anchor">) {
   return (
-    <ContextMenuPrimitive.Portal container={usePortalContainer()}>
+    <ContextMenuPrimitive.Portal>
       <ContextMenuPrimitive.Positioner className="isolate z-50 outline-none" side="bottom" align="start" anchor={anchor}>
         <ContextMenuPrimitive.Popup
           data-slot="context-menu-content"

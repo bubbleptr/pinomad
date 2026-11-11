@@ -1,4 +1,4 @@
-import { ChatLayout } from "@astryxdesign/core/Chat";
+import { ChatLayout } from "@/shared/ui/chat-kit";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { useState, type ComponentProps } from "react";

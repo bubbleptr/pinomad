@@ -19,7 +19,7 @@ import {
   ComboboxValue,
 } from "../../shared/ui/combobox.tsx";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, selectTriggerClassName } from "../../shared/ui/select.tsx";
-import { SideNav, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
+import { SideNav, SideNavItem, SideNavSection } from "../../shared/ui/side-nav.tsx";
 import { Field, FieldDescription, FieldError, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../../shared/ui/input-group.tsx";

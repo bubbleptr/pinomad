@@ -145,6 +145,7 @@ export function ChatMessageList({
   return (
     <ChatListContext value={contextValue}>
       <div
+        {...theme}
         {...rest}
         ref={ref}
         role="log"
@@ -152,7 +153,6 @@ export function ChatMessageList({
         aria-busy={isStreaming || undefined}
         tabIndex={0}
         data-testid={testId}
-        {...theme}
         className={cn(theme.className, "flex min-h-0 flex-1 flex-col", className)}
         style={style}
       >

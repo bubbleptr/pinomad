@@ -1,7 +1,7 @@
 import { Button } from "./shared/ui/button.tsx";
-import { ChatLayout } from "@astryxdesign/core/Chat";
+import { ChatLayout } from "@/shared/ui/chat-kit";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
-import { useMediaQuery } from "@astryxdesign/core/hooks";
+import { useMediaQuery } from "@/shared/use-media-query";
 import { Field, FieldLabel } from "./shared/ui/field.tsx";
 import { Input } from "./shared/ui/input.tsx";
 import type { ConversationId } from "@earendil-works/pi-durable";

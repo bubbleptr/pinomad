@@ -764,7 +764,7 @@ mark.chat-skill-mention {
   height: var(--spacing-6);
 }
 
-.chat-tool-step__item .astryx-chat-tool-calls {
+.chat-tool-step__item [data-slot="chat-tool-calls"] {
   /* The surrounding list owns spacing; Astryx's standalone top gap would
      shift the call header below its sibling kind icon. */
   margin-block-start: 0;
@@ -778,8 +778,8 @@ mark.chat-skill-mention {
 /* Astryx's status circle (check / spinner / x) is a second leading glyph
    next to the kind icon. Failure still reads as "N failed" on the
    summary; the kind icon is the type signal, matching Codex. */
-.chat-tool-step__item .astryx-chat-tool-calls [role="button"] > span:first-child,
-.chat-tool-step__item .astryx-chat-tool-calls > div > span:first-child {
+.chat-tool-step__item [data-slot="chat-tool-calls"] [role="button"] > span:first-child,
+.chat-tool-step__item [data-slot="chat-tool-calls"] > div > span:first-child {
   display: none;
 }
 
@@ -787,7 +787,7 @@ mark.chat-skill-mention {
    (#a3a3a3 at 12px, ~2.6:1 on white). They are read, not disabled: lift them
    to the secondary tone the step rows above already use. The name span stays
    Astryx's; the trailing chevron span carries no text. */
-.chat-tool-step__item .astryx-chat-tool-calls [role="button"] > span:not(:first-child):not(:last-child) {
+.chat-tool-step__item [data-slot="chat-tool-calls"] [role="button"] > span:not(:first-child):not(:last-child) {
   color: var(--color-text-secondary);
 }
 
@@ -800,8 +800,8 @@ mark.chat-skill-mention {
   line-height: 1.5;
 }
 
-.chat-tool-step__item .astryx-chat-tool-calls [role="button"] > span,
-.chat-tool-step__item .astryx-chat-tool-calls > div > span {
+.chat-tool-step__item [data-slot="chat-tool-calls"] [role="button"] > span,
+.chat-tool-step__item [data-slot="chat-tool-calls"] > div > span {
   font-family: inherit;
   font-size: inherit;
   font-style: normal;
@@ -1031,14 +1031,14 @@ mark.chat-skill-mention {
    Size each menu from its own input so long descriptions cannot widen it,
    capped so a wide composer doesn't stretch one-line rows into a sparse
    band; names and descriptions truncate inside the cap. */
-.prompt-input__input > [popover]:has(.astryx-trigger-menu) {
+.prompt-input__input > [popover]:has([data-slot="trigger-menu"]) {
   position-anchor: --pace-prompt-input !important;
   width: min(anchor-size(width), 24rem);
   min-width: 0;
   max-width: calc(100vw - 2 * var(--spacing-4));
 }
 
-.prompt-input__input .astryx-trigger-menu {
+.prompt-input__input [data-slot="trigger-menu"] {
   min-width: 0;
   /* Astryx scrolls the highlighted row into view with block: nearest, which
      aligns it to the scrollport edge and ignores the list's padding; match
@@ -1049,15 +1049,15 @@ mark.chat-skill-mention {
 /* Rows and group headings at the + menu's density: 28px rows instead of
    Astryx's 36, headings one step tighter. !important matches Astryx
    StyleX's :not(#\#) specificity. */
-.prompt-input__input .astryx-trigger-menu [role="option"] {
+.prompt-input__input [data-slot="trigger-menu"] [role="option"] {
   padding: var(--spacing-1) var(--spacing-2) !important;
 }
 
-.prompt-input__input .astryx-trigger-menu [role="group"] > :not([role="option"]) {
+.prompt-input__input [data-slot="trigger-menu"] [role="group"] > :not([role="option"]) {
   padding: var(--spacing-1-5) var(--spacing-2) var(--spacing-0-5) !important;
 }
 
-.prompt-input .astryx-chat-composer {
+.prompt-input [data-slot="chat-composer"] {
   /* Neutral's elevation tokens include an inset highlight in dark mode.
      Keep the outer-only replacement local to the composer, not TextInput. */
   --_composer-shadow-color: var(--color-shadow);
@@ -1074,14 +1074,14 @@ mark.chat-skill-mention {
   );
 }
 
-.prompt-input[data-drop] .astryx-chat-composer {
+.prompt-input[data-drop] [data-slot="chat-composer"] {
   --_composer-shadow-color: color-mix(in srgb, var(--color-accent) 24%, transparent);
 }
 
 /* Astryx balanced density uses --spacing-2 between the input and the
    footer chrome. One step up so the placeholder and model selector
    don't sit on the same visual band. */
-.prompt-input .astryx-chat-composer > div:has(.prompt-input__input) {
+.prompt-input [data-slot="chat-composer"] > div:has(.prompt-input__input) {
   gap: var(--spacing-3);
   /* Override Astryx's hover/focus elevation without changing the geometry:
      a hairline ring edges the composer, and a wide, faint shadow lifts it
@@ -1093,16 +1093,16 @@ mark.chat-skill-mention {
 
 /* Focus steps the hairline up to the emphasized border, the same neutral
    in both themes' terms; no brand color. */
-.prompt-input .astryx-chat-composer > div:has(.prompt-input__input):focus-within {
+.prompt-input [data-slot="chat-composer"] > div:has(.prompt-input__input):focus-within {
   box-shadow: inset 0 0 0 1px var(--color-border-emphasized), var(--_composer-lift);
 }
 
 /* Preserve a focus indicator when the OS suppresses shadows. */
 @media (forced-colors: active) {
-  .prompt-input .astryx-chat-composer > div:has(.prompt-input__input) {
+  .prompt-input [data-slot="chat-composer"] > div:has(.prompt-input__input) {
     outline: var(--border-width) solid CanvasText;
   }
-  .prompt-input .astryx-chat-composer > div:has(.prompt-input__input):focus-within {
+  .prompt-input [data-slot="chat-composer"] > div:has(.prompt-input__input):focus-within {
     outline: var(--spacing-0-5) solid Highlight;
     outline-offset: var(--spacing-0-5);
   }
@@ -1125,7 +1125,7 @@ mark.chat-skill-mention {
 }
 
 /* Astryx inserts an inline baseline alignment on each token span. */
-.prompt-input__input [data-astryx-token] {
+.prompt-input__input [data-chat-token] {
   vertical-align: middle !important;
 }
 
@@ -1152,7 +1152,7 @@ mark.chat-skill-mention {
   isolation: isolate;
 }
 
-.prompt-input:has(> .prompt-input__footer) .astryx-chat-composer {
+.prompt-input:has(> .prompt-input__footer) [data-slot="chat-composer"] {
   position: relative;
   z-index: 1;
 }

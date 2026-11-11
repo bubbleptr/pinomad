@@ -2,7 +2,7 @@ import {
   ChatToolCalls,
   type ChatToolCallItem,
   type ChatToolCallStatus,
-} from "@astryxdesign/core";
+} from "@/shared/ui/chat-kit";
 import { Skeleton } from "../skeleton.tsx";
 import { useState, type ComponentProps, type ReactNode } from "react";
 import {
@@ -46,7 +46,7 @@ export function hasToolDetail(tool: ChatToolItem) {
 }
 
 /**
- * The args and output panes of one call. Rendered inside the Astryx row when
+ * The args and output panes of one call. Rendered inside the chat kit row when
  * it expands, and directly by a single-call ChatToolStep, whose own row
  * already names the call — a second header there would only cost a click.
  * Nested Tool Executions sit between args and result, in the same per-call
@@ -132,7 +132,7 @@ function ToolResultImage({ image }: { image: ViewImage }) {
   );
 }
 
-function toAstryxCall(tool: ChatToolItem, index: number): ChatToolCallItem {
+function toKitCall(tool: ChatToolItem, index: number): ChatToolCallItem {
   const resultDetail = hasToolDetail(tool) ? <ChatToolDetail tool={tool} /> : undefined;
 
   return {
@@ -150,8 +150,8 @@ function toAstryxCall(tool: ChatToolItem, index: number): ChatToolCallItem {
 }
 
 /**
- * Adapter over Astryx ChatToolCalls. One call renders as an inline row;
- * several collapse into the "N tool calls" summary Astryx provides. The
+ * Adapter over the chat kit's ChatToolCalls. One call renders as an inline row;
+ * several collapse into the "N tool calls" summary the kit provides. The
  * wrapper div carries the data-slot contract page tests assert on.
  */
 export type ChatToolGroupProps = Omit<ComponentProps<"div">, "children"> & {
@@ -176,7 +176,7 @@ export function ChatToolGroup({
       data-state={tools.length === 1 ? tools[0].state : undefined}
       {...rest}
     >
-      <ChatToolCalls calls={tools.map(toAstryxCall)} />
+      <ChatToolCalls calls={tools.map(toKitCall)} />
     </div>
   );
 }
@@ -213,7 +213,7 @@ export function ChatTool({
     >
       <ChatToolCalls
         calls={[
-          toAstryxCall(
+          toKitCall(
             { argsText, children, detail, diffStat, durationMs, images, output, state, toolCallId, toolName },
             0,
           ),

@@ -4,7 +4,6 @@ import { cn } from "cn"
 
 import { IconButton } from "@/shared/ui/icon-button"
 import { Cancel } from "@/shared/ui/icons"
-import { usePortalContainer } from "@/shared/ui/portal-container"
 
 /**
  * Forms and confirmations pass `disablePointerDismissal`, so a stray click
@@ -66,7 +65,7 @@ function DialogContent({
 }) {
   const popup = React.useRef<HTMLDivElement>(null)
   return (
-    <DialogPrimitive.Portal container={usePortalContainer()}>
+    <DialogPrimitive.Portal>
       <DialogPrimitive.Backdrop data-slot="dialog-overlay" className={overlayClassName} />
       <DialogPrimitive.Popup
         ref={(element: HTMLDivElement | null) => {

@@ -1,7 +1,7 @@
 // The stored-host composition root's frame: it reads every host's runtime from
 // the registry, so the sidebar lists all machines through every connection
 // phase and focus change, while the main column stays inside HostRuntimes.
-import { useMediaQuery } from "@astryxdesign/core/hooks";
+import { useMediaQuery } from "@/shared/use-media-query";
 import { useMemo, type ReactNode } from "react";
 import type { Home } from "@pinomad/protocol/organization.ts";
 import { keyPairFromPrivate } from "@pinomad/protocol/noise.ts";

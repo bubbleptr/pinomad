@@ -65,7 +65,7 @@ describe("useChatNewMessages — callback ref (issue #2282)", () => {
       const {contentRef} = useChatNewMessages({isLocked: true, onResize});
       return (
         <div ref={contentRef} data-testid="content">
-          <div className="astryx-chat-message">msg</div>
+          <div data-chat-message="">msg</div>
         </div>
       );
     }
@@ -92,7 +92,7 @@ describe("useChatNewMessages — callback ref (issue #2282)", () => {
           </button>
           {mounted && (
             <div ref={contentRef} data-testid="content">
-              <div className="astryx-chat-message">msg</div>
+              <div data-chat-message="">msg</div>
             </div>
           )}
         </>
@@ -130,7 +130,7 @@ describe("useChatNewMessages — callback ref (issue #2282)", () => {
           </button>
           {mounted && (
             <div ref={contentRef} data-testid="content">
-              <div className="astryx-chat-message">msg</div>
+              <div data-chat-message="">msg</div>
             </div>
           )}
         </>
@@ -196,10 +196,10 @@ describe("useChatNewMessages — callback ref (issue #2282)", () => {
     // The inner content div should now be observed
     const contentObservation = activeObservations.find(o => {
       const el = o.element;
-      if (!el.querySelector?.(".astryx-chat-message")) {
+      if (!el.querySelector?.("[data-chat-message]")) {
         return false;
       }
-      if (el.className?.includes("astryx-chat-layout")) {
+      if (el.getAttribute?.("data-slot") === "chat-layout") {
         return false;
       }
       return true;

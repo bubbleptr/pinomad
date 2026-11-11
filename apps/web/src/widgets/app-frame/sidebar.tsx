@@ -2,7 +2,7 @@ import { cn } from "cn";
 import { Button } from "../../shared/ui/button.tsx";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
-import { SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
+import { SideNavItem, SideNavSection } from "../../shared/ui/side-nav.tsx";
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { ConversationNode, Home, Project } from "@pinomad/protocol/organization.ts";
@@ -77,8 +77,8 @@ export function SidebarHeaderBand({
 /**
  * The user bar at the foot of the sidebar: who is signed in on the left; the
  * hosts list and Settings on the right. Dialogs are hoisted into AppFrame —
- * inside MobileNav they would render in the drawer that this click just
- * closed.
+ * inside the phone drawer they would unmount with the drawer this click
+ * just closed.
  */
 export function SidebarFooter({
   onOpenSettings,
@@ -325,8 +325,7 @@ function ConversationRow({
     >
       {item}
       {status === undefined ? null : (
-        // Not aria-describedby: Astryx SideNavItem drops aria props. A hidden
-        // sibling after the button puts the status right after the title in
+        // A hidden sibling after the button puts the status right after the title in
         // reading order while the button's name stays exactly the title.
         <span className="sr-only">{FAMILY_STATUS_TEXT[status]}</span>
       )}
@@ -390,7 +389,7 @@ const CHATS_FOLD = ":chats";
 /**
  * The sidebar's shared content — the global "New chat" entry plus one group per
  * paired machine (machine → project → conversation, ADR-0035 §1) — rendered
- * inside the desktop SideNav and inside MobileNav on narrow screens.
+ * inside the desktop SideNav and inside the phone drawer.
  */
 export function SidebarContent({
   machines,

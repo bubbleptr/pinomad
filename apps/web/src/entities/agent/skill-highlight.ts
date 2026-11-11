@@ -29,7 +29,7 @@ interface TextSegment {
 
 /**
  * Walk the editable the way Astryx's `serialize` reads it: a text node
- * carries its content, a BR one `\n`, a `data-astryx-token` element its token
+ * carries its content, a BR one `\n`, a `data-chat-token` element its token
  * value, and other elements recurse. Mention ranges that land on non-text
  * segments can't anchor a Range — names are plain text in practice, so this
  * only guards against foreign content.
@@ -44,8 +44,8 @@ function textSegments(root: HTMLElement): TextSegment[] {
         segments.push({ node: child as Text, start: offset, end: offset + length });
         offset += length;
       } else if (child instanceof HTMLElement) {
-        if (child.hasAttribute("data-astryx-token")) {
-          const length = child.getAttribute("data-astryx-token-value")?.length ?? 0;
+        if (child.hasAttribute("data-chat-token")) {
+          const length = child.getAttribute("data-chat-token-value")?.length ?? 0;
           segments.push({ start: offset, end: offset + length });
           offset += length;
         } else if (child.tagName === "BR") {

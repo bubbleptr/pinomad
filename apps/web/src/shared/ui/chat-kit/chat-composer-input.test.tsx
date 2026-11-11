@@ -413,7 +413,7 @@ describe("ChatComposerInput", () => {
         },
       });
 
-      expect(textbox.querySelector("[data-astryx-token]")).toBeInTheDocument();
+      expect(textbox.querySelector("[data-chat-token]")).toBeInTheDocument();
     });
 
     it("imperative insertToken works after a focus() with no selection range", () => {
@@ -436,7 +436,7 @@ describe("ChatComposerInput", () => {
         variant: "info" as const,
       });
 
-      expect(textbox.querySelector("[data-astryx-token]")).toBeInTheDocument();
+      expect(textbox.querySelector("[data-chat-token]")).toBeInTheDocument();
     });
 
     it("imperative insertText works after a focus() with no selection range", () => {
@@ -474,7 +474,7 @@ describe("ChatComposerInput", () => {
       });
 
       expect(
-        textbox.querySelector("[data-astryx-token]"),
+        textbox.querySelector("[data-chat-token]"),
       ).not.toBeInTheDocument();
       expect(textbox.textContent).toBe(long);
     });
@@ -583,7 +583,7 @@ describe("ChatComposerInput", () => {
         />,
       );
       expect(root).toBeInstanceOf(HTMLDivElement);
-      expect(root).toHaveClass("astryx-chat-composer-input");
+      expect(root).toHaveAttribute("data-slot", "chat-composer-input");
     });
 
     it("exposes imperative handle via handleRef", () => {
@@ -644,7 +644,7 @@ describe("ChatComposerInput", () => {
       fireEvent.input(textbox);
 
       // The DOM should have a token span + trailing NBSP
-      const tokenSpan = textbox.querySelector("[data-astryx-token]");
+      const tokenSpan = textbox.querySelector("[data-chat-token]");
       expect(tokenSpan).toBeInTheDocument();
 
       const nbsp = tokenSpan!.nextSibling;
@@ -662,7 +662,7 @@ describe("ChatComposerInput", () => {
       fireEvent.keyDown(textbox, {key: "Backspace"});
 
       // Both the NBSP and the token should be removed
-      expect(textbox.querySelector("[data-astryx-token]")).toBeNull();
+      expect(textbox.querySelector("[data-chat-token]")).toBeNull();
     });
 
     it("serializes to empty after token backspace", () => {
@@ -694,7 +694,7 @@ describe("ChatComposerInput", () => {
       });
       fireEvent.input(textbox);
 
-      const tokenSpan = textbox.querySelector("[data-astryx-token]")!;
+      const tokenSpan = textbox.querySelector("[data-chat-token]")!;
       const nbsp = tokenSpan.nextSibling!;
 
       // Position cursor in the NBSP
@@ -710,11 +710,11 @@ describe("ChatComposerInput", () => {
     });
   });
 
-  describe("astryx class names", () => {
-    it("has astryx-chat-composer-input class", () => {
+  describe("data-slot", () => {
+    it("marks the root chat-composer-input", () => {
       const {container} = render(<ChatComposerInput />);
       expect(
-        container.querySelector(".astryx-chat-composer-input"),
+        container.querySelector('[data-slot="chat-composer-input"]'),
       ).toBeInTheDocument();
     });
   });
@@ -731,7 +731,7 @@ describe("ChatComposerInput", () => {
     // 3. selectItem cleans up properly — trigger text is fully replaced
     // 4. No orphaned spans on document.body after menu dismiss
 
-    const BODY_ANCHOR_SELECTOR = "span[data-astryx-trigger-anchor]";
+    const BODY_ANCHOR_SELECTOR = "span[data-chat-trigger-anchor]";
 
     function setupTriggerInput(triggers: ChatComposerTrigger[]) {
       const onChange = vi.fn();

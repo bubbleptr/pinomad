@@ -123,7 +123,7 @@ function ToastList(): ReactNode {
 
 /**
  * Hosts the toasts of everything inside it. The stack is a manual popover,
- * so it sits in the top layer over an open Astryx dialog too. Inside another
+ * so it sits in the top layer, over an open dialog or the phone drawer. Inside another
  * Toaster it adds nothing: one stack per window, so AppFrame keeps its own
  * for stories and tests while the app's root one serves both.
  */

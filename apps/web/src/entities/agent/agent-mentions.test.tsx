@@ -6,7 +6,7 @@
 import { act, render, renderHook } from "@testing-library/react";
 import { useEffect, useRef, type RefObject } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ChatComposerTrigger, ChatComposerTriggerItem } from "@astryxdesign/core/Chat";
+import type { ChatComposerTrigger, ChatComposerTriggerItem } from "@/shared/ui/chat-kit";
 import type { AgentRoles } from "@pinomad/protocol/agents.ts";
 import type { FileListing } from "@pinomad/protocol/organization.ts";
 import { ChatPromptInput, type ChatPromptInputHandle } from "@/shared/ui/chat/chat-prompt-input";

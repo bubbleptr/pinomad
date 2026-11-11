@@ -1,8 +1,5 @@
-import { AppShell } from "@astryxdesign/core/AppShell";
 import { Button } from "../../shared/ui/button.tsx";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
-import { MobileNav } from "@astryxdesign/core/MobileNav";
-import { SideNav } from "@astryxdesign/core/SideNav";
 import {
   createContext,
   useCallback,
@@ -20,7 +17,8 @@ import { displayName } from "@pinomad/client/family.ts";
 import { hostWindowChrome } from "../../shared/host-chrome.ts";
 import { AppleReminder } from "../../shared/ui/icons.tsx";
 import { AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
-import { PortalContainer } from "../../shared/ui/portal-container.tsx";
+import { Sheet, SheetContent } from "../../shared/ui/sheet.tsx";
+import { SideNav } from "../../shared/ui/side-nav.tsx";
 import {
   SidebarContent,
   SidebarFooter,
@@ -66,7 +64,7 @@ export interface FrameMachine extends SidebarMachine {
 }
 
 /**
- * The app frame: Astryx AppShell, sidebar, mobile drawer, and the dialogs that
+ * The app frame: the shell, sidebar, phone drawer, and the dialogs that
  * belong to this client rather than one host. It outlives every host runtime,
  * so a host connecting, failing or losing focus cannot remove the sidebar.
  */
@@ -99,7 +97,6 @@ export function AppFrame({
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(readSidebarOpen);
   const [navOpen, setNavOpen] = useState(false);
-  const [navDialog, setNavDialog] = useState<HTMLDialogElement | null>(null);
   // Open Settings, on a given section or the default one.
   const [settingsAt, setSettingsAt] = useState<SettingsRequest>();
   // Where focus was when Settings opened, to put it back on close.
@@ -171,55 +168,63 @@ export function AppFrame({
         {/* In Settings the whole shell is the Settings page: its nav in the
             sidebar's place, its section in the main pane. The sidebar and the
             workbench stay mounted underneath, hidden. */}
-        <AppShell
-          className={`pigui-app-layout text-foreground${narrow ? "" : " pigui-inset"}${
+        <div
+          className={`pigui-app-layout flex h-dvh bg-(--color-background-body) text-foreground${narrow ? "" : " pigui-inset"}${
             narrow || sidebarOpen || settingsOpen ? "" : " pigui-inset--bare"
           }`}
-          contentPadding={0}
-          mobileNav={false}
-          variant="elevated"
-          sideNav={
-            // Offcanvas on purpose: closed means fully removed — no icon rail.
-            narrow || !(sidebarOpen || settingsOpen) ? undefined : (
-              <>
-                {sidebarOpen ? (
-                  <div className="contents" hidden={settingsOpen}>
-                    <SideNav
-                      resizable={{ defaultWidth: 260, minWidth: 240, maxWidth: 320, autoSaveId: "pinomad-app-shell" }}
-                      header={
-                        <SidebarHeaderBand
-                          onCollapse={toggleSidebar}
-                          safeLeft={sidebarOwnsCorner ? chrome.safeLeft : undefined}
-                        />
-                      }
-                      footer={
-                        <SidebarFooter
-                          onOpenSettings={() => openSettings({})}
-                          onOpenAccount={openAccount}
-                          onLocateHost={locateHost}
-                        />
-                      }
-                    >
-                      {sidebar}
-                    </SideNav>
-                  </div>
-                ) : null}
-                {settings?.nav}
-              </>
-            )
-          }
         >
-          <div className="pigui-stage" hidden={settingsOpen}>
-            {children}
-          </div>
-          {settings === undefined ? null : (
-            <div className="pigui-stage">
-              <section aria-label="Settings" className="pigui-pane">
-                {settings.content}
-              </section>
+          <a
+            href="#main"
+            // Focus only: the hash carries the pairing token, so it must not change.
+            onClick={(event) => {
+              event.preventDefault();
+              document.getElementById("main")?.focus();
+            }}
+            className="sr-only z-[9999] bg-background px-4 py-2 text-sm font-semibold text-primary focus:not-sr-only focus:fixed focus:start-2 focus:top-2"
+          >
+            Skip to content
+          </a>
+          {/* Offcanvas on purpose: closed means fully removed — no icon rail. */}
+          {narrow || !(sidebarOpen || settingsOpen) ? null : (
+            <div className="flex h-full shrink-0 overflow-clip">
+              {sidebarOpen ? (
+                <div className="contents" hidden={settingsOpen}>
+                  <SideNav
+                    resizable={{ defaultWidth: 260, minWidth: 240, maxWidth: 320, autoSaveId: "pinomad-app-shell" }}
+                    header={
+                      <SidebarHeaderBand
+                        onCollapse={toggleSidebar}
+                        safeLeft={sidebarOwnsCorner ? chrome.safeLeft : undefined}
+                      />
+                    }
+                    footer={
+                      <SidebarFooter
+                        onOpenSettings={() => openSettings({})}
+                        onOpenAccount={openAccount}
+                        onLocateHost={locateHost}
+                      />
+                    }
+                  >
+                    {sidebar}
+                  </SideNav>
+                </div>
+              ) : null}
+              {settings?.nav}
             </div>
           )}
-        </AppShell>
+          <main id="main" tabIndex={-1} className="pigui-main h-full min-w-0 flex-1 overflow-clip overscroll-none outline-none">
+            <div className="pigui-stage" hidden={settingsOpen}>
+              {children}
+            </div>
+            {settings === undefined ? null : (
+              <div className="pigui-stage">
+                <section aria-label="Settings" className="pigui-pane">
+                  {settings.content}
+                </section>
+              </div>
+            )}
+          </main>
+        </div>
         {!settingsOpen && (narrow || !sidebarOpen) && (focused?.view === undefined || focused.view.unauthorized === true) ? (
           // The workbench header (and its navigation button) exists only when
           // it paints the column. A phone, or a desktop with the sidebar
@@ -240,17 +245,15 @@ export function AppFrame({
           </div>
         ) : null}
         {narrow ? (
-          // The drawer is a top-layer <dialog>, outside .pigui-app-layout's DOM —
-          // give it the scoping class so the sidebar rules reach it too.
-          <MobileNav
-            ref={setNavDialog}
-            className="pigui-app-layout text-foreground"
-            isOpen={navOpen}
-            onOpenChange={setNavOpen}
-            header={<span className="text-sm font-semibold">PiNomad</span>}
-          >
-            {/* Menus and dialogs opened from the drawer portal into it. */}
-            <PortalContainer value={navDialog ?? undefined}>
+          <Sheet open={navOpen} onOpenChange={setNavOpen}>
+            {/* Portaled out of .pigui-app-layout: the drawer carries the
+                scoping class itself, so the sidebar rules reach it too. */}
+            <SheetContent
+              aria-label="Navigation"
+              className="pigui-app-layout"
+              closeLabel="Close navigation"
+              header={<span className="text-sm font-semibold">PiNomad</span>}
+            >
               {sidebar}
               <SidebarFooter
                 onOpenSettings={() => openSettings({})}
@@ -258,8 +261,8 @@ export function AppFrame({
                 onLocateHost={locateHost}
                 onSelect={() => setNavOpen(false)}
               />
-            </PortalContainer>
-          </MobileNav>
+            </SheetContent>
+          </Sheet>
         ) : null}
         {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}
         {/* Every notice a machine reports also lands as a toast — rejected

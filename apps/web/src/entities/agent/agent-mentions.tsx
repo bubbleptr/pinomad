@@ -19,7 +19,7 @@
 // answer from the SAME scope (iOS's MentionMenu does the same) — a scope
 // change hides the old root's paths immediately.
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import type { ChatComposerTrigger, ChatComposerTriggerItem } from "@astryxdesign/core/Chat";
+import type { ChatComposerTrigger, ChatComposerTriggerItem } from "@/shared/ui/chat-kit";
 import type { SearchSource } from "@/shared/ui/typeahead";
 import type { AgentRole } from "@pinomad/protocol/agents.ts";
 import type { FileListing } from "@pinomad/protocol/organization.ts";

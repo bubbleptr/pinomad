@@ -61,7 +61,7 @@ export function useChatNewMessages({
     observeResize(el, () => {
       onResizeRef.current?.();
 
-      const messages = el.getElementsByClassName("astryx-chat-message");
+      const messages = el.querySelectorAll("[data-chat-message]");
       const last = messages.length > 0 ? messages[messages.length - 1] : null;
 
       if (last && last !== lastMessageRef.current) {

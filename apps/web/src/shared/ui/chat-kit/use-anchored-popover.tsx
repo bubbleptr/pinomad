@@ -102,7 +102,7 @@ export interface UseAnchoredPopoverReturn {
  */
 export function useAnchoredPopover({ onHide }: { onHide?: () => void } = {}): UseAnchoredPopoverReturn {
   const id = useId();
-  const anchorId = `--astryx-layer-${id.replace(/:/g, "")}`;
+  const anchorId = `--chat-layer-${id.replace(/:/g, "")}`;
 
   const [isOpen, setIsOpen] = useState(false);
   const popoverRef = useRef<HTMLElement | null>(null);

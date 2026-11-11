@@ -3,8 +3,7 @@
 // Interim Output, the answer, the settled actions row (time, Copy + Fork, no
 // thumbs), and on the newest run the todo card (ADR-0026).
 import { Button } from "../../shared/ui/button.tsx";
-import { ChatMessageMetadata, ChatSystemMessage } from "@astryxdesign/core/Chat";
-import { InternationalizationProvider } from "@astryxdesign/core/i18n";
+import { ChatMessageMetadata, ChatSystemMessage } from "@/shared/ui/chat-kit";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { TodoState } from "@pinomad/protocol/presentation.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
@@ -168,6 +167,7 @@ function UserEntry({
         ) : undefined
       }
       status={status === "delivered" ? undefined : status}
+      {...(entry.status === "unknown" ? { statusLabels: { sending: "Not confirmed" } } : {})}
       className="chat-message__metadata"
     />
   );
@@ -198,16 +198,7 @@ function UserEntry({
         )}
         <div className={`chat-message__metadata-row${keepMetadataVisible ? " chat-message__metadata-row--persistent" : ""}`}>
           {copy}
-          {entry.status === "unknown" ? (
-            <InternationalizationProvider
-              locale="en"
-              overrides={{ en: { "@astryx.chat.status.sending": "Not confirmed" } }}
-            >
-              {metadata}
-            </InternationalizationProvider>
-          ) : (
-            metadata
-          )}
+          {metadata}
           {local?.error === undefined ? null : (
             <span className="chat-message__local-error" title={local.error}>
               {local.error === HOST_UPGRADING_ERROR ? "The host is upgrading. Retry once it's back." : local.error}

@@ -288,7 +288,7 @@ export function useTriggerMenu(
 
     const span = document.createElement("span");
     span.setAttribute("aria-hidden", "true");
-    span.setAttribute("data-astryx-trigger-anchor", "");
+    span.setAttribute("data-chat-trigger-anchor", "");
     span.style.position = "fixed";
     span.style.left = `${rect.left}px`;
     span.style.top = `${rect.top}px`;

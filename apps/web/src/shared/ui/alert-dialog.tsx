@@ -4,7 +4,6 @@ import { cn } from "cn"
 
 import { Button } from "@/shared/ui/button"
 import { overlayClassName, popupClassName } from "@/shared/ui/dialog"
-import { usePortalContainer } from "@/shared/ui/portal-container"
 
 /**
  * A yes/no question before an irreversible step. Only Escape and Cancel
@@ -20,7 +19,7 @@ function AlertDialogTrigger({ ...props }: AlertDialogPrimitive.Trigger.Props) {
 
 function AlertDialogContent({ className, ...props }: AlertDialogPrimitive.Popup.Props) {
   return (
-    <AlertDialogPrimitive.Portal container={usePortalContainer()}>
+    <AlertDialogPrimitive.Portal>
       <AlertDialogPrimitive.Backdrop data-slot="alert-dialog-overlay" className={overlayClassName} />
       <AlertDialogPrimitive.Popup
         data-slot="alert-dialog-content"

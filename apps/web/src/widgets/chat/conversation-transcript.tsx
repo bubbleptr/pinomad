@@ -1,7 +1,7 @@
 // The rendered transcript of a ConversationView — shared by the main column
 // and the side panel's detail views. Items come from deriveChat; each run
 // entry delegates to ChatEntryView.
-import { ChatMessageList } from "@astryxdesign/core/Chat";
+import { ChatMessageList } from "@/shared/ui/chat-kit";
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import type { ConversationId, ConversationView } from "@earendil-works/pi-durable";
 import { classify, type PresentationType, type TodoState } from "@pinomad/protocol/presentation.ts";

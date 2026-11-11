@@ -2,7 +2,6 @@ import * as React from "react"
 import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "cn"
 import { Check, ChevronDown, ChevronUp } from "@/shared/ui/icons"
-import { usePortalContainer } from "@/shared/ui/portal-container"
 
 /**
  * Base UI's Root, except that a controlled value stays put when its item
@@ -106,7 +105,7 @@ function SelectContent({
     "align" | "alignOffset" | "side" | "sideOffset" | "alignItemWithTrigger"
   >) {
   return (
-    <SelectPrimitive.Portal container={usePortalContainer()}>
+    <SelectPrimitive.Portal>
       <SelectPrimitive.Positioner
         side={side}
         sideOffset={sideOffset}
