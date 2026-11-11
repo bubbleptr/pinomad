@@ -488,8 +488,9 @@ html[lang="zh-CN"] .eyebrow {
   margin-top: clamp(3rem, 6vw, 4.5rem);
 }
 
-/* —— The plate: what the product stands on wherever it's shown (the hero's window,
-   the phone, the screenshot). Silver contour lines over Abyss Blue; the picture is
+/* —— The plate: what the product stands on where the page is light (the hero's
+   window, the screenshot). The phone has none: it sits on the blue stretch, which is
+   the same ground already, and a plate there would be a frame around nothing. Silver contour lines over Abyss Blue; the picture is
    gradient-mapped onto the palette, so its ground is Abyss itself. It is anchored at
    the bottom, so a plate of any shape shows a strip of silver and then blue. —— */
 .plate {
@@ -537,15 +538,6 @@ html[lang="zh-CN"] .eyebrow {
   box-shadow:
     0 -0.5rem 3rem -0.5rem rgb(0 0 0 / 0.45),
     0 2rem 5rem -1.5rem rgb(4 8 28 / 0.6);
-}
-
-/* The phone stands whole on its plate, with room below for its shadow. On the blue
-   stretch the plate's ground is the page's own, so a hairline gives it its edge. */
-.plate-phone {
-  display: grid;
-  justify-items: center;
-  padding: clamp(2rem, 6vw, 3.5rem) 1.5rem clamp(2.5rem, 7vw, 4.5rem);
-  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 .hero-shot {

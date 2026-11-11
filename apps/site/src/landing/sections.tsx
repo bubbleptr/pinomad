@@ -83,9 +83,7 @@ export function Anywhere({ lang, t }: { lang: Lang; t: LandingCopy["anywhere"] }
             ))}
           </div>
         </div>
-        <div className="plate plate-phone">
-          <AnywherePhone lang={lang} step={step} label={t.shotAlt} />
-        </div>
+        <AnywherePhone lang={lang} step={step} label={t.shotAlt} />
       </div>
     </section>
   );
