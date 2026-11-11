@@ -56,7 +56,7 @@ function useIntroOnce() {
     let live = true;
     const entering = document
       .getAnimations()
-      .filter((animation) => animation instanceof CSSAnimation && animation.animationName === "enter");
+      .filter((animation) => animation instanceof CSSAnimation && animation.animationName.startsWith("intro-"));
     void Promise.allSettled(entering.map((animation) => animation.finished)).then(() => {
       if (!live) return;
       document.documentElement.setAttribute("data-intro-seen", "");

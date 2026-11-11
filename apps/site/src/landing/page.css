@@ -1425,34 +1425,57 @@ html[lang="zh-CN"] .split h2 {
   user-select: none;
 }
 
-/* —— Entrance. The first screen comes in once: headline, intro, buttons, then the
-   stage, each a short rise. Plain keyframes, so it plays from the prerendered HTML
-   without waiting for scripts. Nothing below the first screen animates on scroll.
+/* —— Entrance. The first screen comes in once, the way a lens finds focus: each line
+   of the headline, then the intro and the buttons, sharpens out of a blur in turn;
+   the stage fades up behind them and the app window, dark at first, lights up last.
+   Nothing moves, and nothing below the first screen animates on scroll. Plain
+   keyframes, so it plays from the prerendered HTML without waiting for scripts.
    Landing sets data-intro-seen once the entrance has finished and app-hint.js sets it
-   on a later load in the same tab, so coming back from the docs doesn't replay it. —— */
+   on a later load in the same tab, so coming back from the docs doesn't replay it.
+   useIntroOnce finds these animations by the intro- prefix. —— */
 @media screen and (prefers-reduced-motion: no-preference) {
-  :root:not([data-intro-seen]) .hero :is(h1, .lead, .actions),
-  :root:not([data-intro-seen]) .hero-stage {
-    animation: enter 0.6s var(--ease-out) both;
+  :root:not([data-intro-seen]) .hero :is(h1 .line, .lead, .actions) {
+    animation: intro-focus 1s var(--ease-out) both;
+  }
+
+  :root:not([data-intro-seen]) .hero h1 .line:nth-child(2) {
+    animation-delay: 120ms;
   }
 
   :root:not([data-intro-seen]) .hero .lead {
-    animation-delay: 70ms;
+    animation-delay: 280ms;
   }
 
   :root:not([data-intro-seen]) .hero .actions {
-    animation-delay: 140ms;
+    animation-delay: 400ms;
   }
 
   :root:not([data-intro-seen]) .hero-stage {
-    animation-delay: 210ms;
+    animation: intro-fade 1.2s var(--ease-out) 450ms both;
+  }
+
+  /* Brightness, not opacity: a see-through window would show the blue plate. */
+  :root:not([data-intro-seen]) .hero-stage .mock-app {
+    animation: intro-light 1.4s var(--ease-in-out) 700ms both;
   }
 }
 
-@keyframes enter {
+@keyframes intro-focus {
   from {
     opacity: 0;
-    translate: 0 0.5rem;
+    filter: blur(12px);
+  }
+}
+
+@keyframes intro-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes intro-light {
+  from {
+    filter: brightness(0.3);
   }
 }
 
