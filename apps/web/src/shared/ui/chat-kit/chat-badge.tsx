@@ -35,7 +35,7 @@ export function ChatBadge({ ref, variant = "neutral", label, icon, className, ..
       {...theme}
       className={cn(
         theme.className,
-        "inline-flex h-5 items-center justify-center gap-1 rounded-full px-2 py-0 [font-family:inherit] text-[length:var(--font-size-sm)] leading-[1.6667] font-medium whitespace-nowrap",
+        "inline-flex h-5 items-center justify-center gap-1 rounded-[var(--radius-full)] px-2 py-0 [font-family:inherit] text-[length:var(--font-size-sm)] leading-[1.6667] font-medium whitespace-nowrap",
         variants[variant],
         className,
       )}

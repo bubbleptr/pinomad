@@ -6,6 +6,7 @@
 // can reach it as a child of the input, with Astryx's popover surface.
 
 import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { cn } from "cn";
 
 export type LayerPlacement = "above" | "below" | "start" | "end";
 export type LayerAlignment = "start" | "center" | "end";
@@ -79,8 +80,8 @@ function getPositionTryFallbacks(placement: LayerPlacement = "above", alignment:
 export interface AnchoredPopoverRenderProps {
   placement?: LayerPlacement;
   alignment?: LayerAlignment;
-  /** Classes for the surface wrapper inside the popover element. */
-  surfaceClassName?: string;
+  /** Classes for the positioned popover element (spacing from the anchor, sizing). */
+  className?: string;
 }
 
 export interface UseAnchoredPopoverReturn {
@@ -236,13 +237,13 @@ export function useAnchoredPopover({ onHide }: { onHide?: () => void } = {}): Us
 
   const render = useCallback(
     (children: ReactNode, props?: AnchoredPopoverRenderProps): ReactNode => {
-      const { placement = "above", alignment = "center", surfaceClassName } = props ?? {};
+      const { placement = "above", alignment = "center", className } = props ?? {};
       return (
         <div
           ref={popoverRefCallback}
           id={id}
           popover="auto"
-          className="m-0 overflow-visible border-0 border-none bg-transparent p-0 font-sans"
+          className={cn("m-0 overflow-visible border-0 border-none bg-transparent p-0 font-sans", className)}
           style={{
             positionAnchor: anchorId,
             positionArea: getPositionArea(placement, alignment),
@@ -250,7 +251,7 @@ export function useAnchoredPopover({ onHide }: { onHide?: () => void } = {}): Us
           } as CSSProperties}
         >
           <div
-            className={`relative rounded-[var(--radius-container)] bg-[var(--color-background-popover)] [box-shadow:var(--shadow-low,0_2px_4px_light-dark(oklch(0_0_0/5%),oklch(0_0_0/25%)),0_4px_8px_light-dark(oklch(0_0_0/10%),oklch(0_0_0/40%)),inset_0_0_0_1px_light-dark(transparent,oklch(1_0_0/8%)))] ${surfaceClassName ?? ""}`}
+            className="relative rounded-[var(--radius-container)] bg-[var(--color-background-popover)] [box-shadow:var(--shadow-low,0_2px_4px_light-dark(oklch(0_0_0/5%),oklch(0_0_0/25%)),0_4px_8px_light-dark(oklch(0_0_0/10%),oklch(0_0_0/40%)),inset_0_0_0_1px_light-dark(transparent,oklch(1_0_0/8%)))]"
           >
             {children}
           </div>

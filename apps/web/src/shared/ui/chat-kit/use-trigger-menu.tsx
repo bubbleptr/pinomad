@@ -76,7 +76,7 @@ export interface UseTriggerMenuReturn {
 const styles = {
   dropdown: "box-border max-h-60 min-w-[180px] overflow-y-auto p-1",
   popoverSurface: "my-1 min-w-[180px]",
-  item: "box-border flex w-full cursor-pointer items-center rounded-[var(--radius-element)] border-none bg-transparent p-2 text-start font-sans text-[length:var(--font-size-base)] leading-[1.4286] text-[var(--color-text-primary)] outline-none",
+  item: "box-border flex w-full cursor-pointer items-center rounded-[var(--radius-element)] bg-transparent p-2 text-start font-sans text-[length:var(--font-size-base)] leading-[1.4286] text-[var(--color-text-primary)] outline-none",
   itemHighlighted: "bg-[var(--color-overlay-hover)]",
   itemLabel: "min-w-0 flex-1 truncate",
   emptyState: "p-3 text-center text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]",
@@ -620,7 +620,7 @@ export function useTriggerMenu(
       {
         placement: "above",
         alignment: "start",
-        surfaceClassName: styles.popoverSurface,
+        className: styles.popoverSurface,
       },
     );
   }, [popover, listboxId, state, selectItem, getItemId]);

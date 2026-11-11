@@ -128,19 +128,19 @@ export function ChatComposerDrawer({
         >
           <div
             className={cn(
-              "col-start-1 row-start-1 inline-flex h-5 items-center gap-2 justify-self-start rounded-full opacity-100",
+              "col-start-1 row-start-1 inline-flex h-5 items-center gap-2 justify-self-start rounded-[var(--radius-full)] opacity-100",
               fadeFast,
               !isCollapsed && "pointer-events-none opacity-0",
             )}
           >
             <ChatBadge variant="neutral" label={count} />
-            <span className="text-[length:var(--font-size-base)] leading-5 text-[var(--color-text-secondary)] transition-colors duration-[var(--duration-fast)] ease-[var(--ease-standard)] group-hover/drawer-toggle:text-[var(--color-text-primary)]">
+            <span className="text-[length:var(--font-size-base)] leading-5 text-[var(--color-text-secondary)] transition-[color] duration-[var(--duration-fast)] ease-[var(--ease-standard)] group-hover/drawer-toggle:text-[var(--color-text-primary)]">
               {label}
             </span>
           </div>
           <div
             className={cn(
-              "col-start-1 row-start-1 h-0.5 w-5 self-start justify-self-center rounded-full bg-[var(--color-icon-secondary)] opacity-100 transition-[background-color,opacity] duration-[var(--duration-fast)] ease-[var(--ease-standard)] group-hover/drawer-toggle:bg-[var(--color-icon-primary)]",
+              "col-start-1 row-start-1 h-0.5 w-5 self-start justify-self-center rounded-[var(--radius-full)] bg-[var(--color-icon-secondary)] opacity-100 transition-[background-color,opacity] duration-[var(--duration-fast)] ease-[var(--ease-standard)] group-hover/drawer-toggle:bg-[var(--color-icon-primary)]",
               isCollapsed && "pointer-events-none opacity-0",
             )}
           />

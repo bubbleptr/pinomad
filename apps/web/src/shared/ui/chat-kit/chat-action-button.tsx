@@ -46,6 +46,8 @@ export function ChatActionButton({
       type={type}
       disabled={isDisabled}
       aria-label={needsAriaLabel ? label : undefined}
+      data-variant={variant}
+      data-size={size}
       {...props}
       onClick={(event) => {
         if (isDisabled) {
@@ -55,23 +57,28 @@ export function ChatActionButton({
         onClick?.(event);
       }}
       className={cn(
-        "relative inline-flex items-center justify-center gap-2 border-0 px-3 py-2",
+        "relative inline-flex items-center justify-center gap-2 border-0 border-none px-3 py-2",
         "rounded-[var(--_button-radius,var(--radius-element))] [font-family:inherit] text-[length:var(--font-size-base)] leading-[1.4286] font-medium whitespace-nowrap",
         "cursor-pointer transition-[background-image,background-color,color,opacity,transform] duration-[var(--duration-fast)] ease-[var(--ease-standard)] motion-reduce:duration-0",
         "focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-[var(--color-accent)] focus-visible:outline-solid",
         size === "md" ? "h-[var(--size-element-md)]" : "h-[var(--size-element-sm)]",
         variantClasses[variant],
         isIconOnly && "aspect-square p-0",
+        // Astryx applies the press scale after the disabled styles, so a
+        // disabled button still scales; the hover and press fills it drops.
+        "[transform:scale(1)] active:[transform:scale(0.98)]",
         isDisabled
           ? "cursor-not-allowed opacity-50"
-          : "[transform:scale(1)] hover:[background-image:linear-gradient(var(--color-overlay-hover),var(--color-overlay-hover))] active:[background-image:linear-gradient(var(--color-overlay-pressed),var(--color-overlay-pressed))] active:[transform:scale(0.98)]",
+          : "hover:[background-image:linear-gradient(var(--color-overlay-hover),var(--color-overlay-hover))] active:[background-image:linear-gradient(var(--color-overlay-pressed),var(--color-overlay-pressed))]",
         className,
       )}
     >
-      {icon ? (
-        <span className="inline-flex size-4 shrink-0 items-center justify-center text-[16px]">{icon}</span>
-      ) : null}
-      {isIconOnly ? null : <span className="min-w-0 overflow-hidden text-ellipsis">{children ?? label}</span>}
+      <span className="contents">
+        {icon ? (
+          <span className="inline-flex size-4 shrink-0 items-center justify-center text-[16px]">{icon}</span>
+        ) : null}
+        {isIconOnly ? null : <span className="min-w-0 overflow-hidden text-ellipsis">{children ?? label}</span>}
+      </span>
     </button>
   );
 }

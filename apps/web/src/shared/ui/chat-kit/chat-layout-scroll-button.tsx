@@ -46,7 +46,7 @@ export function ChatLayoutScrollButton({
     <div ref={ref} className={cn("flex justify-center pb-3", className)} style={style} {...rest}>
       <div
         className={cn(
-          "pointer-events-auto h-8 overflow-hidden rounded-full bg-[var(--color-background-popover)] [contain:layout_style]",
+          "pointer-events-auto h-8 overflow-hidden rounded-[var(--radius-full)] bg-[var(--color-background-popover)] [contain:layout_style]",
           "[box-shadow:var(--shadow-med,0_2px_4px_light-dark(oklch(0_0_0/5%),oklch(0_0_0/35%)),0_4px_12px_light-dark(oklch(0_0_0/10%),oklch(0_0_0/50%)),inset_0_0_0_1px_light-dark(transparent,oklch(1_0_0/12%)))]",
           "transition-[opacity,transform,max-width] duration-[var(--duration-fast-max)] ease-[var(--ease-standard)] motion-reduce:duration-0",
           isVisible ? "pointer-events-auto opacity-100" : "pointer-events-none max-w-8 opacity-0",

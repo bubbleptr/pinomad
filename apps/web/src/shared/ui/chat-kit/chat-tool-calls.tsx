@@ -67,14 +67,14 @@ export interface ChatToolCallsProps extends BaseProps<HTMLDivElement> {
 
 const supporting = "text-[length:var(--font-size-sm)] leading-[1.6667]";
 const chevronTransition =
-  "transition-transform duration-[var(--duration-fast)] ease-[var(--ease-standard)] motion-reduce:transition-none";
+  "transition-[transform] duration-[var(--duration-fast)] ease-[var(--ease-standard)] motion-reduce:transition-none";
 
 const styles = {
   root: "mt-2 flex flex-col",
   groupIcon: "inline-flex size-4 shrink-0 items-center justify-center text-[var(--color-text-secondary)]",
   groupLabel: cn(supporting, "font-sans font-medium text-[var(--color-text-secondary)]"),
   chevron: cn("inline-flex size-3.5 shrink-0 items-center justify-center text-[var(--color-text-disabled)]", chevronTransition),
-  chevronExpanded: "rotate-180",
+  chevronExpanded: "[transform:rotate(180deg)]",
   groupContent:
     "grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-[var(--ease-standard)] motion-reduce:transition-none",
   groupContentExpanded: "grid-rows-[1fr]",
@@ -83,7 +83,7 @@ const styles = {
   callRow: "flex min-h-6 items-center gap-1.5 py-0.5",
   callRowClickable: "-mx-1 cursor-pointer rounded-[var(--radius-element)] px-1 hover:bg-[var(--color-overlay-hover)]",
   callRowToggle: "cursor-pointer",
-  statusIcon: "relative inline-flex size-4 shrink-0 items-center justify-center rounded-full",
+  statusIcon: "relative inline-flex size-4 shrink-0 items-center justify-center rounded-[var(--radius-full)]",
   statusIconCircle: "absolute inset-0 rounded-[inherit] bg-current opacity-15",
   statusIconInner: "relative inline-flex",
   callName: cn(
@@ -190,7 +190,7 @@ function CallRow({ call }: { call: ChatToolCallItem }) {
           // The title attribute above is hover-only; expose the error detail
           // as real text so it reaches screen readers, keyboard, and touch
           // users, and joins the accessible name of expandable rows.
-          <span className="sr-only">{`Error: ${call.errorMessage ?? ""}`}</span>
+          <span className="pointer-events-none absolute start-0 top-0 -m-px size-px overflow-hidden border-none p-0 whitespace-nowrap select-none [clip:rect(0,0,0,0)]">{`Error: ${call.errorMessage ?? ""}`}</span>
         )}
       </span>
       <span className={styles.callName}>{call.name}</span>
