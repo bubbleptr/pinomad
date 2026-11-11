@@ -55,18 +55,20 @@
   --default: light-dark(rgb(0 0 0 / 6%), rgb(255 255 255 / 10%));
   --success: light-dark(#1e8a4f, #7dcf9f);
   --warning: light-dark(#b25e00, #ffb35c);
-  /* Status washes (Alert, Badge) and the text that reads on each: clean sets
-     the status color itself on its soft wash. The red wash is
+  /* Status washes (Alert, Badge) and the text that reads on each. Clean sets
+     the status color itself on its soft wash; in light that is under 4.5:1
+     for green, orange and blue (3.96, 4.21, 4.37), so their light text is
+     the same hue darkened just past it (about 4.6:1). The red wash is
      --destructive-muted above. */
   --red-strong: var(--destructive);
   --info-muted: light-dark(rgb(1 144 254 / 10%), rgb(79 176 254 / 14%));
-  --info-strong: light-dark(#0070d6, #4fb0fe);
+  --info-strong: light-dark(#006ccd, #4fb0fe);
   --success-muted: light-dark(rgb(95 200 138 / 14%), rgb(125 207 159 / 14%));
-  --success-strong: var(--success);
+  --success-strong: light-dark(#1b7e48, #7dcf9f);
   --warning-muted: light-dark(rgb(242 138 46 / 12%), rgb(242 161 92 / 14%));
-  --warning-strong: var(--warning);
+  --warning-strong: light-dark(#a75800, #ffb35c);
   --orange-muted: var(--warning-muted);
-  --orange-strong: var(--warning);
+  --orange-strong: var(--warning-strong);
   --gray-muted: var(--default);
   --gray-strong: var(--foreground);
   /* Status dots: clean's palette fills, brighter than the text colors so 8px
