@@ -560,6 +560,17 @@ html[lang="zh-CN"] .models-label {
      timeline would follow this box, which never scrolls, instead of the page. */
   overflow: clip;
   border-radius: calc(var(--radius) * 1.75);
+  /* Its own stacking context, so the plate below can sit behind the window. */
+  position: relative;
+  isolation: isolate;
+}
+
+/* The plate is a layer of its own, so the entrance can bring it up after the window. */
+.hero-stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
   background: var(--abyss)
     image-set(url("./hero-stage-1000.webp") 1x, url("./hero-stage.webp") 2x)
     center bottom / cover no-repeat;
@@ -574,7 +585,7 @@ html[lang="zh-CN"] .models-label {
 
 /* Past 1000px wide the small copy would be stretched even at 1x. */
 @media (min-width: 64rem) {
-  .hero-stage {
+  .hero-stage::before {
     background-image: url("./hero-stage.webp");
   }
 }
@@ -1425,57 +1436,88 @@ html[lang="zh-CN"] .split h2 {
   user-select: none;
 }
 
-/* —— Entrance. The first screen comes in once, the way a lens finds focus: each line
-   of the headline, then the intro and the buttons, sharpens out of a blur in turn;
-   the stage fades up behind them and the app window, dark at first, lights up last.
-   Nothing moves, and nothing below the first screen animates on scroll. Plain
-   keyframes, so it plays from the prerendered HTML without waiting for scripts.
-   It plays on every full load; Landing sets data-intro-seen once it has finished, so
-   coming back from the docs without a reload doesn't replay it.
-   useIntroOnce finds these animations by the intro- prefix. —— */
+/* —— Entrance. Played on every full load, in the order a lens finds focus: each line
+   of the headline, then the intro and the buttons, rises a little out of a blur; the
+   app window shows first as a faint empty frame, then its plate comes up behind it
+   and its contents fade in last. Nothing below the first screen animates on scroll.
+   Plain keyframes, so it plays from the prerendered HTML without waiting for scripts.
+   Landing sets data-intro-seen once it has finished, so coming back from the docs
+   without a reload doesn't replay it; useIntroOnce finds these by the intro- prefix. —— */
 @media screen and (prefers-reduced-motion: no-preference) {
-  :root:not([data-intro-seen]) .hero :is(h1 .line, .lead, .actions) {
-    animation: intro-focus 1s var(--ease-out) both;
+  /* Listed out, not :is(): that would lend .lead the specificity of "h1 .line", and
+     this rule's delay would then beat the ones below. */
+  :root:not([data-intro-seen]) .hero h1 .line,
+  :root:not([data-intro-seen]) .hero .lead,
+  :root:not([data-intro-seen]) .hero .actions {
+    animation: intro-focus 1s cubic-bezier(0.25, 0.1, 0.25, 1) 0.4s both;
   }
 
   :root:not([data-intro-seen]) .hero h1 .line:nth-child(2) {
-    animation-delay: 120ms;
+    animation-delay: 0.5s;
   }
 
+  /* A paragraph is taller than a headline line, so its rise is a length, not a share. */
   :root:not([data-intro-seen]) .hero .lead {
-    animation-delay: 280ms;
+    --intro-rise: 0.4rem;
+    animation-delay: 0.6s;
   }
 
   :root:not([data-intro-seen]) .hero .actions {
-    animation-delay: 400ms;
+    --intro-rise: 0.4rem;
+    animation-delay: 0.7s;
   }
 
-  :root:not([data-intro-seen]) .hero-stage {
-    animation: intro-fade 1.2s var(--ease-out) 450ms both;
-  }
-
-  /* Brightness, not opacity: a see-through window would show the blue plate. */
   :root:not([data-intro-seen]) .hero-stage .mock-app {
-    animation: intro-light 1.4s var(--ease-in-out) 700ms both;
+    animation: intro-frame 1.6s cubic-bezier(0.455, 0.03, 0.515, 0.955) 0.2s both;
+  }
+
+  :root:not([data-intro-seen]) .hero-stage::before {
+    animation: intro-plate 1.5s cubic-bezier(0.455, 0.03, 0.515, 0.955) 1.3s both;
+  }
+
+  :root:not([data-intro-seen]) .hero-stage .mock-app > * {
+    animation: intro-fade 1.5s cubic-bezier(0.455, 0.03, 0.515, 0.955) 1.3s both;
+  }
+
+  /* The second window rises once the first has its contents. */
+  :root:not([data-intro-seen]) .hero-stage .mock-browser {
+    animation-delay: 2.4s;
   }
 }
 
 @keyframes intro-focus {
   from {
     opacity: 0;
-    filter: blur(12px);
+    filter: blur(10px);
+    translate: 0 var(--intro-rise, 20%);
+  }
+}
+
+/* A ghost of the window by 0.7s, held until the plate starts at 1.3s, solid by 1.8s. */
+@keyframes intro-frame {
+  from {
+    opacity: 0;
+  }
+
+  31%,
+  69% {
+    opacity: 0.14;
+  }
+}
+
+@keyframes intro-plate {
+  from {
+    opacity: 0;
+  }
+
+  20% {
+    opacity: 0.85;
   }
 }
 
 @keyframes intro-fade {
   from {
     opacity: 0;
-  }
-}
-
-@keyframes intro-light {
-  from {
-    filter: brightness(0.3);
   }
 }
 
