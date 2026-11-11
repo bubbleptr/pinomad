@@ -1,4 +1,3 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../../shared/ui/button.tsx";
 import { SegmentedControl, SegmentedControlItem } from "../../shared/ui/segmented-control.tsx";
 import { useState } from "react";
@@ -8,6 +7,7 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { AutoUpgradeMode, HostUpgrade, UpgradeBlocker, UpgradeWhen } from "@pinomad/protocol/upgrade.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { useNow } from "../../shared/use-now.ts";
+import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 
 /** "5m ago", "just now": `relativeTime` is the sidebar's compact form. */
 const ago = (at: number, now: number): string => {
@@ -65,11 +65,10 @@ export function HostUpgradeSection({ view, remote }: { view: DurableView; remote
   const upgrade = view.upgrade;
   if (!hostSupportsCall(minor, "startUpgrade") || upgrade === null) {
     return (
-      <Banner
-        status="warning"
-        title="This host is too old to upgrade from here"
-        description="Run `pinomad upgrade` on the host."
-      />
+      <Alert variant="warning">
+        <AlertTitle>This host is too old to upgrade from here</AlertTitle>
+        <AlertDescription>Run `pinomad upgrade` on the host.</AlertDescription>
+      </Alert>
     );
   }
   const connected = view.connection === "connected";
@@ -137,19 +136,21 @@ function UpgradeStatus({
         ) : null}
       </div>
       {upgrade.checkError === null ? null : (
-        <Banner status="warning" title="Couldn't check for releases" description={upgrade.checkError} />
+        <Alert variant="warning"><AlertTitle>Couldn't check for releases</AlertTitle><AlertDescription>{upgrade.checkError}</AlertDescription></Alert>
       )}
       {failure === null || phase !== "idle" ? null : (
-        <Banner
-          status="error"
-          title={`Upgrading to pinomad ${failure.version} failed`}
-          description={<span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{failure.message}</span>}
-        />
+        <Alert variant="destructive">
+          <AlertTitle>{`Upgrading to pinomad ${failure.version} failed`}</AlertTitle>
+          <AlertDescription><span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{failure.message}</span></AlertDescription>
+        </Alert>
       )}
       {blocked === null ? null : (
-        <Banner status="info" title={BLOCKED[blocked].title} description={BLOCKED[blocked].description} />
+        <Alert variant="info">
+          <AlertTitle>{BLOCKED[blocked].title}</AlertTitle>
+          <AlertDescription>{BLOCKED[blocked].description}</AlertDescription>
+        </Alert>
       )}
-      {error === undefined ? null : <Banner status="error" title="That didn't go through" description={error} />}
+      {error === undefined ? null : <Alert variant="destructive"><AlertTitle>That didn't go through</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
       {confirming && canStart ? (
         <UpgradeConfirm
           version={available.version}

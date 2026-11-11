@@ -1,4 +1,3 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../../shared/ui/button.tsx";
 import { Separator } from "../../shared/ui/separator.tsx";
 import { Field, FieldLabel } from "../../shared/ui/field.tsx";
@@ -9,6 +8,7 @@ import type { AccountModel } from "../../entities/account/account-model.ts";
 import { knownSignInProviders, SignInProviderMark } from "../../entities/provider/sign-in-provider.tsx";
 import { accountErrorMessage } from "./account-error.ts";
 import { CODE_INPUT, MIN_PASSWORD_LENGTH, NEW_PASSWORD_INPUT, passwordLength } from "./code-input.ts";
+import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 
 /** The Server field's value and setter; absent on a cookie page, which is the server. */
 export interface ServerField {
@@ -19,7 +19,7 @@ export interface ServerField {
 type Step = "sign-in" | "create" | "reset";
 
 interface Notice {
-  readonly status: "success" | "error";
+  readonly variant: "success" | "destructive";
   readonly title: string;
   readonly description: string;
 }
@@ -77,7 +77,7 @@ export function SignInScreen({
   const [notice, setNotice] = useState<Notice | undefined>(() =>
     initialError === undefined
       ? undefined
-      : { status: "error", title: "Couldn't sign in", description: accountErrorMessage({ code: initialError }) },
+      : { variant: "destructive", title: "Couldn't sign in", description: accountErrorMessage({ code: initialError }) },
   );
   const methods = useAuthMethods(account, server?.origin);
   const serverOrigin = server === undefined ? undefined : server.origin.trim();
@@ -95,7 +95,12 @@ export function SignInScreen({
           <span className="text-xs/5 text-muted-foreground">See the hosts on your account and connect without a QR code.</span>
         ) : null}
       </div>
-      {notice === undefined ? null : <Banner status={notice.status} title={notice.title} description={notice.description} />}
+      {notice === undefined ? null : (
+        <Alert variant={notice.variant}>
+          <AlertTitle>{notice.title}</AlertTitle>
+          <AlertDescription>{notice.description}</AlertDescription>
+        </Alert>
+      )}
       {server === undefined ? null : (
         <Field>
           <FieldLabel>Server</FieldLabel>
@@ -115,7 +120,7 @@ export function SignInScreen({
           onEmail={setEmail}
           target={target}
           onStep={go}
-          onError={(error) => setNotice(error === undefined ? undefined : { status: "error", title: "Couldn't sign in", description: accountErrorMessage(error) })}
+          onError={(error) => setNotice(error === undefined ? undefined : { variant: "destructive", title: "Couldn't sign in", description: accountErrorMessage(error) })}
         />
       ) : (
         <CodeFlow
@@ -136,7 +141,7 @@ export function SignInScreen({
           onDone={() => {
             if (step === "reset") {
               setStep("sign-in");
-              setNotice({ status: "success", title: "Password reset", description: "Password reset. Sign in with your new password." });
+              setNotice({ variant: "success", title: "Password reset", description: "Password reset. Sign in with your new password." });
             }
           }}
           onBack={() => go("sign-in")}
@@ -303,11 +308,10 @@ function CodeFlow({
   };
   const errorBanner =
     error === undefined ? null : (
-      <Banner
-        status="error"
-        title={sentTo === undefined ? "Couldn't send the code" : kind === "create" ? "Couldn't create the account" : "Couldn't reset the password"}
-        description={accountErrorMessage(error)}
-      />
+      <Alert variant="destructive">
+        <AlertTitle>{sentTo === undefined ? "Couldn't send the code" : kind === "create" ? "Couldn't create the account" : "Couldn't reset the password"}</AlertTitle>
+        <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
+      </Alert>
     );
   if (sentTo === undefined) {
     return (

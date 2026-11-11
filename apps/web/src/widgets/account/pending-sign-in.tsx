@@ -1,8 +1,6 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
-import { Spinner } from "@astryxdesign/core/Spinner";
 import { Field, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { useEffect, useState } from "react";
@@ -14,6 +12,8 @@ import { signInProviderName, SignInProviderMark } from "../../entities/provider/
 import { accountErrorMessage } from "./account-error.ts";
 import { MIN_PASSWORD_LENGTH, NEW_PASSWORD_INPUT, passwordLength } from "./code-input.ts";
 import { useConfirmIdentity } from "./confirm-identity.tsx";
+import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
+import { Spinner } from "../../shared/ui/spinner.tsx";
 
 /**
  * A provider sign-in that found no account (ADR-0044 §4), over whatever
@@ -95,7 +95,12 @@ export function PendingSignInSteps({
     };
   }, [account, id]);
   if (loadError !== undefined) {
-    return <Banner status="error" title="Couldn't load this sign-in" description={accountErrorMessage(loadError)} />;
+    return (
+      <Alert variant="destructive">
+        <AlertTitle>Couldn't load this sign-in</AlertTitle>
+        <AlertDescription>{accountErrorMessage(loadError)}</AlertDescription>
+      </Alert>
+    );
   }
   if (pending === undefined) return <Spinner size="sm" />;
   if (pending === "expired") {
@@ -203,7 +208,12 @@ function CreateFromPending({
           />
         </Field>
       ) : null}
-      {error === undefined ? null : <Banner status="error" title="Couldn't create the account" description={accountErrorMessage(error)} />}
+      {error === undefined ? null : (
+        <Alert variant="destructive">
+          <AlertTitle>Couldn't create the account</AlertTitle>
+          <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
+        </Alert>
+      )}
       <Button
         variant="primary"
         className="w-full"
@@ -256,7 +266,12 @@ function LinkToCurrent({
         Link {provider} to {current}
       </span>
       {identity.field}
-      {error === undefined ? null : <Banner status="error" title={`Couldn't link ${provider}`} description={accountErrorMessage(error)} />}
+      {error === undefined ? null : (
+        <Alert variant="destructive">
+          <AlertTitle>{`Couldn't link ${provider}`}</AlertTitle>
+          <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
+        </Alert>
+      )}
       <div className="flex gap-2">
         <Button variant="primary" loading={busy} disabled={!identity.ready} onClick={submit}>{`Link ${provider}`}</Button>
         <Button variant="secondary" onClick={onBack}>Back</Button>
@@ -320,7 +335,12 @@ function SignInAndLink({
           }}
         />
       </Field>
-      {error === undefined ? null : <Banner status="error" title={`Couldn't link ${provider}`} description={accountErrorMessage(error)} />}
+      {error === undefined ? null : (
+        <Alert variant="destructive">
+          <AlertTitle>{`Couldn't link ${provider}`}</AlertTitle>
+          <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
+        </Alert>
+      )}
       <div className="flex gap-2">
         <Button variant="primary" loading={busy} disabled={!ready} onClick={submit}>{`Sign in and link ${provider}`}</Button>
         <Button variant="secondary" onClick={onBack}>Back</Button>

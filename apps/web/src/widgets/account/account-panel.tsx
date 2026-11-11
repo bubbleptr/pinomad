@@ -1,13 +1,10 @@
-import { Avatar } from "@astryxdesign/core/Avatar";
-import { Banner } from "@astryxdesign/core/Banner";
+import { Avatar, AvatarFallback, initials } from "../../shared/ui/avatar.tsx";
 import { Button } from "../../shared/ui/button.tsx";
 import { Checkbox } from "../../shared/ui/checkbox.tsx";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
-import { Spinner } from "@astryxdesign/core/Spinner";
-import { Token } from "@astryxdesign/core/Token";
 import { type ReactNode, useEffect, useState } from "react";
 import type {
   AccountDevice,
@@ -34,6 +31,9 @@ import { ConfirmDialog } from "./confirm-dialog.tsx";
 import { useConfirmIdentity } from "./confirm-identity.tsx";
 import { SignInMethods } from "./sign-in-methods.tsx";
 import { SignInScreen } from "./sign-in.tsx";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
+import { Badge } from "../../shared/ui/badge.tsx";
+import { Spinner } from "../../shared/ui/spinner.tsx";
 
 /** The account's pages: everything on one, and the hosts not paired here. */
 export type AccountPage = "overview" | "hosts";
@@ -82,7 +82,12 @@ export function AccountPanel({
     case "signed-out":
       return (
         <div className="flex flex-col gap-3" style={{ width: "100%" }}>
-          {notice === undefined ? null : <Banner {...notice} />}
+          {notice === undefined ? null : (
+            <Alert variant={notice.variant}>
+              <AlertTitle>{notice.title}</AlertTitle>
+              <AlertDescription>{notice.description}</AlertDescription>
+            </Alert>
+          )}
           <SignedOut account={account} state={state} />
         </div>
       );
@@ -118,7 +123,7 @@ export function AccountPanel({
 
 /** What the signed-out panel says about how it got there. */
 interface Notice {
-  readonly status: "warning" | "success";
+  readonly variant: "warning" | "success";
   readonly title: string;
   readonly description: string;
 }
@@ -168,15 +173,19 @@ function ProviderLinkReturn() {
   }, [returned]);
   if (returned?.linked !== undefined) {
     return (
-      <Banner
-        status="success"
-        title={`${signInProviderName(returned.linked)} linked`}
-        description={`You can sign in with ${signInProviderName(returned.linked)} now.`}
-      />
+      <Alert variant="success">
+        <AlertTitle>{`${signInProviderName(returned.linked)} linked`}</AlertTitle>
+        <AlertDescription>{`You can sign in with ${signInProviderName(returned.linked)} now.`}</AlertDescription>
+      </Alert>
     );
   }
   if (returned?.error !== undefined) {
-    return <Banner status="error" title="Couldn't link the account" description={accountErrorMessage({ code: returned.error })} />;
+    return (
+      <Alert variant="destructive">
+        <AlertTitle>Couldn't link the account</AlertTitle>
+        <AlertDescription>{accountErrorMessage({ code: returned.error })}</AlertDescription>
+      </Alert>
+    );
   }
   return null;
 }
@@ -201,7 +210,9 @@ function Overview({
     <div className="flex flex-col gap-6" style={{ width: "100%" }}>
       <ProviderLinkReturn />
       <div className="flex items-center gap-3">
-        <Avatar name={state.user} size="lg" tooltip={false} />
+        <Avatar size="lg" aria-label={state.user}>
+          <AvatarFallback>{initials(state.user)}</AvatarFallback>
+        </Avatar>
         <div className="flex flex-col min-w-0 flex-1">
           {/* An email has no spaces to wrap at; break it rather than run under the button. */}
           <h3 className="text-[1.0625rem]/6 font-bold" style={{ overflowWrap: "anywhere" }}>
@@ -267,7 +278,7 @@ function signOutWarning(result: AccountResult<void>, revoke: boolean): string | 
 }
 
 const signOutNotice = (description: string | undefined): Notice | undefined =>
-  description === undefined ? undefined : { status: "warning", title: "Sign-out not confirmed", description };
+  description === undefined ? undefined : { variant: "warning", title: "Sign-out not confirmed", description };
 
 /**
  * Sign out, with the shared-computer choice off by default: a host's
@@ -383,7 +394,7 @@ function DeleteAccountDialog({
       if (result.ok) {
         if (account.state.status !== "signed-out") return;
         onNotice({
-          status: "success",
+          variant: "success",
           title: "Account deleted",
           description: "This device is still registered on your hosts. To remove it, revoke it in each host's Devices.",
         });
@@ -404,7 +415,10 @@ function DeleteAccountDialog({
     >
       {identity.field}
       {error === undefined ? null : (
-        <Banner status="error" title="Couldn't delete the account" description={accountErrorMessage(error)} />
+        <Alert variant="destructive">
+          <AlertTitle>Couldn't delete the account</AlertTitle>
+          <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
+        </Alert>
       )}
     </ConfirmDialog>
   );
@@ -479,12 +493,11 @@ function Devices({ account, hosts }: { account: AccountModel; hosts: readonly Ac
   return (
     <div className="flex flex-col gap-2" style={{ width: "100%" }}>
       {error === undefined ? null : (
-        <Banner
-          status="warning"
-          title="Couldn't load devices"
-          description={accountErrorMessage(error)}
-          endContent={<Button variant="secondary" size="sm" onClick={() => void load()}>Retry</Button>}
-        />
+        <Alert variant="warning">
+          <AlertTitle>Couldn't load devices</AlertTitle>
+          <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
+          <AlertAction><Button variant="secondary" size="sm" onClick={() => void load()}>Retry</Button></AlertAction>
+        </Alert>
       )}
       {devices === undefined ? (
         error === undefined ? (
@@ -538,9 +551,9 @@ function DeviceRow({
   const name = device.name ?? "Unknown device";
   const signIn = `Last sign-in ${ago(device.lastSeenAt, now)}`;
   const end = device.current ? (
-    <Token label="This device" size="sm" />
+    <Badge>This device</Badge>
   ) : device.kickedAt !== undefined ? (
-    <Token label="Removed" color="gray" size="sm" />
+    <Badge variant="muted">Removed</Badge>
   ) : (
     <MoreMenu label={`More for ${name}`} size="sm" isDisabled={isBusy} items={[{ label: "Remove", onClick: onRemove }]} />
   );
@@ -622,7 +635,10 @@ function RemoveDeviceDialog({
     >
       {identity.field}
       {error === undefined ? null : (
-        <Banner status="error" title="Couldn't remove the device" description={accountErrorMessage(error)} />
+        <Alert variant="destructive">
+          <AlertTitle>Couldn't remove the device</AlertTitle>
+          <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
+        </Alert>
       )}
     </ConfirmDialog>
   );

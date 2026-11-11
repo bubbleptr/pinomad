@@ -1,10 +1,8 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../../shared/ui/button.tsx";
 import { CodeBlock } from "@astryxdesign/core/CodeBlock";
 import { Collapsible } from "@astryxdesign/core/Collapsible";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
-import { Spinner } from "@astryxdesign/core/Spinner";
 import { useState } from "react";
 import type { AccountError, JoinToken } from "@pinomad/client/account.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
@@ -15,6 +13,8 @@ import { accountErrorMessage } from "./account-error.ts";
 import { HostLinkEntry } from "./host-link-entry.tsx";
 import { joinCommand } from "./join-command.ts";
 import { LocalHostSetup } from "./local-host-setup.tsx";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
+import { Spinner } from "../../shared/ui/spinner.tsx";
 
 /**
  * How a new host joins this account (#496): the command to run on it, the
@@ -88,18 +88,20 @@ function TokenCommand() {
               <span className="text-xs/5 text-muted-foreground">Creating a command…</span>
             </div>
           ) : (
-            <Banner
-              status="error"
-              title="Couldn't create a join command"
-              description={accountErrorMessage(error)}
-              endContent={<Button variant="secondary" loading={busy} onClick={create}>Try again</Button>}
-            />
+            <Alert variant="destructive">
+              <AlertTitle>Couldn't create a join command</AlertTitle>
+              <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
+              <AlertAction><Button variant="secondary" loading={busy} onClick={create}>Try again</Button></AlertAction>
+            </Alert>
           )
         ) : (
           <JoinCommand token={token} onRenew={create} />
         )}
         {token !== undefined && error !== undefined ? (
-          <Banner status="error" title="Couldn't create a new command" description={accountErrorMessage(error)} />
+          <Alert variant="destructive">
+            <AlertTitle>Couldn't create a new command</AlertTitle>
+            <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
+          </Alert>
         ) : null}
       </div>
     </Collapsible>

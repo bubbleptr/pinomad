@@ -1,8 +1,6 @@
 // The multi-host composition root: one RemoteDurable per stored host, one
 // focused conversation, and a composer store that outlives focus changes.
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../../shared/ui/button.tsx";
-import { EmptyState } from "@astryxdesign/core/EmptyState";
 import {
   type ReactNode,
   useCallback,
@@ -32,6 +30,8 @@ import { useHostNameSync, useHosts } from "./host-store.ts";
 import { HostRuntimesContext } from "./host-runtimes.ts";
 import type { HostFocus } from "./focus.ts";
 import { secureOptions } from "./secure-options.ts";
+import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../../shared/ui/empty.tsx";
 
 export type RemoteConnect = (options: RemoteDurableOptions) => Promise<RemoteDurable>;
 
@@ -188,7 +188,12 @@ function HostRuntime({
     <HostComposerContext.Provider value={composer}>
       {state.status === "connecting" ? (
         <Centered>
-          <EmptyState title="Connecting" description={host.url} />
+          <Empty>
+            <EmptyHeader>
+              <EmptyTitle>Connecting</EmptyTitle>
+              <EmptyDescription>{host.url}</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
         </Centered>
       ) : (
         <HostFailure host={host} state={state} retry={retry} />
@@ -241,15 +246,14 @@ function BannerForFailure({
 }) {
   return (
     <>
-      <Banner
-        status="error"
-        title={state.direct === undefined ? "Could not connect to the host" : "Direct connection unavailable"}
-        description={
-          state.direct === undefined
+      <Alert variant="destructive">
+        <AlertTitle>{state.direct === undefined ? "Could not connect to the host" : "Direct connection unavailable"}</AlertTitle>
+        <AlertDescription>
+          {state.direct === undefined
             ? state.error
-            : "This host can't be reached without the relay, and the peer-to-peer link didn't connect."
-        }
-      />
+            : "This host can't be reached without the relay, and the peer-to-peer link didn't connect."}
+        </AlertDescription>
+      </Alert>
       {state.direct === undefined ? null : (
         <span className="text-xs/5 text-muted-foreground" style={{ textAlign: "center" }}>
           {`Details: ${state.direct.reason}`}

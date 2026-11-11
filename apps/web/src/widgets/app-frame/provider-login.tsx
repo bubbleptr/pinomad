@@ -1,14 +1,14 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../../shared/ui/button.tsx";
 import { Link } from "../../shared/ui/link.tsx";
 import { Field, FieldContent, FieldDescription, FieldError, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { RadioGroup, RadioGroupItem } from "../../shared/ui/radio-group.tsx";
-import { Spinner } from "@astryxdesign/core/Spinner";
 import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import type { LoginEvent, LoginFlow, LoginMethod, LoginPrompt } from "@pinomad/protocol/auth.ts";
 import { DisconnectedError, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { Check, Copy, LinkExternal } from "../../shared/ui/icons.tsx";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
+import { Spinner } from "../../shared/ui/spinner.tsx";
 
 const iconSize: CSSProperties = { width: "var(--spacing-4)", height: "var(--spacing-4)" };
 
@@ -158,7 +158,7 @@ export function LoginPanel({
     return (
       <div className="flex flex-col gap-3">
         {intro}
-        {startError === undefined ? null : <Banner status="error" title="Couldn't start the login" description={startError} />}
+        {startError === undefined ? null : <Alert variant="destructive"><AlertTitle>Couldn't start the login</AlertTitle><AlertDescription>{startError}</AlertDescription></Alert>}
         <div className="flex flex-wrap gap-2">
           <Button
             variant="primary"
@@ -178,12 +178,11 @@ export function LoginPanel({
 
   if (flow.state === "failed") {
     return (
-      <Banner
-        status="error"
-        title={method === "api_key" ? "The key wasn't saved" : "Sign-in failed"}
-        description={flow.error}
-        endContent={<Button size="sm" disabled={!connected} loading={starting} onClick={start}>Try again</Button>}
-      />
+      <Alert variant="destructive">
+        <AlertTitle>{method === "api_key" ? "The key wasn't saved" : "Sign-in failed"}</AlertTitle>
+        <AlertDescription>{flow.error}</AlertDescription>
+        <AlertAction><Button size="sm" disabled={!connected} loading={starting} onClick={start}>Try again</Button></AlertAction>
+      </Alert>
     );
   }
 

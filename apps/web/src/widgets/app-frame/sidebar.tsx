@@ -1,12 +1,9 @@
 import { cn } from "cn";
-import { Avatar } from "@astryxdesign/core/Avatar";
 import { Button } from "../../shared/ui/button.tsx";
 import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { Icon } from "@astryxdesign/core/Icon";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
-import { StatusDot } from "@astryxdesign/core/StatusDot";
-import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { ConversationNode, Home, Project } from "@pinomad/protocol/organization.ts";
@@ -21,6 +18,8 @@ import { RenameConversationDialog } from "./rename-dialog.tsx";
 import { HostsMenu } from "./hosts.tsx";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { clientDeviceName } from "../../address.ts";
+import { StatusDot } from "../../shared/ui/status-dot.tsx";
+import { Avatar, AvatarFallback, initials } from "../../shared/ui/avatar.tsx";
 
 const PROJECT_EXPANDED_KEY = "pinomad.projectSidebar.expanded";
 
@@ -158,7 +157,9 @@ function UserChip({ onOpenAccount }: { onOpenAccount: () => void }) {
         className="max-w-full"
         onClick={onOpenAccount}
       >
-        <Avatar name={user} size="xsm" tooltip={false} />
+        <Avatar size="xs" aria-label={user}>
+          <AvatarFallback>{initials(user)}</AvatarFallback>
+        </Avatar>
         <span className="truncate">{user}</span>
       </Button>
     );
@@ -233,7 +234,7 @@ function FamilyStatusGlyph({ status }: { status: FamilyStatus }) {
   const tooltip = FAMILY_STATUS_TEXT[status];
   return (
     <span className="pigui-session-glyph" aria-hidden="true">
-      <StatusDot variant={variant} label={tooltip} tooltip={tooltip} isPulsing={status !== "failed"} />
+      <StatusDot variant={variant} label={tooltip} tooltip={tooltip} pulsing={status !== "failed"} />
     </span>
   );
 }
@@ -328,7 +329,7 @@ function ConversationRow({
         // Not aria-describedby: Astryx SideNavItem drops aria props. A hidden
         // sibling after the button puts the status right after the title in
         // reading order while the button's name stays exactly the title.
-        <VisuallyHidden>{FAMILY_STATUS_TEXT[status]}</VisuallyHidden>
+        <span className="sr-only">{FAMILY_STATUS_TEXT[status]}</span>
       )}
       <div className="flex items-center gap-0.5 pigui-sidenav-row-actions pigui-sidenav-hover-actions">
         <DropdownMenu

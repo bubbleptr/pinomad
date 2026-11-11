@@ -1,8 +1,8 @@
 import { Button } from "../../shared/ui/button.tsx";
-import { useToast } from "@astryxdesign/core/Toast";
 import { useEffect, useRef, useState } from "react";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { browserKnownHosts, type KnownHostsStore } from "../../entities/account/known-hosts.ts";
+import { useToast } from "../../shared/ui/toast.tsx";
 import { RemoveHostDialog } from "./remove-host.tsx";
 
 /**
@@ -30,12 +30,12 @@ export function NewHostNotices({ knownHosts = browserKnownHosts }: { knownHosts?
     for (const hostId of arrived) {
       const name = state.hosts.find((match) => match.host.hostId === hostId)?.host.name ?? "A host";
       const dismiss = toast({
-        body: `New host ${name} joined your account. Didn't add it? Remove it.`,
-        uniqueID: `new-host:${hostId}`,
+        description: `New host ${name} joined your account. Didn't add it? Remove it.`,
+        id: `new-host:${hostId}`,
         // It may land while the user looks elsewhere; it waits to be read.
-        isAutoHide: false,
-        endContent: <Button variant="secondary" size="sm" onClick={() => setRemoving({ hostId, name })}>Remove</Button>,
-        onHide: () => dismissals.current.delete(hostId),
+        timeout: 0,
+        action: <Button variant="secondary" size="sm" onClick={() => setRemoving({ hostId, name })}>Remove</Button>,
+        onClose: () => dismissals.current.delete(hostId),
       });
       dismissals.current.set(hostId, dismiss);
     }

@@ -1,15 +1,15 @@
 // "New host X joined your account", once per device per host (#496): a host
 // confirmed anywhere pairs here on its own, so this is where the user learns
 // a machine they didn't add got in.
-import { ToastViewport } from "@astryxdesign/core/Toast";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountHostMatch } from "@pinomad/client/account.ts";
 import { AccountContext } from "../../entities/account/account-context.tsx";
 import type { AccountModel, AccountState } from "../../entities/account/account-model.ts";
 import { createKnownHostsStore, type KnownHostsStore } from "../../entities/account/known-hosts.ts";
 import { HostsContext } from "../../entities/host/host-store.ts";
+import { Toaster } from "../../shared/ui/toast.tsx";
 import { fakeAccount, fakeHosts, signedIn } from "../../test/story-fixtures.tsx";
 import { NewHostNotices } from "./new-host-notice.tsx";
 
@@ -43,9 +43,9 @@ const renderNotices = (account: AccountModel, knownHosts: KnownHostsStore) =>
   render(
     <HostsContext.Provider value={fakeHosts([], null)}>
       <AccountContext.Provider value={account}>
-        <ToastViewport>
+        <Toaster>
           <NewHostNotices knownHosts={knownHosts} />
-        </ToastViewport>
+        </Toaster>
       </AccountContext.Provider>
     </HostsContext.Provider>,
   );
@@ -53,21 +53,12 @@ const renderNotices = (account: AccountModel, knownHosts: KnownHostsStore) =>
 const studio = match("s".repeat(43), "studio");
 const omarchy = match("o".repeat(43), "omarchy");
 
-// Astryx also speaks each toast through a page-wide live region it keeps in
-// document.body: the text lands there a frame after the toast and is cleared
-// two seconds later. That copy is for screen readers, outside the render
-// container that cleanup removes, so these assertions count the toasts only.
-const LIVE_REGION = "[data-astryx-live-region]";
-const toasts = (text: RegExp): HTMLElement[] =>
-  screen.queryAllByText(text).filter((element) => element.closest(LIVE_REGION) === null);
+const toasts = (text: RegExp): HTMLElement[] => screen.queryAllByText(text);
 
-/** Lets the live region's frame fire, so the assertions see what a slow CI runner sees. */
+/** Lets a few frames pass, so the assertions see what a slow CI runner sees. */
 const nextFrames = () => act(() => new Promise<void>((resolve) => setTimeout(resolve, 50)));
 
 beforeEach(() => localStorage.clear());
-afterEach(() => {
-  for (const region of document.querySelectorAll(LIVE_REGION)) region.textContent = "";
-});
 
 describe("NewHostNotices", () => {
   it("says nothing on the first load after sign-in, then announces a later host once", async () => {

@@ -1,8 +1,6 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../../shared/ui/button.tsx";
 import { Item } from "@astryxdesign/core/Item";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
-import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { useState } from "react";
 import type { AccountError, AccountHostMatch } from "@pinomad/client/account.ts";
 import { relativeTime } from "@pinomad/client/family.ts";
@@ -14,6 +12,8 @@ import { GROUP_ROWS } from "../../shared/ui/settings-group.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { accountErrorMessage } from "./account-error.ts";
 import { RemoveHostDialog } from "./remove-host.tsx";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
+import { StatusDot } from "../../shared/ui/status-dot.tsx";
 
 type SignedIn = Extract<AccountState, { status: "signed-in" }>;
 
@@ -104,24 +104,24 @@ export function AccountPairingBanners({ state, pairing }: { state: SignedIn; pai
   return (
     <>
       {state.unsavedHosts.map((host) => (
-        <Banner
-          key={host.hostKey}
-          status="warning"
-          title="This pairing wasn't saved"
-          description={`${host.name ?? host.url} will be lost when the app restarts.`}
-          endContent={<Button variant="secondary" size="sm" onClick={() => pairing.retrySave(host)}>Retry</Button>}
-        />
+        <Alert variant="warning" key={host.hostKey}>
+          <AlertTitle>This pairing wasn't saved</AlertTitle>
+          <AlertDescription>{`${host.name ?? host.url} will be lost when the app restarts.`}</AlertDescription>
+          <AlertAction><Button variant="secondary" size="sm" onClick={() => pairing.retrySave(host)}>Retry</Button></AlertAction>
+        </Alert>
       ))}
       {state.hostsError === undefined ? null : (
-        <Banner
-          status="warning"
-          title="Couldn't refresh hosts"
-          description={accountErrorMessage(state.hostsError)}
-          endContent={<Button variant="secondary" size="sm" onClick={() => void account.refreshHosts()}>Retry</Button>}
-        />
+        <Alert variant="warning">
+          <AlertTitle>Couldn't refresh hosts</AlertTitle>
+          <AlertDescription>{accountErrorMessage(state.hostsError)}</AlertDescription>
+          <AlertAction><Button variant="secondary" size="sm" onClick={() => void account.refreshHosts()}>Retry</Button></AlertAction>
+        </Alert>
       )}
       {pairing.error === undefined ? null : (
-        <Banner status="error" title="Couldn't pair" description={accountErrorMessage(pairing.error)} />
+        <Alert variant="destructive">
+          <AlertTitle>Couldn't pair</AlertTitle>
+          <AlertDescription>{accountErrorMessage(pairing.error)}</AlertDescription>
+        </Alert>
       )}
     </>
   );

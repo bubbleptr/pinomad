@@ -1,4 +1,3 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../../shared/ui/button.tsx";
 import type { Decorator, Meta, StoryObj } from "@storybook/react-vite";
 import { userEvent, within } from "storybook/test";
@@ -13,6 +12,7 @@ import {
   type HostRuntimeInfo,
 } from "../../entities/host/host-runtimes.ts";
 import { HostsFallback, HostsMenu, HostsSection } from "./hosts.tsx";
+import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 
 const STUDIO_HOST = { ...HOME_HOST, name: "Studio" };
 
@@ -305,11 +305,10 @@ export const DirectOnlyFailure: Story = {
   render: () => (
     <div className="flex min-h-[70vh] flex-col items-center justify-center gap-6 p-6">
       <div className="flex flex-col items-center gap-4" style={{ maxWidth: 420 }}>
-        <Banner
-          status="error"
-          title="Direct connection unavailable"
-          description="This host can't be reached without the relay, and the peer-to-peer link didn't connect."
-        />
+        <Alert variant="destructive">
+          <AlertTitle>Direct connection unavailable</AlertTitle>
+          <AlertDescription>This host can't be reached without the relay, and the peer-to-peer link didn't connect.</AlertDescription>
+        </Alert>
         <span className="text-xs/5 text-muted-foreground" style={{ textAlign: "center" }}>
           Details: the ICE connection failed
         </span>

@@ -1,8 +1,8 @@
-import { ToastViewport } from "@astryxdesign/core/Toast";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { useState } from "react";
 import { userEvent, within } from "storybook/test";
 import { createKnownHostsStore } from "../../entities/account/known-hosts.ts";
+import { Toaster } from "../../shared/ui/toast.tsx";
 import { ACCOUNT_HOSTS, signedIn, withAccount } from "../../test/story-fixtures.tsx";
 import { NewHostNotices } from "./new-host-notice.tsx";
 
@@ -15,15 +15,15 @@ function Notices() {
       setItem: (key, value) => void entries.set(key, value),
     });
     store.arrivals(
-      { serverOrigin: "https://pinomad.si", user: "kieran" },
+      { serverOrigin: "https://pinomad.si", user: "kieran@example.com" },
       ACCOUNT_HOSTS.filter((match) => match.host.name !== "omarchy").map((match) => match.host.hostId),
     );
     return store;
   });
   return (
-    <ToastViewport position="topEnd" isTopLayer>
+    <Toaster>
       <NewHostNotices knownHosts={knownHosts} />
-    </ToastViewport>
+    </Toaster>
   );
 }
 

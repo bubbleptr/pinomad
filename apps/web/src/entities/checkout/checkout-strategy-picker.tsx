@@ -2,7 +2,7 @@
 // commit 15b9084): the draft's worktree/project-folder picker.
 import { Checkbox } from "../../shared/ui/checkbox.tsx";
 import { Field, FieldLabel } from "../../shared/ui/field.tsx";
-import { Tooltip } from "@astryxdesign/core/Tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui/tooltip.tsx";
 
 export type CheckoutMode = "worktree" | "local";
 
@@ -19,8 +19,8 @@ export function CheckoutStrategyPicker({
   return (
     // The label stays "worktree" either way: the checkmark is the selected
     // state, and unchecked means the project folder itself.
-    <div className="inline-flex max-w-full shrink-0" data-testid="checkout-strategy-picker">
-      <Tooltip content="Use a Git worktree; when off, work in the project folder." isEnabled={!isDisabled}>
+    <Tooltip disabled={isDisabled}>
+      <TooltipTrigger render={<div className="inline-flex max-w-full shrink-0" data-testid="checkout-strategy-picker" />}>
         <Field orientation="horizontal" disabled={isDisabled} className="w-auto gap-2">
           <Checkbox
             checked={value === "worktree"}
@@ -28,7 +28,8 @@ export function CheckoutStrategyPicker({
           />
           <FieldLabel className="font-normal">worktree</FieldLabel>
         </Field>
-      </Tooltip>
-    </div>
+      </TooltipTrigger>
+      <TooltipContent>Use a Git worktree; when off, work in the project folder.</TooltipContent>
+    </Tooltip>
   );
 }

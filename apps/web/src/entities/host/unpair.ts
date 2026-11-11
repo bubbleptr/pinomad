@@ -41,9 +41,9 @@ export async function unpairHost({
 }
 
 /** The toast for a connected host that didn't answer the unpair in time: only this end went. */
-export function unansweredUnpair(label: string): { body: string; type: "info" } {
+export function unansweredUnpair(label: string): { description: string; type: "info" } {
   return {
-    body: `${label} didn't answer, so only this device forgot it. Unpair this device under Settings → Devices on ${label}.`,
+    description: `${label} didn't answer, so only this device forgot it. Unpair this device under Settings → Devices on ${label}.`,
     type: "info",
   };
 }

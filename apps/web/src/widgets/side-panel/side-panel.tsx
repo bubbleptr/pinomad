@@ -11,7 +11,6 @@ import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
-import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { findConversation } from "@pinomad/protocol/organization.ts";
@@ -33,6 +32,7 @@ import { ChangesSurface } from "./changes-surface.tsx";
 import { LazyXtermView } from "./lazy-xterm-view.tsx";
 import { SurfaceBar } from "./surface-bar.tsx";
 import { TerminalSurface } from "./terminal-surface.tsx";
+import { StatusDot } from "../../shared/ui/status-dot.tsx";
 
 export type PanelSurface = "tasks" | "changes" | "terminal";
 
@@ -124,7 +124,7 @@ function StatusGlyph({ status }: { status: ConversationSummary["status"] }) {
   if (status === undefined) return null;
   return (
     <span aria-hidden="true">
-      <StatusDot variant={STATUS_VARIANT[status]} label={STATUS_LABEL[status]} isPulsing={status !== "failed"} />
+      <StatusDot variant={STATUS_VARIANT[status]} label={STATUS_LABEL[status]} pulsing={status !== "failed"} />
     </span>
   );
 }
@@ -353,7 +353,7 @@ function ProcessGlyph({ state }: { state: ProcessState }) {
   const tone = PROCESS_TONE[processTone(state)];
   return (
     <span aria-hidden="true">
-      <StatusDot variant={tone.variant} label={state === "starting" ? "Starting" : tone.label} isPulsing={tone.pulse} />
+      <StatusDot variant={tone.variant} label={state === "starting" ? "Starting" : tone.label} pulsing={tone.pulse} />
     </span>
   );
 }

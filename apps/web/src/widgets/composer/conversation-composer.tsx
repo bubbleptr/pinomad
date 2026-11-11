@@ -1,5 +1,4 @@
 import { Button } from "../../shared/ui/button.tsx";
-import { useToast } from "@astryxdesign/core/Toast";
 import { useEffect, useRef, useState } from "react";
 import { hostSupportsCall, hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import type { MessageImage, ViewImage } from "@pinomad/protocol/images.ts";
@@ -29,6 +28,7 @@ import { ChatPromptInput, type ChatPromptInputHandle } from "../../shared/ui/cha
 import { composerPlaceholder } from "../../shared/ui/chat/chat-placeholder.ts";
 import { ArchiveArrowDown, Bot, CommandLine, FileIcon, ImageIcon, Sparkles } from "@/shared/ui/icons";
 import { QueuedList } from "./queued-list.tsx";
+import { useToast } from "../../shared/ui/toast.tsx";
 
 /** A queued edit's images as bytes, or undefined when any one cannot load. */
 async function resolveImages(
@@ -215,7 +215,7 @@ export function ConversationComposer({
   const canAct = !disconnected && hostSupportsCall(view.host?.protocol.minor ?? 0, "withdrawQueued");
   const canReorder = !disconnected && hostSupportsCall(view.host?.protocol.minor ?? 0, "reorderQueued");
   const showError = (error: unknown): void => {
-    toast({ body: error instanceof Error ? error.message : String(error), type: "error" });
+    toast({ description: error instanceof Error ? error.message : String(error), type: "error" });
   };
 
   const submissionAction = async (requestId: string, action: () => Promise<void>): Promise<void> => {
@@ -255,7 +255,7 @@ export function ConversationComposer({
     if (id === undefined || !beginAction(id, "withdraw")) return;
     try {
       if ((await remote.controller.withdrawQueued(id, conversationId)) === "sent") {
-        toast({ body: "Already sent — can't withdraw" });
+        toast({ description: "Already sent — can't withdraw" });
       }
     } catch (error) {
       showError(error);
@@ -307,7 +307,7 @@ export function ConversationComposer({
         // the queued message where it is and let the user try again.
         editCopy.current = null;
         setAwaitingEdit(false);
-        toast({ body: "Couldn't load the original images — try again", type: "error" });
+        toast({ description: "Couldn't load the original images — try again", type: "error" });
         return;
       }
       // Restored bytes are about to become sendable; reserve their refs now,
@@ -328,7 +328,7 @@ export function ConversationComposer({
       } else {
         editCopy.current = null;
         setAwaitingEdit(false);
-        toast({ body: "Already sent — can't withdraw" });
+        toast({ description: "Already sent — can't withdraw" });
       }
     } catch (error) {
       showError(error);

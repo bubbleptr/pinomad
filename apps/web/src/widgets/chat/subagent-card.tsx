@@ -7,7 +7,6 @@
 // dispatched, so its tool state says nothing about the work: once it went
 // through, the card follows the subagent's own summary instead.
 import { Button } from "../../shared/ui/button.tsx";
-import { StatusDot } from "@astryxdesign/core/StatusDot";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 import type { ChatToolItem } from "@/shared/ui/chat/chat-tool";
@@ -15,6 +14,7 @@ import { conversationName } from "@/entities/conversation/subagent";
 import { useNow } from "@/shared/use-now";
 import { toolDisplayName, toolTargetFromArgs } from "@pinomad/client/tool-item.ts";
 import { pinomadOf } from "@pinomad/client/cot-view.ts";
+import { StatusDot } from "../../shared/ui/status-dot.tsx";
 
 type CardStatus = "done" | "failed" | "running" | "idle";
 
@@ -99,7 +99,7 @@ function SubagentCard({
         <StatusDot
           variant={status === "failed" ? "error" : status === "running" ? "success" : "neutral"}
           label={STATUS_TEXT[status]}
-          isPulsing={status === "running"}
+          pulsing={status === "running"}
         />
         <span className="min-w-0 flex-1 truncate text-sm">{name}</span>
         {pinomad === undefined ? null : (

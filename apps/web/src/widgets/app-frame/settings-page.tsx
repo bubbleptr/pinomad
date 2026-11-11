@@ -1,4 +1,3 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../../shared/ui/button.tsx";
 import { Card } from "@astryxdesign/core/Card";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
@@ -24,7 +23,6 @@ import { SideNav, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav
 import { Field, FieldDescription, FieldError, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../../shared/ui/input-group.tsx";
-import { Token } from "@astryxdesign/core/Token";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { agentNameProblem, type AgentRole, type AgentRoleProblem } from "@pinomad/protocol/agents.ts";
 import { hostSupportsFeature } from "@pinomad/protocol/frames.ts";
@@ -51,6 +49,8 @@ import { LocalHostSection } from "./local-host-section.tsx";
 import { ProvidersSection } from "./providers-section.tsx";
 import { SettingsSubpageContext, type SettingsSubpage } from "./settings-subpage.ts";
 import { UpdatesSection } from "./updates-section.tsx";
+import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
+import { Badge } from "../../shared/ui/badge.tsx";
 
 // Grouped by what the user wants to change, not by where it is stored: each
 // section's keywords name the sections it absorbed, so search still finds them.
@@ -605,7 +605,12 @@ function sectionBody(
 function ModelsSection({ view, remote, connected }: { view: DurableView; remote: RemoteDurable; connected: boolean }) {
   const settings = view.settings;
   if (settings === null) {
-    return <Banner status="warning" title="This host is too old for settings" description="Run `pinomad upgrade` on the host." />;
+    return (
+      <Alert variant="warning">
+        <AlertTitle>This host is too old for settings</AlertTitle>
+        <AlertDescription>Run `pinomad upgrade` on the host.</AlertDescription>
+      </Alert>
+    );
   }
   const model = view.models.find((each) => sameModel(each, settings.defaultModel ?? undefined));
   const modelGroups = [...new Set(view.models.map((each) => each.provider))].map((provider) => ({
@@ -697,7 +702,12 @@ function ModelsSection({ view, remote, connected }: { view: DurableView; remote:
 function ChatsSection({ view, remote, connected }: { view: DurableView; remote: RemoteDurable; connected: boolean }) {
   const settings = view.settings;
   if (settings === null) {
-    return <Banner status="warning" title="This host is too old for settings" description="Run `pinomad upgrade` on the host." />;
+    return (
+      <Alert variant="warning">
+        <AlertTitle>This host is too old for settings</AlertTitle>
+        <AlertDescription>Run `pinomad upgrade` on the host.</AlertDescription>
+      </Alert>
+    );
   }
   return (
     <SettingsGroup title="Messages sent while the agent works">
@@ -785,7 +795,7 @@ function McpSection({ view }: { view: DurableView }) {
         <SettingsGroup>
           <List hasDividers>
             {mcp.servers.map((server) => (
-              <ListItem key={server.name} label={server.name} endContent={<Token label={server.state} size="sm" />} />
+              <ListItem key={server.name} label={server.name} endContent={<Badge>{server.state}</Badge>} />
             ))}
           </List>
         </SettingsGroup>
@@ -920,11 +930,10 @@ function AgentsSection({ view, remote, connected }: { view: DurableView; remote:
   const [editor, setEditor] = useState<{ mode: "create" } | { mode: "edit"; role: AgentRole } | undefined>(undefined);
   if (agents === null) {
     return (
-      <Banner
-        status="warning"
-        title="This host is too old for named agents"
-        description="Run `pinomad upgrade` on the host."
-      />
+      <Alert variant="warning">
+        <AlertTitle>This host is too old for named agents</AlertTitle>
+        <AlertDescription>Run `pinomad upgrade` on the host.</AlertDescription>
+      </Alert>
     );
   }
   return (
@@ -1004,13 +1013,13 @@ function AgentRoleCard({
           {role.model === undefined && role.thinkingLevel === undefined ? null : (
             <div className="flex flex-wrap gap-1">
               {role.model === undefined ? null : (
-                <Token label={modelSummary?.name ?? role.model} size="sm" />
+                <Badge>{modelSummary?.name ?? role.model}</Badge>
               )}
               {role.thinkingLevel === undefined ? null : (
-                <Token label={thinkingLevelLabels[role.thinkingLevel]} size="sm" />
+                <Badge>{thinkingLevelLabels[role.thinkingLevel]}</Badge>
               )}
               {role.model !== undefined && modelSummary === undefined ? (
-                <Token label="Model not available" color="orange" size="sm" />
+                <Badge variant="warning">Model not available</Badge>
               ) : null}
             </div>
           )}
@@ -1076,7 +1085,7 @@ function AgentProblemCard({
         <div className="flex flex-col gap-1" style={{ flex: 1, minInlineSize: 0 }}>
           <h3 className="text-[1.0625rem]/6 font-bold">{problem.file}</h3>
           <div className="flex flex-wrap gap-1">
-            <Token label="Not loaded" color="orange" size="sm" />
+            <Badge variant="warning">Not loaded</Badge>
           </div>
           <p className="text-xs/5 text-muted-foreground">{problem.reason}</p>
           <p className="text-xs/5 text-muted-foreground">Fix this file on the host.</p>

@@ -58,6 +58,30 @@
   --default: light-dark(oklch(0 0 0 / 6%), oklch(1 0 0 / 10%));
   --success: light-dark(#007004, #9fe59b);
   --warning: light-dark(#745b00, #fdcf4f);
+  /* Status washes (Alert, Badge) and the text that reads on each; the red
+     pair is --destructive-muted / --destructive-strong above. */
+  --info-muted: light-dark(#c4ddfb, #9eb7ff3d);
+  --info-strong: light-dark(#00458c, #c7d3ff);
+  --success-muted: light-dark(#c5e5c0, #84c9803d);
+  --success-strong: light-dark(#0c5700, #9fe59b);
+  --warning-muted: light-dark(#f8da9d, #deb4333d);
+  --warning-strong: light-dark(#584400, #fdcf4f);
+  --orange-muted: light-dark(#fad0b5, #ffa2583d);
+  --orange-strong: light-dark(#6e3500, #ffc9a2);
+  --gray-muted: light-dark(#e5e5e5, oklch(1 0 0 / 10%));
+  --gray-strong: light-dark(#262626, #e5e5e5);
+  /* Status dots: fills, brighter than the text colors so 8px still reads. */
+  --dot-success: light-dark(#198100, #64af4c);
+  --dot-warning: #ffce2f;
+  --dot-error: light-dark(#e33f4a, #ff705d);
+  /* Toasts sit on the opposite of the page: near-black on light, white on
+     dark; an error toast is a deep red on both. */
+  --inverse: light-dark(#0a1317, #ffffff);
+  --inverse-foreground: light-dark(#ffffff, #171717);
+  --destructive-inverse: light-dark(#aa071e, #e3193b);
+  --skeleton: light-dark(#ebebeb, #525252);
+  /* The unfilled ring under a spinner's arc. */
+  --track: light-dark(#ccd3db, #5a5e66);
   /* Reading size for message text and the composer that writes it. One step
      above the 14px chrome (sidebar, trace rows, menus) so the conversation
      reads as body copy rather than UI labels. */
@@ -98,7 +122,7 @@
   --color-error: var(--destructive-strong);
   --color-error-muted: var(--destructive-muted);
   --color-success: var(--success);
-  --color-success-muted: light-dark(#c5e5c0, #84c9803d);
+  --color-success-muted: var(--success-muted);
   --color-warning: var(--warning);
   --color-shadow: light-dark(oklch(0 0 0 / 10%), oklch(0 0 0 / 30%));
 

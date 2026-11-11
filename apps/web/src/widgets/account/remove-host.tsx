@@ -1,4 +1,3 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
@@ -7,6 +6,7 @@ import type { AccountError } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
 import { accountErrorMessage } from "./account-error.ts";
 import { useConfirmIdentity } from "./confirm-identity.tsx";
+import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 
 export interface RemoveHostProps {
   readonly account: AccountModel;
@@ -50,7 +50,10 @@ export function RemoveHost({ account, hostId, name, serverOrigin, onClose }: Rem
       </span>
       {identity.field}
       {error === undefined ? null : (
-        <Banner status="error" title="Couldn't remove the host" description={accountErrorMessage(error)} />
+        <Alert variant="destructive">
+          <AlertTitle>Couldn't remove the host</AlertTitle>
+          <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
+        </Alert>
       )}
       <div className="flex gap-2">
         <Button variant="destructive" loading={busy} disabled={!identity.ready} onClick={submit}>Remove host</Button>

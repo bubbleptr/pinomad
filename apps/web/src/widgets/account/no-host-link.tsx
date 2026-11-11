@@ -1,9 +1,9 @@
-import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { useEffect } from "react";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { PairingLinkForm } from "../../entities/host/pairing-link-form.tsx";
 import { AccountPanel } from "./account-panel.tsx";
 import { FirstHost } from "./first-host.tsx";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../../shared/ui/empty.tsx";
 
 /**
  * The model refreshes the account's hosts only on sign-in and on a return to
@@ -38,10 +38,12 @@ export function NoHostLink() {
   if (account.state.status === "unavailable") {
     return (
       <div className="flex flex-col items-center gap-4" style={{ width: "100%", maxWidth: 420 }}>
-        <EmptyState
-          title="No host link"
-          description="Paste a pairing link from pinomad pair or Settings → Devices → Pair a device."
-        />
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>No host link</EmptyTitle>
+            <EmptyDescription>Paste a pairing link from pinomad pair or Settings → Devices → Pair a device.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
         <PairingLinkForm />
       </div>
     );

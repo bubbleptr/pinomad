@@ -1,4 +1,3 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../../shared/ui/button.tsx";
 import { Card } from "@astryxdesign/core/Card";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
@@ -6,7 +5,6 @@ import { List, ListItem } from "@astryxdesign/core/List";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { Field, FieldLabel } from "../../shared/ui/field.tsx";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "../../shared/ui/input-group.tsx";
-import { Token } from "@astryxdesign/core/Token";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { HostProviders, LoginMethod, ProviderInfo, StoredLogin } from "@pinomad/protocol/auth.ts";
 import { hostSupportsCall } from "@pinomad/protocol/frames.ts";
@@ -16,6 +14,8 @@ import { ProviderLogo } from "../../entities/provider/provider-logo.tsx";
 import { ArrowLeft, Cancel, ChevronRight, MoreHorizontal } from "../../shared/ui/icons.tsx";
 import { CustomEndpointForm } from "./custom-endpoint-form.tsx";
 import { InlineError, LoginPanel } from "./provider-login.tsx";
+import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
+import { Badge } from "../../shared/ui/badge.tsx";
 
 type OAuth = NonNullable<ProviderInfo["oauth"]>;
 
@@ -74,13 +74,18 @@ export function ProvidersSection({ view, remote }: { view: DurableView; remote: 
   const connected = view.connection === "connected";
   if (view.providers !== null) return <ProviderPages providers={view.providers} remote={remote} connected={connected} />;
   if (view.auth === null) {
-    return <Banner status="warning" title="This host is too old for logins" description="Run `pinomad upgrade` on the host." />;
+    return (
+      <Alert variant="warning">
+        <AlertTitle>This host is too old for logins</AlertTitle>
+        <AlertDescription>Run `pinomad upgrade` on the host.</AlertDescription>
+      </Alert>
+    );
   }
   // A 5.21 host sends the providers snapshot right after connecting.
   if (hostSupportsCall(view.host?.protocol.minor ?? 0, "beginLogin")) return <p className="text-xs/5 text-muted-foreground">Loading…</p>;
   return (
     <div className="flex flex-col gap-3">
-      <Banner status="warning" title="Run `pinomad upgrade` on the host to add providers here" />
+      <Alert variant="warning"><AlertTitle>Run `pinomad upgrade` on the host to add providers here</AlertTitle></Alert>
       {view.auth.logins.length === 0 ? (
         <p className="text-xs/5 text-muted-foreground">No stored logins.</p>
       ) : (
@@ -300,7 +305,7 @@ function Tile({
     <button type="button" className="providers-tile" onClick={onClick} disabled={disabled}>
       <span className="providers-tile__top">
         <ProviderLogo providerId={provider.id} name={provider.name} size={36} />
-        {provider.stored?.kind === connectedBy ? <Token label="Connected" color="green" size="sm" /> : null}
+        {provider.stored?.kind === connectedBy ? <Badge variant="success">Connected</Badge> : null}
       </span>
       <span className="providers-tile__name">{provider.name}</span>
       {sub === undefined ? null : <span className="providers-tile__sub">{sub}</span>}

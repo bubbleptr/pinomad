@@ -1,6 +1,6 @@
 import { Button } from "../../shared/ui/button.tsx";
-import { EmptyState } from "@astryxdesign/core/EmptyState";
-import { Skeleton } from "@astryxdesign/core/Skeleton";
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "../../shared/ui/empty.tsx";
+import { Skeleton } from "../../shared/ui/skeleton.tsx";
 
 /**
  * A conversation while its first view is on its way: a sent message and the
@@ -24,7 +24,7 @@ export function ConversationSkeleton() {
 function Bubble({ width, index }: { width: number; index: number }) {
   return (
     <div aria-hidden="true" className="flex justify-end">
-      <Skeleton width={width} height={40} radius={4} index={index} />
+      <Skeleton className="h-10" style={{ width }} index={index} />
     </div>
   );
 }
@@ -34,10 +34,10 @@ function Reply({ lines, index }: { lines: (number | string)[]; index: number }) 
   return (
     <div aria-hidden="true" className="flex flex-col gap-2.5">
       <div className="pb-1">
-        <Skeleton width={128} height={28} radius="rounded" index={index} />
+        <Skeleton className="h-7 w-32 rounded-full" index={index} />
       </div>
       {lines.map((width, line) => (
-        <Skeleton key={line} width={width} height={12} radius="rounded" index={index + line + 1} />
+        <Skeleton key={line} className="h-3 rounded-full" style={{ width }} index={index + line + 1} />
       ))}
     </div>
   );
@@ -47,7 +47,7 @@ function Reply({ lines, index }: { lines: (number | string)[]; index: number }) 
 export function ComposerSkeleton() {
   return (
     <div aria-hidden="true" className="chat-skeleton">
-      <Skeleton height={92} radius={4} />
+      <Skeleton className="h-[92px]" />
     </div>
   );
 }
@@ -67,12 +67,19 @@ export function ConversationUnavailable({
   onRetry: () => void;
 }) {
   return missing ? (
-    <EmptyState title="Conversation not found" description="It was archived or deleted on another device." />
+    <Empty>
+      <EmptyHeader>
+        <EmptyTitle>Conversation not found</EmptyTitle>
+        <EmptyDescription>It was archived or deleted on another device.</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
   ) : (
-    <EmptyState
-      title="Couldn't open this conversation"
-      description={connected ? "The host didn't send it." : "The connection dropped before it arrived."}
-      actions={<Button variant="secondary" onClick={onRetry} disabled={!connected}>Try again</Button>}
-    />
+    <Empty>
+      <EmptyHeader>
+        <EmptyTitle>Couldn't open this conversation</EmptyTitle>
+        <EmptyDescription>{connected ? "The host didn't send it." : "The connection dropped before it arrived."}</EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent><Button variant="secondary" onClick={onRetry} disabled={!connected}>Try again</Button></EmptyContent>
+    </Empty>
   );
 }

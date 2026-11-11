@@ -63,6 +63,24 @@
   --color-default: var(--default);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-info-muted: var(--info-muted);
+  --color-info-strong: var(--info-strong);
+  --color-success-muted: var(--success-muted);
+  --color-success-strong: var(--success-strong);
+  --color-warning-muted: var(--warning-muted);
+  --color-warning-strong: var(--warning-strong);
+  --color-orange-muted: var(--orange-muted);
+  --color-orange-strong: var(--orange-strong);
+  --color-gray-muted: var(--gray-muted);
+  --color-gray-strong: var(--gray-strong);
+  --color-dot-success: var(--dot-success);
+  --color-dot-warning: var(--dot-warning);
+  --color-dot-error: var(--dot-error);
+  --color-inverse: var(--inverse);
+  --color-inverse-foreground: var(--inverse-foreground);
+  --color-destructive-inverse: var(--destructive-inverse);
+  --color-skeleton: var(--skeleton);
+  --color-track: var(--track);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -70,6 +88,20 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Skeleton: waits, then fades between a quarter and full opacity in ten
+   steps (shared/ui/skeleton.tsx). */
+@theme {
+  --animate-skeleton: skeleton-fade 400ms steps(10, end) infinite alternate;
+  @keyframes skeleton-fade {
+    from {
+      opacity: 0.25;
+    }
+    to {
+      opacity: 1;
+    }
+  }
 }
 
 /* `dark:` follows the app's appearance setting (the `dark` class on <html>),

@@ -3,7 +3,6 @@ import { Button } from "../../shared/ui/button.tsx";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { MobileNav } from "@astryxdesign/core/MobileNav";
 import { SideNav } from "@astryxdesign/core/SideNav";
-import { ToastViewport, useToast } from "@astryxdesign/core/Toast";
 import {
   createContext,
   useCallback,
@@ -31,6 +30,7 @@ import {
 import { useSettingsScreen, type SettingsRequest } from "./settings-page.tsx";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { AccountDialog } from "../account/account-dialog.tsx";
+import { Toaster, useToast } from "../../shared/ui/toast.tsx";
 
 const SIDEBAR_OPEN_KEY = "pinomad.sidebar.open";
 
@@ -162,9 +162,9 @@ export function AppFrame({
   );
 
   return (
-    // The viewport wraps the workbench so every descendant's useToast reaches
-    // the same top-layer stack, not Astryx's detached fallback.
-    <ToastViewport position="topEnd" inset={{ top: 48 }} isTopLayer>
+    // The toaster wraps the workbench so every descendant's useToast reaches
+    // the same top-layer stack.
+    <Toaster className="top-12">
       <FrameChromeContext.Provider value={{ sidebarOpen, toggleSidebar, openNav }}>
         {/* In Settings the whole shell is the Settings page: its nav in the
             sidebar's place, its section in the main pane. The sidebar and the
@@ -271,7 +271,7 @@ export function AppFrame({
           ),
         )}
       </FrameChromeContext.Provider>
-    </ToastViewport>
+    </Toaster>
   );
 }
 
@@ -407,10 +407,10 @@ function NoticeToasts({
       if (notice.id <= seenRef.current) continue;
       if (restarting && notice.level === "error") continue;
       toast({
-        body: source === undefined ? notice.message : `${source}: ${notice.message}`,
+        description: source === undefined ? notice.message : `${source}: ${notice.message}`,
         type: notice.level === "error" ? "error" : "info",
         // Notice ids are per host; two machines can both send notice 3.
-        uniqueID: `${machineKey}:${notice.id}`,
+        id: `${machineKey}:${notice.id}`,
       });
     }
     if (latest !== undefined) seenRef.current = latest;

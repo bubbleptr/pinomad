@@ -5,7 +5,6 @@
 // busy, which tool sources are up — and links out for the detail: the
 // side panel's Changes and Tasks surfaces. It replaces the side panel's
 // Live tab.
-import { StatusDot } from "@astryxdesign/core/StatusDot";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { classify } from "@pinomad/protocol/presentation.ts";
@@ -23,6 +22,7 @@ import { branchOf, ChangeFigure, changeStatOf, type ChangeStat } from "../../ent
 import { taskTally } from "../../entities/conversation/task-tally.ts";
 import { DocumentView } from "../../presentation/documents.tsx";
 import { ChevronRight, FileDiff, FolderClosed, FolderGitTwo, GitBranch } from "../../shared/ui/icons.tsx";
+import { StatusDot } from "../../shared/ui/status-dot.tsx";
 
 /** Running subagents listed by name before the rest fold into the summary line. */
 const ACTIVE_ROWS = 3;
@@ -284,7 +284,7 @@ function SubagentsSection({
             <StatusDot
               variant={task.status === "needs-answer" ? "warning" : "success"}
               label={task.status === "needs-answer" ? "Waiting for your answer" : "Running"}
-              isPulsing
+              pulsing
             />
           }
           end={
@@ -331,7 +331,7 @@ function SourcesSection({ view }: { view: DurableView }) {
       {mcp.servers.map((server) => (
         <Row
           key={server.name}
-          icon={<StatusDot variant={MCP_VARIANT[server.state]} label={server.state} isPulsing={server.state === "connecting"} />}
+          icon={<StatusDot variant={MCP_VARIANT[server.state]} label={server.state} pulsing={server.state === "connecting"} />}
           title={server.error}
           end={
             <span className="text-xs text-muted-foreground">
