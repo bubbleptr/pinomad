@@ -3,7 +3,7 @@ import PinomadCore
 
 /// What the overview's context row reads. The core already derives
 /// `ContextUsage` from the last qualifying reply; this turns it into the
-/// percent, ring fill, and copy the view shows — nothing is re-counted here.
+/// percent and copy the view shows — nothing is re-counted here.
 public struct ContextMeterReading: Equatable, Sendable {
     /// A nearly full window warns before the conversation compacts itself.
     public static let warningPercent = 80
@@ -12,10 +12,8 @@ public struct ContextMeterReading: Equatable, Sendable {
     static let maxTokens = 1e12
 
     public let percent: Int?
-    /// A fraction for the ring, capped at a full turn.
-    public let fill: Double
     public let warning: Bool
-    /// The row's figures beside the ring, e.g. "42% · 84k / 200k".
+    /// The row's figures, e.g. "42% · 84k / 200k".
     public let detail: String
     public let accessibilityLabel: String
 
@@ -24,15 +22,8 @@ public struct ContextMeterReading: Equatable, Sendable {
     }
 
     init(used: Double?, window: Double?) {
-        // A non-positive or non-finite window has no scale, and a count
-        // outside the plausible range would trap the Int conversions below.
-        // The core filters some of these, but a provider can still report
-        // an absurd number; fall back to "unknown" instead of crashing.
-        guard let used, let window,
-              used.isFinite, used >= 0, used < Self.maxTokens,
-              window.isFinite, window >= 1, window < Self.maxTokens else {
+        guard let used, let window, Self.isKnown(used: used, window: window) else {
             percent = nil
-            fill = 0
             warning = false
             detail = "No usage data yet"
             accessibilityLabel = "Context usage unknown"
@@ -40,18 +31,26 @@ public struct ContextMeterReading: Equatable, Sendable {
         }
         let share = used / window
         let percent = Int((share * 100).rounded())
-        self.percent = percent
         // The percent stays honest when a smaller model makes used exceed
-        // the window; only the ring saturates.
-        fill = min(1, share)
+        // the window.
+        self.percent = percent
         warning = percent >= Self.warningPercent
         detail = "\(percent)% · \(Self.formatTokens(used)) / \(Self.formatTokens(window))"
         accessibilityLabel =
             "Context \(percent)% used, \(Self.formatTokens(used)) of \(Self.formatTokens(window)) tokens"
     }
 
-    /// Matches the web's `formatTokens`: whole thousands below a million,
-    /// one decimal at or above it, trailing ".0" dropped.
+    /// A non-positive or non-finite window has no scale, and a count outside
+    /// the plausible range would trap the Int conversions here and in the
+    /// breakdown. The core filters some of these, but a provider can still
+    /// report an absurd number; such a reading is unknown instead of a crash.
+    static func isKnown(used: Double, window: Double) -> Bool {
+        used.isFinite && used >= 0 && used < maxTokens
+            && window.isFinite && window >= 1 && window < maxTokens
+    }
+
+    /// Whole thousands below a million ("8k"), one decimal at or above it
+    /// with a trailing ".0" dropped ("1M", "1.2M").
     public static func formatTokens(_ tokens: Double) -> String {
         // The initializer already bounds its inputs, but this is public and
         // must not trap when handed an unvalidated count.

@@ -135,10 +135,10 @@ struct OverviewSheet: View {
                 if let conversation {
                     Section("Context") {
                         let breakdown = ContextBreakdownReading(
-                            conversation.contextBreakdown, window: conversation.contextUsage?.window
+                            conversation.contextUsage, breakdown: conversation.contextBreakdown
                         )
                         contextRow(ContextMeterReading(conversation.contextUsage), breakdown: breakdown)
-                        if let breakdown { breakdownRows(breakdown) }
+                        breakdownRows(breakdown)
                     }
                 }
                 if let workspace {
@@ -163,22 +163,23 @@ struct OverviewSheet: View {
     // MARK: Context
 
     /// How full the model's window is: the percent and figures, orange once
-    /// it nears compaction, over the bar (stacked when the host sent a
-    /// breakdown of the reply the meter counts).
-    private func contextRow(_ reading: ContextMeterReading, breakdown: ContextBreakdownReading?) -> some View {
+    /// it nears compaction, over the grid (one colour per part when the host
+    /// sent a breakdown of the reply the meter counts).
+    private func contextRow(_ reading: ContextMeterReading, breakdown: ContextBreakdownReading) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             LabeledContent("Context window") {
                 Text(reading.detail)
                     .monospacedDigit()
                     .foregroundStyle(reading.warning ? Color(uiColor: .systemOrange) : .secondary)
             }
-            ContextBar(meter: reading, breakdown: breakdown)
+            ContextGrid(meter: reading, breakdown: breakdown)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(reading.accessibilityLabel)
     }
 
-    /// A row per part that fills the window, with its tokens and share.
+    /// The grid legend: a row per part that takes space with its tokens,
+    /// then what is left of the window.
     private func breakdownRows(_ reading: ContextBreakdownReading) -> some View {
         ForEach(reading.rows) { row in
             LabeledContent {
@@ -188,7 +189,7 @@ struct OverviewSheet: View {
                 Label {
                     Text(row.label)
                 } icon: {
-                    ContextBreakdownSwatch(part: row.part)
+                    ContextBreakdownSwatch(color: row.part?.color ?? ContextGrid.emptyColor)
                 }
             }
         }
