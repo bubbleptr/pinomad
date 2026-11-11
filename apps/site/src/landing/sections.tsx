@@ -74,23 +74,38 @@ export function Anywhere({ lang, t }: { lang: Lang; t: LandingCopy["anywhere"] }
       <div className="wrap">
         <div className="section-head chapter-head">
           <SectionHead id="anywhere-title" eyebrow={t.eyebrow} title={t.title} lead={t.lead} />
-          <div className="chips">
+        </div>
+        <div className="chapter-stage">
+          <div className="chapter-phone">
+            <BrandMark className="brand-mark chapter-ghost" />
+            <AnywherePhone lang={lang} step={step} label={t.shotAlt} />
+          </div>
+          <div className="chapter-side chapter-steps">
+            <p className="chapter-label">{t.stepsLabel}</p>
             {STEPS.map((each, index) => (
               <button
                 key={each}
                 type="button"
-                className="chip chip-step"
+                className="chapter-note chapter-step"
                 aria-pressed={each === step}
                 onClick={() => setStep(each)}
               >
-                {t.steps[index]}
+                <strong>{t.steps[index]!.title}</strong>
+                <span>{t.steps[index]!.body}</span>
               </button>
             ))}
           </div>
-        </div>
-        <div className="chapter-stage">
-          <BrandMark className="brand-mark chapter-ghost" />
-          <AnywherePhone lang={lang} step={step} label={t.shotAlt} />
+          <div className="chapter-side chapter-home">
+            <p className="chapter-label">{t.homeLabel}</p>
+            <ul>
+              {t.home.map((note) => (
+                <li key={note.title} className="chapter-note">
+                  <strong>{note.title}</strong>
+                  <span>{note.body}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </div>
     </section>

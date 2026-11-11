@@ -7,6 +7,7 @@ import type { Lang } from "@/lib/i18n.ts";
 // labelled as planned and linked to its issue (#364 has the selling points).
 
 type Link = { text: string; href: string };
+type Note = { title: string; body: string };
 
 export interface LandingCopy {
   skip: string;
@@ -23,8 +24,12 @@ export interface LandingCopy {
     eyebrow: string;
     title: string;
     lead: string;
-    /** The three moments the phone shows, as buttons that switch it. */
-    steps: [string, string];
+    /** The moments the phone shows, as buttons beside it that switch it. */
+    stepsLabel: string;
+    steps: [Note, Note];
+    /** What does not travel: the other side of the phone. */
+    homeLabel: string;
+    home: Note[];
     shotAlt: string;
   };
   core: {
@@ -116,8 +121,18 @@ export const copy: Record<Lang, LandingCopy> = {
     anywhere: {
       eyebrow: "Away from your desk",
       title: "Carry only a phone",
-      lead: "The code and the agent stay on your computer at home; your phone is a screen onto it. From anywhere you can start a task, answer the agent's questions, or step in mid-run, then go through what changed, line by line, before you decide what's next.",
-      steps: ["Start a task", "Answer"],
+      lead: "The code and the agent stay on your computer at home; your phone is a screen onto it.",
+      stepsLabel: "From your phone",
+      steps: [
+        { title: "Start a task", body: "Send work to the host from wherever you are." },
+        { title: "Answer", body: "A push arrives when the agent has a question. Answer it, or step in mid-run." },
+      ],
+      homeLabel: "Stays at home",
+      home: [
+        { title: "Your code", body: "On your own disk, in your own checkouts." },
+        { title: "The agent", body: "Model calls, shell, and file tools all run on the host." },
+        { title: "The run", body: "Checkpointed, so it keeps going while the phone is in your pocket." },
+      ],
       shotAlt:
         "The PiNomad iPhone app at the step chosen beside it: a task sent from the phone to omarchy, or the push notification over the list of machines and then the agent's question about old bills.",
     },
@@ -293,8 +308,18 @@ export const copy: Record<Lang, LandingCopy> = {
     anywhere: {
       eyebrow: "出门在外",
       title: "出门只带一部手机",
-      lead: "代码和 agent 都留在家里的电脑上，手机只是连上去的一块屏幕。出门在外照样能派活、回答 agent 的提问、中途插话；跑完了在手机上看改了哪些文件，逐行看完 diff 再决定下一步。",
-      steps: ["派活", "拍板"],
+      lead: "代码和 agent 都留在家里的电脑上，手机只是连上去的一块屏幕。",
+      stepsLabel: "在手机上",
+      steps: [
+        { title: "派活", body: "人在哪都能把任务发给家里的宿主。" },
+        { title: "拍板", body: "agent 有问题时会推送到手机，回答它，或者中途插话。" },
+      ],
+      homeLabel: "留在家里",
+      home: [
+        { title: "你的代码", body: "在你自己的硬盘上，在你自己的检出里。" },
+        { title: "agent", body: "模型调用、命令和文件读写都在宿主上执行。" },
+        { title: "这一轮运行", body: "步步存检查点，手机揣进兜里它也接着跑。" },
+      ],
       shotAlt: "PiNomad iPhone App，显示旁边选中的那一步：从手机发给 omarchy 的任务，或者机器列表上弹出的推送，接着是 agent 关于旧账单的提问。",
     },
     core: {
