@@ -296,8 +296,10 @@ function write(name: string, tall: number, paths: string[]) {
     tall,
     sea.map(({ level, opacity }) => stroke(field, MIST, level, opacity)),
   );
-  // How many lines cross the top 48 units (about 40px as the page draws it), column by column.
+  // How many lines cross the top 48 units (about 40px as the page draws it), column by
+  // column. Levels already passed at the top edge are off the tile, so they don't count.
+  const edge = field[0]!;
   const strip = field[48 / CELL]!;
-  const counts = strip.map((value) => sea.filter(({ level }) => value > level).length);
+  const counts = strip.map((value, i) => sea.filter(({ level }) => value > level && edge[i]! <= level).length);
   console.log(`plate.svg: ${Math.min(...counts)}-${Math.max(...counts)} lines in the top 48 units`);
 }
