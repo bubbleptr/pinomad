@@ -6,7 +6,7 @@
 
 ## 布局
 
-Bun workspaces：`packages/protocol`（宿主/客户端共享的协议，`exports` 直接指向 `.ts` 源，不构建、必须在浏览器和 Node 上都能运行，ADR-0024）、`packages/client`（各客户端共用的推导：思维链视图、对话家族、排队/状态、工具名、宿主条目校验；同样直接导出 `.ts` 源，不依赖 DOM 和 React，tsconfig 的 `lib` 不含 DOM；两个包有没有用 Node 内置模块、Node 或 DOM 专属的全局，由 `packages/protocol/test/runtime-boundaries.ts` 检查。`@types/node` 会经 undici-types 漏进来，所以 `"types": []` 拦不住，别再试）、`apps/host`（宿主）、`apps/web`（Web 客户端，Vite + React + Astryx）、`apps/server`（服务端：账号、为新设备担保、推送，外网连不上家里时转发密文，ADR-0022；中继部分见 ADR-0008 第二期、0015。命令是 `pinomad server`，`pinomad relay` 是旧名，保留为别名）、`apps/site`（pinomad.si 官网：落地页、文档、博客和更新日志，TanStack Start + Fumadocs，构建时预渲染成静态文件，见 `docs/website.md`）、`apps/cli`（npm 单包的入口和打包脚本，ADR-0016）、`apps/desktop`（Electron 外壳，renderer 就是 `apps/web`，ADR-0017、0020）、`crates/pinomad-core`（原生移动端共用的 Rust 客户端协议核心，ADR-0024；Cargo workspace 在仓库根，库本身不做 I/O、不依赖异步运行时，异步/WebSocket 只在 dev-dependencies）、`crates/pinomad-rtc`（原生端 P2P 用的 sans-I/O WebRTC 栈：STUN + str0m DataChannel，ADR-0033 §6；不开 socket、不读时钟，由平台层喂数据报和计时器，`pinomad-core` 的 `ffi` feature 依赖它）。
+Bun workspaces：`packages/protocol`（宿主/客户端共享的协议，`exports` 直接指向 `.ts` 源，不构建、必须在浏览器和 Node 上都能运行，ADR-0024）、`packages/client`（各客户端共用的推导：思维链视图、对话家族、排队/状态、工具名、宿主条目校验；同样直接导出 `.ts` 源，不依赖 DOM 和 React，tsconfig 的 `lib` 不含 DOM；两个包有没有用 Node 内置模块、Node 或 DOM 专属的全局，由 `packages/protocol/test/runtime-boundaries.ts` 检查。`@types/node` 会经 undici-types 漏进来，所以 `"types": []` 拦不住，别再试）、`apps/host`（宿主）、`apps/web`（Web 客户端，Vite + React + shadcn/Base UI + Tailwind）、`apps/server`（服务端：账号、为新设备担保、推送，外网连不上家里时转发密文，ADR-0022；中继部分见 ADR-0008 第二期、0015。命令是 `pinomad server`，`pinomad relay` 是旧名，保留为别名）、`apps/site`（pinomad.si 官网：落地页、文档、博客和更新日志，TanStack Start + Fumadocs，构建时预渲染成静态文件，见 `docs/website.md`）、`apps/cli`（npm 单包的入口和打包脚本，ADR-0016）、`apps/desktop`（Electron 外壳，renderer 就是 `apps/web`，ADR-0017、0020）、`crates/pinomad-core`（原生移动端共用的 Rust 客户端协议核心，ADR-0024；Cargo workspace 在仓库根，库本身不做 I/O、不依赖异步运行时，异步/WebSocket 只在 dev-dependencies）、`crates/pinomad-rtc`（原生端 P2P 用的 sans-I/O WebRTC 栈：STUN + str0m DataChannel，ADR-0033 §6；不开 socket、不读时钟，由平台层喂数据报和计时器，`pinomad-core` 的 `ffi` feature 依赖它）。
 
 iOS 客户端是原生的 `apps/ios`（SwiftUI + `crates/pinomad-core`，ADR-0024），不在 Bun workspaces 里，开发验证见下。聊天界面组件 AgentChatKit 是独立的 SwiftPM 包 `packages/agent-chat-kit`（没有 `package.json`，也不在 Bun workspaces 里，有自己的 `AGENTS.md`）。
 
@@ -16,11 +16,9 @@ iOS 客户端是原生的 `apps/ios`（SwiftUI + `crates/pinomad-core`，ADR-002
 
 Web 界面的设计规则在 `apps/web/DESIGN.md`：按钮只有 `primary` / `secondary` / `ghost` / `destructive` 四档，什么时候用哪档、什么尺寸都在那里，加按钮前先读。
 
-查 Astryx 组件的 props、variants 和 token 时，在 `apps/web` 下跑 `bunx astryx component <Name>`（`component --list` 列全部组件，`docs tokens` 查 token）。CLI 版本跟着 `@astryxdesign/core` 走；在仓库根目录跑会拉到 npm 上同名的无关包。不跑 `astryx init`：它会往 AGENTS.md 灌整段英文组件索引。
+Web 界面用 shadcn 的 Base UI 版（ADR-0048）：组件在 `apps/web/src/shared/ui/`，归我们所有、可以直接改；新组件在 `apps/web` 下跑 `bunx shadcn@latest add <name>`。设计 token 在 `apps/web/src/app/tokens.css`，颜色用 shadcn 的变量名（`text-muted-foreground`、`bg-card`、`text-destructive`）；不跑 `shadcn init`，它会改写 `styles.css`，那里的 `@layer` 顺序不能动。
 
-Web 的基础组件正在从 Astryx 迁到 shadcn 的 Base UI 版（ADR-0048），迁完之前两套并存。新组件用 shadcn：在 `apps/web` 下跑 `bunx shadcn@latest add <name>`，源码落在 `src/shared/ui/`，归我们所有、可以直接改。设计 token 在 `apps/web/src/app/tokens.css`，颜色用 shadcn 的变量名（`text-muted-foreground`、`bg-card`、`text-destructive`）；不跑 `shadcn init`，它会改写 `styles.css`，那里的 `@layer` 顺序不能动。
-
-Web 组件的 Storybook 在 `apps/web/.storybook`（`bun run storybook`，默认端口 6006，用 `PORT=<端口>` 覆盖，几个会话并行时各用各的端口；新建 story 文件后 class 没生效就重启 Storybook）：story 和组件放在一起（`*.stories.tsx`），装饰器套 Astryx `Theme` 和 `styles.css`，工具栏切明暗；画布默认是对话栏宽度（44rem，居中），整屏的组件在 story 上设 `parameters: { canvasWidth: "full" }`。`src/test/stories.test.tsx` 在 jsdom 里渲染全部 story，进 `bun run test`；组件的 props 变了要同步改它的 story。
+Web 组件的 Storybook 在 `apps/web/.storybook`（`bun run storybook`，默认端口 6006，用 `PORT=<端口>` 覆盖，几个会话并行时各用各的端口；新建 story 文件后 class 没生效就重启 Storybook）：story 和组件放在一起（`*.stories.tsx`），装饰器引入 `styles.css`，工具栏切明暗（切 `<html>` 上的 `dark` 类）；画布默认是对话栏宽度（44rem，居中），整屏的组件在 story 上设 `parameters: { canvasWidth: "full" }`。`src/test/stories.test.tsx` 在 jsdom 里渲染全部 story，进 `bun run test`；组件的 props 变了要同步改它的 story。
 
 ## 验证
 

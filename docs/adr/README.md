@@ -29,7 +29,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0045](0045-background-processes.md) | 后台进程由宿主在内存里用 pty 运行，不建 Durable task；工具是独立扩展，运行时是宿主服务；列表存 root 对话的 `pinomad.processes` 文档，在 Tasks 展示，宿主崩溃后记为 `lost`；只有进程自己退出才用 `steer` 回报模型（补充 0040 §1、0041；修订 0040 §6） |
 | [0046](0046-one-kind-of-subagent.md) | 子代理只有一种：都有名字，答完还能接着聊、能停，派出时用 `background` 选等不等它；后台的消息由归父对话所有的后台回报任务投递，父对话派的答完用 `steer` 唤醒，用户直接聊的只写一行通知、靠 `subagent_read` 按需拉；`checkout` 必填（共用或自己的 worktree）；状态记在派出者的 `pinomad.subagents`（修订 0038 §1、§3，0010 §5；§4 的用户通知和 §6 由 0047 修订） |
 | [0047](0047-subagents-in-tasks-read-only.md) | 子代理都在右侧 Tasks、不进侧栏，对用户只读加 Stop，不能发消息；`lifecycle` 只表示归属、不决定位置；去掉用户直接聊的通知和 `subagent_read` 的 User 标记；协议不升版本，没发布过的 5.33 feature `subagentMessages` 改名为 `subagentStop`，三部分都合入后才发版（修订 0038 §2、§3、§5，0046 §4、§6） |
-| [0048](0048-web-client-moves-to-shadcn-base-ui.md) | Web 客户端的基础组件从 Astryx 换成 shadcn 的 Base UI 版，样式仍是 Tailwind v4；token 归自己、颜色用 shadcn 的变量名，迁移期间 Astryx 的 token 名指向同一份值；不再与 Pace 同形（修订 0014 §1、§2） |
+| [0048](0048-web-client-moves-to-shadcn-base-ui.md) | Web 客户端的基础组件从 Astryx 换成 shadcn 的 Base UI 版，样式仍是 Tailwind v4；token 归自己、颜色用 shadcn 的变量名，迁移期间 Astryx 的 token 名指向同一份值；不再与 Pace 同形（修订 0014 §1、§2；2026-11-11 迁移完成，深浅色只剩 `dark` 类一个开关） |
 
 ## 宿主能力与工作组织
 

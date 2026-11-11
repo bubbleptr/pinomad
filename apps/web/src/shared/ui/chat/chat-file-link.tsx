@@ -59,8 +59,8 @@ function plainTextOf(children: ReactNode): string | null {
  * Link renderer for chat Markdown with `fileLinks` on. Local file targets get
  * a compact chip (icon + basename[:line]) when the model's label just repeats
  * the target; custom prose labels keep their text. Everything else renders
- * through Astryx Link exactly as the default renderer did — http(s) opens in
- * a new tab, other schemes stay plain anchors.
+ * as the default renderer does: http(s) opens in a new tab, other schemes
+ * stay plain anchors.
  */
 export function ChatFileLink({
   href,

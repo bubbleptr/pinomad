@@ -2,10 +2,10 @@
 // per composer. Named agents filter locally and show instantly; file
 // candidates come from `listFiles` and append asynchronously — the search
 // stays synchronous so the menu never debounces, and each answered listing
-// lands in state, recreates the trigger, and makes Astryx re-run the search
+// lands in state, recreates the trigger, and makes the composer re-run the search
 // with the merged list.
 //
-// Two Astryx 0.3.0 quirks this is built around: `useTriggerMenu` calls
+// Two quirks of the chat kit's trigger menu this is built around: `useTriggerMenu` calls
 // `search('')` before every real search to detect async sources (the result
 // is discarded — a promise from it would be an unhandled rejection, so
 // `search` always returns an array), and it never checks generations, so a
@@ -40,7 +40,7 @@ export interface MentionFiles {
 
 interface MentionAux {
   readonly kind: "agent" | "file";
-  /** `auxiliaryData.group` — Astryx's `groupItems` renders one headed section per value. */
+  /** `auxiliaryData.group` — the typeahead's `groupItems` renders one headed section per value. */
   readonly group: "Agents" | "Files";
   readonly description?: string;
   /** What `onSelect` inserts into the editable. */
@@ -76,7 +76,7 @@ const auxOf = (item: ChatComposerTriggerItem): MentionAux | undefined =>
 
 /**
  * The trigger list for `ChatPromptInput`'s `triggers` prop, or undefined.
- * Undefined matters: with triggers configured Astryx turns the editable into
+ * Undefined matters: with triggers configured the composer turns the editable into
  * role="combobox", and an empty source would surface a "No results" popup on
  * every stray `@`. `view.agents === null` means the host predates 5.6; a
  * missing `files` means the scope has no listing (Chat, or a pre-5.10 host).
@@ -112,7 +112,7 @@ export function useAtMentions(
     });
   });
   useEffect(() => () => fetcherRef.current?.cancel(), []);
-  // Astryx only re-runs `search` on an input event — a state update alone
+  // The composer only re-runs `search` on an input event — a state update alone
   // reaches the menu via a NEW trigger object, but nothing calls back into
   // `handleInput`. `emitInput` gives the focused editable a synthetic `input`
   // so the still-active @ span re-activates against the new trigger and

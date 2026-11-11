@@ -1,6 +1,12 @@
 # Web 界面设计规则
 
-Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。组件都在 `src/shared/ui/`：shadcn（Base UI 版）组件，或我们自己从 Astryx 移植、改写成 Tailwind 的（对话组件在 `chat-kit/`，见 `docs/licenses/astryx.md`）。Astryx 只剩 `main.tsx` 里的 `Theme`，下一步删掉（ADR-0048）。
+Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。组件都在 `src/shared/ui/`，归我们所有、可以直接改：shadcn（Base UI 版）组件用 `bunx shadcn@latest add <name>` 加进来；对话组件（`chat-kit/`）、`markdown/`、`code-block/`、`typeahead/` 是手写的 Tailwind 组件，来源和许可见 `docs/licenses/`（ADR-0048）。
+
+## 颜色和 token
+
+token 都在 `src/app/tokens.css`。颜色用 shadcn 的变量名，Tailwind 类直接用（`bg-card`、`text-muted-foreground`、`text-destructive`），不要写死颜色值。每个颜色是一对 `light-dark()`，跟着 `<html>` 的 `color-scheme` 走；`color-scheme` 由 `<html>` 上的 `dark` 类决定（外观设置维护这个类，`styles.css` 据此设 `color-scheme`），所以 `dark:` 类和 token 永远一致。`tokens.css` 下半段是 `chat.css` 等手写 CSS 用的间距、圆角、字号和动效刻度，以及会被对话框抬高一级的表面色阶（`--color-background-*`，见下面“外框和面板”）。
+
+`styles.css` 开头的 `@layer` 顺序不能动，也不要跑 `shadcn init`（它会改写 `styles.css`）。
 
 ## 按钮
 
@@ -131,7 +137,7 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 
 ## 文字和布局
 
-布局用 Tailwind 的 flex 类（`flex flex-col gap-2`），文字用原生元素加类，不再用 Astryx 的 `VStack` / `HStack` / `Text` / `Heading`（ADR-0048）。字号和行高固定这几档：
+布局用 Tailwind 的 flex 类（`flex flex-col gap-2`），文字用原生元素加类，没有专门的布局或文字组件。没写类的 `p`、`h1`–`h6`、`small`、`code` 由 `styles.css` 的 `reset` 层给一套默认字号（`p` 是 14px），但组件里照样写类。字号和行高固定这几档：
 
 | 用途 | 类 |
 | --- | --- |

@@ -1,7 +1,6 @@
 /**
  * Attributes for a mailed 6-digit code's field: the number pad on phones and
- * the OS's one-time-code autofill. Astryx's TextInput forwards the rest of its
- * props to the <input> but doesn't type these, so they go in as a spread.
+ * the OS's one-time-code autofill, spread onto the field's <input>.
  */
 export const CODE_INPUT = { autoComplete: "one-time-code", inputMode: "numeric", maxLength: 12 } as const;
 

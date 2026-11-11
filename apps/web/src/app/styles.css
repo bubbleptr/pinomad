@@ -1,8 +1,5 @@
-@layer theme, base, properties, reset, astryx-base, astryx-theme, components, utilities;
+@layer theme, base, properties, reset, components, utilities;
 @import "tailwindcss";
-@import "@astryxdesign/core/reset.css";
-@import "@astryxdesign/core/astryx.css";
-@import "@astryxdesign/theme-neutral/theme.css";
 @import "@fontsource-variable/geist-mono";
 @import "./tokens.css";
 @import "../shared/ui/chat/chat.css";
@@ -14,33 +11,97 @@
 
 @source "../**/*.{ts,tsx}";
 
+/* Element defaults over Tailwind's preflight (which sits in `base`). The
+   color scheme every light-dark() token resolves against follows the `dark`
+   class the appearance setting keeps on <html>. Bare prose elements carry
+   the app's type scale, so text outside a styled component still reads at
+   the chrome's 14px. */
+@layer reset {
+  :root {
+    color-scheme: light;
+  }
+  :root.dark {
+    color-scheme: dark;
+  }
+  body {
+    color: var(--foreground);
+  }
+  :where(button, [role="button"]) {
+    cursor: pointer;
+  }
+  :where(:disabled) {
+    cursor: default;
+  }
+  :where(dialog) {
+    outline: none;
+  }
+  :where(h1, h2, h3, h4, h5, h6) {
+    font-family: var(--font-family-heading);
+    color: var(--foreground);
+  }
+  :where(h1) {
+    font-size: 1.5rem;
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.3333;
+  }
+  :where(h2) {
+    font-size: 1.25rem;
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.4;
+  }
+  :where(h3) {
+    font-size: var(--font-size-lg);
+    font-weight: 700;
+    line-height: 1.4118;
+  }
+  :where(h4) {
+    font-size: var(--font-size-base);
+    font-weight: 700;
+    line-height: 1.4286;
+  }
+  :where(h5) {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.6667;
+  }
+  :where(h6) {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.6;
+  }
+  :where(p) {
+    font-family: var(--font-family-body);
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-normal);
+    line-height: 1.4286;
+    color: var(--foreground);
+  }
+  :where(small) {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-normal);
+    line-height: 1.6667;
+    color: var(--muted-foreground);
+  }
+  :where(code, pre) {
+    font-family: var(--font-family-code);
+    font-size: var(--font-size-base);
+    line-height: 1.4286;
+  }
+  :where(hr) {
+    border: none;
+    border-top: 1px solid var(--border);
+  }
+}
+
 /* A dialog floats over the pane at card level (dialog.tsx paints it bg-card).
    Shift the ladder up one step inside it: what it paints with the surface
-   color (secondary buttons, Astryx items) matches the dialog, its cards sit
+   color (secondary buttons, diffs) matches the dialog, its cards sit
    at popover level, its inset fills between the two. */
 [data-slot="dialog-content"],
 [data-slot="alert-dialog-content"] {
   --color-background-surface: light-dark(#ffffff, oklch(0.255 0 0));
   --color-background-card: light-dark(#ffffff, oklch(0.295 0 0));
   --color-background-muted: light-dark(#f1f1f1, oklch(0.225 0 0));
-  /* The neutral theme's syntax palette lives on <Theme>'s own element, not on
-     <html>, so a dialog portaled to <body> misses it. Astryx's CodeBlock
-     (Add a host, the local host setup) reads these; same values as
-     code-block.css. */
-  --color-syntax-background: light-dark(#fafafa, #0a0a0a);
-  --color-syntax-keyword: light-dark(#700084, #efa8ff);
-  --color-syntax-string: light-dark(#005600, #a6d2a2);
-  --color-syntax-comment: light-dark(#737373, #a3a3a3);
-  --color-syntax-number: light-dark(#6e3500, #ffb37f);
-  --color-syntax-function: light-dark(#00458c, #a0caff);
-  --color-syntax-type: light-dark(#700084, #efa8ff);
-  --color-syntax-variable: light-dark(#171717, #e5e5e5);
-  --color-syntax-operator: light-dark(#737373, #a3a3a3);
-  --color-syntax-constant: light-dark(#6e3500, #ffb37f);
-  --color-syntax-tag: light-dark(#89001a, #ffaeaa);
-  --color-syntax-attribute: light-dark(#584400, #eec12f);
-  --color-syntax-property: light-dark(#005348, #83dac9);
-  --color-syntax-punctuation: light-dark(#a3a3a3, #525252);
 }
 
 /* Tailwind utility names for the tokens in tokens.css. `inline` keeps the
@@ -240,15 +301,6 @@ html {
   text-rendering: optimizeLegibility;
 }
 
-/* Astryx's reset sets antialiased/grayscale on body. On macOS that turns off
-   CoreText's stem darkening and thins every glyph, most visibly light text on
-   the dark theme, so the platform default comes back here. */
-body {
-  margin: 0;
-  -webkit-font-smoothing: auto;
-  -moz-osx-font-smoothing: auto;
-}
-
 /* One inset for every row in a Settings card, the SettingsRow's spacing-4:
    Item pads 8px, so list rows (hosts, account, archived, details) would sit
    closer to the edge than the setting rows beside them. A trailing
@@ -263,7 +315,7 @@ body {
 }
 
 /* Low-frequency action buttons (send, steer/withdraw, refresh).
-   Astryx Button already presses via `transform: scale(0.98)`; neutralize
+   ChatActionButton already presses via `transform: scale(0.98)`; neutralize
    that so the individual `scale` does not multiply below 0.95. */
 .pigui-pressable {
   transition: scale 150ms ease-out;

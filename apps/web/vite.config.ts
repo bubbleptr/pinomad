@@ -1,4 +1,3 @@
-import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
@@ -14,9 +13,6 @@ const here = dirname(fileURLToPath(import.meta.url));
  * import.meta.url, and the plugin imports are resolved by the caller's scope.
  */
 export function webViteBase(root: string): UserConfig {
-  // bun nests a second `react` under @astryxdesign/core; pin one copy or
-  // React 19 throws `reading 'use'` in Astryx hooks.
-  const requireFromWeb = createRequire(join(root, "package.json"));
   return {
     root,
     plugins: [react(), tailwindcss()],
@@ -32,8 +28,6 @@ export function webViteBase(root: string): UserConfig {
         "shiki/wasm": join(root, "src/presentation/pierre/shiki-wasm.ts"),
         "@pierre/highlights/themes/loader": join(root, "src/presentation/pierre/highlights-themes.ts"),
         "@pierre/theming/themes": join(root, "src/presentation/pierre/theming-themes.ts"),
-        react: dirname(requireFromWeb.resolve("react/package.json")),
-        "react-dom": dirname(requireFromWeb.resolve("react-dom/package.json")),
       },
     },
     server: { host: "127.0.0.1", port: 5199, strictPort: true },

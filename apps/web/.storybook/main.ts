@@ -1,7 +1,7 @@
 import type { StorybookConfig } from "@storybook/react-vite";
 
-// The react-vite builder loads apps/web/vite.config.ts, so the single-React
-// alias pin, `@/`, and the Tailwind plugin come along unchanged.
+// The react-vite builder loads apps/web/vite.config.ts, so the aliases
+// (`@/` among them) and the Tailwind plugin come along unchanged.
 const config: StorybookConfig = {
   framework: "@storybook/react-vite",
   stories: ["../src/**/*.stories.tsx"],

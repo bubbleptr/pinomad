@@ -24,7 +24,7 @@ export type ChatPromptInputHandle = {
   focusAtEnd(): void;
   /**
    * Re-dispatch an `input` event on the editable, but only while it holds
-   * the focus. Async trigger-menu candidates push through this so Astryx
+   * the focus. Async trigger-menu candidates push through this so the composer
    * re-runs its search; scoping to this editable keeps a sibling composer's
    * landed listing from being dispatched into the wrong input.
    */
@@ -37,7 +37,7 @@ export type ChatPromptInputHandle = {
   /**
    * Append a trigger (`@`, `$`) at the end of the draft and open its
    * menu, as if typed there: a separating space goes first when the draft
-   * ends in a word, since Astryx only activates a trigger at the start or
+   * ends in a word, since the composer only activates a trigger at the start or
    * after whitespace.
    */
   openTrigger(trigger: string): void;
@@ -49,7 +49,7 @@ function editableOf(root: HTMLDivElement | null): HTMLElement | null {
 
 /**
  * Put the caret after the last character — inside the last text node when
- * there is one: Astryx's trigger detection reads the text before a caret
+ * there is one: the composer's trigger detection reads the text before a caret
  * only when the caret sits in a text node.
  */
 function caretToEnd(editable: HTMLElement): void {
@@ -139,13 +139,13 @@ function PromptComposerInput({
           }
           editable.focus();
           caretToEnd(editable);
-          // Astryx activates a trigger only after a plain space or a line
+          // The composer activates a trigger only after a plain space or a line
           // break, so any other trailing whitespace (a pasted tab) still
           // needs the separating space.
           const current = valueRef.current;
           const text = current === "" || /[ \n]$/.test(current) ? trigger : ` ${trigger}`;
           // A real insertion, not a controlled-value write: it fires the
-          // native `input` Astryx listens to, which both emits the change and
+          // native `input` the composer listens to, which both emits the change and
           // runs trigger detection against the caret.
           document.execCommand("insertText", false, text);
         });
@@ -157,7 +157,7 @@ function PromptComposerInput({
   }, [inputRef]);
 
   useEffect(() => {
-    // Astryx 0.3.0 sets aria-multiline/aria-label (and the role) on the
+    // ChatComposerInput sets aria-multiline/aria-label (and the role) on the
     // editable, but the placeholder lives on a separate aria-hidden div and
     // disabled state only flips contentEditable. E2E and assistive tech look
     // for aria-placeholder and aria-disabled on the editable.
@@ -232,7 +232,7 @@ type ChatPromptInputOwnProps = {
   /** Pasted or dropped files, for the caller to stage as attachments. */
   onFiles?: (files: File[]) => void;
   /**
-   * Trigger menus (e.g. @agent mentions). With triggers configured Astryx
+   * Trigger menus (e.g. @agent mentions). With triggers configured the composer
    * gives the editable role="combobox" — pass nothing for a plain textbox.
    */
   triggers?: readonly ChatComposerTrigger[];

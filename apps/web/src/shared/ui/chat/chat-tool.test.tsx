@@ -38,11 +38,11 @@ describe("ChatToolGroup", () => {
     expect(group).toHaveTextContent("45ms");
     expect(group).toHaveTextContent("bash");
     expect(group).toHaveTextContent("yarn test");
-    // A multi-call group exposes a summary toggle from Astryx.
+    // A multi-call group exposes a summary toggle from ChatToolCalls.
     expect(screen.getByRole("button", { name: /2/ })).toBeInTheDocument();
   });
 
-  it("renders per-call diff stats through the Astryx additions/deletions slots", () => {
+  it("renders per-call diff stats through the ChatToolCalls additions/deletions slots", () => {
     const { container } = render(
       <ChatToolGroup
         tools={[
@@ -75,7 +75,7 @@ describe("ChatToolGroup", () => {
 });
 
 describe("ChatTool", () => {
-  it("renders an Astryx tool-call row, keeping details unmounted while collapsed", () => {
+  it("renders a ChatToolCalls row, keeping details unmounted while collapsed", () => {
     const { container } = render(
       <ChatTool
         argsText='{"path":"AGENTS.md"}'
@@ -140,7 +140,7 @@ describe("ChatTool", () => {
     const tool = container.querySelector('[data-slot="chat-tool"]');
 
     expect(tool).toHaveAttribute("data-state", "output-error");
-    // Astryx renders errorMessage as visually hidden row text for a11y.
+    // ChatToolCalls renders errorMessage as visually hidden row text for a11y.
     expect(screen.getAllByText(/ENOENT: file not found/).length).toBeGreaterThan(0);
   });
 

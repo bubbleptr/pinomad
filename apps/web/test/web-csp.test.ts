@@ -58,8 +58,8 @@ it("runs the built client served by the host without CSP violations", async () =
   await page.getByRole("button", { name: projectName, exact: true }).hover();
   await page.getByRole("button", { name: `New conversation in ${projectName}`, exact: true }).click();
 
-  // A pasted image renders from a data: URL; the fenced answer runs Astryx's
-  // highlighter, which injects its <style> elements at runtime.
+  // A pasted image renders from a data: URL; the fenced answer runs the code
+  // block's highlighter.
   await page.evaluate(async () => {
     const canvas = document.createElement("canvas");
     canvas.width = 64;

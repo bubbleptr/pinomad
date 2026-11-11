@@ -1,6 +1,5 @@
-// The Astryx Chat components the app uses, ported to Tailwind (ADR-0048).
-// Same export names and props as `@astryxdesign/core/Chat`, so moving a call
-// site over is an import change.
+// The Astryx Chat components the app uses, ported to Tailwind (ADR-0048,
+// docs/licenses/astryx.md). Export names and props match the originals.
 
 export { ChatComposer } from "./chat-composer";
 export type { ChatComposerProps, ChatComposerStatus, ChatComposerDensity } from "./chat-composer";

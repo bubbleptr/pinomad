@@ -3,7 +3,7 @@ import { cn } from "cn";
 
 const STEP = 10;
 const LARGE_STEP = 50;
-/** Kept from Astryx's useResizable, so widths saved before ADR-0048 still load. */
+/** Astryx's useResizable key: renaming it would drop every panel width users saved before ADR-0048. */
 const STORAGE_PREFIX = "astryx-resizable:";
 
 const clamp = (size: number, min: number, max: number): number => Math.min(max, Math.max(min, size));

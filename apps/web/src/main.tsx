@@ -1,8 +1,4 @@
-// Astryx CSS is @imported inside styles.css (after tailwindcss) so its
-// cascade layers outrank Tailwind preflight.
 import "./app/styles.css";
-import { Theme } from "@astryxdesign/core";
-import { neutralTheme } from "@astryxdesign/theme-neutral/built";
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.tsx";
@@ -16,12 +12,11 @@ function Root() {
     void window.pinomadDesktop?.setAppearance?.(appearance);
   }, [appearance]);
   return (
-    <Theme theme={neutralTheme} mode={appearance}>
-      {/* Astryx tooltips opened after 200ms; Base UI's own default is 600ms. */}
-      <TooltipProvider delay={200}>
-        <App />
-      </TooltipProvider>
-    </Theme>
+    // Tooltips open after 200ms, as they did before ADR-0048; Base UI's own
+    // default is 600ms.
+    <TooltipProvider delay={200}>
+      <App />
+    </TooltipProvider>
   );
 }
 

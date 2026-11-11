@@ -21,8 +21,8 @@ const buttonVariants = cva(
       variant: {
         primary: "bg-primary text-primary-foreground not-data-[disabled]:hover:bg-primary/85",
         // Surface fill, hairline and a 1px drop, so a standalone action looks
-        // pressable beside a field and on the dark surface. The surface is
-        // Astryx's name because its dialogs shift it a step up.
+        // pressable beside a field and on the dark surface. The surface
+        // token, not bg-background, because dialogs shift it a step up.
         secondary: [
           "bg-(--color-background-surface) text-foreground",
           "shadow-[inset_0_0_0_1px_var(--border),0_1px_2px_light-dark(oklch(0_0_0/6%),oklch(0_0_0/30%))]",

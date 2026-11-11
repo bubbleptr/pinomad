@@ -12,7 +12,7 @@ const webRoot = resolve(here, "../web");
 // cast past electron-vite's narrower declaration.
 const bundleInput = (input: string): never => ({ rollupOptions: { input } }) as never;
 
-// webViteBase supplies the plugins and the single-React pin; the bundle must
+// webViteBase supplies the plugins and the aliases; the bundle must
 // never drift from what browsers get. Only the port and output differ.
 const renderer = webViteBase(webRoot);
 
