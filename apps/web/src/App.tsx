@@ -434,60 +434,63 @@ export function App() {
     <HostsContext.Provider value={state}>
       <HostRuntimesContext.Provider value={registry}>
         <AccountProvider>
-          <AppHint hostCount={hosts.length} />
-          <AddEmailGate>
-            {address?.kind === "token" ? (
-              <RemoteWorkbench
-                options={address}
-                connectionKey={`${address.url} ${address.token}`}
-                label={address.url}
-              />
-            ) : address?.kind === "pair" ? (
-              <PairConfirm address={address} onPairedHost={pairedHost} />
-            ) : hosts.length === 0 ? (
-              <Centered>
-                <NoHostLink />
-              </Centered>
-            ) : (
-              <HostFrame>
-                <HostRuntimes
-                  hosts={hosts}
-                  focus={focus}
-                  renderWorkbench={({
-                    host,
-                    remote,
-                    device,
-                    rejected,
-                    retry,
-                    opening,
-                    cancelOpening,
-                    openConversation,
-                  }) => (
-                    <Workbench
-                      remote={remote}
-                      wsUrl={host.url}
-                      rejected={rejected}
-                      device={device}
-                      hostKey={host.hostKey}
-                      onReconnect={retry}
-                      notify={false}
-                      framed={false}
-                      hostOpening={opening}
-                      hostOpen={openConversation}
-                      hostCancelOpening={cancelOpening}
-                    />
-                  )}
-                />
-              </HostFrame>
-            )}
-          </AddEmailGate>
-          {/* Above whichever screen is showing, so a first host pairing (which swaps
-              the no-host screen for the workbench) doesn't close or lose them. */}
-          <HostLinkRoute />
-          <PendingSignInRoute />
-          {/* The no-host screen has the panel already; a one-shot token or pair screen is left alone. */}
-          <OAuthReturnDialog stayClosed={address !== undefined || hosts.length === 0} />
+          {/* Every screen's toasts, the one-shot token workbench and the
+              connection-failure screens included; AppFrame's own Toaster
+              defers to this one. */}
           <Toaster className="top-12">
+            <AppHint hostCount={hosts.length} />
+            <AddEmailGate>
+              {address?.kind === "token" ? (
+                <RemoteWorkbench
+                  options={address}
+                  connectionKey={`${address.url} ${address.token}`}
+                  label={address.url}
+                />
+              ) : address?.kind === "pair" ? (
+                <PairConfirm address={address} onPairedHost={pairedHost} />
+              ) : hosts.length === 0 ? (
+                <Centered>
+                  <NoHostLink />
+                </Centered>
+              ) : (
+                <HostFrame>
+                  <HostRuntimes
+                    hosts={hosts}
+                    focus={focus}
+                    renderWorkbench={({
+                      host,
+                      remote,
+                      device,
+                      rejected,
+                      retry,
+                      opening,
+                      cancelOpening,
+                      openConversation,
+                    }) => (
+                      <Workbench
+                        remote={remote}
+                        wsUrl={host.url}
+                        rejected={rejected}
+                        device={device}
+                        hostKey={host.hostKey}
+                        onReconnect={retry}
+                        notify={false}
+                        framed={false}
+                        hostOpening={opening}
+                        hostOpen={openConversation}
+                        hostCancelOpening={cancelOpening}
+                      />
+                    )}
+                  />
+                </HostFrame>
+              )}
+            </AddEmailGate>
+            {/* Above whichever screen is showing, so a first host pairing (which swaps
+                the no-host screen for the workbench) doesn't close or lose them. */}
+            <HostLinkRoute />
+            <PendingSignInRoute />
+            {/* The no-host screen has the panel already; a one-shot token or pair screen is left alone. */}
+            <OAuthReturnDialog stayClosed={address !== undefined || hosts.length === 0} />
             <NewHostNotices />
           </Toaster>
         </AccountProvider>

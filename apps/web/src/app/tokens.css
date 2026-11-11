@@ -58,8 +58,10 @@
   --default: light-dark(oklch(0 0 0 / 6%), oklch(1 0 0 / 10%));
   --success: light-dark(#007004, #9fe59b);
   --warning: light-dark(#745b00, #fdcf4f);
-  /* Status washes (Alert, Badge) and the text that reads on each; the red
-     pair is --destructive-muted / --destructive-strong above. */
+  /* Status washes (Alert, Badge) and the text that reads on each. The red
+     wash is --destructive-muted above; its text is a step darker than the
+     destructive button's label. */
+  --red-strong: light-dark(#89001a, #ffc6c1);
   --info-muted: light-dark(#c4ddfb, #9eb7ff3d);
   --info-strong: light-dark(#00458c, #c7d3ff);
   --success-muted: light-dark(#c5e5c0, #84c9803d);

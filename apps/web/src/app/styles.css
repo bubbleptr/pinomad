@@ -63,6 +63,7 @@
   --color-default: var(--default);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-red-strong: var(--red-strong);
   --color-info-muted: var(--info-muted);
   --color-info-strong: var(--info-strong);
   --color-success-muted: var(--success-muted);

@@ -162,8 +162,8 @@ export function AppFrame({
   );
 
   return (
-    // The toaster wraps the workbench so every descendant's useToast reaches
-    // the same top-layer stack.
+    // In the app this defers to App's root Toaster; rendered alone (stories,
+    // tests) it hosts the frame's toasts itself.
     <Toaster className="top-12">
       <FrameChromeContext.Provider value={{ sidebarOpen, toggleSidebar, openNav }}>
         {/* In Settings the whole shell is the Settings page: its nav in the

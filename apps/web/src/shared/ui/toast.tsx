@@ -123,9 +123,12 @@ function ToastList(): ReactNode {
 
 /**
  * Hosts the toasts of everything inside it. The stack is a manual popover,
- * so it sits in the top layer over an open Astryx dialog too.
+ * so it sits in the top layer over an open Astryx dialog too. Inside another
+ * Toaster it adds nothing: one stack per window, so AppFrame keeps its own
+ * for stories and tests while the app's root one serves both.
  */
 function Toaster({ className, children }: { className?: string; children?: ReactNode }): ReactElement {
+  const outer = useContext(ToastManagerContext);
   const viewport = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const element = viewport.current;
@@ -136,6 +139,7 @@ function Toaster({ className, children }: { className?: string; children?: React
       // Already showing.
     }
   }, []);
+  if (outer !== null) return <>{children}</>;
   return (
     <ToastPrimitive.Provider limit={5}>
       <ManagerBridge>{children}</ManagerBridge>

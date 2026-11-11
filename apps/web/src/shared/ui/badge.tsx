@@ -5,13 +5,13 @@ import type { ComponentProps, ReactElement } from "react";
 // A short read-only label beside a row's name: "This device", "Connected",
 // "new". One size, 20px, so it sits inside a 20px text line.
 const badgeVariants = cva(
-  "inline-flex h-5 max-w-full shrink-0 items-center gap-1 overflow-hidden rounded-sm px-2 text-xs/5 font-medium whitespace-nowrap",
+  "inline-flex h-5 max-w-full items-center gap-1 overflow-hidden rounded-sm px-2 text-xs/5 font-medium whitespace-nowrap",
   {
     variants: {
       variant: {
         default: "bg-default text-foreground",
         success: "bg-success-muted text-success-strong",
-        destructive: "bg-destructive-muted text-destructive-strong",
+        destructive: "bg-destructive-muted text-red-strong",
         warning: "bg-orange-muted text-orange-strong",
         muted: "bg-gray-muted text-gray-strong",
       },

@@ -89,7 +89,7 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 | 组件 | 用在哪 |
 | --- | --- |
 | `alert.tsx` 的 `Alert` | 一直留着、直到情况变了才消失的说明：操作失败、连接断了、请求过期。`variant` 是 `info` / `success` / `warning` / `destructive`，图标随 `variant` 自动给。里面依次放 `AlertTitle`、可选的 `AlertDescription` 和 `AlertAction`（行尾的按钮，`size="sm"` 或默认尺寸都行）。`warning` 和 `destructive` 的角色是 `alert`，会打断读屏；`info` 和 `success` 是 `status`。贴着面板顶边、横跨整个面板的（连接状态、版本不匹配）加 `className="rounded-none"`。 |
-| `toast.tsx` 的 `useToast()` | 一闪而过、不需要留在页面上的结果：命令失败、对方没应答、新主机加入。`toast({ description, type, timeout, id, action, onClose })` 返回关闭函数。普通的 5 秒后消失（悬停、聚焦或窗口在后台时暂停），`type: "error"` 和 `timeout: 0` 的等用户关；相同 `id` 会替换旧的那条。最多显示 5 条，新的在最上面，F6 跳进去。要求外面有 `Toaster`：`App` 和 `AppFrame` 各包了一层（`className="top-12"` 让开顶栏）；外面没有时 toast 被丢掉，开发环境会警告。它是 `popover="manual"`，Astryx 对话框打开时也在最上层。 |
+| `toast.tsx` 的 `useToast()` | 一闪而过、不需要留在页面上的结果：命令失败、对方没应答、新主机加入。`toast({ description, type, timeout, id, action, onClose })` 返回关闭函数。普通的 5 秒后消失（悬停、聚焦或窗口在后台时暂停），`type: "error"` 和 `timeout: 0` 的等用户关；相同 `id` 会替换旧的那条。最多显示 5 条，新的在最上面，F6 跳进去。要求外面有 `Toaster`：`App` 在最外层包了一层（`className="top-12"` 让开顶栏）；`AppFrame` 也包了一层，供单独渲染它的 story 和测试用，嵌在别的 `Toaster` 里时不另起一叠。外面没有时 toast 被丢掉，开发环境会警告。它是 `popover="manual"`，Astryx 对话框打开时也在最上层。 |
 | `badge.tsx` 的 `Badge` | 行名称旁边的短标签，只读：This device、Connected、new、interrupted。`variant` 是 `default` / `success` / `destructive` / `warning`（橙色）/ `muted`（灰色，用于已失效的东西）。 |
 | `status-dot.tsx` 的 `StatusDot` | 8px 的状态灯：在线、运行中、等待回答、失败。`label` 必填（读屏念它），`pulsing` 表示进行中，`tooltip` 悬停时也显示文字。 |
 | `spinner.tsx` 的 `Spinner` | 等待中的一小块区域，旁边通常有一行说明文字。`size="sm"`（14px）放在文字行里，默认 `md`（20px）放在空的面板中间。读屏念 "Loading"，知道在加载什么时写 `aria-label`。按钮自己的加载状态用 `Button` 的 `loading`，不要另放转圈。 |
