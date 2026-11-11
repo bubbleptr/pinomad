@@ -31,7 +31,9 @@ function useClock(ref: RefObject<HTMLElement | null>) {
     const observer = new IntersectionObserver(
       ([entry]) => {
         clearInterval(timer);
-        if (entry?.isIntersecting) timer = setInterval(() => setClock((seconds) => seconds + 1), 1000);
+        // The ratio, not isIntersecting: that is true for any overlap in some engines,
+        // whatever the threshold.
+        if (entry && entry.intersectionRatio >= 0.5) timer = setInterval(() => setClock((seconds) => seconds + 1), 1000);
       },
       { threshold: 0.5 },
     );
