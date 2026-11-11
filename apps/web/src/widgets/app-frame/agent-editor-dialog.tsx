@@ -154,7 +154,8 @@ export function AgentEditorDialog({
                     if (next !== null) changeModel(next);
                   }}
                 >
-                  <SelectTrigger className="w-full">
+                  {/* UNPINNED is "", which Base UI styles as a placeholder; here it is a real choice. */}
+                  <SelectTrigger className="w-full data-placeholder:text-foreground">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -173,7 +174,7 @@ export function AgentEditorDialog({
                     if (next !== null) setLevel(next as ThinkingLevel | typeof UNPINNED);
                   }}
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger className="w-full data-placeholder:text-foreground">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

@@ -249,7 +249,7 @@ export function CustomEndpointForm({
         <Field disabled={!connected}>
           <FieldLabel>
             API key
-            <span className="-ms-2 font-normal text-muted-foreground">
+            <span className="-ms-2 text-xs font-normal text-muted-foreground">
               <span aria-hidden="true">{" ∙ "}</span>Optional
             </span>
           </FieldLabel>

@@ -36,7 +36,7 @@ function SegmentedControlItem({
     <RadioPrimitive.Root<string>
       data-slot="segmented-control-item"
       className={cn(
-        "inline-flex h-full cursor-pointer items-center justify-center rounded-md px-2.5 text-xs font-medium whitespace-nowrap text-muted-foreground transition-colors outline-none select-none",
+        "inline-flex h-full cursor-pointer items-center justify-center rounded-md px-2 text-xs font-medium whitespace-nowrap text-muted-foreground transition-colors outline-none select-none",
         "not-data-[disabled]:hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 data-disabled:cursor-not-allowed",
         "data-checked:bg-[light-dark(#ffffff,oklch(0.335_0_0))] data-checked:text-foreground data-checked:shadow-[inset_0_0_0_1px_light-dark(oklch(0_0_0/8%),oklch(1_0_0/6%))]",
         className,
