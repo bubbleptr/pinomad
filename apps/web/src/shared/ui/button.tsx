@@ -43,10 +43,11 @@ const buttonVariants = cva(
         ],
       },
       size: {
-        md: "h-8 gap-1.5 px-3 has-[>svg:first-child]:pl-2.5",
-        sm: "h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 has-[>svg:first-child]:pl-2",
+        // 12px to the label, counting the 1px border that holds the focus ring.
+        md: "h-8 gap-1.5 px-[11px]",
+        sm: "h-7 gap-1.5 px-[11px]",
         icon: "size-8",
-        "icon-sm": "size-7 rounded-[min(var(--radius-md),12px)]",
+        "icon-sm": "size-7",
       },
     },
     defaultVariants: { variant: "secondary", size: "md" },
