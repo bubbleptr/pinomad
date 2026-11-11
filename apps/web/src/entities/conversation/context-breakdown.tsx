@@ -19,18 +19,29 @@ export function matchingBreakdown(docs: readonly ExtensionDocView[], usage: Cont
 }
 
 /**
- * A row per part that takes space, with its tokens and share of the window.
- * The bar above them is the context meter's own.
+ * The meter's legend: a row per part that takes space, with its tokens, then
+ * what is left of the window (the empty cells). Without a breakdown only the
+ * left row shows.
  */
-export function ContextBreakdownList({ breakdown, window }: { breakdown: ContextBreakdown; window: number }) {
+export function ContextBreakdownList({ usage, breakdown }: { usage: ContextUsage; breakdown: ContextBreakdown | undefined }) {
+  const rows = [
+    ...(breakdown === undefined
+      ? []
+      : PARTS.filter((part) => breakdown[part.key] > 0).map((part) => ({
+          key: part.key,
+          label: part.label,
+          tokens: breakdown[part.key],
+          swatch: { backgroundColor: part.color },
+        }))),
+    ...(usage.used < usage.window ? [{ key: "left", label: "Left", tokens: usage.window - usage.used, swatch: undefined }] : []),
+  ];
   return (
     <ul aria-label="Context breakdown" className="flex flex-col pb-1">
-      {PARTS.filter((part) => breakdown[part.key] > 0).map((part) => (
-        <li key={part.key} className="flex h-6 items-center gap-2 text-xs tabular-nums">
-          <span aria-hidden className="size-2 shrink-0 rounded-[2px]" style={{ backgroundColor: part.color }} />
-          <span className="min-w-0 flex-1 truncate">{part.label}</span>
-          <span className="text-muted-foreground">{formatTokens(breakdown[part.key])}</span>
-          <span className="w-8 text-end text-muted-foreground">{Math.round((breakdown[part.key] / window) * 100)}%</span>
+      {rows.map((row) => (
+        <li key={row.key} className="flex h-6 items-center gap-2 text-xs tabular-nums">
+          <span aria-hidden className={`size-2 shrink-0 rounded-[2px] ${row.swatch === undefined ? "bg-default" : ""}`} style={row.swatch} />
+          <span className="min-w-0 flex-1 truncate">{row.label}</span>
+          <span className="text-muted-foreground">{formatTokens(row.tokens)}</span>
         </li>
       ))}
     </ul>

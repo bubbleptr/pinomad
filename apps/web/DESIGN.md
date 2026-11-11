@@ -4,7 +4,7 @@ Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。组件都�
 
 ## 颜色和 token
 
-token 都在 `src/app/tokens.css`。颜色用 shadcn 的变量名，Tailwind 类直接用（`bg-card`、`text-muted-foreground`、`text-destructive`），不要写死颜色值。每个颜色是一对 `light-dark()`，跟着 `<html>` 的 `color-scheme` 走；`color-scheme` 由 `<html>` 上的 `dark` 类决定（外观设置维护这个类，`styles.css` 据此设 `color-scheme`），所以 `dark:` 类和 token 永远一致。取值来自 affectUI 的 clean 主题：文字、细边和浅色铺底是半透明的黑或白，焦点环是蓝色，基础圆角 7px（`--radius`，Tailwind 的 `rounded-*` 按它缩放）。`tokens.css` 下半段是 `chat.css` 等手写 CSS 用的间距、圆角、字号和动效刻度，以及会被对话框抬高一级的表面色阶（`--color-background-*`，见下面“外框和面板”）。
+token 都在 `src/app/tokens.css`。颜色用 shadcn 的变量名，Tailwind 类直接用（`bg-card`、`text-muted-foreground`、`text-destructive`），不要写死颜色值。每个颜色是一对 `light-dark()`，跟着 `<html>` 的 `color-scheme` 走；`color-scheme` 由 `<html>` 上的 `dark` 类决定（外观设置维护这个类，`styles.css` 据此设 `color-scheme`），所以 `dark:` 类和 token 永远一致。取值来自 affectUI 的 clean 主题：文字、细边和浅色铺底是半透明的黑或白，焦点环是蓝色，基础圆角 7px（`--radius`，Tailwind 的 `rounded-*` 按它缩放）。图表和计量条的分类色是 `--data-blue` / `green` / `amber` / `orange` / `red` / `pink` / `purple` / `teal` / `cyan`（clean 的 `--aui-*` 同名色），只作填充，不作文字色。`tokens.css` 下半段是 `chat.css` 等手写 CSS 用的间距、圆角、字号和动效刻度，以及会被对话框抬高一级的表面色阶（`--color-background-*`，见下面“外框和面板”）。
 
 `styles.css` 开头的 `@layer` 顺序不能动，也不要跑 `shadcn init`（它会改写 `styles.css`）。
 

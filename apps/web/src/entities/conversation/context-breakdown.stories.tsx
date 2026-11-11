@@ -5,7 +5,7 @@ const meta = {
   title: "Entities/Conversation/ContextBreakdownList",
   component: ContextBreakdownList,
   decorators: [
-    // The Usage section's width inside the overview card.
+    // The Context section's width inside the overview card.
     (Story) => (
       <div className="w-72">
         <Story />
@@ -13,8 +13,8 @@ const meta = {
     ),
   ],
   args: {
+    usage: { used: 124_000, window: 200_000 },
     breakdown: { used: 124_000, system: 8_100, skills: 3_200, tools: 12_000, mcp: 9_600, messages: 91_100 },
-    window: 200_000,
   },
 } satisfies Meta<typeof ContextBreakdownList>;
 
@@ -25,10 +25,18 @@ export const Default: Story = {};
 
 /** A fresh conversation without MCP servers: the fixed parts dominate, MCP has no row. */
 export const EarlyNoMcp: Story = {
-  args: { breakdown: { used: 21_000, system: 8_100, skills: 3_200, tools: 7_400, mcp: 0, messages: 2_300 } },
+  args: { usage: { used: 21_000, window: 200_000 }, breakdown: { used: 21_000, system: 8_100, skills: 3_200, tools: 7_400, mcp: 0, messages: 2_300 } },
 };
 
-/** After a swap to a smaller model: the bar fills to the total, shares pass 100% together. */
+/** After a swap to a smaller model: nothing is left, so no Left row. */
 export const OverWindow: Story = {
-  args: { breakdown: { used: 250_000, system: 8_100, skills: 3_200, tools: 12_000, mcp: 9_600, messages: 217_100 }, window: 200_000 },
+  args: {
+    usage: { used: 250_000, window: 200_000 },
+    breakdown: { used: 250_000, system: 8_100, skills: 3_200, tools: 12_000, mcp: 9_600, messages: 217_100 },
+  },
+};
+
+/** An older host, or the reply not broken down yet: only what is left. */
+export const NoBreakdown: Story = {
+  args: { breakdown: undefined },
 };
