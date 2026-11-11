@@ -1,8 +1,8 @@
 import * as React from "react"
 import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "cn"
-import { useDialogPortal } from "@/shared/ui/dialog-portal"
 import { Check, ChevronDown, ChevronUp } from "@/shared/ui/icons"
+import { usePortalContainer } from "@/shared/ui/portal-container"
 
 /**
  * Base UI's Root, except that a controlled value stays put when its item
@@ -105,11 +105,8 @@ function SelectContent({
     SelectPrimitive.Positioner.Props,
     "align" | "alignOffset" | "side" | "sideOffset" | "alignItemWithTrigger"
   >) {
-  const [portalRef, container] = useDialogPortal()
   return (
-    <>
-    <span hidden ref={portalRef} />
-    <SelectPrimitive.Portal container={container}>
+    <SelectPrimitive.Portal container={usePortalContainer()}>
       <SelectPrimitive.Positioner
         side={side}
         sideOffset={sideOffset}
@@ -130,7 +127,6 @@ function SelectContent({
         </SelectPrimitive.Popup>
       </SelectPrimitive.Positioner>
     </SelectPrimitive.Portal>
-    </>
   )
 }
 

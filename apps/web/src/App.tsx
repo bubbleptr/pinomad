@@ -1,8 +1,7 @@
 import { Button } from "./shared/ui/button.tsx";
 import { ChatLayout } from "@astryxdesign/core/Chat";
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { useMediaQuery } from "@astryxdesign/core/hooks";
-import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
 import { Field, FieldLabel } from "./shared/ui/field.tsx";
 import { Input } from "./shared/ui/input.tsx";
 import type { ConversationId } from "@earendil-works/pi-durable";
@@ -1562,41 +1561,32 @@ function ForkDialog({
     onClose();
   };
   return (
-    <Dialog isOpen onOpenChange={(open) => (open ? undefined : onClose())} purpose="form" width={480}>
-      <Layout
-        header={
-          <DialogHeader
-            title="Fork from this answer"
-            subtitle="The fork sees the conversation up to here and works in the same files."
-            onOpenChange={() => onClose()}
-          />
-        }
-        content={
-          <LayoutContent>
-            <Field>
-              <FieldLabel>First message</FieldLabel>
-              <Input
-                value={prompt}
-                onChange={(event) => setPrompt(event.target.value)}
-              />
-            </Field>
-          </LayoutContent>
-        }
-        footer={
-          <LayoutFooter>
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={onClose}>Cancel</Button>
-              <Button
-                variant="primary"
-                disabled={!connected || busy || prompt.trim() === ""}
-                onClick={fork}
-              >
-                {busy ? "Forking…" : "Fork"}
-              </Button>
-            </div>
-          </LayoutFooter>
-        }
-      />
+    <Dialog open onOpenChange={(open) => (open ? undefined : onClose())} disablePointerDismissal>
+      <DialogContent className="w-[480px]">
+        <DialogHeader>
+          <DialogTitle>Fork from this answer</DialogTitle>
+          <DialogDescription>The fork sees the conversation up to here and works in the same files.</DialogDescription>
+        </DialogHeader>
+        <DialogBody>
+          <Field>
+            <FieldLabel>First message</FieldLabel>
+            <Input
+              value={prompt}
+              onChange={(event) => setPrompt(event.target.value)}
+            />
+          </Field>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button
+            variant="primary"
+            disabled={!connected || busy || prompt.trim() === ""}
+            onClick={fork}
+          >
+            {busy ? "Forking…" : "Fork"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }

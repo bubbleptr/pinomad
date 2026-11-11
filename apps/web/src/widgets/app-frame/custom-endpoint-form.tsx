@@ -1,15 +1,37 @@
-import { AlertDialog } from "@astryxdesign/core/AlertDialog";
+import { cn } from "cn";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../../shared/ui/alert-dialog.tsx";
 import { Button } from "../../shared/ui/button.tsx";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
-import { MultiSelector } from "@astryxdesign/core/MultiSelector";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../shared/ui/select.tsx";
+import {
+  Combobox,
+  ComboboxCheckboxItem,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxList,
+  ComboboxTrigger,
+} from "../../shared/ui/combobox.tsx";
+import { Spinner } from "../../shared/ui/spinner.tsx";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, selectTriggerClassName } from "../../shared/ui/select.tsx";
 import { Field, FieldDescription, FieldError, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { CUSTOM_PROVIDER_APIS, type CustomProviderApi, type ProviderInfo } from "@pinomad/protocol/auth.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { Plus, RefreshCw } from "../../shared/ui/icons.tsx";
 import { InlineError } from "./provider-login.tsx";
+
+/** The picker row that checks or clears every model; the NUL keeps it apart from any model ID. */
+const SELECT_ALL = "\u0000select all";
 
 const API_LABELS: Record<CustomProviderApi, string> = {
   "openai-completions": "OpenAI Chat Completions",
@@ -98,6 +120,16 @@ export function CustomEndpointForm({
       : submitted && checked.length === 0
         ? { type: "error", message: "Add at least one model" }
         : undefined;
+  const modelsLabel = useId();
+  const modelsSummary = useId();
+  // "Select all" is one more row of the picker, checked while every model is.
+  const allChecked = options.length > 0 && options.every((model) => checked.includes(model));
+  const pick = (next: string[]): void => {
+    const all = next.includes(SELECT_ALL);
+    if (all && !allChecked) setChecked([...options]);
+    else if (!all && allChecked && next.length === options.length) setChecked([]);
+    else setChecked(next.filter((model) => model !== SELECT_ALL));
+  };
   const nameProblem =
     name.trim() === ""
       ? submitted
@@ -262,20 +294,47 @@ export function CustomEndpointForm({
         </Field>
         {/* The status message sits outside the dropdown so the buttons line up with the controls. */}
         <div className="endpoint-models">
-          <MultiSelector
-            label="Models"
-            description="Checked models appear in the model picker."
-            options={options}
-            value={checked}
-            onChange={setChecked}
-            placeholder={fetching ? "Fetching models…" : "No models yet"}
-            hasSearch
-            hasSelectAll
-            isLoading={fetching}
-            isDisabled={!connected}
-            width="100%"
-            status={modelsStatus === undefined ? undefined : { type: modelsStatus.type }}
-          />
+          <Field disabled={!connected} invalid={modelsStatus?.type === "error"}>
+            <FieldLabel id={modelsLabel}>Models</FieldLabel>
+            <FieldDescription>Checked models appear in the model picker.</FieldDescription>
+            <Combobox
+              multiple
+              items={[SELECT_ALL, ...options]}
+              value={allChecked ? [SELECT_ALL, ...checked] : checked}
+              onValueChange={pick}
+              itemToStringLabel={(model: string) => (model === SELECT_ALL ? "Select all" : model)}
+              // Select all is for the whole list, so a search hides it.
+              filter={(model: string, query: string) => (model === SELECT_ALL ? query === "" : model.toLowerCase().includes(query.toLowerCase()))}
+            >
+              <ComboboxTrigger
+                data-size="default"
+                data-variant="outline"
+                aria-labelledby={`${modelsLabel} ${modelsSummary}`}
+                aria-busy={fetching || undefined}
+                className={cn(selectTriggerClassName, "w-full", modelsStatus?.type === "warning" && "border-warning")}
+              >
+                <span id={modelsSummary} className={cn("flex-1 truncate text-left", checked.length === 0 && "text-muted-foreground")}>
+                  {checked.length === 0 ? (fetching ? "Fetching models…" : "No models yet") : `${checked.length} selected`}
+                </span>
+                {fetching ? <Spinner size="sm" /> : null}
+              </ComboboxTrigger>
+              <ComboboxContent>
+                <ComboboxInput aria-label="Search options" placeholder="Search…" showTrigger={false} />
+                <ComboboxEmpty>No models match</ComboboxEmpty>
+                <ComboboxList aria-label="Models">
+                  {(model: string) => (
+                    <ComboboxCheckboxItem
+                      key={model}
+                      value={model}
+                      className={model === SELECT_ALL ? "mb-1 after:absolute after:inset-x-0 after:-bottom-0.5 after:h-px after:bg-border" : undefined}
+                    >
+                      {model === SELECT_ALL ? "Select all" : model}
+                    </ComboboxCheckboxItem>
+                  )}
+                </ComboboxList>
+              </ComboboxContent>
+            </Combobox>
+          </Field>
           <IconButton
             variant="secondary"
             label="Fetch models"
@@ -336,15 +395,20 @@ export function CustomEndpointForm({
         </div>
       </div>
       {existing === undefined ? null : (
-        <AlertDialog
-          isOpen={confirmingRemove}
-          onOpenChange={setConfirmingRemove}
-          title={`Remove ${existing.name}?`}
-          description="Its models disappear from the model picker, and conversations using them stop."
-          actionLabel="Remove endpoint"
-          isActionLoading={removing}
-          onAction={() => void remove(existing.id)}
-        />
+        <AlertDialog open={confirmingRemove} onOpenChange={setConfirmingRemove}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{`Remove ${existing.name}?`}</AlertDialogTitle>
+              <AlertDialogDescription>Its models disappear from the model picker, and conversations using them stop.</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel />
+              <AlertDialogAction variant="destructive" loading={removing} onClick={() => void remove(existing.id)}>
+                Remove endpoint
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
     </form>
   );

@@ -31,7 +31,8 @@ export const RenameFails: Story = {
     } as unknown as RemoteDurable,
   },
   play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
+    // The dialog is portaled to <body>, outside the canvas.
+    const canvas = within(canvasElement.ownerDocument.body);
     await userEvent.type(canvas.getByLabelText("Title"), " (v2)");
     await userEvent.click(canvas.getByRole("button", { name: "Save" }));
   },

@@ -1,6 +1,8 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { Item } from "@astryxdesign/core/Item";
-import { MoreMenu } from "@astryxdesign/core/MoreMenu";
+import { IconButton } from "../../shared/ui/icon-button.tsx";
+import { MoreHorizontal } from "../../shared/ui/icons.tsx";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
 import { useState } from "react";
 import type { AccountError, AccountHostMatch } from "@pinomad/client/account.ts";
 import { relativeTime } from "@pinomad/client/family.ts";
@@ -176,12 +178,15 @@ export function AccountHostList({
                         Pair
                       </Button>
                     ) : null}
-                    <MoreMenu
-                      label={`More for ${host.name}`}
-                      size="sm"
-                      isDisabled={removing !== undefined || pairing.pairing === host.hostId}
-                      items={[{ label: "Remove from account", onClick: () => setRemoving(host) }]}
-                    />
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        disabled={removing !== undefined || pairing.pairing === host.hostId}
+                        render={<IconButton icon={<MoreHorizontal aria-hidden="true" />} label={`More for ${host.name}`} tooltip={`More for ${host.name}`} size="sm" />}
+                      />
+                      <DropdownMenuContent>
+                        <DropdownMenuItem onClick={() => setRemoving(host)}>Remove from account</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 }
               />

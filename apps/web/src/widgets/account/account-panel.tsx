@@ -4,7 +4,7 @@ import { Checkbox } from "../../shared/ui/checkbox.tsx";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { List, ListItem } from "@astryxdesign/core/List";
-import { MoreMenu } from "@astryxdesign/core/MoreMenu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
 import { type ReactNode, useEffect, useState } from "react";
 import type {
   AccountDevice,
@@ -20,7 +20,7 @@ import type { AccountModel, AccountState } from "../../entities/account/account-
 import { clearOAuthReturn, oauthReturn } from "../../entities/account/oauth-return.ts";
 import { signInProviderName } from "../../entities/provider/sign-in-provider.tsx";
 import { OFFICIAL_SERVER_ORIGIN } from "../../shared/official-server.ts";
-import { ArrowLeft } from "../../shared/ui/icons.tsx";
+import { ArrowLeft, MoreHorizontal } from "../../shared/ui/icons.tsx";
 import { GROUP_ROWS, SettingsGroup } from "../../shared/ui/settings-group.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { accountErrorMessage } from "./account-error.ts";
@@ -555,7 +555,15 @@ function DeviceRow({
   ) : device.kickedAt !== undefined ? (
     <Badge variant="muted">Removed</Badge>
   ) : (
-    <MoreMenu label={`More for ${name}`} size="sm" isDisabled={isBusy} items={[{ label: "Remove", onClick: onRemove }]} />
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        disabled={isBusy}
+        render={<IconButton icon={<MoreHorizontal aria-hidden="true" />} label={`More for ${name}`} tooltip={`More for ${name}`} size="sm" />}
+      />
+      <DropdownMenuContent>
+        <DropdownMenuItem onClick={onRemove}>Remove</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
   return (
     <ListItem

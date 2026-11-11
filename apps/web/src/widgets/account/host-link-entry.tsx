@@ -2,7 +2,6 @@ import { Button } from "../../shared/ui/button.tsx";
 import { MetadataList, MetadataListItem } from "@astryxdesign/core/MetadataList";
 import { Field, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
-import { useDialogPortal } from "../../shared/ui/dialog-portal.ts";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui/tooltip.tsx";
 import { useEffect, useState, type CSSProperties } from "react";
 import type { AccountError, HostLinkRequest } from "@pinomad/client/account.ts";
@@ -293,7 +292,6 @@ export function HostLinkConfirm({
 }) {
   const now = useNow(1000);
   const [copied, setCopied] = useState(false);
-  const [portalRef, portalContainer] = useDialogPortal();
   const seconds = Math.max(0, Math.ceil((request.expiresAt - now) / 1000));
   const expired = seconds === 0;
   return (
@@ -322,10 +320,10 @@ export function HostLinkConfirm({
           <div className="flex flex-wrap items-center gap-2">
             <Tooltip>
               {/* Focusable so keyboard users reach the full id too. */}
-              <TooltipTrigger ref={portalRef} render={<span tabIndex={0} aria-label={`Host ID ${request.hostId}`} />}>
+              <TooltipTrigger render={<span tabIndex={0} aria-label={`Host ID ${request.hostId}`} />}>
                 <span className="font-mono text-sm/5">{shortHostId(request.hostId)}</span>
               </TooltipTrigger>
-              <TooltipContent container={portalContainer}>{request.hostId}</TooltipContent>
+              <TooltipContent>{request.hostId}</TooltipContent>
             </Tooltip>
             <Button
               variant="secondary"

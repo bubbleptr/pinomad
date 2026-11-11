@@ -5,7 +5,7 @@
 // owner's conversations keeps the selection and the screen. The client
 // remembers each owner's last tab in memory.
 import { Button } from "../../shared/ui/button.tsx";
-import { ContextMenu, type ContextMenuOption } from "@astryxdesign/core/ContextMenu";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "../../shared/ui/context-menu.tsx";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { Tab, TabList, TabMenu } from "@astryxdesign/core/TabList";
 import { Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
@@ -294,6 +294,9 @@ function TerminalTabs({
   // The tab the context menu acts on: the one under the pointer when it went
   // down (right click, long press), or the focused one for the menu key.
   const [target, setTarget] = useState<TerminalInfo>();
+  // Opened from the keyboard, the menu has no pointer to open at: it opens
+  // under the tab row instead.
+  const [fromKeyboard, setFromKeyboard] = useState(false);
   const fit = useFittingTabs(
     row,
     list.terminals.length,
@@ -301,25 +304,23 @@ function TerminalTabs({
   );
   const { inline, overflow } = partitionTabs(list.terminals, selectedId, fit);
   const aim = (event: { target: EventTarget }): void => {
-    // The open menu sits inside the same trigger; pressing one of its items
-    // chooses an action for the current target, it doesn't aim at a new one.
+    // Presses in the open menu bubble here through React's portal; they
+    // choose an action for the current target, they don't aim at a new one.
     if (!(event.target instanceof Element) || row.current?.contains(event.target) !== true) return;
     const value = event.target.closest("[data-tab-value]")?.getAttribute("data-tab-value");
     setTarget(list.terminals.find((terminal) => terminal.id === value));
   };
-  const items: ContextMenuOption[] =
-    target === undefined
-      ? [{ label: "New terminal", icon: <Plus aria-hidden="true" size={16} />, isDisabled: onNew === undefined, onClick: () => onNew?.() }]
-      : [
-          { label: "Rename", icon: <Pencil aria-hidden="true" size={16} />, onClick: () => onRename(target) },
-          { label: "Restart", icon: <RefreshCw aria-hidden="true" size={16} />, onClick: () => onRestart(target) },
-          { type: "divider" },
-          { label: "Close", icon: <Trash2 aria-hidden="true" size={16} />, onClick: () => onClose(target) },
-        ];
   return (
-    <div className="min-w-0 flex-1" onPointerDownCapture={aim} onContextMenuCapture={aim}>
-      <ContextMenu label="Terminal actions" size="sm" items={items} isDisabled={!live}>
-        <div ref={row} className="overflow-hidden">
+    <div
+      className="min-w-0 flex-1"
+      onPointerDownCapture={aim}
+      onContextMenuCapture={(event) => {
+        aim(event);
+        setFromKeyboard(event.clientX === 0 && event.clientY === 0 && event.detail === 0);
+      }}
+    >
+      <ContextMenu disabled={!live}>
+        <ContextMenuTrigger ref={row} className="overflow-hidden">
           <TabList size="sm" value={selectedId ?? ""} onChange={onSelect}>
             {inline.map((terminal) => (
               <span key={terminal.id} className="pinomad-terminal-tab-slot group">
@@ -360,7 +361,31 @@ function TerminalTabs({
               />
             )}
           </TabList>
-        </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent aria-label="Terminal actions" {...(fromKeyboard ? { anchor: row } : {})}>
+          {target === undefined ? (
+            <ContextMenuItem disabled={onNew === undefined} onClick={() => onNew?.()}>
+              <Plus aria-hidden="true" />
+              New terminal
+            </ContextMenuItem>
+          ) : (
+            <>
+              <ContextMenuItem onClick={() => onRename(target)}>
+                <Pencil aria-hidden="true" />
+                Rename
+              </ContextMenuItem>
+              <ContextMenuItem onClick={() => onRestart(target)}>
+                <RefreshCw aria-hidden="true" />
+                Restart
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuItem onClick={() => onClose(target)}>
+                <Trash2 aria-hidden="true" />
+                Close
+              </ContextMenuItem>
+            </>
+          )}
+        </ContextMenuContent>
       </ContextMenu>
     </div>
   );

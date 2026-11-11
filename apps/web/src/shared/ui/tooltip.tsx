@@ -1,5 +1,6 @@
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip"
 import { cn } from "cn"
+import { usePortalContainer } from "@/shared/ui/portal-container"
 
 function TooltipProvider({
   delay = 0,
@@ -28,17 +29,15 @@ function TooltipContent({
   sideOffset = 4,
   align = "center",
   alignOffset = 0,
-  container,
   children,
   ...props
 }: TooltipPrimitive.Popup.Props &
   Pick<
     TooltipPrimitive.Positioner.Props,
     "align" | "alignOffset" | "side" | "sideOffset"
-  > &
-  Pick<TooltipPrimitive.Portal.Props, "container">) {
+  >) {
   return (
-    <TooltipPrimitive.Portal container={container}>
+    <TooltipPrimitive.Portal container={usePortalContainer()}>
       <TooltipPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}

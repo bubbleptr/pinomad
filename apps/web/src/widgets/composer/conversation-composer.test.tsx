@@ -61,6 +61,12 @@ function setup(options: {
   return { remote, editable, type, unmount: rendered.unmount };
 }
 
+/** Opens the + menu; its rows exist only while it's open. */
+async function openAddMenu(): Promise<void> {
+  await userEvent.click(screen.getByRole("button", { name: "More actions" }));
+  await screen.findByRole("menu");
+}
+
 describe("ConversationComposer commands", () => {
   it("shows a disabled command's reason instead of running it", async () => {
     const { remote, editable, type } = setup({
@@ -89,22 +95,25 @@ describe("ConversationComposer commands", () => {
   it("keeps Compact conversation and asks for no commands on a pre-5.15 host", async () => {
     const { remote } = setup({ minor: 14 });
     await act(async () => {});
-    expect(screen.getByRole("menuitem", { name: /^Compact conversation/, hidden: true })).toBeInTheDocument();
-    expect(screen.queryByRole("menuitem", { name: /^Run a command/, hidden: true })).toBeNull();
+    await openAddMenu();
+    expect(screen.getByRole("menuitem", { name: /^Compact conversation/ })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: /^Run a command/ })).toBeNull();
     expect(remote.controller.listCommands).not.toHaveBeenCalled();
   });
 
   it("offers Run a command instead of Compact on a 5.15 host", async () => {
     setup();
     await act(async () => {});
-    expect(screen.getByRole("menuitem", { name: /^Run a command/, hidden: true })).not.toHaveAttribute("aria-disabled", "true");
-    expect(screen.queryByRole("menuitem", { name: /^Compact conversation/, hidden: true })).toBeNull();
+    await openAddMenu();
+    expect(screen.getByRole("menuitem", { name: /^Run a command/ })).not.toHaveAttribute("aria-disabled", "true");
+    expect(screen.queryByRole("menuitem", { name: /^Compact conversation/ })).toBeNull();
   });
 
   it("shows Run a command disabled while the list loads", async () => {
     setup({ listCommands: () => new Promise(() => {}) });
     await act(async () => {});
-    const row = screen.getByRole("menuitem", { name: /^Run a command/, hidden: true });
+    await openAddMenu();
+    const row = screen.getByRole("menuitem", { name: /^Run a command/ });
     expect(row).toHaveAttribute("aria-disabled", "true");
     expect(row).toHaveTextContent("Loading…");
   });
@@ -112,13 +121,16 @@ describe("ConversationComposer commands", () => {
   it("offers Attach files only on a 5.19 host", async () => {
     setup();
     await act(async () => {});
-    expect(screen.getByRole("menuitem", { name: /^Attach files/, hidden: true })).toBeInTheDocument();
+    await openAddMenu();
+    expect(screen.getByRole("menuitem", { name: /^Attach files/ })).toBeInTheDocument();
   });
 
   it("hides Attach files on a pre-5.19 host", async () => {
     setup({ minor: 18 });
     await act(async () => {});
-    expect(screen.queryByRole("menuitem", { name: /^Attach files/, hidden: true })).toBeNull();
+    await openAddMenu();
+    expect(screen.getByRole("menuitem", { name: /^Add images/ })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: /^Attach files/ })).toBeNull();
   });
 });
 

@@ -16,6 +16,8 @@ describe.each(Object.entries(modules))("%s", (_path, module) => {
   const stories = composeStories(module) as Record<string, ComponentType>;
   it.each(Object.entries(stories))("%s renders", (_name, Story) => {
     const { container } = render(<Story />);
-    expect(container.querySelector(".sb-pinomad-column")?.childElementCount).toBeGreaterThan(0);
+    // A dialog story renders nothing in place: its popup is portaled to <body>.
+    const portaled = [...document.body.children].filter((element) => element !== container).length;
+    expect((container.querySelector(".sb-pinomad-column")?.childElementCount ?? 0) + portaled).toBeGreaterThan(0);
   });
 });

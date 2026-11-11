@@ -1,6 +1,6 @@
 # Web 界面设计规则
 
-Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。按钮、表单控件和反馈组件（提示条、徽标、toast 等）是 `src/shared/ui/` 里的 shadcn（Base UI 版）组件；其余组件还来自 Astryx（`@astryxdesign/core`，迁移中，ADR-0048），它们的 props 用 `bunx astryx component <Name>` 查（在 `apps/web` 下跑）。
+Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。按钮、表单控件、反馈组件（提示条、徽标、toast 等）和浮层（对话框、菜单、弹出层）是 `src/shared/ui/` 里的 shadcn（Base UI 版）组件；其余组件还来自 Astryx（`@astryxdesign/core`，迁移中，ADR-0048），它们的 props 用 `bunx astryx component <Name>` 查（在 `apps/web` 下跑）。
 
 ## 按钮
 
@@ -89,16 +89,34 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 | 组件 | 用在哪 |
 | --- | --- |
 | `alert.tsx` 的 `Alert` | 一直留着、直到情况变了才消失的说明：操作失败、连接断了、请求过期。`variant` 是 `info` / `success` / `warning` / `destructive`，图标随 `variant` 自动给。里面依次放 `AlertTitle`、可选的 `AlertDescription` 和 `AlertAction`（行尾的按钮，`size="sm"` 或默认尺寸都行）。`warning` 和 `destructive` 的角色是 `alert`，会打断读屏；`info` 和 `success` 是 `status`。贴着面板顶边、横跨整个面板的（连接状态、版本不匹配）加 `className="rounded-none"`。 |
-| `toast.tsx` 的 `useToast()` | 一闪而过、不需要留在页面上的结果：命令失败、对方没应答、新主机加入。`toast({ description, type, timeout, id, action, onClose })` 返回关闭函数。普通的 5 秒后消失（悬停、聚焦或窗口在后台时暂停），`type: "error"` 和 `timeout: 0` 的等用户关；相同 `id` 会替换旧的那条。最多显示 5 条，新的在最上面，F6 跳进去。要求外面有 `Toaster`：`App` 在最外层包了一层（`className="top-12"` 让开顶栏）；`AppFrame` 也包了一层，供单独渲染它的 story 和测试用，嵌在别的 `Toaster` 里时不另起一叠。外面没有时 toast 被丢掉，开发环境会警告。它是 `popover="manual"`，Astryx 对话框打开时也在最上层。 |
+| `toast.tsx` 的 `useToast()` | 一闪而过、不需要留在页面上的结果：命令失败、对方没应答、新主机加入。`toast({ description, type, timeout, id, action, onClose })` 返回关闭函数。普通的 5 秒后消失（悬停、聚焦或窗口在后台时暂停），`type: "error"` 和 `timeout: 0` 的等用户关；相同 `id` 会替换旧的那条。最多显示 5 条，新的在最上面，F6 跳进去。要求外面有 `Toaster`：`App` 在最外层包了一层（`className="top-12"` 让开顶栏）；`AppFrame` 也包了一层，供单独渲染它的 story 和测试用，嵌在别的 `Toaster` 里时不另起一叠。外面没有时 toast 被丢掉，开发环境会警告。它是 `popover="manual"`，在顶层（top layer），对话框打开时也在最上层、能点。 |
 | `badge.tsx` 的 `Badge` | 行名称旁边的短标签，只读：This device、Connected、new、interrupted。`variant` 是 `default` / `success` / `destructive` / `warning`（橙色）/ `muted`（灰色，用于已失效的东西）。 |
 | `status-dot.tsx` 的 `StatusDot` | 8px 的状态灯：在线、运行中、等待回答、失败。`label` 必填（读屏念它），`pulsing` 表示进行中，`tooltip` 悬停时也显示文字。 |
 | `spinner.tsx` 的 `Spinner` | 等待中的一小块区域，旁边通常有一行说明文字。`size="sm"`（14px）放在文字行里，默认 `md`（20px）放在空的面板中间。读屏念 "Loading"，知道在加载什么时写 `aria-label`。按钮自己的加载状态用 `Button` 的 `loading`，不要另放转圈。 |
 | `skeleton.tsx` 的 `Skeleton` | 内容的形状已知、还在路上时的占位块，尺寸和圆角写在 `className` 里。它先等 1 秒再淡入淡出，快的加载不会闪一下；一组用 `index` 错开。 |
 | `empty.tsx` 的 `Empty` | 一屏或一个面板没东西可显示，或在等一个状态过去（Connecting）：`EmptyHeader` 里放 `EmptyTitle` 和 `EmptyDescription`，操作放 `EmptyContent`。 |
 | `avatar.tsx` 的 `Avatar` | 账号的圆形头像，里面是 `AvatarFallback` 和 `initials(name)` 算出的首字母，根元素写 `aria-label`。尺寸 `xs`（20px，侧栏）和 `lg`（48px，账号页）。 |
-| `tooltip.tsx` | 悬停说明。按钮用 `Button` 的 `tooltip` 属性；其余元素用 `Tooltip` / `TooltipTrigger render={…}` / `TooltipContent`，在 Astryx 对话框里时用 `useDialogPortal` 把它渲染进对话框。 |
+| `tooltip.tsx` | 悬停说明。按钮用 `Button` 的 `tooltip` 属性；其余元素用 `Tooltip` / `TooltipTrigger render={…}` / `TooltipContent`。 |
 
 只给读屏看的文字用 `<span className="sr-only">`。
+
+## 对话框、菜单和弹出层
+
+都在 `src/shared/ui/`，基于 Base UI，渲染到 `<body>`，彼此可以嵌套（对话框里开下拉、菜单项打开对话框）。焦点困在打开的那一层里，关闭后回到触发它的元素；Esc 只关最上面一层。
+
+| 组件 | 用在哪 |
+| --- | --- |
+| `dialog.tsx` | 要用户停下来填写或查看的一屏内容：重命名、添加项目、账号。`<Dialog open onOpenChange>` 里放 `DialogContent`，依次是 `DialogHeader`（`DialogTitle`、可选的 `DialogDescription`）、`DialogBody`（内容，过长时自己滚动）、`DialogFooter`（按钮靠右，Cancel 在主按钮左边）。宽度用 `className`（默认 400px，如 `w-[480px]`，最宽 90vw），右上角自带关闭按钮（`showCloseButton={false}` 去掉）；`variant="fullscreen"` 铺满屏幕（窄屏的右侧面板）。有输入的对话框加 `disablePointerDismissal`，点外面不会丢掉填了一半的内容。打开时焦点落在带 `data-autofocus` 的元素上，没有就落在标题上。 |
+| `alert-dialog.tsx` | 不可撤销动作的确认：`AlertDialogContent` 里放 `AlertDialogHeader`（`AlertDialogTitle` 写成问句，`AlertDialogDescription` 说后果）和 `AlertDialogFooter`（`AlertDialogCancel` 是 `secondary`，`AlertDialogAction` 用 `variant="destructive"`）。点外面不关，打开时焦点在 Cancel 上。 |
+| `dropdown-menu.tsx` | 按钮打开的一列动作：行尾的 …（`MoreHorizontal`）、输入框的 +、侧栏底部的主机列表。触发按钮通过 `render` 传入（`<DropdownMenuTrigger render={<IconButton icon={…} label="Conversation actions" size="sm" />} />`），保留它自己的样子和名称。`DropdownMenuItem` 是文字，前面可以放图标；禁用的项仍能聚焦、会被读出来。上下键移动，打字跳到对应项。 |
+| `context-menu.tsx` | 右键（触屏长按）打开的菜单，目前只有终端标签。`ContextMenuSeparator` 分组；从键盘（菜单键、Shift+F10）打开时用 `anchor` 让它出现在元素下方而不是左上角。 |
+| `popover.tsx` | 触发按钮旁边、不挡住页面的一块面板，里面可以有搜索框和列表：模型选择。`PopoverContent` 写 `aria-label`，宽度用 `className`；放不下时在可用高度里滚动，不会跑到触发按钮侧面。 |
+| `combobox.tsx` 的 `ComboboxCheckboxItem` | 带搜索的多选（`<Combobox multiple>`），每项前面一个勾选框：自定义端点的模型列表。 |
+| `lightbox.tsx` | 全屏看图：`images` 和 `index`，左右键或两侧按钮切换，点空白处或 Esc 关闭。 |
+
+菜单和弹出层用同一块浮层表面（`floatingSurfaceClassName`：popover 底色、12px 圆角、低投影），对话框是卡片底色加高投影。调用处不要用 `className` 改它们的底色、圆角和投影。
+
+窄屏的导航抽屉还是 Astryx 的 `MobileNav`，它是 `showModal()` 打开的 `<dialog>`，在顶层，抽屉外的页面都不能点。`AppFrame` 用 `portal-container.tsx` 的 `PortalContainer` 让抽屉里打开的菜单、对话框和提示渲染进抽屉，别处不用管；抽屉换成 Base UI 后（ADR-0048 第 7 步）删掉它。
 
 ## 文字和布局
 

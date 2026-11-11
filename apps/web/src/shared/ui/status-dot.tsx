@@ -1,7 +1,6 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "cn";
 import type { ReactElement } from "react";
-import { useDialogPortal } from "@/shared/ui/dialog-portal";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 
 const statusDotVariants = cva("inline-block size-2 shrink-0 rounded-full", {
@@ -36,15 +35,14 @@ function StatusDot({
   tooltip?: string;
   className?: string;
 }): ReactElement {
-  const [portalRef, container] = useDialogPortal();
   const dot = (
     <span data-slot="status-dot" role="img" aria-label={label} className={cn(statusDotVariants({ variant, pulsing }), className)} />
   );
   if (tooltip === undefined) return dot;
   return (
     <Tooltip>
-      <TooltipTrigger ref={portalRef} render={dot} />
-      <TooltipContent container={container}>{tooltip}</TooltipContent>
+      <TooltipTrigger render={dot} />
+      <TooltipContent>{tooltip}</TooltipContent>
     </Tooltip>
   );
 }

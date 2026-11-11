@@ -274,7 +274,9 @@ describe("the app frame across hosts", () => {
     await userEvent.click(within(home).getByRole("button", { name: "Project actions for pinomad" }));
     await userEvent.click(await screen.findByRole("menuitem", { name: "Remove project" }));
     expect(await screen.findByText("Remove project pinomad?")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "focus-devbox" }));
+    // Focus moves by itself (a notification, another window): the open
+    // dialog hides the rest of the page from the accessibility tree.
+    await userEvent.click(screen.getByText("focus-devbox"));
     await waitFor(() => expect(screen.getByTestId("workbench").dataset.host).toBe(DEVBOX_HOST.hostKey));
     await userEvent.click(screen.getByRole("button", { name: "Remove project" }));
 
@@ -347,8 +349,9 @@ describe("the app frame across hosts", () => {
     await userEvent.click(within(settings).getByRole("button", { name: "Add a host" }));
     const addHost = await screen.findByRole("dialog", { name: "Add a host" });
 
-    within(addHost).getAllByRole("button")[0]!.focus();
+    within(addHost).getByRole("button", { name: "Done" }).focus();
     await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByRole("region", { name: "Settings" })).toBeInTheDocument();
 
     // A text field keeps its Escape: what was typed is not thrown away.

@@ -3,7 +3,7 @@ import { Card } from "@astryxdesign/core/Card";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { Link } from "../../shared/ui/link.tsx";
 import { List, ListItem } from "@astryxdesign/core/List";
-import { MoreMenu } from "@astryxdesign/core/MoreMenu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
 import { SegmentedControl, SegmentedControlItem } from "../../shared/ui/segmented-control.tsx";
 import {
   Combobox,
@@ -1026,17 +1026,16 @@ function AgentRoleCard({
         </div>
         {confirming ? null : (
           <div className="flex items-center gap-1">
-            <MoreMenu
-              icon={<MoreHorizontal aria-hidden="true" />}
-              label={`${role.name} actions`}
-              size="sm"
-              variant="ghost"
-              isDisabled={!connected}
-              items={[
-                { label: "Edit", onClick: onEdit },
-                { label: "Delete", onClick: () => setConfirming(true) },
-              ]}
-            />
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                disabled={!connected}
+                render={<IconButton icon={<MoreHorizontal aria-hidden="true" />} label={`${role.name} actions`} tooltip={`${role.name} actions`} size="sm" />}
+              />
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={onEdit}>Edit</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setConfirming(true)}>Delete</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         )}
       </div>
@@ -1092,14 +1091,15 @@ function AgentProblemCard({
         </div>
         {confirming || !deletable ? null : (
           <div className="flex items-center gap-1">
-            <MoreMenu
-              icon={<MoreHorizontal aria-hidden="true" />}
-              label={`${problem.file} actions`}
-              size="sm"
-              variant="ghost"
-              isDisabled={!connected}
-              items={[{ label: "Delete", onClick: () => setConfirming(true) }]}
-            />
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                disabled={!connected}
+                render={<IconButton icon={<MoreHorizontal aria-hidden="true" />} label={`${problem.file} actions`} tooltip={`${problem.file} actions`} size="sm" />}
+              />
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={() => setConfirming(true)}>Delete</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         )}
       </div>

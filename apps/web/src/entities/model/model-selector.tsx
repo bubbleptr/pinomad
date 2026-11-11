@@ -8,7 +8,7 @@
 import { useRef, useState } from "react";
 import { Button } from "../../shared/ui/button.tsx";
 import { List, ListItem } from "@astryxdesign/core/List";
-import { Popover } from "@astryxdesign/core/Popover";
+import { Popover, PopoverContent, PopoverTrigger } from "../../shared/ui/popover.tsx";
 import { Field, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import type { ModelRef } from "@earendil-works/pi-durable";
@@ -77,18 +77,46 @@ export function ModelSelector({
       : undefined;
 
   return (
-    <Popover
-      alignment="start"
-      label="Model and Thinking"
-      placement="above"
-      width={236}
-      // Opening lands in the search box, as before the Agent section took
-      // the top: the popover's own autofocus would pick "No agent" instead.
-      hasAutoFocus={false}
-      onOpenChange={(open) => {
-        if (open) requestAnimationFrame(() => searchRef.current?.focus());
-      }}
-      content={
+    <Popover>
+      <PopoverTrigger
+        render={
+          <Button
+            className="min-w-0 max-w-[19rem] flex-nowrap gap-1.5 px-2 text-muted-foreground"
+            data-testid="model-thinking-trigger"
+            disabled={isDisabled || models.length === 0}
+            aria-label="Model and Thinking"
+            size="sm"
+            variant="ghost"
+            {...(problem === undefined ? {} : { tooltip: problem.title })}
+          />
+        }
+      >
+        <span className="flex min-w-0 items-center gap-1.5">
+          {problem === undefined && selected.model !== undefined ? <ModelLogo model={selected.model} size={14} /> : null}
+          {problem === undefined ? (
+            <span className="truncate">
+              {agentName === undefined ? "" : `@${agentName} · `}
+              {modelLabel(models, selected)}
+            </span>
+          ) : (
+            <span className="truncate text-destructive">{problem.label}</span>
+          )}
+          {sourceHint === undefined || problem !== undefined ? null : (
+            <span className="shrink-0 truncate text-xs text-muted-foreground">{sourceHint}</span>
+          )}
+          {/* The Select trigger's glyph, so it matches the draft tray's pickers. */}
+          <ChevronDown aria-hidden="true" strokeWidth={2} className="size-4" />
+        </span>
+      </PopoverTrigger>
+      <PopoverContent
+        aria-label="Model and Thinking"
+        side="top"
+        align="start"
+        className="w-[236px]"
+        // Opening lands in the search box, as before the Agent section took
+        // the top: the first tabbable element would be "No agent" instead.
+        initialFocus={searchRef}
+      >
         <div
           className="flex w-full flex-col gap-1 p-1"
           data-testid="model-thinking-popover"
@@ -207,34 +235,7 @@ export function ModelSelector({
             </div>
           ) : null}
         </div>
-      }
-    >
-      <Button
-        className="min-w-0 max-w-[19rem] flex-nowrap gap-1.5 px-2 text-muted-foreground"
-        data-testid="model-thinking-trigger"
-        disabled={isDisabled || models.length === 0}
-        aria-label="Model and Thinking"
-        size="sm"
-        variant="ghost"
-        {...(problem === undefined ? {} : { tooltip: problem.title })}
-      >
-        <span className="flex min-w-0 items-center gap-1.5">
-          {problem === undefined && selected.model !== undefined ? <ModelLogo model={selected.model} size={14} /> : null}
-          {problem === undefined ? (
-            <span className="truncate">
-              {agentName === undefined ? "" : `@${agentName} · `}
-              {modelLabel(models, selected)}
-            </span>
-          ) : (
-            <span className="truncate text-destructive">{problem.label}</span>
-          )}
-          {sourceHint === undefined || problem !== undefined ? null : (
-            <span className="shrink-0 truncate text-xs text-muted-foreground">{sourceHint}</span>
-          )}
-          {/* The Select trigger's glyph, so it matches the draft tray's pickers. */}
-          <ChevronDown aria-hidden="true" strokeWidth={2} className="size-4" />
-        </span>
-      </Button>
+      </PopoverContent>
     </Popover>
   );
 }

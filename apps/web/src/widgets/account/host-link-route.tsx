@@ -1,6 +1,5 @@
 import { Button } from "../../shared/ui/button.tsx";
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
+import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { useState } from "react";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { AccountPanel } from "./account-panel.tsx";
@@ -39,17 +38,17 @@ export function HostLinkRoute({ navigate = (url) => window.location.assign(url) 
     setOpen(false);
   };
   return (
-    <Dialog isOpen onOpenChange={(next) => (next ? undefined : close())} width={480}>
-      <Layout
-        header={<DialogHeader title="Add a host" onOpenChange={close} />}
-        content={
-          <LayoutContent>
-            <div style={{ padding: "var(--spacing-2)" }}>
-              <HostLinkSteps requestId={requestId} navigate={navigate} onSettled={leavePath} onClose={close} />
-            </div>
-          </LayoutContent>
-        }
-      />
+    <Dialog open onOpenChange={(next) => (next ? undefined : close())}>
+      <DialogContent className="w-[480px]">
+        <DialogHeader>
+          <DialogTitle>Add a host</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          <div style={{ padding: "var(--spacing-2)" }}>
+            <HostLinkSteps requestId={requestId} navigate={navigate} onSettled={leavePath} onClose={close} />
+          </div>
+        </DialogBody>
+      </DialogContent>
     </Dialog>
   );
 }

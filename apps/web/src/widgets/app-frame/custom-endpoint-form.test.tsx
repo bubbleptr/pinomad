@@ -1,32 +1,12 @@
 // The models picker lists what the endpoint serves and saves only what's
 // checked. A fetch answers for the endpoint as it was when asked; an answer
 // that arrives after the form moved on must not land in it.
-import { act, render, screen, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ProviderInfo } from "@pinomad/protocol/auth.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { CustomEndpointForm } from "./custom-endpoint-form.tsx";
-
-// jsdom lacks the popover API the models dropdown opens with.
-beforeEach(() => {
-  HTMLElement.prototype.showPopover = function (this: HTMLElement) {
-    this.setAttribute("popover-open", "");
-    const event = new Event("toggle");
-    Object.defineProperty(event, "newState", { value: "open" });
-    this.dispatchEvent(event);
-  };
-  HTMLElement.prototype.hidePopover = function (this: HTMLElement) {
-    this.removeAttribute("popover-open");
-    const event = new Event("toggle");
-    Object.defineProperty(event, "newState", { value: "closed" });
-    this.dispatchEvent(event);
-  };
-  const matches = Element.prototype.matches;
-  HTMLElement.prototype.matches = function (this: HTMLElement, selector: string) {
-    return selector === ":popover-open" ? this.hasAttribute("popover-open") : matches.call(this, selector);
-  };
-});
 
 const hidden = { hidden: true } as const;
 
@@ -67,8 +47,10 @@ function setup(existing?: ProviderInfo) {
   );
   const user = userEvent.setup();
   const openModels = async () => {
-    await user.click(screen.getByRole("button", { name: /^Models/ }));
-    return screen.getByRole("listbox", { name: /^Models/, ...hidden });
+    // A picker closed a moment ago may still be on its way out.
+    await waitFor(() => expect(screen.queryByRole("listbox", { name: /^Models/, ...hidden })).toBeNull());
+    await user.click(screen.getByRole("combobox", { name: /^Models/ }));
+    return screen.findByRole("listbox", { name: /^Models/, ...hidden });
   };
   /** Every model the dropdown offers, and the checked ones. */
   const offered = async () => {

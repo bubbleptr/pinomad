@@ -2,7 +2,7 @@ import { Button } from "../../shared/ui/button.tsx";
 import { Card } from "@astryxdesign/core/Card";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { List, ListItem } from "@astryxdesign/core/List";
-import { MoreMenu } from "@astryxdesign/core/MoreMenu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
 import { Field, FieldLabel } from "../../shared/ui/field.tsx";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "../../shared/ui/input-group.tsx";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -610,14 +610,15 @@ function StoredLoginCard({ login, connected, remote }: { login: StoredLogin; con
           <p className="text-xs/5 text-muted-foreground">{storedLoginLine(login)}</p>
         </div>
         {confirming ? null : (
-          <MoreMenu
-            icon={<MoreHorizontal aria-hidden="true" />}
-            label={`${login.name} actions`}
-            size="sm"
-            variant="ghost"
-            isDisabled={!connected}
-            items={[{ label: "Log out", onClick: () => setConfirming(true) }]}
-          />
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              disabled={!connected}
+              render={<IconButton icon={<MoreHorizontal aria-hidden="true" />} label={`${login.name} actions`} tooltip={`${login.name} actions`} size="sm" />}
+            />
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={() => setConfirming(true)}>Log out</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
       {confirming ? (

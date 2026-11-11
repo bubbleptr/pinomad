@@ -20,6 +20,7 @@ import { displayName } from "@pinomad/client/family.ts";
 import { hostWindowChrome } from "../../shared/host-chrome.ts";
 import { AppleReminder } from "../../shared/ui/icons.tsx";
 import { AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
+import { PortalContainer } from "../../shared/ui/portal-container.tsx";
 import {
   SidebarContent,
   SidebarFooter,
@@ -98,6 +99,7 @@ export function AppFrame({
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(readSidebarOpen);
   const [navOpen, setNavOpen] = useState(false);
+  const [navDialog, setNavDialog] = useState<HTMLDialogElement | null>(null);
   // Open Settings, on a given section or the default one.
   const [settingsAt, setSettingsAt] = useState<SettingsRequest>();
   // Where focus was when Settings opened, to put it back on close.
@@ -241,18 +243,22 @@ export function AppFrame({
           // The drawer is a top-layer <dialog>, outside .pigui-app-layout's DOM —
           // give it the scoping class so the sidebar rules reach it too.
           <MobileNav
+            ref={setNavDialog}
             className="pigui-app-layout text-foreground"
             isOpen={navOpen}
             onOpenChange={setNavOpen}
             header={<span className="text-sm font-semibold">PiNomad</span>}
           >
-            {sidebar}
-            <SidebarFooter
-              onOpenSettings={() => openSettings({})}
-              onOpenAccount={openAccount}
-              onLocateHost={locateHost}
-              onSelect={() => setNavOpen(false)}
-            />
+            {/* Menus and dialogs opened from the drawer portal into it. */}
+            <PortalContainer value={navDialog ?? undefined}>
+              {sidebar}
+              <SidebarFooter
+                onOpenSettings={() => openSettings({})}
+                onOpenAccount={openAccount}
+                onLocateHost={locateHost}
+                onSelect={() => setNavOpen(false)}
+              />
+            </PortalContainer>
           </MobileNav>
         ) : null}
         {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}

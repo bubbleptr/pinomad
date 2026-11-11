@@ -1,6 +1,5 @@
 import { Button } from "../../shared/ui/button.tsx";
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
+import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Field, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
@@ -177,25 +176,25 @@ export function AccountEmail({ account, email }: { account: AccountModel; email:
       </List>
       </SettingsGroup>
       {open ? (
-        <Dialog aria-label={title} isOpen onOpenChange={(next) => (next ? undefined : setOpen(false))} purpose="form" width={460}>
-          <Layout
-            header={<DialogHeader title={title} onOpenChange={() => setOpen(false)} />}
-            content={
-              <LayoutContent>
-                <div style={{ padding: "var(--spacing-2)" }}>
-                  <EmailForm
-                    account={account}
-                    submitLabel="Save"
-                    onSaved={() => {
-                      setOpen(false);
-                      setChanged(true);
-                    }}
-                    onCancel={() => setOpen(false)}
-                  />
-                </div>
-              </LayoutContent>
-            }
-          />
+        <Dialog open onOpenChange={(next) => (next ? undefined : setOpen(false))} disablePointerDismissal>
+          <DialogContent className="w-[460px]">
+            <DialogHeader>
+              <DialogTitle>{title}</DialogTitle>
+            </DialogHeader>
+            <DialogBody>
+              <div style={{ padding: "var(--spacing-2)" }}>
+                <EmailForm
+                  account={account}
+                  submitLabel="Save"
+                  onSaved={() => {
+                    setOpen(false);
+                    setChanged(true);
+                  }}
+                  onCancel={() => setOpen(false)}
+                />
+              </div>
+            </DialogBody>
+          </DialogContent>
         </Dialog>
       ) : null}
     </div>
