@@ -1,5 +1,5 @@
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { Link } from "../../shared/ui/link.tsx";
 import { useState } from "react";
 import type { AccountState } from "../../entities/account/account-model.ts";
@@ -50,14 +50,14 @@ export function FirstHost({ state }: { state: Extract<AccountState, { status: "s
           </div>
         ) : (
           <div className="flex">
-            <Button label="Have a pairing link?" variant="ghost" size="sm" onClick={() => setPastingLink(true)} />
+            <Button variant="ghost" size="sm" onClick={() => setPastingLink(true)}>Have a pairing link?</Button>
           </div>
         )}
         <div className="flex items-center gap-2">
           <span className="text-xs/5 text-muted-foreground">
             Signed in as {state.user} on {new URL(state.serverOrigin).host}
           </span>
-          <Button label="Account" variant="secondary" size="sm" onClick={() => setAccountOpen(true)} />
+          <Button variant="secondary" size="sm" onClick={() => setAccountOpen(true)}>Account</Button>
         </div>
       </div>
       {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}

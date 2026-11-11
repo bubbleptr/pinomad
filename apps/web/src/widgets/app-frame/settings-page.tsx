@@ -1,14 +1,29 @@
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { Card } from "@astryxdesign/core/Card";
-import { IconButton } from "@astryxdesign/core/IconButton";
+import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { Link } from "../../shared/ui/link.tsx";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
-import { SegmentedControl, SegmentedControlItem } from "@astryxdesign/core/SegmentedControl";
-import { Selector } from "@astryxdesign/core/Selector";
+import { SegmentedControl, SegmentedControlItem } from "../../shared/ui/segmented-control.tsx";
+import {
+  Combobox,
+  ComboboxCollection,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxGroup,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxLabel,
+  ComboboxList,
+  ComboboxTrigger,
+  ComboboxValue,
+} from "../../shared/ui/combobox.tsx";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, selectTriggerClassName } from "../../shared/ui/select.tsx";
 import { SideNav, SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
-import { TextInput } from "@astryxdesign/core/TextInput";
+import { Field, FieldDescription, FieldError, FieldLabel } from "../../shared/ui/field.tsx";
+import { Input } from "../../shared/ui/input.tsx";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "../../shared/ui/input-group.tsx";
 import { Token } from "@astryxdesign/core/Token";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { agentNameProblem, type AgentRole, type AgentRoleProblem } from "@pinomad/protocol/agents.ts";
@@ -17,13 +32,13 @@ import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { cleanHostName, type HostSettings, type QueueMode } from "@pinomad/protocol/settings.ts";
 import type { ModelRef } from "@earendil-works/pi-durable";
-import type { DurableView, ThinkingLevel } from "@pinomad/protocol/view.ts";
+import type { DurableView, ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";
 import { familyUpdatedAt, relativeTime } from "@pinomad/client/family.ts";
 import { sameModel, summaryOf, thinkingLevelLabels } from "@pinomad/client/model.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { ModelLogo } from "../../entities/model/model-logo.tsx";
 import { useNow } from "../../shared/use-now.ts";
-import { ArchiveRestore, ArrowLeft, Bot, Cancel, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, MoreHorizontal, SlidersHorizontal, Sparkles, UserCircle } from "../../shared/ui/icons.tsx";
+import { ArchiveRestore, ArrowLeft, Bot, Cancel, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, MoreHorizontal, Search, SlidersHorizontal, Sparkles, UserCircle } from "../../shared/ui/icons.tsx";
 import { GROUP_ROWS, SettingsGroup, SettingsRow } from "../../shared/ui/settings-group.tsx";
 import { AccountPanel } from "../account/account-panel.tsx";
 import { AgentEditorDialog } from "./agent-editor-dialog.tsx";
@@ -190,22 +205,26 @@ export function useSettingsScreen({
   // Which host a host page manages, over its title: a choice with several,
   // the name with one.
   const hostLine = !isHostSection(active) || machine === undefined ? null : choosable ? (
-    <Selector
-      className="-ms-2 self-start"
-      label="Host"
-      isLabelHidden
-      size="sm"
-      variant="ghost"
-      placement="below"
-      startIcon={<HostStatusDot connected={connected} />}
+    <Select
+      items={machines.map((entry) => ({ value: entry.key, label: entry.label }))}
       value={machine.key}
-      options={machines.map((entry) => ({
-        value: entry.key,
-        label: entry.label,
-        icon: <HostStatusDot connected={entry.view?.connection === "connected"} />,
-      }))}
-      onChange={setPickedKey}
-    />
+      onValueChange={(key: string | null) => {
+        if (key !== null) setPickedKey(key);
+      }}
+    >
+      <SelectTrigger aria-label="Host" variant="ghost" size="sm" className="-ms-2 self-start">
+        <HostStatusDot connected={connected} />
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {machines.map((entry) => (
+          <SelectItem key={entry.key} value={entry.key}>
+            <HostStatusDot connected={entry.view?.connection === "connected"} />
+            {entry.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   ) : (
     <div className="flex items-center gap-2">
       <HostStatusDot connected={connected} />
@@ -214,20 +233,23 @@ export function useSettingsScreen({
   );
 
   const searchField = (
-    <TextInput
-      className="pigui-nav-lead"
-      label="Search settings"
-      isLabelHidden
-      placeholder="Search"
-      size="sm"
-      startIcon="search"
-      value={query}
-      onChange={setQuery}
-      onKeyDown={(event) => {
-        const first = groups[0]?.sections[0];
-        if (event.key === "Enter" && first !== undefined) setSection(first.id);
-      }}
-    />
+    <Field>
+      <FieldLabel className="sr-only">Search settings</FieldLabel>
+      <InputGroup className="pigui-nav-lead h-7">
+        <InputGroupAddon className="ps-0">
+          <Search aria-hidden="true" />
+        </InputGroupAddon>
+        <InputGroupInput
+          placeholder="Search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            const first = groups[0]?.sections[0];
+            if (event.key === "Enter" && first !== undefined) setSection(first.id);
+          }}
+        />
+      </InputGroup>
+    </Field>
   );
   const noMatch = groups.length === 0 ? <span className="text-xs/5 text-muted-foreground">No settings match</span> : null;
 
@@ -272,14 +294,15 @@ export function useSettingsScreen({
             <div className="flex flex-col gap-2">
               <span ref={closeSlot} className="contents">
                 <Button
-                  label="Settings"
                   aria-label="Close settings"
                   variant="ghost"
                   size="sm"
-                  icon={<ChevronRight aria-hidden="true" className="size-4 rotate-180" />}
                   onClick={onClose}
                   className="pigui-nav-lead self-start"
-                />
+                >
+                  <ChevronRight aria-hidden="true" className="size-4 rotate-180" />
+                  Settings
+                </Button>
               </span>
               {searchField}
             </div>
@@ -585,64 +608,85 @@ function ModelsSection({ view, remote, connected }: { view: DurableView; remote:
     return <Banner status="warning" title="This host is too old for settings" description="Run `pinomad upgrade` on the host." />;
   }
   const model = view.models.find((each) => sameModel(each, settings.defaultModel ?? undefined));
-  // Option values are indexes: a model id may itself contain `/`.
-  const providers = [...new Set(view.models.map((each) => each.provider))];
+  const modelGroups = [...new Set(view.models.map((each) => each.provider))].map((provider) => ({
+    provider,
+    items: view.models.filter((each) => each.provider === provider),
+  }));
   const levels = model?.thinkingLevels ?? [];
   const customized = settings.custom.includes("defaultModel") || settings.custom.includes("defaultThinkingLevel");
   return (
     <SettingsGroup>
       <div className={GROUP_ROWS}>
         <SettingsRow label="Default model">
-          <Selector
-            label="Default model"
-            isLabelHidden
-            size="sm"
-            hasSearch
-            searchPlaceholder="Search models"
-            placeholder="Pi's default"
-            isDisabled={!connected || view.models.length === 0}
-            {...(model === undefined ? {} : { startIcon: <ModelLogo model={model} size={14} /> })}
-            {...(model === undefined ? {} : { value: String(view.models.indexOf(model)) })}
-            options={providers.map((provider) => ({
-              type: "section" as const,
-              title: provider,
-              options: view.models.flatMap((each, index) =>
-                each.provider === provider
-                  ? [{ value: String(index), label: each.name, icon: <ModelLogo model={each} size={14} reserve /> }]
-                  : [],
-              ),
-            }))}
-            onChange={(value) => {
-              const picked = view.models[Number(value)];
-              if (picked !== undefined) {
+          <Combobox
+            items={modelGroups}
+            value={model ?? null}
+            itemToStringLabel={(each: ModelSummary) => each.name}
+            isItemEqualToValue={(a: ModelSummary, b: ModelSummary) => sameModel(a, b)}
+            disabled={!connected || view.models.length === 0}
+            onValueChange={(picked: ModelSummary | null) => {
+              if (picked !== null) {
                 void remote.controller.updateSettings({ defaultModel: { provider: picked.provider, modelId: picked.modelId } });
               }
             }}
-          />
+          >
+            <ComboboxTrigger aria-label="Default model" data-size="sm" data-variant="outline" className={selectTriggerClassName}>
+              {model === undefined ? null : <ModelLogo model={model} size={14} />}
+              <ComboboxValue placeholder="Pi's default" />
+            </ComboboxTrigger>
+            <ComboboxContent className="min-w-64">
+              <ComboboxInput aria-label="Search models" placeholder="Search models" showTrigger={false} />
+              <ComboboxEmpty>No models match</ComboboxEmpty>
+              <ComboboxList>
+                {(group: { provider: string; items: ModelSummary[] }) => (
+                  <ComboboxGroup key={group.provider} items={group.items}>
+                    <ComboboxLabel>{group.provider}</ComboboxLabel>
+                    <ComboboxCollection>
+                      {(each: ModelSummary) => (
+                        <ComboboxItem key={`${each.provider}/${each.modelId}`} value={each}>
+                          <ModelLogo model={each} size={14} reserve />
+                          {each.name}
+                        </ComboboxItem>
+                      )}
+                    </ComboboxCollection>
+                  </ComboboxGroup>
+                )}
+              </ComboboxList>
+            </ComboboxContent>
+          </Combobox>
         </SettingsRow>
         {/* A model that can't reason has nothing to pick here. */}
         {levels.length > 1 ? (
           <SettingsRow label="Thinking" description="How long the model reasons before it answers">
-            <Selector
-              label="Thinking"
-              isLabelHidden
-              size="sm"
-              isDisabled={!connected}
+            <Select
+              items={levels.map((level) => ({ value: level, label: thinkingLevelLabels[level] }))}
+              disabled={!connected}
               value={settings.defaultThinkingLevel ?? "off"}
-              options={levels.map((level) => ({ value: level, label: thinkingLevelLabels[level] }))}
-              onChange={(level) => void remote.controller.updateSettings({ defaultThinkingLevel: level as ThinkingLevel })}
-            />
+              onValueChange={(level: string | null) => {
+                if (level !== null) void remote.controller.updateSettings({ defaultThinkingLevel: level as ThinkingLevel });
+              }}
+            >
+              <SelectTrigger aria-label="Thinking" size="sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {levels.map((level) => (
+                  <SelectItem key={level} value={level}>{thinkingLevelLabels[level]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </SettingsRow>
         ) : null}
         {customized ? (
           <div className="flex justify-end px-4 py-3">
             <Button
-              label="Use pi's defaults"
               variant="secondary"
               size="sm"
-              isDisabled={!connected}
+              disabled={!connected}
               onClick={() => void remote.controller.updateSettings({ defaultModel: null, defaultThinkingLevel: null })}
-            />
+            >
+              Use pi's defaults
+            </Button>
           </div>
         ) : null}
       </div>
@@ -708,13 +752,13 @@ function ArchivedSection({ view, remote, connected }: { view: DurableView; remot
                     .join(" · ")}
                   endContent={
                     <Button
-                      label={`Restore ${title}`}
-                      icon={<ArchiveRestore aria-hidden="true" />}
+                      aria-label={`Restore ${title}`}
                       variant="secondary"
                       size="sm"
-                      isDisabled={!connected}
+                      disabled={!connected}
                       onClick={() => void remote.controller.archive(node.summary.id, false)}
                     >
+                      <ArchiveRestore aria-hidden="true" />
                       Restore
                     </Button>
                   }
@@ -802,31 +846,30 @@ function HostNameField({ settings, remote, connected }: { settings: HostSettings
   const save = (): void => void remote.controller.updateSettings({ hostName: cleaned });
   return (
     <div className="flex flex-col gap-1">
-      <TextInput
-        label="Host name"
-        value={draft}
-        onChange={setDraft}
-        onEnter={canSave ? save : undefined}
-        isDisabled={!connected}
-        description="How paired devices name this machine. Without a custom name the hostname is used."
-        status={
-          draft !== "" && cleaned === ""
-            ? { type: "error", message: "The name needs at least one displayable character" }
-            : undefined
-        }
-        width="100%"
-      />
+      <Field disabled={!connected} invalid={draft !== "" && cleaned === ""}>
+        <FieldLabel>Host name</FieldLabel>
+        <FieldDescription>How paired devices name this machine. Without a custom name the hostname is used.</FieldDescription>
+        <Input
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && canSave) save();
+          }}
+        />
+        <FieldError>{draft !== "" && cleaned === "" ? "The name needs at least one displayable character" : undefined}</FieldError>
+      </Field>
       <div className="flex justify-end gap-2">
         {settings.custom.includes("hostName") ? (
           <Button
-            label="Use machine name"
             variant="secondary"
             size="sm"
-            isDisabled={!connected}
+            disabled={!connected}
             onClick={() => void remote.controller.updateSettings({ hostName: null })}
-          />
+          >
+            Use machine name
+          </Button>
         ) : null}
-        <Button label="Save" variant="secondary" size="sm" isDisabled={!canSave} onClick={save} />
+        <Button variant="secondary" size="sm" disabled={!canSave} onClick={save}>Save</Button>
       </div>
     </div>
   );
@@ -852,17 +895,16 @@ function ModeSetting({
   return (
     <SettingsRow label={title} description={description}>
       {customized ? (
-        <Button label="Use pi's default" variant="secondary" size="sm" isDisabled={disabled} onClick={onReset} />
+        <Button variant="secondary" size="sm" disabled={disabled} onClick={onReset}>Use pi's default</Button>
       ) : null}
       <SegmentedControl
         value={value}
-        onChange={(next) => onChange(next as QueueMode)}
-        label={title}
-        size="sm"
-        isDisabled={disabled}
+        onValueChange={(next) => onChange(next as QueueMode)}
+        aria-label={title}
+        disabled={disabled}
       >
-        <SegmentedControlItem value="one-at-a-time" label="One at a time" />
-        <SegmentedControlItem value="all" label="All at once" />
+        <SegmentedControlItem value="one-at-a-time">One at a time</SegmentedControlItem>
+        <SegmentedControlItem value="all">All at once</SegmentedControlItem>
       </SegmentedControl>
     </SettingsRow>
   );
@@ -889,12 +931,13 @@ function AgentsSection({ view, remote, connected }: { view: DurableView; remote:
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
         <Button
-          label="New agent"
           variant="secondary"
           size="sm"
-          isDisabled={!connected}
+          disabled={!connected}
           onClick={() => setEditor({ mode: "create" })}
-        />
+        >
+          New agent
+        </Button>
       </div>
       {agents.roles.length === 0 && agents.problems.length === 0 ? (
         <p className="text-xs/5 text-muted-foreground">No named agents yet.</p>
@@ -992,8 +1035,8 @@ function AgentRoleCard({
         <div className="flex flex-col gap-2" style={{ marginBlockStart: "var(--spacing-4)" }}>
           <p className="text-xs/5 text-muted-foreground">Conversations already using this agent keep their copy.</p>
           <div className="flex items-center gap-2">
-            <Button label="Delete" variant="destructive" size="sm" isDisabled={!connected} onClick={remove} />
-            <Button label="Cancel" variant="secondary" size="sm" onClick={() => setConfirming(false)} />
+            <Button variant="destructive" size="sm" disabled={!connected} onClick={remove}>Delete</Button>
+            <Button variant="secondary" size="sm" onClick={() => setConfirming(false)}>Cancel</Button>
           </div>
         </div>
       ) : null}
@@ -1054,8 +1097,8 @@ function AgentProblemCard({
       {confirming ? (
         <div className="flex flex-col gap-2" style={{ marginBlockStart: "var(--spacing-4)" }}>
           <div className="flex items-center gap-2">
-            <Button label="Delete" variant="destructive" size="sm" isDisabled={!connected} onClick={remove} />
-            <Button label="Cancel" variant="secondary" size="sm" onClick={() => setConfirming(false)} />
+            <Button variant="destructive" size="sm" disabled={!connected} onClick={remove}>Delete</Button>
+            <Button variant="secondary" size="sm" onClick={() => setConfirming(false)}>Cancel</Button>
           </div>
         </div>
       ) : null}

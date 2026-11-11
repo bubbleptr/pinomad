@@ -1,7 +1,8 @@
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { Spinner } from "@astryxdesign/core/Spinner";
-import { TextInput } from "@astryxdesign/core/TextInput";
+import { Field, FieldLabel } from "../../shared/ui/field.tsx";
+import { Input } from "../../shared/ui/input.tsx";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import type { AccountConfirmation, AccountError, AccountResult } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
@@ -126,28 +127,41 @@ export function ConfirmIdentity({
   if (method === "loading") return <Spinner size="sm" />;
   if (method === "password") {
     return (
-      <TextInput
-        label="Password"
-        type="password"
-        value={password}
-        onChange={onPassword}
-        onEnter={onEnter}
-        width="100%"
-        {...{ autoComplete: "current-password" }}
-      />
+      <Field>
+        <FieldLabel>Password</FieldLabel>
+        <Input
+          type="password"
+          value={password}
+          onChange={(event) => onPassword(event.target.value)}
+          {...{ autoComplete: "current-password" }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") onEnter?.();
+          }}
+        />
+      </Field>
     );
   }
   return (
     <div className="flex flex-col gap-2">
       <span className="text-xs/5 text-muted-foreground">We'll email a code to {email ?? "your account's email"}.</span>
       {sent ? (
-        <TextInput label="Confirmation code" value={code} onChange={onCode} onEnter={onEnter} width="100%" {...CODE_INPUT} />
+        <Field>
+          <FieldLabel>Confirmation code</FieldLabel>
+          <Input
+            value={code}
+            onChange={(event) => onCode(event.target.value)}
+            {...CODE_INPUT}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") onEnter?.();
+            }}
+          />
+        </Field>
       ) : null}
       {sendError === undefined ? null : (
         <Banner status="error" title="Couldn't send the code" description={accountErrorMessage(sendError)} />
       )}
       <div className="flex gap-2">
-        <Button label={sent ? "Resend code" : "Send code"} variant="secondary" size="sm" isLoading={sending} onClick={onSend} />
+        <Button variant="secondary" size="sm" loading={sending} onClick={onSend}>{sent ? "Resend code" : "Send code"}</Button>
       </div>
     </div>
   );

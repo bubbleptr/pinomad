@@ -197,19 +197,6 @@ describe("QuestionCard", () => {
     expect(answer).toHaveBeenCalledTimes(1);
   });
 
-  // question.css reaches into Astryx's list markup to tighten the rows; an
-  // Astryx upgrade that renames it silently brings the tall rows back.
-  it("still finds the Astryx list markup its styles reach into", () => {
-    const { container } = setup();
-    const options = (selector: string): Element | null => container.querySelector(`.question-card__options ${selector}`);
-
-    // The checkbox list (its rows are inset; the radio list's are not).
-    expect(options(".astryx-list input[type='checkbox']")).not.toBeNull();
-    expect(options(".astryx-item > span:nth-child(2) > :nth-child(2)")).toHaveTextContent(
-      "Short-lived token from the refresh flow.",
-    );
-  });
-
   // The request can resolve elsewhere (another client, or a chat reply
   // dismissing it) while a pick's move is still pending.
   it("drops a pending move when the card goes away", async () => {

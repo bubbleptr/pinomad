@@ -4,9 +4,9 @@
 // root, or a pre-ADR-0019 fork with its own worktree — so moving between that
 // owner's conversations keeps the selection and the screen. The client
 // remembers each owner's last tab in memory.
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { ContextMenu, type ContextMenuOption } from "@astryxdesign/core/ContextMenu";
-import { IconButton } from "@astryxdesign/core/IconButton";
+import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { Tab, TabList, TabMenu } from "@astryxdesign/core/TabList";
 import { Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
@@ -160,7 +160,7 @@ export function TerminalSurface({
           size="sm"
           variant="ghost"
           tooltip={full ? `Terminal limit reached (${list.limit})` : "New terminal"}
-          isDisabled={!live || full}
+          disabled={!live || full}
           onClick={openTerminal}
         />
     );
@@ -211,7 +211,7 @@ export function TerminalSurface({
           <div className="flex flex-1 items-center justify-center p-6">
             <div className="flex flex-col items-center gap-5">
               <TerminalIllustration />
-              <Button label="New terminal" variant="secondary" isDisabled={!live} onClick={openTerminal} />
+              <Button variant="secondary" disabled={!live} onClick={openTerminal}>New terminal</Button>
             </div>
           </div>
         ) : (
@@ -232,12 +232,13 @@ export function TerminalSurface({
                   {selected.exit.code === null ? "The process exited." : `The process exited with code ${selected.exit.code}.`}
                 </span>
                 <Button
-                  label="Restart"
                   variant="secondary"
                   size="sm"
-                  isDisabled={!live}
+                  disabled={!live}
                   onClick={() => restart(selected)}
-                />
+                >
+                  Restart
+                </Button>
               </div>
             )}
           </>
@@ -339,7 +340,7 @@ function TerminalTabs({
                   size="sm"
                   variant="ghost"
                   tabIndex={-1}
-                  isDisabled={!live}
+                  disabled={!live}
                   className={
                     terminal.id === selectedId
                       ? "pinomad-terminal-tab-close"

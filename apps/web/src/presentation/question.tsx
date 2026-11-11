@@ -4,11 +4,12 @@
 // tap on a single-choice option, which moves on by itself. One Submit sends
 // every question's answers at once; untouched questions count as skipped. The
 // resolved read-only view lives in documents.tsx.
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { Button } from "@astryxdesign/core/Button";
-import { CheckboxList, CheckboxListItem } from "@astryxdesign/core/CheckboxList";
-import { RadioList, RadioListItem } from "@astryxdesign/core/RadioList";
-import { TextInput } from "@astryxdesign/core/TextInput";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Button } from "../shared/ui/button.tsx";
+import { Checkbox } from "../shared/ui/checkbox.tsx";
+import { Field, FieldContent, FieldDescription, FieldLabel } from "../shared/ui/field.tsx";
+import { RadioGroup, RadioGroupItem } from "../shared/ui/radio-group.tsx";
+import { Input } from "../shared/ui/input.tsx";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { QuestionItem, QuestionRequest } from "@pinomad/protocol/presentation.ts";
 import { pendingQuestions, questionAnswers } from "@pinomad/client/questions.ts";
@@ -178,7 +179,7 @@ export function QuestionCard({
       </div>
       <div className="question-card__footer">
         <div className="question-card__back">
-          {pager.index > 0 ? <Button label="Back" variant="secondary" onClick={() => moveTo(pager.index - 1)} /> : null}
+          {pager.index > 0 ? <Button variant="secondary" onClick={() => moveTo(pager.index - 1)}>Back</Button> : null}
         </div>
         {count > 1 ? (
           <div className="question-card__segments" role="tablist" aria-label="Questions">
@@ -202,11 +203,11 @@ export function QuestionCard({
         )}
         <div className="question-card__action">
           {shown === "submit" ? (
-            <Button label="Submit" variant="primary" isDisabled={!connected || sending} onClick={submit} />
+            <Button variant="primary" disabled={!connected || sending} onClick={submit}>Submit</Button>
           ) : shown === "next" ? (
-            <Button label="Next" variant="secondary" onClick={advance} />
+            <Button variant="secondary" onClick={advance}>Next</Button>
           ) : (
-            <Button label="Skip" variant="secondary" onClick={advance} />
+            <Button variant="secondary" onClick={advance}>Skip</Button>
           )}
         </div>
       </div>
@@ -255,8 +256,20 @@ function QuestionPage({
         input?.setSelectionRange(input.value.length, input.value.length);
       });
   };
-  const description = (option: QuestionItem["options"][number]) =>
-    option.description === undefined || option.description === "" ? {} : { description: option.description };
+  const items: readonly { label: string; value: string; description?: string | undefined }[] = [
+    ...question.options.map((option) => ({ label: option.label, value: option.label, description: option.description })),
+    { label: "Other", value: OTHER },
+  ];
+  const checkedValues = otherOn ? [...selected, OTHER] : selected;
+  const row = (item: (typeof items)[number], control: ReactNode) => (
+    <Field key={item.value} orientation="horizontal" data-option={item.value} className="question-card__option">
+      {control}
+      <FieldContent>
+        <FieldLabel>{item.label}</FieldLabel>
+        <FieldDescription>{item.description}</FieldDescription>
+      </FieldContent>
+    </Field>
+  );
 
   return (
     <div className="flex flex-col gap-1">
@@ -271,43 +284,43 @@ function QuestionPage({
           pointerAt.current = performance.now();
         }}
         onClick={(event) => {
-          const target = event.target;
-          if (!(target instanceof HTMLInputElement) || target.type !== "radio") return;
+          // A tap on a radio or its label; the hidden input's own click stays inside the radio.
+          if (multi || !(event.target instanceof Element)) return;
+          const option = event.target.closest<HTMLElement>("[data-option]");
+          if (option === null || event.target.closest('[role="radio"], label') === null) return;
+          const value = option.dataset.option!;
           if (performance.now() - pointerAt.current > 1000) return;
           pointerAt.current = Number.NEGATIVE_INFINITY;
           // This render's state is from before the tap: was the tapped row already the pick?
-          const cleared = target.value === OTHER ? otherOn : selected[0] === target.value;
+          const cleared = value === OTHER ? otherOn : selected[0] === value;
           if (cleared) {
-            if (target.value === OTHER) onOtherOn(false);
+            if (value === OTHER) onOtherOn(false);
             else onSelect([]);
           }
-          onPointerPick(target.value, cleared);
+          onPointerPick(value, cleared);
         }}
       >
         {multi ? (
-          <CheckboxList
-            label={question.header}
-            isLabelHidden
-            // Compact is the only way CheckboxList gives its items the small box.
-            density="compact"
-            value={otherOn ? [...selected, OTHER] : selected}
-            onChange={(next) => {
-              onSelect(next.filter((value) => value !== OTHER));
-              if (next.includes(OTHER) !== otherOn) openOther(!otherOn);
-            }}
-          >
-            {question.options.map((option) => (
-              <CheckboxListItem key={option.label} label={option.label} value={option.label} {...description(option)} />
-            ))}
-            <CheckboxListItem label="Other" value={OTHER} />
-          </CheckboxList>
+          <div role="group" aria-label={question.header} className="flex flex-col">
+            {items.map((item) =>
+              row(
+                item,
+                <Checkbox
+                  checked={checkedValues.includes(item.value)}
+                  onCheckedChange={(on) => {
+                    const next = on ? [...checkedValues, item.value] : checkedValues.filter((value) => value !== item.value);
+                    onSelect(next.filter((value) => value !== OTHER));
+                    if (next.includes(OTHER) !== otherOn) openOther(!otherOn);
+                  }}
+                />,
+              ),
+            )}
+          </div>
         ) : (
-          <RadioList
-            label={question.header}
-            isLabelHidden
-            size="sm"
+          <RadioGroup
+            aria-label={question.header}
             value={otherOn ? OTHER : (selected[0] ?? "")}
-            onChange={(next) => {
+            onValueChange={(next: string) => {
               if (next === OTHER) {
                 onSelect([]);
                 openOther(true);
@@ -317,11 +330,8 @@ function QuestionPage({
               onOtherOn(false);
             }}
           >
-            {question.options.map((option) => (
-              <RadioListItem key={option.label} label={option.label} value={option.label} {...description(option)} />
-            ))}
-            <RadioListItem label="Other" value={OTHER} />
-          </RadioList>
+            {items.map((item) => row(item, <RadioGroupItem value={item.value} />))}
+          </RadioGroup>
         )}
       </div>
       {otherOn ? (
@@ -335,7 +345,14 @@ function QuestionPage({
             }
           }}
         >
-          <TextInput label="Other answer" isLabelHidden value={other} onChange={onOther} placeholder="Your answer…" />
+          <Field>
+            <FieldLabel className="sr-only">Other answer</FieldLabel>
+            <Input
+              value={other}
+              onChange={(event) => onOther(event.target.value)}
+              placeholder="Your answer…"
+            />
+          </Field>
         </div>
       ) : null}
     </div>

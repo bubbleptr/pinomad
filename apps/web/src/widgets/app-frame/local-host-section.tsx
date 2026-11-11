@@ -1,8 +1,9 @@
 import { AlertDialog } from "@astryxdesign/core/AlertDialog";
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { Spinner } from "@astryxdesign/core/Spinner";
-import { Switch } from "@astryxdesign/core/Switch";
+import { Field, FieldContent, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
+import { Switch } from "../../shared/ui/switch.tsx";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import type { LocalHostStopResult } from "../../entities/local-host/local-host-protocol.ts";
@@ -96,7 +97,7 @@ function LocalHostControls({ bridge, pollIntervalMs }: { bridge: LocalHostBridge
           status="error"
           title="Couldn't check the host on this Mac"
           description={state.message}
-          endContent={<Button label="Try again" variant="secondary" onClick={() => void refresh()} />}
+          endContent={<Button variant="secondary" onClick={() => void refresh()}>Try again</Button>}
         />
       );
     case "too-old":
@@ -110,19 +111,19 @@ function LocalHostControls({ bridge, pollIntervalMs }: { bridge: LocalHostBridge
     case "installed":
       return (
         <div className="flex flex-col gap-3">
-          <Switch
-            label="Run the host on this Mac"
-            description={state.detail}
-            labelPosition="start"
-            labelSpacing="spread"
-            width="100%"
-            // On means not turned off: a crashed host launchd will restart is still on, and Off must reach it.
-            value={!state.stopped}
-            isLoading={busy !== undefined}
-            isDisabled={busy !== undefined}
-            // Off goes through the confirm; the switch keeps showing the real state until the CLI is done.
-            onChange={(checked) => (checked ? start() : setConfirming(true))}
-          />
+          <Field orientation="horizontal" disabled={busy !== undefined}>
+            <FieldContent>
+              <FieldLabel>Run the host on this Mac</FieldLabel>
+              <FieldDescription>{state.detail}</FieldDescription>
+            </FieldContent>
+            <Switch
+              // On means not turned off: a crashed host launchd will restart is still on, and Off must reach it.
+              checked={!state.stopped}
+              aria-busy={busy !== undefined || undefined}
+              // Off goes through the confirm; the switch keeps showing the real state until the CLI is done.
+              onCheckedChange={(checked) => (checked ? start() : setConfirming(true))}
+            />
+          </Field>
           {busy?.kind === "stopping" ? (
             <div className="flex flex-col gap-2">
               <p className="text-xs/5 text-muted-foreground">
@@ -138,7 +139,7 @@ function LocalHostControls({ bridge, pollIntervalMs }: { bridge: LocalHostBridge
               )}
               <div className="flex">
                 {/* Interrupts the CLI's wait: the service stays on. */}
-                <Button label="Cancel" variant="secondary" size="sm" onClick={() => void bridge.cancelStop()} />
+                <Button variant="secondary" size="sm" onClick={() => void bridge.cancelStop()}>Cancel</Button>
               </div>
             </div>
           ) : null}

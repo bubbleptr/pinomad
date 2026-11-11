@@ -312,7 +312,7 @@ mark.chat-skill-mention {
 
 /* Compact text actions right after the status/error, with no dot before them.
    Match the metadata type and keep a 24px target inside the 28px row. */
-.astryx-button.chat-message__local-action {
+[data-slot="button"].chat-message__local-action {
   flex: none;
   height: auto;
   min-height: 24px;
@@ -1186,12 +1186,9 @@ mark.chat-skill-mention {
   font-weight: var(--font-weight-normal, 400) !important;
 }
 
-/* Pills like the model selector above them. Inside the card Astryx rounds
-   buttons to the card radius minus its padding (16px, a pill at 28px tall);
-   the tray sits outside the card, so its Selectors fall back to
-   --radius-element. */
-.prompt-input__footer .astryx-selector {
-  border-radius: var(--radius-full) !important;
+/* Pills like the model selector above them. */
+.prompt-input__footer [data-slot="select-trigger"] {
+  border-radius: var(--radius-full);
 }
 
 /* —— Chain of thought: rail skin —— */

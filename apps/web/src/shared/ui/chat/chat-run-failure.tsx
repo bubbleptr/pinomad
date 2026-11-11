@@ -1,6 +1,6 @@
 import { useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../button.tsx";
 import { Collapsible } from "@astryxdesign/core/Collapsible";
 import { cn } from "cn";
 import { classifyProviderFailure } from "@pinomad/client/provider-failure.ts";
@@ -79,11 +79,11 @@ export function ChatRunFailure({
       <Banner status="error" title={summary.title} description={summary.description} />
       <div className="flex flex-wrap gap-2">
         {onOpenProviderSettings ? (
-          <Button label="Provider settings" size="sm" variant="secondary" onClick={onOpenProviderSettings} />
+          <Button size="sm" variant="secondary" onClick={onOpenProviderSettings}>Provider settings</Button>
         ) : null}
         {modelControl}
         {onRetry ? (
-          <Button label="Retry request" size="sm" variant="secondary" isDisabled={retrying} onClick={() => void retry()} />
+          <Button size="sm" variant="secondary" disabled={retrying} onClick={() => void retry()}>Retry request</Button>
         ) : null}
       </div>
       {retryError ? (

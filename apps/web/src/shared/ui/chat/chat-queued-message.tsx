@@ -2,7 +2,7 @@
 // the left, icon actions that wait for hover, and one column on the right for
 // the steer mark. Steer, Edit, and Withdraw are the protocol's 5.14 queued-input
 // calls; reordering is 5.29's reorderQueued.
-import { IconButton } from "@astryxdesign/core/IconButton";
+import { IconButton } from "../icon-button.tsx";
 import type { ComponentProps, FocusEvent, KeyboardEvent, ReactNode, Ref } from "react";
 import { ArrowBigUpDash, Cancel, GripVertical, Pencil, RefreshCw } from "../icons.tsx";
 
@@ -76,7 +76,7 @@ export function ChatQueuedMessage({
         tooltip="Retry"
         variant="ghost"
         size="sm"
-        isDisabled={isPending}
+        disabled={isPending}
         onClick={onRetry}
         icon={<RefreshCw aria-hidden="true" />}
       />
@@ -88,7 +88,7 @@ export function ChatQueuedMessage({
         tooltip={isEditDisabled && editTooltip !== undefined ? editTooltip : "Edit"}
         variant="ghost"
         size="sm"
-        isDisabled={isPending || isEditDisabled}
+        disabled={isPending || isEditDisabled}
         onClick={onEdit}
         icon={<Pencil aria-hidden="true" />}
       />
@@ -100,7 +100,7 @@ export function ChatQueuedMessage({
         tooltip="Withdraw"
         variant="ghost"
         size="sm"
-        isDisabled={isPending}
+        disabled={isPending}
         onClick={onWithdraw}
         icon={<Cancel aria-hidden="true" />}
       />
@@ -171,7 +171,7 @@ export function ChatQueuedMessage({
                 tooltip="Steer now"
                 variant="ghost"
                 size="sm"
-                isDisabled={isPending}
+                disabled={isPending}
                 onClick={onSteer}
                 icon={<ArrowBigUpDash aria-hidden="true" />}
               />

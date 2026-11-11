@@ -1,5 +1,5 @@
-import { Button } from "@astryxdesign/core/Button";
-import { IconButton } from "@astryxdesign/core/IconButton";
+import { Button } from "./button.tsx";
+import { IconButton } from "./icon-button.tsx";
 import { List, ListItem } from "@astryxdesign/core/List";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { ArrowLeft, MoreHorizontal } from "./icons.tsx";
@@ -18,8 +18,8 @@ export const InContext: Story = {
       <div className="flex flex-col gap-2">
         <span className="text-sm/5 font-semibold">Dialog footer: primary + secondary</span>
         <div className="flex justify-end gap-2">
-          <Button label="Cancel" variant="secondary" />
-          <Button label="Save" variant="primary" />
+          <Button variant="secondary">Cancel</Button>
+          <Button variant="primary">Save</Button>
         </div>
       </div>
       <div className="flex flex-col gap-2">
@@ -30,8 +30,8 @@ export const InContext: Story = {
             description="Paired Oct 12"
             endContent={
               <div className="flex gap-2">
-                <Button label="Connection" variant="secondary" size="sm" />
-                <Button label="Unpair" variant="secondary" size="sm" />
+                <Button variant="secondary" size="sm">Connection</Button>
+                <Button variant="secondary" size="sm">Unpair</Button>
               </div>
             }
           />
@@ -40,8 +40,8 @@ export const InContext: Story = {
       <div className="flex flex-col gap-2">
         <span className="text-sm/5 font-semibold">Confirming an irreversible action: destructive + secondary</span>
         <div className="flex gap-2">
-          <Button label="Delete account" variant="destructive" />
-          <Button label="Cancel" variant="secondary" />
+          <Button variant="destructive">Delete account</Button>
+          <Button variant="secondary">Cancel</Button>
         </div>
       </div>
       <div className="flex flex-col gap-2">
@@ -49,7 +49,7 @@ export const InContext: Story = {
         <div className="flex items-center gap-2">
           <IconButton label="Back" icon={<ArrowLeft />} variant="ghost" size="sm" />
           <IconButton label="More" icon={<MoreHorizontal />} variant="ghost" size="sm" />
-          <Button label="Sign in instead" variant="ghost" />
+          <Button variant="ghost">Sign in instead</Button>
         </div>
       </div>
     </div>
@@ -59,10 +59,24 @@ export const InContext: Story = {
 export const Disabled: Story = {
   render: () => (
     <div className="flex gap-2">
-      <Button label="Primary" variant="primary" isDisabled />
-      <Button label="Secondary" variant="secondary" isDisabled />
-      <Button label="Ghost" variant="ghost" isDisabled />
-      <Button label="Destructive" variant="destructive" isDisabled />
+      <Button variant="primary" disabled>Primary</Button>
+      <Button variant="secondary" disabled>Secondary</Button>
+      <Button variant="ghost" disabled>Ghost</Button>
+      <Button variant="destructive" disabled>Destructive</Button>
+    </div>
+  ),
+};
+
+// Loading keeps the label's width under the spinner; a disabled button with a
+// tooltip stays focusable.
+export const States: Story = {
+  render: () => (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button variant="primary" loading>Save</Button>
+      <Button variant="secondary" loading>Refresh</Button>
+      <Button variant="destructive" size="sm" loading>Delete account</Button>
+      <IconButton label="Refresh" icon={<ArrowLeft />} loading />
+      <Button variant="secondary" disabled tooltip="Connect the host first">Unpair</Button>
     </div>
   ),
 };

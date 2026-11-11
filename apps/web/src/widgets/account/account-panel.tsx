@@ -1,8 +1,9 @@
 import { Avatar } from "@astryxdesign/core/Avatar";
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
-import { CheckboxInput } from "@astryxdesign/core/CheckboxInput";
-import { IconButton } from "@astryxdesign/core/IconButton";
+import { Button } from "../../shared/ui/button.tsx";
+import { Checkbox } from "../../shared/ui/checkbox.tsx";
+import { Field, FieldContent, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
+import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { Spinner } from "@astryxdesign/core/Spinner";
@@ -208,7 +209,7 @@ function Overview({
           </h3>
           <span className="text-xs/5 text-muted-foreground">{server}</span>
         </div>
-        <Button label="Sign out" variant="secondary" size="sm" onClick={() => setOpen("sign-out")} />
+        <Button variant="secondary" size="sm" onClick={() => setOpen("sign-out")}>Sign out</Button>
       </div>
       <AccountEmail account={account} email={state.email} />
       <SignInMethods account={account} />
@@ -218,12 +219,12 @@ function Overview({
           <DangerAction
             title="Sign out everywhere"
             description="Ends every session on every device, including this one."
-            action={<Button label="Sign out everywhere" variant="secondary" size="sm" onClick={() => setOpen("everywhere")} />}
+            action={<Button variant="secondary" size="sm" onClick={() => setOpen("everywhere")}>Sign out everywhere</Button>}
           />
           <DangerAction
             title="Delete account"
             description={`Removes your account from ${server}. Devices stay registered on your hosts.`}
-            action={<Button label="Delete account" variant="secondary" size="sm" onClick={() => setOpen("delete")} />}
+            action={<Button variant="secondary" size="sm" onClick={() => setOpen("delete")}>Delete account</Button>}
           />
         </ul>
       </SettingsGroup>
@@ -292,7 +293,6 @@ function SignOutDialog({
       onClose={onClose}
       action={
         <Button
-          label="Sign out"
           variant="destructive"
           onClick={() => {
             onClose();
@@ -300,15 +300,20 @@ function SignOutDialog({
             // The model lands signed-out at once; the answer only decides the warning.
             void account.logout({ revoke }).then((result) => onNotice(signOutNotice(signOutWarning(result, revoke))));
           }}
-        />
+        >
+          Sign out
+        </Button>
       }
     >
-      <CheckboxInput
-        label="This is a shared computer"
-        description="Also remove this device from the hosts it joined through your account, and forget them here. Hosts paired with a QR code stay."
-        value={revoke}
-        onChange={setRevoke}
-      />
+      <Field orientation="horizontal">
+        <Checkbox checked={revoke} onCheckedChange={setRevoke} />
+        <FieldContent>
+          <FieldLabel>This is a shared computer</FieldLabel>
+          <FieldDescription>
+            Also remove this device from the hosts it joined through your account, and forget them here. Hosts paired with a QR code stay.
+          </FieldDescription>
+        </FieldContent>
+      </Field>
     </ConfirmDialog>
   );
 }
@@ -329,7 +334,6 @@ function SignOutEverywhereDialog({
       onClose={onClose}
       action={
         <Button
-          label="Sign out everywhere"
           variant="destructive"
           onClick={() => {
             onClose();
@@ -340,7 +344,9 @@ function SignOutEverywhereDialog({
               if (!result.ok) onNotice(signOutNotice("Other devices may still be signed in. Sign in and try Sign out everywhere again."));
             });
           }}
-        />
+        >
+          Sign out everywhere
+        </Button>
       }
     />
   );
@@ -394,7 +400,7 @@ function DeleteAccountDialog({
       title="Delete your account?"
       description={`This deletes your account on ${server} and signs you out everywhere. Hosts joined to it are disconnected from the server; run pinomad join on each to connect it again. This device and your others stay registered on their hosts. To remove them, revoke them in each host's Devices.`}
       onClose={onClose}
-      action={<Button label="Delete account" variant="destructive" isLoading={busy} isDisabled={!identity.ready} onClick={submit} />}
+      action={<Button variant="destructive" loading={busy} disabled={!identity.ready} onClick={submit}>Delete account</Button>}
     >
       {identity.field}
       {error === undefined ? null : (
@@ -425,7 +431,7 @@ function AccountHosts({ state }: { state: SignedInState }) {
         </SettingsGroup>
       )}
       <div className="flex">
-        <Button label="Add a host" variant="secondary" size="sm" onClick={() => setAdding(true)} />
+        <Button variant="secondary" size="sm" onClick={() => setAdding(true)}>Add a host</Button>
       </div>
       {adding ? <AddHostDialog onClose={() => setAdding(false)} /> : null}
     </div>
@@ -477,7 +483,7 @@ function Devices({ account, hosts }: { account: AccountModel; hosts: readonly Ac
           status="warning"
           title="Couldn't load devices"
           description={accountErrorMessage(error)}
-          endContent={<Button label="Retry" variant="secondary" size="sm" onClick={() => void load()} />}
+          endContent={<Button variant="secondary" size="sm" onClick={() => void load()}>Retry</Button>}
         />
       )}
       {devices === undefined ? (
@@ -612,7 +618,7 @@ function RemoveDeviceDialog({
       title={`Remove ${name}?`}
       description={description}
       onClose={() => onClose(false)}
-      action={<Button label="Remove device" variant="destructive" isLoading={busy} isDisabled={!identity.ready} onClick={submit} />}
+      action={<Button variant="destructive" loading={busy} disabled={!identity.ready} onClick={submit}>Remove device</Button>}
     >
       {identity.field}
       {error === undefined ? null : (

@@ -22,7 +22,7 @@ function renderModels(machines = fakeMachines()) {
 describe("Settings models", () => {
   it("saves the picked model as its provider and id", async () => {
     const updateSettings = renderModels();
-    await userEvent.click(screen.getByRole("button", { name: "Default model" }));
+    await userEvent.click(screen.getByRole("combobox", { name: "Default model" }));
     await userEvent.click(await screen.findByRole("option", { name: /GPT-5/ }));
     expect(updateSettings).toHaveBeenCalledWith({ defaultModel: { provider: "openai", modelId: "gpt-5" } });
   });
@@ -38,7 +38,7 @@ describe("Settings models", () => {
     const base = fakeView();
     const models = base.models.map((model) => ({ ...model, thinkingLevels: ["off" as const] }));
     renderModels(fakeMachines({ home: fakeView({ models }) }));
-    expect(screen.getByRole("button", { name: "Default model" })).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Default model" })).toBeTruthy();
     expect(screen.queryByRole("combobox", { name: "Thinking" })).toBeNull();
   });
 });

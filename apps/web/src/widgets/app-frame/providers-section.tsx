@@ -1,10 +1,11 @@
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { Card } from "@astryxdesign/core/Card";
-import { IconButton } from "@astryxdesign/core/IconButton";
+import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
-import { TextInput } from "@astryxdesign/core/TextInput";
+import { Field, FieldLabel } from "../../shared/ui/field.tsx";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "../../shared/ui/input-group.tsx";
 import { Token } from "@astryxdesign/core/Token";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { HostProviders, LoginMethod, ProviderInfo, StoredLogin } from "@pinomad/protocol/auth.ts";
@@ -12,7 +13,7 @@ import { hostSupportsCall } from "@pinomad/protocol/frames.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { ProviderLogo } from "../../entities/provider/provider-logo.tsx";
-import { ArrowLeft, ChevronRight, MoreHorizontal } from "../../shared/ui/icons.tsx";
+import { ArrowLeft, Cancel, ChevronRight, MoreHorizontal } from "../../shared/ui/icons.tsx";
 import { CustomEndpointForm } from "./custom-endpoint-form.tsx";
 import { InlineError, LoginPanel } from "./provider-login.tsx";
 
@@ -354,20 +355,37 @@ function KeyPage({
   onPick: (id: string) => void;
 }) {
   const [query, setQuery] = useState("");
+  const filterRef = useRef<HTMLInputElement>(null);
   const keyed = providers.filter((provider) => provider.apiKey !== undefined && provider.custom === undefined);
   const q = query.trim().toLowerCase();
   const shown = keyed.filter((provider) => q === "" || `${provider.name} ${provider.id}`.toLowerCase().includes(q));
   return (
     <SubPage title="API key" onBack={onBack}>
-      <TextInput
-        label="Filter providers"
-        isLabelHidden
-        placeholder={`Filter ${keyed.length} providers`}
-        value={query}
-        onChange={setQuery}
-        hasClear
-        width="100%"
-      />
+      <Field>
+        <FieldLabel className="sr-only">Filter providers</FieldLabel>
+        <InputGroup>
+          <InputGroupInput
+            ref={filterRef}
+            placeholder={`Filter ${keyed.length} providers`}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          {query === "" ? null : (
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton
+                size="icon-xs"
+                aria-label="Clear Filter providers"
+                onClick={() => {
+                  setQuery("");
+                  filterRef.current?.focus();
+                }}
+              >
+                <Cancel aria-hidden="true" />
+              </InputGroupButton>
+            </InputGroupAddon>
+          )}
+        </InputGroup>
+      </Field>
       {shown.length === 0 ? (
         <p className="text-xs/5 text-muted-foreground">
           {`No provider matches “${query.trim()}”. If it speaks an OpenAI- or Anthropic-compatible API, add it as a custom endpoint.`}
@@ -486,6 +504,7 @@ function Connection({
   onRemoved: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<string>();
   const stored = provider.stored;
   const oauth = provider.oauth;
@@ -498,10 +517,10 @@ function Connection({
         </p>
         <div className="flex flex-wrap gap-2">
           {provider.apiKey === undefined ? null : (
-            <Button label="Save a key here" size="sm" isDisabled={!connected} onClick={() => onLogin("api_key")} />
+            <Button size="sm" disabled={!connected} onClick={() => onLogin("api_key")}>Save a key here</Button>
           )}
           {oauth === undefined ? null : (
-            <Button label={useOAuthLabel(oauth)} variant="secondary" size="sm" isDisabled={!connected} onClick={() => onLogin("oauth")} />
+            <Button variant="secondary" size="sm" disabled={!connected} onClick={() => onLogin("oauth")}>{useOAuthLabel(oauth)}</Button>
           )}
         </div>
       </div>
@@ -519,17 +538,23 @@ function Connection({
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <Button
-            label={isKey ? "Remove key" : "Log out"}
             variant="destructive"
             size="sm"
-            isDisabled={!connected}
-            clickAction={() =>
-              remote.controller.logout(provider.id).then(onRemoved, (reason: unknown) => {
-                setError(reason instanceof Error ? reason.message : String(reason));
-              })
-            }
-          />
-          <Button label="Cancel" variant="secondary" size="sm" onClick={() => setConfirming(false)} />
+            disabled={!connected}
+            loading={removing}
+            onClick={() => {
+              setRemoving(true);
+              remote.controller
+                .logout(provider.id)
+                .then(onRemoved, (reason: unknown) => {
+                  setError(reason instanceof Error ? reason.message : String(reason));
+                })
+                .finally(() => setRemoving(false));
+            }}
+          >
+            {isKey ? "Remove key" : "Log out"}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => setConfirming(false)}>Cancel</Button>
           {error === undefined ? null : <InlineError message={error} />}
         </div>
       </div>
@@ -546,18 +571,19 @@ function Connection({
         </p>
       )}
       <div className="flex flex-wrap gap-2">
-        <Button label={isKey ? "Replace key" : "Sign in again"} size="sm" isDisabled={!connected} onClick={() => onLogin(stored.kind)} />
-        <Button label={isKey ? "Remove key" : "Log out"} variant="secondary" size="sm" isDisabled={!connected} onClick={() => setConfirming(true)} />
+        <Button size="sm" disabled={!connected} onClick={() => onLogin(stored.kind)}>{isKey ? "Replace key" : "Sign in again"}</Button>
+        <Button variant="secondary" size="sm" disabled={!connected} onClick={() => setConfirming(true)}>{isKey ? "Remove key" : "Log out"}</Button>
       </div>
       {hasOther ? (
         <div>
           <Button
-            label={other === "api_key" || oauth === undefined ? "Use an API key instead" : useOAuthLabel(oauth)}
             variant="ghost"
             size="sm"
-            isDisabled={!connected}
+            disabled={!connected}
             onClick={() => onLogin(other)}
-          />
+          >
+            {other === "api_key" || oauth === undefined ? "Use an API key instead" : useOAuthLabel(oauth)}
+          </Button>
         </div>
       ) : null}
     </div>
@@ -594,13 +620,14 @@ function StoredLoginCard({ login, connected, remote }: { login: StoredLogin; con
           <p className="text-xs/5 text-muted-foreground">{`Removes the stored ${login.name} credential from the host.`}</p>
           <div className="flex items-center gap-2">
             <Button
-              label="Log out"
               variant="destructive"
               size="sm"
-              isDisabled={!connected}
+              disabled={!connected}
               onClick={() => void remote.controller.logout(login.providerId)}
-            />
-            <Button label="Cancel" variant="secondary" size="sm" onClick={() => setConfirming(false)} />
+            >
+              Log out
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => setConfirming(false)}>Cancel</Button>
           </div>
         </div>
       ) : null}

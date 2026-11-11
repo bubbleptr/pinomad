@@ -1,9 +1,10 @@
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { Spinner } from "@astryxdesign/core/Spinner";
-import { TextInput } from "@astryxdesign/core/TextInput";
+import { Field, FieldLabel } from "../../shared/ui/field.tsx";
+import { Input } from "../../shared/ui/input.tsx";
 import { useEffect, useState } from "react";
 import type { AccountError, AccountResult, PendingSignIn } from "@pinomad/client/account.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
@@ -102,7 +103,7 @@ export function PendingSignInSteps({
       <div className="flex flex-col gap-3">
         <span className="text-sm/5">This sign-in expired. Start again.</span>
         <div className="flex">
-          <Button label="Back to sign-in" variant="secondary" onClick={onDone} />
+          <Button variant="secondary" onClick={onDone}>Back to sign-in</Button>
         </div>
       </div>
     );
@@ -189,26 +190,30 @@ function CreateFromPending({
   return (
     <div className="flex flex-col gap-3">
       {asksPassword ? (
-        <TextInput
-          label="New password"
-          type="password"
-          value={password}
-          onChange={setPassword}
-          onEnter={create}
-          width="100%"
-          {...NEW_PASSWORD_INPUT}
-        />
+        <Field>
+          <FieldLabel>New password</FieldLabel>
+          <Input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            {...NEW_PASSWORD_INPUT}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") create();
+            }}
+          />
+        </Field>
       ) : null}
       {error === undefined ? null : <Banner status="error" title="Couldn't create the account" description={accountErrorMessage(error)} />}
       <Button
-        label="Create account"
         variant="primary"
-        width="100%"
-        isLoading={busy}
-        isDisabled={asksPassword && password === ""}
+        className="w-full"
+        loading={busy}
+        disabled={asksPassword && password === ""}
         onClick={create}
-      />
-      <Button label="I already have an account" variant="secondary" width="100%" isDisabled={busy} onClick={onLink} />
+      >
+        Create account
+      </Button>
+      <Button variant="secondary" className="w-full" disabled={busy} onClick={onLink}>I already have an account</Button>
     </div>
   );
 }
@@ -253,8 +258,8 @@ function LinkToCurrent({
       {identity.field}
       {error === undefined ? null : <Banner status="error" title={`Couldn't link ${provider}`} description={accountErrorMessage(error)} />}
       <div className="flex gap-2">
-        <Button label={`Link ${provider}`} variant="primary" isLoading={busy} isDisabled={!identity.ready} onClick={submit} />
-        <Button label="Back" variant="secondary" onClick={onBack} />
+        <Button variant="primary" loading={busy} disabled={!identity.ready} onClick={submit}>{`Link ${provider}`}</Button>
+        <Button variant="secondary" onClick={onBack}>Back</Button>
       </div>
     </div>
   );
@@ -292,20 +297,33 @@ function SignInAndLink({
   };
   return (
     <div className="flex flex-col gap-3">
-      <TextInput label="Email" value={email} onChange={setEmail} onEnter={submit} width="100%" {...{ autoComplete: "username" }} />
-      <TextInput
-        label="Password"
-        type="password"
-        value={password}
-        onChange={setPassword}
-        onEnter={submit}
-        width="100%"
-        {...{ autoComplete: "current-password" }}
-      />
+      <Field>
+        <FieldLabel>Email</FieldLabel>
+        <Input
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          {...{ autoComplete: "username" }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") submit();
+          }}
+        />
+      </Field>
+      <Field>
+        <FieldLabel>Password</FieldLabel>
+        <Input
+          type="password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          {...{ autoComplete: "current-password" }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") submit();
+          }}
+        />
+      </Field>
       {error === undefined ? null : <Banner status="error" title={`Couldn't link ${provider}`} description={accountErrorMessage(error)} />}
       <div className="flex gap-2">
-        <Button label={`Sign in and link ${provider}`} variant="primary" isLoading={busy} isDisabled={!ready} onClick={submit} />
-        <Button label="Back" variant="secondary" onClick={onBack} />
+        <Button variant="primary" loading={busy} disabled={!ready} onClick={submit}>{`Sign in and link ${provider}`}</Button>
+        <Button variant="secondary" onClick={onBack}>Back</Button>
       </div>
       <span className="text-xs/5 text-muted-foreground">Signed up with Google, GitHub or Apple? Sign in with it first, then link this one in Settings.</span>
     </div>

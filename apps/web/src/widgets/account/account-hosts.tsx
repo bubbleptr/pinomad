@@ -1,5 +1,5 @@
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { Item } from "@astryxdesign/core/Item";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
@@ -109,7 +109,7 @@ export function AccountPairingBanners({ state, pairing }: { state: SignedIn; pai
           status="warning"
           title="This pairing wasn't saved"
           description={`${host.name ?? host.url} will be lost when the app restarts.`}
-          endContent={<Button label="Retry" variant="secondary" size="sm" onClick={() => pairing.retrySave(host)} />}
+          endContent={<Button variant="secondary" size="sm" onClick={() => pairing.retrySave(host)}>Retry</Button>}
         />
       ))}
       {state.hostsError === undefined ? null : (
@@ -117,7 +117,7 @@ export function AccountPairingBanners({ state, pairing }: { state: SignedIn; pai
           status="warning"
           title="Couldn't refresh hosts"
           description={accountErrorMessage(state.hostsError)}
-          endContent={<Button label="Retry" variant="secondary" size="sm" onClick={() => void account.refreshHosts()} />}
+          endContent={<Button variant="secondary" size="sm" onClick={() => void account.refreshHosts()}>Retry</Button>}
         />
       )}
       {pairing.error === undefined ? null : (
@@ -167,13 +167,14 @@ export function AccountHostList({
                   <div className="flex items-center gap-1">
                     {pairable ? (
                       <Button
-                        label="Pair"
                         variant="secondary"
                         size="sm"
-                        isLoading={pairing.pairing === host.hostId}
-                        isDisabled={pairing.pairing !== undefined}
+                        loading={pairing.pairing === host.hostId}
+                        disabled={pairing.pairing !== undefined}
                         onClick={() => pairing.pair(host.hostId)}
-                      />
+                      >
+                        Pair
+                      </Button>
                     ) : null}
                     <MoreMenu
                       label={`More for ${host.name}`}

@@ -1,4 +1,4 @@
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { useToast } from "@astryxdesign/core/Toast";
 import { useEffect, useRef, useState } from "react";
 import { hostSupportsCall, hostSupportsFeature } from "@pinomad/protocol/frames.ts";
@@ -597,13 +597,14 @@ export function ConversationComposer({
         endActions={
           busy && (value.trim() !== "" || images.length > 0 || files.entries.length > 0) ? (
             <Button
-              label="Follow-up"
               variant="ghost"
               size={narrow ? "md" : "sm"}
               tooltip="Queue after the running turn"
-              isDisabled={disconnected || imagesPending || editLocked || files.uploading || files.failed}
+              disabled={disconnected || imagesPending || editLocked || files.uploading || files.failed}
               onClick={() => submit("followUp")}
-            />
+            >
+              Follow-up
+            </Button>
           ) : null
         }
       />

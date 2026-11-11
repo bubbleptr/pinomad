@@ -1,10 +1,10 @@
 # Web 界面设计规则
 
-Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。组件来自 Astryx（`@astryxdesign/core`，主题 `@astryxdesign/theme-neutral`），props 和 token 用 `bunx astryx component <Name>` 查（在 `apps/web` 下跑）。
+Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。按钮和表单控件是 `src/shared/ui/` 里的 shadcn（Base UI 版）组件；其余组件还来自 Astryx（`@astryxdesign/core`，迁移中，ADR-0048），它们的 props 用 `bunx astryx component <Name>` 查（在 `apps/web` 下跑）。
 
 ## 按钮
 
-按钮只用 Astryx 的 `Button`（带文字）和 `IconButton`（只有图标），`variant` 只有四档，没有别的：
+按钮只用 `src/shared/ui/button.tsx` 的 `Button`（带文字）和 `src/shared/ui/icon-button.tsx` 的 `IconButton`（只有图标，`label` 必填，作为无障碍名称），`variant` 只有四档，没有别的：
 
 | variant | 样子 | 用在哪 |
 |---|---|---|
@@ -13,7 +13,9 @@ Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。组件来�
 | `ghost` | 透明，只有字或图标 | 只有下面四种情况，见流程图。 |
 | `destructive` | 浅红底红字 | 不可撤销动作的**最后一步确认**，旁边必须有一个 `secondary` 的 Cancel。 |
 
-`secondary` 的描边和投影在 `src/app/styles.css` 的 “Button tiers” 一段里，写在 `astryx-theme` 层，输入框（`.astryx-chat-composer`）里的按钮除外：停止按钮在输入框底色上，表面色反而像个洞。Astryx 原版的 secondary 只是 6% 灰底，放在输入框旁边像一段文字，深色下几乎看不见，这是改它的原因。不要在调用处用 `className` 给按钮加边框、阴影或背景：一档按钮长什么样只在主题里定一次。
+每档的样子只写在 `button.tsx` 的 `buttonVariants` 里。`secondary` 有描边和投影，是因为只有浅灰底时放在输入框旁边像一段文字，深色下几乎看不见。`destructive` 的字用 `--destructive-strong`：`--destructive` 画在浅红底上对比度只有约 3.4:1。不要在调用处用 `className` 给按钮加边框、阴影或背景。
+
+文字写成 children，图标放在文字前面（`<Button><Plus aria-hidden="true" />Add</Button>`）。另有两个属性：`loading` 在文字上盖一个转圈并禁用按钮，宽度和无障碍名称不变；`tooltip` 悬停和聚焦时显示，禁用的按钮带 `tooltip` 时仍能用键盘聚焦。默认 `type="button"`，提交表单要写 `type="submit"`。
 
 ### 选哪一档
 
@@ -38,8 +40,9 @@ Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。组件来�
 
 ### 尺寸
 
-- 列表行（`ListItem` 的 `endContent`）、行内表单、卡片里：`size="sm"`。
-- 对话框页脚、整屏的表单提交：默认的 `md`。
+- 列表行（`ListItem` 的 `endContent`）、行内表单、卡片里：`size="sm"`（28px）。
+- 对话框页脚、整屏的表单提交：默认的 `md`（32px）。
+- `IconButton` 也是 `md` / `sm` 两档。
 - 同一行的按钮用同一个尺寸。
 
 ### 例子
@@ -49,23 +52,27 @@ Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。组件来�
 ```tsx
 <ListItem
   label={device.name}
-  endContent={<Button label="Unpair" variant="secondary" size="sm" onClick={onUnpair} />}
+  endContent={<Button variant="secondary" size="sm" onClick={onUnpair}>Unpair</Button>}
 />
 
 <div className="flex gap-2">
-  <Button label="Delete account" variant="destructive" isLoading={busy} onClick={submit} />
-  <Button label="Cancel" variant="secondary" onClick={close} />
+  <Button variant="destructive" loading={busy} onClick={submit}>Delete account</Button>
+  <Button variant="secondary" onClick={close}>Cancel</Button>
 </div>
 ```
 
 错的：独立动作用 `ghost`（读成纯文字），打开确认的按钮就用 `destructive`（还没确认就在报警）。
 
 ```tsx
-<ListItem label={device.name} endContent={<Button label="Unpair" variant="ghost" size="sm" />} />
-<Button label="Delete account" variant="destructive" onClick={() => setOpen(true)} />
+<ListItem label={device.name} endContent={<Button variant="ghost" size="sm">Unpair</Button>} />
+<Button variant="destructive" onClick={() => setOpen(true)}>Delete account</Button>
 ```
 
-四档并排的样子见 Storybook 的 `Shared/ButtonTiers`（`src/shared/ui/button-tiers.stories.tsx`），明暗两套都要看。
+四档并排的样子和加载、禁用状态见 Storybook 的 `Shared/ButtonTiers`（`src/shared/ui/button-tiers.stories.tsx`），明暗两套都要看。
+
+### 表单控件
+
+输入框、选择器等也在 `src/shared/ui/`：`input.tsx`、`textarea.tsx`、`select.tsx`、`combobox.tsx`（带搜索的选择器）、`checkbox.tsx`、`switch.tsx`、`radio-group.tsx`、`segmented-control.tsx`。名称、说明和错误用 `field.tsx` 的 `Field` / `FieldLabel` / `FieldDescription` / `FieldError` 包起来，它们自动关联到控件（`for`、`aria-describedby`）；只给读屏的名称用 `<FieldLabel className="sr-only">`。
 
 ### 不归这里管的
 
@@ -106,9 +113,9 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 分区内容用 `shared/ui/settings-group.tsx`：
 
 - `SettingsGroup`：可选标题，下面一张带描边的卡片，行间有分隔线。
-- `SettingsRow`：一项设置一行，左边是名称（可加一行说明），右边是控件；窄时控件换到下一行。控件自己带无障碍名称（比如 `SegmentedControl` 的 `label`），行的名称只给人看。
+- `SettingsRow`：一项设置一行，左边是名称（可加一行说明），右边是控件；窄时控件换到下一行。控件自己带无障碍名称（比如 `SegmentedControl` 的 `aria-label`），行的名称只给人看。
 - 现成的列表（`List hasDividers`）直接放进 `SettingsGroup`。
 
-设置页里的 `secondary` 按钮和 `Selector` 是平的：透明底，只留一圈 `--color-border` 描边，没有投影（`styles.css` 里 `.pigui-settings` 一段）。深色下表面色比卡片暗一级，按钮放在卡片里会像个洞。`SegmentedControl` 也是平的：凹下去的轨道，选中的那段比下面所有层都亮一级，没有投影；深色下 Astryx 原版的选中段比卡片还暗。
+设置页里的 `secondary` 按钮和 `Select` 是平的：透明底，只留一圈 `--border` 描边，没有投影（写在各自组件里的 `in-[.pigui-settings]:` 类）。深色下表面色比卡片暗一级，按钮放在卡片里会像个洞。`SegmentedControl` 也是平的：凹下去的轨道，选中的那段比下面所有层都亮一级，没有投影。
 
 分区按用户要调整的事分组，不按存在哪里分：This device 下是 General、Hosts；Host settings 下是 Providers、Models、Agents、Chats、Devices、About。合并进来的旧分区名写进 `SECTIONS` 的 keywords，搜索还能找到。选宿主的选择器在每个宿主分区的标题上方，不在导航里。页面上不显示文件路径。

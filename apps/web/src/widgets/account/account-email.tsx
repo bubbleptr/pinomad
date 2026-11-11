@@ -1,9 +1,10 @@
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
-import { TextInput } from "@astryxdesign/core/TextInput";
+import { Field, FieldLabel } from "../../shared/ui/field.tsx";
+import { Input } from "../../shared/ui/input.tsx";
 import { useEffect, useRef, useState } from "react";
 import type { AccountConfirmation, AccountError, EmailConfirmation } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
@@ -78,15 +79,26 @@ export function EmailForm({
     run((confirmation) => account.setEmail({ email: sentTo, code: code.trim(), ...confirmation }), onSaved);
   };
   const identity = useConfirmIdentity(account, sentTo === undefined ? send : save);
-  const cancel = onCancel === undefined ? null : <Button label="Cancel" variant="secondary" onClick={onCancel} />;
+  const cancel = onCancel === undefined ? null : <Button variant="secondary" onClick={onCancel}>Cancel</Button>;
   if (sentTo === undefined) {
     return (
       <div className="flex flex-col gap-2">
-        <TextInput label="Email" type="email" value={email} onChange={setEmail} onEnter={send} width="100%" {...{ autoComplete: "email" }} />
+        <Field>
+          <FieldLabel>Email</FieldLabel>
+          <Input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            {...{ autoComplete: "email" }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") send();
+            }}
+          />
+        </Field>
         {identity.field}
         {error === undefined ? null : <Banner status="error" title="Couldn't send the code" description={accountErrorMessage(error)} />}
         <div className="flex gap-2">
-          <Button label="Send code to new email" variant="primary" isLoading={busy} isDisabled={email.trim() === "" || !identity.ready} onClick={send} />
+          <Button variant="primary" loading={busy} disabled={email.trim() === "" || !identity.ready} onClick={send}>Send code to new email</Button>
           {cancel}
         </div>
       </div>
@@ -95,13 +107,22 @@ export function EmailForm({
   return (
     <div className="flex flex-col gap-2">
       <span className="text-sm/5">Enter the 6-digit code we sent to {sentTo}.</span>
-      <TextInput label="Code" value={code} onChange={setCode} onEnter={save} width="100%" {...CODE_INPUT} />
+      <Field>
+        <FieldLabel>Code</FieldLabel>
+        <Input
+          value={code}
+          onChange={(event) => setCode(event.target.value)}
+          {...CODE_INPUT}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") save();
+          }}
+        />
+      </Field>
       {reconfirm ? identity.field : null}
       {error === undefined ? null : <Banner status="error" title="Couldn't save the email" description={accountErrorMessage(error)} />}
       <div className="flex gap-2">
-        <Button label={submitLabel} variant="primary" isLoading={busy} isDisabled={code.trim() === "" || !identity.ready} onClick={save} />
+        <Button variant="primary" loading={busy} disabled={code.trim() === "" || !identity.ready} onClick={save}>{submitLabel}</Button>
         <Button
-          label="Use a different email"
           variant="ghost"
           onClick={() => {
             setSentTo(undefined);
@@ -109,7 +130,9 @@ export function EmailForm({
             setError(undefined);
             setReconfirm(false);
           }}
-        />
+        >
+          Use a different email
+        </Button>
       </div>
     </div>
   );
@@ -129,7 +152,6 @@ export function AccountEmail({ account, email }: { account: AccountModel; email:
           {...(changed ? { description: "Email saved." } : {})}
           endContent={
             <Button
-              label={email === undefined ? "Add" : "Change"}
               aria-label={title}
               variant="secondary"
               size="sm"
@@ -137,7 +159,9 @@ export function AccountEmail({ account, email }: { account: AccountModel; email:
                 setChanged(false);
                 setOpen(true);
               }}
-            />
+            >
+              {email === undefined ? "Add" : "Change"}
+            </Button>
           }
         />
       </List>

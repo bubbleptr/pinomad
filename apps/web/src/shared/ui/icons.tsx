@@ -10,6 +10,8 @@ import {
   ArrowBigUpDashIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
+  ArrowDown01Icon,
+  ArrowUp01Icon,
   ArrowUp02Icon,
   BarChartIcon,
   BotIcon,
@@ -56,6 +58,7 @@ import {
   PuzzleIcon,
   RefreshIcon,
   RobotIcon,
+  Search01Icon,
   SearchVisualIcon,
   Settings01Icon,
   Settings02Icon,
@@ -67,6 +70,7 @@ import {
   ThumbsDownIcon,
   ThumbsUpIcon,
   Tick02Icon,
+  UnfoldMoreIcon,
   UserCircleIcon,
 } from "@hugeicons/core-free-icons";
 
@@ -104,7 +108,10 @@ export const Brain = iconComponent(BrainIcon);
 export const Cancel = iconComponent(Cancel01Icon);
 export const ChatAdd = iconComponent(ChatAddIcon);
 export const ChatBubble = iconComponent(BubbleChatIcon);
+export const ChevronDown = iconComponent(ArrowDown01Icon);
 export const ChevronRight = iconComponent(ChevronRightIcon);
+export const ChevronUp = iconComponent(ArrowUp01Icon);
+export const ChevronsUpDown = iconComponent(UnfoldMoreIcon);
 export const Check = iconComponent(Tick02Icon);
 export const CheckCircle = iconComponent(CheckmarkCircle02Icon);
 export const Circle = iconComponent(CircleIcon);
@@ -145,6 +152,7 @@ export const Pencil = iconComponent(PencilEdit01Icon);
 export const Plus = iconComponent(AddIcon);
 export const Puzzle = iconComponent(PuzzleIcon);
 export const RefreshCw = iconComponent(RefreshIcon);
+export const Search = iconComponent(Search01Icon);
 export const SearchVisual = iconComponent(SearchVisualIcon);
 export const Settings = iconComponent(Settings01Icon);
 export const Settings2 = iconComponent(Settings02Icon);

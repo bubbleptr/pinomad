@@ -1,4 +1,4 @@
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
 import type { ReactNode } from "react";
@@ -44,7 +44,7 @@ export function ConfirmDialog({
         footer={
           <LayoutFooter>
             <div className="flex justify-end gap-2">
-              <Button label="Cancel" variant="secondary" onClick={onClose} />
+              <Button variant="secondary" onClick={onClose}>Cancel</Button>
               {action}
             </div>
           </LayoutFooter>

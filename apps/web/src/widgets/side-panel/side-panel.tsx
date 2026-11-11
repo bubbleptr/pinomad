@@ -5,9 +5,9 @@
 // via `view.side`, next to its background processes.
 // Changes is the shown conversation's checkout diff (changes-surface.tsx);
 // Terminal is the terminals' owner's shells (terminal-surface.tsx).
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { Dialog } from "@astryxdesign/core/Dialog";
-import { IconButton } from "@astryxdesign/core/IconButton";
+import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
@@ -100,7 +100,6 @@ export function SurfaceButtons({
           <span key={entry.id} className="relative">
             <IconButton
               aria-pressed={shown}
-              // The shaded button says the surface is shown, beside aria-pressed.
               className={shown ? "bg-[var(--color-overlay-pressed)]" : undefined}
               icon={entry.icon}
               label={entry.label}
@@ -459,7 +458,7 @@ function ProcessDetail({
         start={barStart}
         end={
           <>
-            {canStop ? <Button label="Stop" size="sm" variant="secondary" isDisabled={stopping} onClick={stop} /> : null}
+            {canStop ? <Button size="sm" variant="secondary" disabled={stopping} onClick={stop}>Stop</Button> : null}
             {barEnd}
           </>
         }
@@ -545,8 +544,8 @@ function TaskDetail({
         )}
       </div>
       <div className="flex justify-center gap-2 p-2 shrink-0 border-t border-border">
-        {onStop === undefined ? null : <Button label="Stop" variant="secondary" size="sm" onClick={onStop} />}
-        <Button label="Open in main" variant="ghost" size="sm" onClick={() => onOpenInMain(side.id)} />
+        {onStop === undefined ? null : <Button variant="secondary" size="sm" onClick={onStop}>Stop</Button>}
+        <Button variant="ghost" size="sm" onClick={() => onOpenInMain(side.id)}>Open in main</Button>
       </div>
     </div>
   );

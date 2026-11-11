@@ -1,4 +1,4 @@
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { UpdateStatusNote } from "../../entities/app-update/update-status-note.tsx";
 import { useAppUpdate } from "../../entities/app-update/use-app-update.ts";
 
@@ -15,7 +15,7 @@ export function UpdatesSection() {
       <span className="text-sm/5">{`PiNomad ${update.status.currentVersion}`}</span>
       {update.status.state === "idle" ? (
         <div>
-          <Button label="Check for updates" variant="secondary" onClick={() => update.check()} />
+          <Button variant="secondary" onClick={() => update.check()}>Check for updates</Button>
         </div>
       ) : (
         <UpdateStatusNote update={update} />

@@ -1,4 +1,4 @@
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../button.tsx";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { ChatRunFailure } from "./chat-run-failure.tsx";
@@ -28,7 +28,7 @@ export const AuthRejected: Story = {
 export const RateLimited: Story = {
   args: {
     error: '429 {"error":{"type":"rate_limit_error","message":"Number of request tokens has exceeded your per-minute rate limit"}}',
-    modelControl: <Button label="claude-sonnet" size="sm" variant="secondary" onClick={fn()} />,
+    modelControl: <Button size="sm" variant="secondary" onClick={fn()}>claude-sonnet</Button>,
   },
 };
 

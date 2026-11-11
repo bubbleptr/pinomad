@@ -1,4 +1,4 @@
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { useToast } from "@astryxdesign/core/Toast";
 import { useEffect, useRef, useState } from "react";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
@@ -34,7 +34,7 @@ export function NewHostNotices({ knownHosts = browserKnownHosts }: { knownHosts?
         uniqueID: `new-host:${hostId}`,
         // It may land while the user looks elsewhere; it waits to be read.
         isAutoHide: false,
-        endContent: <Button label="Remove" variant="secondary" size="sm" onClick={() => setRemoving({ hostId, name })} />,
+        endContent: <Button variant="secondary" size="sm" onClick={() => setRemoving({ hostId, name })}>Remove</Button>,
         onHide: () => dismissals.current.delete(hostId),
       });
       dismissals.current.set(hostId, dismiss);

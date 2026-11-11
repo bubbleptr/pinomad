@@ -2,7 +2,7 @@
 // follows the main column's conversation, not the family — a pre-ADR-0019
 // fork may own its worktree — and fetches only while shown: on show, on every
 // conversation change, when the connection returns and once a run settles.
-import { IconButton } from "@astryxdesign/core/IconButton";
+import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -79,7 +79,7 @@ export function ChangesSurface({
               label="Refresh changes"
               size="sm"
               variant="ghost"
-              isDisabled={!connected || conversationId === undefined}
+              disabled={!connected || conversationId === undefined}
               onClick={refresh}
             />
             {barEnd}

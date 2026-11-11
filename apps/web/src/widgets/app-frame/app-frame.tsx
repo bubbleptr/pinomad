@@ -1,6 +1,6 @@
 import { AppShell } from "@astryxdesign/core/AppShell";
-import { Button } from "@astryxdesign/core/Button";
-import { IconButton } from "@astryxdesign/core/IconButton";
+import { Button } from "../../shared/ui/button.tsx";
+import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { MobileNav } from "@astryxdesign/core/MobileNav";
 import { SideNav } from "@astryxdesign/core/SideNav";
 import { ToastViewport, useToast } from "@astryxdesign/core/Toast";
@@ -339,12 +339,13 @@ export function FrameHeader({
         ) : (
           <span className="flex items-center gap-1">
             <Button
-              label={displayName(parentSummary)}
               aria-label={`Back to ${displayName(parentSummary)}`}
               variant="ghost"
               size="sm"
               onClick={() => onBackToParent(parentSummary.id)}
-            />
+            >
+              {displayName(parentSummary)}
+            </Button>
             <span aria-hidden="true" className="text-muted-foreground">
               ›
             </span>
@@ -356,7 +357,6 @@ export function FrameHeader({
       {showOverview ? (
         <IconButton
           aria-pressed={overviewOpen}
-          // The shaded button says the card is open, beside aria-pressed.
           className={overviewOpen ? "bg-[var(--color-overlay-pressed)]" : undefined}
           icon={<AppleReminder className="size-4" />}
           label="Overview"

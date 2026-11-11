@@ -1,10 +1,11 @@
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { Link } from "../../shared/ui/link.tsx";
-import { RadioList, RadioListItem } from "@astryxdesign/core/RadioList";
+import { Field, FieldContent, FieldDescription, FieldError, FieldLabel } from "../../shared/ui/field.tsx";
+import { Input } from "../../shared/ui/input.tsx";
+import { RadioGroup, RadioGroupItem } from "../../shared/ui/radio-group.tsx";
 import { Spinner } from "@astryxdesign/core/Spinner";
-import { TextInput } from "@astryxdesign/core/TextInput";
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import type { LoginEvent, LoginFlow, LoginMethod, LoginPrompt } from "@pinomad/protocol/auth.ts";
 import { DisconnectedError, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { Check, Copy, LinkExternal } from "../../shared/ui/icons.tsx";
@@ -160,13 +161,14 @@ export function LoginPanel({
         {startError === undefined ? null : <Banner status="error" title="Couldn't start the login" description={startError} />}
         <div className="flex flex-wrap gap-2">
           <Button
-            label={method === "api_key" ? "Try again" : (signIn ?? "Sign in")}
             variant="primary"
-            isLoading={starting}
-            isDisabled={!connected}
+            loading={starting}
+            disabled={!connected}
             onClick={start}
-          />
-          <Button label="Cancel" variant="secondary" onClick={onCancel} />
+          >
+            {method === "api_key" ? "Try again" : (signIn ?? "Sign in")}
+          </Button>
+          <Button variant="secondary" onClick={onCancel}>Cancel</Button>
         </div>
       </div>
     );
@@ -180,7 +182,7 @@ export function LoginPanel({
         status="error"
         title={method === "api_key" ? "The key wasn't saved" : "Sign-in failed"}
         description={flow.error}
-        endContent={<Button label="Try again" size="sm" isDisabled={!connected} isLoading={starting} onClick={start} />}
+        endContent={<Button size="sm" disabled={!connected} loading={starting} onClick={start}>Try again</Button>}
       />
     );
   }
@@ -230,7 +232,7 @@ function Status({ label }: { label: string }) {
 function CancelRow({ error, onCancel }: { error?: string; onCancel: () => void }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Button label="Cancel" variant="secondary" onClick={onCancel} />
+      <Button variant="secondary" onClick={onCancel}>Cancel</Button>
       {error === undefined ? null : <InlineError message={error} />}
     </div>
   );
@@ -295,11 +297,12 @@ function LoginEventView({ event }: { event: LoginEvent }) {
           <p className="text-sm/5">{event.instructions ?? "Open the sign-in page and approve access."}</p>
           <div className="flex gap-2">
             <Button
-              label="Open sign-in page"
-              icon={<LinkExternal aria-hidden="true" style={iconSize} />}
               size="sm"
               onClick={() => openInNewTab(event.url)}
-            />
+            >
+              <LinkExternal aria-hidden="true" style={iconSize} />
+              Open sign-in page
+            </Button>
           </div>
         </div>
       );
@@ -330,13 +333,14 @@ function DeviceCode({ code, url }: { code: string; url: string }) {
           <div className="flex flex-wrap items-center gap-3">
             <span className="providers-code">{code}</span>
             <Button
-              label={copied ? "Copied" : "Copy"}
               size="sm"
-              icon={copied ? <Check aria-hidden="true" style={iconSize} /> : <Copy aria-hidden="true" style={iconSize} />}
               onClick={() => {
                 void navigator.clipboard?.writeText(code).then(() => setCopied(true), () => undefined);
               }}
-            />
+            >
+              {copied ? <Check aria-hidden="true" style={iconSize} /> : <Copy aria-hidden="true" style={iconSize} />}
+              {copied ? "Copied" : "Copy"}
+            </Button>
           </div>
         </div>
       </li>
@@ -347,11 +351,12 @@ function DeviceCode({ code, url }: { code: string; url: string }) {
           </span>
           <div className="flex gap-2">
             <Button
-              label={`Open ${host}`}
-              icon={<LinkExternal aria-hidden="true" style={iconSize} />}
               size="sm"
               onClick={() => openInNewTab(url)}
-            />
+            >
+              <LinkExternal aria-hidden="true" style={iconSize} />
+              {`Open ${host}`}
+            </Button>
           </div>
         </div>
       </li>
@@ -397,35 +402,52 @@ function PromptForm({
     });
   };
 
-  const status = error === undefined ? undefined : { type: "error" as const, message: error };
+  const groupLabel = useId();
   return (
     <form onSubmit={submit} autoComplete="off">
       <div className="flex flex-col gap-3">
         {prompt.type === "select" ? (
-          <RadioList label={labelOf(prompt)} value={value} onChange={setValue} isDisabled={!connected} status={status}>
-            {prompt.options.map((option) => (
-              <RadioListItem key={option.id} value={option.id} label={option.label} description={option.description} />
-            ))}
-          </RadioList>
+          <div className="flex flex-col gap-1.5">
+            <span id={groupLabel} className="text-sm/5 font-medium">{labelOf(prompt)}</span>
+            <RadioGroup
+              aria-labelledby={groupLabel}
+              aria-invalid={error !== undefined || undefined}
+              value={value}
+              onValueChange={(next: string) => setValue(next)}
+              disabled={!connected}
+            >
+              {prompt.options.map((option) => (
+                <Field key={option.id} orientation="horizontal">
+                  <RadioGroupItem value={option.id} />
+                  <FieldContent>
+                    <FieldLabel>{option.label}</FieldLabel>
+                    <FieldDescription>{option.description}</FieldDescription>
+                  </FieldContent>
+                </Field>
+              ))}
+            </RadioGroup>
+            {error === undefined ? null : <p role="alert" className="text-xs/5 text-destructive">{error}</p>}
+          </div>
         ) : (
-          <TextInput
-            label={labelOf(prompt)}
-            type={prompt.type === "secret" ? "password" : "text"}
-            value={value}
-            onChange={(next) => {
-              setValue(next);
-              setError(undefined);
-            }}
-            placeholder={prompt.placeholder}
-            hasAutoFocus
-            isDisabled={!connected}
-            status={status}
-            width="100%"
-          />
+          <Field disabled={!connected} invalid={error !== undefined}>
+            <FieldLabel>{labelOf(prompt)}</FieldLabel>
+            <Input
+              type={prompt.type === "secret" ? "password" : "text"}
+              value={value}
+              onChange={(event) => {
+                setValue(event.target.value);
+                setError(undefined);
+              }}
+              placeholder={prompt.placeholder}
+              autoFocus
+              data-autofocus
+            />
+            <FieldError>{error}</FieldError>
+          </Field>
         )}
         <div className="flex flex-wrap items-center gap-2">
-          <Button label="Continue" variant="primary" type="submit" isLoading={sending} isDisabled={!canSubmit} />
-          <Button label="Cancel" variant="secondary" onClick={onCancel} />
+          <Button variant="primary" type="submit" loading={sending} disabled={!canSubmit}>Continue</Button>
+          <Button variant="secondary" onClick={onCancel}>Cancel</Button>
           {cancelError === undefined ? null : <InlineError message={cancelError} />}
         </div>
       </div>

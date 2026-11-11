@@ -1,9 +1,10 @@
 // The sidebar row's Rename dialog: a manual name is permanent — once written,
 // the host never auto-titles the conversation again.
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
-import { TextInput } from "@astryxdesign/core/TextInput";
+import { Field, FieldLabel } from "../../shared/ui/field.tsx";
+import { Input } from "../../shared/ui/input.tsx";
 import { useEffect, useRef, useState } from "react";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
@@ -48,15 +49,19 @@ export function RenameConversationDialog({
         header={<DialogHeader title="Rename conversation" onOpenChange={() => onClose()} />}
         content={
           <LayoutContent>
-            <TextInput
-              ref={input}
-              label="Title"
-              value={value}
-              onChange={setValue}
-              onEnter={save}
-              hasAutoFocus
-              isDisabled={saving}
-            />
+            <Field disabled={saving}>
+              <FieldLabel>Title</FieldLabel>
+              <Input
+                ref={input}
+                value={value}
+                onChange={(event) => setValue(event.target.value)}
+                autoFocus
+                data-autofocus
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") save();
+                }}
+              />
+            </Field>
             {error === undefined ? null : (
               <span className="text-xs/5 text-muted-foreground" role="alert" style={{ color: "var(--destructive)" }}>
                 {error}
@@ -67,13 +72,14 @@ export function RenameConversationDialog({
         footer={
           <LayoutFooter>
             <div className="flex justify-end gap-2">
-              <Button label="Cancel" variant="secondary" onClick={onClose} />
+              <Button variant="secondary" onClick={onClose}>Cancel</Button>
               <Button
-                label="Save"
                 variant="primary"
-                isDisabled={!connected || saving || title === "" || title === initial}
+                disabled={!connected || saving || title === "" || title === initial}
                 onClick={save}
-              />
+              >
+                Save
+              </Button>
             </div>
           </LayoutFooter>
         }

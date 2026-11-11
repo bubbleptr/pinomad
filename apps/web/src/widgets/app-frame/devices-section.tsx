@@ -1,7 +1,8 @@
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { List, ListItem } from "@astryxdesign/core/List";
-import { Switch } from "@astryxdesign/core/Switch";
+import { Field, FieldContent, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
+import { Switch } from "../../shared/ui/switch.tsx";
 import { useToast } from "@astryxdesign/core/Toast";
 import { Token } from "@astryxdesign/core/Token";
 import { useEffect, useMemo, useState } from "react";
@@ -83,7 +84,7 @@ export function DevicesSection({
       <AccountDevicesSwitch view={view} remote={remote} />
       {pairError === undefined ? null : <Banner status="error" title="Could not create a pairing offer" description={pairError} />}
       {offer === undefined ? (
-        <Button label="Pair a device" variant="secondary" isDisabled={!connected} onClick={pair} />
+        <Button variant="secondary" disabled={!connected} onClick={pair}>Pair a device</Button>
       ) : (
         <PairingOffer url={offer.url} expiresAt={offer.expiresAt} onRenew={pair} />
       )}
@@ -99,13 +100,18 @@ function AccountDevicesSwitch({ view, remote }: { view: DurableView; remote: Rem
   const minor = view.host?.protocol.minor;
   if (view.settings === null || minor === undefined || !hostSupportsFeature(minor, "acceptAccountDevices")) return null;
   return (
-    <Switch
-      label="Accept devices from your account"
-      description="Devices signed in to the server this host joined can pair without a QR code. Turn off to allow QR codes only."
-      value={view.settings.acceptAccountDevices}
-      isDisabled={view.connection !== "connected"}
-      onChange={(checked) => void remote.controller.updateSettings({ acceptAccountDevices: checked })}
-    />
+    <Field orientation="horizontal" disabled={view.connection !== "connected"}>
+      <Switch
+        checked={view.settings.acceptAccountDevices}
+        onCheckedChange={(checked) => void remote.controller.updateSettings({ acceptAccountDevices: checked })}
+      />
+      <FieldContent>
+        <FieldLabel>Accept devices from your account</FieldLabel>
+        <FieldDescription>
+          Devices signed in to the server this host joined can pair without a QR code. Turn off to allow QR codes only.
+        </FieldDescription>
+      </FieldContent>
+    </Field>
   );
 }
 
@@ -143,13 +149,14 @@ function DeviceRow({
         <div className="flex items-center gap-2">
           {isSelf ? <Token label="This device" size="sm" /> : null}
           <Button
-            label="Unpair"
             aria-label={`Unpair ${device.name}`}
             variant="secondary"
             size="sm"
-            isDisabled={!connected}
+            disabled={!connected}
             onClick={onUnpair}
-          />
+          >
+            Unpair
+          </Button>
         </div>
       }
     />
@@ -177,8 +184,8 @@ function UnpairDeviceConfirm({
           : "This host will stop accepting it. It can pair again with a new pairing link."}
       </span>
       <div className="flex justify-end gap-2">
-        <Button label="Cancel" variant="secondary" size="sm" onClick={onCancel} />
-        <Button label="Unpair" variant="destructive" size="sm" onClick={onConfirm} />
+        <Button variant="secondary" size="sm" onClick={onCancel}>Cancel</Button>
+        <Button variant="destructive" size="sm" onClick={onConfirm}>Unpair</Button>
       </div>
     </div>
   );
@@ -195,7 +202,7 @@ function PairingOffer({ url, expiresAt, onRenew }: { url: string; expiresAt: num
     return (
       <div className="flex items-center gap-2">
         <span className="text-xs/5 text-muted-foreground">Expired</span>
-        <Button label="New code" variant="secondary" size="sm" onClick={onRenew} />
+        <Button variant="secondary" size="sm" onClick={onRenew}>New code</Button>
       </div>
     );
   }

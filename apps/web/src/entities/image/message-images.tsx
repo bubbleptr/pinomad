@@ -1,7 +1,7 @@
 // A message's image blocks as thumbnails; a click opens the lightbox gallery
 // at that image. Bytes render immediately; refs load near the viewport and
 // the lightbox only fetches the image it is showing.
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { Lightbox } from "@astryxdesign/core/Lightbox";
@@ -94,7 +94,7 @@ export function MessageLightbox({
                   <span className="text-sm/5">Couldn't load the original image.</span>
                 </div>
                 <div>
-                  <Button label="Try again" onClick={() => setAttempt((value) => value + 1)} />
+                  <Button onClick={() => setAttempt((value) => value + 1)}>Try again</Button>
                 </div>
               </div>
             </LayoutContent>

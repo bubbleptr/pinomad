@@ -6,7 +6,7 @@
 // A background call (ADR-0046 §1) returns as soon as the subagent is
 // dispatched, so its tool state says nothing about the work: once it went
 // through, the card follows the subagent's own summary instead.
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { StatusDot } from "@astryxdesign/core/StatusDot";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
@@ -103,7 +103,7 @@ function SubagentCard({
         />
         <span className="min-w-0 flex-1 truncate text-sm">{name}</span>
         {pinomad === undefined ? null : (
-          <Button label="View" variant="secondary" size="sm" onClick={() => openInPanel(pinomad.conversationId)} />
+          <Button variant="secondary" size="sm" onClick={() => openInPanel(pinomad.conversationId)}>View</Button>
         )}
       </div>
       <div className="text-xs text-muted-foreground tabular-nums">

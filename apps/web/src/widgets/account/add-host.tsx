@@ -1,5 +1,5 @@
 import { Banner } from "@astryxdesign/core/Banner";
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { CodeBlock } from "@astryxdesign/core/CodeBlock";
 import { Collapsible } from "@astryxdesign/core/Collapsible";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
@@ -92,7 +92,7 @@ function TokenCommand() {
               status="error"
               title="Couldn't create a join command"
               description={accountErrorMessage(error)}
-              endContent={<Button label="Try again" variant="secondary" isLoading={busy} onClick={create} />}
+              endContent={<Button variant="secondary" loading={busy} onClick={create}>Try again</Button>}
             />
           )
         ) : (
@@ -117,7 +117,7 @@ export function JoinCommand({ token, onRenew }: { token: JoinToken; onRenew: () 
       {seconds === 0 ? (
         <div className="flex items-center gap-2">
           <span className="text-xs/5 text-muted-foreground">Expired</span>
-          <Button label="New command" variant="secondary" size="sm" onClick={onRenew} />
+          <Button variant="secondary" size="sm" onClick={onRenew}>New command</Button>
         </div>
       ) : (
         <span className="text-xs/5 text-muted-foreground tabular-nums">
@@ -163,7 +163,7 @@ export function AddHostDialog({ onClose }: { onClose: () => void }) {
                     linkForm
                   ) : (
                     <div className="flex">
-                      <Button label="Have a pairing link?" variant="ghost" size="sm" onClick={() => setPastingLink(true)} />
+                      <Button variant="ghost" size="sm" onClick={() => setPastingLink(true)}>Have a pairing link?</Button>
                     </div>
                   )}
                 </div>
@@ -174,7 +174,7 @@ export function AddHostDialog({ onClose }: { onClose: () => void }) {
         footer={
           <LayoutFooter>
             <div className="flex justify-end gap-2">
-              <Button label="Done" variant="secondary" onClick={close} />
+              <Button variant="secondary" onClick={close}>Done</Button>
             </div>
           </LayoutFooter>
         }

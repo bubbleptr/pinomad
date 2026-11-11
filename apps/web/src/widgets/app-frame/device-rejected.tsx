@@ -1,4 +1,4 @@
-import { Button } from "@astryxdesign/core/Button";
+import { Button } from "../../shared/ui/button.tsx";
 import { useState } from "react";
 import { hostLabels } from "@pinomad/client/stored-host.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
@@ -37,16 +37,17 @@ export function DeviceRejected({ hostKey }: { hostKey: string }) {
       </div>
       <div className="flex items-center justify-between gap-2">
         {account.state.status === "signed-out" ? (
-          <Button label="Sign in to pair through your account" variant="ghost" size="sm" onClick={() => setAccountOpen(true)} />
+          <Button variant="ghost" size="sm" onClick={() => setAccountOpen(true)}>Sign in to pair through your account</Button>
         ) : (
           <span />
         )}
         <Button
-          label={label === undefined ? "Unpair" : `Unpair ${label}`}
           variant="secondary"
           size="sm"
           onClick={() => void forget(hostKey)}
-        />
+        >
+          {label === undefined ? "Unpair" : `Unpair ${label}`}
+        </Button>
       </div>
       {accountOpen ? <AccountDialog onClose={() => setAccountOpen(false)} /> : null}
     </div>

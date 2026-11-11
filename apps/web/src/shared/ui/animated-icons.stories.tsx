@@ -1,4 +1,4 @@
-import { IconButton } from "@astryxdesign/core/IconButton";
+import { IconButton } from "./icon-button.tsx";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import * as AnimatedIcons from "./animated-icons.tsx";
 

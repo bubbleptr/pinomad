@@ -1,4 +1,4 @@
-import { Selector } from "@astryxdesign/core/Selector";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../shared/ui/select.tsx";
 import { useRef, useState } from "react";
 import { hostSupportsCall, hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import type { Home } from "@pinomad/protocol/organization.ts";
@@ -163,6 +163,10 @@ export function DraftHome({
             : undefined;
   const imagesUnavailable =
     accepts || !connected ? undefined : `${model?.name ?? pick.model?.modelId ?? "This model"} can't see images`;
+  const projectItems = [
+    { value: "chat", label: "No project" },
+    ...view.organized.projects.map((entry) => ({ value: entry.project.path, label: entry.project.name })),
+  ];
 
   return (
     <section
@@ -314,47 +318,52 @@ export function DraftHome({
               // spaces them, an extra gap reads as three loose controls.
               <span className="pigui-draft-footer flex w-full min-w-0 flex-wrap items-center gap-y-1">
                 {machine === undefined || machine.options.length < 2 ? null : (
-                  <Selector
-                    isLabelHidden
-                    label="Machine"
-                    placement="below"
-                    variant="ghost"
-                    size="sm"
+                  <Select
+                    items={machine.options}
                     value={machine.value}
-                    startIcon={<Computer aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />}
-                    options={machine.options.map((option) => ({
-                      ...option,
-                      icon: <Computer aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />,
-                    }))}
-                    onChange={(picked) => {
-                      if (picked !== machine.value) machine.onChange(picked);
+                    onValueChange={(picked: string | null) => {
+                      if (picked !== null && picked !== machine.value) machine.onChange(picked);
                     }}
-                  />
+                  >
+                    <SelectTrigger aria-label="Machine" variant="ghost" size="sm">
+                      <Computer aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {machine.options.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          <Computer aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 )}
-                <Selector
-                  isLabelHidden
-                  label="Project"
-                  placeholder="No project"
-                  placement="below"
-                  variant="ghost"
-                  size="sm"
-                  isDisabled={!connected}
+                <Select
+                  items={projectItems}
+                  disabled={!connected}
                   value={draft.kind === "chat" ? "chat" : draft.path}
-                  startIcon={
-                    draft.kind === "chat"
+                  onValueChange={(picked: string | null) => {
+                    if (picked !== null) onDraft(picked === "chat" ? { kind: "chat" } : { kind: "project", path: picked });
+                  }}
+                >
+                  <SelectTrigger aria-label="Project" variant="ghost" size="sm">
+                    {draft.kind === "chat"
                       ? <ChatAdd aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-                      : <FolderClosed aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-                  }
-                  options={[
-                    { value: "chat", label: "No project", icon: <ChatAdd aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" /> },
-                    ...view.organized.projects.map((entry) => ({
-                      value: entry.project.path,
-                      label: entry.project.name,
-                      icon: <FolderClosed aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />,
-                    })),
-                  ]}
-                  onChange={(picked) => onDraft(picked === "chat" ? { kind: "chat" } : { kind: "project", path: picked })}
-                />
+                      : <FolderClosed aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />}
+                    <SelectValue placeholder="No project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projectItems.map((item) => (
+                      <SelectItem key={item.value} value={item.value}>
+                        {item.value === "chat"
+                          ? <ChatAdd aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+                          : <FolderClosed aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />}
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 {draft.kind === "project" ? (
                   <CheckoutStrategyPicker value={checkoutMode} onChange={setCheckoutMode} isDisabled={!connected} />
                 ) : null}
