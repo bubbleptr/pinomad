@@ -356,6 +356,45 @@ export function ConnectionDiagram({ t }: { t: LandingCopy["connection"]["diagram
   );
 }
 
+/**
+ * The small core: one card over a registry, and everything else hanging off it. The
+ * built-in tools and what you add yourself are the same kind of card; plugins are
+ * planned, so theirs is a dashed outline.
+ */
+export function CoreDiagram({ t }: { t: LandingCopy["extensions"]["diagram"] }) {
+  const loop = { dur: "5.4s" };
+  const columns = [64, 180, 296];
+  const rows = [92, 140, 188];
+  const shipped = [...t.builtin, ...t.yours];
+  return (
+    <Diagram label={t.label} height={236}>
+      <path className="dg-line" d="M180 56V76M64 76H296M64 76V188M180 76V188M296 76V176" />
+      <path className="dg-line dg-planned" d="M296 176V188" />
+      <Card x={120} y={8} w={120} h={48} />
+      <text className="dg-name" x="180" y="37">
+        {t.core}
+      </text>
+      {shipped.map((name, i) => {
+        const x = columns[i % 3]!;
+        const y = rows[Math.floor(i / 3)]!;
+        return (
+          <g key={name}>
+            <Card x={x - 52} y={y} w={104} h={36} r={10} />
+            <text className="dg-name is-small" x={x} y={y + 23}>
+              {name}
+            </text>
+            <Pulse {...loop} path={`M180 56V76H${x}V${y}`} from={0.04 + i * 0.1} to={0.16 + i * 0.1} />
+          </g>
+        );
+      })}
+      <Ghost x={columns[2]! - 52} y={rows[2]!} w={104} h={36} />
+      <text className="dg-name is-small is-planned" x={columns[2]!} y={rows[2]! + 23}>
+        {t.planned}
+      </text>
+    </Diagram>
+  );
+}
+
 /** Planned: the model stays on the host; its tool calls go out to the other machines. */
 export function EnvironmentsDiagram({ t }: { t: LandingCopy["next"]["diagram"] }) {
   const loop = { dur: "3.6s" };

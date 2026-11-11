@@ -2,7 +2,7 @@ import { type ReactNode, useState } from "react";
 import { localized, type Lang } from "@/lib/i18n.ts";
 import { githubUrl } from "@/lib/nav.ts";
 import { blogUrl, type LandingCopy } from "./copy.tsx";
-import { AgentsDiagram, ConnectionDiagram, EnvironmentsDiagram } from "./diagrams.tsx";
+import { AgentsDiagram, ConnectionDiagram, CoreDiagram, EnvironmentsDiagram } from "./diagrams.tsx";
 import { DurableDiagram } from "./durable.tsx";
 import { AnywherePhone, STEPS, type Step } from "./mock/anywhere-phone.tsx";
 import { HeroApp } from "./mock/hero-app.tsx";
@@ -127,9 +127,12 @@ export function Core({
           <SectionHead id="core-title" eyebrow={t.eyebrow} title={t.title} />
         </div>
         <div className="bento">
-          <article className="cell" aria-labelledby="extensions-title">
-            <h3 id="extensions-title">{extensions.title}</h3>
-            <p>{extensions.body}</p>
+          <article className="cell cell-split" aria-labelledby="extensions-title">
+            <div>
+              <h3 id="extensions-title">{extensions.title}</h3>
+              <p>{extensions.body}</p>
+            </div>
+            <CoreDiagram t={extensions.diagram} />
           </article>
           <article className="cell cell-wide" aria-labelledby="durable-title">
             <h3 id="durable-title">{durable.title}</h3>

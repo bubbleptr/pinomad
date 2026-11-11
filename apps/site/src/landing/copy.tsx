@@ -37,7 +37,12 @@ export interface LandingCopy {
     title: ReactNode;
     allFeatures: string;
   };
-  extensions: { title: string; body: string };
+  extensions: {
+    title: string;
+    body: string;
+    /** Six built-in extensions, the two ways to add your own, and the planned one. */
+    diagram: { label: string; core: string; builtin: string[]; yours: [string, string]; planned: string };
+  };
   durable: {
     title: string;
     body: string;
@@ -148,6 +153,14 @@ export const copy: Record<Lang, LandingCopy> = {
     extensions: {
       title: "The built-in tools are extensions too",
       body: "The coding tools, subagents, to-dos, questions, and background processes are each a separate Pi Durable extension; the core knows them only through a registry. Add your own tools today with MCP servers and skills.",
+      diagram: {
+        label:
+          "A small core holds a registry. The coding tools, subagents, to-dos, questions, background processes, and codemode are extensions registered in it; MCP servers and skills plug in the same way. Plugins are planned.",
+        core: "Core",
+        builtin: ["Coding tools", "Subagents", "To-dos", "Questions", "Processes", "Codemode"],
+        yours: ["MCP servers", "Skills"],
+        planned: "Plugins",
+      },
     },
     durable: {
       title: "Runs survive crashes and restarts",
@@ -335,6 +348,13 @@ export const copy: Record<Lang, LandingCopy> = {
     extensions: {
       title: "内置工具本身也是扩展",
       body: "编码工具、子代理、待办、提问、后台进程各是一个独立的 Pi Durable 扩展，核心只通过注册表认识它们。现在就能用 MCP 服务器和 Skills 加上自己的工具。",
+      diagram: {
+        label: "小小的核心里只有一张注册表。编码工具、子代理、待办、提问、后台进程和 codemode 都是注册在上面的扩展；MCP 服务器和 Skills 以同样的方式接入。插件还在规划中。",
+        core: "核心",
+        builtin: ["编码工具", "子代理", "待办", "提问", "后台进程", "codemode"],
+        yours: ["MCP 服务器", "Skills"],
+        planned: "插件",
+      },
     },
     durable: {
       title: "步步存检查点，重启不用从头来",
