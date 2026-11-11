@@ -265,7 +265,7 @@ function QuestionPage({
     <Field key={item.value} orientation="horizontal" data-option={item.value} className="question-card__option">
       {control}
       <FieldContent>
-        <FieldLabel>{item.label}</FieldLabel>
+        <FieldLabel className="text-foreground">{item.label}</FieldLabel>
         <FieldDescription>{item.description}</FieldDescription>
       </FieldContent>
     </Field>

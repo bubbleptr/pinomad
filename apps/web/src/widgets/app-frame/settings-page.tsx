@@ -236,7 +236,7 @@ export function useSettingsScreen({
     <Field>
       <FieldLabel className="sr-only">Search settings</FieldLabel>
       <InputGroup className="pigui-nav-lead h-7">
-        <InputGroupAddon className="ps-0">
+        <InputGroupAddon className="pr-0.5 pl-0">
           <Search aria-hidden="true" />
         </InputGroupAddon>
         <InputGroupInput

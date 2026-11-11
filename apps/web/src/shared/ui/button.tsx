@@ -44,8 +44,8 @@ const buttonVariants = cva(
       },
       size: {
         // 12px to the label, counting the 1px border that holds the focus ring.
-        md: "h-8 gap-1.5 px-[11px]",
-        sm: "h-7 gap-1.5 px-[11px]",
+        md: "h-8 gap-2 px-[11px]",
+        sm: "h-7 gap-2 px-[11px]",
         icon: "size-8",
         "icon-sm": "size-7",
       },

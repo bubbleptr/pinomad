@@ -34,7 +34,7 @@ function Field({ className, orientation = "vertical", ...props }: FieldProps): R
 
 /** The label and description of a checkbox or switch beside it. */
 function FieldContent({ className, ...props }: ComponentProps<"div">): ReactElement {
-  return <div data-slot="field-content" className={cn("flex flex-1 flex-col gap-0.5", className)} {...props} />;
+  return <div data-slot="field-content" className={cn("flex flex-1 flex-col", className)} {...props} />;
 }
 
 function FieldLabel({ className, ...props }: Omit<FieldPrimitive.Label.Props, "className"> & { className?: string }): ReactElement {
@@ -42,7 +42,10 @@ function FieldLabel({ className, ...props }: Omit<FieldPrimitive.Label.Props, "c
     <FieldPrimitive.Label
       data-slot="field-label"
       className={cn(
-        "flex w-fit items-center gap-2 text-sm/5 font-medium select-none group-data-[disabled]/field:opacity-50",
+        // The label recedes behind the control's value. Beside a checkbox,
+        // radio or switch it is regular weight; an option in a list of
+        // choices passes text-foreground, since it is the content there.
+        "flex w-fit items-center gap-2 text-sm/5 font-medium text-muted-foreground select-none group-data-[disabled]/field:opacity-50 group-data-[orientation=horizontal]/field:font-normal",
         className,
       )}
       {...props}

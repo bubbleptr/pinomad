@@ -420,7 +420,7 @@ function PromptForm({
                 <Field key={option.id} orientation="horizontal">
                   <RadioGroupItem value={option.id} />
                   <FieldContent>
-                    <FieldLabel>{option.label}</FieldLabel>
+                    <FieldLabel className="text-foreground">{option.label}</FieldLabel>
                     <FieldDescription>{option.description}</FieldDescription>
                   </FieldContent>
                 </Field>
