@@ -36,10 +36,11 @@ const buttonVariants = cva(
         ghost:
           "bg-transparent text-foreground not-data-[disabled]:hover:overlay-hover not-data-[disabled]:active:overlay-pressed aria-expanded:overlay-hover aria-pressed:overlay-hover",
         // Text on the red wash needs the darker pair: --destructive alone is
-        // about 3.4:1 there.
+        // about 3.4:1 there. No pressed overlay: it drops the text under 4.5:1
+        // (4.3:1 on a dark popover); the press still moves the button 1px.
         destructive: [
           "bg-destructive-muted text-destructive-strong focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40",
-          "not-data-[disabled]:hover:overlay-hover not-data-[disabled]:active:overlay-pressed",
+          "not-data-[disabled]:hover:overlay-hover",
         ],
       },
       size: {
