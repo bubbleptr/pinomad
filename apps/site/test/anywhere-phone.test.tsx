@@ -14,7 +14,7 @@ describe("anywhere phone", () => {
     it(`prerenders the first step (${lang})`, () => {
       const t = copy[lang].anywhere;
       const html = renderToString(<Anywhere lang={lang} t={t} />);
-      for (const step of t.steps) expect(html).toContain(escape(step));
+      for (const step of t.steps) expect(html).toContain(escape(step.title));
       expect(html.match(/aria-pressed="true"/g)).toHaveLength(1);
       const shown = html.match(/<img[^>]*data-shown="true"[^>]*>/g) ?? [];
       expect(shown).toHaveLength(1);
