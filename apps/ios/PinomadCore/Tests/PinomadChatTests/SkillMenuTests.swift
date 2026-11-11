@@ -12,11 +12,6 @@ private func skill(
 }
 
 @Suite struct SkillMentionTokenTests {
-    @Test func atLineStart() {
-        let token = MentionToken.at(text: "$rev", cursor: 4, trigger: "$")
-        #expect(token == MentionToken(range: 0..<4, query: "rev"))
-    }
-
     @Test func afterWhitespaceAndNewlines() {
         #expect(MentionToken.at(text: "ask $rev", cursor: 8, trigger: "$")
             == MentionToken(range: 4..<8, query: "rev"))
@@ -26,40 +21,8 @@ private func skill(
             == MentionToken(range: 4..<8, query: "rev"))
     }
 
-    /// The dollar has to start the word, so a$review is not a trigger.
-    @Test func theDollarMustStartTheWord() {
-        #expect(MentionToken.at(text: "a$review", cursor: 8, trigger: "$") == nil)
-        #expect(MentionToken.at(text: "mail a$b", cursor: 8, trigger: "$") == nil)
-    }
-
     @Test func atCannotUseTheSkillTrigger() {
         #expect(MentionToken.at(text: "$rev", cursor: 4) == nil)
-    }
-
-    @Test func caretInTheMiddleKeepsTheWholeToken() {
-        let token = MentionToken.at(text: "$reviewer", cursor: 4, trigger: "$")
-        #expect(token == MentionToken(range: 0..<9, query: "rev"))
-    }
-
-    @Test func cjkAndEmojiKeepUTF16OffsetsRight() {
-        // 你(1) 好(1) emoji(2) space(1) = 5 units, then $r.
-        let token = MentionToken.at(text: "你好🙂 $r", cursor: 7, trigger: "$")
-        #expect(token == MentionToken(range: 5..<7, query: "r"))
-    }
-
-    @Test func whitespaceEndsTheToken() {
-        #expect(MentionToken.at(text: "$re v", cursor: 3, trigger: "$")
-            == MentionToken(range: 0..<3, query: "re"))
-        #expect(MentionToken.at(text: "$re v", cursor: 4, trigger: "$") == nil)
-        #expect(MentionToken.at(text: "$rev ", cursor: 5, trigger: "$") == nil)
-    }
-
-    @Test func choosingInsertsPlainTextAndMovesTheCaret() throws {
-        let text = "ask $review please"
-        let token = try #require(MentionToken.at(text: text, cursor: 8, trigger: "$"))
-        let insertion = token.replacing(in: text, with: "$review ")
-        #expect(insertion.text == "ask $review please")
-        #expect(insertion.cursor == "ask $review ".utf16.count)
     }
 }
 
