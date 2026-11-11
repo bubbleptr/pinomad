@@ -1,7 +1,7 @@
 // The todo list under the newest run (ADR-0026 §4): always that run's last
 // element, shown while the run is going and either wrote the list or has
 // something on it still unfinished. A settled run drops it.
-import { Collapsible } from "@base-ui-components/react/collapsible";
+import { Collapsible } from "@base-ui/react/collapsible";
 import { useState } from "react";
 import type { ChatEntry } from "@pinomad/client/cot-view.ts";
 import type { TodoItem, TodoState } from "@pinomad/protocol/presentation.ts";

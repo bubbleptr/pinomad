@@ -11,7 +11,7 @@
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--background);
   padding: 0.25rem 0.5rem;
   color: var(--foreground);
   font-size: 0.75rem;
@@ -19,14 +19,14 @@
 }
 
 .file-chip[data-status="failed"] {
-  border-color: var(--danger);
+  border-color: var(--destructive);
 }
 
 .file-chip__icon {
   width: 0.875rem;
   height: 0.875rem;
   flex-shrink: 0;
-  color: var(--muted);
+  color: var(--muted-foreground);
 }
 
 .file-chip__name {
@@ -38,12 +38,12 @@
 
 .file-chip__size {
   flex-shrink: 0;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-variant-numeric: tabular-nums;
 }
 
 .file-chip[data-status="failed"] .file-chip__size {
-  color: var(--danger);
+  color: var(--destructive);
 }
 
 .file-chip__action {
@@ -54,7 +54,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 9999px;
-  color: var(--muted);
+  color: var(--muted-foreground);
 }
 
 .file-chip__action:hover,

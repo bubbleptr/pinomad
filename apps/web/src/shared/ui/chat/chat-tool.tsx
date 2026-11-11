@@ -114,7 +114,7 @@ function ToolResultImage({ image }: { image: ViewImage }) {
         ref={observe}
         role="img"
         aria-label="Image unavailable"
-        className="flex h-40 w-full items-center justify-center text-muted"
+        className="flex h-40 w-full items-center justify-center text-muted-foreground"
       >
         <ImageIcon aria-hidden="true" className="size-6" />
       </div>

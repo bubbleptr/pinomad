@@ -322,10 +322,10 @@ export function DraftHome({
                     variant="ghost"
                     size="sm"
                     value={machine.value}
-                    startIcon={<Computer aria-hidden="true" className="size-4 shrink-0 text-muted" />}
+                    startIcon={<Computer aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />}
                     options={machine.options.map((option) => ({
                       ...option,
-                      icon: <Computer aria-hidden="true" className="size-4 shrink-0 text-muted" />,
+                      icon: <Computer aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />,
                     }))}
                     onChange={(picked) => {
                       if (picked !== machine.value) machine.onChange(picked);
@@ -343,15 +343,15 @@ export function DraftHome({
                   value={draft.kind === "chat" ? "chat" : draft.path}
                   startIcon={
                     draft.kind === "chat"
-                      ? <ChatAdd aria-hidden="true" className="size-4 shrink-0 text-muted" />
-                      : <FolderClosed aria-hidden="true" className="size-4 shrink-0 text-muted" />
+                      ? <ChatAdd aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+                      : <FolderClosed aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
                   }
                   options={[
-                    { value: "chat", label: "No project", icon: <ChatAdd aria-hidden="true" className="size-4 shrink-0 text-muted" /> },
+                    { value: "chat", label: "No project", icon: <ChatAdd aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" /> },
                     ...view.organized.projects.map((entry) => ({
                       value: entry.project.path,
                       label: entry.project.name,
-                      icon: <FolderClosed aria-hidden="true" className="size-4 shrink-0 text-muted" />,
+                      icon: <FolderClosed aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />,
                     })),
                   ]}
                   onChange={(picked) => onDraft(picked === "chat" ? { kind: "chat" } : { kind: "project", path: picked })}

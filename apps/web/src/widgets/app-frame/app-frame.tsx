@@ -334,7 +334,7 @@ export function FrameHeader({
         {parentSummary === undefined ? (
           <span className="flex items-center gap-1.5">
             <span className="truncate">{title}</span>
-            {agent === undefined ? null : <span className="shrink-0 text-muted">@{agent}</span>}
+            {agent === undefined ? null : <span className="shrink-0 text-muted-foreground">@{agent}</span>}
           </span>
         ) : (
           <span className="flex items-center gap-1">
@@ -345,11 +345,11 @@ export function FrameHeader({
               size="sm"
               onClick={() => onBackToParent(parentSummary.id)}
             />
-            <span aria-hidden="true" className="text-muted">
+            <span aria-hidden="true" className="text-muted-foreground">
               ›
             </span>
             <span className="truncate">{title}</span>
-            {agent === undefined ? null : <span className="shrink-0 text-muted">@{agent}</span>}
+            {agent === undefined ? null : <span className="shrink-0 text-muted-foreground">@{agent}</span>}
           </span>
         )}
       </h1>

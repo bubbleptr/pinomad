@@ -322,7 +322,7 @@ export function AddProjectDialog({
             <HStack gap={2} vAlign="center" hAlign="between">
               <div className="min-w-0 flex-1">
                 {addError !== undefined ? (
-                  <Text type="supporting" role="alert" maxLines={1} style={{ color: "var(--danger)" }}>
+                  <Text type="supporting" role="alert" maxLines={1} style={{ color: "var(--destructive)" }}>
                     {addError}
                   </Text>
                 ) : (

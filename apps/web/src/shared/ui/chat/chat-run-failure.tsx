@@ -88,7 +88,7 @@ export function ChatRunFailure({
         ) : null}
       </HStack>
       {retryError ? (
-        <Text role="alert" style={{ color: "var(--danger)" }}>{retryError}</Text>
+        <Text role="alert" style={{ color: "var(--destructive)" }}>{retryError}</Text>
       ) : null}
       <Collapsible
         trigger={<Text type="body" size="sm" color="secondary">Error details</Text>}

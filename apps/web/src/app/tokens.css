@@ -1,0 +1,151 @@
+/* The app's design tokens (ADR-0048).
+
+   Colors use shadcn's variable names, so components added with the shadcn
+   CLI read them as-is. Each is one light-dark() pair: the value follows the
+   element's color-scheme, which the appearance setting drives (data-theme on
+   <html>), so nothing here depends on the `.dark` class that the `dark:`
+   variant uses.
+
+   Light is shadcn's neutral base. Dark keeps this app's surface ladder:
+   elevation reads as lightness, so each layer above another is lighter. The
+   window frame behind the sidebar is the darkest, the main pane one step up,
+   raised surfaces (the composer, settings groups) another, popovers and
+   dialogs lightest. The greys are pure neutrals about 0.04 L apart, so each
+   step separates by fill alone. Dark text stops at L 0.94: full white on a
+   near-black ground blooms. The dark border is solid and sits above the
+   popover, so it still draws an edge on the top layer; a translucent white
+   one glows. */
+:root {
+  --background: light-dark(oklch(1 0 0), oklch(0.215 0 0));
+  --foreground: light-dark(oklch(0.145 0 0), oklch(0.94 0 0));
+  --card: light-dark(oklch(1 0 0), oklch(0.255 0 0));
+  --card-foreground: var(--foreground);
+  --popover: light-dark(oklch(1 0 0), oklch(0.295 0 0));
+  --popover-foreground: var(--foreground);
+  --primary: light-dark(oklch(0.205 0 0), oklch(0.922 0 0));
+  --primary-foreground: light-dark(oklch(0.985 0 0), oklch(0.205 0 0));
+  /* Hover and quiet fills. Translucent in dark so one value lifts every
+     layer of the ladder, the popover included. */
+  --secondary: light-dark(oklch(0.97 0 0), oklch(1 0 0 / 8%));
+  --secondary-foreground: var(--foreground);
+  --muted: light-dark(oklch(0.97 0 0), oklch(1 0 0 / 8%));
+  --muted-foreground: light-dark(oklch(0.556 0 0), oklch(0.708 0 0));
+  --accent: light-dark(oklch(0.97 0 0), oklch(1 0 0 / 8%));
+  --accent-foreground: var(--foreground);
+  --destructive: light-dark(oklch(0.577 0.245 27.325), oklch(0.704 0.191 22.216));
+  --border: light-dark(oklch(0.922 0 0), oklch(0.335 0 0));
+  --input: light-dark(oklch(0.922 0 0), oklch(1 0 0 / 15%));
+  --ring: light-dark(oklch(0.708 0 0), oklch(0.556 0 0));
+  --radius: 0.625rem;
+  --sidebar: light-dark(oklch(0.985 0 0), oklch(0.17 0 0));
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+
+  /* App tokens shadcn has no name for. */
+  /* Inset fills (code, chips): recessed, so darker than the pane they sit in. */
+  --surface-muted: light-dark(oklch(0.955 0 0), oklch(0.185 0 0));
+  --surface-hover: light-dark(oklch(0 0 0 / 5%), oklch(1 0 0 / 5%));
+  --default: light-dark(oklch(0 0 0 / 6%), oklch(1 0 0 / 10%));
+  --success: light-dark(#007004, #9fe59b);
+  --warning: light-dark(#745b00, #fdcf4f);
+  /* Reading size for message text and the composer that writes it. One step
+     above the 14px chrome (sidebar, trace rows, menus) so the conversation
+     reads as body copy rather than UI labels. */
+  --text-transcript-size: 0.9375rem;
+}
+
+/* —— Astryx names ——
+   The app's own CSS (chat.css and the rest) was written against Astryx's
+   token names. They are defined here so that CSS keeps working outside the
+   Astryx theme element (Base UI popups render under <body>) and after Astryx
+   is removed. Colors point at the tokens above, so Astryx components and the
+   app's CSS share one palette while both libraries are in use; the doubled
+   attribute selector lifts these above theme-neutral's own values, which it
+   declares on :scope inside @scope ([data-astryx-theme]). */
+:root,
+[data-astryx-theme][data-astryx-theme] {
+  --color-background-body: var(--sidebar);
+  --color-background-surface: var(--background);
+  --color-background-card: var(--card);
+  --color-background-popover: var(--popover);
+  --color-background-muted: var(--surface-muted);
+  --color-border: var(--border);
+  --color-border-emphasized: light-dark(oklch(0.87 0 0), oklch(0.44 0 0));
+  --color-text-primary: var(--foreground);
+  --color-text-secondary: var(--muted-foreground);
+  --color-text-disabled: light-dark(oklch(0.708 0 0), oklch(0.44 0 0));
+  --color-text-accent: var(--primary);
+  --color-text-blue: light-dark(#00458c, #c7d3ff);
+  --color-icon-primary: var(--foreground);
+  --color-icon-secondary: var(--muted-foreground);
+  --color-icon-accent: var(--primary);
+  --color-accent: var(--primary);
+  --color-on-accent: var(--primary-foreground);
+  --color-neutral: var(--default);
+  --color-overlay-hover: var(--surface-hover);
+  --color-overlay-pressed: light-dark(oklch(0 0 0 / 10%), oklch(1 0 0 / 10%));
+  /* Astryx paints error text on --color-error-muted (destructive buttons,
+     error banners). --destructive is tuned for text on the page ground and
+     is only about 3.4:1 on that fill, so Astryx keeps its own darker pair. */
+  --color-error: light-dark(#a50c25, #ffc6c1);
+  --color-error-muted: light-dark(#facecb, #ff9e973d);
+  --color-success: var(--success);
+  --color-success-muted: light-dark(#c5e5c0, #84c9803d);
+  --color-warning: var(--warning);
+  --color-shadow: light-dark(oklch(0 0 0 / 10%), oklch(0 0 0 / 30%));
+
+  --radius-inner: 0.375rem;
+  --radius-element: var(--radius);
+  --radius-container: 0.75rem;
+  --radius-full: 9999px;
+  --border-width: 1px;
+  --size-element-sm: 28px;
+  --size-element-md: 32px;
+
+  --spacing-0-5: 2px;
+  --spacing-1: 4px;
+  --spacing-1-5: 6px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-6: 24px;
+  --spacing-8: 32px;
+
+  /* System UI faces on every platform, Latin and CJK paired from the same
+     vendor (SF Pro + PingFang, Segoe UI + Microsoft YaHei, Roboto + Noto Sans
+     CJK) so both scripts in one line carry the same stroke at the same
+     weight. A web Latin face left CJK to fall back to PingFang, whose Regular
+     is visibly heavier. */
+  --font-family-body: -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto,
+    "Noto Sans CJK SC", Helvetica, Arial, sans-serif;
+  --font-family-heading: var(--font-family-body);
+  /* Code is the one bundled face: ui-monospace and "SF Mono" only resolve in
+     Safari, so Chromium (and Electron) fell through to Monaco on macOS,
+     Consolas on Windows and Liberation Mono on Linux. */
+  --font-family-code: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo,
+    Consolas, "Liberation Mono", monospace;
+  --font-size-xs: 0.625rem;
+  --font-size-sm: 0.75rem;
+  --font-size-base: 0.875rem;
+  --font-size-lg: 1.0625rem;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --text-supporting-size: var(--font-size-sm);
+  --text-supporting-leading: 1.6667;
+
+  --ease-standard: cubic-bezier(0.24, 1, 0.4, 1);
+  --ease-out: var(--ease-standard);
+  --duration-fast: 125ms;
+  --duration-fast-max: 165ms;
+
+  /* The inset panes' edge: lighter than --border, since the fill step from
+     the frame already separates them. */
+  --pigui-pane-ring: light-dark(#00000012, oklch(0.255 0 0));
+}

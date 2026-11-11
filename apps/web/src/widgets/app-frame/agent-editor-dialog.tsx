@@ -153,7 +153,7 @@ export function AgentEditorDialog({
               />
               <TextArea label="Prompt" value={prompt} onChange={setPrompt} isDisabled={saving} rows={4} />
               {error === undefined ? null : (
-                <Text type="supporting" role="alert" style={{ color: "var(--danger)" }}>
+                <Text type="supporting" role="alert" style={{ color: "var(--destructive)" }}>
                   {error}
                 </Text>
               )}

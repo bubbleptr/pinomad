@@ -1306,7 +1306,7 @@ export function Workbench({
               <div className="mx-auto w-full max-w-[44rem]">
                 {shownSubagent !== undefined ? (
                   <HStack gap={2} vAlign="center" className="border-t border-border py-2">
-                    <span className="min-w-0 flex-1 text-center text-xs text-muted">Read-only · subagent</span>
+                    <span className="min-w-0 flex-1 text-center text-xs text-muted-foreground">Read-only · subagent</span>
                     {!canStopShown ? null : (
                       <Button
                         label="Stop"

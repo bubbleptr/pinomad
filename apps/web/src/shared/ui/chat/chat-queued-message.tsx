@@ -108,7 +108,7 @@ export function ChatQueuedMessage({
   ].filter((action) => action !== null);
   return (
     <div
-      className={`chat-queued-message group flex min-h-10 min-w-0 items-center gap-1 rounded-lg border border-border bg-surface p-1 text-sm ${
+      className={`chat-queued-message group flex min-h-10 min-w-0 items-center gap-1 rounded-lg border border-border bg-background p-1 text-sm ${
         className ?? ""
       }`.trim()}
       data-testid="chat-queued-message"
@@ -123,7 +123,7 @@ export function ChatQueuedMessage({
         <button
           ref={reorder.handleRef}
           type="button"
-          className="chat-queued-message__handle flex h-7 w-6 shrink-0 cursor-grab items-center justify-center rounded-md text-muted active:cursor-grabbing"
+          className="chat-queued-message__handle flex h-7 w-6 shrink-0 cursor-grab items-center justify-center rounded-md text-muted-foreground active:cursor-grabbing"
           aria-label="Reorder queued message"
           aria-description="Drag, or press the up and down arrow keys"
           title="Drag to reorder"
@@ -156,7 +156,7 @@ export function ChatQueuedMessage({
         // One column for the steer mark: on a follow-up the same spot holds
         // Steer now, so pressing it leaves the mark where the button was.
         <span
-          className="flex w-7 shrink-0 items-center justify-center text-muted"
+          className="flex w-7 shrink-0 items-center justify-center text-muted-foreground"
           data-slot="queued-message-mode"
           data-mode={mode}
         >

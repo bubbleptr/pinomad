@@ -4,6 +4,7 @@
 @import "@astryxdesign/core/astryx.css";
 @import "@astryxdesign/theme-neutral/theme.css";
 @import "@fontsource-variable/geist-mono";
+@import "./tokens.css";
 @import "../shared/ui/chat/chat.css";
 @import "../entities/attachment/attachments.css";
 @import "../entities/model/model-logo.css";
@@ -12,63 +13,6 @@
 @import "../presentation/question.css";
 
 @source "../**/*.{ts,tsx}";
-
-/* —— Font override ——
-   System UI faces on every platform, Latin and CJK paired from the same
-   vendor (SF Pro + PingFang, Segoe UI + Microsoft YaHei, Roboto + Noto Sans
-   CJK) so both scripts in one line carry the same stroke at the same weight.
-   A web Latin face (Montserrat before) left CJK to fall back to PingFang,
-   whose Regular is visibly heavier.
-
-   theme-neutral declares --font-family-* on :scope inside
-   @scope ([data-astryx-theme="neutral"]); at equal specificity a scoped
-   declaration beats an unscoped one on scope proximity, so the doubled
-   attribute selector lifts this rule above :scope (0,2,0 > 0,1,0) and the
-   override wins before proximity is even consulted.
-
-   Code is the one bundled face. theme-neutral's code stack leads with
-   ui-monospace and "SF Mono", which only Safari resolves; Chromium (and so
-   Electron) fell through to Monaco on macOS, Consolas on Windows and
-   Liberation Mono on Linux. */
-[data-astryx-theme][data-astryx-theme] {
-  --font-family-body: -apple-system, BlinkMacSystemFont, "Segoe UI",
-    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto,
-    "Noto Sans CJK SC", Helvetica, Arial, sans-serif;
-  --font-family-heading: var(--font-family-body);
-  --font-family-code: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo,
-    Consolas, "Liberation Mono", monospace;
-}
-
-/* —— Dark surface ladder ——
-   Lighter on top: in dark mode a surface's elevation reads as lightness, so
-   each layer above another is lighter than it. The window frame (body,
-   behind the sidebar) is the darkest layer, the main pane sits one step up,
-   raised surfaces (card: the composer, settings groups) another, and
-   popovers and dialogs float lightest. Inset fills (muted: code, chips) are
-   recessed, so they go darker than the pane they sit in, just above the
-   frame; the tray under the composer is not one (chat.css). Light mode keeps theme-neutral's
-   values except the frame, a step lighter (#f8f8f8) so the inset panes
-   read as cards on it; shadows and borders carry the same order.
-   Same specificity lift as the font override.
-
-   Dark greys are pure neutrals (C 0), about 0.04 L apart so each step
-   separates by fill alone. Dark text and icons stop at L 0.94: full white on
-   a near-black ground blooms. Dark borders are solid, not theme-neutral's
-   10% white, which glows, and sit above the popover so they still draw an
-   edge on the top layer. */
-[data-astryx-theme][data-astryx-theme] {
-  --color-background-body: light-dark(#f8f8f8, oklch(0.17 0 0));
-  --color-background-muted: light-dark(#f1f1f1, oklch(0.185 0 0));
-  --color-background-surface: light-dark(#ffffff, oklch(0.215 0 0));
-  --color-background-card: light-dark(#ffffff, oklch(0.255 0 0));
-  --color-background-popover: light-dark(#ffffff, oklch(0.295 0 0));
-  --color-border: light-dark(#00000014, oklch(0.335 0 0));
-  --color-text-primary: light-dark(#171717, oklch(0.94 0 0));
-  --color-icon-primary: light-dark(#171717, oklch(0.94 0 0));
-  /* The inset panes' edge: lighter than --color-border, since the fill step
-     from the frame already separates them. */
-  --pigui-pane-ring: light-dark(#00000012, oklch(0.255 0 0));
-}
 
 /* A dialog floats over the pane, but Astryx paints it with the surface color,
    level with the pane under its scrim. Shift the ladder up one step inside
@@ -80,55 +24,54 @@
   --color-background-muted: light-dark(#f1f1f1, oklch(0.225 0 0));
 }
 
-/* —— Semantic token bridge ——
-   Composes Astryx first-level tokens into the app-level semantic vocabulary.
-   Declared on both :root and the
-   Astryx theme scope: custom properties resolve chained var() references at
-   the element they are declared on, so re-declaring under [data-astryx-theme]
-   lets the bridge pick up theme-neutral's token overrides. */
-:root,
-[data-astryx-theme] {
-  --foreground: var(--color-text-primary);
-  --background: var(--color-background-body);
-  --surface: var(--color-background-surface);
-  --surface-muted: var(--color-background-muted);
-  --surface-secondary: var(--color-background-muted);
-  --surface-hover: var(--color-overlay-hover);
-  --muted: var(--color-text-secondary);
-  --default: var(--color-neutral);
-  --separator: var(--color-border);
-  --border: var(--color-border);
-  --primary: var(--color-accent);
-  --danger: var(--color-error);
-  --success: var(--color-success);
-  --warning: var(--color-warning);
-  --radius: var(--radius-element);
-  /* Reading size for message text and the composer that writes it. One step
-     above the 14px chrome (sidebar, trace rows, menus) so the conversation
-     reads as body copy rather than UI labels. */
-  --text-transcript-size: 0.9375rem;
-}
-
-/* Tailwind utility names generated from the bridge. `inline` keeps the
-   var() references in the emitted utilities so they resolve at usage site,
-   inside the Astryx theme scope. */
+/* Tailwind utility names for the tokens in tokens.css. `inline` keeps the
+   var() references in the emitted utilities, so they resolve where they are
+   used. The color and radius names are the ones shadcn's components expect. */
 @theme inline {
   --font-sans: var(--font-family-body);
-  --color-foreground: var(--foreground);
   --color-background: var(--background);
-  --color-surface: var(--surface);
-  --color-surface-muted: var(--surface-muted);
-  --color-surface-secondary: var(--surface-secondary);
-  --color-surface-hover: var(--surface-hover);
-  --color-muted: var(--muted);
-  --color-default: var(--default);
-  --color-separator: var(--separator);
-  --color-border: var(--border);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
-  --color-danger: var(--danger);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted-foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-hover: var(--surface-hover);
+  --color-default: var(--default);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
 }
+
+/* `dark:` follows the app's appearance setting (the `dark` class on <html>),
+   not only the system's. */
+@custom-variant dark (&:is(.dark *));
 
 :root {
   --pigui-icon-motion-duration: 800ms;
@@ -426,7 +369,7 @@ body {
   background-color: transparent;
   background-image: none;
   box-shadow: none;
-  color: var(--muted);
+  color: var(--muted-foreground);
   transform: none;
   transition-property: color;
 }
@@ -494,7 +437,7 @@ body {
   border: none;
   border-radius: var(--pigui-sidebar-item-radius);
   background: none;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font: inherit;
   font-size: var(--text-supporting-size);
   line-height: var(--text-supporting-leading);
@@ -693,7 +636,7 @@ body {
 .pigui-app-layout :is(.pigui-pane, .pigui-centered) {
   min-height: 0;
   overflow: clip;
-  background-color: var(--surface);
+  background-color: var(--background);
 }
 
 /* A hairline border and no shadow: the pane sits on the frame, it does not
@@ -831,7 +774,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 999px;
   background: transparent;
-  color: var(--muted);
+  color: var(--muted-foreground);
   font-size: var(--font-size-xs, 0.75rem);
   line-height: 1;
   cursor: pointer;
@@ -852,7 +795,7 @@ body {
 }
 
 .pigui-fork-chip:focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 

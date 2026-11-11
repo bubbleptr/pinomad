@@ -35,7 +35,7 @@ export const PARTS = [
  */
 export function ContextFigures({ usage }: { usage: ContextUsage | undefined }) {
   return (
-    <span className={isWarning(usage) ? "text-warning" : "text-muted"}>
+    <span className={isWarning(usage) ? "text-warning" : "text-muted-foreground"}>
       {usage === undefined ? "—" : `${percentOf(usage)}% · ${formatTokens(usage.used)} / ${formatTokens(usage.window)}`}
     </span>
   );
@@ -53,7 +53,7 @@ export function ContextBar({ usage, breakdown }: { usage: ContextUsage | undefin
     usage === undefined
       ? []
       : breakdown === undefined
-        ? [{ key: "used", tokens: usage.used, className: isWarning(usage) ? "bg-warning" : "bg-muted", color: undefined }]
+        ? [{ key: "used", tokens: usage.used, className: isWarning(usage) ? "bg-warning" : "bg-muted-foreground", color: undefined }]
         : PARTS.filter((part) => breakdown[part.key] > 0).map((part) => ({
             key: part.key,
             tokens: breakdown[part.key],

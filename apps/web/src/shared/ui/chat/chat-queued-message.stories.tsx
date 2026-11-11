@@ -34,7 +34,7 @@ export const LocalNotConfirmed: Story = {
   args: {
     isLocal: true,
     reorder: undefined,
-    status: <span className="text-muted">Not confirmed</span>,
+    status: <span className="text-muted-foreground">Not confirmed</span>,
     onSteer: undefined,
     onEdit: undefined,
     onWithdraw: undefined,
@@ -46,7 +46,7 @@ export const LocalFailed: Story = {
   args: {
     isLocal: true,
     reorder: undefined,
-    status: <span className="text-danger">Failed to send</span>,
+    status: <span className="text-destructive">Failed to send</span>,
     onSteer: undefined,
     onWithdraw: undefined,
     onRetry: fn(),

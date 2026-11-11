@@ -651,7 +651,7 @@ mark.chat-skill-mention {
 }
 
 .chat-step__meta--error {
-  color: var(--color-danger);
+  color: var(--destructive);
 }
 
 /* Right = collapsed, down = expanded — the same rotation in all three places
@@ -832,7 +832,7 @@ mark.chat-skill-mention {
   padding: var(--spacing-2) var(--spacing-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-element);
-  background: var(--surface);
+  background: var(--background);
   font-size: var(--font-size-base);
   line-height: 1.5;
 }
@@ -871,12 +871,12 @@ mark.chat-skill-mention {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--muted);
+  color: var(--muted-foreground);
 }
 
 .todo-card__updated {
   flex-shrink: 0;
-  color: var(--muted);
+  color: var(--muted-foreground);
   white-space: nowrap;
 }
 
@@ -947,7 +947,7 @@ mark.chat-skill-mention {
 }
 
 .todo-card__item[data-status="completed"] {
-  color: var(--muted);
+  color: var(--muted-foreground);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1132,7 +1132,7 @@ mark.chat-skill-mention {
 }
 
 /* Hint copy recedes below composer chrome (model selector uses
-   --color-text-secondary via text-muted). Opacity is reset so Firefox
+   --color-text-secondary via text-muted-foreground). Opacity is reset so Firefox
    does not further fade the token color. */
 .prompt-input__input > [aria-hidden="true"] {
   color: var(--color-text-disabled) !important;
@@ -1313,7 +1313,7 @@ mark.chat-skill-mention {
 }
 
 .chain-of-thought-rail__marker[data-state="output-error"] {
-  background: var(--color-danger);
+  background: var(--destructive);
 }
 
 .chain-of-thought-rail__marker[data-state="input-streaming"],
@@ -1429,7 +1429,7 @@ details[open] > .chain-of-thought-rail__tool-row .chain-of-thought-rail__disclos
 }
 
 .chain-of-thought-rail__badge[data-tone="error"] {
-  color: var(--color-danger);
+  color: var(--destructive);
 }
 
 .chain-of-thought-rail__badge[data-tone="running"] {
@@ -1465,7 +1465,7 @@ details[open] > .chain-of-thought-rail__tool-row .chain-of-thought-rail__disclos
 }
 
 .chain-of-thought-rail__pre[data-tone="error"] {
-  color: var(--color-danger);
+  color: var(--destructive);
 }
 
 .chain-of-thought-rail__pre + .chain-of-thought-rail__pre {

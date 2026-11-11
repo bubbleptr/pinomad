@@ -1,6 +1,6 @@
 # ADR-0014：Web 客户端采用 Pace 的设计系统和对话界面
 
-- 状态：Accepted；§2 里思维链组件和 Pace 保持同形的部分由 ADR-0026 修订；§1 的 Montserrat 已换成系统字体（2026-10-21，Montserrat 只覆盖拉丁字母，中文回落到苹方，同一行里中文明显比英文粗）
+- 状态：Accepted；§1 的 Astryx 基础和 §2 的"与 Pace 同形"由 ADR-0048 修订（基础组件换成 shadcn 的 Base UI 版）；§2 里思维链组件和 Pace 保持同形的部分由 ADR-0026 修订；§1 的 Montserrat 已换成系统字体（2026-10-21，Montserrat 只覆盖拉丁字母，中文回落到苹方，同一行里中文明显比英文粗）
 - 日期：2026-10-08
 - 来源：Pace（`bubbleptr/PiGUI` @ 15b9084）
 

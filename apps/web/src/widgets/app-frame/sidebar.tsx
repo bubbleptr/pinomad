@@ -164,7 +164,7 @@ function UserChip({ onOpenAccount }: { onOpenAccount: () => void }) {
   if (status === "signed-out") {
     return <Button label="Sign in" icon={<UserCircle aria-hidden="true" />} variant="ghost" size="sm" onClick={onOpenAccount} />;
   }
-  return <span className="block truncate px-2 text-sm text-muted">{deviceName}</span>;
+  return <span className="block truncate px-2 text-sm text-muted-foreground">{deviceName}</span>;
 }
 
 // Codex-style section header (Pace's SidebarSectionHeader): the title is the

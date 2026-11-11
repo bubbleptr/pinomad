@@ -1,4 +1,4 @@
-import { Collapsible } from "@base-ui-components/react/collapsible";
+import { Collapsible } from "@base-ui/react/collapsible";
 import type { ComponentProps } from "react";
 import { ChatInlinePager } from "@/shared/ui/chat/chat-inline-pager";
 import {
@@ -176,7 +176,7 @@ export function ChatOutcomeMeta({ failed, diffStat }: ReturnType<typeof summariz
           {" "}
           <span className="chat-step__meta" data-slot="chat-tool-diff-stat">
             <span className="text-success">+{diffStat.additions}</span>{" "}
-            <span className="text-danger">-{diffStat.deletions}</span>
+            <span className="text-destructive">-{diffStat.deletions}</span>
           </span>
         </>
       ) : null}
