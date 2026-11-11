@@ -6,7 +6,6 @@ import { Button } from "../../shared/ui/button.tsx";
 import { ChatMessageMetadata, ChatSystemMessage } from "@astryxdesign/core/Chat";
 import { Icon } from "@astryxdesign/core/Icon";
 import { InternationalizationProvider } from "@astryxdesign/core/i18n";
-import { Token } from "@astryxdesign/core/Token";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { TodoState } from "@pinomad/protocol/presentation.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
@@ -30,6 +29,7 @@ import { messageTime } from "./chat-time.ts";
 import { SubagentCards } from "./subagent-card.tsx";
 import { fillToolDetails } from "./tool-detail.tsx";
 import { HOST_UPGRADING_ERROR } from "@pinomad/protocol/upgrade.ts";
+import { Badge } from "../../shared/ui/badge.tsx";
 
 /** The conversation's todo list and when any run last wrote it (`lastTodoWriteMs`). */
 type RunTodo = { state: TodoState; updatedAtMs?: number };
@@ -306,7 +306,7 @@ function RunEntry({
       <ChatMessage.Body>
         {entry.interrupted ? (
           <p className="mb-1">
-            <Token label="interrupted" color="orange" size="sm" />
+            <Badge variant="warning">interrupted</Badge>
           </p>
         ) : null}
         <AssistantRunTrajectory view={cot} />

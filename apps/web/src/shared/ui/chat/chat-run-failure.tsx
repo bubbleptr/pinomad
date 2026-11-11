@@ -1,9 +1,9 @@
 import { useRef, useState, type ComponentProps, type ReactNode } from "react";
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../button.tsx";
 import { Collapsible } from "@astryxdesign/core/Collapsible";
 import { cn } from "cn";
 import { classifyProviderFailure } from "@pinomad/client/provider-failure.ts";
+import { Alert, AlertDescription, AlertTitle } from "../alert.tsx";
 
 function describeFailure(error: string) {
   const kind = classifyProviderFailure(error);
@@ -76,7 +76,7 @@ export function ChatRunFailure({
 
   return (
     <div className={cn("flex flex-col gap-2", className)} {...rest}>
-      <Banner status="error" title={summary.title} description={summary.description} />
+      <Alert variant="destructive"><AlertTitle>{summary.title}</AlertTitle><AlertDescription>{summary.description}</AlertDescription></Alert>
       <div className="flex flex-wrap gap-2">
         {onOpenProviderSettings ? (
           <Button size="sm" variant="secondary" onClick={onOpenProviderSettings}>Provider settings</Button>

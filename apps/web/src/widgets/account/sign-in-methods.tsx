@@ -1,8 +1,6 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../../shared/ui/button.tsx";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { MoreMenu } from "@astryxdesign/core/MoreMenu";
-import { Spinner } from "@astryxdesign/core/Spinner";
 import { Field, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -15,6 +13,8 @@ import { accountErrorMessage } from "./account-error.ts";
 import { ConfirmDialog } from "./confirm-dialog.tsx";
 import { MIN_PASSWORD_LENGTH, NEW_PASSWORD_INPUT, passwordLength } from "./code-input.ts";
 import { useConfirmIdentity } from "./confirm-identity.tsx";
+import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
+import { Spinner } from "../../shared/ui/spinner.tsx";
 
 /** What the section has open: one form at a time. */
 type Open =
@@ -256,7 +256,7 @@ function ConfirmedAction({
     >
       {identity.field}
       {extra?.(submit)}
-      {error === undefined ? null : <Banner status="error" title={errorTitle} description={accountErrorMessage(error)} />}
+      {error === undefined ? null : <Alert variant="destructive"><AlertTitle>{errorTitle}</AlertTitle><AlertDescription>{accountErrorMessage(error)}</AlertDescription></Alert>}
     </ConfirmDialog>
   );
 }

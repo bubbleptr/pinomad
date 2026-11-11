@@ -1,4 +1,3 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../../shared/ui/button.tsx";
 import { Link } from "../../shared/ui/link.tsx";
 import { useState } from "react";
@@ -7,6 +6,7 @@ import { PairingLinkForm } from "../../entities/host/pairing-link-form.tsx";
 import { accountErrorMessage } from "./account-error.ts";
 import { AccountDialog } from "./account-dialog.tsx";
 import { AddHostSteps } from "./add-host.tsx";
+import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 
 /** Where the docs explain pairing without an account. */
 const NO_ACCOUNT_DOCS = "https://pinomad.si/docs/";
@@ -34,7 +34,10 @@ export function FirstHost({ state }: { state: Extract<AccountState, { status: "s
       </div>
       <AddHostSteps serverOrigin={state.serverOrigin} />
       {state.hostsError === undefined ? null : (
-        <Banner status="warning" title="Couldn't check for new hosts" description={accountErrorMessage(state.hostsError)} />
+        <Alert variant="warning">
+          <AlertTitle>Couldn't check for new hosts</AlertTitle>
+          <AlertDescription>{accountErrorMessage(state.hostsError)}</AlertDescription>
+        </Alert>
       )}
       <div className="flex flex-col gap-2">
         <span className="text-xs/5 text-muted-foreground">

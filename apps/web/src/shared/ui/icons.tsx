@@ -3,6 +3,7 @@ import {
   ActivityIcon,
   AddIcon,
   AiEditingIcon,
+  Alert02Icon,
   AppleReminderIcon,
   ArchiveArrowDownIcon,
   ArchiveIcon,
@@ -19,6 +20,7 @@ import {
   BrainIcon,
   BubbleChatIcon,
   Cancel01Icon,
+  CancelCircleIcon,
   ChatAddIcon,
   CheckmarkCircle02Icon,
   ChevronRightIcon,
@@ -106,6 +108,7 @@ export const Bot = iconComponent(RobotIcon);
 export const Box = iconComponent(BoxIcon);
 export const Brain = iconComponent(BrainIcon);
 export const Cancel = iconComponent(Cancel01Icon);
+export const CancelCircle = iconComponent(CancelCircleIcon);
 export const ChatAdd = iconComponent(ChatAddIcon);
 export const ChatBubble = iconComponent(BubbleChatIcon);
 export const ChevronDown = iconComponent(ArrowDown01Icon);
@@ -163,6 +166,7 @@ export const Stop = iconComponent(HugeStopIcon);
 export const ThumbsDown = iconComponent(ThumbsDownIcon);
 export const ThumbsUp = iconComponent(ThumbsUpIcon);
 export const Trash2 = iconComponent(Delete02Icon);
+export const TriangleAlert = iconComponent(Alert02Icon);
 export const UserCircle = iconComponent(UserCircleIcon);
 export const ShieldKey = iconComponent(ShieldKeyIcon);
 

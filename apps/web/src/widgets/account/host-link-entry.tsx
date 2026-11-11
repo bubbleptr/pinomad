@@ -1,10 +1,9 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../../shared/ui/button.tsx";
 import { MetadataList, MetadataListItem } from "@astryxdesign/core/MetadataList";
-import { Spinner } from "@astryxdesign/core/Spinner";
 import { Field, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
-import { Tooltip } from "@astryxdesign/core/Tooltip";
+import { useDialogPortal } from "../../shared/ui/dialog-portal.ts";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui/tooltip.tsx";
 import { useEffect, useState, type CSSProperties } from "react";
 import type { AccountError, HostLinkRequest } from "@pinomad/client/account.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
@@ -13,6 +12,8 @@ import { browserKnownHosts, type KnownHostsStore } from "../../entities/account/
 import { Check, Copy } from "../../shared/ui/icons.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { accountErrorMessage } from "./account-error.ts";
+import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
+import { Spinner } from "../../shared/ui/spinner.tsx";
 
 /** What a refused lookup means; confirm and deny refuse the same way, after the user saw the host. */
 export function hostLinkErrorMessage(error: AccountError, step: "lookup" | "answer"): string {
@@ -195,15 +196,14 @@ export function HostLinkRequestEntry({
     case "missing":
       return (
         <div className="flex flex-col gap-3" style={{ width: "100%" }}>
-          <Banner
-            status="error"
-            title="Couldn't find this host"
-            description={
-              step.error.code === "not_found"
+          <Alert variant="destructive">
+            <AlertTitle>Couldn't find this host</AlertTitle>
+            <AlertDescription>
+              {step.error.code === "not_found"
                 ? "It's no longer waiting: it timed out, or it was confirmed or denied already. Run pinomad up on it again."
-                : accountErrorMessage(step.error)
-            }
-          />
+                : accountErrorMessage(step.error)}
+            </AlertDescription>
+          </Alert>
           {onClose === undefined ? null : (
             <div className="flex">
               <Button variant="secondary" onClick={onClose}>Close</Button>
@@ -256,7 +256,10 @@ export function HostLinkCodeForm({
         />
       </Field>
       {error === undefined ? null : (
-        <Banner status="error" title="Couldn't find that host" description={hostLinkErrorMessage(error, "lookup")} />
+        <Alert variant="destructive">
+          <AlertTitle>Couldn't find that host</AlertTitle>
+          <AlertDescription>{hostLinkErrorMessage(error, "lookup")}</AlertDescription>
+        </Alert>
       )}
       <div className="flex items-center gap-2">
         <Button variant="primary" loading={isBusy} disabled={!isCompleteUserCode(code)} onClick={onSubmit}>Continue</Button>
@@ -290,6 +293,7 @@ export function HostLinkConfirm({
 }) {
   const now = useNow(1000);
   const [copied, setCopied] = useState(false);
+  const [portalRef, portalContainer] = useDialogPortal();
   const seconds = Math.max(0, Math.ceil((request.expiresAt - now) / 1000));
   const expired = seconds === 0;
   return (
@@ -299,11 +303,10 @@ export function HostLinkConfirm({
         <span className="text-xs/5 text-muted-foreground">Only confirm a computer you are setting up yourself right now.</span>
       </div>
       {request.ipDiffers ? (
-        <Banner
-          status="warning"
-          title="This request came from a different network address than this device"
-          description={`The host asked from ${request.sourceIp}. If you aren't setting it up on another network yourself, deny it.`}
-        />
+        <Alert variant="warning">
+          <AlertTitle>This request came from a different network address than this device</AlertTitle>
+          <AlertDescription>{`The host asked from ${request.sourceIp}. If you aren't setting it up on another network yourself, deny it.`}</AlertDescription>
+        </Alert>
       ) : null}
       <MetadataList>
         <MetadataListItem label="Name">
@@ -317,11 +320,12 @@ export function HostLinkConfirm({
         </MetadataListItem>
         <MetadataListItem label="Host ID">
           <div className="flex flex-wrap items-center gap-2">
-            <Tooltip content={request.hostId}>
+            <Tooltip>
               {/* Focusable so keyboard users reach the full id too. */}
-              <span tabIndex={0} aria-label={`Host ID ${request.hostId}`}>
+              <TooltipTrigger ref={portalRef} render={<span tabIndex={0} aria-label={`Host ID ${request.hostId}`} />}>
                 <span className="font-mono text-sm/5">{shortHostId(request.hostId)}</span>
-              </span>
+              </TooltipTrigger>
+              <TooltipContent container={portalContainer}>{request.hostId}</TooltipContent>
             </Tooltip>
             <Button
               variant="secondary"
@@ -337,7 +341,10 @@ export function HostLinkConfirm({
         </MetadataListItem>
       </MetadataList>
       {expired ? (
-        <Banner status="warning" title="This request has expired" description="Run pinomad up on the host again." />
+        <Alert variant="warning">
+          <AlertTitle>This request has expired</AlertTitle>
+          <AlertDescription>Run pinomad up on the host again.</AlertDescription>
+        </Alert>
       ) : (
         <span className="text-xs/5 text-muted-foreground tabular-nums">
           The host's terminal should show the same name and ID. Expires in {Math.floor(seconds / 60)}:
@@ -345,7 +352,10 @@ export function HostLinkConfirm({
         </span>
       )}
       {error === undefined ? null : (
-        <Banner status="error" title="Couldn't answer the host" description={hostLinkErrorMessage(error, "answer")} />
+        <Alert variant="destructive">
+          <AlertTitle>Couldn't answer the host</AlertTitle>
+          <AlertDescription>{hostLinkErrorMessage(error, "answer")}</AlertDescription>
+        </Alert>
       )}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex gap-2">
@@ -380,13 +390,15 @@ export function HostLinkOutcome({
   return (
     <div className="flex flex-col gap-3" style={{ width: "100%" }}>
       {outcome === "confirmed" ? (
-        <Banner
-          status="success"
-          title={`${name} joined your account`}
-          description="It will appear in your hosts and connect on its own once its terminal finishes setting up."
-        />
+        <Alert variant="success">
+          <AlertTitle>{`${name} joined your account`}</AlertTitle>
+          <AlertDescription>It will appear in your hosts and connect on its own once its terminal finishes setting up.</AlertDescription>
+        </Alert>
       ) : (
-        <Banner status="info" title={`Turned ${name} away`} description="Its terminal will say the join was denied." />
+        <Alert variant="info">
+          <AlertTitle>{`Turned ${name} away`}</AlertTitle>
+          <AlertDescription>Its terminal will say the join was denied.</AlertDescription>
+        </Alert>
       )}
       <div className="flex">
         <Button variant="secondary" onClick={onDone}>Done</Button>

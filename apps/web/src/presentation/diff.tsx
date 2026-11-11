@@ -6,8 +6,8 @@
 // folds a long patch's files so opening it stays cheap.
 import { parsePatch } from "@pinomad/client/patch.ts";
 import { lazy, Suspense, useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import { Token } from "@astryxdesign/core/Token";
 import { ChevronRight } from "../shared/ui/icons.tsx";
+import { Badge } from "../shared/ui/badge.tsx";
 
 // Suspense doesn't catch a chunk that fails to load; without this, a network
 // blip on first use would unmount the page instead of leaving the plain lines.
@@ -50,8 +50,8 @@ export function DiffView({ patch, collapsible = false }: { patch: string; collap
             <span className="block truncate text-xs/5 font-semibold text-muted-foreground" title={title}>
               {title}
             </span>
-            {file.isNew ? <Token label="new" color="green" size="sm" /> : null}
-            {file.isDeleted ? <Token label="deleted" color="red" size="sm" /> : null}
+            {file.isNew ? <Badge variant="success">new</Badge> : null}
+            {file.isDeleted ? <Badge variant="destructive">deleted</Badge> : null}
             <span className="text-xs/5 text-muted-foreground">
               +{file.additions} −{file.deletions}
             </span>

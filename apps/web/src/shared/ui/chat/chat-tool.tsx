@@ -3,7 +3,7 @@ import {
   type ChatToolCallItem,
   type ChatToolCallStatus,
 } from "@astryxdesign/core";
-import { Skeleton } from "@astryxdesign/core/Skeleton";
+import { Skeleton } from "../skeleton.tsx";
 import { useState, type ComponentProps, type ReactNode } from "react";
 import {
   formatToolDuration,
@@ -104,7 +104,7 @@ function ToolResultImage({ image }: { image: ViewImage }) {
   if (state.status === "loading") {
     return (
       <div ref={observe} data-testid="tool-image-loading">
-        <Skeleton height={160} width="100%" />
+        <Skeleton className="h-40" />
       </div>
     );
   }

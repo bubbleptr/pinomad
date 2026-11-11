@@ -1,13 +1,10 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "./shared/ui/button.tsx";
 import { ChatLayout } from "@astryxdesign/core/Chat";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { EmptyState } from "@astryxdesign/core/EmptyState";
 import { useMediaQuery } from "@astryxdesign/core/hooks";
 import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
 import { Field, FieldLabel } from "./shared/ui/field.tsx";
 import { Input } from "./shared/ui/input.tsx";
-import { ToastViewport, useToast } from "@astryxdesign/core/Toast";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import {
   type CSSProperties,
@@ -82,6 +79,9 @@ import { HostRuntimes, type RemoteConnect } from "./entities/host/host-runtime.t
 import { syncAppHint } from "./shared/app-hint.ts";
 import { Centered } from "./shared/ui/centered.tsx";
 import { reloadedKey, VersionMismatch } from "./widgets/app-frame/version-mismatch.tsx";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "./shared/ui/alert.tsx";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./shared/ui/empty.tsx";
+import { Toaster, useToast } from "./shared/ui/toast.tsx";
 
 const chatColumn: CSSProperties = { flex: 1, minHeight: 0 };
 
@@ -434,62 +434,65 @@ export function App() {
     <HostsContext.Provider value={state}>
       <HostRuntimesContext.Provider value={registry}>
         <AccountProvider>
-          <AppHint hostCount={hosts.length} />
-          <AddEmailGate>
-            {address?.kind === "token" ? (
-              <RemoteWorkbench
-                options={address}
-                connectionKey={`${address.url} ${address.token}`}
-                label={address.url}
-              />
-            ) : address?.kind === "pair" ? (
-              <PairConfirm address={address} onPairedHost={pairedHost} />
-            ) : hosts.length === 0 ? (
-              <Centered>
-                <NoHostLink />
-              </Centered>
-            ) : (
-              <HostFrame>
-                <HostRuntimes
-                  hosts={hosts}
-                  focus={focus}
-                  renderWorkbench={({
-                    host,
-                    remote,
-                    device,
-                    rejected,
-                    retry,
-                    opening,
-                    cancelOpening,
-                    openConversation,
-                  }) => (
-                    <Workbench
-                      remote={remote}
-                      wsUrl={host.url}
-                      rejected={rejected}
-                      device={device}
-                      hostKey={host.hostKey}
-                      onReconnect={retry}
-                      notify={false}
-                      framed={false}
-                      hostOpening={opening}
-                      hostOpen={openConversation}
-                      hostCancelOpening={cancelOpening}
-                    />
-                  )}
+          {/* Every screen's toasts, the one-shot token workbench and the
+              connection-failure screens included; AppFrame's own Toaster
+              defers to this one. */}
+          <Toaster className="top-12">
+            <AppHint hostCount={hosts.length} />
+            <AddEmailGate>
+              {address?.kind === "token" ? (
+                <RemoteWorkbench
+                  options={address}
+                  connectionKey={`${address.url} ${address.token}`}
+                  label={address.url}
                 />
-              </HostFrame>
-            )}
-          </AddEmailGate>
-          {/* Above whichever screen is showing, so a first host pairing (which swaps
-              the no-host screen for the workbench) doesn't close or lose them. */}
-          <HostLinkRoute />
-          <PendingSignInRoute />
-          {/* The no-host screen has the panel already; a one-shot token or pair screen is left alone. */}
-          <OAuthReturnDialog stayClosed={address !== undefined || hosts.length === 0} />
-          <ToastViewport position="topEnd" inset={{ top: 48 }} isTopLayer>
+              ) : address?.kind === "pair" ? (
+                <PairConfirm address={address} onPairedHost={pairedHost} />
+              ) : hosts.length === 0 ? (
+                <Centered>
+                  <NoHostLink />
+                </Centered>
+              ) : (
+                <HostFrame>
+                  <HostRuntimes
+                    hosts={hosts}
+                    focus={focus}
+                    renderWorkbench={({
+                      host,
+                      remote,
+                      device,
+                      rejected,
+                      retry,
+                      opening,
+                      cancelOpening,
+                      openConversation,
+                    }) => (
+                      <Workbench
+                        remote={remote}
+                        wsUrl={host.url}
+                        rejected={rejected}
+                        device={device}
+                        hostKey={host.hostKey}
+                        onReconnect={retry}
+                        notify={false}
+                        framed={false}
+                        hostOpening={opening}
+                        hostOpen={openConversation}
+                        hostCancelOpening={cancelOpening}
+                      />
+                    )}
+                  />
+                </HostFrame>
+              )}
+            </AddEmailGate>
+            {/* Above whichever screen is showing, so a first host pairing (which swaps
+                the no-host screen for the workbench) doesn't close or lose them. */}
+            <HostLinkRoute />
+            <PendingSignInRoute />
+            {/* The no-host screen has the panel already; a one-shot token or pair screen is left alone. */}
+            <OAuthReturnDialog stayClosed={address !== undefined || hosts.length === 0} />
             <NewHostNotices />
-          </ToastViewport>
+          </Toaster>
         </AccountProvider>
       </HostRuntimesContext.Provider>
     </HostsContext.Provider>
@@ -539,7 +542,12 @@ function PairConfirm({
   return (
     <Centered>
       <div className="flex flex-col items-center gap-4" style={{ maxWidth: 420 }}>
-        <EmptyState title="Pair with this host?" description={`This device will pair with ${target.host}.`} />
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>Pair with this host?</EmptyTitle>
+            <EmptyDescription>{`This device will pair with ${target.host}.`}</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
         <span className="text-xs/5 text-muted-foreground" style={{ wordBreak: "break-all" }}>
           {address.url}
         </span>
@@ -668,10 +676,12 @@ export function SecureClient({
       // A pairing offer is single-use; a rejected one is the offer's problem,
       // not this device's — never offer to wipe a saved pairing from here.
       <div className="flex flex-col items-center gap-4">
-        <EmptyState
-          title="This pairing code was used or has expired"
-          description="Generate a new QR on the host: run pinomad pair, or open Settings → Devices → Pair a device."
-        />
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>This pairing code was used or has expired</EmptyTitle>
+            <EmptyDescription>Generate a new QR on the host: run pinomad pair, or open Settings → Devices → Pair a device.</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
         <div className="w-full max-w-md">
           <PairingLinkForm />
         </div>
@@ -692,12 +702,10 @@ export function SecureClient({
     );
   const notice =
     unsaved === undefined ? undefined : (
-      <Banner
-        status="warning"
-        container="section"
-        title="This pairing wasn't saved"
-        description="It will be lost when the app restarts."
-        endContent={
+      <Alert variant="warning" className="rounded-none">
+        <AlertTitle>This pairing wasn't saved</AlertTitle>
+        <AlertDescription>It will be lost when the app restarts.</AlertDescription>
+        <AlertAction>
           <Button
             variant="secondary"
             onClick={() => {
@@ -712,8 +720,8 @@ export function SecureClient({
           >
             Retry
           </Button>
-        }
-      />
+        </AlertAction>
+      </Alert>
     );
   return (
     <RemoteWorkbench
@@ -768,7 +776,12 @@ export function RemoteWorkbench({
   if (state.status === "connecting") {
     return (
       <Centered>
-        <EmptyState title="Connecting" description={label} />
+        <Empty>
+          <EmptyHeader>
+            <EmptyTitle>Connecting</EmptyTitle>
+            <EmptyDescription>{label}</EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       </Centered>
     );
   }
@@ -786,15 +799,14 @@ export function RemoteWorkbench({
           rejected
         ) : (
           <div className="flex flex-col items-center gap-4">
-            <Banner
-              status="error"
-              title={state.direct === undefined ? "Could not connect to the host" : "Direct connection unavailable"}
-              description={
-                state.direct === undefined
+            <Alert variant="destructive">
+              <AlertTitle>{state.direct === undefined ? "Could not connect to the host" : "Direct connection unavailable"}</AlertTitle>
+              <AlertDescription>
+                {state.direct === undefined
                   ? state.error
-                  : "This host can't be reached without the relay, and the peer-to-peer link didn't connect."
-              }
-            />
+                  : "This host can't be reached without the relay, and the peer-to-peer link didn't connect."}
+              </AlertDescription>
+            </Alert>
             {state.direct === undefined ? null : (
               <span className="text-xs/5 text-muted-foreground" style={{ textAlign: "center" }}>
                 {`Details: ${state.direct.reason}`}
@@ -1096,7 +1108,7 @@ export function Workbench({
         // keep waiting for a stage that this command could not hand off.
         op.cancelled = true;
         if (live.current) {
-          toast({ body: error instanceof Error ? error.message : String(error), type: "error" });
+          toast({ description: error instanceof Error ? error.message : String(error), type: "error" });
         }
       } finally {
         if (forkOp.current === op) {
@@ -1352,7 +1364,12 @@ export function Workbench({
                   onRetry={() => openTarget(opening.id)}
                 />
               ) : (
-                <EmptyState title="Nothing here yet" description="Ask the agent something. Every client sees it." />
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyTitle>Nothing here yet</EmptyTitle>
+                    <EmptyDescription>Ask the agent something. Every client sees it.</EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
               )
             }
           >
@@ -1414,7 +1431,7 @@ export function Workbench({
                           })
                           .catch((error: unknown) => {
                             setTakingBack(undefined);
-                            toast({ body: error instanceof Error ? error.message : String(error), type: "error" });
+                            toast({ description: error instanceof Error ? error.message : String(error), type: "error" });
                           });
                       }
                 }
@@ -1601,25 +1618,21 @@ function ConnectionBanner({
   // The host exits once an upgrade installs (ADR-0043): this drop is the restart.
   if (view.connection === "reconnecting" && view.upgrade?.phase === "installing") {
     return (
-      <Banner
-        status="info"
-        container="section"
-        title="Host is restarting"
-        description={`Upgrading to pinomad ${view.upgrade.target ?? ""}. Reconnecting when it's back…`}
-      />
+      <Alert variant="info" className="rounded-none">
+        <AlertTitle>Host is restarting</AlertTitle>
+        <AlertDescription>{`Upgrading to pinomad ${view.upgrade.target ?? ""}. Reconnecting when it's back…`}</AlertDescription>
+      </Alert>
     );
   }
   if (view.connection === "reconnecting") {
     return (
-      <Banner
-        status="warning"
-        container="section"
-        title="Host connection lost"
-        description="Reconnecting… the view keeps the last state the host sent."
-      />
+      <Alert variant="warning" className="rounded-none">
+        <AlertTitle>Host connection lost</AlertTitle>
+        <AlertDescription>Reconnecting… the view keeps the last state the host sent.</AlertDescription>
+      </Alert>
     );
   }
-  if (view.connection === "closed") return <Banner status="error" container="section" title="Disconnected from the host" />;
+  if (view.connection === "closed") return <Alert variant="destructive" className="rounded-none"><AlertTitle>Disconnected from the host</AlertTitle></Alert>;
   return null;
 }
 

@@ -1,12 +1,12 @@
 // A draft that becomes a conversation is the only thing that updates the
 // global New chat's host preference (ADR-0035 §7).
-import { ToastViewport } from "@astryxdesign/core/Toast";
 import { fireEvent, render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { Workbench } from "./App.tsx";
 import { LAST_NEW_HOST_KEY } from "./entities/host/last-new-host.ts";
 import { HostsContext } from "./entities/host/host-store.ts";
+import { Toaster } from "./shared/ui/toast.tsx";
 import { fakeHosts, fakeRemote, fakeView, HOME_HOST } from "./test/story-fixtures.tsx";
 
 beforeEach(() => localStorage.clear());
@@ -28,7 +28,7 @@ describe("Workbench draft create", () => {
     const state = fakeHosts([HOME_HOST], HOME_HOST.hostKey);
     render(
       <HostsContext.Provider value={state}>
-        <ToastViewport position="topEnd" isTopLayer>
+        <Toaster>
           <Workbench
             remote={remote}
             wsUrl={HOME_HOST.url}
@@ -36,7 +36,7 @@ describe("Workbench draft create", () => {
             notify={false}
             framed={false}
           />
-        </ToastViewport>
+        </Toaster>
       </HostsContext.Provider>,
     );
 

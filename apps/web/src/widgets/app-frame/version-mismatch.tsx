@@ -1,9 +1,9 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { useEffect, useState } from "react";
 import type { ProtocolMismatch } from "@pinomad/protocol/view.ts";
 import { servedByHost } from "../../address.ts";
 import { useAppUpdate } from "../../entities/app-update/use-app-update.ts";
 import { UpdateStatusNote } from "../../entities/app-update/update-status-note.tsx";
+import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 
 const RELOADED_KEY = "pinomad.reloadedForProtocol";
 
@@ -51,20 +51,16 @@ export function VersionMismatch({
   return mismatch.direction === "client-older" ? (
     // Same gap the Centered screens use between the banner and the switcher.
     <div className="flex flex-col gap-4">
-      <Banner
-        status="error"
-        container="section"
-        title="Client out of date"
-        description={`The host speaks a newer protocol. ${hasUpdater ? "Update the app." : "Reload the page, or update the app."}${version}`}
-      />
+      <Alert variant="destructive" className="rounded-none">
+        <AlertTitle>Client out of date</AlertTitle>
+        <AlertDescription>{`The host speaks a newer protocol. ${hasUpdater ? "Update the app." : "Reload the page, or update the app."}${version}`}</AlertDescription>
+      </Alert>
       {hasUpdater ? <UpdateStatusNote update={update} /> : null}
     </div>
   ) : (
-    <Banner
-      status="error"
-      container="section"
-      title="Host out of date"
-      description={`This client speaks a newer protocol. Upgrade the host (pinomad upgrade).${version}`}
-    />
+    <Alert variant="destructive" className="rounded-none">
+      <AlertTitle>Host out of date</AlertTitle>
+      <AlertDescription>{`This client speaks a newer protocol. Upgrade the host (pinomad upgrade).${version}`}</AlertDescription>
+    </Alert>
   );
 }

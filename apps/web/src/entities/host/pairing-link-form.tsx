@@ -1,9 +1,9 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../../shared/ui/button.tsx";
 import { Field, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { useState } from "react";
 import { pairingFragment } from "../../address.ts";
+import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 
 /**
  * Paste-a-pairing-link form: a valid link becomes the location fragment and a
@@ -53,7 +53,7 @@ export function PairingLinkForm({
         </div>
         <Button variant={connectVariant} disabled={pasted.trim() === ""} onClick={connect}>Connect</Button>
       </div>
-      {error === undefined ? null : <Banner status="error" title="Not a pairing link" description={error} />}
+      {error === undefined ? null : <Alert variant="destructive"><AlertTitle>Not a pairing link</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
     </>
   );
 }

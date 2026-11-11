@@ -1,10 +1,7 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../../shared/ui/button.tsx";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
 import { Switch } from "../../shared/ui/switch.tsx";
-import { useToast } from "@astryxdesign/core/Toast";
-import { Token } from "@astryxdesign/core/Token";
 import { useEffect, useMemo, useState } from "react";
 import { encode } from "uqr";
 import { hostLabels } from "@pinomad/client/stored-host.ts";
@@ -17,6 +14,9 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { useHosts } from "../../entities/host/host-store.ts";
 import { unansweredUnpair, unpairHost } from "../../entities/host/unpair.ts";
+import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
+import { Badge } from "../../shared/ui/badge.tsx";
+import { useToast } from "../../shared/ui/toast.tsx";
 
 /** Settings → Devices: the devices paired with this host, the account switch, and a new pairing offer. */
 export function DevicesSection({
@@ -82,7 +82,7 @@ export function DevicesSection({
         />
       )}
       <AccountDevicesSwitch view={view} remote={remote} />
-      {pairError === undefined ? null : <Banner status="error" title="Could not create a pairing offer" description={pairError} />}
+      {pairError === undefined ? null : <Alert variant="destructive"><AlertTitle>Could not create a pairing offer</AlertTitle><AlertDescription>{pairError}</AlertDescription></Alert>}
       {offer === undefined ? (
         <Button variant="secondary" disabled={!connected} onClick={pair}>Pair a device</Button>
       ) : (
@@ -147,7 +147,7 @@ function DeviceRow({
       description={`Paired ${PAIRED_AT.format(device.pairedAt)}${source}`}
       endContent={
         <div className="flex items-center gap-2">
-          {isSelf ? <Token label="This device" size="sm" /> : null}
+          {isSelf ? <Badge>This device</Badge> : null}
           <Button
             aria-label={`Unpair ${device.name}`}
             variant="secondary"

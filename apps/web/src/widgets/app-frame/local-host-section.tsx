@@ -1,7 +1,5 @@
 import { AlertDialog } from "@astryxdesign/core/AlertDialog";
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../../shared/ui/button.tsx";
-import { Spinner } from "@astryxdesign/core/Spinner";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
 import { Switch } from "../../shared/ui/switch.tsx";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
@@ -9,6 +7,8 @@ import { useAccountModel } from "../../entities/account/account-context.tsx";
 import type { LocalHostStopResult } from "../../entities/local-host/local-host-protocol.ts";
 import { localHostBridge, useLocalHostState, type LocalHostBridge } from "../../entities/local-host/use-local-host.ts";
 import { LocalHostSetup } from "../account/local-host-setup.tsx";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
+import { Spinner } from "../../shared/ui/spinner.tsx";
 
 /**
  * Settings → This Mac, desktop on macOS only (#501): a switch over the host
@@ -87,18 +87,17 @@ function LocalHostControls({ bridge, pollIntervalMs }: { bridge: LocalHostBridge
 
   const banner =
     error === undefined ? null : (
-      <Banner status="error" title="Couldn't change the host" description={error} />
+      <Alert variant="destructive"><AlertTitle>Couldn't change the host</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>
     );
 
   switch (state.kind) {
     case "error":
       return (
-        <Banner
-          status="error"
-          title="Couldn't check the host on this Mac"
-          description={state.message}
-          endContent={<Button variant="secondary" onClick={() => void refresh()}>Try again</Button>}
-        />
+        <Alert variant="destructive">
+          <AlertTitle>Couldn't check the host on this Mac</AlertTitle>
+          <AlertDescription>{state.message}</AlertDescription>
+          <AlertAction><Button variant="secondary" onClick={() => void refresh()}>Try again</Button></AlertAction>
+        </Alert>
       );
     case "too-old":
       return (

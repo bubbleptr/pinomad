@@ -1,12 +1,12 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
-import { Spinner } from "@astryxdesign/core/Spinner";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FolderListing, Project } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { folderCrumbs, parentFolder } from "@pinomad/client/folder-path.ts";
 import { ChevronRight, FolderClosed } from "../../shared/ui/icons.tsx";
+import { Spinner } from "../../shared/ui/spinner.tsx";
 
 const message = (reason: unknown): string => (reason instanceof Error ? reason.message : String(reason));
 
@@ -384,7 +384,7 @@ function FolderColumn({
     >
       {listing === undefined || listing.status === "loading" ? (
         <div className="flex flex-1 items-center justify-center">
-          <Spinner aria-label={`Loading ${label}`} size="sm" />
+          <Spinner size="sm" aria-label={`Loading ${label}`} />
         </div>
       ) : listing.status === "error" ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 px-2 text-center">

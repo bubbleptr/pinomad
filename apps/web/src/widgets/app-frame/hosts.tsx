@@ -7,10 +7,6 @@ import { Item } from "@astryxdesign/core/Item";
 import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { SegmentedControl, SegmentedControlItem } from "../../shared/ui/segmented-control.tsx";
-import { StatusDot } from "@astryxdesign/core/StatusDot";
-import { useToast } from "@astryxdesign/core/Toast";
-import { Token } from "@astryxdesign/core/Token";
-import { VisuallyHidden } from "@astryxdesign/core/VisuallyHidden";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { hostLabels, type StoredHost } from "@pinomad/client/stored-host.ts";
 import { hostSupportsFeature } from "@pinomad/protocol/frames.ts";
@@ -52,6 +48,9 @@ import {
   PATH_LABEL,
   pathLabel,
 } from "./hosts-diagnostics.ts";
+import { Badge } from "../../shared/ui/badge.tsx";
+import { StatusDot } from "../../shared/ui/status-dot.tsx";
+import { useToast } from "../../shared/ui/toast.tsx";
 
 /** The coordinator methods this panel pulls diagnostics from. */
 export type HostsRtc = Pick<RemoteDurable, "rtcDiagnostics" | "setConnectionMode">;
@@ -209,7 +208,7 @@ export function HostStatusDot({ connected }: { connected: boolean }) {
   return (
     <span aria-hidden="true" className="inline-flex">
       {connected ? (
-        <StatusDot variant="success" label="Connected" isPulsing />
+        <StatusDot variant="success" label="Connected" pulsing />
       ) : (
         <StatusDot variant="neutral" label="Not connected" />
       )}
@@ -252,7 +251,7 @@ export function HostsMenu({ onLocate }: { onLocate?: (hostKey: string) => void }
               <span aria-hidden="true" className="ms-2 text-muted-foreground">
                 {hostStatusText(paired.info(host))}
               </span>
-              <VisuallyHidden>{`(${hostStatusText(paired.info(host)).toLowerCase()})`}</VisuallyHidden>
+              <span className="sr-only">{`(${hostStatusText(paired.info(host)).toLowerCase()})`}</span>
             </>
           }
           {...(onLocate === undefined ? {} : { onClick: () => onLocate(host.hostKey) })}
@@ -407,7 +406,7 @@ function PairedHostRow({
     ) : onSwitch !== undefined ? (
       <Button aria-label={`Switch to ${label}`} variant="secondary" size="sm" onClick={onSwitch}>Switch</Button>
     ) : isCurrent ? (
-      <Token label="Current" size="sm" />
+      <Badge>Current</Badge>
     ) : null;
   return (
     <li aria-label={label}>

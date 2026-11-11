@@ -1,9 +1,9 @@
 import { List, ListItem } from "@astryxdesign/core/List";
-import { Token } from "@astryxdesign/core/Token";
 import type { JsonValue } from "@earendil-works/chord";
 import { classify, type QuestionRequest, type QuestionState } from "@pinomad/protocol/presentation.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { ExtensionDocView } from "@pinomad/protocol/view.ts";
+import { Badge } from "../shared/ui/badge.tsx";
 
 const STATUS_LABEL = { pending: "pending", in_progress: "in progress", completed: "completed" } as const;
 
@@ -35,7 +35,7 @@ function TodoDoc({ doc }: { doc: { items: readonly { text: string; status: "pend
         <ListItem label="Empty" />
       ) : (
         doc.items.map((item, index) => (
-          <ListItem key={index} label={item.text} startContent={<Token label={STATUS_LABEL[item.status]} size="sm" />} />
+          <ListItem key={index} label={item.text} startContent={<Badge>{STATUS_LABEL[item.status]}</Badge>} />
         ))
       )}
     </List>
@@ -70,7 +70,7 @@ function QuestionDoc({ doc }: { doc: QuestionState }) {
                 key={`${request.id}-${index}`}
                 label={question.question}
                 description={status.label}
-                startContent={<Token label={question.header} size="sm" />}
+                startContent={<Badge>{question.header}</Badge>}
               />
             );
           }),

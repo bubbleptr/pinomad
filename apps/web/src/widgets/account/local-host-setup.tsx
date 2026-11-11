@@ -1,13 +1,13 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../../shared/ui/button.tsx";
 import { CodeBlock } from "@astryxdesign/core/CodeBlock";
-import { Spinner } from "@astryxdesign/core/Spinner";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { useSetupRun, type MintToken } from "../../entities/local-host/setup-run.ts";
 import type { LocalHostBridge } from "../../entities/local-host/use-local-host.ts";
 import { accountErrorMessage } from "./account-error.ts";
 import { joinCommand } from "./join-command.ts";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
+import { Spinner } from "../../shared/ui/spinner.tsx";
 
 /** The installer's last lines: where it is, without a log to scroll. */
 const SHOWN_LINES = 6;
@@ -69,12 +69,11 @@ export function LocalHostSetup({
     case "failed":
       return (
         <div className="flex flex-col gap-3">
-          <Banner
-            status="error"
-            title={phase.step === "install" ? "Couldn't install PiNomad" : "Couldn't add this Mac to your account"}
-            description={phase.message}
-            endContent={<Button variant="secondary" onClick={run}>Try again</Button>}
-          />
+          <Alert variant="destructive">
+            <AlertTitle>{phase.step === "install" ? "Couldn't install PiNomad" : "Couldn't add this Mac to your account"}</AlertTitle>
+            <AlertDescription>{phase.message}</AlertDescription>
+            <AlertAction><Button variant="secondary" onClick={run}>Try again</Button></AlertAction>
+          </Alert>
           <InstallLog lines={phase.lines} />
           <div className="flex flex-col gap-2">
             <span className="text-xs/5 text-muted-foreground">Or run it in your own terminal:</span>

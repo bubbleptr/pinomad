@@ -1,11 +1,11 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
-import { Spinner } from "@astryxdesign/core/Spinner";
 import { useState } from "react";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { AccountPanel } from "./account-panel.tsx";
 import { HostLinkEntry, HostLinkRequestEntry } from "./host-link-entry.tsx";
+import { Spinner } from "../../shared/ui/spinner.tsx";
 
 /**
  * The page `pinomad join <origin>` opens (the server's `verifyUrl`). Exact,

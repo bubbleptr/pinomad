@@ -2647,8 +2647,8 @@ it("surfaces a failed command as a toast without opening the dock", async () => 
   await observer.controller.removeProject(project.path);
   await prompt(page).fill("hi");
   await prompt(page).press("Enter");
-  // Scope to the toast itself: the message also lands in Astryx's hidden
-  // assertive live region, making a bare role=alert match ambiguous.
+  // Scope to the toast itself: an error toast also keeps a hidden assertive
+  // copy for screen readers, making a bare role=alert match ambiguous.
   const toast = page.locator("[data-toast-id]");
   await toast.getByText("Unknown project", { exact: false }).waitFor();
 

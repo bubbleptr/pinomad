@@ -1,4 +1,3 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../../shared/ui/button.tsx";
 import { useEffect, useState } from "react";
 import type { AccountError } from "@pinomad/client/account.ts";
@@ -6,6 +5,7 @@ import { useAccountModel } from "../../entities/account/account-context.tsx";
 import type { AccountState } from "../../entities/account/account-model.ts";
 import { useHosts } from "../../entities/host/host-store.ts";
 import { accountErrorMessage } from "./account-error.ts";
+import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 
 /**
  * On the "this device isn't paired" screen: when the refused host belongs to
@@ -39,7 +39,7 @@ export function RepairViaAccount({ hostKey }: { hostKey: string }) {
       >
         Pair again with your account
       </Button>
-      {error === undefined ? null : <Banner status="error" title="Couldn't pair" description={accountErrorMessage(error)} />}
+      {error === undefined ? null : <Alert variant="destructive"><AlertTitle>Couldn't pair</AlertTitle><AlertDescription>{accountErrorMessage(error)}</AlertDescription></Alert>}
     </div>
   );
 }

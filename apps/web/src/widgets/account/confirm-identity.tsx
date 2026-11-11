@@ -1,6 +1,4 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../../shared/ui/button.tsx";
-import { Spinner } from "@astryxdesign/core/Spinner";
 import { Field, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { useEffect, useRef, useState, type ReactElement } from "react";
@@ -8,6 +6,8 @@ import type { AccountConfirmation, AccountError, AccountResult } from "@pinomad/
 import type { AccountModel } from "../../entities/account/account-model.ts";
 import { accountErrorMessage } from "./account-error.ts";
 import { CODE_INPUT } from "./code-input.ts";
+import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
+import { Spinner } from "../../shared/ui/spinner.tsx";
 
 /** The second check a guarded action takes, ready to send (ADR-0044 §6). */
 export interface IdentityConfirmation {
@@ -158,7 +158,10 @@ export function ConfirmIdentity({
         </Field>
       ) : null}
       {sendError === undefined ? null : (
-        <Banner status="error" title="Couldn't send the code" description={accountErrorMessage(sendError)} />
+        <Alert variant="destructive">
+          <AlertTitle>Couldn't send the code</AlertTitle>
+          <AlertDescription>{accountErrorMessage(sendError)}</AlertDescription>
+        </Alert>
       )}
       <div className="flex gap-2">
         <Button variant="secondary" size="sm" loading={sending} onClick={onSend}>{sent ? "Resend code" : "Send code"}</Button>

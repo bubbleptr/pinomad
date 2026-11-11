@@ -1,4 +1,3 @@
-import { Banner } from "@astryxdesign/core/Banner";
 import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
@@ -12,6 +11,7 @@ import { SettingsGroup } from "../../shared/ui/settings-group.tsx";
 import { accountErrorMessage } from "./account-error.ts";
 import { CODE_INPUT } from "./code-input.ts";
 import { useConfirmIdentity } from "./confirm-identity.tsx";
+import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 
 const byName = (confirmation: AccountConfirmation): EmailConfirmation =>
   typeof confirmation === "string" ? { password: confirmation } : confirmation;
@@ -96,7 +96,12 @@ export function EmailForm({
           />
         </Field>
         {identity.field}
-        {error === undefined ? null : <Banner status="error" title="Couldn't send the code" description={accountErrorMessage(error)} />}
+        {error === undefined ? null : (
+          <Alert variant="destructive">
+            <AlertTitle>Couldn't send the code</AlertTitle>
+            <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
+          </Alert>
+        )}
         <div className="flex gap-2">
           <Button variant="primary" loading={busy} disabled={email.trim() === "" || !identity.ready} onClick={send}>Send code to new email</Button>
           {cancel}
@@ -119,7 +124,12 @@ export function EmailForm({
         />
       </Field>
       {reconfirm ? identity.field : null}
-      {error === undefined ? null : <Banner status="error" title="Couldn't save the email" description={accountErrorMessage(error)} />}
+      {error === undefined ? null : (
+        <Alert variant="destructive">
+          <AlertTitle>Couldn't save the email</AlertTitle>
+          <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
+        </Alert>
+      )}
       <div className="flex gap-2">
         <Button variant="primary" loading={busy} disabled={code.trim() === "" || !identity.ready} onClick={save}>{submitLabel}</Button>
         <Button
