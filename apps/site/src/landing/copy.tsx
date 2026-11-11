@@ -15,9 +15,6 @@ export interface LandingCopy {
     lead: string;
     start: string;
     github: string;
-    modelsLabel: string;
-    models: string[];
-    modelsMore: string;
     shotAlt: string;
     /** Spec pairs under the call to action, set like a colour swatch's HEX / CMYK lines. */
     specs: { label: string; value: string }[];
@@ -88,7 +85,6 @@ export interface LandingCopy {
   footer: { sign: string; nav: string; docs: string; license: string; privacy: string; terms: string };
 }
 
-const models = ["Anthropic", "OpenAI", "Google", "DeepSeek", "xAI", "Mistral"];
 const issue = (n: number) => `https://github.com/bubbleptr/pinomad/issues/${n}`;
 const adr4 = "https://github.com/bubbleptr/pinomad/blob/main/docs/adr/0004-built-in-first-plugin-protocol-later.md";
 const blogPost = "https://kieran.build/zh/blog/indie-dev-weekly-03/";
@@ -107,9 +103,6 @@ export const copy: Record<Lang, LandingCopy> = {
       lead: "It runs on your own Mac or Linux machine; pick up any run from the Mac app, the browser, or your iPhone. Built on Pi Durable, it checkpoints every model and tool call, so a crash or restart resumes the run instead of starting over.",
       start: "Get started",
       github: "View on GitHub",
-      modelsLabel: "Use any model pi supports",
-      models: [...models, "Qwen", "Kimi", "Z.AI", "MiniMax", "OpenRouter", "GitHub Copilot"],
-      modelsMore: "17 more",
       shotAlt:
         "The PiNomad Mac app with two machines in its sidebar. On macbook-pro, @planner has split currency support for the iOS and web clients between two @worker agents and a @critic, each on its own model; on omarchy, the API is filling in a currency for old bills. In front, the @critic's own conversation is open in a browser.",
 
@@ -280,9 +273,6 @@ export const copy: Record<Lang, LandingCopy> = {
       lead: "Mac App、浏览器、iPhone 都能随时接手正在跑的任务。基于 Pi Durable，每次模型和工具调用都存检查点，崩溃重启也从断处接着跑。",
       start: "开始使用",
       github: "在 GitHub 上查看",
-      modelsLabel: "pi 支持的模型都能用",
-      models: [...models, "通义千问", "Kimi", "智谱 Z.AI", "MiniMax", "OpenRouter", "GitHub Copilot"],
-      modelsMore: "另有 17 家",
       shotAlt: "PiNomad Mac App，侧栏里有两台机器：macbook-pro 上 @planner 把 iOS 和 Web 的多币种支持分给了两个 @worker 和一个 @critic，各用各的模型；omarchy 上服务端正在给旧账单回填币种。前面的浏览器里打开的是 @critic 自己的对话。",
       specs: [
         { label: "宿主", value: "macOS · Linux" },

@@ -42,7 +42,6 @@
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
-  --ease-reveal: cubic-bezier(0.215, 0.61, 0.355, 1);
   --font: Montserrat, -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
     "Microsoft YaHei", "Noto Sans CJK SC", "Segoe UI", sans-serif;
   /* Chinese headlines fall back to a Song face; Windows has none worth setting this
@@ -313,7 +312,7 @@ html[lang="zh-CN"] h2 {
 }
 
 .lead {
-  max-width: 34rem;
+  max-width: 38rem;
   font-size: clamp(1.05rem, 1.6vw, 1.2rem);
 }
 
@@ -443,7 +442,7 @@ html[lang="zh-CN"] .eyebrow {
 
 /* —— Hero: the headline on the mist, then the app on a blue stage —— */
 .hero {
-  padding-top: clamp(4.5rem, 11vw, 8.5rem);
+  padding-top: clamp(2.5rem, 5.5vw, 4.5rem);
   text-align: center;
 }
 
@@ -484,64 +483,9 @@ html[lang="zh-CN"] .eyebrow {
   color: var(--fg-2);
 }
 
-/* Spec line, then the models: the label sits close to its ticker, further from the specs. */
+/* Under the stage. */
 .hero-meta {
-  margin-top: 3rem;
-}
-
-.models {
-  margin-top: clamp(2.5rem, 5vw, 3.5rem);
-}
-
-.models-label {
-  margin-bottom: 0.9rem;
-  color: var(--fg-3);
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-html[lang="zh-CN"] .models-label {
-  letter-spacing: 0.06em;
-}
-
-/* Model providers drift past as one band, fading out at both edges. */
-.ticker {
-  display: flex;
-  width: max-content;
-}
-
-.models {
-  overflow: hidden;
-  mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
-}
-
-.ticker ul {
-  display: flex;
-  flex: none;
-  align-items: baseline;
-}
-
-.ticker li {
-  display: flex;
-  align-items: baseline;
-  color: var(--fg-2);
-  font-family: var(--font-display);
-  font-size: clamp(1.4rem, 2.6vw, 2rem);
-  white-space: nowrap;
-}
-
-.ticker li::after {
-  content: "✦";
-  margin-inline: 1.4em;
-  color: var(--fg-3);
-  font-size: 0.45em;
-  translate: 0 -0.35em;
-}
-
-.models-more {
-  font-style: italic;
+  margin-top: clamp(3rem, 6vw, 4.5rem);
 }
 
 /* The app stands on a plate of silver contour lines over Abyss Blue. The picture is
@@ -553,7 +497,8 @@ html[lang="zh-CN"] .models-label {
 /* Wider than the text column, so the window reads at close to its real size. */
 .hero-stage {
   width: min(100% - 2 * var(--gutter), 90rem);
-  margin: clamp(3rem, 7vw, 5rem) auto 0;
+  /* Close enough to the buttons that the app shows on the first screen. */
+  margin: clamp(2.5rem, 5vw, 4rem) auto 0;
   padding-top: clamp(2.5rem, 7vw, 6.5rem);
   /* clip, not hidden: hidden makes a scroll container, and the app's view()
      timeline would follow this box, which never scrolls, instead of the page. */
@@ -562,6 +507,13 @@ html[lang="zh-CN"] .models-label {
   background: var(--abyss)
     image-set(url("./hero-stage-1000.webp") 1x, url("./hero-stage.webp") 2x)
     center bottom / cover no-repeat;
+}
+
+/* On a short laptop screen the full silver band would push the window below the fold. */
+@media (min-width: 56rem) and (max-height: 50rem) {
+  .hero-stage {
+    padding-top: 2.5rem;
+  }
 }
 
 /* Past 1000px wide the small copy would be stretched even at 1x. */
@@ -590,14 +542,6 @@ html[lang="zh-CN"] .models-label {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .ticker {
-    animation: drift 60s linear infinite;
-  }
-
-  .models:hover .ticker {
-    animation-play-state: paused;
-  }
-
   /* The app tips up off its stage as it scrolls in. */
   @supports (animation-timeline: view()) {
     .hero-shot {
@@ -609,16 +553,10 @@ html[lang="zh-CN"] .models-label {
   }
 }
 
-@keyframes drift {
-  to {
-    translate: -50% 0;
-  }
-}
-
+/* No fade: the window's top is on the first screen at rest, and shouldn't sit there dimmed. */
 @keyframes rise {
   from {
     transform: perspective(1800px) rotateX(10deg) scale(0.96);
-    opacity: 0.6;
   }
 }
 
@@ -1417,68 +1355,63 @@ html[lang="zh-CN"] .split h2 {
   user-select: none;
 }
 
-/* —— Scroll reveal. useReveal adds .reveal only to blocks that start below the first
-   screen and only without reduced motion, so nothing is hidden without JS; print
-   always shows everything. The transition sits on .is-revealed so hiding is
-   instant and only the reveal animates. —— */
+/* —— Entrance. Played on every full load, in the order a lens finds focus: each line
+   of the headline, then the intro and the buttons, rises a little out of a blur; the
+   stage then fades up, plate and window as one, and the window's contents last. Nothing below the first screen animates on scroll.
+   Plain keyframes, so it plays from the prerendered HTML without waiting for scripts.
+   Landing sets data-intro-seen once it has finished, so coming back from the docs
+   without a reload doesn't replay it; useIntroOnce finds these by the intro- prefix. —— */
 @media screen and (prefers-reduced-motion: no-preference) {
-  /* A long rise out of a soft blur. The curve is GSAP's power3.out. */
-  .reveal:not(.is-revealed),
-  .section-head.reveal:not(.is-revealed) > * {
-    opacity: 0;
-    translate: 0 3.5rem;
-    filter: blur(6px);
+  /* Listed out, not :is(): that would lend .lead the specificity of "h1 .line", and
+     this rule's delay would then beat the ones below. */
+  :root:not([data-intro-seen]) .hero h1 .line,
+  :root:not([data-intro-seen]) .hero .lead,
+  :root:not([data-intro-seen]) .hero .actions {
+    animation: intro-focus 1s cubic-bezier(0.25, 0.1, 0.25, 1) 0.4s both;
   }
 
-  .reveal.is-revealed,
-  .section-head.reveal.is-revealed > * {
-    transition:
-      opacity 0.8s var(--ease-reveal),
-      translate 0.8s var(--ease-reveal),
-      filter 0.8s var(--ease-reveal);
+  :root:not([data-intro-seen]) .hero h1 .line:nth-child(2) {
+    animation-delay: 0.5s;
   }
 
-  /* A section's heading comes in a line at a time: label, title, intro, the rest. The
-     head itself stays put so its children's offsets don't add up. */
-  .section-head.reveal:not(.is-revealed) {
-    opacity: 1;
-    translate: none;
-    filter: none;
+  /* A paragraph is taller than a headline line, so its rise is a length, not a share. */
+  :root:not([data-intro-seen]) .hero .lead {
+    --intro-rise: 0.4rem;
+    animation-delay: 0.6s;
   }
 
-  .section-head.reveal.is-revealed > :nth-child(2) {
-    transition-delay: 80ms;
+  :root:not([data-intro-seen]) .hero .actions {
+    --intro-rise: 0.4rem;
+    animation-delay: 0.7s;
   }
 
-  .section-head.reveal.is-revealed > :nth-child(3) {
-    transition-delay: 160ms;
+  /* The stage comes up as one piece, plate and window together: on a light page a
+     dark window arriving before its plate reads as a glitch. Its contents follow. */
+  :root:not([data-intro-seen]) .hero-stage {
+    animation: intro-fade 1.2s cubic-bezier(0.455, 0.03, 0.515, 0.955) 0.7s both;
   }
 
-  .section-head.reveal.is-revealed > :nth-child(n + 4) {
-    transition-delay: 240ms;
+  :root:not([data-intro-seen]) .hero-stage .mock-app > * {
+    animation: intro-fade 1.2s cubic-bezier(0.455, 0.03, 0.515, 0.955) 1.5s both;
+  }
+
+  /* The second window rises once the first has its contents. */
+  :root:not([data-intro-seen]) .hero-stage .mock-browser {
+    animation-delay: 2.5s;
   }
 }
 
-/* Without the drift, the band would cut the list off: show one copy, wrapped. */
-@media (prefers-reduced-motion: reduce) {
-  .models {
-    mask-image: none;
+@keyframes intro-focus {
+  from {
+    opacity: 0;
+    filter: blur(10px);
+    translate: 0 var(--intro-rise, 20%);
   }
+}
 
-  .ticker {
-    width: auto;
-  }
-
-  .ticker ul {
-    flex: 1;
-    flex-wrap: wrap;
-    justify-content: center;
-    row-gap: 0.4rem;
-  }
-
-  .ticker ul[aria-hidden],
-  .ticker li:last-child::after {
-    display: none;
+@keyframes intro-fade {
+  from {
+    opacity: 0;
   }
 }
 
