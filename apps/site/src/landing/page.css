@@ -718,15 +718,17 @@ html[lang="zh-CN"] .chapter-head h2 {
 }
 
 .chapter-stage {
+  --phone: min(21rem, 72vw);
   position: relative;
   display: grid;
   width: fit-content;
-  /* Room above for the ghost, clear of the buttons. */
-  margin: clamp(6.5rem, 9vw, 7.5rem) auto 0;
+  /* The ghost stands a share of the phone's size above it, so the room above follows
+     the phone's width and the ghost stays clear of the buttons at every width. */
+  margin: calc(var(--phone) * 0.5 + 1rem) auto 0;
 }
 
 .chapter-stage .phone {
-  width: min(21rem, 72vw);
+  width: var(--phone);
 }
 
 /* The ghost from the logo, looking over the phone's shoulder: the agent itself stays
@@ -740,6 +742,7 @@ html[lang="zh-CN"] .chapter-head h2 {
   color: var(--void);
   --mark-body: var(--mist);
   rotate: 9deg;
+  pointer-events: none;
 }
 
 /* On a phone there is no room beside the phone, so it leans in less. */
