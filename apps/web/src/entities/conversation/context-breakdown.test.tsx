@@ -12,12 +12,12 @@ describe("ContextBreakdownList", () => {
 
   it("lists each part that takes space with its tokens, then what is left", () => {
     render(<ContextBreakdownList usage={{ used: 124_000, window: 200_000 }} breakdown={PARTS} />);
-    expect(rowsOf()).toEqual(["System8k", "Skills3k", "Tools12k", "Messages101k", "Left76k"]);
+    expect(rowsOf()).toEqual(["System8.1K", "Tools12.0K", "Skills3.2K", "Messages101K", "Left76.0K"]);
   });
 
   it("still says what is left without a breakdown, and nothing is left past the window", () => {
     const { rerender } = render(<ContextBreakdownList usage={{ used: 124_000, window: 200_000 }} breakdown={undefined} />);
-    expect(rowsOf()).toEqual(["Left76k"]);
+    expect(rowsOf()).toEqual(["Left76.0K"]);
     rerender(<ContextBreakdownList usage={{ used: 250_000, window: 200_000 }} breakdown={{ ...PARTS, used: 250_000, messages: 226_700 }} />);
     expect(rowsOf()).not.toContainEqual(expect.stringMatching(/^Left/));
   });

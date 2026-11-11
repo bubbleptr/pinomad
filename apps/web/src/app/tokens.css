@@ -76,6 +76,18 @@
   --dot-success: light-dark(#5fc88a, #7dcf9f);
   --dot-warning: light-dark(#e8b000, #e6c24d);
   --dot-error: light-dark(#f04438, #ff6b5f);
+  /* Categorical data colors for charts and meters (clean's --aui-blue …
+     --aui-cyan): fills, not text, so they only need to read against each
+     other and the card. */
+  --data-blue: light-dark(#0190fe, #4fb0fe);
+  --data-green: light-dark(#5fc88a, #7dcf9f);
+  --data-amber: light-dark(#e8b000, #e6c24d);
+  --data-orange: light-dark(#f28a2e, #f2a15c);
+  --data-red: light-dark(#f04438, #ff6b5f);
+  --data-pink: light-dark(#ee3e9e, #f06db5);
+  --data-purple: light-dark(#a651f0, #b98af0);
+  --data-teal: light-dark(#13b3a0, #4fc3b4);
+  --data-cyan: light-dark(#14b3f0, #5cc6ee);
   /* Toasts sit on the opposite of the page: near-black on light, white on
      dark; an error toast is a deep red on both. */
   --inverse: light-dark(#0a1317, #ffffff);

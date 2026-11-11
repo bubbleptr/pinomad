@@ -17,7 +17,7 @@ import { conversationName } from "../../entities/conversation/subagent.ts";
 import { summaryOf } from "@pinomad/client/model.ts";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ContextBreakdownList, matchingBreakdown } from "../../entities/conversation/context-breakdown.tsx";
-import { ContextBar, ContextFigures } from "../../entities/conversation/context-meter.tsx";
+import { ContextBar, ContextHeadline } from "../../entities/conversation/context-meter.tsx";
 import { branchOf, ChangeFigure, changeStatOf, type ChangeStat } from "../../entities/conversation/change-stat.tsx";
 import { taskTally } from "../../entities/conversation/task-tally.ts";
 import { DocumentView } from "../../presentation/documents.tsx";
@@ -245,7 +245,7 @@ function UsageSection({ view, conversation }: { view: DurableView; conversation:
   const percent = usage === undefined ? "—" : `${Math.round((usage.used / usage.window) * 100)}%`;
   return (
     <Section section="usage" title="Context" summary={percent}>
-      <Row end={<ContextFigures usage={usage} />}>Used</Row>
+      <ContextHeadline usage={usage} />
       <div className="pb-1.5">
         <ContextBar usage={usage} breakdown={breakdown} />
       </div>

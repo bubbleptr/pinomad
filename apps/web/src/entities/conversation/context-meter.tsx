@@ -1,40 +1,59 @@
 import type { ContextUsage } from "@pinomad/client/context-usage.ts";
 import type { ContextBreakdown } from "@pinomad/protocol/presentation.ts";
+import { Badge } from "../../shared/ui/badge.tsx";
 
 /** A nearly-full window warns before the conversation compacts itself. */
 const WARNING_PERCENT = 80;
 
+/** Token counts as the meter reads them: one decimal below 100K ("4.2K", "88.0K"), whole above ("200K", "1M"). */
 export const formatTokens = (tokens: number): string =>
   tokens >= 1_000_000
     ? `${+(tokens / 1_000_000).toFixed(1)}M`
-    : tokens >= 1000
-      ? `${Math.round(tokens / 1000)}k`
-      : `${Math.round(tokens)}`;
+    : tokens >= 100_000
+      ? `${Math.round(tokens / 1000)}K`
+      : tokens >= 1000
+        ? `${(tokens / 1000).toFixed(1)}K`
+        : `${Math.round(tokens)}`;
 
 const percentOf = (usage: ContextUsage): number => Math.round((usage.used / usage.window) * 100);
 const isWarning = (usage: ContextUsage | undefined): boolean => usage !== undefined && percentOf(usage) >= WARNING_PERCENT;
 
-// The app's categorical data palette (styles.css), even in lightness across
-// themes. Messages take blue: the part the user produces and the one that grows.
+/**
+ * A lighter step of a data color, for parts in one family: toward the card in
+ * light, toward white in dark, where a step toward the card would sink into
+ * the empty cells.
+ */
+const tint = (color: string, percent: number): string => `color-mix(in oklab, ${color} ${percent}%, light-dark(var(--card), #ffffff))`;
+
+// The fixed overhead the host sends every request is one blue family, darkest
+// first; MCP, the part servers add, is teal; messages, the part that grows,
+// purple.
 export const PARTS = [
-  { key: "system", label: "System", color: "var(--pigui-data-slate)" },
-  { key: "skills", label: "Skills", color: "var(--pigui-data-amber)" },
-  { key: "tools", label: "Tools", color: "var(--pigui-data-green)" },
-  { key: "mcp", label: "MCP", color: "var(--pigui-data-orange)" },
-  { key: "messages", label: "Messages", color: "var(--pigui-data-blue)" },
+  { key: "system", label: "System", color: "var(--data-blue)" },
+  { key: "tools", label: "Tools", color: tint("var(--data-blue)", 60) },
+  { key: "skills", label: "Skills", color: tint("var(--data-blue)", 30) },
+  { key: "mcp", label: "MCP", color: "var(--data-teal)" },
+  { key: "messages", label: "Messages", color: "var(--data-purple)" },
 ] as const;
 
 /**
- * The context row's figures: share, then used / window. `used` may exceed
- * `window` after a swap to a smaller model — the share stays honest. Without
- * a qualifying reply it reads "—": the last usage predates a compaction or
- * reset and would lie.
+ * The section's headline: tokens used, of the window, and the share as a
+ * badge that turns warning near compaction. `used` may exceed `window` after
+ * a swap to a smaller model, and the share stays honest. Without a qualifying
+ * reply it reads "—": the last usage predates a compaction or reset and would lie.
  */
-export function ContextFigures({ usage }: { usage: ContextUsage | undefined }) {
+export function ContextHeadline({ usage }: { usage: ContextUsage | undefined }) {
+  if (usage === undefined) return <p className="py-1 text-2xl/8 font-medium text-muted-foreground">—</p>;
   return (
-    <span className={isWarning(usage) ? "text-warning" : "text-muted-foreground"}>
-      {usage === undefined ? "—" : `${percentOf(usage)}% · ${formatTokens(usage.used)} / ${formatTokens(usage.window)}`}
-    </span>
+    <div className="flex items-center gap-2 py-1">
+      <p className="min-w-0 flex-1 truncate tabular-nums">
+        <span className="text-2xl/8 font-medium">{formatTokens(usage.used)}</span>{" "}
+        <span className="text-sm text-muted-foreground">of {formatTokens(usage.window)} tokens</span>
+      </p>
+      <Badge variant={isWarning(usage) ? "warning" : "default"} className="tabular-nums">
+        {percentOf(usage)}%
+      </Badge>
+    </div>
   );
 }
 
