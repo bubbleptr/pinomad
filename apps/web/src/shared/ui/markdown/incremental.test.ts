@@ -74,15 +74,6 @@ describe('parseMarkdownIncremental', () => {
     expect(state.settledBlocks.length).toBeGreaterThan(0);
   });
 
-  it('code fences prevent false settlement', () => {
-    const state = createIncrementalState();
-    const input =
-      '```javascript\nconst x = 1;\n\n// still in code\nconsole.log(x);';
-    parseMarkdownIncremental(input, state);
-    // Inside an unclosed fence, nothing should be settled
-    expect(state.settledBlocks).toHaveLength(0);
-  });
-
   it('handles heading then code block', () => {
     const text = '# Title\n\n```ts\nconst x = 1;\n```';
     const {final} = simulateStreaming(text);

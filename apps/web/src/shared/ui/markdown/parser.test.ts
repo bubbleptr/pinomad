@@ -174,14 +174,6 @@ describe('parseInline', () => {
 });
 
 describe('parseMarkdown', () => {
-  it('parses headings', () => {
-    const result = parseMarkdown('# Hello');
-    expect(result[0].type).toBe('heading');
-    if (result[0].type === 'heading') {
-      expect(result[0].level).toBe(1);
-    }
-  });
-
   it('parses h1-h6', () => {
     const input = '# H1\n## H2\n### H3\n#### H4\n##### H5\n###### H6';
     const result = parseMarkdown(input);
@@ -192,11 +184,6 @@ describe('parseMarkdown', () => {
         expect(block.level).toBe(i + 1);
       }
     });
-  });
-
-  it('parses paragraphs', () => {
-    const result = parseMarkdown('Hello world');
-    expect(result[0].type).toBe('paragraph');
   });
 
   it('separates paragraphs by blank lines', () => {

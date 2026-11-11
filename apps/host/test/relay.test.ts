@@ -1,7 +1,5 @@
-import { stat } from "node:fs/promises";
 import { createServer, type Socket } from "node:net";
 import type { AddressInfo } from "node:net";
-import { join } from "node:path";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { describe, expect, it } from "vitest";
 import type { EndpointSet } from "@pinomad/protocol/endpoints.ts";
@@ -862,22 +860,6 @@ describe("relay link", () => {
 
     await tokenClient.controller.revokeDevice(toBase64Url(device.publicKey));
     await waitForView(remote.view, (view) => view.connection === "closed");
-  });
-});
-
-describe("loadRelayKey", () => {
-  it("creates a stable 0600 Ed25519 key, even for concurrent first calls", async () => {
-    const dir = await tempDir();
-    defer(dir.remove);
-    const [a, b] = await Promise.all([loadRelayKey(dir.path), loadRelayKey(dir.path)]);
-    expect(toBase64Url(a.secretKey)).toBe(toBase64Url(b.secretKey));
-    const again = await loadRelayKey(dir.path);
-    expect(toBase64Url(again.secretKey)).toBe(toBase64Url(a.secretKey));
-    expect(relayHostId(a.publicKey)).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    const path = join(dir.path, "relay-key");
-    expect((await stat(path)).mode & 0o777).toBe(0o600);
-    const written = await loadRelayKey(dir.path);
-    expect(toBase64Url(written.secretKey)).toBe(toBase64Url(a.secretKey));
   });
 });
 

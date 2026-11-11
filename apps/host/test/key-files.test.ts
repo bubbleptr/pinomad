@@ -6,6 +6,7 @@ import { readdir, stat } from "node:fs/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { relayHostId } from "@pinomad/protocol/relay.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { loadHostKey, loadRelayKey } from "../src/devices.ts";
 import { tempDir, useCleanups } from "./support.ts";
@@ -45,6 +46,7 @@ describe("key files under a slow first write", () => {
     const [a, b] = await Promise.all([loadRelayKey(dir.path), loadRelayKey(dir.path)]);
     expect(toBase64Url(b.secretKey)).toBe(toBase64Url(a.secretKey));
     expect(toBase64Url((await loadRelayKey(dir.path)).secretKey)).toBe(toBase64Url(a.secretKey));
+    expect(relayHostId(a.publicKey)).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect((await stat(join(dir.path, "relay-key"))).mode & 0o777).toBe(0o600);
     expect(await readdir(dir.path)).toEqual(["relay-key"]);
   });

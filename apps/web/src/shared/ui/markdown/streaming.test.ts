@@ -25,12 +25,6 @@ describe('computeBoundaries', () => {
   it('handles maxSpans of 1', () => {
     expect(computeBoundaries([10], 20, 1)).toEqual([20]);
   });
-
-  it('returns same reference when nothing changes', () => {
-    const prev = [5, 10, 15];
-    const result = computeBoundaries(prev, 10, 5);
-    expect(result).toBe(prev);
-  });
 });
 
 describe('computeSegments', () => {

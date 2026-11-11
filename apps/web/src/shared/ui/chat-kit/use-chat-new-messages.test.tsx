@@ -58,23 +58,6 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("useChatNewMessages — callback ref (issue #2282)", () => {
-  it("attaches observer when element is provided immediately", () => {
-    const onResize = vi.fn();
-
-    function TestHarness() {
-      const {contentRef} = useChatNewMessages({isLocked: true, onResize});
-      return (
-        <div ref={contentRef} data-testid="content">
-          <div data-chat-message="">msg</div>
-        </div>
-      );
-    }
-
-    render(<TestHarness />);
-    // observeResize fires initial callback → onResize called
-    expect(onResize).toHaveBeenCalled();
-  });
-
   it("attaches observer when element mounts late (callback ref)", () => {
     const onResize = vi.fn();
 

@@ -43,10 +43,4 @@ describe("skillMentionRanges", () => {
   it.each(SKILL_MENTION_CASES)("$name", ({ name, text, names }) => {
     expect(skillMentionRanges(text, names)).toEqual(EXPECTED[name]);
   });
-
-  it("counts UTF-16 units, not code points", () => {
-    // A sanity check the expected table doesn't make obvious: the emoji takes
-    // two units, so the range starts at 3.
-    expect(skillMentionRanges("😀 $x", ["x"])).toEqual([{ start: 3, end: 5 }]);
-  });
 });

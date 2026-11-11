@@ -6,17 +6,6 @@ import { render, screen } from "@testing-library/react";
 import { ChatMessageMetadata } from "./chat-message-metadata";
 
 describe("ChatMessageMetadata", () => {
-  it("renders metadata content", () => {
-    render(
-      <ChatMessageMetadata
-        timestamp="12:00"
-        status="read"
-        data-testid="meta"
-      />,
-    );
-    expect(screen.getByTestId("meta")).toBeTruthy();
-  });
-
   it("forwards rest props (data-*, aria-*, id) to the root element", () => {
     render(
       <ChatMessageMetadata

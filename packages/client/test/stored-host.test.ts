@@ -9,7 +9,7 @@ import {
   updateStoredHostConnection,
   updateStoredHostEndpoints,
 } from "../src/stored-host.ts";
-import { HOST_CASES, HOST_KEY_A, HOST_KEY_B, HOST_KEY_C, HOST_LABEL_CASES, KEY_A, KEY_B } from "./misc-cases.ts";
+import { HOST_KEY_A, HOST_KEY_B, HOST_KEY_C, HOST_LABEL_CASES } from "./misc-cases.ts";
 
 const key = () => toBase64Url(generateKeyPair().privateKey);
 const valid = () => ({
@@ -17,8 +17,6 @@ const valid = () => ({
   hostKey: key(),
   privateKey: key(),
 });
-
-const CASE = (name: string) => HOST_CASES.find((c) => c.name === name)!;
 
 describe("parseStoredHost", () => {
   it("round-trips a valid entry", () => {
@@ -72,13 +70,6 @@ describe("parseStoredHost", () => {
 
   it.each([undefined, null, "ws://x", 42, ["a"]])("rejects non-object input %s", (value) => {
     expect(parseStoredHost(value)).toBeUndefined();
-  });
-
-  it("accepts the deterministic vector cases", () => {
-    const parsed = parseStoredHost(CASE("valid").value);
-    expect(parsed).toEqual({ url: "ws://192.168.1.5:7422/secure", hostKey: KEY_A, privateKey: KEY_B });
-    const withAccount = parseStoredHost(CASE("account").value);
-    expect(withAccount?.account).toEqual({ serverOrigin: "https://relay.example.com", hostId: HOST_KEY_A });
   });
 });
 

@@ -6,17 +6,6 @@ import { render, screen } from "@testing-library/react";
 import { ChatLayoutScrollButton } from "./chat-layout-scroll-button";
 
 describe("ChatLayoutScrollButton", () => {
-  it("renders a scroll button", () => {
-    render(
-      <ChatLayoutScrollButton
-        isVisible
-        onClick={() => {}}
-        data-testid="scroll"
-      />,
-    );
-    expect(screen.getByTestId("scroll")).toBeTruthy();
-  });
-
   it("forwards rest props (data-*, aria-*, id) to the root element", () => {
     render(
       <ChatLayoutScrollButton

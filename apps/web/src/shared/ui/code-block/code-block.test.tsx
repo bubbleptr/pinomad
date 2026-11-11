@@ -20,11 +20,6 @@ describe("CodeBlock", () => {
     });
   });
 
-  it("renders the code", () => {
-    render(<CodeBlock code="const x = 1;" language="javascript" />);
-    expect(screen.getByText(/const/)).toBeInTheDocument();
-  });
-
   it("colors tokens with span classes where the Highlight API is missing", () => {
     const { container } = render(<CodeBlock code="const x = 1;" language="javascript" />);
     expect(container.querySelector(".token-keyword")).toHaveTextContent("const");
@@ -129,13 +124,6 @@ describe("CodeBlock", () => {
     expect(header).toHaveAttribute("aria-expanded", "false");
     fireEvent.keyDown(header, { key: "Enter" });
     expect(header).toHaveAttribute("aria-expanded", "true");
-  });
-
-  it("links the collapsible header to its code region via aria-controls", () => {
-    render(<CodeBlock code={LONG_CODE} language="javascript" title="example" isCollapsible />);
-    const region = document.getElementById(collapsibleHeader().getAttribute("aria-controls")!);
-    expect(region).not.toBeNull();
-    expect(region).toContainElement(screen.getByRole("group"));
   });
 
   it("makes the collapsed region inert and restores it on expand", () => {

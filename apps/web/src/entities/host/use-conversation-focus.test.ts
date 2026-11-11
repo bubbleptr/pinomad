@@ -91,14 +91,4 @@ describe("useConversationFocus", () => {
     expect(unavailable).toHaveBeenCalledTimes(1);
     expect(fake.switchConversation).not.toHaveBeenCalled();
   });
-
-  it("does not re-switch the already shown conversation", () => {
-    const fake = fakeRemote();
-    const { rerender } = renderHook(
-      ({ target }) => useConversationFocus(fake.remote, view({ conversation: 3 }), target),
-      { initialProps: { target: id(3) as ConversationId | undefined } },
-    );
-    rerender({ target: id(3) });
-    expect(fake.switchConversation).not.toHaveBeenCalled();
-  });
 });

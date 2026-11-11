@@ -75,13 +75,4 @@ describe("ChatMessageList", () => {
     const el = screen.getByTestId("list");
     expect(el).toHaveAttribute("data-density", "compact");
   });
-
-  it("applies data-testid", () => {
-    render(
-      <ChatMessageList data-testid="chat-list">
-        <div>msg</div>
-      </ChatMessageList>,
-    );
-    expect(screen.getByTestId("chat-list")).toBeTruthy();
-  });
 });

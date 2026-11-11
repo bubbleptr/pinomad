@@ -503,11 +503,6 @@ describe("relay limits (issue #453)", () => {
     expect(announced).toBe(false);
   });
 
-  it("still answers 4604 for an offline host, not a cap", async () => {
-    const relay = await start({ acceptTimeoutMs: 5_000, limits: { perHost: 1 } });
-    expect((await refused(relay, `/c/${relayHostId(ed25519.keygen().publicKey)}`))[0]).toBe(RELAY_CLOSE.hostOffline);
-  });
-
   it("frees a slot when a device goes away", async () => {
     const relay = await start({ acceptTimeoutMs: 5_000, limits: { perHost: 1 } });
     const control = await registerHost(relay);

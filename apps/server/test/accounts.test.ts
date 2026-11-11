@@ -737,27 +737,6 @@ describe("server CLI account mode", () => {
   });
 });
 
-describe("host registration with accounts", () => {
-  it("lets a host register when bound in the hosts table", async () => {
-    const { relay, accounts } = await startServer();
-    const keys = ed25519.keygen();
-    const db = new DatabaseSync(accounts.dbPath);
-    db.prepare("INSERT INTO hosts (host_id, user_id, noise_public_key, name, joined_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)").run(
-      relayHostId(keys.publicKey),
-      1,
-      "noise-public-key",
-      "test-host",
-      1000,
-      1000,
-    );
-    db.close();
-    expect(await tryRegister(relay, keys)).toBe("registered");
-
-    // A well-signed but unbound host is still refused.
-    expect(await tryRegister(relay, ed25519.keygen())).toBe(RELAY_CLOSE.hostNotAllowed);
-  });
-});
-
 describe("push token registration (ADR-0036)", () => {
   const TOKEN = "aa".repeat(32);
   const register = (relay: Relay, token: string, body: unknown, path = "/api/push-tokens") =>

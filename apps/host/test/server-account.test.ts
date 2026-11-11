@@ -797,17 +797,6 @@ describe("probeServerAccounts", () => {
   });
 });
 
-describe("loadHostKey", () => {
-  it("creates a single 0600 X25519 key even for concurrent first calls", async () => {
-    const data = await tempDir();
-    defer(data.remove);
-    const [a, b] = await Promise.all([loadHostKey(data.path), loadHostKey(data.path)]);
-    expect(toBase64Url(a.privateKey)).toBe(toBase64Url(b.privateKey));
-    expect(toBase64Url((await loadHostKey(data.path)).privateKey)).toBe(toBase64Url(a.privateKey));
-    expect((await stat(join(data.path, "host-key"))).mode & 0o777).toBe(0o600);
-  });
-});
-
 describe("server.json", () => {
   it("round-trips and rejects malformed files", async () => {
     const data = await tempDir();
