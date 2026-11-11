@@ -155,10 +155,11 @@ function UserChip({ onOpenAccount }: { onOpenAccount: () => void }) {
       <Button
         variant="ghost"
         size="sm"
+        className="max-w-full"
         onClick={onOpenAccount}
       >
         <Avatar name={user} size="xsm" tooltip={false} />
-        {user}
+        <span className="truncate">{user}</span>
       </Button>
     );
   }
