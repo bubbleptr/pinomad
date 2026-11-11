@@ -1,50 +1,50 @@
 import type { ComponentProps, ReactNode } from "react";
 import {
-  ChatMessage as AstryxChatMessage,
-  ChatMessageBubble as AstryxChatMessageBubble,
-} from "@astryxdesign/core/Chat";
+  ChatMessage as KitChatMessage,
+  ChatMessageBubble as KitChatMessageBubble,
+} from "@/shared/ui/chat-kit";
 import { Copy, ThumbsDown, ThumbsUp } from "@/shared/ui/icons";
 
 type MessageSectionProps = ComponentProps<"div">;
 
-/* Sender wrappers delegate alignment and density to Astryx ChatMessage;
-   the data-slot contract stays on the Astryx root (rest props pass through). */
+/* Sender wrappers delegate alignment and density to the chat kit's ChatMessage;
+   a caller's data-slot replaces the kit root's (rest props pass through). */
 function ChatMessageUser({ children, className = "", ...rest }: MessageSectionProps) {
   return (
-    <AstryxChatMessage
+    <KitChatMessage
       className={`chat-message ${className}`.trim()}
       data-slot="chat-message-user"
       sender="user"
       {...rest}
     >
       {children}
-    </AstryxChatMessage>
+    </KitChatMessage>
   );
 }
 
 function ChatMessageAssistant({ children, className = "", ...rest }: MessageSectionProps) {
   return (
-    <AstryxChatMessage
+    <KitChatMessage
       className={`chat-message ${className}`.trim()}
       data-slot="chat-message-assistant"
       sender="assistant"
       {...rest}
     >
       {children}
-    </AstryxChatMessage>
+    </KitChatMessage>
   );
 }
 
 /* Filled bubble; the sender-colored background comes from ChatMessage context. */
 function ChatMessageBubble({ children, className = "", ...rest }: MessageSectionProps) {
   return (
-    <AstryxChatMessageBubble
+    <KitChatMessageBubble
       className={className || undefined}
       data-slot="chat-message-bubble"
       {...rest}
     >
       {children}
-    </AstryxChatMessageBubble>
+    </KitChatMessageBubble>
   );
 }
 

@@ -9,7 +9,7 @@ import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogContent } from "@/shared/ui/dialog";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "../../shared/ui/item.tsx";
-import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
+import { ResizeHandle, useResizableWidth } from "../../shared/ui/resize-handle.tsx";
 import { Suspense, useEffect, useId, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { findConversation } from "@pinomad/protocol/organization.ts";
@@ -554,7 +554,7 @@ const PANEL_MAX_PX = 1200;
 /**
  * The width the row leaves the panel once the chat column, its previous
  * sibling, keeps its own minimum; tracked so the drag never runs past what the
- * window can show (Astryx clamps a drag to `maxSizePx`, not the layout).
+ * window can show (the resize handle clamps a drag to its `max`, not the layout).
  */
 function useRoomBeside(panel: HTMLElement | null): number | undefined {
   const [room, setRoom] = useState<number>();
@@ -608,10 +608,10 @@ export function SidePanel({
   const [panel, setPanel] = useState<HTMLDivElement | null>(null);
   const room = useRoomBeside(panel);
   const maxSizePx = Math.max(PANEL_MIN_PX, Math.min(PANEL_MAX_PX, room ?? PANEL_MAX_PX));
-  const resizable = useResizable({
+  const resizable = useResizableWidth({
     defaultSize: 440,
-    minSizePx: PANEL_MIN_PX,
-    maxSizePx,
+    min: PANEL_MIN_PX,
+    max: maxSizePx,
     autoSaveId: "pinomad-side-panel",
   });
   // A width the window no longer has would make the first stretch of a drag
@@ -678,18 +678,14 @@ export function SidePanel({
         {content()}
       </div>
       <ResizeHandle
-        direction="horizontal"
-        position="overlay"
-        // Overlay defaults to the end edge; isReversed only changes drag direction.
+        // The handle defaults to the end edge; reversed only changes drag direction.
         // Pulled back by half its width plus half the gap between the panes,
         // so the grip sits in the gap; the extra 1px is the pane's border,
         // since an absolute offset starts inside it.
-        className="start-[calc(-0.5rem-var(--pigui-pane-gap)/2-1px)]! end-auto!"
-        // Centering keeps Astryx's grab zone full-height instead of shifted up by 50%.
-        pillPlacement="center"
-        isReversed
+        className="start-[calc(-0.5rem-var(--pigui-pane-gap)/2-1px)] end-auto"
+        reversed
         label="Resize side panel"
-        resizable={resizable.props}
+        width={resizable}
       />
     </div>
   );

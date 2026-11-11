@@ -56,14 +56,14 @@ describe("ChatMessageList", () => {
     expect(screen.getByText("No messages yet")).toBeTruthy();
   });
 
-  it("applies density class", () => {
+  it("reflects the density", () => {
     render(
       <ChatMessageList density="compact" data-testid="list">
         <div>msg</div>
       </ChatMessageList>,
     );
     const el = screen.getByTestId("list");
-    expect(el.className).toContain("compact");
+    expect(el).toHaveAttribute("data-density", "compact");
   });
 
   it("accepts gap independently from density", () => {
@@ -73,7 +73,7 @@ describe("ChatMessageList", () => {
       </ChatMessageList>,
     );
     const el = screen.getByTestId("list");
-    expect(el.className).toContain("compact");
+    expect(el).toHaveAttribute("data-density", "compact");
   });
 
   it("applies data-testid", () => {

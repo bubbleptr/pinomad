@@ -43,14 +43,14 @@ describe("ChatSystemMessage", () => {
     expect(screen.getByTestId("icon")).toBeTruthy();
   });
 
-  it("applies variant class", () => {
+  it("reflects the variant", () => {
     render(
       <ChatSystemMessage variant="divider" data-testid="sys">
         Today
       </ChatSystemMessage>,
     );
     const el = screen.getByTestId("sys");
-    expect(el.className).toContain("divider");
+    expect(el).toHaveAttribute("data-variant", "divider");
   });
 
   it("applies data-testid", () => {

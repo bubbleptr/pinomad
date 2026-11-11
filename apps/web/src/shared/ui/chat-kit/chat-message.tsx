@@ -77,12 +77,13 @@ export function ChatMessage({
   return (
     <ChatMessageContext value={contextValue}>
       <article
+        {...theme}
         {...rest}
+        data-chat-message=""
         ref={ref}
         data-testid={testId}
         aria-label={!hasName ? `Message from ${sender}` : undefined}
         aria-labelledby={hasName ? nameId : undefined}
-        {...theme}
         className={cn(
           theme.className,
           "flex max-w-full items-start",

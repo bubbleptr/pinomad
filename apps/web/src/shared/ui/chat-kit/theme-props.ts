@@ -36,29 +36,20 @@ function toDataAttributeName(prop: string): `data-${string}` {
   return `data-${prop.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase()}`;
 }
 
-function classTokenForPropValue(prop: string, value: string): string {
-  return /^\d/.test(value) ? `${prop}-${value}` : value;
-}
-
 /**
- * The stable hook class (`astryx-chat-composer`) plus variant classes and
- * `data-*` reflections, as Astryx emitted them. The app's own CSS (chat.css)
- * and the end-to-end tests select on these names, so the ported components
- * keep them until those selectors move.
+ * The root's `data-slot` (`chat-composer`) plus a `data-*` reflection of each
+ * variant prop, the way shadcn components mark their parts. The app's CSS
+ * (chat.css) and the tests select on these. The roots spread them before
+ * their rest props, so a caller's own `data-slot` replaces the default.
  */
 export function themeProps(component: string, props?: ClassProps): ThemeProps {
-  const classes = [`astryx-${component}`];
-  const attrs: ThemeDataAttributes = {};
+  const attrs: ThemeDataAttributes = { "data-slot": component };
   if (props) {
     for (const [prop, value] of Object.entries(props)) {
-      if (value == null) {
-        continue;
-      }
-      classes.push(classTokenForPropValue(prop, String(value)));
-      attrs[toDataAttributeName(prop)] = String(value);
+      if (value != null) attrs[toDataAttributeName(prop)] = String(value);
     }
   }
-  return { className: classes.join(" "), ...attrs };
+  return { className: "", ...attrs };
 }
 
 export function mergeRefs<T>(...refs: (Ref<T> | undefined)[]): RefCallback<T> {

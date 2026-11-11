@@ -56,14 +56,14 @@ describe("ChatMessage", () => {
     expect(screen.queryByTestId("avatar")).toBeNull();
   });
 
-  it("applies sender class", () => {
+  it("reflects the sender", () => {
     render(
       <ChatMessage sender="user" data-testid="msg">
         <ChatMessageBubble>Hi</ChatMessageBubble>
       </ChatMessage>,
     );
     const el = screen.getByTestId("msg");
-    expect(el.className).toContain("user");
+    expect(el).toHaveAttribute("data-sender", "user");
   });
 
   it("sets accessible aria-labelledby with name", () => {

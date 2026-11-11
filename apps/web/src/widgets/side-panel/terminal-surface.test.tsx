@@ -27,7 +27,7 @@ function renderSurface(terminals: RemoteTerminals, conversationId: ConversationI
   return { show: (shown: ConversationId) => result.rerender(surface(shown)) };
 }
 
-// Astryx tabs are buttons in a nav; the selected one is the current page.
+// Terminal tabs are buttons in a nav; the selected one is the current page.
 const selectedTab = () => document.querySelector('nav [aria-current="page"]')?.getAttribute("data-tab-value");
 
 describe("TerminalSurface", () => {

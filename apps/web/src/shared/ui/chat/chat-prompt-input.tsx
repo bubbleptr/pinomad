@@ -3,8 +3,8 @@
 // caller-owned submit contract (the composer must not force-clear a failed
 // draft), focus/focusAtEnd handles, Pace's allowSubmitWhileRunning behavior
 // (always on — we steer), status, startActions/footer/endActions
-// slots, the attachments drawer, and trigger menus (callers pass Astryx
-// ChatComposerTrigger[]; an open menu consumes Enter/Arrows/Escape before our
+// slots, the attachments drawer, and trigger menus (callers pass the chat
+// kit's ChatComposerTrigger[]; an open menu consumes Enter/Arrows/Escape before our
 // submit path, so Enter selects rather than sends).
 import { type ComponentProps, type DragEvent, type KeyboardEvent, type ReactNode, type RefObject, useEffect, useRef } from "react";
 import {
@@ -14,7 +14,7 @@ import {
   type ChatComposerInputHandle,
   type ChatComposerTrigger,
   ChatSendButton,
-} from "@astryxdesign/core/Chat";
+} from "@/shared/ui/chat-kit";
 
 export type PromptInputStatus = "ready" | "submitted" | "streaming" | "error";
 
@@ -75,7 +75,7 @@ function caretToEnd(editable: HTMLElement): void {
 }
 
 /**
- * Astryx contentEditable composer input. Submit is intercepted in onKeyDown
+ * The chat kit's contentEditable composer input (ported from Astryx). Submit is intercepted in onKeyDown
  * (the built-in Enter path force-clears the value before the caller can
  * keep a failed draft), and the missing placeholder/disabled attributes are
  * patched locally — no swizzle.

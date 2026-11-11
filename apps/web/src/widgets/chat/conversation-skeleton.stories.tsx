@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { ChatLayout } from "@astryxdesign/core/Chat";
+import { ChatLayout } from "@/shared/ui/chat-kit";
 import { fn } from "storybook/test";
 import { ComposerSkeleton, ConversationSkeleton, ConversationUnavailable } from "./conversation-skeleton.tsx";
 

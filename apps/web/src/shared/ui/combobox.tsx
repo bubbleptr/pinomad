@@ -9,7 +9,6 @@ import {
   InputGroupInput,
 } from "@/shared/ui/input-group"
 import { Cancel, Check, ChevronDown } from "@/shared/ui/icons"
-import { usePortalContainer } from "@/shared/ui/portal-container"
 
 const Combobox = ComboboxPrimitive.Root
 
@@ -96,7 +95,7 @@ function ComboboxContent({
     "side" | "align" | "sideOffset" | "alignOffset" | "anchor"
   >) {
   return (
-    <ComboboxPrimitive.Portal container={usePortalContainer()}>
+    <ComboboxPrimitive.Portal>
       <ComboboxPrimitive.Positioner
         side={side}
         sideOffset={sideOffset}

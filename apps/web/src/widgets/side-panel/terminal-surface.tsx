@@ -7,7 +7,7 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "../../shared/ui/context-menu.tsx";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
-import { Tab, TabList, TabMenu } from "@astryxdesign/core/TabList";
+import { Tab, TabList, TabMenu } from "../../shared/ui/tab-list.tsx";
 import { Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { RemoteTerminals, TerminalsState } from "@pinomad/protocol/remote-durable.ts";
@@ -321,7 +321,7 @@ function TerminalTabs({
     >
       <ContextMenu disabled={!live}>
         <ContextMenuTrigger ref={row} className="overflow-hidden">
-          <TabList size="sm" value={selectedId ?? ""} onChange={onSelect}>
+          <TabList value={selectedId ?? ""} onChange={onSelect}>
             {inline.map((terminal) => (
               <span key={terminal.id} className="pinomad-terminal-tab-slot group">
                 <Tab

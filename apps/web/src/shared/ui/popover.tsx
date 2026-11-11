@@ -1,6 +1,5 @@
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover"
 import { cn } from "cn"
-import { usePortalContainer } from "@/shared/ui/portal-container"
 
 /**
  * The floating surface menus and popovers share: popover fill, 12px corners
@@ -35,7 +34,7 @@ function PopoverContent({
     "align" | "alignOffset" | "side" | "sideOffset"
   >) {
   return (
-    <PopoverPrimitive.Portal container={usePortalContainer()}>
+    <PopoverPrimitive.Portal>
       <PopoverPrimitive.Positioner
         align={align}
         alignOffset={alignOffset}

@@ -187,7 +187,7 @@ export function ChatComposer(props: ChatComposerProps) {
     // Focus the input when clicking empty space in the body.
     // Skip if the click target is a button, link, or interactive element.
     const target = e.target as HTMLElement;
-    if (target.closest('button, a, [role="button"], [contenteditable="true"], [data-astryx-token]')) {
+    if (target.closest('button, a, [role="button"], [contenteditable="true"], [data-chat-token]')) {
       return;
     }
     // Prefer the input's registered control (works for any input shape,

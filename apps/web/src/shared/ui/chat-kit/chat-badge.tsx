@@ -28,7 +28,7 @@ export type ChatBadgeProps = Omit<ComponentProps<"span">, "children"> & {
 };
 
 export function ChatBadge({ ref, variant = "neutral", label, icon, className, ...props }: ChatBadgeProps) {
-  const theme = themeProps("badge", { variant });
+  const theme = themeProps("chat-badge", { variant });
   return (
     <span
       ref={ref}

@@ -117,10 +117,10 @@ export function ChatMessageBubble({
         </div>
       )}
       <div
+        {...theme}
         {...rest}
         ref={ref}
         data-testid={testId}
-        {...theme}
         className={cn(
           theme.className,
           contentClass,

@@ -42,7 +42,7 @@ function LabelledDivider({ label }: { label: ReactNode }) {
       role="separator"
       aria-orientation="horizontal"
       aria-labelledby={label ? labelId : undefined}
-      className="astryx-divider subtle horizontal flex w-full items-center"
+      className="flex w-full items-center"
       data-variant="subtle"
       data-orientation="horizontal"
     >

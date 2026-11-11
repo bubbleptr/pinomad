@@ -57,7 +57,7 @@ function isInsideToken(node: Node): HTMLElement | null {
   while (current) {
     if (
       current instanceof HTMLElement &&
-      current.hasAttribute("data-astryx-token")
+      current.hasAttribute("data-chat-token")
     ) {
       return current;
     }
@@ -96,9 +96,9 @@ export function useChatComposerTokens({
       // Create a non-editable container — React will portal the Badge into it
       const span = document.createElement("span");
       const id = `token-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      span.setAttribute("data-astryx-token", "");
-      span.setAttribute("data-astryx-token-value", token.value);
-      span.setAttribute("data-astryx-token-id", id);
+      span.setAttribute("data-chat-token", "");
+      span.setAttribute("data-chat-token-value", token.value);
+      span.setAttribute("data-chat-token-id", id);
       span.contentEditable = "false";
       span.style.display = "inline-flex";
       span.style.verticalAlign = "baseline";
@@ -144,7 +144,7 @@ export function useChatComposerTokens({
         startContainer.nodeType === Node.TEXT_NODE &&
         startOffset === 0 &&
         startContainer.previousSibling instanceof HTMLElement &&
-        startContainer.previousSibling.hasAttribute("data-astryx-token")
+        startContainer.previousSibling.hasAttribute("data-chat-token")
       ) {
         return false;
       }
@@ -156,7 +156,7 @@ export function useChatComposerTokens({
         startContainer.textContent === "\u00A0" &&
         startOffset <= 1 &&
         startContainer.previousSibling instanceof HTMLElement &&
-        startContainer.previousSibling.hasAttribute("data-astryx-token")
+        startContainer.previousSibling.hasAttribute("data-chat-token")
       ) {
         e.preventDefault();
         const tokenSpan = startContainer.previousSibling;
@@ -232,7 +232,7 @@ export function useChatComposerTokens({
       }
 
       const {span} = portal;
-      const value = span.getAttribute("data-astryx-token-value") ?? "";
+      const value = span.getAttribute("data-chat-token-value") ?? "";
       const textNode = document.createTextNode(value);
 
       // Remove the trailing NBSP if present

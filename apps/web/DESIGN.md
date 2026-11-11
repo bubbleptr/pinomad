@@ -1,6 +1,6 @@
 # Web 界面设计规则
 
-Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。按钮、表单控件、反馈组件（提示条、徽标、toast 等）、浮层（对话框、菜单、弹出层）和列表、卡片、代码块、Markdown 是 `src/shared/ui/` 里的 shadcn（Base UI 版）组件或我们自己的移植；其余组件还来自 Astryx（`@astryxdesign/core`，迁移中，ADR-0048），它们的 props 用 `bunx astryx component <Name>` 查（在 `apps/web` 下跑）。
+Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。组件都在 `src/shared/ui/`：shadcn（Base UI 版）组件，或我们自己从 Astryx 移植、改写成 Tailwind 的（对话组件在 `chat-kit/`，见 `docs/licenses/astryx.md`）。Astryx 只剩 `main.tsx` 里的 `Theme`，下一步删掉（ADR-0048）。
 
 ## 按钮
 
@@ -116,7 +116,7 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 
 菜单和弹出层用同一块浮层表面（`floatingSurfaceClassName`：popover 底色、12px 圆角、低投影），对话框是卡片底色加高投影。调用处不要用 `className` 改它们的底色、圆角和投影。
 
-窄屏的导航抽屉还是 Astryx 的 `MobileNav`，它是 `showModal()` 打开的 `<dialog>`，在顶层，抽屉外的页面都不能点。`AppFrame` 用 `portal-container.tsx` 的 `PortalContainer` 让抽屉里打开的菜单、对话框和提示渲染进抽屉，别处不用管；抽屉换成 Base UI 后（ADR-0048 第 7 步）删掉它。
+窄屏的导航抽屉是 `sheet.tsx`（Base UI 的 Dialog，从左边滑出，最宽 320px）。抽屉里打开的菜单和对话框叠在它上面，Esc 一次只关最上面一层，抽屉留在下面；toast 在顶层（manual popover），抽屉开着也看得见。
 
 ## 列表、卡片和内容
 
@@ -152,6 +152,12 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 - 框架里显示的 `Centered` 屏（连接中、连接失败）自己就是一张面板；框架外的（还没有宿主、配对）铺满窗口，用框架色。
 - 深色模式照样“越上层越亮”：框架最暗，面板高一级，卡片（输入框、设置分组）再高一级。
 - 调用处不要用 `className` 给面板加圆角、边框或底色。
+
+外框的部件也在 `src/shared/ui/`：
+
+- `side-nav.tsx`：侧栏和设置导航。`SideNav` 是一列（顶部、可滚动的中段、底部），`resizable` 时宽度可拖、可用方向键调（`ResizeHandle`），并存进 localStorage；`SideNavSection` 是带标题的一组行；`SideNavItem` 是 32px 的一行，`onClick` 打开、`isSelected` 标当前（`aria-current="page"`），带 `collapsible` 和子行时折叠子行。行上的悬浮操作和行宽的样式在 `styles.css` 的侧栏一段，按 `data-slot="side-nav-item"` 选。
+- `resize-handle.tsx`：`useResizableWidth`（px 宽度、上下限、存盘）和贴在面板边上的 `ResizeHandle`（`separator`，拖动或方向键，Shift 步长更大，Home / End 到上下限）。侧栏、设置导航和右侧面板都用它。
+- `tab-list.tsx`：一排导航式的标签（`nav` 里的按钮，当前那个 `aria-current="page"` 加下划线），放不下的进末尾的 `TabMenu`。没有面板，所以标签之间可以夹关闭按钮：终端标签就是这样。
 
 ## 设置页
 

@@ -334,33 +334,14 @@ body {
 
 /* —— App frame / sidebar (Pace app-frame) —— */
 
-/* The SideNav enforces a label weight bump for the selected item, but every
-   selected item label must stay at normal weight (everything 400). Scoped to
-   the nav on purpose: sitting on the whole layout it silently flattened every
-   weight in the app, markdown bold and Tailwind font-medium included. */
-.pigui-app-layout .astryx-side-nav :where(*) {
+/* Everything in the desktop nav column stays at normal weight, the buttons
+   in its header and foot included. Scoped to the nav on purpose: sitting on
+   the whole layout it silently flattened every weight in the app, markdown
+   bold and Tailwind font-medium included. */
+.pigui-app-layout [data-slot="side-nav"] :where(*) {
   font-weight: var(--font-weight-normal, 400);
 }
 
-.pigui-app-layout .astryx-side-nav-section span,
-.pigui-app-layout .astryx-side-nav-item,
-.pigui-app-layout .astryx-side-nav-item[data-selected="selected"] {
-  font-weight: var(--font-weight-normal, 400);
-}
-
-/* Inactive side nav rows keep normal foreground color instead of the
-   secondary tone Astryx applies by default. */
-.pigui-app-layout .astryx-side-nav-item:not([aria-disabled="true"]):not(:disabled),
-.pigui-app-layout .astryx-side-nav-item:not([aria-disabled="true"]):not(:disabled) .astryx-icon {
-  color: var(--foreground);
-}
-
-.pigui-app-layout .astryx-side-nav-item {
-  border-radius: var(--pigui-sidebar-item-radius);
-  min-height: var(--pigui-sidebar-row-height);
-}
-
-.pigui-app-layout .astryx-side-nav-item svg,
 .pigui-app-layout .pigui-session-glyph svg {
   width: var(--pigui-sidebar-icon-size);
   height: var(--pigui-sidebar-icon-size);
@@ -375,32 +356,29 @@ body {
   --pigui-nav-group: light-dark(#b5b5b5, oklch(0.52 0 0));
 }
 
-.pigui-settings-nav .astryx-side-nav-item:not([data-selected="selected"]):not(#\#):not(#\#):not(#\#),
-.pigui-settings-nav .astryx-side-nav-item:not([data-selected="selected"]) :is(svg, .astryx-icon):not(#\#):not(#\#):not(#\#) {
+.pigui-settings-nav [data-slot="side-nav-item"]:not([aria-current="page"]) {
   color: var(--pigui-nav-rest);
 }
 
 @media (hover: hover) {
-  .pigui-settings-nav .astryx-side-nav-item:hover:not(#\#):not(#\#):not(#\#),
-  .pigui-settings-nav .astryx-side-nav-item:hover :is(svg, .astryx-icon):not(#\#):not(#\#):not(#\#) {
+  .pigui-settings-nav [data-slot="side-nav-item"]:hover {
     color: var(--foreground);
   }
 }
 
-.pigui-settings-nav .astryx-side-nav-section > :first-child:not(#\#):not(#\#):not(#\#),
-.pigui-settings-nav .astryx-side-nav-section > :first-child *:not(#\#):not(#\#):not(#\#) {
+.pigui-settings-nav [data-slot="side-nav-section-title"] {
   color: var(--pigui-nav-group);
 }
 
 /* Ghost controls leading a side nav (Settings' back row, its host picker):
-   Astryx pads them 12px, the nav items 8px. Matching the items' padding puts
+   buttons pad 12px, the nav items 8px. Matching the items' padding puts
    their glyph and label on the items' icon and text columns. */
-.pigui-nav-lead:not(#\#):not(#\#):not(#\#) {
+.pigui-nav-lead {
   padding-inline-start: var(--pigui-sidebar-row-padding-x);
 }
 
 /* A field's 1px border already sits inside that padding. */
-.pigui-nav-lead[data-slot="input-group"]:not(#\#):not(#\#):not(#\#) {
+.pigui-nav-lead[data-slot="input-group"] {
   padding-inline-start: calc(var(--pigui-sidebar-row-padding-x) - 1px);
 }
 
@@ -430,9 +408,9 @@ body {
   z-index: 1;
 }
 
-/* Row actions share the row surface; only the glyph gains emphasis.
-   Match StyleX specificity without changing the built-in focus outline. */
-.pigui-sidenav-hover-actions :is(.astryx-button, [data-slot="button"]):not(#\#):not(#\#):not(#\#) {
+/* Row actions share the row surface; only the glyph gains emphasis. The
+   focus outline stays the button's own. */
+.pigui-sidenav-hover-actions [data-slot="button"] {
   background-color: transparent;
   background-image: none;
   box-shadow: none;
@@ -441,18 +419,18 @@ body {
   transition-property: color;
 }
 
-.pigui-sidenav-hover-actions :is(.astryx-button, [data-slot="button"]):not(:disabled):not([aria-disabled="true"]):is(:focus-visible, :active, [aria-expanded="true"]):not(#\#):not(#\#):not(#\#) {
+.pigui-sidenav-hover-actions [data-slot="button"]:not(:disabled):not([aria-disabled="true"]):is(:focus-visible, :active, [aria-expanded="true"]) {
   color: var(--foreground);
 }
 
 @media (hover: hover) {
-  .pigui-sidenav-hover-actions :is(.astryx-button, [data-slot="button"]):not(:disabled):not([aria-disabled="true"]):hover:not(#\#):not(#\#):not(#\#) {
+  .pigui-sidenav-hover-actions [data-slot="button"]:not(:disabled):not([aria-disabled="true"]):hover {
     color: var(--foreground);
   }
 
   /* The action overlay is a sibling, so hovering it does not hover the
      navigation button. Keep the same row wash across that boundary. */
-  .pigui-sidenav-row-with-actions:has(> .pigui-sidenav-row-actions:hover) > div > .astryx-side-nav-item:not([data-selected="selected"]):not(#\#):not(#\#):not(#\#) {
+  .pigui-sidenav-row-with-actions:has(> .pigui-sidenav-row-actions:hover) > div > [data-slot="side-nav-item"]:not([aria-current="page"]) {
     background-color: var(--color-overlay-hover);
   }
 }
@@ -465,22 +443,6 @@ body {
 /* Conversation rows overlay a lone … menu — one button slot, not two. */
 .pigui-sidenav-actions-spacer--single {
   width: var(--size-element-sm);
-}
-
-/* Astryx nested SideNavItem children use padding-inline-start: var(--spacing-6)
-   at StyleX ID-level specificity. Conversation rows already lead with a glyph
-   slot the same size as the project folder, so that extra indent pushes titles
-   toward the row center. Match StyleX specificity and drop the indent so the
-   two columns line up. childrenInner is a block box with no gap; space the
-   rows from the project header and from each other so hover/selected washes do
-   not pinch. padding-block-start lives on childrenInner (inside the 0fr
-   collapse) so the gap clips away when the project is folded. */
-.pigui-sidenav-row-with-actions [role="group"] > div:not(#\#):not(#\#):not(#\#) {
-  display: flex;
-  flex-direction: column;
-  gap: var(--pigui-sidebar-row-gap);
-  padding-block-start: var(--pigui-sidebar-row-gap);
-  padding-inline-start: 0;
 }
 
 /* Section header (Chats / Projects): the title is the collapse toggle, laid
@@ -563,8 +525,8 @@ body {
   .pigui-sidenav-section-header:focus-within .pigui-sidenav-hover-actions,
   .pigui-sidenav-session-row:hover > .pigui-sidenav-hover-actions,
   .pigui-sidenav-session-row:focus-within > .pigui-sidenav-hover-actions,
-  .pigui-sidenav-row-with-actions:has(> div > .astryx-side-nav-item:hover) > .pigui-sidenav-row-actions > .pigui-sidenav-hover-actions,
-  .pigui-sidenav-row-with-actions:has(> div > .astryx-side-nav-item:focus-visible) > .pigui-sidenav-row-actions > .pigui-sidenav-hover-actions,
+  .pigui-sidenav-row-with-actions:has(> div > [data-slot="side-nav-item"]:hover) > .pigui-sidenav-row-actions > .pigui-sidenav-hover-actions,
+  .pigui-sidenav-row-with-actions:has(> div > [data-slot="side-nav-item"]:focus-visible) > .pigui-sidenav-row-actions > .pigui-sidenav-hover-actions,
   .pigui-sidenav-row-actions:hover > .pigui-sidenav-hover-actions,
   .pigui-sidenav-row-actions:focus-within > .pigui-sidenav-hover-actions,
   .pigui-sidenav-hover-actions:has([aria-expanded="true"]) {
@@ -582,12 +544,6 @@ body {
   .pigui-sidenav-section-toggle__chevron {
     opacity: 1;
   }
-}
-
-/* Project rows carry their own folder/chevron indicator — hide the built-in
-   trailing chevron Astryx renders on collapsible items. */
-.pigui-app-layout .astryx-side-nav-item[aria-expanded] > span:last-of-type {
-  display: none;
 }
 
 .pigui-project-expansion-indicator {
@@ -633,23 +589,13 @@ body {
 }
 
 .pigui-app-layout
-  .astryx-side-nav-item:is(
-    :hover,
-    [data-hovered="true"],
-    :focus-visible,
-    [data-focus-visible="true"]
-  )
+  [data-slot="side-nav-item"]:is(:hover, :focus-visible)
   .pigui-project-expansion-indicator__state {
   opacity: 0;
 }
 
 .pigui-app-layout
-  .astryx-side-nav-item:is(
-    :hover,
-    [data-hovered="true"],
-    :focus-visible,
-    [data-focus-visible="true"]
-  )
+  [data-slot="side-nav-item"]:is(:hover, :focus-visible)
   .pigui-project-expansion-indicator__chevron {
   opacity: 1;
 }
@@ -670,21 +616,13 @@ body {
   --pigui-pane-radius: 0.75rem;
 }
 
-.pigui-app-layout [role="main"] {
-  overscroll-behavior: none;
-}
-
-.pigui-app-layout [role="main"]:not(#\#):not(#\#):not(#\#) {
-  background-color: transparent;
-}
-
-.pigui-inset [role="main"]:not(#\#):not(#\#):not(#\#) {
+.pigui-inset .pigui-main {
   padding: var(--pigui-pane-inset);
   padding-inline-start: 0;
 }
 
 /* Sidebar collapsed: nothing to butt against, so the pane insets on all sides. */
-.pigui-inset--bare [role="main"]:not(#\#):not(#\#):not(#\#) {
+.pigui-inset--bare .pigui-main {
   padding-inline-start: var(--pigui-pane-inset);
 }
 
@@ -724,13 +662,6 @@ body {
 
 .pigui-inset .pigui-split {
   gap: var(--pigui-pane-gap);
-}
-
-/* Resize handles (sidebar, settings nav, side panel) show no grip: the
-   pane edges already mark where to drag. Keyboard focus still shows it, as
-   the only sign of what is focused. */
-.pigui-app-layout .astryx-resize-handle:not(:focus-visible) .astryx-resize-handle-pill:not(#\#):not(#\#):not(#\#) {
-  visibility: hidden;
 }
 
 /* The side panel's resize grip hangs into the gap, outside the card: the
@@ -897,10 +828,9 @@ body {
 
 
 /* A terminal tab carries the shell's window title, often a whole path: cap
-   the tab and end its label in an ellipsis. Tabs never shrink below their
-   label, so tabs that don't fit go to the menu instead of becoming
-   indistinguishable stubs. The label is a grid stacking the text over a
-   hidden bold copy (Astryx keeps the width steady that way). */
+   the tab and end its label in an ellipsis (tab-list.tsx truncates it).
+   Tabs never shrink below their label, so tabs that don't fit go to the menu
+   instead of becoming indistinguishable stubs. */
 .pinomad-terminal-tab-slot {
   display: inline-flex;
   flex-shrink: 0;
@@ -915,15 +845,6 @@ body {
    hover area rather than as a separate stop in the row. */
 .pinomad-terminal-tab-close {
   margin-inline-start: -0.375rem;
-}
-
-.pinomad-terminal-tab > span:not([aria-hidden]):has(> span) {
-  min-width: 0;
-}
-
-.pinomad-terminal-tab > span:not([aria-hidden]) > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* The Terminal empty state's cursor (terminal-illustration.tsx). */

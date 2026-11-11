@@ -7,7 +7,7 @@ Web 的基础组件从 Astryx 迁到 shadcn 时（ADR-0048），有几个组件 
 - 移植的文件：
   - `apps/web/src/shared/ui/markdown/`：`parser.ts`、`streaming.ts`（原样）、`use-streaming-text.ts`（`src/hooks/useStreamingText.ts`）、`markdown.tsx`（`src/Markdown/Markdown.tsx`），以及对应的测试
   - `apps/web/src/shared/ui/code-block/`：`tokenizer.ts`（原样）、`highlight-ranges.ts`（`src/CodeBlock/highlightRanges.ts`）、`code-block.tsx`（`src/CodeBlock/CodeBlock.tsx`）、`code.tsx`（`src/Code/Code.tsx`）、`code-block.css`（`src/CodeBlock/highlightStyles.ts` 和 neutral 主题的语法配色），以及对应的测试
-  - `apps/web/src/shared/ui/chat-kit/`：`src/Chat/` 下的输入框、令牌、触发菜单、粘贴转令牌、发送按钮、抽屉、对话布局和滚动、消息列表、消息、元数据、系统消息、工具调用，以及对应的测试；内部用到的 `src/utils/`（`themeProps`、`mergeRefs`、`sharedResizeObserver`、`groupItems`、`getKey`、`BaseProps`）、`src/hooks/`（`useMediaQuery`、`useFocusTrap`）、`src/Layer/`（`useLayer`、`anchorName`）、`src/Popover/usePopover`，以及 `Button`、`Badge`、`Spinner`、`Divider`、`Icon`、`VisuallyHidden` 的精简版；neutral 主题的取值来自 `@astryxdesign/theme-neutral`。图标路径取自 Lucide（ISC，见 [lucide.md](lucide.md)）
+  - `apps/web/src/shared/ui/chat-kit/`：`src/Chat/` 下的输入框、令牌、触发菜单、粘贴转令牌、发送按钮、抽屉、对话布局和滚动、消息列表、消息、元数据、系统消息、工具调用，以及对应的测试；内部用到的 `src/utils/`（`themeProps`、`mergeRefs`、`sharedResizeObserver`、`groupItems`、`getKey`、`BaseProps`）、`src/hooks/`（`useFocusTrap`；`useMediaQuery` 移到了 `apps/web/src/shared/use-media-query.ts`）、`src/Layer/`（`useLayer`、`anchorName`）、`src/Popover/usePopover`，以及 `Button`、`Badge`、`Spinner`、`Divider`、`Icon`、`VisuallyHidden` 的精简版；neutral 主题的取值来自 `@astryxdesign/theme-neutral`。图标路径取自 Lucide（ISC，见 [lucide.md](lucide.md)）
   - `apps/web/src/shared/ui/typeahead/`：`src/Typeahead/types.ts`、`createStaticSource.ts` 和 `groupItems`
 
 ```text

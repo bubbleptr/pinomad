@@ -2,7 +2,7 @@
 // Ported from @astryxdesign/core 0.3.0 src/Chat/useChatStreamScroll.ts (MIT).
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import { useMediaQuery } from "./use-media-query";
+import { useMediaQuery } from "@/shared/use-media-query";
 
 // =============================================================================
 // Types
@@ -239,7 +239,7 @@ export function useChatStreamScroll({
     if (!container) {
       return;
     }
-    const messages = container.getElementsByClassName("astryx-chat-message");
+    const messages = container.querySelectorAll("[data-chat-message]");
     const last = messages[messages.length - 1];
     if (last instanceof HTMLElement) {
       scrollToMessage(last);

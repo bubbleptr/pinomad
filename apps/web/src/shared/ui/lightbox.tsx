@@ -4,7 +4,6 @@ import { useState } from "react"
 import { overlayClassName } from "@/shared/ui/dialog"
 import { IconButton } from "@/shared/ui/icon-button"
 import { Cancel, ChevronRight } from "@/shared/ui/icons"
-import { usePortalContainer } from "@/shared/ui/portal-container"
 
 interface LightboxImage {
   readonly src: string
@@ -41,7 +40,7 @@ function Lightbox({
   }
   return (
     <DialogPrimitive.Root open={open} onOpenChange={(next) => onOpenChange(next)}>
-      <DialogPrimitive.Portal container={usePortalContainer()}>
+      <DialogPrimitive.Portal>
         <DialogPrimitive.Backdrop data-slot="lightbox-overlay" className={overlayClassName} />
         <DialogPrimitive.Popup
           data-slot="lightbox"

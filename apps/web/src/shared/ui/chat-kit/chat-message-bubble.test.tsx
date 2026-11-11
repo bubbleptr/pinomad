@@ -18,14 +18,14 @@ describe("ChatMessageBubble", () => {
     expect(screen.getByText("Hello world")).toBeTruthy();
   });
 
-  it("applies sender-aware class from context", () => {
+  it("reflects the sender from context", () => {
     render(
       <ChatMessage sender="user">
         <ChatMessageBubble data-testid="bubble">Hi</ChatMessageBubble>
       </ChatMessage>,
     );
     const el = screen.getByTestId("bubble");
-    expect(el.className).toContain("user");
+    expect(el).toHaveAttribute("data-sender", "user");
   });
 
   it("defaults to assistant when no context", () => {
@@ -35,10 +35,10 @@ describe("ChatMessageBubble", () => {
       </ChatMessageBubble>,
     );
     const el = screen.getByTestId("bubble");
-    expect(el.className).toContain("assistant");
+    expect(el).toHaveAttribute("data-sender", "assistant");
   });
 
-  it("applies inherited compact density class", () => {
+  it("reflects the inherited compact density", () => {
     render(
       <ChatMessageList density="compact">
         <ChatMessage sender="assistant">
@@ -49,7 +49,7 @@ describe("ChatMessageBubble", () => {
       </ChatMessageList>,
     );
     const el = screen.getByTestId("bubble");
-    expect(el.className).toContain("compact");
+    expect(el).toHaveAttribute("data-density", "compact");
   });
 
   it("applies data-testid", () => {

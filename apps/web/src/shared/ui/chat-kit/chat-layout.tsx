@@ -161,16 +161,16 @@ export function ChatLayout({
   return (
     <ChatLayoutContext value={layoutContext}>
       <div
+        {...theme}
         {...rest}
         ref={mergeRefs(ref, rootRef)}
         data-testid={testId}
-        {...theme}
         className={cn(
           theme.className,
           "relative flex min-h-0 flex-1 flex-col [container-type:inline-size]",
           // The scrollbar hides while a programmatic scroll animates, so it
           // does not flash.
-          isSelfScrolling && "overflow-x-hidden overflow-y-auto [&[data-astryx-scrolling]]:[scrollbar-width:none]",
+          isSelfScrolling && "overflow-x-hidden overflow-y-auto",
           className,
         )}
         style={style}

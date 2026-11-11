@@ -220,8 +220,8 @@ function serialize(node: Node): string {
     if (child.nodeType === Node.TEXT_NODE) {
       result += child.textContent ?? "";
     } else if (child instanceof HTMLElement) {
-      if (child.hasAttribute("data-astryx-token")) {
-        result += child.getAttribute("data-astryx-token-value") ?? "";
+      if (child.hasAttribute("data-chat-token")) {
+        result += child.getAttribute("data-chat-token-value") ?? "";
       } else if (child.tagName === "BR") {
         result += "\n";
       } else {
@@ -387,7 +387,7 @@ export function ChatComposerInput(props: ChatComposerInputProps) {
     // which serializes to "\n". Treat whitespace-only as empty.
     const hasTokens =
       editableRef.current.querySelector(
-        "[data-astryx-token], [data-astryx-dictation-interim]",
+        "[data-chat-token], [data-chat-dictation-interim]",
       ) != null;
     const trimmedEmpty = text.trim().length === 0 && !hasTokens;
     const nextValue = trimmedEmpty ? "" : text;
@@ -467,7 +467,7 @@ export function ChatComposerInput(props: ChatComposerInputProps) {
             startContainer.nodeType === Node.TEXT_NODE &&
             startOffset === 0 &&
             startContainer.previousSibling instanceof HTMLElement &&
-            startContainer.previousSibling.hasAttribute("data-astryx-token")
+            startContainer.previousSibling.hasAttribute("data-chat-token")
           ) {
             // Cursor is at start of text node right after a token — let
             // the browser handle it normally (it will select/delete the token)
@@ -476,7 +476,7 @@ export function ChatComposerInput(props: ChatComposerInputProps) {
             startContainer.textContent === " " &&
             startOffset <= 1 &&
             startContainer.previousSibling instanceof HTMLElement &&
-            startContainer.previousSibling.hasAttribute("data-astryx-token")
+            startContainer.previousSibling.hasAttribute("data-chat-token")
           ) {
             // Cursor is in or after the trailing NBSP — remove the NBSP
             // and the token in one action
@@ -672,8 +672,8 @@ ChatComposerInput.displayName = "ChatComposerInput";
 export function ChatComposerTokenElement({ token }: { token: ChatComposerToken }) {
   return (
     <span
-      data-astryx-token=""
-      data-astryx-token-value={token.value}
+      data-chat-token=""
+      data-chat-token-value={token.value}
       contentEditable={false}
       style={{ display: "inline-flex", verticalAlign: "baseline" }}
     >

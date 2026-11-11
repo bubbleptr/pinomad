@@ -1575,7 +1575,7 @@ it("organizes conversations under projects and chats", async () => {
   const page = await openPage(host, 1280, webOrigin);
 
   // A machine with nothing yet says so; projects are added from its header.
-  await page.locator("button.astryx-side-nav-item", { hasText: "No conversations" }).waitFor();
+  await page.locator('button[data-slot="side-nav-item"]', { hasText: "No conversations" }).waitFor();
 
   // Add the project through the folder picker; the draft for it opens right after.
   await page.getByRole("button", { name: /^Add project on / }).click();
@@ -1728,8 +1728,8 @@ it("renames from the row menu inside the narrow-screen drawer, which stays open 
   await prompt(page).press("Enter");
   await page.getByText("done", { exact: true }).waitFor();
 
-  // The drawer is a top-layer modal <dialog>: a menu or dialog opened from it
-  // must render inside it, or it sits underneath and takes no clicks.
+  // The drawer is a modal: a menu or dialog opened from it must stack above
+  // it and take clicks, and the drawer stays open behind it.
   await page.getByRole("button", { name: "Open navigation", exact: true }).click();
   const drawer = page.getByRole("dialog", { name: "Navigation" });
   await drawer.getByRole("button", { name: "Conversation actions", exact: true }).click();
@@ -2586,7 +2586,7 @@ it("keeps the chat scrollbar at the column edge while the conversation clears th
   // At 1280 the gutter can't fit the card, so the column makes room — inside
   // the scroll area: its scrollbar stays on the column's edge, while the
   // centered conversation (composer included) ends left of the card.
-  const scroller = page.locator(".astryx-chat-layout");
+  const scroller = page.locator('[data-slot="chat-layout"]');
   const right = async (locator: Locator) => {
     const box = (await locator.boundingBox())!;
     return box.x + box.width;
