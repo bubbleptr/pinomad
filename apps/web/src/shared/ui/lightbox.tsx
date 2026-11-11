@@ -62,7 +62,7 @@ function Lightbox({
             }
           }}
         >
-          <img src={current.src} alt={current.alt} draggable={false} className="pointer-events-none max-h-full max-w-full object-contain select-none" />
+          <img src={current.src} alt={current.alt} draggable={false} className="max-h-full max-w-full object-contain select-none" />
           <DialogPrimitive.Close
             render={
               <IconButton

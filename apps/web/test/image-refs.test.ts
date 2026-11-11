@@ -121,6 +121,16 @@ it("serves conversation images by ref, fetches on demand, and survives a reload"
   const image = transcript.getByRole("img", { name: "Image 1" });
   await expect.poll(async () => (await image.getAttribute("src"))?.startsWith("data:image/jpeg;base64,")).toBe(true);
 
+  // The lightbox closes on a click around the image, not on the image itself
+  // (which also has to stay hit-testable for its context menu).
+  await transcript.getByRole("button", { name: /Image 1/ }).click();
+  const lightbox = page.getByRole("dialog", { name: "Image 1" });
+  await lightbox.getByRole("img", { name: "Image 1" }).click();
+  await page.waitForTimeout(300);
+  expect(await lightbox.isVisible()).toBe(true);
+  await lightbox.click({ position: { x: 5, y: 5 } });
+  await lightbox.waitFor({ state: "detached" });
+
   const [record] = (await host.harness.commit((tx) => tx.scanConversations({}, 10), BACKGROUND_CONTEXT)).items;
   const contents = await userContentsOf(host, record.id);
   const blocks = contents.at(-1) as { type: string; data?: string }[];
