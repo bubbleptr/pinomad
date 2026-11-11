@@ -1,13 +1,14 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { List, ListItem } from "@astryxdesign/core/List";
-import { MoreMenu } from "@astryxdesign/core/MoreMenu";
+import { IconButton } from "../../shared/ui/icon-button.tsx";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
 import { Field, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { AccountConfirmation, AccountError, AccountIdentities, AccountResult } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
 import { knownSignInProviders, signInProviderName, SignInProviderMark } from "../../entities/provider/sign-in-provider.tsx";
-import { KeyRound } from "../../shared/ui/icons.tsx";
+import { KeyRound, MoreHorizontal } from "../../shared/ui/icons.tsx";
 import { SettingsGroup } from "../../shared/ui/settings-group.tsx";
 import { accountErrorMessage } from "./account-error.ts";
 import { ConfirmDialog } from "./confirm-dialog.tsx";
@@ -113,12 +114,15 @@ export function SignInMethods({
               </MethodMark>
             }
             endContent={
-              <MoreMenu
-                label={`More for ${signInProviderName(identity.provider)}`}
-                size="sm"
-                isDisabled={busy}
-                items={[{ label: "Remove", onClick: () => start({ kind: "remove", provider: identity.provider }) }]}
-              />
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  disabled={busy}
+                  render={<IconButton icon={<MoreHorizontal aria-hidden="true" />} label={`More for ${signInProviderName(identity.provider)}`} tooltip={`More for ${signInProviderName(identity.provider)}`} size="sm" />}
+                />
+                <DropdownMenuContent>
+                  <DropdownMenuItem onClick={() => start({ kind: "remove", provider: identity.provider })}>Remove</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             }
           />
         ))}

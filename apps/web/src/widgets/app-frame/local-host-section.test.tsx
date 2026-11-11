@@ -87,6 +87,8 @@ describe("LocalHostSection", () => {
 
     const log = await screen.findByRole("log");
     await waitFor(() => expect(log).toHaveTextContent("refactor-auth: running"));
+    // The confirm closes as the stop starts; its own Cancel goes with it.
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(localHost.cancelStop).toHaveBeenCalledTimes(1);
@@ -105,6 +107,8 @@ describe("LocalHostSection", () => {
 
     const log = await screen.findByRole("log");
     await waitFor(() => expect(log).toHaveTextContent("refactor-auth: running"));
+    // The confirm closes as the stop starts; its own Cancel goes with it.
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     expect(localHost.cancelStop).toHaveBeenCalledTimes(1);

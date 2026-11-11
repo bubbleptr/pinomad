@@ -9,7 +9,7 @@
 // is no `/` trigger for Astryx to match at all.
 import { useEffect, useMemo, useRef, type RefObject } from "react";
 import type { ChatComposerTrigger, ChatComposerTriggerItem } from "@astryxdesign/core/Chat";
-import type { SearchSource } from "@astryxdesign/core/Typeahead";
+import type { SearchSource } from "@/shared/ui/typeahead";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { CommandInfo, CommandListing } from "@pinomad/protocol/commands.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";

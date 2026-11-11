@@ -1,6 +1,5 @@
 import { Button } from "../../shared/ui/button.tsx";
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FolderListing, Project } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -233,118 +232,104 @@ export function AddProjectDialog({
   };
 
   return (
-    <Dialog
-      isOpen
-      onOpenChange={(open) => (open ? undefined : onClose())}
-      purpose="form"
-      width="min(780px, calc(100vw - 32px))"
-    >
-      <Layout
-        header={
-          <DialogHeader
-            title="Add project"
-            subtitle="Choose a folder on the host."
-            onOpenChange={() => onClose()}
-          />
-        }
-        content={
-          <LayoutContent>
-            {start.status !== "ok" ? (
-              <div className="flex h-[24rem] items-center justify-center">
-                {start.status === "loading" ? (
-                  <Spinner aria-label="Loading folders" />
-                ) : (
-                  <div className="flex flex-col items-center gap-2">
-                    <span className="text-xs/5 text-muted-foreground">{start.message}</span>
-                    <Button variant="secondary" onClick={begin}>Try again</Button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="overflow-hidden rounded-[var(--radius-inner)] border border-[var(--color-border)]">
-                <div
-                  ref={strip}
-                  role="group"
-                  aria-label="Folders"
-                  tabIndex={0}
-                  aria-activedescendant={selected === undefined || selected === anchor ? undefined : optionId(selected)}
-                  onKeyDown={onKeyDown}
-                  className="group flex h-[22rem] overflow-x-auto overflow-y-hidden outline-none"
-                >
-                  {chain.map((path, index) => (
-                    <FolderColumn
-                      key={path}
-                      path={path}
-                      label={crumbs[index]!.label}
-                      listing={listings[path]}
-                      next={chain[index + 1]}
-                      selected={selected}
-                      disabled={adding}
-                      onPick={pick}
-                      onRetry={() => load(path)}
-                    />
-                  ))}
+    <Dialog open onOpenChange={(open) => (open ? undefined : onClose())} disablePointerDismissal>
+      <DialogContent className="w-[min(780px,_calc(100vw_-_32px))]">
+        <DialogHeader>
+          <DialogTitle>Add project</DialogTitle>
+          <DialogDescription>Choose a folder on the host.</DialogDescription>
+        </DialogHeader>
+        <DialogBody>
+          {start.status !== "ok" ? (
+            <div className="flex h-[24rem] items-center justify-center">
+              {start.status === "loading" ? (
+                <Spinner aria-label="Loading folders" />
+              ) : (
+                <div className="flex flex-col items-center gap-2">
+                  <span className="text-xs/5 text-muted-foreground">{start.message}</span>
+                  <Button variant="secondary" onClick={begin}>Try again</Button>
                 </div>
-                <nav
-                  aria-label="Selected folder"
-                  data-testid="picker-path"
-                  data-path={selected}
-                  className="flex h-8 min-w-0 items-center gap-0.5 border-t border-[var(--color-border)] bg-[var(--color-background-muted)] px-2 text-[13px] text-[var(--color-text-secondary)]"
-                >
-                  {pathBar.map((crumb, index) => {
-                    const last = index === pathBar.length - 1;
-                    return (
-                      // The last crumb keeps its width; earlier ones shrink first on a deep path.
-                      <span key={crumb.path} className={`flex min-w-0 items-center gap-0.5 ${last ? "shrink-0" : ""}`}>
-                        {index === 0 ? null : <ChevronRight aria-hidden="true" className="size-3 shrink-0 opacity-60" />}
-                        <button
-                          type="button"
-                          disabled={adding}
-                          aria-current={last ? "location" : undefined}
-                          onClick={() => pick(crumb.path)}
-                          className={`max-w-[14rem] min-w-0 truncate rounded px-1 py-0.5 hover:bg-[var(--color-overlay-hover)] focus-visible:outline-2 focus-visible:outline-[var(--color-border-emphasized)] ${
-                            last ? "text-[var(--color-text-primary)]" : ""
-                          }`}
-                        >
-                          {crumb.label}
-                        </button>
-                      </span>
-                    );
-                  })}
-                </nav>
+              )}
+            </div>
+          ) : (
+            <div className="overflow-hidden rounded-[var(--radius-inner)] border border-[var(--color-border)]">
+              <div
+                ref={strip}
+                role="group"
+                aria-label="Folders"
+                tabIndex={0}
+                aria-activedescendant={selected === undefined || selected === anchor ? undefined : optionId(selected)}
+                onKeyDown={onKeyDown}
+                className="group flex h-[22rem] overflow-x-auto overflow-y-hidden outline-none"
+              >
+                {chain.map((path, index) => (
+                  <FolderColumn
+                    key={path}
+                    path={path}
+                    label={crumbs[index]!.label}
+                    listing={listings[path]}
+                    next={chain[index + 1]}
+                    selected={selected}
+                    disabled={adding}
+                    onPick={pick}
+                    onRetry={() => load(path)}
+                  />
+                ))}
+              </div>
+              <nav
+                aria-label="Selected folder"
+                data-testid="picker-path"
+                data-path={selected}
+                className="flex h-8 min-w-0 items-center gap-0.5 border-t border-[var(--color-border)] bg-[var(--color-background-muted)] px-2 text-[13px] text-[var(--color-text-secondary)]"
+              >
+                {pathBar.map((crumb, index) => {
+                  const last = index === pathBar.length - 1;
+                  return (
+                    // The last crumb keeps its width; earlier ones shrink first on a deep path.
+                    <span key={crumb.path} className={`flex min-w-0 items-center gap-0.5 ${last ? "shrink-0" : ""}`}>
+                      {index === 0 ? null : <ChevronRight aria-hidden="true" className="size-3 shrink-0 opacity-60" />}
+                      <button
+                        type="button"
+                        disabled={adding}
+                        aria-current={last ? "location" : undefined}
+                        onClick={() => pick(crumb.path)}
+                        className={`max-w-[14rem] min-w-0 truncate rounded px-1 py-0.5 hover:bg-[var(--color-overlay-hover)] focus-visible:outline-2 focus-visible:outline-[var(--color-border-emphasized)] ${
+                          last ? "text-[var(--color-text-primary)]" : ""
+                        }`}
+                      >
+                        {crumb.label}
+                      </button>
+                    </span>
+                  );
+                })}
+              </nav>
+            </div>
+          )}
+        </DialogBody>
+        <DialogFooter className="justify-between">
+          <div className="min-w-0 flex-1">
+            {addError !== undefined ? (
+              <span className="block truncate text-xs/5 text-destructive" role="alert" title={addError}>
+                {addError}
+              </span>
+            ) : (
+              // Touch has no arrow keys to advertise.
+              <div className="hidden pointer-fine:block">
+                <span className="block truncate text-xs/5 text-muted-foreground">Arrow keys to browse, Enter to add</span>
               </div>
             )}
-          </LayoutContent>
-        }
-        footer={
-          <LayoutFooter>
-            <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                {addError !== undefined ? (
-                  <span className="block truncate text-xs/5 text-destructive" role="alert" title={addError}>
-                    {addError}
-                  </span>
-                ) : (
-                  // Touch has no arrow keys to advertise.
-                  <div className="hidden pointer-fine:block">
-                    <span className="block truncate text-xs/5 text-muted-foreground">Arrow keys to browse, Enter to add</span>
-                  </div>
-                )}
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="secondary" onClick={onClose}>Cancel</Button>
-                <Button
-                  variant="primary"
-                  disabled={!connected || selected === undefined || adding}
-                  onClick={add}
-                >
-                  {adding ? "Adding…" : "Add project"}
-                </Button>
-              </div>
-            </div>
-          </LayoutFooter>
-        }
-      />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button
+              variant="primary"
+              disabled={!connected || selected === undefined || adding}
+              onClick={add}
+            >
+              {adding ? "Adding…" : "Add project"}
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }
@@ -444,25 +429,17 @@ export function RemoveProjectDialog({
     onClose();
   };
   return (
-    <Dialog isOpen onOpenChange={(open) => (open ? undefined : onClose())} purpose="form" width={480}>
-      <Layout
-        header={
-          <DialogHeader
-            title={`Remove project ${project.name}?`}
-            subtitle="The directory and its conversations are kept; only the registration is removed."
-            onOpenChange={() => onClose()}
-          />
-        }
-        content={<LayoutContent />}
-        footer={
-          <LayoutFooter>
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={onClose}>Cancel</Button>
-              <Button variant="primary" disabled={!connected} onClick={remove}>Remove project</Button>
-            </div>
-          </LayoutFooter>
-        }
-      />
+    <Dialog open onOpenChange={(open) => (open ? undefined : onClose())} disablePointerDismissal>
+      <DialogContent className="w-[480px]">
+        <DialogHeader>
+          <DialogTitle>{`Remove project ${project.name}?`}</DialogTitle>
+          <DialogDescription>The directory and its conversations are kept; only the registration is removed.</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" disabled={!connected} onClick={remove}>Remove project</Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }

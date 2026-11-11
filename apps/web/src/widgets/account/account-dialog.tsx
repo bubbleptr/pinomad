@@ -1,5 +1,4 @@
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
+import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { useState } from "react";
 import { oauthReturn } from "../../entities/account/oauth-return.ts";
 import { AccountPanel, type AccountPage } from "./account-panel.tsx";
@@ -10,17 +9,17 @@ import { AccountPanel, type AccountPage } from "./account-panel.tsx";
  */
 export function AccountDialog({ initialPage, onClose }: { initialPage?: AccountPage; onClose: () => void }) {
   return (
-    <Dialog isOpen onOpenChange={(open) => (open ? undefined : onClose())} width={480}>
-      <Layout
-        header={<DialogHeader title="Account" onOpenChange={() => onClose()} />}
-        content={
-          <LayoutContent>
-            <div style={{ padding: "var(--spacing-2)" }}>
-              <AccountPanel {...(initialPage === undefined ? {} : { initialPage })} />
-            </div>
-          </LayoutContent>
-        }
-      />
+    <Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
+      <DialogContent className="w-[480px]">
+        <DialogHeader>
+          <DialogTitle>Account</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          <div style={{ padding: "var(--spacing-2)" }}>
+            <AccountPanel {...(initialPage === undefined ? {} : { initialPage })} />
+          </div>
+        </DialogBody>
+      </DialogContent>
     </Dialog>
   );
 }

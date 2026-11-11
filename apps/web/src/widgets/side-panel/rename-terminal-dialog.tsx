@@ -1,11 +1,10 @@
 // The terminal menu's Rename dialog: a name holds until cleared, after which
 // the tab follows the shell's window title again.
 import { Button } from "../../shared/ui/button.tsx";
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
+import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { Field, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import type { RemoteTerminals } from "@pinomad/protocol/remote-durable.ts";
 import type { TerminalInfo } from "@pinomad/protocol/terminals.ts";
 
@@ -24,8 +23,9 @@ export function RenameTerminalDialog({
   const [value, setValue] = useState(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
-  const input = useRef<HTMLInputElement>(null);
-  useEffect(() => input.current?.select(), []);
+  // Select-all as the input mounts (the dialog portals it in after this
+  // component's effects run), so typing replaces the old name.
+  const selectAll = useCallback((input: HTMLInputElement | null) => input?.select(), []);
 
   const name = value.trim();
   const save = (): void => {
@@ -42,42 +42,38 @@ export function RenameTerminalDialog({
   };
 
   return (
-    <Dialog isOpen onOpenChange={(open) => (open ? undefined : onClose())} purpose="form" width={480}>
-      <Layout
-        header={<DialogHeader title="Rename terminal" onOpenChange={() => onClose()} />}
-        content={
-          <LayoutContent>
-            <Field disabled={saving}>
-              <FieldLabel>Name</FieldLabel>
-              <FieldDescription>Leave empty to use the shell's window title.</FieldDescription>
-              <Input
-                ref={input}
-                placeholder={terminal.renamed ? undefined : terminal.name}
-                value={value}
-                onChange={(event) => setValue(event.target.value)}
-                autoFocus
-                data-autofocus
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") save();
-                }}
-              />
-            </Field>
-            {error === undefined ? null : (
-              <span className="text-xs/5 text-muted-foreground" role="alert" style={{ color: "var(--destructive)" }}>
-                {error}
-              </span>
-            )}
-          </LayoutContent>
-        }
-        footer={
-          <LayoutFooter>
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={onClose}>Cancel</Button>
-              <Button variant="primary" disabled={!connected || saving || name === initial} onClick={save}>Save</Button>
-            </div>
-          </LayoutFooter>
-        }
-      />
+    <Dialog open onOpenChange={(open) => (open ? undefined : onClose())} disablePointerDismissal>
+      <DialogContent className="w-[480px]">
+        <DialogHeader>
+          <DialogTitle>Rename terminal</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          <Field disabled={saving}>
+            <FieldLabel>Name</FieldLabel>
+            <FieldDescription>Leave empty to use the shell's window title.</FieldDescription>
+            <Input
+              ref={selectAll}
+              placeholder={terminal.renamed ? undefined : terminal.name}
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+              autoFocus
+              data-autofocus
+              onKeyDown={(event) => {
+                if (event.key === "Enter") save();
+              }}
+            />
+          </Field>
+          {error === undefined ? null : (
+            <span className="text-xs/5 text-muted-foreground" role="alert" style={{ color: "var(--destructive)" }}>
+              {error}
+            </span>
+          )}
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="primary" disabled={!connected || saving || name === initial} onClick={save}>Save</Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }

@@ -2,7 +2,6 @@ import { Button as ButtonPrimitive } from "@base-ui/react/button";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "cn";
 import type { ReactElement, ReactNode } from "react";
-import { useDialogPortal } from "@/shared/ui/dialog-portal";
 import { LoaderCircle } from "@/shared/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 
@@ -75,7 +74,6 @@ function Button({
   ...props
 }: ButtonProps): ReactElement {
   const inactive = disabled || loading;
-  const [portalRef, container] = useDialogPortal();
   const button = (
     <ButtonPrimitive
       data-slot="button"
@@ -104,8 +102,8 @@ function Button({
   if (tooltip == null) return button;
   return (
     <Tooltip>
-      <TooltipTrigger ref={portalRef} render={button} />
-      <TooltipContent container={container}>{tooltip}</TooltipContent>
+      <TooltipTrigger render={button} />
+      <TooltipContent>{tooltip}</TooltipContent>
     </Tooltip>
   );
 }

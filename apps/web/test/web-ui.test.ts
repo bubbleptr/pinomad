@@ -1679,6 +1679,9 @@ it("leaves a conversation row's title the full width and reveals … on hover an
   await actions.click();
   await page.getByRole("menuitem", { name: "Rename", exact: true }).waitFor();
   await page.keyboard.press("Escape");
+  // Closing hands focus back to … once the menu has unmounted.
+  await page.getByRole("menu").waitFor({ state: "detached" });
+  await expect.poll(() => actions.evaluate((el) => el === document.activeElement)).toBe(true);
 
   // Pointer off and focus out hides it again; keyboard focus brings … back.
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
@@ -1715,6 +1718,36 @@ it("renames a conversation from its sidebar row menu", async () => {
   await expect.poll(() => page.getByRole("dialog").count()).toBe(0);
   await chats.getByRole("button", { name: "My better name", exact: true }).waitFor();
   await expect.poll(() => page.locator("h1").textContent()).toBe("My better name");
+});
+
+it("renames from the row menu inside the narrow-screen drawer, which stays open behind the dialog", async () => {
+  const webOrigin = await startWeb(defer);
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["done"] });
+  const page = await openPage(host, 390, webOrigin);
+  await prompt(page).fill("hello");
+  await prompt(page).press("Enter");
+  await page.getByText("done", { exact: true }).waitFor();
+
+  // The drawer is a top-layer modal <dialog>: a menu or dialog opened from it
+  // must render inside it, or it sits underneath and takes no clicks.
+  await page.getByRole("button", { name: "Open navigation", exact: true }).click();
+  const drawer = page.getByRole("dialog", { name: "Navigation" });
+  await drawer.getByRole("button", { name: "Conversation actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Rename conversation" });
+  const input = dialog.getByRole("textbox", { name: "Title", exact: true });
+  await input.fill("Renamed on a phone");
+
+  // Escape closes the rename dialog only.
+  await page.keyboard.press("Escape");
+  await expect.poll(() => dialog.count()).toBe(0);
+  await drawer.getByRole("button", { name: "hello", exact: true }).waitFor();
+
+  await drawer.getByRole("button", { name: "Conversation actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
+  await input.fill("Renamed on a phone");
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await drawer.getByRole("button", { name: "Renamed on a phone", exact: true }).waitFor();
 });
 
 it("keeps the side panel closed until asked and keeps it open across conversations", async () => {
@@ -4022,10 +4055,8 @@ it("shows the named agent a subagent ran as on its done card", async () => {
 });
 
 
-// Astryx's Popover ignores a trigger click within ~50ms of a hide — the guard
-// exists so the light-dismiss click landing on the trigger doesn't reopen it,
-// but it swallows any immediate reopen. Outside click + a beat is the reliable
-// way to close one capsule's menu and open another.
+// An outside click closes whichever capsule popover is open; the beat lets
+// the close finish before the next trigger click opens another.
 const dismissPopovers = async (page: Page): Promise<void> => {
   await page.locator("h1").click();
   await page.waitForTimeout(100);

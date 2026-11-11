@@ -1,8 +1,7 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { CodeBlock } from "@astryxdesign/core/CodeBlock";
 import { Collapsible } from "@astryxdesign/core/Collapsible";
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
+import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { useState } from "react";
 import type { AccountError, JoinToken } from "@pinomad/client/account.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
@@ -150,37 +149,33 @@ export function AddHostDialog({ onClose }: { onClose: () => void }) {
     </div>
   );
   return (
-    <Dialog aria-label="Add a host" isOpen onOpenChange={(open) => (open ? undefined : close())} purpose="form" width={520}>
-      <Layout
-        header={<DialogHeader title="Add a host" onOpenChange={() => close()} />}
-        content={
-          <LayoutContent>
-            <div style={{ padding: "var(--spacing-2)" }}>
-              {state.status !== "signed-in" ? (
-                linkForm
-              ) : (
-                <div className="flex flex-col gap-4">
-                  <AddHostSteps serverOrigin={state.serverOrigin} />
-                  {pastingLink ? (
-                    linkForm
-                  ) : (
-                    <div className="flex">
-                      <Button variant="ghost" size="sm" onClick={() => setPastingLink(true)}>Have a pairing link?</Button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </LayoutContent>
-        }
-        footer={
-          <LayoutFooter>
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={close}>Done</Button>
-            </div>
-          </LayoutFooter>
-        }
-      />
+    <Dialog open onOpenChange={(open) => (open ? undefined : close())} disablePointerDismissal>
+      <DialogContent className="w-[520px]">
+        <DialogHeader>
+          <DialogTitle>Add a host</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          <div style={{ padding: "var(--spacing-2)" }}>
+            {state.status !== "signed-in" ? (
+              linkForm
+            ) : (
+              <div className="flex flex-col gap-4">
+                <AddHostSteps serverOrigin={state.serverOrigin} />
+                {pastingLink ? (
+                  linkForm
+                ) : (
+                  <div className="flex">
+                    <Button variant="ghost" size="sm" onClick={() => setPastingLink(true)}>Have a pairing link?</Button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="secondary" onClick={close}>Done</Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }

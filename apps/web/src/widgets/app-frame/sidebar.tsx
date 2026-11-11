@@ -1,6 +1,6 @@
 import { cn } from "cn";
 import { Button } from "../../shared/ui/button.tsx";
-import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
 import { Icon } from "@astryxdesign/core/Icon";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { SideNavItem, SideNavSection } from "@astryxdesign/core/SideNav";
@@ -332,35 +332,26 @@ function ConversationRow({
         <span className="sr-only">{FAMILY_STATUS_TEXT[status]}</span>
       )}
       <div className="flex items-center gap-0.5 pigui-sidenav-row-actions pigui-sidenav-hover-actions">
-        <DropdownMenu
-          hasChevron={false}
-          button={{
-            icon: <MoreHorizontal aria-hidden="true" />,
-            isIconOnly: true,
-            label: "Conversation actions",
-            size: "sm",
-            variant: "ghost",
-            isDisabled: disabled,
-          }}
-          items={[
-            {
-              label: "Rename",
-              icon: <Pencil aria-hidden="true" size={16} />,
-              onClick: () => setRenaming(true),
-            },
-            // The host archives only top-level index entries; archiving the
-            // root still takes the whole family (ADR-0039 §1).
-            ...(fork
-              ? []
-              : [
-                  {
-                    label: "Archive",
-                    icon: <ArchiveArrowDown aria-hidden="true" size={16} />,
-                    onClick: () => void remote.controller.archive(summary.id, true),
-                  },
-                ]),
-          ]}
-        />
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            disabled={disabled}
+            render={<IconButton icon={<MoreHorizontal aria-hidden="true" />} label="Conversation actions" size="sm" />}
+          />
+          <DropdownMenuContent>
+            <DropdownMenuItem onClick={() => setRenaming(true)}>
+              <Pencil aria-hidden="true" />
+              Rename
+            </DropdownMenuItem>
+            {/* The host archives only top-level index entries; archiving the
+                root still takes the whole family (ADR-0039 §1). */}
+            {fork ? null : (
+              <DropdownMenuItem onClick={() => void remote.controller.archive(summary.id, true)}>
+                <ArchiveArrowDown aria-hidden="true" />
+                Archive
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       {renaming ? (
         <RenameConversationDialog
@@ -650,24 +641,20 @@ function MachineSection({
                         disabled={disabled}
                         onClick={() => start({ kind: "project", path: project.path })}
                       />
-                      <DropdownMenu
-                        hasChevron={false}
-                        button={{
-                          icon: <MoreHorizontal aria-hidden="true" />,
-                          isIconOnly: true,
-                          label: `Project actions for ${project.name}`,
-                          size: "sm",
-                          variant: "ghost",
-                          isDisabled: disabled,
-                        }}
-                        items={[
-                          {
-                            label: "Remove project",
-                            icon: <Trash2 aria-hidden="true" size={16} />,
-                            onClick: () => setRemoving(project),
-                          },
-                        ]}
-                      />
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          disabled={disabled}
+                          render={
+                            <IconButton icon={<MoreHorizontal aria-hidden="true" />} label={`Project actions for ${project.name}`} size="sm" />
+                          }
+                        />
+                        <DropdownMenuContent>
+                          <DropdownMenuItem onClick={() => setRemoving(project)}>
+                            <Trash2 aria-hidden="true" />
+                            Remove project
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                   </div>
                 </div>

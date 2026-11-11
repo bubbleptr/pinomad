@@ -2,8 +2,7 @@
 // agents stream — the row appears only once the host pushes the change, never
 // from local state.
 import { Button } from "../../shared/ui/button.tsx";
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
+import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../shared/ui/select.tsx";
 import { Field, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
@@ -109,112 +108,97 @@ export function AgentEditorDialog({
   };
 
   return (
-    <Dialog
-      isOpen
-      onOpenChange={(open) => (open ? undefined : onClose())}
-      purpose="form"
-      width={480}
-      aria-label={editing ? `Edit ${role.name}` : "New agent"}
-    >
-      <Layout
-        header={
-          <DialogHeader
-            title={editing ? `Edit ${role.name}` : "New agent"}
-            onOpenChange={() => onClose()}
-          />
-        }
-        content={
-          <LayoutContent>
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1">
-                <Field disabled={saving || editing}>
-                  <FieldLabel>Name</FieldLabel>
-                  <FieldDescription>{editing ? "The name is the file name and can't be changed." : undefined}</FieldDescription>
-                  <Input
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    autoFocus={!editing}
-                    data-autofocus={!editing || undefined}
-                  />
-                </Field>
-              </div>
-              <Field disabled={saving}>
-                <FieldLabel>Description</FieldLabel>
+    <Dialog open onOpenChange={(open) => (open ? undefined : onClose())} disablePointerDismissal>
+      <DialogContent className="w-[480px]">
+        <DialogHeader>
+          <DialogTitle>{editing ? `Edit ${role.name}` : "New agent"}</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1">
+              <Field disabled={saving || editing}>
+                <FieldLabel>Name</FieldLabel>
+                <FieldDescription>{editing ? "The name is the file name and can't be changed." : undefined}</FieldDescription>
                 <Input
-                  value={description}
-                  onChange={(event) => setDescription(event.target.value)}
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  autoFocus={!editing}
+                  data-autofocus={!editing || undefined}
                 />
               </Field>
-              <Field disabled={saving}>
-                <FieldLabel>Model</FieldLabel>
-                <Select
-                  items={modelOptions}
-                  value={model}
-                  onValueChange={(next: string | null) => {
-                    if (next !== null) changeModel(next);
-                  }}
-                >
-                  {/* UNPINNED is "", which Base UI styles as a placeholder; here it is a real choice. */}
-                  <SelectTrigger className="w-full data-placeholder:text-foreground">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {modelOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field disabled={saving}>
-                <FieldLabel>Thinking level</FieldLabel>
-                <Select
-                  items={levelOptions}
-                  value={level}
-                  onValueChange={(next: string | null) => {
-                    if (next !== null) setLevel(next as ThinkingLevel | typeof UNPINNED);
-                  }}
-                >
-                  <SelectTrigger className="w-full data-placeholder:text-foreground">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {levelOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field disabled={saving}>
-                <FieldLabel>Prompt</FieldLabel>
-                <Textarea
-                  value={prompt}
-                  onChange={(event) => setPrompt(event.target.value)}
-                  rows={4}
-                />
-              </Field>
-              {error === undefined ? null : (
-                <span className="text-xs/5 text-muted-foreground" role="alert" style={{ color: "var(--destructive)" }}>
-                  {error}
-                </span>
-              )}
             </div>
-          </LayoutContent>
-        }
-        footer={
-          <LayoutFooter>
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={onClose}>Cancel</Button>
-              <Button
-                variant="primary"
-                disabled={!connected || saving}
-                onClick={save}
+            <Field disabled={saving}>
+              <FieldLabel>Description</FieldLabel>
+              <Input
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+              />
+            </Field>
+            <Field disabled={saving}>
+              <FieldLabel>Model</FieldLabel>
+              <Select
+                items={modelOptions}
+                value={model}
+                onValueChange={(next: string | null) => {
+                  if (next !== null) changeModel(next);
+                }}
               >
-                Save
-              </Button>
-            </div>
-          </LayoutFooter>
-        }
-      />
+                {/* UNPINNED is "", which Base UI styles as a placeholder; here it is a real choice. */}
+                <SelectTrigger className="w-full data-placeholder:text-foreground">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {modelOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field disabled={saving}>
+              <FieldLabel>Thinking level</FieldLabel>
+              <Select
+                items={levelOptions}
+                value={level}
+                onValueChange={(next: string | null) => {
+                  if (next !== null) setLevel(next as ThinkingLevel | typeof UNPINNED);
+                }}
+              >
+                <SelectTrigger className="w-full data-placeholder:text-foreground">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {levelOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field disabled={saving}>
+              <FieldLabel>Prompt</FieldLabel>
+              <Textarea
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                rows={4}
+              />
+            </Field>
+            {error === undefined ? null : (
+              <span className="text-xs/5 text-muted-foreground" role="alert" style={{ color: "var(--destructive)" }}>
+                {error}
+              </span>
+            )}
+          </div>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button
+            variant="primary"
+            disabled={!connected || saving}
+            onClick={save}
+          >
+            Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }

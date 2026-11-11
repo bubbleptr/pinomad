@@ -1,10 +1,9 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { Collapsible } from "@astryxdesign/core/Collapsible";
-import { DropdownMenu, DropdownMenuItem } from "@astryxdesign/core/DropdownMenu";
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { Item } from "@astryxdesign/core/Item";
-import { Layout, LayoutContent, LayoutFooter } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { SegmentedControl, SegmentedControlItem } from "../../shared/ui/segmented-control.tsx";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -224,27 +223,17 @@ export function HostStatusDot({ connected }: { connected: boolean }) {
 export function HostsMenu({ onLocate }: { onLocate?: (hostKey: string) => void }) {
   const paired = usePairedHosts();
   return (
-    <DropdownMenu
-      hasChevron={false}
-      placement="above"
-      alignment="end"
-      // As wide as the longest "name status" line; no fixed width to pad out.
-      menuWidth="max-content"
-      button={{
-        icon: <Computer aria-hidden="true" />,
-        isIconOnly: true,
-        label: "Hosts",
-        tooltip: "Hosts",
-        size: "sm",
-        variant: "ghost",
-      }}
-    >
-      {paired.hosts.map((host) => (
-        <DropdownMenuItem
-          key={host.hostKey}
-          icon={<HostStatusDot connected={paired.isConnected(host)} />}
-          label={
-            <>
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<IconButton icon={<Computer aria-hidden="true" />} label="Hosts" tooltip="Hosts" size="sm" />} />
+      {/* As wide as the longest "name status" line; no fixed width to pad out. */}
+      <DropdownMenuContent side="top" align="end">
+        {paired.hosts.map((host) => (
+          <DropdownMenuItem
+            key={host.hostKey}
+            {...(onLocate === undefined ? {} : { onClick: () => onLocate(host.hostKey) })}
+          >
+            <HostStatusDot connected={paired.isConnected(host)} />
+            <span>
               {paired.label(host)}
               {/* Seen after the name; the hidden copy keeps the accessible
                   name "<host> (<status>)" without reading it twice. */}
@@ -252,11 +241,10 @@ export function HostsMenu({ onLocate }: { onLocate?: (hostKey: string) => void }
                 {hostStatusText(paired.info(host))}
               </span>
               <span className="sr-only">{`(${hostStatusText(paired.info(host)).toLowerCase()})`}</span>
-            </>
-          }
-          {...(onLocate === undefined ? {} : { onClick: () => onLocate(host.hostKey) })}
-        />
-      ))}
+            </span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
     </DropdownMenu>
   );
 }
@@ -642,19 +630,17 @@ function UnpairHostDialog({
     );
   };
   return (
-    <Dialog aria-label={title} isOpen onOpenChange={(open) => (open ? undefined : onClose(false))} purpose="form" width={440}>
-      <Layout
-        header={<DialogHeader title={title} subtitle={unpairText(label, info)} onOpenChange={() => onClose(false)} />}
-        content={<LayoutContent />}
-        footer={
-          <LayoutFooter>
-            <div className="flex justify-end gap-2">
-              <Button variant="secondary" onClick={() => onClose(false)}>Cancel</Button>
-              <Button variant="destructive" onClick={unpair}>Unpair</Button>
-            </div>
-          </LayoutFooter>
-        }
-      />
+    <Dialog open onOpenChange={(open) => (open ? undefined : onClose(false))} disablePointerDismissal>
+      <DialogContent className="w-[440px]">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{unpairText(label, info)}</DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => onClose(false)}>Cancel</Button>
+          <Button variant="destructive" onClick={unpair}>Unpair</Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   );
 }

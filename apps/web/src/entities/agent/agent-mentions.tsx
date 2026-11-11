@@ -20,7 +20,7 @@
 // change hides the old root's paths immediately.
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { ChatComposerTrigger, ChatComposerTriggerItem } from "@astryxdesign/core/Chat";
-import type { SearchSource } from "@astryxdesign/core/Typeahead";
+import type { SearchSource } from "@/shared/ui/typeahead";
 import type { AgentRole } from "@pinomad/protocol/agents.ts";
 import type { FileListing } from "@pinomad/protocol/organization.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";

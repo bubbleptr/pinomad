@@ -2,9 +2,8 @@
 // at that image. Bytes render immediately; refs load near the viewport and
 // the lightbox only fetches the image it is showing.
 import { Button } from "../../shared/ui/button.tsx";
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
-import { Lightbox } from "@astryxdesign/core/Lightbox";
+import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
+import { Lightbox } from "@/shared/ui/lightbox";
 import { Thumbnail } from "@astryxdesign/core/Thumbnail";
 import { useState } from "react";
 import type { ViewImage } from "@pinomad/protocol/images.ts";
@@ -84,26 +83,26 @@ export function MessageLightbox({
   const shown = useImageSrc(current, true, "original", attempt);
   if (shown.status === "error") {
     return (
-      <Dialog isOpen width={420} onOpenChange={(open) => (open ? undefined : onClose())}>
-        <Layout
-          header={<DialogHeader title="Image unavailable" onOpenChange={() => onClose()} />}
-          content={
-            <LayoutContent>
-              <div className="flex flex-col gap-3 p-3">
-                <div role="alert">
-                  <span className="text-sm/5">Couldn't load the original image.</span>
-                </div>
-                <div>
-                  <Button onClick={() => setAttempt((value) => value + 1)}>Try again</Button>
-                </div>
+      <Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
+        <DialogContent className="w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Image unavailable</DialogTitle>
+          </DialogHeader>
+          <DialogBody>
+            <div className="flex flex-col gap-3 p-3">
+              <div role="alert">
+                <span className="text-sm/5">Couldn't load the original image.</span>
               </div>
-            </LayoutContent>
-          }
-        />
+              <div>
+                <Button onClick={() => setAttempt((value) => value + 1)}>Try again</Button>
+              </div>
+            </div>
+          </DialogBody>
+        </DialogContent>
       </Dialog>
     );
   }
-  const media = images.map((image, itemIndex) => ({
+  const shownImages = images.map((image, itemIndex) => ({
     src: itemIndex === index && shown.status === "ready"
       ? shown.src
       : (cachedImageSrc(image, "thumbnail") ?? cachedImageSrc(image, "preview") ?? TRANSPARENT_PIXEL),
@@ -111,8 +110,8 @@ export function MessageLightbox({
   }));
   return (
     <Lightbox
-      isOpen
-      media={media}
+      open
+      images={shownImages}
       index={index}
       onIndexChange={onIndexChange}
       onOpenChange={(next) => {

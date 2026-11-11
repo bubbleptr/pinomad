@@ -1,4 +1,13 @@
-import { AlertDialog } from "@astryxdesign/core/AlertDialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../../shared/ui/alert-dialog.tsx";
 import { Button } from "../../shared/ui/button.tsx";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
 import { Switch } from "../../shared/ui/switch.tsx";
@@ -143,14 +152,20 @@ function LocalHostControls({ bridge, pollIntervalMs }: { bridge: LocalHostBridge
             </div>
           ) : null}
           {banner}
-          <AlertDialog
-            isOpen={confirming}
-            onOpenChange={setConfirming}
-            title="Turn off the host on this Mac?"
-            description="Your other devices can't reach this Mac while it's off. Running tasks finish first, so this may take a while."
-            actionLabel="Turn off"
-            onAction={stop}
-          />
+          <AlertDialog open={confirming} onOpenChange={setConfirming}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Turn off the host on this Mac?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Your other devices can't reach this Mac while it's off. Running tasks finish first, so this may take a while.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel />
+                <AlertDialogAction variant="destructive" onClick={stop}>Turn off</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       );
   }

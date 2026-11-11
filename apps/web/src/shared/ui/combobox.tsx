@@ -8,8 +8,8 @@ import {
   InputGroupButton,
   InputGroupInput,
 } from "@/shared/ui/input-group"
-import { useDialogPortal } from "@/shared/ui/dialog-portal"
 import { Cancel, Check, ChevronDown } from "@/shared/ui/icons"
+import { usePortalContainer } from "@/shared/ui/portal-container"
 
 const Combobox = ComboboxPrimitive.Root
 
@@ -95,11 +95,8 @@ function ComboboxContent({
     ComboboxPrimitive.Positioner.Props,
     "side" | "align" | "sideOffset" | "alignOffset" | "anchor"
   >) {
-  const [portalRef, container] = useDialogPortal()
   return (
-    <>
-    <span hidden ref={portalRef} />
-    <ComboboxPrimitive.Portal container={container}>
+    <ComboboxPrimitive.Portal container={usePortalContainer()}>
       <ComboboxPrimitive.Positioner
         side={side}
         sideOffset={sideOffset}
@@ -115,7 +112,6 @@ function ComboboxContent({
         />
       </ComboboxPrimitive.Positioner>
     </ComboboxPrimitive.Portal>
-    </>
   )
 }
 
@@ -154,6 +150,32 @@ function ComboboxItem({
       >
         <Check strokeWidth={2} className="pointer-events-none" />
       </ComboboxPrimitive.ItemIndicator>
+    </ComboboxPrimitive.Item>
+  )
+}
+
+/** A row of a `multiple` combobox: a checkbox before the label shows whether it's picked. */
+function ComboboxCheckboxItem({
+  className,
+  children,
+  ...props
+}: ComboboxPrimitive.Item.Props) {
+  return (
+    <ComboboxPrimitive.Item
+      data-slot="combobox-checkbox-item"
+      className={cn(
+        "group/item relative flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm/5 outline-hidden select-none data-highlighted:overlay-hover data-disabled:pointer-events-none data-disabled:opacity-50",
+        className
+      )}
+      {...props}
+    >
+      <span
+        aria-hidden="true"
+        className="flex size-4 shrink-0 items-center justify-center rounded-[4px] border border-ring group-data-selected/item:border-primary group-data-selected/item:bg-primary group-data-selected/item:text-primary-foreground"
+      >
+        <ComboboxPrimitive.ItemIndicator render={<Check strokeWidth={2} className="size-3.5" />} />
+      </span>
+      {children}
     </ComboboxPrimitive.Item>
   )
 }
@@ -204,6 +226,7 @@ export {
   ComboboxContent,
   ComboboxList,
   ComboboxItem,
+  ComboboxCheckboxItem,
   ComboboxGroup,
   ComboboxLabel,
   ComboboxCollection,

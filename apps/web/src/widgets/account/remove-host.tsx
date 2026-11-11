@@ -1,6 +1,5 @@
 import { Button } from "../../shared/ui/button.tsx";
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
+import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { useState } from "react";
 import type { AccountError } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
@@ -66,17 +65,17 @@ export function RemoveHost({ account, hostId, name, serverOrigin, onClose }: Rem
 /** The same form on its own, for the new-host notice. */
 export function RemoveHostDialog(props: RemoveHostProps) {
   return (
-    <Dialog aria-label={`Remove ${props.name}`} isOpen purpose="form" onOpenChange={(open) => (open ? undefined : props.onClose(false))} width={440}>
-      <Layout
-        header={<DialogHeader title={`Remove ${props.name}`} onOpenChange={() => props.onClose(false)} />}
-        content={
-          <LayoutContent>
-            <div style={{ padding: "var(--spacing-2)" }}>
-              <RemoveHost {...props} />
-            </div>
-          </LayoutContent>
-        }
-      />
+    <Dialog open disablePointerDismissal onOpenChange={(open) => (open ? undefined : props.onClose(false))}>
+      <DialogContent className="w-[440px]">
+        <DialogHeader>
+          <DialogTitle>{`Remove ${props.name}`}</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          <div style={{ padding: "var(--spacing-2)" }}>
+            <RemoveHost {...props} />
+          </div>
+        </DialogBody>
+      </DialogContent>
     </Dialog>
   );
 }

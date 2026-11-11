@@ -6,9 +6,8 @@
 // Changes is the shown conversation's checkout diff (changes-surface.tsx);
 // Terminal is the terminals' owner's shells (terminal-surface.tsx).
 import { Button } from "../../shared/ui/button.tsx";
-import { Dialog } from "@astryxdesign/core/Dialog";
+import { Dialog, DialogContent } from "@/shared/ui/dialog";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
-import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
 import { List, ListItem } from "@astryxdesign/core/List";
 import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
 import { Suspense, useEffect, useState, type ReactNode } from "react";
@@ -650,23 +649,19 @@ export function SidePanel({
     );
   if (narrow) {
     return (
-      <Dialog isOpen={open} onOpenChange={onOpenChange} variant="fullscreen" aria-label="Side panel">
-        <Layout
-          content={
-            <LayoutContent padding={0}>
-              {content(
-                <SurfaceButtons narrow={false} open surface={surface} liveActivity={liveActivity} onSelect={onSelectSurface} />,
-                <IconButton
-                  icon={<Cancel className="size-4" aria-hidden="true" />}
-                  label="Close side panel"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => onOpenChange(false)}
-                />,
-              )}
-            </LayoutContent>
-          }
-        />
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent variant="fullscreen" aria-label="Side panel" showCloseButton={false}>
+          {content(
+            <SurfaceButtons narrow={false} open surface={surface} liveActivity={liveActivity} onSelect={onSelectSurface} />,
+            <IconButton
+              icon={<Cancel className="size-4" aria-hidden="true" />}
+              label="Close side panel"
+              size="sm"
+              variant="ghost"
+              onClick={() => onOpenChange(false)}
+            />,
+          )}
+        </DialogContent>
       </Dialog>
     );
   }

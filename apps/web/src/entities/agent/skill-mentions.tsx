@@ -11,7 +11,7 @@
 // refetch is in flight — the menu never flashes empty between answers.
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { ChatComposerTrigger, ChatComposerTriggerItem } from "@astryxdesign/core/Chat";
-import type { SearchSource } from "@astryxdesign/core/Typeahead";
+import type { SearchSource } from "@/shared/ui/typeahead";
 import type { SkillScope } from "@pinomad/protocol/organization.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { skillMentionRanges } from "@pinomad/client/skill-mentions.ts";

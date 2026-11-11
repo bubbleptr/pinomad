@@ -2,7 +2,8 @@
 // one per typed trigger (`$` skill, `@` agent, `/` command), each opening the
 // same menu typing the trigger would.
 import type { ReactNode } from "react";
-import { DropdownMenu, DropdownMenuItem } from "@astryxdesign/core/DropdownMenu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/shared/ui/dropdown-menu";
+import { IconButton } from "@/shared/ui/icon-button";
 import { Plus } from "@/shared/ui/icons";
 
 /** The ghost `+` button and its menu; children are `ChatAddMenuItem`s. */
@@ -16,23 +17,13 @@ export function ChatAddMenu({
   children: ReactNode;
 }) {
   return (
-    <DropdownMenu
-      button={{
-        label: "More actions",
-        variant: "ghost",
-        size: "sm",
-        isIconOnly: true,
-        icon: <Plus aria-hidden="true" />,
-        isDisabled,
-      }}
-      hasChevron={false}
-      menuWidth={288}
-      onOpenChange={onOpenChange}
-      // Up, like the model popover: below a draft's composer the menu runs
-      // off short screens; the layer still flips when there's no room.
-      placement="above"
-    >
-      {children}
+    <DropdownMenu {...(onOpenChange === undefined ? {} : { onOpenChange: (open: boolean) => onOpenChange(open) })}>
+      <DropdownMenuTrigger disabled={isDisabled} render={<IconButton icon={<Plus aria-hidden="true" />} label="More actions" size="sm" />} />
+      {/* Up, like the model popover: below a draft's composer the menu runs
+          off short screens; it still flips when there's no room. */}
+      <DropdownMenuContent side="top" className="min-w-72">
+        {children}
+      </DropdownMenuContent>
     </DropdownMenu>
   );
 }
@@ -55,16 +46,12 @@ export function ChatAddMenuItem({
   onClick: () => void;
 }) {
   return (
-    <DropdownMenuItem
-      icon={<Icon aria-hidden="true" className="size-4 text-muted-foreground" />}
-      label={
-        <span className="flex min-w-0 items-baseline gap-3">
-          <span className="shrink-0">{label}</span>
-          {hint === undefined ? null : <span className="ml-auto min-w-0 truncate text-xs text-muted-foreground">{hint}</span>}
-        </span>
-      }
-      isDisabled={isDisabled}
-      onClick={onClick}
-    />
+    <DropdownMenuItem disabled={isDisabled} onClick={onClick}>
+      <Icon aria-hidden="true" className="size-4 text-muted-foreground" />
+      <span className="flex min-w-0 flex-1 items-baseline gap-3">
+        <span className="shrink-0">{label}</span>
+        {hint === undefined ? null : <span className="ml-auto min-w-0 truncate text-xs text-muted-foreground">{hint}</span>}
+      </span>
+    </DropdownMenuItem>
   );
 }

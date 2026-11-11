@@ -1,6 +1,5 @@
 import { Button } from "../../shared/ui/button.tsx";
-import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { Layout, LayoutContent } from "@astryxdesign/core/Layout";
+import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { Field, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { useEffect, useState } from "react";
@@ -31,21 +30,21 @@ export function PendingSignInRoute({ navigate = (url) => window.location.assign(
   if (!open || id === undefined || account.state.status === "unavailable") return null;
   const close = (): void => setOpen(false);
   return (
-    <Dialog isOpen onOpenChange={(next) => (next ? undefined : close())} width={480}>
-      <Layout
-        header={<DialogHeader title="Finish signing in" onOpenChange={close} />}
-        content={
-          <LayoutContent>
-            <div style={{ padding: "var(--spacing-2)" }}>
-              {account.state.status === "checking" ? (
-                <Spinner size="sm" />
-              ) : (
-                <PendingSignInSteps account={account} id={id} navigate={navigate} onDone={close} />
-              )}
-            </div>
-          </LayoutContent>
-        }
-      />
+    <Dialog open onOpenChange={(next) => (next ? undefined : close())}>
+      <DialogContent className="w-[480px]">
+        <DialogHeader>
+          <DialogTitle>Finish signing in</DialogTitle>
+        </DialogHeader>
+        <DialogBody>
+          <div style={{ padding: "var(--spacing-2)" }}>
+            {account.state.status === "checking" ? (
+              <Spinner size="sm" />
+            ) : (
+              <PendingSignInSteps account={account} id={id} navigate={navigate} onDone={close} />
+            )}
+          </div>
+        </DialogBody>
+      </DialogContent>
     </Dialog>
   );
 }
