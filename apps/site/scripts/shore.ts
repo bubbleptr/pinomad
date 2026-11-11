@@ -1,19 +1,18 @@
-// Draws the shore that edges the landing page's blue stretch (page.css,
-// .zone-abyss::before): mist above a wavy coast, blue below, and the contour
-// lines of one height field running across both. Output is a static SVG, so the
-// page needs no script and the lines stay hairlines at any width.
+// Draws the landing page's contour lines: the shore that edges the blue stretch
+// (page.css, .zone-abyss::before) and the top of the plates the product stands on
+// (.plate). Both are the contour lines of a seeded height field. Output is static
+// SVG, so the page needs no script and the lines stay hairlines at any width.
 //
-// The field is periodic in x: the tile repeats sideways without a seam, which is
-// how the page uses it, so a wider screen shows more shore rather than a
+// The fields are periodic in x: a tile repeats sideways without a seam, which is
+// how the page uses them, so a wider screen shows more shore rather than a
 // stretched one.
 //
-// Usage: bun scripts/shore.ts   (writes src/landing/shore.svg; commit the result)
+// Usage: bun scripts/shore.ts   (writes src/landing/shore.svg and plate.svg; commit both)
 
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const W = 1600;
-const H = 400;
 const CELL = 4;
 const MIST = "#e4e4e4";
 const ABYSS = "#2b3b79";
@@ -84,29 +83,34 @@ function wrapped(x: number, y: number, size: number, offset: number) {
 }
 
 // —— The height field. 0 is the coast, negative is land (mist), positive is sea (blue). ——
-const coast = (x: number) => 150 + 40 * wrapped(x, 0, 260, 7.3) + 14 * wrapped(x, 0, 90, 3.1);
+type Coast = (x: number) => number;
 
-function height(x: number, y: number) {
-  const d = (y - coast(x)) / 100;
-  const n = wrapped(x, y, 210, 0) + 0.4 * wrapped(x, y, 85, 11.7);
-  // The warp fades out at the coast, so the coast itself stays the single line drawn by coast().
-  return d + n * 1.05 * ((d * d) / (d * d + 0.1));
+/** Heights on the grid for a tile `tall` px high. `warp` is how far the noise bends the
+    lines away from the coast's shape; `offset` picks a different patch of noise. */
+function sample(coast: Coast, tall: number, warp: number, offset: number) {
+  const height = (x: number, y: number) => {
+    const d = (y - coast(x)) / 100;
+    const n = wrapped(x, y, 210, offset) + 0.4 * wrapped(x, y, 85, offset + 11.7);
+    // The warp fades out at the coast, so the coast itself stays the single line drawn by coast().
+    return d + n * warp * ((d * d) / (d * d + 0.1));
+  };
+  const field: number[][] = [];
+  for (let j = 0; j <= tall / CELL; j++) {
+    const row: number[] = [];
+    for (let i = 0; i <= cols; i++) row.push(height((i % cols) * CELL, j * CELL));
+    field.push(row);
+  }
+  return field;
 }
 
 const cols = W / CELL;
-const rows = H / CELL;
-const field: number[][] = [];
-for (let j = 0; j <= rows; j++) {
-  const row: number[] = [];
-  for (let i = 0; i <= cols; i++) row.push(height((i % cols) * CELL, j * CELL));
-  field.push(row);
-}
 
 // —— Marching squares, then the segments chained into polylines. ——
 type Point = [number, number];
 type Segment = { a: string; b: string; pa: Point; pb: Point };
 
-function segments(level: number): Segment[] {
+function segments(field: number[][], level: number): Segment[] {
+  const rows = field.length - 1;
   const out: Segment[] = [];
   // A cell edge is named by its lower corner and direction, so neighbours agree on it.
   const cross = (i: number, j: number, horizontal: boolean): [string, Point] => {
@@ -238,32 +242,62 @@ const path = (lines: Point[][]) =>
     .map(curve)
     .join("");
 
-// Sea: close together at the coast, opening out and fading towards open water.
-const sea: { level: number; opacity: number }[] = [];
-for (let k = 1; ; k++) {
-  const level = 0.075 * k ** 1.25;
-  if (level > 2.3) break;
-  sea.push({ level, opacity: 0.08 + 0.72 * (1 - level / 2.3) ** 1.4 });
+/** Sea levels: close together at the coast, opening out and fading to nothing at `far`. */
+function levels(far: number, near: number) {
+  const out: { level: number; opacity: number }[] = [];
+  for (let k = 1; ; k++) {
+    const level = 0.075 * k ** 1.25;
+    if (level > far) return out;
+    out.push({ level, opacity: 0.08 + near * (1 - level / far) ** 1.4 });
+  }
 }
-// Land: a few faint lines in the page's ink.
-const land = [-0.22, -0.5, -0.85].map((level, index) => ({ level, opacity: 0.2 - index * 0.05 }));
 
-let shore = `M0,0H${W}V${fmt(coast(0))}`;
-for (let x = W - CELL; x >= 0; x -= CELL) shore += `L${x},${fmt(coast(x))}`;
-shore += "Z";
+const stroke = (field: number[][], color: string, level: number, opacity: number) =>
+  `<path stroke="${color}" stroke-opacity="${opacity.toFixed(2)}" d="${path(chain(segments(field, level)))}"/>`;
 
-const stroke = (color: string, level: number, opacity: number) =>
-  `<path stroke="${color}" stroke-opacity="${opacity.toFixed(2)}" d="${path(chain(segments(level)))}"/>`;
+function write(name: string, tall: number, paths: string[]) {
+  const svg = [
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${tall}" width="${W}" height="${tall}" fill="none" stroke-width="1" stroke-linejoin="round">`,
+    ...paths,
+    "</svg>",
+    "",
+  ].join("\n");
+  const out = join(import.meta.dirname, "../src/landing", name);
+  writeFileSync(out, svg);
+  console.log(`${name}: ${paths.length} paths, ${(svg.length / 1024).toFixed(1)} KB -> ${out}`);
+}
 
-const svg = [
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" fill="none" stroke-width="1" stroke-linejoin="round">`,
-  `<path fill="${MIST}" d="${shore}"/>`,
-  ...land.map(({ level, opacity }) => stroke(ABYSS, level, opacity)),
-  ...sea.map(({ level, opacity }) => stroke(MIST, level, opacity)),
-  "</svg>",
-  "",
-].join("\n");
+// —— shore.svg: the edge of the blue stretch. Mist land above the coast, with a few faint
+// lines in the page's ink; blue sea below. ——
+{
+  const tall = 400;
+  const coast: Coast = (x) => 150 + 40 * wrapped(x, 0, 260, 7.3) + 14 * wrapped(x, 0, 90, 3.1);
+  const field = sample(coast, tall, 1.05, 0);
+  let land = `M0,0H${W}V${fmt(coast(0))}`;
+  for (let x = W - CELL; x >= 0; x -= CELL) land += `L${x},${fmt(coast(x))}`;
+  land += "Z";
+  write("shore.svg", tall, [
+    `<path fill="${MIST}" d="${land}"/>`,
+    ...[-0.22, -0.5, -0.85].map((level, index) => stroke(field, ABYSS, level, 0.2 - index * 0.05)),
+    ...levels(2.3, 0.72).map(({ level, opacity }) => stroke(field, MIST, level, opacity)),
+  ]);
+}
 
-const out = join(import.meta.dirname, "../src/landing/shore.svg");
-writeFileSync(out, svg);
-console.log(`shore: ${sea.length} sea lines, ${land.length} land lines, ${(svg.length / 1024).toFixed(1)} KB -> ${out}`);
+// —— plate.svg: the top of the plates the product stands on (page.css, .plate). The same
+// sea with the coast just off the top edge and no land: a plate is a solid blue card, and
+// the window on it leaves only a strip along the top showing, so the close lines go there. ——
+{
+  const tall = 320;
+  const coast: Coast = (x) => -16 + 9 * wrapped(x, 0, 260, 5.1) + 4 * wrapped(x, 0, 90, 9.4);
+  const field = sample(coast, tall, 0.7, 23.5);
+  const sea = levels(2.6, 0.62);
+  write(
+    "plate.svg",
+    tall,
+    sea.map(({ level, opacity }) => stroke(field, MIST, level, opacity)),
+  );
+  // How many lines cross the top 48 units (about 40px as the page draws it), column by column.
+  const strip = field[48 / CELL]!;
+  const counts = strip.map((value) => sea.filter(({ level }) => value > level).length);
+  console.log(`plate.svg: ${Math.min(...counts)}-${Math.max(...counts)} lines in the top 48 units`);
+}

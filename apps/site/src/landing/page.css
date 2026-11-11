@@ -529,24 +529,20 @@ html[lang="zh-CN"] .eyebrow {
 
 /* —— The plate: what the product stands on where the page is light (the hero's
    window, the screenshot). The phone has none: it sits on the blue stretch, which is
-   the same ground already, and a plate there would be a frame around nothing. Silver contour lines over Abyss Blue; the picture is
-   gradient-mapped onto the palette, so its ground is Abyss itself. It is anchored at
-   the bottom, so a plate of any shape shows a strip of silver and then blue. —— */
+   the same ground already, and a plate there would be a frame around nothing. Abyss
+   Blue with the blue stretch's contour lines along the top (plate.svg, drawn by
+   scripts/shore.ts): the window covers the rest, so the close lines are in the strip
+   that shows. Tiled sideways at a fixed size, like the shores, so the lines are as
+   fine on a wide plate as on a narrow one. —— */
 .plate {
   /* clip, not hidden: hidden makes a scroll container, and the hero app's view()
      timeline would follow this box, which never scrolls, instead of the page. */
   overflow: clip;
   border-radius: calc(var(--radius) * 1.75);
-  background: var(--abyss)
-    image-set(url("./hero-stage-1000.webp") 1x, url("./hero-stage.webp") 2x)
-    center bottom / cover no-repeat;
-}
-
-/* Past 1000px wide the small copy would be stretched even at 1x. */
-@media (min-width: 64rem) {
-  .hero-stage {
-    background-image: url("./hero-stage.webp");
-  }
+  background:
+    var(--grain),
+    url("./plate.svg") 0 0 / auto 16rem repeat-x,
+    var(--abyss);
 }
 
 /* The hero's plate is wider than the text column, so the window reads at close to its
@@ -559,7 +555,7 @@ html[lang="zh-CN"] .eyebrow {
   padding-top: clamp(2.5rem, 7vw, 6.5rem);
 }
 
-/* On a short laptop screen the full silver band would push the window below the fold. */
+/* On a short laptop screen the full strip would push the window below the fold. */
 @media (min-width: 56rem) and (max-height: 50rem) {
   .hero-stage {
     padding-top: 2.5rem;
