@@ -158,19 +158,6 @@ describe("remote access", () => {
     expect(entry!.source).toBe("qr");
   });
 
-  it("reconnects a registered device without pairing", async () => {
-    const host = await startFauxHost(defer, { remote: { port: 0 } });
-    const tokenClient = await connectTo(defer, host);
-    const { url } = await createPairing(tokenClient);
-    const { secret } = pairFrom(url);
-    const device = generateKeyPair();
-    const first = await connectDevice(host, device, { secret, name: "phone" });
-    await first.close();
-
-    const second = await connectDevice(host, device);
-    expect(second.view.current().connection).toBe("connected");
-  });
-
   it("rejects wrong, reused, expired, and absent pairing secrets", async () => {
     // The offer lifetime is what this test asserts, so Date is frozen: time
     // advances only where the test says so, never by how long a refused

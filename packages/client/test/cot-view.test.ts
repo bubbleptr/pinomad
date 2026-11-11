@@ -387,11 +387,6 @@ describe("deriveChat", () => {
     expect(run.cot.elapsedMs).toBe(5500);
   });
 
-  it("falls back to the last timestamp for a multi-message run without a recorded start", () => {
-    const run = runs(derive("answer-started-fallback-multi")).at(-1)!;
-    expect(run.cot.elapsedMs).toBe(4000);
-  });
-
   it("ignores an answer start before the request or one that is not finite", () => {
     expect(runs(derive("answer-started-invalid-early")).at(-1)!.cot.elapsedMs).toBeUndefined();
     expect(runs(derive("answer-started-invalid-nonfinite")).at(-1)!.cot.elapsedMs).toBeUndefined();

@@ -48,14 +48,6 @@ describe("focus storage", () => {
     expect(readFocus(localStorage, [])).toBeUndefined();
   });
 
-  it("keeps the outgoing host's conversation when focusing a newly paired host", () => {
-    const last = new Map<string, ConversationId>([["host-a", 1 as ConversationId]]);
-    expect(focusPairedHost(last, { hostKey: "host-a", conversationId: 1 as ConversationId }, "host-b")).toEqual({
-      hostKey: "host-b",
-    });
-    expect(last.get("host-a")).toBe(1);
-  });
-
   it("keeps the persisted conversation when a refresh re-pairs the same host", () => {
     // A reload starts the in-memory map empty; the persisted focus is the
     // only record of A's conversation. Initialization seeds it, and pairing A

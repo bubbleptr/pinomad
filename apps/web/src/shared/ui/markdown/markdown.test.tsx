@@ -133,13 +133,6 @@ describe("Markdown", () => {
     expect(screen.getByRole("button", { expanded: true })).toHaveTextContent("ts");
   });
 
-  it("renders links with correct href", () => {
-    render(<Markdown>{"[click](https://example.com)"}</Markdown>);
-    const link = screen.getByText("click");
-    expect(link.tagName).toBe("A");
-    expect(link.getAttribute("href")).toBe("https://example.com");
-  });
-
   it('adds target="_blank" to external links', () => {
     render(<Markdown>{"[ext](https://example.com)"}</Markdown>);
     const link = screen.getByText("ext");

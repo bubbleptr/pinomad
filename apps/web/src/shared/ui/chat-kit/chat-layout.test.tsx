@@ -251,26 +251,14 @@ describe("ChatLayout — first-fill scroll positioning", () => {
     return screen.getByTestId("layout");
   }
 
-  it("positions async-loaded content synchronously on the first fill", () => {
+  it("springs on growth after the first fill — animation owns it", () => {
     const root = renderLayout();
-    // Mounted while content is short (loading) — not scrollable.
+    // Mounted while content is short (loading): not scrollable.
     setGeometry(root, 400);
     act(() => rafQueue.splice(0).forEach(cb => cb(0)));
     expect(root.scrollTop).toBe(0);
 
-    // Content lands: the message list's ResizeObserver fires.
-    setGeometry(root, 1400);
-    fireContentResize();
-    // Positioned in the same synchronous step — no animation frames.
-    expect(root.scrollTop).toBe(1000);
-  });
-
-  it("springs on growth after the first fill — animation owns it", () => {
-    const root = renderLayout();
-    setGeometry(root, 400);
-    act(() => rafQueue.splice(0).forEach(cb => cb(0)));
-
-    // First fill: instant.
+    // First fill: positioned in the same synchronous step, no animation frames.
     setGeometry(root, 1400);
     fireContentResize();
     expect(root.scrollTop).toBe(1000);

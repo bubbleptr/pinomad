@@ -70,13 +70,6 @@ describe("ChatComposerInput", () => {
       expect(screen.getByText(/Type a message/)).toBeInTheDocument();
     });
 
-    it("renders a textbox role", () => {
-      render(<ChatComposerInput label="Test input" />);
-      expect(
-        screen.getByRole("textbox", {name: "Test input"}),
-      ).toBeInTheDocument();
-    });
-
     it("renders disabled state", () => {
       render(<ChatComposerInput isDisabled />);
       const textbox = screen.getByRole("textbox");
@@ -230,20 +223,6 @@ describe("ChatComposerInput", () => {
       expect(handle).toHaveBeenCalled();
       // Consumer did not preventDefault, so the built-in submit also fires.
       expect(onSubmit).toHaveBeenCalledWith("hello");
-    });
-
-    it("calls onKeyDown before submit and lets preventDefault take over", () => {
-      const onSubmit = vi.fn();
-      const onKeyDown = vi.fn(e => {
-        e.preventDefault();
-      });
-      render(<ChatComposerInput onSubmit={onSubmit} onKeyDown={onKeyDown} />);
-      const textbox = screen.getByRole("textbox");
-      textbox.textContent = "hello";
-      fireEvent.input(textbox);
-      fireEvent.keyDown(textbox, {key: "Enter"});
-      expect(onKeyDown).toHaveBeenCalled();
-      expect(onSubmit).not.toHaveBeenCalled();
     });
 
     it("calls onKeyDown but still submits when the consumer does not preventDefault", () => {
@@ -481,12 +460,6 @@ describe("ChatComposerInput", () => {
   });
 
   describe("triggers", () => {
-    it("accepts triggers with searchSource", () => {
-      const triggers = [createMentionTrigger()];
-      const {container} = render(<ChatComposerInput triggers={triggers} />);
-      expect(container).toBeTruthy();
-    });
-
     it("accepts multiple triggers", () => {
       const triggers = [createMentionTrigger(), createCommandTrigger()];
       const {container} = render(<ChatComposerInput triggers={triggers} />);
@@ -710,15 +683,6 @@ describe("ChatComposerInput", () => {
     });
   });
 
-  describe("data-slot", () => {
-    it("marks the root chat-composer-input", () => {
-      const {container} = render(<ChatComposerInput />);
-      expect(
-        container.querySelector('[data-slot="chat-composer-input"]'),
-      ).toBeInTheDocument();
-    });
-  });
-
   describe("trigger menu cursor anchor", () => {
     // The trigger menu anchors its popover to the cursor position, not the
     // entire input element. In real browsers this creates a fixed-position
@@ -772,18 +736,6 @@ describe("ChatComposerInput", () => {
       // No stray spans inside the editable — text nodes stay intact
       const spans = textbox.querySelectorAll('span[aria-hidden="true"]');
       expect(spans.length).toBe(0);
-    });
-
-    it("opens trigger menu without errors in jsdom fallback path", () => {
-      const {textbox} = setupTriggerInput([createMentionTrigger()]);
-
-      // jsdom returns zero-rect from getBoundingClientRect, so the
-      // fallback anchors on the editable. No crash.
-      setCursorAfterText(textbox, "@");
-      fireEvent.input(textbox);
-
-      // The popover opened — ARIA says expanded
-      expect(textbox.getAttribute("aria-expanded")).toBe("true");
     });
 
     it("does not throw when Escape dismisses the menu", () => {

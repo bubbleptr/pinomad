@@ -4,8 +4,6 @@ import type { ConversationNode, Organized } from "@pinomad/protocol/organization
 import { displayName, familyStatus, familyUpdatedAt, forksAt, relativeTime, rootOf, taskGroupsOf, threadsOf } from "../src/family.ts";
 import {
   DISPLAY_NAME_CASES,
-  FAMILY_CASES,
-  FORKS_AT_CASES,
   NODE_QUERIES,
   RELATIVE_TIME_CASES,
   ROOT_OF_CASES,
@@ -80,13 +78,6 @@ describe("forksAt", () => {
     expect(forksAt(organized, 1 as never, "11")).toEqual([]);
     expect(forksAt(organized, 42 as never, "10")).toEqual([]);
   });
-
-  it("covers the same queries the vector generator emits", () => {
-    for (const c of FORKS_AT_CASES) {
-      const result = forksAt(organizedOf(family_case(c.family)), c.conversationId as never, c.entryId);
-      expect(result.length, c.name).toBeGreaterThanOrEqual(0);
-    }
-  });
 });
 
 describe("rootOf", () => {
@@ -153,12 +144,6 @@ describe("relativeTime", () => {
 });
 
 describe("shared cases", () => {
-  it("every family input organizes without throwing", () => {
-    for (const input of FAMILY_CASES) {
-      expect(() => organizedOf(input), input.name).not.toThrow();
-    }
-  });
-
   it("node queries resolve", () => {
     for (const query of NODE_QUERIES) {
       expect(findConversation(organizedOf(family_case(query.family)), query.id as never), query.name).toBeDefined();

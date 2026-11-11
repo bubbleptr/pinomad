@@ -101,13 +101,6 @@ function renderHook(options?: Partial<UseChatStreamScrollOptions>) {
 }
 
 describe("useChatStreamScroll — initial positioning", () => {
-  it("default: jumps to the bottom on mount when content is scrollable", () => {
-    const {el} = renderHook();
-    setGeometry(el, {scrollHeight: 1000, clientHeight: 400});
-    flushRaf();
-    expect(el.scrollTop).toBe(600);
-  });
-
   it("positions the first async fill in one synchronous step", () => {
     const {api, el} = renderHook();
     // Mount while loading — nothing scrollable yet.

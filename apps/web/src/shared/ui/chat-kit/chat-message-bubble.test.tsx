@@ -9,15 +9,6 @@ import { ChatMessageList } from "./chat-message-list";
 import { ChatMessageMetadata } from "./chat-message-metadata";
 
 describe("ChatMessageBubble", () => {
-  it("renders children", () => {
-    render(
-      <ChatMessage sender="assistant">
-        <ChatMessageBubble>Hello world</ChatMessageBubble>
-      </ChatMessage>,
-    );
-    expect(screen.getByText("Hello world")).toBeTruthy();
-  });
-
   it("reflects the sender from context", () => {
     render(
       <ChatMessage sender="user">
@@ -50,15 +41,6 @@ describe("ChatMessageBubble", () => {
     );
     const el = screen.getByTestId("bubble");
     expect(el).toHaveAttribute("data-density", "compact");
-  });
-
-  it("applies data-testid", () => {
-    render(
-      <ChatMessage sender="assistant">
-        <ChatMessageBubble data-testid="my-bubble">Hi</ChatMessageBubble>
-      </ChatMessage>,
-    );
-    expect(screen.getByTestId("my-bubble")).toBeTruthy();
   });
 });
 

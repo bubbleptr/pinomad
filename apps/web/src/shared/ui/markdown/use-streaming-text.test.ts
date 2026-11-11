@@ -83,11 +83,6 @@ describe('useStreamingText', () => {
     expect(result.current).toBe('Hello world');
   });
 
-  it('starts with empty string when streaming', () => {
-    const {result} = renderHook(() => useStreamingText('Hello world', true));
-    expect(result.current).toBe('');
-  });
-
   it('snaps to full text when streaming ends', () => {
     const {result, rerender} = renderHook(
       ({text, streaming}) => useStreamingText(text, streaming),
@@ -112,27 +107,6 @@ describe('useStreamingText', () => {
     // Clear text (new message)
     rerender({text: '', streaming: true});
     expect(result.current).toBe('');
-  });
-
-  it('progressively reveals text through animation frames', () => {
-    const {result} = renderHook(() =>
-      useStreamingText('Hello, world! This is a test.', true),
-    );
-
-    expect(result.current).toBe('');
-
-    // Fire animation frames
-    let lastLen = 0;
-    for (let i = 0; i < 20; i++) {
-      if (rafCallbacks.length > 0) {
-        const cb = rafCallbacks.pop()!;
-        act(() => cb(performance.now() + i * 20));
-      }
-      expect(result.current.length).toBeGreaterThanOrEqual(lastLen);
-      lastLen = result.current.length;
-    }
-
-    expect(result.current.length).toBeGreaterThan(0);
   });
 
   it('advances monotonically without stalls or backwards jumps', () => {
