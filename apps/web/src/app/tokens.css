@@ -5,43 +5,41 @@
    element's color-scheme, which styles.css sets on <html> from the `.dark`
    class that the appearance setting drives (the class `dark:` follows too).
 
-   Light is shadcn's neutral base. Dark keeps this app's surface ladder:
-   elevation reads as lightness, so each layer above another is lighter. The
-   window frame behind the sidebar is the darkest, the main pane one step up,
-   raised surfaces (the composer, settings groups) another, popovers and
-   dialogs lightest. The greys are pure neutrals about 0.04 L apart, so each
-   step separates by fill alone. Dark text stops at L 0.94: full white on a
-   near-black ground blooms. The dark border is solid and sits above the
-   popover, so it still draws an edge on the top layer; a translucent white
-   one glows. */
+   The values are affectUI's "clean" theme (MIT, docs/licenses/affectui.md):
+   text, hairlines and washes are translucent black or white, so one value
+   reads on every layer; the focus ring is blue. Departures from it:
+   --muted-foreground is a step darker (clean's 45% black is about 3.3:1 on
+   white, short of the 4.5:1 that hints and second lines need), and dark keeps
+   a lift between the main pane, raised surfaces (the composer, settings
+   groups) and popovers, since this app separates those by fill. */
 :root {
-  --background: light-dark(oklch(1 0 0), oklch(0.215 0 0));
-  --foreground: light-dark(oklch(0.145 0 0), oklch(0.94 0 0));
-  --card: light-dark(oklch(1 0 0), oklch(0.255 0 0));
+  --background: light-dark(#ffffff, #1c1c1e);
+  --foreground: light-dark(rgb(0 0 0 / 88%), rgb(255 255 255 / 90%));
+  --card: light-dark(#ffffff, #1f1f22);
   --card-foreground: var(--foreground);
-  --popover: light-dark(oklch(1 0 0), oklch(0.295 0 0));
+  --popover: light-dark(#ffffff, #252528);
   --popover-foreground: var(--foreground);
-  --primary: light-dark(oklch(0.205 0 0), oklch(0.922 0 0));
-  --primary-foreground: light-dark(oklch(0.985 0 0), oklch(0.205 0 0));
-  /* Hover and quiet fills. Translucent in dark so one value lifts every
-     layer of the ladder, the popover included. */
-  --secondary: light-dark(oklch(0.97 0 0), oklch(1 0 0 / 8%));
+  --primary: light-dark(rgb(0 0 0 / 88%), rgb(255 255 255 / 90%));
+  --primary-foreground: light-dark(#ffffff, #161618);
+  /* Quiet fills and hover washes (clean's --aui-subtle). The accent, which
+     marks the highlighted menu item and the selected row, is a step
+     stronger so it still reads as a selection. */
+  --secondary: light-dark(rgb(0 0 0 / 3%), rgb(255 255 255 / 4%));
   --secondary-foreground: var(--foreground);
-  --muted: light-dark(oklch(0.97 0 0), oklch(1 0 0 / 8%));
-  --muted-foreground: light-dark(oklch(0.556 0 0), oklch(0.708 0 0));
-  --accent: light-dark(oklch(0.97 0 0), oklch(1 0 0 / 8%));
+  --muted: light-dark(rgb(0 0 0 / 3%), rgb(255 255 255 / 4%));
+  --muted-foreground: light-dark(rgb(0 0 0 / 55%), rgb(255 255 255 / 50%));
+  --accent: light-dark(rgb(0 0 0 / 5%), rgb(255 255 255 / 8%));
   --accent-foreground: var(--foreground);
-  --destructive: light-dark(oklch(0.577 0.245 27.325), oklch(0.704 0.191 22.216));
-  /* The red wash a destructive button sits on, and the text that reads on
-     it. --destructive is tuned for text on the page ground and is only about
-     3.4:1 on the wash. */
-  --destructive-muted: light-dark(#facecb, #ff9e973d);
-  --destructive-strong: light-dark(#a50c25, #ffc6c1);
-  --border: light-dark(oklch(0.922 0 0), oklch(0.335 0 0));
-  --input: light-dark(oklch(0.922 0 0), oklch(1 0 0 / 15%));
-  --ring: light-dark(oklch(0.708 0 0), oklch(0.556 0 0));
-  --radius: 0.625rem;
-  --sidebar: light-dark(oklch(0.985 0 0), oklch(0.17 0 0));
+  --destructive: light-dark(#c4320a, #ff8a7a);
+  /* The red wash a destructive button or error notice sits on, and the text
+     that reads on it. */
+  --destructive-muted: light-dark(rgb(240 68 56 / 10%), rgb(255 107 95 / 14%));
+  --destructive-strong: var(--destructive);
+  --border: light-dark(rgb(0 0 0 / 8%), rgb(255 255 255 / 14%));
+  --input: var(--border);
+  --ring: light-dark(rgb(0 96 226 / 70%), rgb(77 141 255 / 80%));
+  --radius: 7px;
+  --sidebar: light-dark(#f7f7f7, #161618);
   --sidebar-foreground: var(--foreground);
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
@@ -52,29 +50,30 @@
 
   /* App tokens shadcn has no name for. */
   /* Inset fills (code, chips): recessed, so darker than the pane they sit in. */
-  --surface-muted: light-dark(oklch(0.955 0 0), oklch(0.185 0 0));
-  --surface-hover: light-dark(oklch(0 0 0 / 5%), oklch(1 0 0 / 5%));
-  --default: light-dark(oklch(0 0 0 / 6%), oklch(1 0 0 / 10%));
-  --success: light-dark(#007004, #9fe59b);
-  --warning: light-dark(#745b00, #fdcf4f);
-  /* Status washes (Alert, Badge) and the text that reads on each. The red
-     wash is --destructive-muted above; its text is a step darker than the
-     destructive button's label. */
-  --red-strong: light-dark(#89001a, #ffc6c1);
-  --info-muted: light-dark(#c4ddfb, #9eb7ff3d);
-  --info-strong: light-dark(#00458c, #c7d3ff);
-  --success-muted: light-dark(#c5e5c0, #84c9803d);
-  --success-strong: light-dark(#0c5700, #9fe59b);
-  --warning-muted: light-dark(#f8da9d, #deb4333d);
-  --warning-strong: light-dark(#584400, #fdcf4f);
-  --orange-muted: light-dark(#fad0b5, #ffa2583d);
-  --orange-strong: light-dark(#6e3500, #ffc9a2);
-  --gray-muted: light-dark(#e5e5e5, oklch(1 0 0 / 10%));
-  --gray-strong: light-dark(#262626, #e5e5e5);
-  /* Status dots: fills, brighter than the text colors so 8px still reads. */
-  --dot-success: light-dark(#198100, #64af4c);
-  --dot-warning: #ffce2f;
-  --dot-error: light-dark(#e33f4a, #ff705d);
+  --surface-muted: light-dark(rgb(0 0 0 / 4%), rgb(0 0 0 / 22%));
+  --surface-hover: light-dark(rgb(0 0 0 / 3%), rgb(255 255 255 / 4%));
+  --default: light-dark(rgb(0 0 0 / 6%), rgb(255 255 255 / 10%));
+  --success: light-dark(#1e8a4f, #7dcf9f);
+  --warning: light-dark(#b25e00, #ffb35c);
+  /* Status washes (Alert, Badge) and the text that reads on each: clean sets
+     the status color itself on its soft wash. The red wash is
+     --destructive-muted above. */
+  --red-strong: var(--destructive);
+  --info-muted: light-dark(rgb(1 144 254 / 10%), rgb(79 176 254 / 14%));
+  --info-strong: light-dark(#0070d6, #4fb0fe);
+  --success-muted: light-dark(rgb(95 200 138 / 14%), rgb(125 207 159 / 14%));
+  --success-strong: var(--success);
+  --warning-muted: light-dark(rgb(242 138 46 / 12%), rgb(242 161 92 / 14%));
+  --warning-strong: var(--warning);
+  --orange-muted: var(--warning-muted);
+  --orange-strong: var(--warning);
+  --gray-muted: var(--default);
+  --gray-strong: var(--foreground);
+  /* Status dots: clean's palette fills, brighter than the text colors so 8px
+     still reads. */
+  --dot-success: light-dark(#5fc88a, #7dcf9f);
+  --dot-warning: light-dark(#e8b000, #e6c24d);
+  --dot-error: light-dark(#f04438, #ff6b5f);
   /* Toasts sit on the opposite of the page: near-black on light, white on
      dark; an error toast is a deep red on both. */
   --inverse: light-dark(#0a1317, #ffffff);
@@ -102,12 +101,12 @@
   --color-background-popover: var(--popover);
   --color-background-muted: var(--surface-muted);
   --color-border: var(--border);
-  --color-border-emphasized: light-dark(oklch(0.87 0 0), oklch(0.44 0 0));
+  --color-border-emphasized: light-dark(rgb(0 0 0 / 13%), rgb(255 255 255 / 20%));
   --color-text-primary: var(--foreground);
   --color-text-secondary: var(--muted-foreground);
-  --color-text-disabled: light-dark(oklch(0.708 0 0), oklch(0.44 0 0));
+  --color-text-disabled: light-dark(rgb(0 0 0 / 30%), rgb(255 255 255 / 30%));
   --color-text-accent: var(--primary);
-  --color-text-blue: light-dark(#00458c, #c7d3ff);
+  --color-text-blue: var(--info-strong);
   --color-icon-primary: var(--foreground);
   --color-icon-secondary: var(--muted-foreground);
   --color-icon-accent: var(--primary);
@@ -124,9 +123,9 @@
   --color-warning: var(--warning);
   --color-shadow: light-dark(oklch(0 0 0 / 10%), oklch(0 0 0 / 30%));
 
-  --radius-inner: 0.375rem;
+  --radius-inner: 5px;
   --radius-element: var(--radius);
-  --radius-container: 0.75rem;
+  --radius-container: 10px;
   --radius-full: 9999px;
   --border-width: 1px;
   --size-element-sm: 28px;
@@ -166,21 +165,23 @@
   --text-supporting-leading: 1.6667;
 
   /* Raised chat chrome (the composer, the pasted-text preview, the
-     scroll-to-bottom button): a drop shadow in light, a hairline ring in
-     dark where a shadow would not read. */
-  --shadow-low: 0 2px 4px light-dark(oklch(0 0 0 / 5%), oklch(0 0 0 / 25%)),
-    0 4px 8px light-dark(oklch(0 0 0 / 10%), oklch(0 0 0 / 40%)),
-    inset 0 0 0 1px light-dark(transparent, oklch(1 0 0 / 8%));
-  --shadow-med: 0 2px 4px light-dark(oklch(0 0 0 / 5%), oklch(0 0 0 / 35%)),
-    0 4px 12px light-dark(oklch(0 0 0 / 10%), oklch(0 0 0 / 50%)),
-    inset 0 0 0 1px light-dark(transparent, oklch(1 0 0 / 12%));
+     scroll-to-bottom button): clean's card and popover depth, a half-pixel
+     edge plus a lift. A layer whose color is transparent in one scheme
+     belongs to the other's shadow. */
+  --shadow-low: 0 0 0 0.5px light-dark(rgb(0 0 0 / 6%), rgb(255 255 255 / 10%)),
+    0 1px 1px -1px light-dark(rgb(0 0 0 / 10%), transparent),
+    0 1px 2px 0 light-dark(rgb(0 0 0 / 5%), rgb(0 0 0 / 40%));
+  --shadow-med: 0 0 0 0.5px light-dark(rgb(0 0 0 / 8%), rgb(255 255 255 / 12%)),
+    0 8px 24px -6px light-dark(rgb(0 0 0 / 14%), transparent),
+    0 12px 32px -8px light-dark(transparent, rgb(0 0 0 / 60%)),
+    0 2px 6px -2px light-dark(rgb(0 0 0 / 6%), transparent);
 
-  --ease-standard: cubic-bezier(0.24, 1, 0.4, 1);
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-out: var(--ease-standard);
   --duration-fast: 125ms;
   --duration-fast-max: 165ms;
 
   /* The inset panes' edge: lighter than --border, since the fill step from
      the frame already separates them. */
-  --pigui-pane-ring: light-dark(#00000012, oklch(0.255 0 0));
+  --pigui-pane-ring: light-dark(rgb(0 0 0 / 6%), rgb(255 255 255 / 8%));
 }

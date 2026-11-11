@@ -4,7 +4,7 @@ Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。组件都�
 
 ## 颜色和 token
 
-token 都在 `src/app/tokens.css`。颜色用 shadcn 的变量名，Tailwind 类直接用（`bg-card`、`text-muted-foreground`、`text-destructive`），不要写死颜色值。每个颜色是一对 `light-dark()`，跟着 `<html>` 的 `color-scheme` 走；`color-scheme` 由 `<html>` 上的 `dark` 类决定（外观设置维护这个类，`styles.css` 据此设 `color-scheme`），所以 `dark:` 类和 token 永远一致。`tokens.css` 下半段是 `chat.css` 等手写 CSS 用的间距、圆角、字号和动效刻度，以及会被对话框抬高一级的表面色阶（`--color-background-*`，见下面“外框和面板”）。
+token 都在 `src/app/tokens.css`。颜色用 shadcn 的变量名，Tailwind 类直接用（`bg-card`、`text-muted-foreground`、`text-destructive`），不要写死颜色值。每个颜色是一对 `light-dark()`，跟着 `<html>` 的 `color-scheme` 走；`color-scheme` 由 `<html>` 上的 `dark` 类决定（外观设置维护这个类，`styles.css` 据此设 `color-scheme`），所以 `dark:` 类和 token 永远一致。取值来自 affectUI 的 clean 主题：文字、细边和浅色铺底是半透明的黑或白，焦点环是蓝色，基础圆角 7px（`--radius`，Tailwind 的 `rounded-*` 按它缩放）。`tokens.css` 下半段是 `chat.css` 等手写 CSS 用的间距、圆角、字号和动效刻度，以及会被对话框抬高一级的表面色阶（`--color-background-*`，见下面“外框和面板”）。
 
 `styles.css` 开头的 `@layer` 顺序不能动，也不要跑 `shadcn init`（它会改写 `styles.css`）。
 
@@ -19,7 +19,7 @@ token 都在 `src/app/tokens.css`。颜色用 shadcn 的变量名，Tailwind 类
 | `ghost` | 透明，只有字或图标 | 只有下面四种情况，见流程图。 |
 | `destructive` | 浅红底红字 | 不可撤销动作的**最后一步确认**，旁边必须有一个 `secondary` 的 Cancel。 |
 
-每档的样子只写在 `button.tsx` 的 `buttonVariants` 里。`secondary` 有描边和投影，是因为只有浅灰底时放在输入框旁边像一段文字，深色下几乎看不见。`destructive` 的字用 `--destructive-strong`：`--destructive` 画在浅红底上对比度只有约 3.4:1。不要在调用处用 `className` 给按钮加边框、阴影或背景。
+每档的样子只写在 `button.tsx` 的 `buttonVariants` 里。`secondary` 有描边和投影，是因为只有浅灰底时放在输入框旁边像一段文字，深色下几乎看不见。`destructive` 的字用 `--destructive-strong`（浅红底上的文字色，现在和 `--destructive` 同值）。不要在调用处用 `className` 给按钮加边框、阴影或背景。
 
 文字写成 children，图标放在文字前面（`<Button><Plus aria-hidden="true" />Add</Button>`）。另有两个属性：`loading` 在文字上盖一个转圈并禁用按钮，宽度和无障碍名称不变；`tooltip` 悬停和聚焦时显示，禁用的按钮带 `tooltip` 时仍能用键盘聚焦。默认 `type="button"`，提交表单要写 `type="submit"`。
 
@@ -120,7 +120,7 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 | `combobox.tsx` 的 `ComboboxCheckboxItem` | 带搜索的多选（`<Combobox multiple>`），每项前面一个勾选框：自定义端点的模型列表。 |
 | `lightbox.tsx` | 全屏看图：`images` 和 `index`，左右键或两侧按钮切换，点空白处或 Esc 关闭。 |
 
-菜单和弹出层用同一块浮层表面（`floatingSurfaceClassName`：popover 底色、12px 圆角、低投影），对话框是卡片底色加高投影。调用处不要用 `className` 改它们的底色、圆角和投影。
+菜单和弹出层用同一块浮层表面（`floatingSurfaceClassName`：popover 底色、`rounded-xl` 圆角、低投影），对话框是卡片底色加高投影。调用处不要用 `className` 改它们的底色、圆角和投影。
 
 窄屏的导航抽屉是 `sheet.tsx`（Base UI 的 Dialog，从左边滑出，最宽 320px）。抽屉里打开的菜单和对话框叠在它上面，Esc 一次只关最上面一层，抽屉留在下面；toast 在顶层（manual popover），抽屉开着也看得见。
 
@@ -129,7 +129,7 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 | 组件 | 用在哪 |
 | --- | --- |
 | `item.tsx` | 一行一项：设置里的设备、宿主、登录方式，侧面板的任务，模型选择。`ItemGroup`（`ul role="list"`，用 `aria-label` 或 `aria-labelledby` 命名）里放 `Item render={<li />}`，依次是可选的 `ItemMedia`（图标、状态灯、logo）、`ItemContent`（`ItemTitle` 一行截断，`ItemDescription` 默认一行截断，两行用 `line-clamp-2 whitespace-normal`，自由换行的富内容用 `overflow-visible whitespace-normal`）、`ItemActions`（行尾的按钮、徽标、时间）。紧凑的行用 `size="sm"`。整行可点时写 `<ItemContent render={<button type="button" onClick={…} />}>`：按钮铺满整行，名称只有标题和说明，`ItemActions` 里就不要再放可点的东西。选中写在 `Item` 上：`aria-current`（底色变深），禁用写 `aria-disabled`。 |
-| `card.tsx` | 一块带 1px 描边和 12px 圆角的卡片：Agents、旧版登录这类一张一项的内容，内容放 `CardContent`。成组的设置行用 `SettingsGroup`，不要自己拼 `Card`。 |
+| `card.tsx` | 一块带 1px 描边和 `rounded-xl` 圆角的卡片：Agents、旧版登录这类一张一项的内容，内容放 `CardContent`。成组的设置行用 `SettingsGroup`，不要自己拼 `Card`。 |
 | `collapsible.tsx` | 默认收起的细节（错误详情、地址、一次性令牌）：`Collapsible` 里放 `CollapsibleTrigger`（整行宽，右边的箭头自带，文字自己写样式，通常 `text-xs/5 text-muted-foreground`）和 `CollapsibleContent`（收起时不渲染）。 |
 | `thumbnail.tsx` | 64px 的图片预览：待发送的附件（`onRemove`）和消息里的图（`onClick` 打开大图），`alt` 同时是整块的名称。 |
 | `code-block/` | `CodeBlock` 带高亮和复制按钮的代码块（要复制的命令用 `isWrapped width="100%"`），`Code` 行内代码。 |
@@ -153,7 +153,7 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 
 窗口底色是框架色（`--color-background-body`），侧栏直接放在底色上；工作区是从窗口边缘内缩的圆角卡片（面板，pane）：主区一张，右侧面板（Tasks / Changes / Terminal）打开时是旁边单独的一张，两张之间露出底色间隙。样式只在 `src/app/styles.css` 的 “Inset shell” 一段里定义：
 
-- 面板加 `pigui-pane`，底色 `--background`，圆角 `--pigui-pane-radius`（12px），边缘是 `--pigui-pane-ring` 的 1px 细边，不加投影。离窗口边缘 `--pigui-pane-inset`（8px），两张面板之间 `--pigui-pane-gap`（4px）。
+- 面板加 `pigui-pane`，底色 `--background`，圆角 `--pigui-pane-radius`（`--radius-container`，10px），边缘是 `--pigui-pane-ring` 的 1px 细边，不加投影。离窗口边缘 `--pigui-pane-inset`（8px），两张面板之间 `--pigui-pane-gap`（4px）。
 - 内缩只在宽屏（≥1024px，AppFrame 给外壳加 `pigui-inset`）。窄屏没有侧栏，面板贴满窗口，不要圆角和描边。
 - 框架里显示的 `Centered` 屏（连接中、连接失败）自己就是一张面板；框架外的（还没有宿主、配对）铺满窗口，用框架色。
 - 深色模式照样“越上层越亮”：框架最暗，面板高一级，卡片（输入框、设置分组）再高一级。

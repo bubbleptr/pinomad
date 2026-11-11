@@ -99,9 +99,9 @@
    at popover level, its inset fills between the two. */
 [data-slot="dialog-content"],
 [data-slot="alert-dialog-content"] {
-  --color-background-surface: light-dark(#ffffff, oklch(0.255 0 0));
-  --color-background-card: light-dark(#ffffff, oklch(0.295 0 0));
-  --color-background-muted: light-dark(#f1f1f1, oklch(0.225 0 0));
+  --color-background-surface: var(--card);
+  --color-background-card: var(--popover);
+  --color-background-muted: var(--surface-muted);
 }
 
 /* Tailwind utility names for the tokens in tokens.css. `inline` keeps the
@@ -665,7 +665,7 @@ html {
   /* Between two panes side by side: tighter than the inset, so the pair
      reads as one work area. */
   --pigui-pane-gap: 0.25rem;
-  --pigui-pane-radius: 0.75rem;
+  --pigui-pane-radius: var(--radius-container);
 }
 
 .pigui-inset .pigui-main {
