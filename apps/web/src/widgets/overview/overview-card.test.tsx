@@ -1,7 +1,7 @@
 // jsdom: the overview card's Workspace branch row — a 5.11 host's
 // changes() answer owns it, an older host's checkout record does — and
 // sections that fold away but keep their status.
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CallMethods } from "@pinomad/protocol/frames.ts";
@@ -166,14 +166,14 @@ describe("OverviewCard context breakdown", () => {
 
   it("shows the parts under the meter while they belong to the reply it counts", () => {
     withBreakdown(0);
-    expect(screen.getByRole("list", { name: "Context breakdown" })).toBeVisible();
+    expect(within(screen.getByRole("list", { name: "Context breakdown" })).getByText("Tools")).toBeVisible();
     // Never twice: not also as a raw document card.
     expect(screen.queryByText("context.breakdown")).toBeNull();
   });
 
   it("keeps the meter alone when the breakdown is from another reply", () => {
     withBreakdown(-1_000);
-    expect(screen.queryByRole("list", { name: "Context breakdown" })).toBeNull();
+    expect(screen.queryByText("Tools")).toBeNull();
     expect(screen.getByRole("meter")).toBeVisible();
   });
 });

@@ -250,7 +250,7 @@ function UsageSection({ view, conversation }: { view: DurableView; conversation:
       <div className="pb-1.5">
         <ContextBar usage={usage} breakdown={breakdown} />
       </div>
-      {usage === undefined || breakdown === undefined ? null : <ContextBreakdownList breakdown={breakdown} window={usage.window} />}
+      {usage === undefined ? null : <ContextBreakdownList usage={usage} breakdown={breakdown} />}
       {spent > 0 ? <Row end={<span className="text-muted-foreground">{formatCost(spent)}</span>}>Spent</Row> : null}
     </Section>
   );
