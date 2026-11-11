@@ -734,7 +734,7 @@ html[lang="zh-CN"] .split h2 {
   font-weight: 600;
 }
 
-/* —— How it works: the durable demo, full width. —— */
+/* —— The small core: the extensions cell, then the durable demo, full width. —— */
 .bento {
   display: grid;
   gap: 1rem;

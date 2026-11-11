@@ -23,17 +23,18 @@ export function Landing({ lang, latest }: { lang: Lang; latest?: LatestRelease }
         start={{ text: t.hero.start, href: "#quick-start" }}
       />
       <main id="main">
-        {/* Mist, then one stretch of blue for reaching the host from anywhere, then mist
-            again. Each zone sets the colour tokens for what's in it. */}
+        {/* The page argues one thing, that the agent travels light, in two parts. The
+            blue stretch is being away from the host with only a phone; the mist after it
+            is the small core. Each zone sets the colour tokens for what's in it. */}
         <div className="zone zone-light">
           <Hero lang={lang} t={t.hero} />
-          <Core lang={lang} t={t.core} durable={t.durable} />
         </div>
         <div className="zone zone-abyss">
           <Anywhere lang={lang} t={t.anywhere} />
           <Connection t={t.connection} />
         </div>
         <div className="zone zone-light">
+          <Core lang={lang} t={t.core} extensions={t.extensions} durable={t.durable} />
           <Agents lang={lang} t={t.agents} />
           <GetStarted t={t.start} />
           <Next t={t.next} />

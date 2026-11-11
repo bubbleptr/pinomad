@@ -29,9 +29,10 @@ export interface LandingCopy {
   };
   core: {
     eyebrow: string;
-    title: string;
+    title: ReactNode;
     allFeatures: string;
   };
+  extensions: { title: string; body: string };
   durable: {
     title: string;
     body: string;
@@ -97,10 +98,10 @@ export const copy: Record<Lang, LandingCopy> = {
     hero: {
       title: (
         <>
-          <span className="line">The durable coding agent,</span> <span className="line">reachable from anywhere.</span>
+          <span className="line">The coding agent</span> <span className="line">that travels light.</span>
         </>
       ),
-      lead: "It runs on your own Mac or Linux machine; pick up any run from the Mac app, the browser, or your iPhone. Built on Pi Durable, it checkpoints every model and tool call, so a crash or restart resumes the run instead of starting over.",
+      lead: "It runs on your own Mac or Linux machine, so all you carry is a phone. The core is small: built on Pi Durable, extended with MCP servers and skills. Every model and tool call is checkpointed, so you can walk away mid-run.",
       start: "Get started",
       github: "View on GitHub",
       shotAlt:
@@ -114,16 +115,24 @@ export const copy: Record<Lang, LandingCopy> = {
     },
     anywhere: {
       eyebrow: "Away from your desk",
-      title: "Your computer at home is your cloud machine",
+      title: "Carry only a phone",
       lead: "The code and the agent stay on your computer at home; your phone is a screen onto it. From anywhere you can start a task, answer the agent's questions, or step in mid-run, then go through what changed, line by line, before you decide what's next.",
       steps: ["Start a task", "Answer"],
       shotAlt:
         "The PiNomad iPhone app at the step chosen beside it: a task sent from the phone to omarchy, or the push notification over the list of machines and then the agent's question about old bills.",
     },
     core: {
-      eyebrow: "How it works",
-      title: "Built on Pi Durable",
+      eyebrow: "How it's built",
+      title: (
+        <>
+          <span className="nowrap">A small core.</span> <span className="nowrap">The rest is extensions.</span>
+        </>
+      ),
       allFeatures: "Everything the agent can do",
+    },
+    extensions: {
+      title: "The built-in tools are extensions too",
+      body: "The coding tools, subagents, to-dos, questions, and background processes are each a separate Pi Durable extension; the core knows them only through a registry. Add your own tools today with MCP servers and skills.",
     },
     durable: {
       title: "Runs survive crashes and restarts",
@@ -264,13 +273,14 @@ export const copy: Record<Lang, LandingCopy> = {
       title: (
         <>
           <span className="line">
-            <span className="nowrap">持久可靠的</span>
-            <span className="nowrap">编码智能体，</span>
+            <span className="nowrap">轻装上路的</span>
           </span>
-          <span className="line">随时随地都能连上</span>
+          <span className="line">
+            <span className="nowrap">编码智能体</span>
+          </span>
         </>
       ),
-      lead: "Mac App、浏览器、iPhone 都能随时接手正在跑的任务。基于 Pi Durable，每次模型和工具调用都存检查点，崩溃重启也从断处接着跑。",
+      lead: "它跑在你自己的 Mac 或 Linux 上，出门只用带一部手机。内核很小：基于 Pi Durable，用 MCP 和 Skills 扩展。每次模型和工具调用都存检查点，任务跑到一半也可以放心走开。",
       start: "开始使用",
       github: "在 GitHub 上查看",
       shotAlt: "PiNomad Mac App，侧栏里有两台机器：macbook-pro 上 @planner 把 iOS 和 Web 的多币种支持分给了两个 @worker 和一个 @critic，各用各的模型；omarchy 上服务端正在给旧账单回填币种。前面的浏览器里打开的是 @critic 自己的对话。",
@@ -282,15 +292,24 @@ export const copy: Record<Lang, LandingCopy> = {
     },
     anywhere: {
       eyebrow: "出门在外",
-      title: "家里的电脑，就是你随身的云主机",
+      title: "出门只带一部手机",
       lead: "代码和 agent 都留在家里的电脑上，手机只是连上去的一块屏幕。出门在外照样能派活、回答 agent 的提问、中途插话；跑完了在手机上看改了哪些文件，逐行看完 diff 再决定下一步。",
       steps: ["派活", "拍板"],
       shotAlt: "PiNomad iPhone App，显示旁边选中的那一步：从手机发给 omarchy 的任务，或者机器列表上弹出的推送，接着是 agent 关于旧账单的提问。",
     },
     core: {
-      eyebrow: "工作方式",
-      title: "基于 Pi Durable",
+      eyebrow: "怎么做的",
+      title: (
+        <>
+          <span className="nowrap">内核很小，</span>
+          <span className="nowrap">其余都是扩展</span>
+        </>
+      ),
       allFeatures: "agent 能做的所有事",
+    },
+    extensions: {
+      title: "内置工具本身也是扩展",
+      body: "编码工具、子代理、待办、提问、后台进程各是一个独立的 Pi Durable 扩展，核心只通过注册表认识它们。现在就能用 MCP 服务器和 Skills 加上自己的工具。",
     },
     durable: {
       title: "步步存检查点，重启不用从头来",

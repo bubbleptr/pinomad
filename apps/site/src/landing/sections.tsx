@@ -89,8 +89,18 @@ export function Anywhere({ lang, t }: { lang: Lang; t: LandingCopy["anywhere"] }
   );
 }
 
-/** How it works: the durable run. */
-export function Core({ lang, t, durable }: { lang: Lang; t: LandingCopy["core"]; durable: LandingCopy["durable"] }) {
+/** The small core: what is an extension, and the durable run underneath. */
+export function Core({
+  lang,
+  t,
+  extensions,
+  durable,
+}: {
+  lang: Lang;
+  t: LandingCopy["core"];
+  extensions: LandingCopy["extensions"];
+  durable: LandingCopy["durable"];
+}) {
   return (
     <section className="section" id="how-it-works" aria-labelledby="core-title">
       <div className="wrap">
@@ -98,6 +108,10 @@ export function Core({ lang, t, durable }: { lang: Lang; t: LandingCopy["core"];
           <SectionHead id="core-title" eyebrow={t.eyebrow} title={t.title} />
         </div>
         <div className="bento">
+          <article className="cell" aria-labelledby="extensions-title">
+            <h3 id="extensions-title">{extensions.title}</h3>
+            <p>{extensions.body}</p>
+          </article>
           <article className="cell cell-wide" aria-labelledby="durable-title">
             <h3 id="durable-title">{durable.title}</h3>
             <p>{durable.body}</p>
