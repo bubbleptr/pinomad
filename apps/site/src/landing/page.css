@@ -84,9 +84,50 @@
   padding-bottom: var(--section-space);
 }
 
+/* The blue stretch has shores, not straight edges: the plate's band of silver contour
+   lines lies along its top and, mirrored, along its bottom. It is the same picture as
+   the plates', which makes the whole stretch one large plate. Each shore reaches a
+   third of its height out over the mist and is masked to nothing at both ends, so the
+   lines come up out of the page (grain and all, since the page shows through) and
+   sink into the flat blue; the stretch's own straight edge lies under the opaque
+   middle. The picture never shrinks below 56rem wide, or a phone would get a hairline. */
 .zone-abyss {
-  padding-bottom: var(--section-space);
+  --shore: clamp(9rem, 20vw, 17rem);
+
+  position: relative;
+  isolation: isolate;
+  padding-block: calc(var(--shore) * 0.3) calc(var(--section-space) + var(--shore) * 0.3);
   background: var(--grain), var(--abyss);
+}
+
+.zone-abyss::before,
+.zone-abyss::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  z-index: -1;
+  height: calc(var(--shore) * 1.35);
+  background: image-set(url("./hero-stage-1000.webp") 1x, url("./hero-stage.webp") 2x) center top /
+    max(100%, 56rem) auto no-repeat;
+  /* Opaque from 26%: that is 0.35 of a shore down, exactly where the stretch begins. */
+  mask-image: linear-gradient(transparent, #000 26%, #000 62%, transparent);
+  pointer-events: none;
+}
+
+.zone-abyss::before {
+  top: calc(var(--shore) * -0.35);
+}
+
+.zone-abyss::after {
+  bottom: calc(var(--shore) * -0.35);
+  scale: 1 -1;
+}
+
+@media (min-width: 64rem) {
+  .zone-abyss::before,
+  .zone-abyss::after {
+    background-image: url("./hero-stage.webp");
+  }
 }
 
 *,
