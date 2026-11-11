@@ -122,6 +122,17 @@ describe("estimateRequest", () => {
     expect(estimate.mcp).toBeGreaterThan(promptOnly.mcp + 100);
   });
 
+  // #728: CJK costs about a token per character, not a quarter of one.
+  it("counts CJK text at about a token per character", () => {
+    const system = (text: string) => estimateRequest({ system: text }, [])!.system;
+    const cjk = "改动前先读架构总览和术语表。".repeat(50);
+    const latin = "a".repeat(cjk.length);
+    expect(system(cjk)).toBeGreaterThanOrEqual(cjk.length);
+    expect(system(latin)).toBeLessThan(cjk.length / 2);
+    // Mixed text costs the sum of its two halves, give or take rounding.
+    expect(Math.abs(system(cjk + latin) - system(cjk) - system(latin))).toBeLessThanOrEqual(1);
+  });
+
   it("gives up on a request it cannot read", () => {
     expect(estimateRequest({ prompt: "hi" }, [])).toBeUndefined();
     expect(estimateRequest(undefined, [])).toBeUndefined();
