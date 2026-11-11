@@ -2,7 +2,7 @@
 // opens, and the staged-thumbnail row the prompt input shows in its drawer.
 // Shared by the conversation composer and the draft home.
 import type { ReactNode, RefObject } from "react";
-import { Thumbnail } from "@astryxdesign/core/Thumbnail";
+import { Thumbnail } from "@/shared/ui/thumbnail";
 import type { MessageImage } from "@pinomad/protocol/images.ts";
 import { imageSrc } from "./image-url.ts";
 
@@ -68,7 +68,7 @@ export function attachmentDrawer({
           onRemove={() => onRemove(index)}
         />
       ))}
-      {pending ? <Thumbnail isLoading alt="Preparing image" /> : null}
+      {pending ? <Thumbnail loading alt="Preparing image" /> : null}
       {files}
     </div>
   );

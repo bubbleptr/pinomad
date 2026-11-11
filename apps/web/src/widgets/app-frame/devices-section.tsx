@@ -1,5 +1,5 @@
 import { Button } from "../../shared/ui/button.tsx";
-import { List, ListItem } from "@astryxdesign/core/List";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "../../shared/ui/item.tsx";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
 import { Switch } from "../../shared/ui/switch.tsx";
 import { useEffect, useMemo, useState } from "react";
@@ -49,7 +49,7 @@ export function DevicesSection({
       {view.devices.length === 0 ? (
         <span className="text-xs/5 text-muted-foreground">No paired devices.</span>
       ) : (
-        <List density="compact">
+        <ItemGroup>
           {view.devices.map((device) => (
             <DeviceRow
               key={device.publicKey}
@@ -59,7 +59,7 @@ export function DevicesSection({
               onUnpair={() => setUnpairing(device)}
             />
           ))}
-        </List>
+        </ItemGroup>
       )}
       {unpairing === undefined ? null : (
         <UnpairDeviceConfirm
@@ -142,24 +142,24 @@ function DeviceRow({
 }) {
   const source = device.source === undefined ? "" : ` ${SOURCE_LABEL[device.source]}`;
   return (
-    <ListItem
-      label={device.name}
-      description={`Paired ${PAIRED_AT.format(device.pairedAt)}${source}`}
-      endContent={
-        <div className="flex items-center gap-2">
-          {isSelf ? <Badge>This device</Badge> : null}
-          <Button
-            aria-label={`Unpair ${device.name}`}
-            variant="secondary"
-            size="sm"
-            disabled={!connected}
-            onClick={onUnpair}
-          >
-            Unpair
-          </Button>
-        </div>
-      }
-    />
+    <Item size="sm" render={<li />}>
+      <ItemContent>
+        <ItemTitle>{device.name}</ItemTitle>
+        <ItemDescription>{`Paired ${PAIRED_AT.format(device.pairedAt)}${source}`}</ItemDescription>
+      </ItemContent>
+      <ItemActions>
+        {isSelf ? <Badge>This device</Badge> : null}
+        <Button
+          aria-label={`Unpair ${device.name}`}
+          variant="secondary"
+          size="sm"
+          disabled={!connected}
+          onClick={onUnpair}
+        >
+          Unpair
+        </Button>
+      </ItemActions>
+    </Item>
   );
 }
 

@@ -1,10 +1,10 @@
-import { Card } from "@astryxdesign/core/Card";
+import { Card } from "./card.tsx";
 import type { ReactNode } from "react";
 
 /**
  * Rows of one kind on a Settings page: an optional title over a bordered box,
- * a divider between rows. Give it a `List hasDividers`, or a `ul` with
- * GROUP_ROWS. The danger tone colors the title for irreversible actions.
+ * a divider between rows. Give it an `ItemGroup` or a `ul` with GROUP_ROWS.
+ * The danger tone colors the title for irreversible actions.
  */
 export function SettingsGroup({
   title,
@@ -24,15 +24,15 @@ export function SettingsGroup({
       ) : (
         <h4 className="text-sm/5 font-bold">{title}</h4>
       )}
-      <Card padding={0} style={{ overflow: "hidden" }}>
+      <Card className="gap-0 py-0">
         {children}
       </Card>
     </div>
   );
 }
 
-/** A hand-built row list inside a SettingsGroup: the dividers `List hasDividers` draws. */
-export const GROUP_ROWS = "m-0 flex list-none flex-col p-0 divide-y divide-[var(--color-border)]";
+/** The rows of a SettingsGroup, a divider between each: put it on the `ItemGroup` or `ul`. */
+export const GROUP_ROWS = "m-0 flex list-none flex-col gap-0 p-0 divide-y divide-[var(--color-border)] *:rounded-none";
 
 /**
  * One setting in a SettingsGroup: what it is on the left, its control on the

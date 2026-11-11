@@ -1,10 +1,9 @@
 import { Button } from "../../shared/ui/button.tsx";
-import { Collapsible } from "@astryxdesign/core/Collapsible";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../shared/ui/collapsible.tsx";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
-import { Item } from "@astryxdesign/core/Item";
-import { List, ListItem } from "@astryxdesign/core/List";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "../../shared/ui/item.tsx";
 import { SegmentedControl, SegmentedControlItem } from "../../shared/ui/segmented-control.tsx";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { hostLabels, type StoredHost } from "@pinomad/client/stored-host.ts";
@@ -328,7 +327,7 @@ export function HostsSection({
         <span className="text-xs/5 text-muted-foreground">No paired hosts.</span>
       ) : (
         <SettingsGroup {...(others.length === 0 && thisMac === undefined ? {} : { title: "Paired with this device" })}>
-          <ul aria-label="Paired with this device" className={GROUP_ROWS}>
+          <ItemGroup aria-label="Paired with this device" className={GROUP_ROWS}>
             {paired.hosts.map((host) => (
               <PairedHostRow
                 key={host.hostKey}
@@ -342,7 +341,7 @@ export function HostsSection({
                 onDetails={() => setDetailKey(host.hostKey)}
               />
             ))}
-          </ul>
+          </ItemGroup>
         </SettingsGroup>
       )}
       {accountState === undefined || others.length === 0 ? null : (
@@ -397,27 +396,27 @@ function PairedHostRow({
       <Badge>Current</Badge>
     ) : null;
   return (
-    <li aria-label={label}>
-      <Item
-        as="div"
-        startContent={<HostStatusDot connected={connected} />}
-        descriptionLines={2}
-        label={label}
-        description={issue === undefined ? status : ACCOUNT_HOST_ISSUE[issue.kind]}
-        endContent={
-          <div className="flex items-center gap-1">
-            {action}
-            <IconButton
-              label={`${label} details`}
-              icon={<ChevronRight aria-hidden="true" />}
-              variant="ghost"
-              size="sm"
-              onClick={onDetails}
-            />
-          </div>
-        }
-      />
-    </li>
+    <Item render={<li />} aria-label={label}>
+      <ItemMedia>
+        <HostStatusDot connected={connected} />
+      </ItemMedia>
+      <ItemContent>
+        <ItemTitle>{label}</ItemTitle>
+        <ItemDescription className="line-clamp-2 whitespace-normal">
+          {issue === undefined ? status : ACCOUNT_HOST_ISSUE[issue.kind]}
+        </ItemDescription>
+      </ItemContent>
+      <ItemActions className="gap-1">
+        {action}
+        <IconButton
+          label={`${label} details`}
+          icon={<ChevronRight aria-hidden="true" />}
+          variant="ghost"
+          size="sm"
+          onClick={onDetails}
+        />
+      </ItemActions>
+    </Item>
   );
 }
 
@@ -519,52 +518,52 @@ function HostDetail({
       </div>
       {connected ? (
         <SettingsGroup title="Status">
-          <List hasDividers aria-label="Status">
-            <ListItem
-              label="Path"
-              description={
-                <div className="flex flex-col gap-1">
+          <ItemGroup aria-label="Status" className={GROUP_ROWS}>
+            <Item render={<li />}>
+              <ItemContent>
+                <ItemTitle>Path</ItemTitle>
+                <ItemDescription className="overflow-visible whitespace-normal flex flex-col gap-1">
                   <span>{diagnostics === undefined ? "—" : pathLabel(diagnostics)}</span>
                   {diagnostics?.path === "p2p" && diagnostics.selectedPair !== undefined ? (
-                    <Collapsible
-                      defaultIsOpen={false}
-                      trigger={
-                        <span className="block min-h-11 py-3 text-xs leading-[1.4286] font-normal text-muted-foreground">
-                          Show addresses
-                        </span>
-                      }
-                    >
-                      <div className="flex flex-col gap-1">
+                    <Collapsible>
+                      <CollapsibleTrigger>
+                        <span className="block min-h-11 py-3 text-xs/5 text-muted-foreground">Show addresses</span>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="flex flex-col gap-1">
                         <AddressRow label="This device" end={diagnostics.selectedPair.local} />
                         <AddressRow label="Host" end={diagnostics.selectedPair.remote} />
-                      </div>
+                      </CollapsibleContent>
                     </Collapsible>
                   ) : null}
-                </div>
-              }
-            />
-            <ListItem
-              label="Peer-to-peer"
-              description={p2pStatus({
-                diagnostics,
-                mode,
-                hostMinor,
-                rtcAvailable,
-                connectedSince: connectedSince.current,
-              })}
-            />
+                </ItemDescription>
+              </ItemContent>
+            </Item>
+            <Item render={<li />}>
+              <ItemContent>
+                <ItemTitle>Peer-to-peer</ItemTitle>
+                <ItemDescription>
+                  {p2pStatus({
+                    diagnostics,
+                    mode,
+                    hostMinor,
+                    rtcAvailable,
+                    connectedSince: connectedSince.current,
+                  })}
+                </ItemDescription>
+              </ItemContent>
+            </Item>
             {diagnostics?.lastFailure === undefined ? null : (
-              <ListItem
-                label="Last failure"
-                // A node wraps instead of truncating; the age ticks every second.
-                description={
-                  <span className="tabular-nums">
+              <Item render={<li />}>
+                <ItemContent>
+                  <ItemTitle>Last failure</ItemTitle>
+                  {/* Wraps instead of truncating; the age ticks every second. */}
+                  <ItemDescription className="overflow-visible whitespace-normal tabular-nums">
                     {failureLabel(diagnostics.lastFailure)}
-                  </span>
-                }
-              />
+                  </ItemDescription>
+                </ItemContent>
+              </Item>
             )}
-          </List>
+          </ItemGroup>
         </SettingsGroup>
       ) : null}
       <div className="flex flex-col gap-1">

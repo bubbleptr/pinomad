@@ -1,11 +1,11 @@
 import { Button } from "../../shared/ui/button.tsx";
-import { Card } from "@astryxdesign/core/Card";
+import { Card, CardContent } from "../../shared/ui/card.tsx";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
-import { List, ListItem } from "@astryxdesign/core/List";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "../../shared/ui/item.tsx";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
 import { Field, FieldLabel } from "../../shared/ui/field.tsx";
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "../../shared/ui/input-group.tsx";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { HostProviders, LoginMethod, ProviderInfo, StoredLogin } from "@pinomad/protocol/auth.ts";
 import { hostSupportsCall } from "@pinomad/protocol/frames.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -193,30 +193,38 @@ function Home({ providers, connected, go }: { providers: readonly ProviderInfo[]
     .map((id) => keyed.find((provider) => provider.id === id))
     .filter((provider) => provider !== undefined);
   const keyLogos = featured.length > 0 ? featured : keyed.slice(0, 5);
+  const connectedId = useId();
   return (
     <div className="flex flex-col gap-6">
       {linked.length > 0 ? (
-        <List
-          density="compact"
-          header={
-            <span className="text-xs/5 font-semibold text-muted-foreground">
-              Connected
-            </span>
-          }
-        >
+        <div className="flex flex-col">
+          <div id={connectedId} className="mb-2">
+            <span className="text-xs/5 font-semibold text-muted-foreground">Connected</span>
+          </div>
+          <ItemGroup aria-labelledby={connectedId}>
             {linked.map((provider) => (
-              <ListItem
-                key={provider.id}
-                label={provider.name}
-                description={credentialLine(provider)}
-                startContent={<ProviderLogo providerId={provider.id} name={provider.name} baseUrl={provider.custom?.baseUrl} />}
-                endContent={chevron}
-                onClick={() =>
-                  go(provider.custom === undefined ? { at: "provider", id: provider.id, from: HOME } : { at: "custom", id: provider.id })
-                }
-              />
-          ))}
-        </List>
+              <Item key={provider.id} size="sm" render={<li />}>
+                <ItemMedia>
+                  <ProviderLogo providerId={provider.id} name={provider.name} baseUrl={provider.custom?.baseUrl} />
+                </ItemMedia>
+                <ItemContent
+                  render={
+                    <button
+                      type="button"
+                      onClick={() =>
+                        go(provider.custom === undefined ? { at: "provider", id: provider.id, from: HOME } : { at: "custom", id: provider.id })
+                      }
+                    />
+                  }
+                >
+                  <ItemTitle>{provider.name}</ItemTitle>
+                  <ItemDescription>{credentialLine(provider)}</ItemDescription>
+                </ItemContent>
+                <ItemActions>{chevron}</ItemActions>
+              </Item>
+            ))}
+          </ItemGroup>
+        </div>
       ) : null}
       <div className="flex flex-col gap-2">
         <span className="text-xs/5 font-semibold text-muted-foreground">
@@ -602,41 +610,43 @@ const storedLoginLine = (login: StoredLogin): string =>
 function StoredLoginCard({ login, connected, remote }: { login: StoredLogin; connected: boolean; remote: RemoteDurable }) {
   const [confirming, setConfirming] = useState(false);
   return (
-    <Card padding={4}>
-      <div className="flex items-start gap-3">
-        <ProviderLogo providerId={login.providerId} name={login.name} />
-        <div className="flex flex-col gap-1" style={{ flex: 1, minInlineSize: 0 }}>
-          <h3 className="text-[1.0625rem]/6 font-bold">{login.name}</h3>
-          <p className="text-xs/5 text-muted-foreground">{storedLoginLine(login)}</p>
-        </div>
-        {confirming ? null : (
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              disabled={!connected}
-              render={<IconButton icon={<MoreHorizontal aria-hidden="true" />} label={`${login.name} actions`} tooltip={`${login.name} actions`} size="sm" />}
-            />
-            <DropdownMenuContent>
-              <DropdownMenuItem onClick={() => setConfirming(true)}>Log out</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-      </div>
-      {confirming ? (
-        <div className="flex flex-col gap-2" style={{ marginBlockStart: "var(--spacing-4)" }}>
-          <p className="text-xs/5 text-muted-foreground">{`Removes the stored ${login.name} credential from the host.`}</p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={!connected}
-              onClick={() => void remote.controller.logout(login.providerId)}
-            >
-              Log out
-            </Button>
-            <Button variant="secondary" size="sm" onClick={() => setConfirming(false)}>Cancel</Button>
+    <Card>
+      <CardContent>
+        <div className="flex items-start gap-3">
+          <ProviderLogo providerId={login.providerId} name={login.name} />
+          <div className="flex flex-col gap-1" style={{ flex: 1, minInlineSize: 0 }}>
+            <h3 className="text-[1.0625rem]/6 font-bold">{login.name}</h3>
+            <p className="text-xs/5 text-muted-foreground">{storedLoginLine(login)}</p>
           </div>
+          {confirming ? null : (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                disabled={!connected}
+                render={<IconButton icon={<MoreHorizontal aria-hidden="true" />} label={`${login.name} actions`} tooltip={`${login.name} actions`} size="sm" />}
+              />
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={() => setConfirming(true)}>Log out</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
-      ) : null}
+        {confirming ? (
+          <div className="flex flex-col gap-2" style={{ marginBlockStart: "var(--spacing-4)" }}>
+            <p className="text-xs/5 text-muted-foreground">{`Removes the stored ${login.name} credential from the host.`}</p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={!connected}
+                onClick={() => void remote.controller.logout(login.providerId)}
+              >
+                Log out
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setConfirming(false)}>Cancel</Button>
+            </div>
+          </div>
+        ) : null}
+      </CardContent>
     </Card>
   );
 }

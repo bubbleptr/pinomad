@@ -3,13 +3,13 @@ import { describe, expect, it } from "vitest";
 import { ChatCodeBlock } from "@/shared/ui/chat/chat-code-block";
 
 describe("ChatCodeBlock", () => {
-  it("renders code through the Astryx CodeBlock", () => {
+  it("renders code through CodeBlock", () => {
     render(<ChatCodeBlock code={'const answer = 42;'} language="ts" />);
 
     const root = screen.getByTestId("chat-code-block");
 
     expect(root).toHaveAttribute("data-slot", "chat-code-block");
-    expect(root.querySelector(".astryx-codeblock")).toBeInTheDocument();
+    expect(root.querySelector('[data-slot="code-block"]')).toBeInTheDocument();
     expect(root).toHaveTextContent("const answer = 42;");
   });
 
@@ -25,7 +25,7 @@ describe("ChatCodeBlock", () => {
     expect(screen.getByTestId("chat-code-block")).toHaveTextContent("no language");
   });
 
-  it("exposes the Astryx copy button", () => {
+  it("exposes the copy button", () => {
     render(<ChatCodeBlock code="copy me" />);
 
     expect(screen.getByRole("button", { name: /copy/i })).toBeInTheDocument();

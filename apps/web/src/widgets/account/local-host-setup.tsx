@@ -1,5 +1,5 @@
 import { Button } from "../../shared/ui/button.tsx";
-import { CodeBlock } from "@astryxdesign/core/CodeBlock";
+import { CodeBlock } from "@/shared/ui/code-block/code-block";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { useSetupRun, type MintToken } from "../../entities/local-host/setup-run.ts";

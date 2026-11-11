@@ -1,5 +1,4 @@
 import { Button } from "../../shared/ui/button.tsx";
-import { MetadataList, MetadataListItem } from "@astryxdesign/core/MetadataList";
 import { Field, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui/tooltip.tsx";
@@ -306,17 +305,21 @@ export function HostLinkConfirm({
           <AlertDescription>{`The host asked from ${request.sourceIp}. If you aren't setting it up on another network yourself, deny it.`}</AlertDescription>
         </Alert>
       ) : null}
-      <MetadataList>
-        <MetadataListItem label="Name">
+      <dl className="m-0 grid grid-cols-[auto_1fr] items-baseline gap-x-4 gap-y-2 text-sm/5 *:min-h-6 [&>dd]:m-0 [&>dd]:break-words [&>dt]:flex [&>dt]:items-center [&>dt]:font-medium [&>dt]:text-muted-foreground">
+        <dt>Name</dt>
+        <dd>
           <span className="text-sm/5 font-semibold">{request.name}</span>
-        </MetadataListItem>
-        <MetadataListItem label="System">
+        </dd>
+        <dt>System</dt>
+        <dd>
           <span className="text-sm/5">{request.os}</span>
-        </MetadataListItem>
-        <MetadataListItem label="Asked from">
+        </dd>
+        <dt>Asked from</dt>
+        <dd>
           <span className="font-mono text-sm/5">{request.sourceIp}</span>
-        </MetadataListItem>
-        <MetadataListItem label="Host ID">
+        </dd>
+        <dt>Host ID</dt>
+        <dd>
           <div className="flex flex-wrap items-center gap-2">
             <Tooltip>
               {/* Focusable so keyboard users reach the full id too. */}
@@ -336,8 +339,8 @@ export function HostLinkConfirm({
               {copied ? "Copied" : "Copy"}
             </Button>
           </div>
-        </MetadataListItem>
-      </MetadataList>
+        </dd>
+      </dl>
       {expired ? (
         <Alert variant="warning">
           <AlertTitle>This request has expired</AlertTitle>

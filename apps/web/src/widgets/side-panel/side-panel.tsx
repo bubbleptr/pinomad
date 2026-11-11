@@ -8,9 +8,9 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogContent } from "@/shared/ui/dialog";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
-import { List, ListItem } from "@astryxdesign/core/List";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "../../shared/ui/item.tsx";
 import { ResizeHandle, useResizable } from "@astryxdesign/core/Resizable";
-import { Suspense, useEffect, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useId, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { findConversation } from "@pinomad/protocol/organization.ts";
 import type { ProcessListState, RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -247,18 +247,7 @@ function TasksSurface({
           ) : (
             <>
               {groups.map((group) => (
-                <List
-                  key={group.owner.id}
-                  density="compact"
-                  header={
-                    // List renders headers bare — pad to sit on the rows' text edge.
-                    <div className="px-3 pt-2">
-                      <span className="text-sm/5 font-semibold">
-                        {group.label}
-                      </span>
-                    </div>
-                  }
-                >
+                <RowGroup key={group.owner.id} label={group.label}>
                   {group.tasks.map((node) => (
                     <SideRow
                       key={node.summary.id}
@@ -267,7 +256,7 @@ function TasksSurface({
                       onOpen={() => openInPanel(node.summary.id)}
                     />
                   ))}
-                </List>
+                </RowGroup>
               ))}
               {processRows.length === 0 ? null : (
                 <ProcessGroup processes={processRows} onOpen={openProcess} />
@@ -275,6 +264,20 @@ function TasksSurface({
             </>
           )}
       </Scrollable>
+    </div>
+  );
+}
+
+/** A titled run of rows; the title names the list. */
+function RowGroup({ label, children }: { label: string; children: ReactNode }) {
+  const id = useId();
+  return (
+    <div className="flex flex-col">
+      {/* Padded to sit on the rows' text edge. */}
+      <div id={id} className="mb-2 px-3 pt-2">
+        <span className="text-sm/5 font-semibold">{label}</span>
+      </div>
+      <ItemGroup aria-labelledby={id}>{children}</ItemGroup>
     </div>
   );
 }
@@ -294,23 +297,26 @@ function SideRow({
   onOpen: () => void;
 }) {
   return (
-    <ListItem
-      label={conversationName(summary)}
-      description={
-        summary.status === "running" && summary.activity !== undefined
-          ? `→ ${toolDisplayName(summary.activity.tool) ?? summary.activity.tool}${summary.activity.target === undefined ? "" : ` ${summary.activity.target}`}`
-          : undefined
-      }
-      startContent={<StatusGlyph status={summary.status} />}
-      endContent={
-        summary.updatedAt === undefined ? undefined : (
+    <Item size="sm" render={<li />}>
+      <ItemMedia>
+        <StatusGlyph status={summary.status} />
+      </ItemMedia>
+      <ItemContent render={<button type="button" onClick={onOpen} />}>
+        <ItemTitle>{conversationName(summary)}</ItemTitle>
+        {summary.status === "running" && summary.activity !== undefined ? (
+          <ItemDescription>
+            {`→ ${toolDisplayName(summary.activity.tool) ?? summary.activity.tool}${summary.activity.target === undefined ? "" : ` ${summary.activity.target}`}`}
+          </ItemDescription>
+        ) : null}
+      </ItemContent>
+      {summary.updatedAt === undefined ? null : (
+        <ItemActions>
           <span aria-hidden="true" className="text-xs text-muted-foreground">
             {relativeTime(summary.updatedAt, now)}
           </span>
-        )
-      }
-      onClick={onOpen}
-    />
+        </ItemActions>
+      )}
+    </Item>
   );
 }
 
@@ -372,41 +378,33 @@ function processResultText(state: ProcessState): string {
 /** A process row: status, name (and command when it differs), duration or result. */
 function ProcessRow({ process, onOpen }: { process: ProcessInfo; onOpen: () => void }) {
   return (
-    <ListItem
-      label={process.name}
-      description={
-        process.name === process.command ? undefined : (
-          <span className="block truncate font-mono">{process.command}</span>
-        )
-      }
-      startContent={<ProcessGlyph state={process.state} />}
-      endContent={
+    <Item size="sm" render={<li />}>
+      <ItemMedia>
+        <ProcessGlyph state={process.state} />
+      </ItemMedia>
+      <ItemContent render={<button type="button" onClick={onOpen} />}>
+        <ItemTitle>{process.name}</ItemTitle>
+        {process.name === process.command ? null : (
+          <ItemDescription className="font-mono">{process.command}</ItemDescription>
+        )}
+      </ItemContent>
+      <ItemActions>
         <span aria-hidden="true" className="text-xs text-muted-foreground tabular-nums">
           {isProcessActive(process.state) ? <ProcessDuration startedAt={process.startedAt} /> : processResultText(process.state)}
         </span>
-      }
-      onClick={onOpen}
-    />
+      </ItemActions>
+    </Item>
   );
 }
 
 /** The family's processes beside its Foreground subagent groups. */
 function ProcessGroup({ processes, onOpen }: { processes: readonly ProcessInfo[]; onOpen: (id: ProcessId) => void }) {
   return (
-    <List
-      density="compact"
-      header={
-        <div className="px-3 pt-2">
-          <span className="text-sm/5 font-semibold">
-            Processes
-          </span>
-        </div>
-      }
-    >
+    <RowGroup label="Processes">
       {orderedProcesses(processes).map((process) => (
         <ProcessRow key={process.id} process={process} onOpen={() => onOpen(process.id)} />
       ))}
-    </List>
+    </RowGroup>
   );
 }
 

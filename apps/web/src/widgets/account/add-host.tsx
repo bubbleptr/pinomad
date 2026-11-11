@@ -1,6 +1,6 @@
 import { Button } from "../../shared/ui/button.tsx";
-import { CodeBlock } from "@astryxdesign/core/CodeBlock";
-import { Collapsible } from "@astryxdesign/core/Collapsible";
+import { CodeBlock } from "@/shared/ui/code-block/code-block";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/shared/ui/collapsible";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { useState } from "react";
 import type { AccountError, JoinToken } from "@pinomad/client/account.ts";
@@ -73,12 +73,11 @@ function TokenCommand() {
     if (next && token === undefined && !busy) create();
   };
   return (
-    <Collapsible
-      trigger={<span className="text-xs/5 font-normal text-muted-foreground">Advanced: join with a one-time token</span>}
-      isOpen={open}
-      onOpenChange={toggle}
-    >
-      <div className="flex flex-col gap-2">
+    <Collapsible open={open} onOpenChange={toggle}>
+      <CollapsibleTrigger>
+        <span className="text-xs/5 text-muted-foreground">Advanced: join with a one-time token</span>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="flex flex-col gap-2">
         <span className="text-xs/5 text-muted-foreground">For scripts: this command joins without a code to confirm. Anyone who has it can add a host.</span>
         {token === undefined ? (
           error === undefined ? (
@@ -102,7 +101,7 @@ function TokenCommand() {
             <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
           </Alert>
         ) : null}
-      </div>
+      </CollapsibleContent>
     </Collapsible>
   );
 }

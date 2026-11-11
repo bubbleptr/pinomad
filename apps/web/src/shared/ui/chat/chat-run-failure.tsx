@@ -1,6 +1,6 @@
 import { useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { Button } from "../button.tsx";
-import { Collapsible } from "@astryxdesign/core/Collapsible";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../collapsible.tsx";
 import { cn } from "cn";
 import { classifyProviderFailure } from "@pinomad/client/provider-failure.ts";
 import { Alert, AlertDescription, AlertTitle } from "../alert.tsx";
@@ -89,16 +89,15 @@ export function ChatRunFailure({
       {retryError ? (
         <span className="text-sm/5" role="alert" style={{ color: "var(--destructive)" }}>{retryError}</span>
       ) : null}
-      <Collapsible
-        trigger={<span className="text-xs leading-[1.4286] font-normal text-muted-foreground">Error details</span>}
-        isOpen={detailsOpen}
-        onOpenChange={setDetailsOpen}
-      >
-        {detailsOpen ? (
-          <div className="text-xs leading-[1.4286]" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+      <Collapsible open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <CollapsibleTrigger>
+          <span className="text-xs/5 text-muted-foreground">Error details</span>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="text-xs/5" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
             {error}
           </div>
-        ) : null}
+        </CollapsibleContent>
       </Collapsible>
     </div>
   );

@@ -55,13 +55,12 @@
   overflow-wrap: anywhere;
 }
 
-/* Astryx body leading is 1.4286 (14px -> 20px), tuned for UI labels. Chat
-   prose mixes bold, links, and inline code chips across wrapped lines, so
-   it reads like GitHub/Tailwind prose: a looser 1.6 leaves the code chip
-   room above and below instead of touching the neighbouring line.
-   !important matches Astryx StyleX's :not(#\#) specificity. */
-.chat-markdown .astryx-markdown {
-  line-height: 1.6 !important;
+/* Markdown's body leading is 1.4286 (14px -> 20px), tuned for UI labels.
+   Chat prose mixes bold, links, and inline code chips across wrapped lines,
+   so it reads like GitHub/Tailwind prose: a looser 1.6 leaves the code chip
+   room above and below instead of touching the neighbouring line. */
+.chat-markdown [data-slot="markdown"] {
+  line-height: 1.6;
 }
 
 /* Inline code sized to the text around it, a touch smaller: Geist Mono's
@@ -69,59 +68,58 @@
    lowercase up (13px in 14px body, and it follows headings). The smaller
    chip with 1px vertical padding keeps 3-4px of air inside the 1.6 line box. */
 .chat-markdown .chat-inline-code {
-  font-size: 0.93em !important;
-  padding-block: 1px !important;
+  font-size: 0.93em;
+  padding-block: 1px;
 }
 
-.chat-markdown .astryx-markdown-heading {
+.chat-markdown [data-slot="markdown-heading"] {
   font-family: inherit;
 }
 
 /* styles.css flattens every weight under .pigui-app-layout to 400 for the
-   side nav; that also erased **bold** in assistant answers (Astryx's own
-   strong rule has the same specificity and loses on order). Restore it. */
+   side nav; that also erased **bold** in assistant answers (Markdown's
+   font-semibold utility is layered and loses to it). Restore it. */
 .chat-markdown :is(strong, b) {
   font-weight: var(--font-weight-semibold);
 }
 
-.chat-markdown .astryx-markdown-heading[data-level="3"] {
+.chat-markdown [data-slot="markdown-heading"][data-level="3"] {
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-semibold);
   line-height: 1.4;
 }
 
-.chat-markdown .astryx-markdown-heading[data-level="4"] {
+.chat-markdown [data-slot="markdown-heading"][data-level="4"] {
   font-size: var(--text-transcript-size);
   font-weight: var(--font-weight-semibold);
   line-height: inherit;
 }
 
-.chat-markdown .astryx-markdown-heading[data-level="5"],
-.chat-markdown .astryx-markdown-heading[data-level="6"] {
+.chat-markdown [data-slot="markdown-heading"][data-level="5"],
+.chat-markdown [data-slot="markdown-heading"][data-level="6"] {
   font-size: var(--text-transcript-size);
   font-weight: var(--font-weight-medium);
   line-height: inherit;
 }
 
-/* Astryx compact density gives paragraphs only --spacing-1 (4px) block
-   margins, which collapse to less than the inter-line gap — consecutive
-   paragraphs visually merge. Restore a clear break between adjacent
-   paragraphs; first/last block margins stay Astryx's. !important matches
-   Astryx StyleX's :not(#\#) specificity. */
-.chat-markdown .astryx-markdown-paragraph + .astryx-markdown-paragraph {
-  margin-block-start: var(--spacing-3) !important;
+/* Compact density gives paragraphs only --spacing-1 (4px) block margins,
+   which collapse to less than the inter-line gap — consecutive paragraphs
+   visually merge. Restore a clear break between adjacent paragraphs;
+   first/last block margins stay Markdown's. */
+.chat-markdown [data-slot="markdown-paragraph"] + [data-slot="markdown-paragraph"] {
+  margin-block-start: var(--spacing-3);
 }
 
 /* Chat convention (GFM breaks mode, as in ChatGPT/GitHub): a single \n in
    model output is an intentional line break, not a collapsible space.
    pre-line renders newlines as breaks while still collapsing spaces. */
-.chat-markdown .astryx-markdown-paragraph {
+.chat-markdown [data-slot="markdown-paragraph"] {
   white-space: pre-line;
 }
 
 /* A file link renders as a compact reference (icon + basename[:line]) — a
    long relative path as link text would wrap awkwardly and bury the point.
-   The accent colour is the one Astryx markdown links use; no resting
+   The accent colour is the one Markdown links use; no resting
    underline, the leading file icon already marks it as a link. display stays
    inline so the chip wraps inside a paragraph like any other text. */
 .chat-markdown .chat-file-link {
@@ -193,8 +191,8 @@ mark.chat-skill-mention {
 
 /* —— Code block —— */
 
-/* Surface, copy button, and highlighting are owned by Astryx CodeBlock;
-   the wrapper only keeps the block in the chat flow. */
+/* Surface, copy button, and highlighting are owned by CodeBlock; the
+   wrapper only keeps the block in the chat flow. */
 .chat-code-block {
   min-width: 0;
   margin-block: var(--spacing-2);
@@ -218,7 +216,7 @@ mark.chat-skill-mention {
 
 /* Astryx ChatMessage roots at 16px while its bubble and markdown sit at
    --text-body-size (14px). Point both at the transcript reading size the
-   composer also uses; markdown reads --text-body-size through StyleX. */
+   composer also uses; Markdown reads --text-body-size for its body size. */
 .chat-message__content {
   --text-body-size: var(--text-transcript-size);
   min-width: 0;

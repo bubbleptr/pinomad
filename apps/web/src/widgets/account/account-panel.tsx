@@ -3,7 +3,7 @@ import { Button } from "../../shared/ui/button.tsx";
 import { Checkbox } from "../../shared/ui/checkbox.tsx";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
-import { List, ListItem } from "@astryxdesign/core/List";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "../../shared/ui/item.tsx";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
 import { type ReactNode, useEffect, useState } from "react";
 import type {
@@ -509,7 +509,7 @@ function Devices({ account, hosts }: { account: AccountModel; hosts: readonly Ac
         ) : null
       ) : (
         <SettingsGroup title="Signed-in devices">
-          <List hasDividers aria-label="Signed-in devices">
+          <ItemGroup aria-label="Signed-in devices" className={GROUP_ROWS}>
           {devices.map((device) => (
             <DeviceRow
               key={device.id}
@@ -519,7 +519,7 @@ function Devices({ account, hosts }: { account: AccountModel; hosts: readonly Ac
               onRemove={() => setRemoving(device)}
             />
           ))}
-          </List>
+          </ItemGroup>
         </SettingsGroup>
       )}
       {removing === undefined ? null : (
@@ -566,10 +566,10 @@ function DeviceRow({
     </DropdownMenu>
   );
   return (
-    <ListItem
-      label={name}
-      description={
-        <div className="flex flex-col">
+    <Item render={<li />}>
+      <ItemContent>
+        <ItemTitle>{name}</ItemTitle>
+        <ItemDescription className="overflow-visible whitespace-normal flex flex-col">
           <span>
             {device.kickedAt === undefined ? signIn : `${signIn} · removed ${ago(device.kickedAt, now)}`}
           </span>
@@ -578,10 +578,10 @@ function DeviceRow({
               {device.hosts.map((host) => `${host.name}: ${DEVICE_HOST_STATE[host.state]}`).join(" · ")}
             </span>
           )}
-        </div>
-      }
-      endContent={end}
-    />
+        </ItemDescription>
+      </ItemContent>
+      <ItemActions>{end}</ItemActions>
+    </Item>
   );
 }
 

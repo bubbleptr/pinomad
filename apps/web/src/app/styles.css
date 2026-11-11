@@ -250,16 +250,15 @@ body {
 }
 
 /* One inset for every row in a Settings card, the SettingsRow's spacing-4:
-   Astryx's Item pads 8px, so list rows (hosts, account, archived, details)
-   sat closer to the edge than the setting rows beside them. A trailing
+   Item pads 8px, so list rows (hosts, account, archived, details) would sit
+   closer to the edge than the setting rows beside them. A trailing
    icon-only button keeps 6px of hit area around its glyph; pulled out by that
    much, the glyph lines up with the right inset as the text does with the
    left. "Trailing" ignores the tooltip and menu popovers rendered after it. */
-.pigui-settings .astryx-card .astryx-item:not(#\#):not(#\#):not(#\#) {
+.pigui-settings [data-slot="card"] [data-slot="item"] {
   padding-inline: var(--spacing-4);
 }
-.pigui-settings .astryx-card .astryx-button.ghost[data-size="sm"]:has(> span:first-child > span:only-child > svg:only-child):not(:has(~ :not([popover]))):not(#\#):not(#\#):not(#\#),
-.pigui-settings .astryx-card [data-slot="button"][data-variant="ghost"][data-size="icon-sm"]:not(:has(~ :not([popover]))) {
+.pigui-settings [data-slot="card"] [data-slot="button"][data-variant="ghost"][data-size="icon-sm"]:not(:has(~ :not([popover]))) {
   margin-inline-end: -6px;
 }
 

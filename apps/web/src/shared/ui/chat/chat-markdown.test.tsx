@@ -5,13 +5,13 @@ import { describe, expect, it } from "vitest";
 import { ChatMarkdown, ChatStreamMarkdown } from "@/shared/ui/chat/chat-markdown";
 
 describe("ChatMarkdown", () => {
-  it("renders markdown children as rich text through Astryx Markdown", () => {
+  it("renders markdown children as rich text through Markdown", () => {
     render(<ChatMarkdown>{"Some **bold** text"}</ChatMarkdown>);
 
     const root = screen.getByTestId("markdown-renderer");
 
     expect(root).toHaveAttribute("data-slot", "chat-markdown");
-    expect(root.querySelector(".astryx-markdown")).toBeInTheDocument();
+    expect(root.querySelector('[data-slot="markdown"]')).toBeInTheDocument();
     expect(screen.getByText("bold").tagName).toBe("STRONG");
   });
 
@@ -21,13 +21,13 @@ describe("ChatMarkdown", () => {
     expect(screen.getByRole("table")).toBeInTheDocument();
   });
 
-  it("renders fenced code with the Astryx built-in code block, not ChatCodeBlock", () => {
+  it("renders fenced code with Markdown's own code block, not ChatCodeBlock", () => {
     const { container } = render(
       <ChatMarkdown>{"```ts\nconst x = 1;\n```"}</ChatMarkdown>,
     );
 
     expect(screen.queryByTestId("chat-code-block")).not.toBeInTheDocument();
-    expect(container.querySelector(".astryx-markdown-codeblock")).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="markdown-codeblock"]')).toBeInTheDocument();
   });
 
   it("demotes markdown headings so they sit under the page title", () => {
@@ -50,9 +50,9 @@ describe("ChatMarkdown", () => {
       "utf8",
     );
 
-    expect(styles).toContain(".chat-markdown .astryx-markdown-heading[data-level=\"3\"]");
-    expect(styles).toContain(".chat-markdown .astryx-markdown-heading[data-level=\"4\"]");
-    expect(styles).toContain(".chat-markdown .astryx-markdown-heading[data-level=\"5\"]");
+    expect(styles).toContain('.chat-markdown [data-slot="markdown-heading"][data-level="3"]');
+    expect(styles).toContain('.chat-markdown [data-slot="markdown-heading"][data-level="4"]');
+    expect(styles).toContain('.chat-markdown [data-slot="markdown-heading"][data-level="5"]');
     expect(styles).toContain("font-size: var(--font-size-lg);");
     expect(styles).toContain("font-size: var(--font-size-base);");
     expect(styles).toContain("font-weight: var(--font-weight-semibold);");
@@ -69,7 +69,7 @@ describe("ChatStreamMarkdown", () => {
     const root = screen.getByTestId("stream-markdown-renderer");
 
     expect(root).toHaveAttribute("data-is-streaming", "true");
-    // Astryx incremental parsing reveals streamed chunks asynchronously.
+    // Markdown's incremental parsing reveals streamed chunks asynchronously.
     await waitFor(() => expect(root).toHaveTextContent("Streaming now"));
     expect(container.querySelector(".chat-markdown__caret")).not.toBeInTheDocument();
   });

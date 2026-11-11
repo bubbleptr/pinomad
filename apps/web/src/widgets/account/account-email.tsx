@@ -1,6 +1,6 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
-import { List, ListItem } from "@astryxdesign/core/List";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "../../shared/ui/item.tsx";
 import { Field, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { useEffect, useRef, useState } from "react";
@@ -155,11 +155,13 @@ export function AccountEmail({ account, email }: { account: AccountModel; email:
   return (
     <div className="flex flex-col gap-2">
       <SettingsGroup title="Email">
-      <List aria-label="Email">
-        <ListItem
-          label={email ?? "None yet"}
-          {...(changed ? { description: "Email saved." } : {})}
-          endContent={
+      <ItemGroup>
+        <Item render={<li />}>
+          <ItemContent>
+            <ItemTitle>{email ?? "None yet"}</ItemTitle>
+            {changed ? <ItemDescription>Email saved.</ItemDescription> : null}
+          </ItemContent>
+          <ItemActions>
             <Button
               aria-label={title}
               variant="secondary"
@@ -171,9 +173,9 @@ export function AccountEmail({ account, email }: { account: AccountModel; email:
             >
               {email === undefined ? "Add" : "Change"}
             </Button>
-          }
-        />
-      </List>
+          </ItemActions>
+        </Item>
+      </ItemGroup>
       </SettingsGroup>
       {open ? (
         <Dialog open onOpenChange={(next) => (next ? undefined : setOpen(false))} disablePointerDismissal>
