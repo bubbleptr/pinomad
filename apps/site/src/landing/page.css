@@ -42,7 +42,6 @@
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
-  --ease-reveal: cubic-bezier(0.215, 0.61, 0.355, 1);
   --font: Montserrat, -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
     "Microsoft YaHei", "Noto Sans CJK SC", "Segoe UI", sans-serif;
   /* Chinese headlines fall back to a Song face; Windows has none worth setting this
@@ -313,7 +312,7 @@ html[lang="zh-CN"] h2 {
 }
 
 .lead {
-  max-width: 34rem;
+  max-width: 38rem;
   font-size: clamp(1.05rem, 1.6vw, 1.2rem);
 }
 
@@ -443,7 +442,7 @@ html[lang="zh-CN"] .eyebrow {
 
 /* —— Hero: the headline on the mist, then the app on a blue stage —— */
 .hero {
-  padding-top: clamp(4.5rem, 11vw, 8.5rem);
+  padding-top: clamp(2.5rem, 5.5vw, 4.5rem);
   text-align: center;
 }
 
@@ -484,9 +483,10 @@ html[lang="zh-CN"] .eyebrow {
   color: var(--fg-2);
 }
 
-/* Spec line, then the models: the label sits close to its ticker, further from the specs. */
+/* Under the stage: the spec line, then the models. The label sits close to its
+   ticker, further from the specs. */
 .hero-meta {
-  margin-top: 3rem;
+  margin-top: clamp(3rem, 6vw, 4.5rem);
 }
 
 .models {
@@ -553,7 +553,8 @@ html[lang="zh-CN"] .models-label {
 /* Wider than the text column, so the window reads at close to its real size. */
 .hero-stage {
   width: min(100% - 2 * var(--gutter), 90rem);
-  margin: clamp(3rem, 7vw, 5rem) auto 0;
+  /* Close enough to the buttons that the app shows on the first screen. */
+  margin: clamp(2.5rem, 5vw, 4rem) auto 0;
   padding-top: clamp(2.5rem, 7vw, 6.5rem);
   /* clip, not hidden: hidden makes a scroll container, and the app's view()
      timeline would follow this box, which never scrolls, instead of the page. */
@@ -562,6 +563,13 @@ html[lang="zh-CN"] .models-label {
   background: var(--abyss)
     image-set(url("./hero-stage-1000.webp") 1x, url("./hero-stage.webp") 2x)
     center bottom / cover no-repeat;
+}
+
+/* On a short laptop screen the full silver band would push the window below the fold. */
+@media (min-width: 56rem) and (max-height: 50rem) {
+  .hero-stage {
+    padding-top: 2.5rem;
+  }
 }
 
 /* Past 1000px wide the small copy would be stretched even at 1x. */
@@ -615,10 +623,10 @@ html[lang="zh-CN"] .models-label {
   }
 }
 
+/* No fade: the window's top is on the first screen at rest, and shouldn't sit there dimmed. */
 @keyframes rise {
   from {
     transform: perspective(1800px) rotateX(10deg) scale(0.96);
-    opacity: 0.6;
   }
 }
 
@@ -1417,45 +1425,34 @@ html[lang="zh-CN"] .split h2 {
   user-select: none;
 }
 
-/* —— Scroll reveal. useReveal adds .reveal only to blocks that start below the first
-   screen and only without reduced motion, so nothing is hidden without JS; print
-   always shows everything. The transition sits on .is-revealed so hiding is
-   instant and only the reveal animates. —— */
+/* —— Entrance. The first screen comes in once: headline, intro, buttons, then the
+   stage, each a short rise. Plain keyframes, so it plays from the prerendered HTML
+   without waiting for scripts. Nothing below the first screen animates on scroll.
+   Landing sets data-intro-seen once the entrance has finished and app-hint.js sets it
+   on a later load in the same tab, so coming back from the docs doesn't replay it. —— */
 @media screen and (prefers-reduced-motion: no-preference) {
-  /* A long rise out of a soft blur. The curve is GSAP's power3.out. */
-  .reveal:not(.is-revealed),
-  .section-head.reveal:not(.is-revealed) > * {
+  :root:not([data-intro-seen]) .hero :is(h1, .lead, .actions),
+  :root:not([data-intro-seen]) .hero-stage {
+    animation: enter 0.6s var(--ease-out) both;
+  }
+
+  :root:not([data-intro-seen]) .hero .lead {
+    animation-delay: 70ms;
+  }
+
+  :root:not([data-intro-seen]) .hero .actions {
+    animation-delay: 140ms;
+  }
+
+  :root:not([data-intro-seen]) .hero-stage {
+    animation-delay: 210ms;
+  }
+}
+
+@keyframes enter {
+  from {
     opacity: 0;
-    translate: 0 3.5rem;
-    filter: blur(6px);
-  }
-
-  .reveal.is-revealed,
-  .section-head.reveal.is-revealed > * {
-    transition:
-      opacity 0.8s var(--ease-reveal),
-      translate 0.8s var(--ease-reveal),
-      filter 0.8s var(--ease-reveal);
-  }
-
-  /* A section's heading comes in a line at a time: label, title, intro, the rest. The
-     head itself stays put so its children's offsets don't add up. */
-  .section-head.reveal:not(.is-revealed) {
-    opacity: 1;
-    translate: none;
-    filter: none;
-  }
-
-  .section-head.reveal.is-revealed > :nth-child(2) {
-    transition-delay: 80ms;
-  }
-
-  .section-head.reveal.is-revealed > :nth-child(3) {
-    transition-delay: 160ms;
-  }
-
-  .section-head.reveal.is-revealed > :nth-child(n + 4) {
-    transition-delay: 240ms;
+    translate: 0 0.5rem;
   }
 }
 

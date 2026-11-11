@@ -1,4 +1,4 @@
-import { type RefObject, useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { SiteHeader } from "@/components/site-header.tsx";
 import { localized, type Lang } from "@/lib/i18n.ts";
 import { otherLanguage } from "@/lib/nav.ts";
@@ -9,10 +9,9 @@ import { SiteFooter } from "./site-footer.tsx";
 
 export function Landing({ lang, latest }: { lang: Lang; latest?: LatestRelease }) {
   const t = copy[lang];
-  const root = useRef<HTMLDivElement>(null);
-  useReveal(root);
+  useIntroOnce();
   return (
-    <div className="landing" ref={root}>
+    <div className="landing">
       <a className="skip-link" href="#main">
         {t.skip}
       </a>
@@ -46,33 +45,29 @@ export function Landing({ lang, latest }: { lang: Lang; latest?: LatestRelease }
   );
 }
 
-const revealed = ".section-head, .cell, .split > .diagram, .split > .phone, .stack, .plan, .client, .code-card, .start-end";
-
 /**
- * Blocks that start below the first screen fade up once as they scroll in.
- * Anything on screen at load is left alone, so the first paint never animates.
+ * The first screen's entrance (page.css) plays once per tab. Once it has finished
+ * (or isn't running: reduced motion, or it ended before hydration) the page is marked
+ * seen: the attribute stops a client-side return from the docs or blog playing it
+ * again, and app-hint.js reads the stored flag on a full page load.
  */
-function useReveal(root: RefObject<HTMLElement | null>) {
+function useIntroOnce() {
   useEffect(() => {
-    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        let shown = 0;
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          (entry.target as HTMLElement).style.transitionDelay = `${Math.min(shown, 3) * 80}ms`;
-          entry.target.classList.add("is-revealed");
-          observer.unobserve(entry.target);
-          shown += 1;
-        }
-      },
-      { rootMargin: "0px 0px -10% 0px" },
-    );
-    for (const block of root.current!.querySelectorAll(revealed)) {
-      if (block.getBoundingClientRect().top < innerHeight) continue;
-      block.classList.add("reveal");
-      observer.observe(block);
-    }
-    return () => observer.disconnect();
-  }, [root]);
+    let live = true;
+    const entering = document
+      .getAnimations()
+      .filter((animation) => animation instanceof CSSAnimation && animation.animationName === "enter");
+    void Promise.allSettled(entering.map((animation) => animation.finished)).then(() => {
+      if (!live) return;
+      document.documentElement.setAttribute("data-intro-seen", "");
+      try {
+        sessionStorage.setItem("pinomad_intro", "1");
+      } catch {
+        // Private mode or blocked site data: it plays again on the next load.
+      }
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
 }

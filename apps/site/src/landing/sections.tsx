@@ -42,6 +42,9 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
           </a>
         </div>
       </div>
+      <div className="hero-stage">
+        <HeroApp lang={lang} label={t.shotAlt} />
+      </div>
       {/* The spec line, then the models. */}
       <div className="hero-meta">
         <div className="wrap">
@@ -62,9 +65,6 @@ export function Hero({ lang, t }: { lang: Lang; t: LandingCopy["hero"] }) {
             <ModelList t={t} hidden />
           </div>
         </div>
-      </div>
-      <div className="hero-stage">
-        <HeroApp lang={lang} label={t.shotAlt} />
       </div>
     </section>
   );

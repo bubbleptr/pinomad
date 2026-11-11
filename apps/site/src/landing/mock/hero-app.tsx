@@ -26,10 +26,15 @@ function useClock(ref: RefObject<HTMLElement | null>) {
   useEffect(() => {
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     let timer: ReturnType<typeof setInterval> | undefined;
-    const observer = new IntersectionObserver(([entry]) => {
-      clearInterval(timer);
-      if (entry?.isIntersecting) timer = setInterval(() => setClock((seconds) => seconds + 1), 1000);
-    });
+    // Half the window, not a sliver: its top edge shows on the first screen, and the
+    // script shouldn't play out before anyone has scrolled to it.
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        clearInterval(timer);
+        if (entry?.isIntersecting) timer = setInterval(() => setClock((seconds) => seconds + 1), 1000);
+      },
+      { threshold: 0.5 },
+    );
     observer.observe(ref.current!);
     return () => {
       observer.disconnect();
