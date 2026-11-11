@@ -84,10 +84,10 @@ const rootClass =
 const bodyClass =
   "relative z-[2] flex cursor-text flex-col gap-2 rounded-[var(--_chat-composer-radius)] bg-[var(--color-background-popover)] p-[var(--_chat-composer-padding)] transition-[box-shadow,border-color] duration-[var(--duration-fast)] ease-[var(--ease-standard)]";
 
-// Theme-neutral's --shadow-low / --shadow-med are the fallbacks; chat.css
-// redefines --shadow-low on the composer root.
+// --shadow-low / --shadow-med come from tokens.css; chat.css redefines
+// --shadow-low on the composer root.
 const elevationClasses = {
-  low: "[box-shadow:var(--shadow-low,0_2px_4px_light-dark(oklch(0_0_0/5%),oklch(0_0_0/25%)),0_4px_8px_light-dark(oklch(0_0_0/10%),oklch(0_0_0/40%)),inset_0_0_0_1px_light-dark(transparent,oklch(1_0_0/8%)))] hover:[box-shadow:var(--shadow-med,0_2px_4px_light-dark(oklch(0_0_0/5%),oklch(0_0_0/35%)),0_4px_12px_light-dark(oklch(0_0_0/10%),oklch(0_0_0/50%)),inset_0_0_0_1px_light-dark(transparent,oklch(1_0_0/12%)))] focus-within:[box-shadow:var(--shadow-med,0_2px_4px_light-dark(oklch(0_0_0/5%),oklch(0_0_0/35%)),0_4px_12px_light-dark(oklch(0_0_0/10%),oklch(0_0_0/50%)),inset_0_0_0_1px_light-dark(transparent,oklch(1_0_0/12%)))]",
+  low: "[box-shadow:var(--shadow-low)] hover:[box-shadow:var(--shadow-med)] focus-within:[box-shadow:var(--shadow-med)]",
   // The border is drawn inside the padding, so content geometry matches the
   // elevated case.
   none: "border border-solid border-[var(--color-border-emphasized)] p-[calc(var(--_chat-composer-padding)_-_1px)] [box-shadow:none] focus-within:border-[var(--color-accent)] hover:not-focus-within:[box-shadow:inset_0_0_0_2px_color-mix(in_srgb,var(--color-border-emphasized)_30%,transparent)] focus-within:[box-shadow:inset_0_0_0_2px_light-dark(#f1f1f1,#262626)]",

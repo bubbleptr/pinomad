@@ -1,5 +1,5 @@
 // The `$` skill menu (issue #143), the composer's bound-skill draft and
-// highlight (#308, ADR-0028), and the bubbles' mention marks. Astryx
+// highlight (#308, ADR-0028), and the bubbles' mention marks. The composer
 // activates a trigger at a text node's start or after a literal
 // space/newline. A pick inserts `$name ` as plain text, never a token, and
 // binds that range (skill-bindings.ts); only bound names are sent as
@@ -153,7 +153,7 @@ export function useSkillMentions(
         return `$${item.label} `;
       },
     };
-    // A new scope or a landed listing rebuilds the trigger so Astryx's next
+    // A new scope or a landed listing rebuilds the trigger so the composer's next
     // search reads the fresh list.
   }, [enabled, cache, key, skills]);
   return { trigger, request };
@@ -177,7 +177,7 @@ export function useSkillDraft(slot?: ComposerSlot): SkillDraftState {
   const local = useLocalComposerSlot();
   const active = slot ?? local;
   const draft = useComposerSlotState(active).draft;
-  // Astryx calls onSelect, then emits the value with the inserted text.
+  // The composer calls onSelect, then emits the value with the inserted text.
   const picked = useRef<string | undefined>(undefined);
   const setValue = useCallback((next: string) => {
     const name = picked.current;

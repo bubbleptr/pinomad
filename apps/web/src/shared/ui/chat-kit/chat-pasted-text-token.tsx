@@ -44,7 +44,7 @@ export function ChatPastedTextToken({ text, onExpand }: ChatPastedTextTokenProps
       />
       <PreviewCard.Portal>
         <PreviewCard.Positioner side="top" align="start" sideOffset={4}>
-          <PreviewCard.Popup className="rounded-[var(--radius-container)] bg-[var(--color-background-surface)] p-3 font-sans [box-shadow:var(--shadow-med,0_2px_4px_light-dark(oklch(0_0_0/5%),oklch(0_0_0/35%)),0_4px_12px_light-dark(oklch(0_0_0/10%),oklch(0_0_0/50%)),inset_0_0_0_1px_light-dark(transparent,oklch(1_0_0/12%)))]">
+          <PreviewCard.Popup className="rounded-[var(--radius-container)] bg-[var(--color-background-surface)] p-3 font-sans [box-shadow:var(--shadow-med)]">
             <div className="flex max-w-[480px] flex-col gap-2">
               <div className="max-h-60 overflow-y-auto font-mono text-[length:var(--font-size-sm)] leading-[1.6667] [word-break:break-word] whitespace-pre-wrap text-[var(--color-text-primary)]">
                 {text}

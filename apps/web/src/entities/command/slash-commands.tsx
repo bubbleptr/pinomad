@@ -2,11 +2,11 @@
 // run on the host and never reach the model. The list comes only from
 // `listCommands`, cached per conversation like the `$` skills.
 //
-// A command is recognized only at index 0 of the draft, but Astryx's
+// A command is recognized only at index 0 of the draft, but the chat kit's
 // `useTriggerMenu` activates a trigger after any whitespace — `see /etc/hosts`
 // would pop a menu. So the `/` trigger exists only while the whole draft is
 // still a leading `/` plus its first token; once anything else is typed there
-// is no `/` trigger for Astryx to match at all.
+// is no `/` trigger for the composer to match at all.
 import { useEffect, useMemo, useRef, type RefObject } from "react";
 import type { ChatComposerTrigger, ChatComposerTriggerItem } from "@/shared/ui/chat-kit";
 import type { SearchSource } from "@/shared/ui/typeahead";
@@ -111,9 +111,9 @@ export function useSlashCommands(
         return command.disabled === undefined ? `/${command.name} ` : `/${typed}`;
       },
     };
-    // A landed listing rebuilds the trigger so Astryx's next search reads it.
+    // A landed listing rebuilds the trigger so the composer's next search reads it.
   }, [active, commands]);
-  // The trigger appears on the keystroke that typed the `/`, after Astryx has
+  // The trigger appears on the keystroke that typed the `/`, after the composer has
   // already looked for one; a synthetic input lets it see the new trigger
   // (and, when a listing lands, re-run the search).
   useEffect(() => {

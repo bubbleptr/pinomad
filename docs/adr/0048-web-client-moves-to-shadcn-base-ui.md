@@ -1,6 +1,6 @@
 # ADR-0048：Web 客户端的基础组件从 Astryx 换成 shadcn（Base UI 版）
 
-- 状态：Accepted
+- 状态：Accepted；迁移于 2026-11-11 完成，`@astryxdesign/*` 已删除（#704），§3 的共存期随之结束：仍有人用的 Astryx token 名留在 `tokens.css`，作为手写 CSS 的刻度和对话框抬高一级的表面色阶；§4 的两个开关合成一个，`color-scheme` 也跟 `<html>` 上的 `dark` 类走，不再设 `data-theme`
 - 日期：2026-11-11
 - 修订：ADR-0014 §1（视觉基础不再建在 Astryx 上，token 以 shadcn 的变量名为准）、§2（不再要求目录和组件与 Pace 同形）
 

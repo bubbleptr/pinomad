@@ -7,10 +7,8 @@ try {
 } catch (_) {
   // Storage blocked: the app falls back to the system's appearance.
 }
-if (appearance === "light" || appearance === "dark") {
-  document.documentElement.setAttribute("data-theme", appearance);
-}
-// The class Tailwind's `dark:` variant follows; useDarkClass keeps it current.
+// The class the tokens' color-scheme and Tailwind's `dark:` variant follow;
+// useDarkClass keeps it current.
 document.documentElement.classList.toggle(
   "dark",
   appearance === "dark" || (appearance !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches),

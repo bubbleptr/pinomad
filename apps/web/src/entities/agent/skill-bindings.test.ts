@@ -13,7 +13,7 @@ const spans = (draft: SkillDraft): string[] => draft.bindings.map((b) => `${b.st
 describe("followEdit", () => {
   it("binds the $name a pick inserted over the typed query", () => {
     expect(spans(followEdit(bound("please $rev"), "please $review ", "review"))).toEqual(["7:$review"]);
-    // Mid-sentence: Astryx replaces `$rev` in place, the rest of the line stays.
+    // Mid-sentence: the composer replaces `$rev` in place, the rest of the line stays.
     expect(spans(followEdit(bound("please $rev the code"), "please $review  the code", "review"))).toEqual(["7:$review"]);
     // An empty query, and a query that already spelled the whole name.
     expect(spans(followEdit(bound("please $"), "please $review ", "review"))).toEqual(["7:$review"]);

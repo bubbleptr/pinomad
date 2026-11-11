@@ -1,6 +1,6 @@
 // The composer's bound `$name` highlights (issues #143, #308): CSS Custom
 // Highlight API — ranges over the contentEditable's text nodes painted via
-// `::highlight`, so the DOM Astryx owns is never mutated. Only the ranges a
+// `::highlight`, so the DOM the composer owns is never mutated. Only the ranges a
 // `$` menu pick bound are painted (skill-bindings.ts); a typed `$name` stays
 // plain. One registry entry holds every editable's ranges; each caller swaps
 // only its own. Browsers without the API simply show no highlight.
@@ -28,7 +28,7 @@ interface TextSegment {
 }
 
 /**
- * Walk the editable the way Astryx's `serialize` reads it: a text node
+ * Walk the editable the way the composer's `serialize` reads it: a text node
  * carries its content, a BR one `\n`, a `data-chat-token` element its token
  * value, and other elements recurse. Mention ranges that land on non-text
  * segments can't anchor a Range — names are plain text in practice, so this

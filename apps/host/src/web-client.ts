@@ -25,8 +25,8 @@ const NOT_BUILT = "Web client not built: run bun run build";
 // bundle may run in it. Directives beyond default-src, each for a need:
 // - script-src 'wasm-unsafe-eval': the diff highlighter compiles its
 //   WebAssembly regex engine; it allows WebAssembly compilation, not eval().
-// - style-src 'unsafe-inline': Astryx injects its theme and highlight <style>
-//   elements at runtime, so neither a hash nor a nonce can cover them.
+// - style-src 'unsafe-inline': the diff highlighter injects <style> elements
+//   into its shadow roots at runtime, so neither a hash nor a nonce can cover them.
 // - img-src data:: message images and placeholders are data: URLs.
 // - connect-src ws: wss:: a host's remote candidates can be any socket URL
 //   (endpoints.ts); account fetches stay same-origin (bearer mode is desktop-only).

@@ -2,7 +2,8 @@ import { extname, isAbsolute, relative, resolve } from "node:path";
 
 /**
  * What the bundled renderer is allowed to reach: its own bundle, WebSocket
- * connections to a host or relay, and inline styles (Astryx sets style props).
+ * connections to a host or relay, and inline styles (the diff highlighter
+ * injects <style> elements).
  * Nothing else: no remote scripts, no remote fonts. connect-src also takes
  * `https:` for the server-accounts API (ADR-0022) — `wss:` already lets the
  * page dial any host, so allowing https fetches opens no new reach while

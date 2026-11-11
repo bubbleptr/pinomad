@@ -1,5 +1,3 @@
-import { createRequire } from "node:module";
-import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
@@ -10,9 +8,6 @@ const shared = {
   hookTimeout: 30_000,
 } as const;
 
-// Same single-React pin as apps/web/vite.config.ts: bun nests a second copy
-// under @astryxdesign/core, which breaks React 19 hooks in jsdom tests.
-const requireFromWeb = createRequire(new URL("./apps/web/package.json", import.meta.url));
 const webSrc = fileURLToPath(new URL("./apps/web/src", import.meta.url));
 
 export default defineConfig({
@@ -77,11 +72,7 @@ export default defineConfig({
       },
       {
         resolve: {
-          alias: {
-            "@": webSrc,
-            react: dirname(requireFromWeb.resolve("react/package.json")),
-            "react-dom": dirname(requireFromWeb.resolve("react-dom/package.json")),
-          },
+          alias: { "@": webSrc },
         },
         test: {
           ...shared,

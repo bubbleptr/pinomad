@@ -16,7 +16,7 @@ import { use, type ReactNode } from "react";
 // Inside the diff's shadow root: the page's tokens for surface and type, so
 // the diff sits on the panel like the rest of the app. Pierre's host pins
 // `color-scheme: light dark`, so its light-dark() colors would follow the OS
-// rather than a scheme the Theme element forces; inherit the page's instead.
+// rather than the one the appearance setting forces; inherit the page's instead.
 const SURFACE_CSS = [
   ":host{color-scheme:inherit;",
   "--diffs-light-bg:var(--color-background-surface);",

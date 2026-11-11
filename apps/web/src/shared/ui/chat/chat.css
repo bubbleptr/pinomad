@@ -1,5 +1,5 @@
-/* Chat primitive styles (shared/ui/chat). Astryx tokens only; unlayered on
-   purpose so these rules win over layered framework CSS. */
+/* Chat primitive styles (shared/ui/chat). tokens.css tokens only; unlayered
+   on purpose so these rules win over layered framework CSS. */
 
 /* —— TextShimmer —— */
 
@@ -46,8 +46,8 @@
 
 /* —— Markdown —— */
 
-/* Layout is ours; heading type scale is too. Astryx compact only tightens
-   heading margins — `#` still uses document heading-1. After
+/* Layout is ours; heading type scale is too. Markdown's compact density only
+   tightens heading margins — `#` still uses document heading-1. After
    headingLevelStart=3, markdown # is data-level=3. Keep a conversation
    scale: one step up for #, body size below that, never smaller than body. */
 .chat-markdown {
@@ -146,8 +146,8 @@ mark.chat-skill-mention {
   text-decoration: underline;
 }
 
-/* Astryx controls draw a 2px accent outline on focus; the chip follows the
-   same ring rather than the browser default. */
+/* The chat kit's controls draw a 2px accent outline on focus; the chip
+   follows the same ring rather than the browser default. */
 .chat-markdown .chat-file-link:focus-visible {
   outline: var(--spacing-0-5) solid var(--color-accent);
   outline-offset: var(--spacing-0-5);
@@ -173,7 +173,7 @@ mark.chat-skill-mention {
    and box metrics — only the accent text and link affordances change. Unlike
    .chat-file-link there is no icon marking it, and the accent token sits a
    few lightness points off body text, so the rest underline is what makes
-   the link distinguishable (the same affordance Astryx links rely on). */
+   the link distinguishable (the same affordance markdown links rely on). */
 .chat-markdown .chat-inline-code-link {
   color: var(--color-text-accent);
   text-decoration: underline;
@@ -200,7 +200,7 @@ mark.chat-skill-mention {
 
 /* —— Messages —— */
 
-/* Alignment and bubble visuals are owned by Astryx ChatMessage/Bubble;
+/* Alignment and bubble visuals are owned by ChatMessage/ChatMessageBubble;
    only the layout column, content, and hover actions remain ours. */
 .chat-message {
   min-width: 0;
@@ -214,7 +214,7 @@ mark.chat-skill-mention {
   gap: var(--spacing-2);
 }
 
-/* Astryx ChatMessage roots at 16px while its bubble and markdown sit at
+/* ChatMessage roots at 16px while its bubble and markdown sit at
    --text-body-size (14px). Point both at the transcript reading size the
    composer also uses; Markdown reads --text-body-size for its body size. */
 .chat-message__content {
@@ -377,7 +377,7 @@ mark.chat-skill-mention {
   --chat-icon-stroke: 2;
 }
 
-/* Astryx lays the assistant body out with align-items: start, so it is
+/* ChatMessage lays the assistant body out with align-items: start, so it is
    fit-content, and the block above contains its own inline size — nothing
    inside asks for width any more. Without this a settled trace collapses the
    whole message to the width of its header (measured: 672px → 147px). */
@@ -530,7 +530,7 @@ mark.chat-skill-mention {
   margin-block-start: var(--spacing-2);
   height: var(--collapsible-panel-height);
   /* PiNomad: clip only the fold axis. With overflow: hidden this box became a
-     scroll container, and focusing a grouped Astryx tool row (whose hover fill
+     scroll container, and focusing a grouped ChatToolCalls row (whose hover fill
      overhangs by -4px) scrolled it sideways, shearing every step's left edge. */
   overflow-x: visible;
   overflow-y: clip;
@@ -765,7 +765,7 @@ mark.chat-skill-mention {
 }
 
 .chat-tool-step__item [data-slot="chat-tool-calls"] {
-  /* The surrounding list owns spacing; Astryx's standalone top gap would
+  /* The surrounding list owns spacing; ChatToolCalls' standalone top gap would
      shift the call header below its sibling kind icon. */
   margin-block-start: 0;
 }
@@ -775,7 +775,7 @@ mark.chat-skill-mention {
   flex: 1;
 }
 
-/* Astryx's status circle (check / spinner / x) is a second leading glyph
+/* ChatToolCalls' status circle (check / spinner / x) is a second leading glyph
    next to the kind icon. Failure still reads as "N failed" on the
    summary; the kind icon is the type signal, matching Codex. */
 .chat-tool-step__item [data-slot="chat-tool-calls"] [role="button"] > span:first-child,
@@ -783,15 +783,15 @@ mark.chat-skill-mention {
   display: none;
 }
 
-/* Astryx paints the row's target path and duration in --color-text-disabled
+/* ChatToolCalls paints the row's target path and duration in --color-text-disabled
    (#a3a3a3 at 12px, ~2.6:1 on white). They are read, not disabled: lift them
-   to the secondary tone the step rows above already use. The name span stays
-   Astryx's; the trailing chevron span carries no text. */
+   to the secondary tone the step rows above already use. The name span keeps
+   its own color; the trailing chevron span carries no text. */
 .chat-tool-step__item [data-slot="chat-tool-calls"] [role="button"] > span:not(:first-child):not(:last-child) {
   color: var(--color-text-secondary);
 }
 
-/* Astryx sets the call name in its code face and the target and duration a
+/* ChatToolCalls sets the call name in its code face and the target and duration a
    size down. Inside a burst those rows are the same kind of line as the
    step row above them, so they take that row's face and size — one level,
    not a header over a sub-header. Chevron and status spans carry no text. */
@@ -978,13 +978,14 @@ mark.chat-skill-mention {
   min-width: 0;
 }
 
-/* Astryx 0.3.0 upstream bug (facebook/astryx#4830): rows widen their hover
+/* Carried over from Astryx 0.3.0 with the ChatToolCalls port
+   (facebook/astryx#4830): rows widen their hover
    background with a -4px inline margin, but the group's expand-animation
    container clips at overflow:hidden, cutting the hover radius on grouped
    rows (single rows are unclipped). Widen the clip box by the same overhang.
    Scoped to multi-call groups (single-call groups carry data-state) and to
-   the 0.3.0 DOM shape: group toggle row + sibling content grid > clip
-   container. Drop once the upstream fix ships. */
+   the ported DOM shape: group toggle row + sibling content grid > clip
+   container. Drop once the port's clip container allows for the overhang. */
 .chat-tool[data-slot="chat-tool-group"]:not([data-state])
   [role="button"][aria-expanded]
   + div
@@ -993,8 +994,8 @@ mark.chat-skill-mention {
   margin-inline: calc(-1 * var(--spacing-1));
 }
 
-/* Detail panes inside the Astryx ChatToolCalls row (args / result). The
-   Astryx detail container only indents; separation from the row above and
+/* Detail panes inside the ChatToolCalls row (args / result). The
+   detail container only indents; separation from the row above and
    between panes is ours to provide. */
 .chat-tool__section {
   margin: 0;
@@ -1012,7 +1013,7 @@ mark.chat-skill-mention {
 
 /* —— Prompt input ——
    Shell, slot layout, send/stop button, and error status are owned by
-   Astryx ChatComposer; the native textarea, body padding, steady outer-only
+   ChatComposer; the native textarea, body padding, steady outer-only
    elevation, input-to-footer gap, and neutral footer hint remain ours. */
 
 .prompt-input {
@@ -1027,7 +1028,7 @@ mark.chat-skill-mention {
   anchor-name: --pace-prompt-input;
 }
 
-/* Astryx anchors suggestions to the caret and leaves their width intrinsic.
+/* The trigger menu anchors suggestions to the caret and leaves their width intrinsic.
    Size each menu from its own input so long descriptions cannot widen it,
    capped so a wide composer doesn't stretch one-line rows into a sparse
    band; names and descriptions truncate inside the cap. */
@@ -1040,15 +1041,15 @@ mark.chat-skill-mention {
 
 .prompt-input__input [data-slot="trigger-menu"] {
   min-width: 0;
-  /* Astryx scrolls the highlighted row into view with block: nearest, which
+  /* The menu scrolls the highlighted row into view with block: nearest, which
      aligns it to the scrollport edge and ignores the list's padding; match
      the padding so a scrolled row keeps its inset. */
   scroll-padding-block: var(--spacing-1);
 }
 
 /* Rows and group headings at the + menu's density: 28px rows instead of
-   Astryx's 36, headings one step tighter. !important matches Astryx
-   StyleX's :not(#\#) specificity. */
+   the menu's 36, headings one step tighter. !important dates from Astryx's
+   StyleX classes, which carried :not(#\#) specificity. */
 .prompt-input__input [data-slot="trigger-menu"] [role="option"] {
   padding: var(--spacing-1) var(--spacing-2) !important;
 }
@@ -1063,10 +1064,10 @@ mark.chat-skill-mention {
   --_composer-shadow-color: var(--color-shadow);
   --shadow-low: 0 var(--border-width) var(--spacing-0-5) var(--_composer-shadow-color),
     0 var(--spacing-0-5) var(--spacing-2) var(--_composer-shadow-color);
-  /* One step below Astryx's default so the chrome sits closer to the edge.
+  /* One step below ChatComposer's default so the chrome sits closer to the edge.
      The elevated shell has no border; the total content inset is unchanged. */
   --_chat-composer-padding: var(--spacing-2);
-  /* Astryx pairs --radius-chat (28) with --spacing-3 (12) so the 32px
+  /* ChatComposer pairs --radius-chat (28) with --spacing-3 (12) so the 32px
      send button stays a circle: 28 − 12 = 16. Padding dropped one step,
      so the shell must follow: outer = padding + half the md button. */
   --_chat-composer-radius: calc(
@@ -1078,12 +1079,12 @@ mark.chat-skill-mention {
   --_composer-shadow-color: color-mix(in srgb, var(--color-accent) 24%, transparent);
 }
 
-/* Astryx balanced density uses --spacing-2 between the input and the
+/* ChatComposer's balanced density uses --spacing-2 between the input and the
    footer chrome. One step up so the placeholder and model selector
    don't sit on the same visual band. */
 .prompt-input [data-slot="chat-composer"] > div:has(.prompt-input__input) {
   gap: var(--spacing-3);
-  /* Override Astryx's hover/focus elevation without changing the geometry:
+  /* Override ChatComposer's hover/focus elevation without changing the geometry:
      a hairline ring edges the composer, and a wide, faint shadow lifts it
      off the transcript. The negative spread keeps that shadow out from under
      the ring, so the edge itself never thickens or darkens. */
@@ -1111,7 +1112,8 @@ mark.chat-skill-mention {
 /* ChatComposerInput renders its own typography on the editable and the
    placeholder: --text-body-size at 22px leading with --spacing-1 padding.
    Pin both to the transcript reading size and the wider inline padding the
-   textarea used. !important matches Astryx StyleX's :not(#\#) specificity. */
+   textarea used. !important dates from Astryx's StyleX classes, which
+   carried :not(#\#) specificity. */
 .prompt-input__input > [aria-multiline="true"],
 .prompt-input__input > [aria-hidden="true"] {
   font-size: var(--text-transcript-size) !important;
@@ -1124,7 +1126,7 @@ mark.chat-skill-mention {
   color: var(--color-text-primary) !important;
 }
 
-/* Astryx inserts an inline baseline alignment on each token span. */
+/* The composer sets an inline baseline alignment on each token span. */
 .prompt-input__input [data-chat-token] {
   vertical-align: middle !important;
 }
@@ -1171,14 +1173,15 @@ mark.chat-skill-mention {
   font-size: var(--font-size-sm);
 }
 
-/* Astryx Selector's wrappers keep min-width: auto, so a long label would
+/* The pickers' wrappers keep min-width: auto, so a long label would
    push the row past the tray instead of ellipsizing. */
 .prompt-input__footer div {
   min-width: 0;
 }
 
 /* The tray's pickers recede like its surface: regular weight, secondary
-   text. !important matches Astryx StyleX's :not(#\#) specificity. */
+   text. !important dates from Astryx's StyleX classes, which carried
+   :not(#\#) specificity. */
 .prompt-input__footer button {
   color: var(--color-text-secondary) !important;
   font-weight: var(--font-weight-normal, 400) !important;

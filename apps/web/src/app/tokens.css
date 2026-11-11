@@ -2,9 +2,8 @@
 
    Colors use shadcn's variable names, so components added with the shadcn
    CLI read them as-is. Each is one light-dark() pair: the value follows the
-   element's color-scheme, which the appearance setting drives (data-theme on
-   <html>), so nothing here depends on the `.dark` class that the `dark:`
-   variant uses.
+   element's color-scheme, which styles.css sets on <html> from the `.dark`
+   class that the appearance setting drives (the class `dark:` follows too).
 
    Light is shadcn's neutral base. Dark keeps this app's surface ladder:
    elevation reads as lightness, so each layer above another is lighter. The
@@ -90,16 +89,13 @@
   --text-transcript-size: 0.9375rem;
 }
 
-/* —— Astryx names ——
-   The app's own CSS (chat.css and the rest) was written against Astryx's
-   token names. They are defined here so that CSS keeps working outside the
-   Astryx theme element (Base UI popups render under <body>) and after Astryx
-   is removed. Colors point at the tokens above, so Astryx components and the
-   app's CSS share one palette while both libraries are in use; the doubled
-   attribute selector lifts these above theme-neutral's own values, which it
-   declares on :scope inside @scope ([data-astryx-theme]). */
-:root,
-[data-astryx-theme][data-astryx-theme] {
+/* —— Scales and the surface ladder ——
+   The spacing, radius, type and motion scales the app's own CSS (chat.css,
+   the ported chat kit, markdown and code block) is written against. The
+   names predate ADR-0048; the colors point at the tokens above, except the
+   --color-background-* ladder, which a dialog shifts up a step (styles.css),
+   so what paints with it matches the layer it sits on. */
+:root {
   --color-background-body: var(--sidebar);
   --color-background-surface: var(--background);
   --color-background-card: var(--card);
@@ -120,7 +116,7 @@
   --color-neutral: var(--default);
   --color-overlay-hover: var(--surface-hover);
   --color-overlay-pressed: light-dark(oklch(0 0 0 / 10%), oklch(1 0 0 / 10%));
-  /* Astryx paints error text on --color-error-muted (error banners). */
+  /* Error text sits on --color-error-muted (error banners). */
   --color-error: var(--destructive-strong);
   --color-error-muted: var(--destructive-muted);
   --color-success: var(--success);
@@ -168,6 +164,16 @@
   --font-weight-semibold: 600;
   --text-supporting-size: var(--font-size-sm);
   --text-supporting-leading: 1.6667;
+
+  /* Raised chat chrome (the composer, the pasted-text preview, the
+     scroll-to-bottom button): a drop shadow in light, a hairline ring in
+     dark where a shadow would not read. */
+  --shadow-low: 0 2px 4px light-dark(oklch(0 0 0 / 5%), oklch(0 0 0 / 25%)),
+    0 4px 8px light-dark(oklch(0 0 0 / 10%), oklch(0 0 0 / 40%)),
+    inset 0 0 0 1px light-dark(transparent, oklch(1 0 0 / 8%));
+  --shadow-med: 0 2px 4px light-dark(oklch(0 0 0 / 5%), oklch(0 0 0 / 35%)),
+    0 4px 12px light-dark(oklch(0 0 0 / 10%), oklch(0 0 0 / 50%)),
+    inset 0 0 0 1px light-dark(transparent, oklch(1 0 0 / 12%));
 
   --ease-standard: cubic-bezier(0.24, 1, 0.4, 1);
   --ease-out: var(--ease-standard);
