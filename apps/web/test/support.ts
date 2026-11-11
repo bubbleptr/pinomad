@@ -26,16 +26,7 @@ function freePort(): Promise<number> {
   });
 }
 
-/**
- * Serve apps/web from a Vite dev server for one test; returns its origin.
- * `apiTarget` proxies `/api` to an account server, so the page is that
- * server's own origin (cookie mode, ADR-0022 §2); `port` pins the origin the
- * server was started with.
- */
-export async function startWeb(
-  defer: (cleanup: () => Promise<void> | void) => void,
-  options?: { readonly port?: number; readonly apiTarget?: string },
-): Promise<string> {
+async function serve(options?: { readonly port?: number; readonly apiTarget?: string }) {
   const vite = await createServer({
     configFile: webConfig,
     cacheDir,
@@ -46,6 +37,35 @@ export async function startWeb(
     logLevel: "error",
   });
   await vite.listen();
-  defer(() => vite.close());
-  return new URL(vite.resolvedUrls!.local[0]!).origin;
+  return { origin: new URL(vite.resolvedUrls!.local[0]!).origin, close: () => vite.close() };
+}
+
+// A closed dev server does not give all of its memory back, so a fresh server
+// per test grew web-ui.test.ts's worker past the heap limit. Tests without a
+// pinned port or proxy share one per worker; each test's browser context
+// already keeps its storage apart.
+let shared: Promise<{ origin: string; close: () => Promise<void> }> | undefined;
+afterAll(async () => {
+  await (await shared)?.close();
+  shared = undefined;
+});
+
+/**
+ * Serve apps/web from a Vite dev server; returns its origin. Without options
+ * the worker's shared server answers. `apiTarget` proxies `/api` to an
+ * account server, so the page is that server's own origin (cookie mode,
+ * ADR-0022 §2); `port` pins the origin the server was started with. Those get
+ * a server of their own, closed with the test.
+ */
+export async function startWeb(
+  defer: (cleanup: () => Promise<void> | void) => void,
+  options?: { readonly port?: number; readonly apiTarget?: string },
+): Promise<string> {
+  if (options === undefined) {
+    shared ??= serve();
+    return (await shared).origin;
+  }
+  const server = await serve(options);
+  defer(server.close);
+  return server.origin;
 }
