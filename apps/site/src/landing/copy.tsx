@@ -86,7 +86,7 @@ export interface LandingCopy {
 }
 
 const issue = (n: number) => `https://github.com/bubbleptr/pinomad/issues/${n}`;
-const adr4 = "https://github.com/bubbleptr/pinomad/blob/main/docs/adr/0004-built-in-first-plugin-protocol-later.md";
+const adr49 = "https://github.com/bubbleptr/pinomad/blob/main/docs/adr/0049-plugins-ship-ui.md";
 const blogPost = "https://kieran.build/zh/blog/indie-dev-weekly-03/";
 
 export const blogUrl = blogPost;
@@ -190,9 +190,9 @@ export const copy: Record<Lang, LandingCopy> = {
           link: { text: "#148", href: issue(148) },
         },
         {
-          title: "An open plugin protocol",
-          body: "Write plugins that add custom tools and structured result cards, rendered the same way in the web, Mac, and iPhone clients.",
-          link: { text: "Design decision", href: adr4 },
+          title: "Plugins with their own UI",
+          body: "Write plugins that add tools, a side panel, and cards for their tool calls in the web and Mac apps, with a sandbox for pages the model writes. On the iPhone a plugin's tools work without its UI.",
+          link: { text: "Design decision", href: adr49 },
         },
       ],
       diagram: {
@@ -360,9 +360,9 @@ export const copy: Record<Lang, LandingCopy> = {
           link: { text: "#148", href: issue(148) },
         },
         {
-          title: "开放插件协议",
-          body: "对外开放插件协议，谁都能写插件，添加自定义工具和结构化的结果卡片，在 Web、Mac 和 iPhone 上统一渲染。",
-          link: { text: "设计决策", href: adr4 },
+          title: "自带界面的插件",
+          body: "谁都能写插件：添加工具，在 Web 和 Mac 上带自己的侧边面板和工具卡片，模型写的页面放进沙箱里显示。iPhone 上插件的工具照常可用，但没有插件界面。",
+          link: { text: "设计决策", href: adr49 },
         },
       ],
       diagram: {
