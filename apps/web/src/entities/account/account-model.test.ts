@@ -172,6 +172,36 @@ const settled = async (model: AccountModel): Promise<void> => {
 };
 
 describe("account model", () => {
+  it("keeps the session's last re-auth grant until it expires, is refused or the session ends", async () => {
+    const now = Date.now();
+    const { model } = makeModel({ fake: fakeFetch(
+      { status: 401 }, // probe
+      { status: 401, body: { error: "unauthenticated" } }, // me
+      { status: 200, body: USER }, // login
+      { status: 200, body: [] }, // listHosts
+      { status: 200, body: { reauth: "g1", expiresAt: now + 300_000 } },
+      { status: 200, body: { reauth: "g2", expiresAt: now - 1 } },
+      { status: 200, body: { reauth: "g3", expiresAt: now + 300_000 } },
+      { status: 204 },
+    ) });
+    await settled(model);
+    expect((await model.login({ username: "admin", password: "pw" })).ok).toBe(true);
+    expect(model.recentGrant()).toBeUndefined();
+
+    await model.reauth({ password: "pw" });
+    expect(model.recentGrant()).toEqual({ reauth: "g1" });
+    model.forgetGrant();
+    expect(model.recentGrant()).toBeUndefined();
+
+    await model.reauth({ password: "pw" });
+    expect(model.recentGrant()).toBeUndefined();
+
+    await model.reauth({ password: "pw" });
+    expect(model.recentGrant()).toEqual({ reauth: "g3" });
+    await model.logout();
+    expect(model.recentGrant()).toBeUndefined();
+  });
+
   it("is unavailable when the page origin runs no accounts", async () => {
     const { model } = makeModel({ fake: fakeFetch({ status: 404, body: { error: "accounts_disabled" } }) });
     await settled(model);

@@ -116,12 +116,12 @@ describe("HostsSection unpairing", () => {
     const { forget } = harness({ hosts: [HOME_HOST, DEVBOX_HOST], withRuntime: false });
     await openDetails(DEVBOX_HOST.name!);
     await userEvent.click(screen.getByRole("button", { name: "Unpair" }));
-    const dialog = screen.getByRole("dialog", { name: `Unpair ${DEVBOX_HOST.name}?` });
+    const dialog = screen.getByRole("alertdialog", { name: `Unpair ${DEVBOX_HOST.name}?` });
     await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(forget).not.toHaveBeenCalled();
 
     await userEvent.click(screen.getByRole("button", { name: "Unpair" }));
-    await userEvent.click(within(screen.getByRole("dialog", { name: `Unpair ${DEVBOX_HOST.name}?` })).getByRole("button", { name: "Unpair" }));
+    await userEvent.click(within(screen.getByRole("alertdialog", { name: `Unpair ${DEVBOX_HOST.name}?` })).getByRole("button", { name: "Unpair" }));
     await waitFor(() => expect(forget).toHaveBeenCalledWith(DEVBOX_HOST.hostKey));
     // Back on the list, which no longer needs the host's page.
     expect(await screen.findByRole("list", { name: "Paired with this device" })).toBeTruthy();
@@ -220,12 +220,12 @@ describe("HostsSection with an account", () => {
     harness({ account: model(signedIn({ hosts: [match] }), { removeHost }) });
     await userEvent.click(within(row(onAccount(), "up")).getByRole("button", { name: "More for up" }));
     await userEvent.click(await screen.findByRole("menuitem", { name: "Remove from account" }));
-    const dialog = screen.getByRole("dialog", { name: "Remove up" });
+    const dialog = screen.getByRole("alertdialog", { name: "Remove up?" });
     expect(within(dialog).getByText(/stops connecting through pinomad\.si/)).toBeTruthy();
     await act(async () => {
       await userEvent.type(await within(dialog).findByLabelText("Password"), "my password{Enter}");
     });
-    expect(removeHost).toHaveBeenCalledWith({ hostId: "u".repeat(43), confirmation: "my password" });
+    expect(removeHost).toHaveBeenCalledWith({ hostId: "u".repeat(43), confirmation: { reauth: "grant" } });
   });
 
   it("moves an unpaired account host to the account's section before the next refresh (dureview #641)", async () => {
@@ -257,7 +257,7 @@ describe("HostsSection with an account", () => {
     render(<Live />);
     await openDetails("omarchy");
     await userEvent.click(screen.getByRole("button", { name: "Unpair" }));
-    await userEvent.click(within(screen.getByRole("dialog", { name: "Unpair omarchy?" })).getByRole("button", { name: "Unpair" }));
+    await userEvent.click(within(screen.getByRole("alertdialog", { name: "Unpair omarchy?" })).getByRole("button", { name: "Unpair" }));
     expect(within(await screen.findByRole("list", { name: "On your account" })).getByText("omarchy")).toBeTruthy();
     expect(within(paired()).queryByText("omarchy")).toBeNull();
   });

@@ -1,7 +1,7 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { Field, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
-import { useEffect, useRef, useState, type ReactElement } from "react";
+import { useEffect, useReducer, useRef, useState, type ReactElement } from "react";
 import type { AccountConfirmation, AccountError, AccountResult } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
 import { accountErrorMessage } from "./account-error.ts";
@@ -11,14 +11,14 @@ import { Spinner } from "../../shared/ui/spinner.tsx";
 
 /** The second check a guarded action takes, ready to send (ADR-0044 §6). */
 export interface IdentityConfirmation {
-  /** The field the action's form shows in place of its password input. */
-  readonly field: ReactElement;
+  /** The field the action's form shows in place of its password input; nothing while a recent grant lasts. */
+  readonly field: ReactElement | null;
   /** Enough is filled in to try. */
   readonly ready: boolean;
   /**
-   * The password, or a re-auth grant traded for the mailed code. A grant is
-   * kept for the next try; `reset` drops it after the action refused it,
-   * with the spent code, so a passwordless account sends a new one.
+   * A re-auth grant: the account's last one while it lasts, else one traded
+   * for the password or the mailed code. `reset` drops it after the action
+   * refused it, with the spent code, so the field asks again.
    */
   confirm(): Promise<AccountResult<AccountConfirmation>>;
   reset(): void;
@@ -29,17 +29,29 @@ type Method = "loading" | "password" | "code";
 /**
  * The confirmation kicking a device, removing a host, deleting the account
  * and changing sign-in methods ask for: the password on an account that has
- * one, else a code mailed to the account's email. Each action keeps its own
- * button and copy; this supplies only the value.
+ * one, else a code mailed to the account's email. Either is traded for a
+ * grant the account keeps for five minutes, and every guarded action in that
+ * window goes through without asking. Each action keeps its own button and
+ * copy; this supplies only the value.
  */
 export function useConfirmIdentity(account: AccountModel, onEnter?: () => void): IdentityConfirmation {
   const [method, setMethod] = useState<Method>("loading");
+  // Read on every render: the account holds the grant, this only redraws once it changes.
+  const granted = account.recentGrant() !== undefined;
+  const [, redraw] = useReducer((n: number) => n + 1, 0);
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<AccountError>();
-  const grant = useRef<{ readonly reauth: string }>(undefined);
+  // Closed while the password was checked: the action must not go ahead.
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
   useEffect(() => {
     let live = true;
     void account.identities().then((result) => {
@@ -61,17 +73,14 @@ export function useConfirmIdentity(account: AccountModel, onEnter?: () => void):
       else setSendError(result.error);
     });
   };
-  const field = (
+  const field = granted ? null : (
     <ConfirmIdentity
       method={method}
       email={email}
       password={password}
       onPassword={setPassword}
       code={code}
-      onCode={(value) => {
-        grant.current = undefined;
-        setCode(value);
-      }}
+      onCode={setCode}
       sent={sent}
       sending={sending}
       sendError={sendError}
@@ -81,17 +90,27 @@ export function useConfirmIdentity(account: AccountModel, onEnter?: () => void):
   );
   return {
     field,
-    ready: method === "password" ? password !== "" : method === "code" && sent && code.trim() !== "",
+    ready: granted || (method === "password" ? password !== "" : method === "code" && sent && code.trim() !== ""),
     confirm: async () => {
-      if (method === "password") return { ok: true, value: password };
-      if (grant.current !== undefined) return { ok: true, value: grant.current };
-      const result = await account.reauth({ code: code.trim() });
+      const held = account.recentGrant();
+      if (held !== undefined) return { ok: true, value: held };
+      // It ran out while the dialog was open: ask now.
+      if (granted) {
+        redraw();
+        return { ok: false, error: { code: "invalid_reauth" } };
+      }
+      const result = await account.reauth(method === "password" ? { password } : { code: code.trim() });
+      if (!live.current) return { ok: false, error: { code: "cancelled" } };
+      // A server without grants takes the password on the action itself.
+      if (!result.ok && method === "password" && result.error.status === 404) return { ok: true, value: password };
       if (!result.ok) return result;
-      grant.current = { reauth: result.value.reauth };
-      return { ok: true, value: grant.current };
+      redraw();
+      return { ok: true, value: { reauth: result.value.reauth } };
     },
     reset: () => {
-      grant.current = undefined;
+      account.forgetGrant();
+      redraw();
+      setPassword("");
       setCode("");
       setSent(false);
     },

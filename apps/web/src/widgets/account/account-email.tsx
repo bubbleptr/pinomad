@@ -122,7 +122,8 @@ export function EmailForm({
           }}
         />
       </Field>
-      {reconfirm ? identity.field : null}
+      {/* Asked again when the server refused the grant, or it ran out here. */}
+      {reconfirm || !identity.ready ? identity.field : null}
       {error === undefined ? null : (
         <Alert variant="destructive">
           <AlertTitle>Couldn't save the email</AlertTitle>

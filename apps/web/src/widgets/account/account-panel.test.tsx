@@ -73,6 +73,8 @@ function fakeModel(initial: AccountState): AccountModel & { setState(next: Accou
     identities: vi.fn(() => Promise.resolve({ ok: true as const, value: { hasPassword: true, identities: [] } })),
     requestReauthCode: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     reauth: vi.fn(() => Promise.resolve({ ok: true as const, value: { reauth: "grant", expiresAt: Date.now() + 300_000 } })),
+    recentGrant: vi.fn(() => undefined),
+    forgetGrant: vi.fn(),
     linkProvider: vi.fn(() => new Promise<never>(() => {})),
     unlinkProvider: vi.fn(() => Promise.resolve({ ok: true as const, value: undefined })),
     pendingSignIn: vi.fn(() => Promise.reject(new Error("unused"))),
@@ -178,7 +180,7 @@ describe("AccountPanel", () => {
     });
     renderPanel(model);
     await userEvent.click(screen.getByRole("button", { name: "Sign out everywhere" }));
-    const dialog = screen.getByRole("dialog", { name: "Sign out everywhere?" });
+    const dialog = screen.getByRole("alertdialog", { name: "Sign out everywhere?" });
     await userEvent.click(within(dialog).getByRole("button", { name: "Sign out everywhere" }));
     expect(await screen.findByText(/Other devices may still be signed in/)).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
@@ -189,7 +191,7 @@ describe("AccountPanel", () => {
     renderPanel(model);
     const signOut = async (shared: boolean) => {
       await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
-      const dialog = screen.getByRole("dialog", { name: "Sign out of nomad.example?" });
+      const dialog = screen.getByRole("alertdialog", { name: "Sign out of nomad.example?" });
       const box = within(dialog).getByRole("checkbox", { name: /shared computer/ });
       expect(box).not.toBeChecked();
       if (shared) await userEvent.click(box);
@@ -209,7 +211,7 @@ describe("AccountPanel", () => {
     });
     renderPanel(model);
     await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
-    const dialog = screen.getByRole("dialog", { name: "Sign out of nomad.example?" });
+    const dialog = screen.getByRole("alertdialog", { name: "Sign out of nomad.example?" });
     await userEvent.click(within(dialog).getByRole("checkbox", { name: /shared computer/ }));
     await userEvent.click(within(dialog).getByRole("button", { name: "Sign out" }));
     expect(await screen.findByText(/may still connect to them/)).toBeTruthy();
@@ -256,14 +258,14 @@ describe("account settings", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Change password" }));
     await userEvent.type(await screen.findByLabelText("Password"), "old password here");
     await userEvent.type(screen.getByLabelText("New password"), "new password here{Enter}");
-    expect(model.changePassword).toHaveBeenCalledWith({ confirmation: "old password here", newPassword: "new password here" });
+    expect(model.changePassword).toHaveBeenCalledWith({ confirmation: { reauth: "grant" }, newPassword: "new password here" });
     expect(await screen.findByText("Password changed. Your other devices were signed out.")).toBeTruthy();
     expect(screen.queryByLabelText("Password")).toBeNull();
   });
 
   it("keeps the form and says so when the current password is wrong", async () => {
     const model = fakeModel(signedIn([]));
-    vi.mocked(model.changePassword).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
+    vi.mocked(model.reauth).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
     renderPanel(model);
     await userEvent.click(await screen.findByRole("button", { name: "Change password" }));
     await userEvent.type(screen.getByLabelText("Password"), "wrong one");
@@ -283,7 +285,7 @@ describe("account settings", () => {
     await userEvent.click(screen.getByRole("button", { name: "Delete account" }));
     expect(screen.getByText(/run pinomad join on each/)).toBeTruthy();
     await userEvent.type(await screen.findByLabelText("Password"), "my password{Enter}");
-    expect(model.deleteAccount).toHaveBeenCalledWith({ confirmation: "my password" });
+    expect(model.deleteAccount).toHaveBeenCalledWith({ confirmation: { reauth: "grant" } });
     expect(await screen.findByText("Account deleted")).toBeTruthy();
     expect(screen.getByText(/still registered on your hosts/)).toBeTruthy();
     expect(screen.getByLabelText("Email")).toBeTruthy();
@@ -291,7 +293,7 @@ describe("account settings", () => {
 
   it("keeps the session and the form when the password is wrong", async () => {
     const model = fakeModel(signedIn([]));
-    vi.mocked(model.deleteAccount).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
+    vi.mocked(model.reauth).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
     renderPanel(model);
     await userEvent.click(screen.getByRole("button", { name: "Delete account" }));
     await userEvent.type(await screen.findByLabelText("Password"), "wrong one{Enter}");
@@ -357,7 +359,7 @@ describe("account devices (#452)", () => {
   };
   const deviceRow = async (name: string) => (await screen.findByText(name)).closest("li")!;
 
-  it("lists the account's devices with their state on each host; this device can't be removed", async () => {
+  it("lists the account's devices with their state on each host, leaving out removed ones; this device can't be removed", async () => {
     renderPanel(withDevices(DEVICES));
     const current = await deviceRow("Mac Chrome");
     expect(within(current).getByText("This device")).toBeTruthy();
@@ -367,10 +369,9 @@ describe("account devices (#452)", () => {
     expect(within(phone).getByText(/omarchy: registered/)).toBeTruthy();
     expect(within(phone).getByText(/studio: waiting for the host/)).toBeTruthy();
     expect(within(phone).getByRole("button", { name: "More for iPhone" })).toBeTruthy();
-    const unknown = row("Unknown device");
-    expect(within(unknown).getByText("Removed")).toBeTruthy();
-    expect(within(unknown).getByText(/omarchy: revoked/)).toBeTruthy();
-    expect(within(unknown).queryByRole("button", { name: /^More for/ })).toBeNull();
+    // Removing a device is asking not to see it again.
+    expect(screen.queryByText("Unknown device")).toBeNull();
+    expect(within(screen.getByRole("list", { name: "Signed-in devices" })).getAllByRole("listitem")).toHaveLength(2);
   });
 
   it("removes a device after the password and reloads the list", async () => {
@@ -383,20 +384,20 @@ describe("account devices (#452)", () => {
     renderPanel(model);
     await deviceRow("iPhone");
     await fromMenu("More for iPhone", "Remove");
-    expect(screen.getByText(/asks each host it joined through your account to revoke it/)).toBeTruthy();
+    expect(screen.getByText(/signs iPhone out and removes it from the hosts it joined/)).toBeTruthy();
     // Hosts that don't report devices can't be asked; the form names them.
-    expect(screen.getByText(/attic can't be asked/)).toBeTruthy();
+    expect(screen.getByText(/If it joined attic, revoke it there yourself/)).toBeTruthy();
     await act(async () => {
       await userEvent.type(await screen.findByLabelText("Password"), "my password{Enter}");
     });
-    expect(model.kickDevice).toHaveBeenCalledWith({ id: 2, confirmation: "my password" });
+    expect(model.kickDevice).toHaveBeenCalledWith({ id: 2, confirmation: { reauth: "grant" } });
     expect(model.listDevices).toHaveBeenCalledTimes(2);
     expect(screen.queryByLabelText("Password")).toBeNull();
   });
 
   it("keeps the form when the password is wrong", async () => {
     const model = withDevices(DEVICES);
-    vi.mocked(model.kickDevice).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
+    vi.mocked(model.reauth).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
     renderPanel(model);
     await deviceRow("iPhone");
     await fromMenu("More for iPhone", "Remove");
@@ -430,13 +431,13 @@ describe("removing a host (#512)", () => {
     await act(async () => {
       await userEvent.type(await screen.findByLabelText("Password"), "my password{Enter}");
     });
-    expect(model.removeHost).toHaveBeenCalledWith({ hostId: boxId, confirmation: "my password" });
+    expect(model.removeHost).toHaveBeenCalledWith({ hostId: boxId, confirmation: { reauth: "grant" } });
     expect(screen.queryByLabelText("Password")).toBeNull();
   });
 
   it("keeps the form when the password is wrong", async () => {
     const model = withHost();
-    vi.mocked(model.removeHost).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
+    vi.mocked(model.reauth).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
     renderPanel(model, "hosts");
     await openRemove();
     await userEvent.type(await screen.findByLabelText("Password"), "wrong{Enter}");
@@ -499,7 +500,7 @@ describe("sign-in methods (ADR-0044 §4)", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Link Google" }));
     await userEvent.type(await screen.findByLabelText("Password"), "pw");
     await userEvent.click(screen.getByRole("button", { name: "Continue to Google" }));
-    expect(model.linkProvider).toHaveBeenCalledWith("google", "pw");
+    expect(model.linkProvider).toHaveBeenCalledWith("google", { reauth: "grant" });
     expect(await screen.findByText("Google linked.")).toBeTruthy();
     expect(vi.mocked(model.identities).mock.calls.length).toBeGreaterThan(1);
   });

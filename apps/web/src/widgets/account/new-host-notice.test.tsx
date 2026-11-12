@@ -115,7 +115,7 @@ describe("NewHostNotices", () => {
     // count as hidden to role queries.
     await userEvent.click(screen.getByRole("button", { name: "Remove", hidden: true }));
     await userEvent.type(await screen.findByLabelText("Password"), "my password{Enter}");
-    expect(removeHost).toHaveBeenCalledWith({ hostId: omarchy.host.hostId, confirmation: "my password" });
+    expect(removeHost).toHaveBeenCalledWith({ hostId: omarchy.host.hostId, confirmation: { reauth: "grant" } });
     await vi.waitFor(() => expect(screen.queryByLabelText("Password")).toBeNull());
   });
 });

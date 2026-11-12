@@ -479,7 +479,9 @@ function Devices({ account, hosts }: { account: AccountModel; hosts: readonly Ac
   const load = (): Promise<void> =>
     account.listDevices().then((result) => {
       if (result.ok) {
-        setDevices(result.value);
+        // Removing a device is asking not to see it again. The server keeps it
+        // until its hosts confirm the revocation; that needs nothing from the user.
+        setDevices(result.value.filter((device) => device.kickedAt === undefined));
         setError(undefined);
       } else if (result.error.status === 404) setUnsupported(true);
       else setError(result.error);
@@ -549,11 +551,8 @@ function DeviceRow({
   onRemove: () => void;
 }) {
   const name = device.name ?? "Unknown device";
-  const signIn = `Last sign-in ${ago(device.lastSeenAt, now)}`;
   const end = device.current ? (
     <Badge>This device</Badge>
-  ) : device.kickedAt !== undefined ? (
-    <Badge variant="muted">Removed</Badge>
   ) : (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -570,9 +569,7 @@ function DeviceRow({
       <ItemContent>
         <ItemTitle>{name}</ItemTitle>
         <ItemDescription className="overflow-visible whitespace-normal flex flex-col">
-          <span>
-            {device.kickedAt === undefined ? signIn : `${signIn} · removed ${ago(device.kickedAt, now)}`}
-          </span>
+          <span>Last sign-in {ago(device.lastSeenAt, now)}</span>
           {device.hosts.length === 0 ? null : (
             <span>
               {device.hosts.map((host) => `${host.name}: ${DEVICE_HOST_STATE[host.state]}`).join(" · ")}
@@ -628,12 +625,8 @@ function RemoveDeviceDialog({
   };
   const identity = useConfirmIdentity(account, submit);
   const description =
-    `This signs ${name} out of your account and asks each host it joined through your account to revoke it. Hosts that are offline revoke it when they reconnect.` +
-    (unreachable.length === 0
-      ? ""
-      : unreachable.length === 1
-        ? ` The host ${unreachable[0]} can't be asked. If ${name} joined it, revoke it in that host's Devices.`
-        : ` The hosts ${listNames(unreachable)} can't be asked. If ${name} joined them, revoke it in each one's Devices.`);
+    `This signs ${name} out and removes it from the hosts it joined.` +
+    (unreachable.length === 0 ? "" : ` If it joined ${listNames(unreachable)}, revoke it there yourself.`);
   return (
     <ConfirmDialog
       title={`Remove ${name}?`}

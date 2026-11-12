@@ -1,5 +1,12 @@
-import { Button } from "../../shared/ui/button.tsx";
-import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/shared/ui/alert-dialog";
 import type { ReactNode } from "react";
 
 /**
@@ -22,24 +29,18 @@ export function ConfirmDialog({
   onClose: () => void;
 }) {
   return (
-    <Dialog open onOpenChange={(open) => (open ? undefined : onClose())} disablePointerDismissal>
-      <DialogContent className="w-[460px]">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          {description === undefined ? null : <DialogDescription>{description}</DialogDescription>}
-        </DialogHeader>
-        <DialogBody>
-          {children === undefined ? null : (
-            <div className="flex flex-col gap-3" style={{ padding: "var(--spacing-2)" }}>
-              {children}
-            </div>
-          )}
-        </DialogBody>
-        <DialogFooter>
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+    <AlertDialog open onOpenChange={(open) => (open ? undefined : onClose())}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          {description === undefined ? null : <AlertDialogDescription>{description}</AlertDialogDescription>}
+        </AlertDialogHeader>
+        {children === undefined ? null : <div className="flex flex-col gap-3">{children}</div>}
+        <AlertDialogFooter>
+          <AlertDialogCancel />
           {action}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

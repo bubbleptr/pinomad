@@ -88,7 +88,7 @@ describe("PendingSignInSteps", () => {
     expect(screen.getByText("Link Google to kieran@example.com")).toBeTruthy();
     await userEvent.type(await screen.findByLabelText("Password"), "my password");
     await userEvent.click(screen.getByRole("button", { name: "Link Google" }));
-    expect(account.linkPending).toHaveBeenCalledWith(ID, "my password");
+    expect(account.linkPending).toHaveBeenCalledWith(ID, { reauth: "grant" });
     await vi.waitFor(() => expect(onDone).toHaveBeenCalled());
   });
 
