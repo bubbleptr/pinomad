@@ -57,6 +57,7 @@ token 都在 `src/app/tokens.css`，分三层：
 - 列表行（`Item` 的 `ItemActions`）、行内表单、卡片里：`size="sm"`（28px）。
 - 对话框页脚、整屏的表单提交：默认的 `md`（32px）。
 - `IconButton` 也是 `md` / `sm` 两档。
+- `icon-xs`（24px）只给附件卡片里的操作按钮（`AttachmentAction`）用，别处不要用：它比行内控件小，放在别处点不准。
 - 同一行的按钮用同一个尺寸。
 
 ### 例子
@@ -155,6 +156,14 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 | `thumbnail.tsx` | 64px 的图片预览：待发送的附件（`onRemove`）和消息里的图（`onClick` 打开大图），`alt` 同时是整块的名称。 |
 | `code-block/` | `CodeBlock` 带高亮和复制按钮的代码块（要复制的命令用 `isWrapped width="100%"`），`Code` 行内代码。 |
 | `markdown/` | `Markdown` 渲染模型输出；对话里用 `shared/ui/chat/chat-markdown.tsx` 的 `ChatMarkdown`，它定好了密度、标题层级和文件链接。各块带 `data-slot="markdown-…"`，`chat.css` 按它调样式。 |
+
+### 附件
+
+文件和图片附件都用 `src/shared/ui/attachment.tsx` 的 `Attachment`（shadcn 的组件），输入框里待发的和消息里已发的是同一套。不要再手写附件标签。
+
+- 文件：`size="xs"` 的横排卡片，`AttachmentMedia` 放文件图标，`AttachmentTitle` 是文件名，`AttachmentDescription` 是大小；上传中写 `Uploading · 38%`，失败写 `Failed`（`state="error"` 把卡片变红，文字说明原因，不只靠颜色）。封装在 `entities/attachment/file-attachments.tsx`。
+- 图片：只有图的 64px 卡片，封装在 `shared/ui/thumbnail.tsx` 的 `Thumbnail`；能点开大图的整张卡片是按钮（`AttachmentTrigger`）。
+- 重试、移除用 `AttachmentAction`。压在图片上的移除按钮是深色角标，悬停或聚焦才出现（触屏常驻）。
 
 ## 文字和布局
 

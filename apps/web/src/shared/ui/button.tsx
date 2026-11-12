@@ -48,6 +48,8 @@ const buttonVariants = cva(
         sm: "h-7 gap-2 px-[11px]",
         icon: "size-8",
         "icon-sm": "size-7",
+        // Attachment actions only (apps/web/DESIGN.md): the one button smaller than a row control.
+        "icon-xs": "size-6 [&_svg:not([class*='size-'])]:size-3.5",
       },
     },
     defaultVariants: { variant: "secondary", size: "md" },
