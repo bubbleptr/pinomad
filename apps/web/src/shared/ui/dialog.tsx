@@ -31,8 +31,9 @@ const popupClassName = cn(
   // enter animation is free to use translate and scale.
   "fixed inset-0 z-50 m-auto flex h-fit max-h-[75vh] w-[400px] max-w-[90vw] flex-col overflow-hidden rounded-[0.75rem] bg-card text-foreground outline-none",
   "shadow-[0_4px_6px_light-dark(oklch(0_0_0/10%),oklch(0_0_0/50%)),0_12px_24px_light-dark(oklch(0_0_0/15%),oklch(0_0_0/70%)),inset_0_0_0_1px_light-dark(transparent,oklch(1_0_0/15%))]",
-  // Rises in; closing is instant.
-  "transition-[opacity,translate,scale] duration-400 ease-(--ease-standard) data-starting-style:translate-y-4 data-starting-style:scale-95 data-starting-style:opacity-0 motion-reduce:transition-none",
+  // Rises in; closing is instant. `starting:` (CSS @starting-style) rather
+  // than data-starting-style, which Base UI skips for a dialog mounted open.
+  "transition-[opacity,translate,scale] duration-250 ease-(--ease-standard) starting:translate-y-4 starting:scale-95 starting:opacity-0 motion-reduce:transition-none",
 )
 
 /**
@@ -66,7 +67,11 @@ function DialogContent({
   const popup = React.useRef<HTMLDivElement>(null)
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Backdrop data-slot="dialog-overlay" className={overlayClassName} />
+      <DialogPrimitive.Backdrop
+        data-slot="dialog-overlay"
+        // Fades in with the popup, on the same timing.
+        className={cn(overlayClassName, "transition-opacity duration-250 ease-(--ease-standard) starting:opacity-0 motion-reduce:transition-none")}
+      />
       <DialogPrimitive.Popup
         ref={(element: HTMLDivElement | null) => {
           popup.current = element

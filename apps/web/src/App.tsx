@@ -1058,9 +1058,13 @@ export function Workbench({
   // opens it so the header button is learned — except on a phone, where the
   // card would cover the exchange that just began.
   const [overviewOpen, setOverviewOpen] = useState(readOverviewOpen);
+  // Only an open the user just asked for plays the card's entrance; a card
+  // restored on load or remounted by a conversation switch just appears.
+  const [overviewEntering, setOverviewEntering] = useState(false);
   const changeOverview = (open: boolean): void => {
     window.localStorage.setItem(OVERVIEW_OPEN_KEY, String(open));
     setOverviewOpen(open);
+    setOverviewEntering(open);
   };
   // The side panel's open state and surface live here so chat entries and the
   // overview can open it on the surface they name (ADR-0040). The surface
@@ -1458,6 +1462,8 @@ export function Workbench({
               onOpenChanges={() => openSurface("changes")}
               onOpenTasks={openTasks}
               onClose={() => changeOverview(false)}
+              entering={overviewEntering}
+              onEntered={() => setOverviewEntering(false)}
             />
           ) : null}
         </div>
