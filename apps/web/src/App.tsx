@@ -33,7 +33,7 @@ import { ConversationComposer } from "./widgets/composer/conversation-composer.t
 import { takeBackForConversation, type PendingTakeBack } from "./widgets/composer/take-back.ts";
 import { ConversationTranscript } from "./widgets/chat/conversation-transcript.tsx";
 import { ComposerSkeleton, ConversationSkeleton, ConversationUnavailable } from "./widgets/chat/conversation-skeleton.tsx";
-import { panelSurfaceOf, SidePanel, SurfaceButtons, type PanelSurface } from "./widgets/side-panel/side-panel.tsx";
+import { panelSurfaceOf, shownSurface, SidePanel, SurfaceButtons, type PanelSurface } from "./widgets/side-panel/side-panel.tsx";
 import { OverviewCard } from "./widgets/overview/overview-card.tsx";
 import { PendingQuestions } from "./presentation/question.tsx";
 import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
@@ -72,6 +72,7 @@ import { OAuthReturnDialog } from "./widgets/account/account-dialog.tsx";
 import { PendingSignInRoute } from "./widgets/account/pending-sign-in.tsx";
 import { NewHostNotices } from "./widgets/account/new-host-notice.tsx";
 import { useDurableView, useRemoteDurable } from "./use-remote.ts";
+import { PluginHostProvider, PluginScope, usePluginWorkbench } from "./entities/plugin/plugin-host.tsx";
 import { createBrowserRtcPlatform } from "./entities/host/browser-rtc.ts";
 import { secureOptions } from "./entities/host/secure-options.ts";
 import { HostRuntimes, type RemoteConnect } from "./entities/host/host-runtime.tsx";
@@ -824,17 +825,21 @@ export function RemoteWorkbench({
     );
   }
   return (
-    <Workbench
-      remote={state.remote}
-      wsUrl={label}
-      rejected={rejected}
-      device={device}
-      notice={notice}
-      hostKey={hostKey}
-      onReconnect={() => setAttempt(attempt + 1)}
-    />
+    <PluginHostProvider remote={state.remote}>
+      <Workbench
+        remote={state.remote}
+        wsUrl={label}
+        rejected={rejected}
+        device={device}
+        notice={notice}
+        hostKey={hostKey}
+        onReconnect={() => setAttempt(attempt + 1)}
+      />
+    </PluginHostProvider>
   );
 }
+
+const NO_DOCS: DurableView["docs"] = [];
 
 export function Workbench({
   remote,
@@ -1068,8 +1073,12 @@ export function Workbench({
     setPanelOpen(true);
   }, []);
   // The shown surface's icon closes the panel; any other opens its surface.
+  // Plugin slots act on the conversation actually on screen; while another
+  // opens, or a draft is up, the view's docs still belong to the old one.
+  const pluginConversationId = conversation?.conversation.id;
+  const plugins = usePluginWorkbench(pluginConversationId, openSurface);
   const selectSurface = (surface: PanelSurface): void => {
-    if (panelOpen && surface === panelSurface) setPanelOpen(false);
+    if (panelOpen && surface === shownSurface(panelSurface, plugins.panels)) setPanelOpen(false);
     else openSurface(surface);
   };
   // A failed/unconfirmed send edited from the transcript flows back into the
@@ -1257,6 +1266,7 @@ export function Workbench({
             open={panelOpen}
             surface={panelSurface}
             liveActivity={liveActivity}
+            pluginPanels={plugins.panels}
             onSelect={selectSurface}
           />
         }
@@ -1460,6 +1470,7 @@ export function Workbench({
           narrow={false}
           open={panelOpen}
           surface={panelSurface}
+          pluginPanels={plugins.panels}
           busy={busy}
           liveActivity={liveActivity}
           onOpenChange={setPanelOpen}
@@ -1480,6 +1491,7 @@ export function Workbench({
           narrow
           open={panelOpen}
           surface={panelSurface}
+          pluginPanels={plugins.panels}
           busy={busy}
           liveActivity={liveActivity}
           onOpenChange={setPanelOpen}
@@ -1505,37 +1517,39 @@ export function Workbench({
       retryKey={imageRetryKey}
       {...(hostKey === undefined ? {} : { source: hostKey })}
     >
-      {framed ? (
-        <AppFrame
-          // A one-shot client reaches a single machine.
-          machines={[
-            {
-              key: hostKey ?? "local",
-              label: view.settings?.hostName ?? wsUrl,
-              view,
-              remote,
-              ...(hostKey === undefined ? {} : { hostKey }),
-              ...(device === undefined ? {} : { device }),
-              ...(onReconnect === undefined ? {} : { retry: onReconnect }),
-            },
-          ]}
-          focusKey={hostKey ?? "local"}
-          draftingChat={drafting && draft.kind === "chat"}
-          shownId={shownId}
-          onDraft={(_key, home) => startDraft(home)}
-          onOpen={(_key, id) => openConversation(id)}
-          onNewChat={() => startDraft({ kind: "chat" })}
-          narrow={narrow}
-        >
-          {body}
-          {extras}
-        </AppFrame>
-      ) : (
-        <>
-          {body}
-          {extras}
-        </>
-      )}
+      <PluginScope conversationId={pluginConversationId} docs={conversation === undefined ? NO_DOCS : view.docs}>
+        {framed ? (
+          <AppFrame
+            // A one-shot client reaches a single machine.
+            machines={[
+              {
+                key: hostKey ?? "local",
+                label: view.settings?.hostName ?? wsUrl,
+                view,
+                remote,
+                ...(hostKey === undefined ? {} : { hostKey }),
+                ...(device === undefined ? {} : { device }),
+                ...(onReconnect === undefined ? {} : { retry: onReconnect }),
+              },
+            ]}
+            focusKey={hostKey ?? "local"}
+            draftingChat={drafting && draft.kind === "chat"}
+            shownId={shownId}
+            onDraft={(_key, home) => startDraft(home)}
+            onOpen={(_key, id) => openConversation(id)}
+            onNewChat={() => startDraft({ kind: "chat" })}
+            narrow={narrow}
+          >
+            {body}
+            {extras}
+          </AppFrame>
+        ) : (
+          <>
+            {body}
+            {extras}
+          </>
+        )}
+      </PluginScope>
     </ImageSourceProvider>
   );
 }

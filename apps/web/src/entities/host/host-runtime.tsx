@@ -30,6 +30,7 @@ import { useHostNameSync, useHosts } from "./host-store.ts";
 import { HostRuntimesContext } from "./host-runtimes.ts";
 import type { HostFocus } from "./focus.ts";
 import { secureOptions } from "./secure-options.ts";
+import { PluginHostProvider } from "../plugin/plugin-host.tsx";
 import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../../shared/ui/empty.tsx";
 
@@ -315,16 +316,21 @@ function ReadyHost({
     focused && focusTarget !== undefined ? view.conversation?.conversation.id : undefined,
     focusConversation,
   );
-  if (!focused) return null;
-  const rejected = <DeviceRejected hostKey={host.hostKey} />;
-  return renderWorkbench({
-    host,
-    remote,
-    device,
-    rejected,
-    retry,
-    opening,
-    cancelOpening: cancel,
-    openConversation: open,
-  });
+  // Plugins load once per connection, whether or not this host is focused.
+  return (
+    <PluginHostProvider remote={remote}>
+      {focused
+        ? renderWorkbench({
+            host,
+            remote,
+            device,
+            rejected: <DeviceRejected hostKey={host.hostKey} />,
+            retry,
+            opening,
+            cancelOpening: cancel,
+            openConversation: open,
+          })
+        : null}
+    </PluginHostProvider>
+  );
 }

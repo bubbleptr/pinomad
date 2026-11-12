@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./v1": "./src/v1.ts"
+    "./v1": "./src/v1.ts",
+    "./v1/web": "./src/v1-web.ts"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17"
   }
 }

@@ -8,7 +8,7 @@ import type { AgentRole, AgentRoles } from "./agents.ts";
 import type { CustomProviderApi, CustomProviderInput, HostAuth, HostProviders, LoginMethod } from "./auth.ts";
 import type { CommandListing } from "./commands.ts";
 import type { DeviceEntry } from "./devices.ts";
-import type { CallMethods, ProtocolVersion, PushToken } from "./frames.ts";
+import type { CallMethods, PluginInfo, ProtocolVersion, PushToken } from "./frames.ts";
 import type { McpStatus } from "./mcp.ts";
 import type { FileListing, FileScope, FolderListing, Home, Organized, Project, SkillListing, SkillScope, WorktreeCheckout } from "./organization.ts";
 import type { PresentationType, QuestionAnswer } from "./presentation.ts";
@@ -210,8 +210,11 @@ export interface DurableView {
   readonly agents: AgentRoles | null;
   /** Release checks and the upgrade in progress (ADR-0043); `null` before its snapshot or when the host predates the `upgrade` stream (5.30). */
   readonly upgrade: HostUpgrade | null;
-  /** What the host announced in its hello; `version` is absent when the host runs from a source checkout. */
-  readonly host?: { readonly version?: string; readonly protocol: ProtocolVersion };
+  /**
+   * What the host announced in its hello; `version` is absent when the host
+   * runs from a source checkout, `plugins` when it has none (ADR-0049).
+   */
+  readonly host?: { readonly version?: string; readonly protocol: ProtocolVersion; readonly plugins?: readonly PluginInfo[] };
 }
 
 export interface DurableViewSource {

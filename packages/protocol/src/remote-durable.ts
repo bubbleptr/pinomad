@@ -1,4 +1,5 @@
 import { applyImmutable } from "@earendil-works/chord/delta";
+import type { JsonValue } from "@earendil-works/chord";
 import type { ConversationId, ConversationView, JsonObject, TaskGraph } from "@earendil-works/pi-durable";
 import { MAX_ATTACHMENTS_PER_MESSAGE, type UserAttachment } from "./attachments.ts";
 import type { ImageVariant, OutgoingImage, ViewImage } from "./images.ts";
@@ -25,6 +26,7 @@ import {
   hostStreams,
   hostSupportsCall,
   hostSupportsFeature,
+  type PluginInfo,
   PROTOCOL,
   type ServerFrame,
   type StreamName,
@@ -342,11 +344,20 @@ export interface RemoteTerminals {
   close(terminalId: TerminalId): Promise<void>;
 }
 
+/** A plugin's browser half and its host methods (5.34, ADR-0049); the list is `view.host.plugins`. */
+export interface RemotePlugins {
+  /** The `web.js` source behind `hello.plugins[].web`; the caller checks its hash. */
+  bundle(name: string): Promise<string>;
+  /** One of the plugin's host methods, for one conversation. */
+  call(conversationId: ConversationId, plugin: string, method: string, args: JsonValue): Promise<JsonValue>;
+}
+
 export interface RemoteDurable {
   readonly view: DurableViewSource;
   readonly controller: DurableController;
   readonly terminals: RemoteTerminals;
   readonly processes: RemoteProcesses;
+  readonly plugins: RemotePlugins;
   /** Switching mode reconnects the whole client (ADR-0033 §3). */
   setConnectionMode(mode: ConnectionMode): void;
   /** Current path, P2P phase, last failure, selected ICE type, cooldown. */
@@ -661,6 +672,7 @@ class RemoteClient {
   #hostTerminals: TerminalsHello | undefined;
   /** The last hello's `processes`: absent when the host's pty module didn't load. */
   #hostProcesses: ProcessesHello | undefined;
+  #hostPlugins: readonly PluginInfo[] = [];
   /** `terminals:<id>` streams and who watches them, kept across reconnects. */
   readonly #terminalWatchers = new Map<StreamName, Set<(state: TerminalsState) => void>>();
   /** `terminal:<id>` streams and their sinks, kept across reconnects. */
@@ -949,6 +961,7 @@ class RemoteClient {
     this.#hostVersion = frame.hostVersion;
     this.#hostTerminals = isTerminalsHello(frame.terminals) ? frame.terminals : undefined;
     this.#hostProcesses = isProcessesHello(frame.processes) ? frame.processes : undefined;
+    this.#hostPlugins = hostSupportsFeature(hostMinor, "plugins") ? pluginInfos(frame.plugins) : [];
     this.#fresh.clear();
     // A host that got older between reconnects no longer covers every host
     // stream; drop the ones it predates together with their values.
@@ -1077,6 +1090,7 @@ class RemoteClient {
         controller: this.#controller(),
         terminals: this.#terminals(),
         processes: this.#processes(),
+        plugins: this.#plugins(),
         setConnectionMode: (mode) => this.setConnectionMode(mode),
         rtcDiagnostics: () => this.rtcDiagnostics(),
         close: () => this.#close(),
@@ -2779,6 +2793,25 @@ class RemoteClient {
     return {
       protocol: { major: PROTOCOL.major, minor: this.#hostMinor },
       ...(this.#hostVersion === undefined ? {} : { version: this.#hostVersion }),
+      ...(this.#hostPlugins.length === 0 ? {} : { plugins: this.#hostPlugins }),
+    };
+  }
+
+  #plugins(): RemotePlugins {
+    const supported = (): void => {
+      if (!hostSupportsFeature(this.#hostMinor, "plugins")) {
+        throw new Error("The host is too old for plugins (needs protocol 5.34); run `pinomad upgrade` on the host");
+      }
+    };
+    return {
+      bundle: async (name) => {
+        supported();
+        return (await this.#call("pluginBundle", { name })).code;
+      },
+      call: async (conversationId, plugin, method, args) => {
+        supported();
+        return this.#call("pluginCall", { conversationId, plugin, method, args });
+      },
     };
   }
 
@@ -3959,4 +3992,18 @@ class RemoteClient {
     this.#rejectSnapshotWaiters(new DisconnectedError());
     this.#update({ connection: "closed" });
   }
+}
+
+/** `hello.plugins`, keeping only well-formed entries; a malformed one is dropped, not fatal. */
+function pluginInfos(value: unknown): readonly PluginInfo[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is PluginInfo => {
+    if (entry === null || typeof entry !== "object") return false;
+    const { name, api, web } = entry as Record<string, unknown>;
+    if (typeof name !== "string" || name === "" || typeof api !== "number") return false;
+    if (web === undefined) return true;
+    if (web === null || typeof web !== "object") return false;
+    const { hash, size } = web as Record<string, unknown>;
+    return typeof hash === "string" && /^[0-9a-f]{64}$/.test(hash) && typeof size === "number";
+  });
 }

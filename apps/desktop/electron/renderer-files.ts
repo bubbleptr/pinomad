@@ -8,10 +8,12 @@ import { extname, isAbsolute, relative, resolve } from "node:path";
  * `https:` for the server-accounts API (ADR-0022) — `wss:` already lets the
  * page dial any host, so allowing https fetches opens no new reach while
  * plain http stays out. script-src takes 'wasm-unsafe-eval' for the diff
- * highlighter's WebAssembly regex engine; it allows no eval().
+ * highlighter's WebAssembly regex engine; it allows no eval(). It takes
+ * `blob:` for plugin UI (ADR-0049): bundles arrive over the host connection,
+ * are hash-checked, and are imported from a blob: URL the page made.
  */
 export const RENDERER_CSP =
-  "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src ws: wss: https:";
+  "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src ws: wss: https:";
 
 export const APP_SCHEME = "app";
 export const APP_HOST = "pinomad";

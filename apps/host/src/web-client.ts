@@ -25,6 +25,8 @@ const NOT_BUILT = "Web client not built: run bun run build";
 // bundle may run in it. Directives beyond default-src, each for a need:
 // - script-src 'wasm-unsafe-eval': the diff highlighter compiles its
 //   WebAssembly regex engine; it allows WebAssembly compilation, not eval().
+// - script-src blob:: plugin UI (ADR-0049) is fetched over the host
+//   connection, hash-checked, and imported from a blob: URL the page made.
 // - style-src 'unsafe-inline': the diff highlighter injects <style> elements
 //   into its shadow roots at runtime, so neither a hash nor a nonce can cover them.
 // - img-src data:: message images and placeholders are data: URLs.
@@ -34,7 +36,7 @@ const NOT_BUILT = "Web client not built: run bun run build";
 const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   "content-security-policy": [
     "default-src 'self'",
-    "script-src 'self' 'wasm-unsafe-eval'",
+    "script-src 'self' 'wasm-unsafe-eval' blob:",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data:",
     "connect-src 'self' ws: wss:",

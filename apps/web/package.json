@@ -17,6 +17,7 @@
     "@fontsource-variable/geist-mono": "5.3.0",
     "@hugeicons/core-free-icons": "4.3.5",
     "@hugeicons/react": "1.1.10",
+    "@noble/hashes": "2.4.0",
     "@pierre/diffs": "1.6.1",
     "@pierre/highlights": "0.2.0",
     "@pierre/theme": "2.0.0",
@@ -33,6 +34,7 @@
   },
   "devDependencies": {
     "@pinomad/host": "workspace:*",
+    "@pinomad/plugin": "workspace:*",
     "@playwright/test": "^1.64.1",
     "@storybook/addon-docs": "10.6.5",
     "@storybook/react-vite": "10.6.5",

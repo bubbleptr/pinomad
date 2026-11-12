@@ -2,23 +2,44 @@
 // browser tests run on the Vite dev server, which sends no policy and injects
 // an inline preamble, so only a production build served by the host shows
 // whether a dependency started needing inline script, eval or a foreign origin.
+// The same build loads a plugin's UI from a blob: module (ADR-0049).
 
+import { cp } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { chromium } from "@playwright/test";
 import { build } from "vite";
-import { expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 import { coding } from "@pinomad/host/src/extensions/coding.ts";
 import { startFauxHost, tempDir, useCleanups } from "@pinomad/host/test/support.ts";
 
 const defer = useCleanups();
 const webConfig = fileURLToPath(new URL("../vite.config.ts", import.meta.url));
+const NOTES_PLUGIN = fileURLToPath(new URL("../../host/test/fixtures/plugins/notes", import.meta.url));
+
+let out: Awaited<ReturnType<typeof tempDir>>;
+beforeAll(async () => {
+  out = await tempDir();
+  await build({ configFile: webConfig, logLevel: "error", build: { outDir: join(out.path, "dist"), emptyOutDir: true } });
+}, 120_000);
+afterAll(() => out?.remove());
+
+/** Logs every CSP violation to the console, where `refused` collects it. */
+async function watchCsp(page: import("@playwright/test").Page): Promise<string[]> {
+  const refused: string[] = [];
+  page.on("console", (message) => {
+    if (/content security policy/i.test(message.text())) refused.push(message.text().slice(0, 200));
+  });
+  await page.addInitScript(() => {
+    document.addEventListener("securitypolicyviolation", (event) => {
+      console.error(`Content Security Policy violation: ${event.effectiveDirective} ${event.blockedURI}`);
+    });
+  });
+  return refused;
+}
 
 it("runs the built client served by the host without CSP violations", async () => {
-  const out = await tempDir();
-  defer(out.remove);
-  await build({ configFile: webConfig, logLevel: "error", build: { outDir: join(out.path, "dist"), emptyOutDir: true } });
   const project = await tempDir();
   defer(project.remove);
   const projectName = project.path.split("/").at(-1)!;
@@ -41,15 +62,7 @@ it("runs the built client served by the host without CSP violations", async () =
   const browser = await chromium.launch();
   defer(() => browser.close());
   const page = await browser.newPage({ viewport: { width: 1280, height: 844 } });
-  const refused: string[] = [];
-  page.on("console", (message) => {
-    if (/content security policy/i.test(message.text())) refused.push(message.text().slice(0, 200));
-  });
-  await page.addInitScript(() => {
-    document.addEventListener("securitypolicyviolation", (event) => {
-      console.error(`Content Security Policy violation: ${event.effectiveDirective} ${event.blockedURI}`);
-    });
-  });
+  const refused = await watchCsp(page);
 
   const response = await page.goto(`${origin}/#token=${encodeURIComponent(host.token)}&url=${encodeURIComponent(host.url)}`);
   expect(response?.headers()["content-security-policy"]).toContain("default-src 'self'");
@@ -90,4 +103,48 @@ it("runs the built client served by the host without CSP violations", async () =
     .waitFor();
 
   expect(refused).toEqual([]);
+});
+
+it("loads a plugin's panel under the CSP and updates it through a plugin call", async () => {
+  const dataDir = await tempDir();
+  defer(dataDir.remove);
+  await cp(NOTES_PLUGIN, join(dataDir.path, "plugins", "notes"), { recursive: true });
+  const project = await tempDir();
+  defer(project.remove);
+  const projectName = project.path.split("/").at(-1)!;
+  const host = await startFauxHost(defer, {
+    dataDir: dataDir.path,
+    webRoot: join(out.path, "dist"),
+    projects: [project.path],
+    answers: ["Board ready."],
+  });
+  const origin = new URL(host.url.replace(/^ws/, "http")).origin;
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  const page = await browser.newPage({ viewport: { width: 1280, height: 844 }, colorScheme: "light" });
+  const refused = await watchCsp(page);
+  const errors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text().slice(0, 200));
+  });
+  await page.goto(`${origin}/#token=${encodeURIComponent(host.token)}&url=${encodeURIComponent(host.url)}`);
+  const prompt = page.getByRole("textbox", { name: "Prompt" }).or(page.getByRole("combobox", { name: "Prompt" }));
+  await prompt.waitFor();
+  await page.getByRole("button", { name: projectName, exact: true }).hover();
+  await page.getByRole("button", { name: `New conversation in ${projectName}`, exact: true }).click();
+  await prompt.fill("hello");
+  await prompt.press("Enter");
+  await page.getByText("Board ready.").waitFor();
+
+  await page.getByRole("button", { name: "Notes", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  await panel.getByText("0 on the board ✓").waitFor();
+  await panel.getByRole("button", { name: "Add note" }).click();
+  await panel.getByText("1 on the board ✓").waitFor();
+  expect(await panel.getByRole("list", { name: "Notes" }).getByRole("listitem").allTextContents()).toEqual(["Note from the panel"]);
+  if (process.env.PINOMAD_PLUGIN_SHOT !== undefined) await page.screenshot({ path: process.env.PINOMAD_PLUGIN_SHOT });
+
+  expect(refused).toEqual([]);
+  expect(errors).toEqual([]);
 });
