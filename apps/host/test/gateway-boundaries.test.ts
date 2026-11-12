@@ -226,7 +226,7 @@ describe("gateway boundaries", () => {
     expect(index.headers.get("referrer-policy")).toBe("no-referrer");
 
     // The sandbox page runs model-written HTML (ADR-0049): its scripts run, in
-    // an opaque origin, with no network, framed only by the client's own origin.
+    // an opaque origin, without fetches, framed only by the client's own origin.
     await writeFile(join(webRoot.path, "sandbox.html"), "<html>sandbox</html>");
     const sandbox = await fetch(`http://127.0.0.1:${port}/sandbox.html`);
     expect(sandbox.status).toBe(200);

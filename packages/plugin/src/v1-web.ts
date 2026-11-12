@@ -27,7 +27,7 @@ export interface PanelDefinition {
 }
 
 export interface SandboxProps {
-  /** A whole document; its scripts run. A new value starts a new document. */
+  /** A whole document; its scripts run, isolated from the client. A new value starts a new document. */
   readonly html: string;
   /** The frame's accessible name. */
   readonly title: string;
@@ -49,8 +49,11 @@ export interface WebApi {
   /** Opens one of this plugin's panels by id. */
   openPanel(id: string): void;
   /**
-   * Renders model-written HTML, scripts included, in a frame cut off from the
-   * shell (no storage, no DOM access) and from the network. It fills its slot.
+   * Renders model-written HTML, scripts included, in a frame that cannot reach
+   * anything of the client: not its device key, its storage or the shell's
+   * page. Network access is not part of the promise: fetches, navigation and
+   * external resources are blocked as best effort, and WebRTC is not blocked.
+   * It fills its slot.
    */
   readonly Sandbox: ComponentType<SandboxProps>;
 }

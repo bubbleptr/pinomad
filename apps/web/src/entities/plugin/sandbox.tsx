@@ -1,7 +1,8 @@
 // The frame plugins render model-written HTML in (ADR-0049). The HTML may
 // carry scripts, which must not run in the shell's page: they could read the
-// device key. public/sandbox.html is served with its own policy (opaque
-// origin, no network), and receives the HTML by postMessage once it is ready.
+// device key. public/sandbox.html is served with its own policy (an opaque
+// origin, so none of the client's storage or page; fetches blocked as best
+// effort, WebRTC not), and receives the HTML by postMessage once it is ready.
 import { useEffect, useRef } from "react";
 import type { SandboxProps } from "@pinomad/plugin/v1/web";
 

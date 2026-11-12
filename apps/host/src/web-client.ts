@@ -53,8 +53,11 @@ const SECURITY_HEADERS: Readonly<Record<string, string>> = {
  * The page plugins render model-written HTML in (ADR-0049): it is framed with
  * `sandbox="allow-scripts"`, receives the HTML by postMessage and writes it
  * into itself. Its scripts must run, so the page cannot share the client's
- * policy; instead it gets no network at all, keeps an opaque origin even when
- * opened directly (`sandbox`), and only the client's own origin may frame it.
+ * policy. What it guarantees is an opaque origin, even when opened directly
+ * (`sandbox`): no access to the client's storage, device key or page. Only
+ * the client's own origin may frame it. `default-src 'none'` also blocks
+ * fetches and external resources, as best effort: WebRTC stays open, since
+ * no engine we ship on honours a CSP `webrtc` directive.
  */
 export const SANDBOX_PAGE = "sandbox.html";
 export const SANDBOX_CSP = [

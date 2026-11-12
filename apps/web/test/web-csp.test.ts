@@ -149,7 +149,7 @@ it("loads a plugin's panel under the CSP and updates it through a plugin call", 
   expect(errors).toEqual([]);
 });
 
-it("runs a plugin's model-written HTML in the sandbox, cut off from the shell and the network", async () => {
+it("runs a plugin's model-written HTML in the sandbox, cut off from the shell and from fetch", async () => {
   const dataDir = await tempDir();
   defer(dataDir.remove);
   await cp(NOTES_PLUGIN, join(dataDir.path, "plugins", "notes"), { recursive: true });

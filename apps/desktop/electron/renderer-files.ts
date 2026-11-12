@@ -17,8 +17,8 @@ export const RENDERER_CSP =
 
 /**
  * The page plugins render model-written HTML in (ADR-0049), the same policy
- * as apps/host/src/web-client.ts sends: its scripts run, with no network, in
- * an opaque origin, framed only by the app itself.
+ * as apps/host/src/web-client.ts sends: its scripts run in an opaque origin,
+ * framed only by the app itself; fetches are blocked as best effort.
  */
 const SANDBOX_CSP =
   "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; frame-ancestors 'self'; sandbox allow-scripts";

@@ -59,7 +59,7 @@ describe("cspFor", () => {
   it("gives the sandbox page its own policy and every other file the renderer's", () => {
     const sandbox = cspFor(join(dir, "sandbox.html"), dir);
     // Model-written HTML runs there: its scripts run, in an opaque origin,
-    // with no network, framed only by the app itself.
+    // without fetches, framed only by the app itself.
     expect(sandbox).toContain("default-src 'none'");
     expect(sandbox).toContain("script-src 'unsafe-inline'");
     expect(sandbox).toContain("frame-ancestors 'self'");
