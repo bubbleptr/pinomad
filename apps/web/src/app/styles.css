@@ -476,11 +476,6 @@ html {
   cursor: default;
 }
 
-.pigui-sidenav-section-toggle:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
-}
-
 .pigui-sidenav-section-toggle__title {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -499,13 +494,7 @@ html {
   justify-content: center;
   translate: 0 -1px;
   opacity: 0;
-  transition:
-    opacity 120ms ease-out,
-    rotate 150ms ease-out;
-}
-
-.pigui-sidenav-section-toggle__chevron[data-expanded="true"] {
-  rotate: 90deg;
+  transition: opacity 120ms ease-out;
 }
 
 /* Actions (new chat, add project, row menus) are hidden until the row is

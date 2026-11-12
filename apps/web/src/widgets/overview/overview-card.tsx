@@ -21,7 +21,8 @@ import { ContextBar, ContextHeadline } from "../../entities/conversation/context
 import { branchOf, ChangeFigure, changeStatOf, type ChangeStat } from "../../entities/conversation/change-stat.tsx";
 import { taskTally } from "../../entities/conversation/task-tally.ts";
 import { DocumentView } from "../../presentation/documents.tsx";
-import { ChevronRight, FileDiff, FolderClosed, FolderGitTwo, GitBranch } from "../../shared/ui/icons.tsx";
+import { DisclosureButton, DisclosureChevron } from "../../shared/ui/disclosure-button.tsx";
+import { FileDiff, FolderClosed, FolderGitTwo, GitBranch } from "../../shared/ui/icons.tsx";
 import { StatusDot } from "../../shared/ui/status-dot.tsx";
 
 /** Running subagents listed by name before the rest fold into the summary line. */
@@ -106,20 +107,16 @@ function Section({ section, title, summary, children }: { section: SectionKey; t
   return (
     <section className={`${CARD} pt-1 ${collapsed ? "pb-1" : "pb-1.5"}`}>
       <h2 className="-mx-1.5">
-        <button
-          type="button"
-          aria-expanded={!collapsed}
+        <DisclosureButton
+          open={!collapsed}
           aria-controls={body}
-          className="flex h-7 w-full items-center gap-2 rounded-md px-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-hover hover:text-foreground focus-visible:bg-surface-hover"
+          className="flex h-7 w-full items-center gap-2 rounded-md px-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-hover hover:text-foreground"
           onClick={toggle}
         >
           <span className="shrink-0">{title}</span>
           <span className="min-w-0 flex-1 truncate text-end font-normal tabular-nums">{collapsed ? summary : null}</span>
-          <ChevronRight
-            aria-hidden
-            className={`size-3.5 shrink-0 motion-safe:transition-transform motion-safe:duration-150 motion-safe:ease-out ${collapsed ? "" : "rotate-90"}`}
-          />
-        </button>
+          <DisclosureChevron />
+        </DisclosureButton>
       </h2>
       <div id={body} hidden={collapsed} className={`flex flex-col gap-0.5 ${toggled ? "motion-safe:animate-[pigui-overview-reveal_150ms_ease-out]" : ""}`}>
         {children}
