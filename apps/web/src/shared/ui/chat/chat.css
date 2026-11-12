@@ -1092,6 +1092,11 @@ mark.chat-skill-mention {
   font-weight: var(--font-weight-normal, 400) !important;
 }
 
+/* Pills like the model selector above them. */
+.prompt-input__footer [data-slot="select-trigger"] {
+  border-radius: var(--radius-full);
+}
+
 /* —— Chain of thought: rail skin —— */
 
 .chain-of-thought-rail {
