@@ -1040,9 +1040,6 @@ mark.chat-skill-mention {
   --_composer-shadow-color: var(--shadow-color);
   --shadow-low: 0 var(--border-width) var(--spacing-0-5) var(--_composer-shadow-color),
     0 var(--spacing-0-5) var(--spacing-2) var(--_composer-shadow-color);
-  /* One step below ChatComposer's default so the chrome sits closer to the edge.
-     The elevated shell has no border; the total content inset is unchanged. */
-  --_chat-composer-padding: var(--spacing-2);
   /* An 18px shell around controls at the button radius (7px): the send
      button and model picker read --_button-radius. */
   --_chat-composer-radius: 18px;
