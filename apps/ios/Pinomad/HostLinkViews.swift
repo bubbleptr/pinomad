@@ -315,10 +315,15 @@ struct HostLinkConfirmView: View {
             }
             GridRow {
                 label("Host ID")
-                HStack(spacing: 8) {
-                    Text(HostLinkCopy.shortHostId(request.hostId))
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    // In full: it is compared against the one `pinomad up` prints.
+                    // A break opportunity between every character: lines fill
+                    // evenly and iOS never hyphenates, which would add dashes
+                    // that aren't in the id. Copy takes the real id.
+                    Text(request.hostId.map(String.init).joined(separator: "\u{200B}"))
                         .font(.body.monospaced())
-                        .accessibilityLabel("Host ID \(request.hostId)")
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel(request.hostId)
                     Button {
                         UIPasteboard.general.string = request.hostId
                         copiedId = true
@@ -326,7 +331,7 @@ struct HostLinkConfirmView: View {
                         Image(copiedId ? .check : .copy)
                     }
                     .buttonStyle(.borderless)
-                    .accessibilityLabel(copiedId ? "Copied" : "Copy the full host ID")
+                    .accessibilityLabel(copiedId ? "Copied" : "Copy the host ID")
                     .sensoryFeedback(.success, trigger: copiedId)
                 }
             }
