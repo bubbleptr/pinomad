@@ -394,7 +394,7 @@ function FolderColumn({
               // Focus stays on the strip, which owns the keyboard.
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => onPick(folder.path)}
-              className={`flex h-7 shrink-0 cursor-default items-center gap-2 rounded-[7px] px-2 text-sm ${
+              className={`flex h-7 shrink-0 cursor-default items-center gap-2 rounded-lg px-2 text-sm ${
                 isSelected
                   ? "bg-[var(--surface-pressed)] group-focus:bg-[var(--primary)] group-focus:text-[var(--primary-foreground)]"
                   : folder.path === next

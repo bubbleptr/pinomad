@@ -45,7 +45,7 @@
   --spacing-6: 24px;
   --spacing-8: 32px;
 
-  --radius: 7px;
+  --radius: 8px;
   --radius-inner: 5px;
   --radius-element: var(--radius);
   --radius-container: 10px;

@@ -1040,10 +1040,10 @@ mark.chat-skill-mention {
   --_composer-shadow-color: var(--shadow-color);
   --shadow-low: 0 var(--border-width) var(--spacing-0-5) var(--_composer-shadow-color),
     0 var(--spacing-0-5) var(--spacing-2) var(--_composer-shadow-color);
-  /* An 18px shell around controls at the button radius (7px): the send
-     button and model picker read --_button-radius. */
-  --_chat-composer-radius: 18px;
-  --_button-radius: var(--radius-element);
+  /* Concentric with the controls inside: outer radius = padding + the
+     control radius. ChatComposer derives the send button's --_button-radius
+     back from these, so it lands on --radius-element. */
+  --_chat-composer-radius: calc(var(--_chat-composer-padding) + var(--radius-element));
 }
 
 .prompt-input[data-drop] [data-slot="chat-composer"] {
@@ -1137,8 +1137,8 @@ mark.chat-skill-mention {
   /* Cancel the column gap as well as tucking under the card. */
   margin: calc(-1 * (var(--_prompt-tray-tuck) + var(--spacing-1-5))) var(--spacing-4) 0;
   padding: calc(var(--_prompt-tray-tuck) + var(--spacing-1)) var(--spacing-3) var(--spacing-1-5);
-  /* The tray's bottom corners match the shell's. */
-  border-radius: 0 0 18px 18px;
+  /* Concentric with the pickers: the tray's side padding + their radius. */
+  border-radius: 0 0 calc(var(--spacing-3) + var(--radius-element)) calc(var(--spacing-3) + var(--radius-element));
   background: light-dark(var(--surface-muted), oklch(0.235 0 0));
   color: var(--muted-foreground);
   font-size: var(--font-size-sm);
