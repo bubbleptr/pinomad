@@ -172,10 +172,12 @@ struct OverviewSheet: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(reading.figures)
                     .foregroundStyle(reading.percent == nil ? .secondary : .primary)
+                    .rollingNumber(reading.figures)
                 Spacer(minLength: 12)
                 if let percent = reading.percent {
                     Text("\(percent)%")
                         .foregroundStyle(reading.warning ? Color(uiColor: .systemOrange) : .secondary)
+                        .rollingNumber(percent)
                 }
             }
             .monospacedDigit()
@@ -309,8 +311,8 @@ struct OverviewSheet: View {
                 // numbers as a floor, as on the Web card.
                 let floor = truncated ? "+" : ""
                 HStack(spacing: 4) {
-                    Text("+\(additions)\(floor)").foregroundStyle(.green)
-                    Text("−\(deletions)\(floor)").foregroundStyle(.red)
+                    Text("+\(additions)\(floor)").foregroundStyle(.green).rollingNumber(additions)
+                    Text("−\(deletions)\(floor)").foregroundStyle(.red).rollingNumber(deletions)
                 }
                 .monospacedDigit()
                 .accessibilityElement(children: .ignore)

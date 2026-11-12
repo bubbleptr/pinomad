@@ -428,6 +428,7 @@ private struct OptionRow: View {
     let multi: Bool
     let picked: Bool
     let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Where the label column starts: the glyph's width plus the gap.
     static let labelInset: CGFloat = 26
@@ -447,6 +448,8 @@ private struct OptionRow: View {
                 Image(icon)
                     .font(.subheadline)
                     .foregroundStyle(picked ? Color.accentColor : .secondary)
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: picked)
                     .frame(width: Self.labelInset - 8)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(label)
@@ -492,6 +495,7 @@ private struct CardButtonStyle: ButtonStyle {
             .background(background, in: .capsule)
             .contentShape(.capsule)
             .opacity(configuration.isPressed ? 0.6 : 1)
+            .animation(.easeOut(duration: 0.15), value: configuration.isPressed)
             .sensoryFeedback(.impact(weight: .light), trigger: configuration.isPressed) { _, pressed in pressed }
     }
 

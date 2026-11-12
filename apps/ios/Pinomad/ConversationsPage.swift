@@ -16,6 +16,8 @@ struct ConversationsPage: View {
     /// title being typed. The old title is kept here, not looked up again:
     /// the row may leave a status list while the alert is up.
     @State private var renaming: ConversationRef?
+    /// Bumped by each archive, for its tap; the row itself is gone by then.
+    @State private var archives = 0
     @State private var renamingFrom = ""
     @State private var newTitle = ""
     @State private var renameError: String?
@@ -68,6 +70,7 @@ struct ConversationsPage: View {
                 .disabled(!model.isConnected(draftHost ?? ""))
             }
         }
+        .sensoryFeedback(.impact(weight: .medium), trigger: archives)
         .alert("Rename Conversation", isPresented: Binding(
             get: { renaming != nil },
             set: { if !$0 { renaming = nil } }
@@ -160,11 +163,17 @@ struct ConversationsPage: View {
                             renaming = ref
                         }
                     }
-                    Button("Archive", image: .archive) { model.archive(ref, true) }
+                    Button("Archive", image: .archive) {
+                        model.archive(ref, true)
+                        archives += 1
+                    }
                 }
                 .swipeActions(edge: .trailing) {
-                    Button("Archive", image: .archive) { model.archive(ref, true) }
-                        .tint(.indigo)
+                    Button("Archive", image: .archive) {
+                        model.archive(ref, true)
+                        archives += 1
+                    }
+                    .tint(.indigo)
                 }
         } else {
             label
@@ -238,6 +247,7 @@ struct ConversationRowLabel: View {
 /// of the same width when idle, so titles line up.
 private struct FamilyStatusDot: View {
     let status: ConversationStatus?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
@@ -246,7 +256,7 @@ private struct FamilyStatusDot: View {
                 Circle()
                     .fill(filter.status == nil ? Color.secondary : filter.tint)
                     .frame(width: 8, height: 8)
-                    .phaseAnimator(status == .running ? [1.0, 0.35] : [1.0]) { dot, opacity in
+                    .phaseAnimator(status == .running && !reduceMotion ? [1.0, 0.35] : [1.0]) { dot, opacity in
                         dot.opacity(opacity)
                     } animation: { _ in .easeInOut(duration: 1.2) }
                     .accessibilityLabel(filter.status == nil ? "Unknown status" : filter.title)

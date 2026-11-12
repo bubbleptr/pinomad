@@ -370,6 +370,8 @@ private struct DeviceCodeSteps: View {
 
     @Environment(\.openURL) private var openURL
     @State private var copied = false
+    /// Counts taps, so every copy taps back, not only the first.
+    @State private var copies = 0
 
     var body: some View {
         let url = URL(string: uri)
@@ -384,12 +386,15 @@ private struct DeviceCodeSteps: View {
                         .textSelection(.enabled)
                     Button {
                         UIPasteboard.general.string = code
-                        copied = true
+                        copies += 1
+                        withAnimation { copied = true }
                     } label: {
                         Label(copied ? "Copied" : "Copy", image: copied ? .check : .copy)
+                            .contentTransition(.symbolEffect(.replace))
                     }
-                    .buttonStyle(.tactile(.bordered))
-                    .sensoryFeedback(.success, trigger: copied)
+                    // Not .tactile: .success below is the feedback; both would buzz twice.
+                    .buttonStyle(.bordered)
+                    .sensoryFeedback(.success, trigger: copies)
                 }
             }
             step(2) {

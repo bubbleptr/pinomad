@@ -259,7 +259,6 @@ struct ComposerMenuCard<Rows: View>: View {
         // The material does not pick up a system appearance switch while a
         // short menu is already on screen; a new identity re-resolves it.
         .id(colorScheme)
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
         .layoutPriority(1)
     }
 }

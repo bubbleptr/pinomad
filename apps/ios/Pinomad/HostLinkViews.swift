@@ -35,6 +35,8 @@ struct JoinCommandBlock: View {
     let command: String
 
     @State private var copied = false
+    /// Counts taps, so every copy taps back, not only the first.
+    @State private var copies = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -48,13 +50,17 @@ struct JoinCommandBlock: View {
             HStack(spacing: 12) {
                 Button {
                     UIPasteboard.general.string = command
-                    copied = true
+                    copies += 1
+                    withAnimation { copied = true }
                 } label: {
                     Label(copied ? "Copied" : "Copy", image: copied ? .check : .copy)
+                        .contentTransition(.symbolEffect(.replace))
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.tactile(.glass))
-                .sensoryFeedback(.success, trigger: copied)
+                // Not .tactile: the success tap is this button's feedback,
+                // and a second impact on top of it reads as a double buzz.
+                .buttonStyle(.glass)
+                .sensoryFeedback(.success, trigger: copies)
 
                 // AirDrop, Messages or Mail to the computer that will run it.
                 ShareLink(item: command) {
@@ -171,6 +177,7 @@ struct HostLinkConfirmView: View {
     @Binding var flow: HostLinkFlow
 
     @State private var copiedId = false
+    @State private var idCopies = 0
 
     private var busy: Bool {
         switch flow.step {
@@ -326,13 +333,15 @@ struct HostLinkConfirmView: View {
                         .accessibilityLabel(request.hostId)
                     Button {
                         UIPasteboard.general.string = request.hostId
-                        copiedId = true
+                        idCopies += 1
+                        withAnimation { copiedId = true }
                     } label: {
                         Image(copiedId ? .check : .copy)
+                            .contentTransition(.symbolEffect(.replace))
                     }
                     .buttonStyle(.borderless)
                     .accessibilityLabel(copiedId ? "Copied" : "Copy the host ID")
-                    .sensoryFeedback(.success, trigger: copiedId)
+                    .sensoryFeedback(.success, trigger: idCopies)
                 }
             }
         }

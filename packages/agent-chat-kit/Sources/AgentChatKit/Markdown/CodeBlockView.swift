@@ -65,6 +65,8 @@ struct CopyButton: View {
         } label: {
             Image(copied ? Icon.check : .copy)
                 .contentTransition(.symbolEffect(.replace))
+                // The replace effect only plays inside an animated change.
+                .animation(.default, value: copied)
                 .font(.caption)
                 .frame(width: 28, height: 28)
                 .contentShape(.rect)

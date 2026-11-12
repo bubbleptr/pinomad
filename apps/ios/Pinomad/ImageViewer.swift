@@ -10,6 +10,7 @@ struct ImageViewer: View {
 
     @Environment(\.inlineImageLoader) private var loader
     @Environment(\.inlineImageEpoch) private var epoch
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var fetched: ToolImage?
     @State private var failed = false
     @State private var attempt = 0
@@ -54,7 +55,7 @@ struct ImageViewer: View {
                                 settledScale = scale
                                 // Back at fit: recentre, so the next drag is a
                                 // dismiss pull from the middle.
-                                if scale <= 1 { withAnimation(.snappy) { recentre() } }
+                                if scale <= 1 { withAnimation(reduceMotion ? nil : .snappy) { recentre() } }
                             }
                     )
                     .simultaneousGesture(
@@ -71,7 +72,7 @@ struct ImageViewer: View {
                                 } else if abs(value.translation.height) > 80 || abs(value.predictedEndTranslation.height) > 300 {
                                     close()
                                 } else {
-                                    withAnimation(.snappy) { drag = .zero }
+                                    withAnimation(reduceMotion ? nil : .snappy) { drag = .zero }
                                 }
                             }
                     )
@@ -98,7 +99,7 @@ struct ImageViewer: View {
         }
         .contentShape(.rect)
         .onTapGesture(count: 2) {
-            withAnimation(.snappy) {
+            withAnimation(reduceMotion ? nil : .snappy) {
                 scale = scale > 1 ? 1 : 2.5
                 settledScale = scale
                 recentre()
