@@ -1,5 +1,5 @@
 // The composer halves of attachments: the hidden file picker the "+" menu
-// opens, and the staged-thumbnail row the prompt input shows in its drawer.
+// opens, and the staged-thumbnail row the prompt input shows inside its shell.
 // Shared by the conversation composer and the draft home.
 import type { ReactNode, RefObject } from "react";
 import { Thumbnail } from "@/shared/ui/thumbnail";
@@ -44,8 +44,8 @@ export function ImageFileInput({
   return <FilePickerInput inputRef={inputRef} onFiles={onFiles} accept="image/*" />;
 }
 
-/** The staged thumbnails; undefined means "nothing staged" — no drawer. */
-export function attachmentDrawer({
+/** The staged thumbnails; undefined means "nothing staged" — no row. */
+export function attachmentRow({
   images,
   pending,
   onRemove,

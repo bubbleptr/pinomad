@@ -85,7 +85,7 @@ export function ModelSelector({
             data-testid="model-thinking-trigger"
             disabled={isDisabled || models.length === 0}
             aria-label="Model and Thinking"
-            size="sm"
+            size="md"
             variant="ghost"
             {...(problem === undefined ? {} : { tooltip: problem.title })}
           />

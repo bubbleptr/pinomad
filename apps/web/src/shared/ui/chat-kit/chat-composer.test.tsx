@@ -7,6 +7,36 @@ import { useEffect, useRef } from "react";
 import { ChatComposer } from "./chat-composer";
 import { useChatComposerContext } from "./chat-context";
 
+// The composer body — the elevated surface — is the div that wraps the input
+// area (styles.body). A custom `input` slot renders inside the inputArea div,
+// so the body is two ancestors up from the slot marker. Walking from a known
+// marker keeps this independent of StyleX's generated class names.
+function renderBodyClass(elevation?: "none" | "low"): string {
+  const {container} = render(
+    <ChatComposer
+      onSubmit={() => {}}
+      elevation={elevation}
+      input={<div data-testid="composer-input-marker" />}
+    />,
+  );
+  const marker = container.querySelector(
+    '[data-testid="composer-input-marker"]',
+  )!;
+  const inputArea = marker.parentElement!;
+  const body = inputArea.parentElement!;
+  return body.className;
+}
+
+describe("ChatComposer elevation", () => {
+  it("applies a distinct body class for each supported level", () => {
+    expect(renderBodyClass("none")).not.toBe(renderBodyClass("low"));
+  });
+
+  it("defaults to 'low' (preserves the raised look)", () => {
+    expect(renderBodyClass(undefined)).toBe(renderBodyClass("low"));
+  });
+});
+
 // A custom input that participates in the composer's composition contract:
 // reads value/submit from the exported context, and registers a focus control
 // so the shell can drive body-click-to-focus without knowing its DOM shape.

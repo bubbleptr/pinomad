@@ -21,7 +21,7 @@ import {
   ComboboxTrigger,
 } from "../../shared/ui/combobox.tsx";
 import { Spinner } from "../../shared/ui/spinner.tsx";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, selectTriggerClassName } from "../../shared/ui/select.tsx";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue, selectTriggerClassName } from "../../shared/ui/select.tsx";
 import { Field, FieldDescription, FieldError, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
@@ -260,9 +260,11 @@ export function CustomEndpointForm({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {CUSTOM_PROVIDER_APIS.map((value) => (
-                <SelectItem key={value} value={value}>{API_LABELS[value]}</SelectItem>
-              ))}
+              <SelectGroup>
+                {CUSTOM_PROVIDER_APIS.map((value) => (
+                  <SelectItem key={value} value={value}>{API_LABELS[value]}</SelectItem>
+                ))}
+              </SelectGroup>
             </SelectContent>
           </Select>
         </Field>

@@ -18,7 +18,7 @@ export function ChatAddMenu({
 }) {
   return (
     <DropdownMenu {...(onOpenChange === undefined ? {} : { onOpenChange: (open: boolean) => onOpenChange(open) })}>
-      <DropdownMenuTrigger disabled={isDisabled} render={<IconButton icon={<Plus aria-hidden="true" />} label="More actions" size="sm" />} />
+      <DropdownMenuTrigger disabled={isDisabled} render={<IconButton icon={<Plus aria-hidden="true" />} label="More actions" />} />
       {/* Up, like the model popover: below a draft's composer the menu runs
           off short screens; it still flips when there's no room. */}
       <DropdownMenuContent side="top" className="min-w-72">

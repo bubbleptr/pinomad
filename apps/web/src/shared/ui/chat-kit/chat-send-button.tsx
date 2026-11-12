@@ -78,7 +78,14 @@ export function ChatSendButton(props: ChatSendButtonProps): ReactNode {
       disabled={!isStopShown && isDisabled}
       onClick={isStopShown ? onStop : handleSend}
       {...rest}
-      className={cn(theme.className, "rounded-full", className)}
+      // Disabled (nothing to send) recedes to a muted fill with a faint arrow
+      // rather than a half-transparent black block.
+      className={cn(
+        theme.className,
+        "rounded-[var(--_button-radius,var(--radius-full))]",
+        "data-disabled:bg-(--surface-muted) data-disabled:text-(--disabled-foreground) data-disabled:opacity-100",
+        className,
+      )}
       style={style}
     />
   );

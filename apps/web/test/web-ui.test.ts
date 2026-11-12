@@ -232,7 +232,7 @@ async function dropFile(page: Page, name: string, body: string): Promise<void> {
   }, [name, body] as const);
 }
 
-/** The staged-attachment row the composer drawer shows. */
+/** The staged-attachment row inside the composer. */
 const attachments = (page: Page) => page.locator('[data-testid="composer-attachments"] [role="group"]');
 
 /** A staged image that finished preparing — the pending skeleton has no img. */

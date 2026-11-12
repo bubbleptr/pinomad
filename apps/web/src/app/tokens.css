@@ -45,7 +45,7 @@
   --spacing-6: 24px;
   --spacing-8: 32px;
 
-  --radius: 7px;
+  --radius: 8px;
   --radius-inner: 5px;
   --radius-element: var(--radius);
   --radius-container: 10px;
@@ -125,10 +125,6 @@
      fixed layers. */
   --surface: var(--background);
   --surface-raised: var(--card);
-  /* The fill of the composer, which has no edge: a gray step off the pane in
-     light, the popover's lift in dark. Opaque, since the transcript scrolls
-     under it. */
-  --surface-field: light-dark(#f5f5f5, var(--popover));
   /* Inset fills (code, chips): recessed, so darker than the pane they sit in. */
   --surface-muted: light-dark(rgb(0 0 0 / 4%), rgb(0 0 0 / 22%));
   /* Hover and press washes, painted over whatever fill is underneath. */
@@ -169,8 +165,8 @@
   /* The unfilled ring under a spinner's arc. */
   --track: light-dark(#ccd3db, #5a5e66);
 
-  /* Raised chat chrome (the pasted-text preview, the scroll-to-bottom
-     button): clean's card and popover depth, a half-pixel
+  /* Raised chat chrome (the composer, the pasted-text preview, the
+     scroll-to-bottom button): clean's card and popover depth, a half-pixel
      edge plus a lift. A layer whose color is transparent in one scheme
      belongs to the other's shadow. */
   --shadow-color: light-dark(oklch(0 0 0 / 10%), oklch(0 0 0 / 30%));
@@ -183,7 +179,8 @@
     0 2px 6px -2px light-dark(rgb(0 0 0 / 6%), transparent);
   /* A secondary button's edge, from clean's button (--ui-btnc-shadow): the
      low shadow at rest; hover firms the ring and the drop up instead of
-     tinting the fill. */
+     tinting the fill. Declared here, so it keeps this value where a
+     component redefines --shadow-low for itself (the composer). */
   --shadow-button: var(--shadow-low);
   --shadow-button-hover:
     0 0 0 0.5px light-dark(rgb(0 0 0 / 10%), rgb(255 255 255 / 16%)),

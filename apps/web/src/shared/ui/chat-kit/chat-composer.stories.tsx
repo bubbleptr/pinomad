@@ -67,7 +67,7 @@ export const StopShown: Story = {
 export const WithHeader: Story = {
   args: {
     header: (
-      <div className="flex flex-wrap gap-2">
+      <div className="flex gap-1">
         <ChatBadge label="screenshot.png" />
         <ChatBadge label="trace.log" />
       </div>
@@ -81,6 +81,10 @@ export const WithError: Story = {
 
 export const WithWarning: Story = {
   args: { status: { type: "warning", message: "Context window is almost full." } },
+};
+
+export const Flat: Story = {
+  args: { elevation: "none" },
 };
 
 export const Disabled: Story = {

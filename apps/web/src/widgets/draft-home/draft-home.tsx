@@ -1,4 +1,4 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../shared/ui/select.tsx";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "../../shared/ui/select.tsx";
 import { useRef, useState } from "react";
 import { hostSupportsCall, hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import type { Home } from "@pinomad/protocol/organization.ts";
@@ -13,7 +13,7 @@ import { draftMessage } from "../../entities/agent/skill-bindings.ts";
 import { splitFiles } from "../../entities/attachment/file-attachments.ts";
 import { FileAttachmentChip } from "../../entities/attachment/file-attachments.tsx";
 import { useFileAttachments } from "../../entities/attachment/use-file-attachments.ts";
-import { attachmentDrawer, FilePickerInput, ImageFileInput } from "../../entities/image/attachments.tsx";
+import { attachmentRow, FilePickerInput, ImageFileInput } from "../../entities/image/attachments.tsx";
 import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useDraftModelPick } from "../../entities/model/use-draft-model-pick.ts";
@@ -242,7 +242,7 @@ export function DraftHome({
               commands: false,
               skills: skills.trigger !== undefined,
             })}
-            attachments={attachmentDrawer({
+            attachments={attachmentRow({
               images,
               pending,
               onRemove: remove,
@@ -330,12 +330,14 @@ export function DraftHome({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {machine.options.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          <Computer aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-                          {option.label}
-                        </SelectItem>
-                      ))}
+                      <SelectGroup>
+                        {machine.options.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            <Computer aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
                 )}
@@ -355,14 +357,16 @@ export function DraftHome({
                     <SelectValue>{(value: string) => projectItems.find((item) => item.value === value)?.label ?? "No project"}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    {projectItems.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.value === "chat"
-                          ? <ChatAdd aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-                          : <FolderClosed aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />}
-                        {item.label}
-                      </SelectItem>
-                    ))}
+                    <SelectGroup>
+                      {projectItems.map((item) => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {item.value === "chat"
+                            ? <ChatAdd aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+                            : <FolderClosed aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />}
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
                 {draft.kind === "project" ? (

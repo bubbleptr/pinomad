@@ -1,16 +1,16 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { FileAttachmentChip } from "../attachment/file-attachments.tsx";
-import { attachmentDrawer } from "./attachments.tsx";
+import { attachmentRow } from "./attachments.tsx";
 import { moss, sky, sunset } from "./image-fixtures.ts";
 
-// `attachmentDrawer` builds the prompt input's drawer node rather than being
+// `attachmentRow` builds the prompt input's attachments node rather than being
 // a component, so the meta is typed by its argument.
 const meta = {
-  title: "Entities/Image/AttachmentDrawer",
+  title: "Entities/Image/AttachmentRow",
   args: { images: [sky, sunset], pending: false, onRemove: fn() },
-  render: (args) => <>{attachmentDrawer(args)}</>,
-} satisfies Meta<Parameters<typeof attachmentDrawer>[0]>;
+  render: (args) => <>{attachmentRow(args)}</>,
+} satisfies Meta<Parameters<typeof attachmentRow>[0]>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;

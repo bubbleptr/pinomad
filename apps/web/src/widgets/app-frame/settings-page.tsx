@@ -18,7 +18,7 @@ import {
   ComboboxTrigger,
   ComboboxValue,
 } from "../../shared/ui/combobox.tsx";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, selectTriggerClassName } from "../../shared/ui/select.tsx";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue, selectTriggerClassName } from "../../shared/ui/select.tsx";
 import { SideNav, SideNavItem, SideNavSection } from "../../shared/ui/side-nav.tsx";
 import { Field, FieldError, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
@@ -217,12 +217,14 @@ export function useSettingsScreen({
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {machines.map((entry) => (
-          <SelectItem key={entry.key} value={entry.key}>
-            <HostStatusDot connected={entry.view?.connection === "connected"} />
-            {entry.label}
-          </SelectItem>
-        ))}
+        <SelectGroup>
+          {machines.map((entry) => (
+            <SelectItem key={entry.key} value={entry.key}>
+              <HostStatusDot connected={entry.view?.connection === "connected"} />
+              {entry.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
       </SelectContent>
     </Select>
   ) : (
@@ -673,9 +675,11 @@ function ModelsSection({ view, remote, connected }: { view: DurableView; remote:
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {levels.map((level) => (
-                  <SelectItem key={level} value={level}>{thinkingLevelLabels[level]}</SelectItem>
-                ))}
+                <SelectGroup>
+                  {levels.map((level) => (
+                    <SelectItem key={level} value={level}>{thinkingLevelLabels[level]}</SelectItem>
+                  ))}
+                </SelectGroup>
               </SelectContent>
             </Select>
           </SettingsRow>

@@ -309,6 +309,7 @@ export function ChatPromptInput({
       {...rest}
     >
       <ChatComposer
+        elevation="low"
         header={attachments}
         footerActions={startActions}
         input={

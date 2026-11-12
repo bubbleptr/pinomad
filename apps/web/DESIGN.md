@@ -10,7 +10,7 @@ token 都在 `src/app/tokens.css`，分三层：
 - **二级（shadcn 语义名）**：`--background`、`--foreground`、`--primary`、`--muted-foreground`、`--border` 这一套。Tailwind 类直接用（`bg-card`、`text-muted-foreground`、`text-destructive`），不要写死颜色值。
 - **应用专有语义**：shadcn 没有名字的那些。表面：`--surface` 和高一级的 `--surface-raised` 在对话框里各抬高一级（`styles.css` 里按 `data-slot` 设置），`--surface-muted` 是凹陷的填充，`--surface-hover` / `--surface-pressed` 是盖在任意底色上的悬停和按下层。还有 `--default`（中性填充）、`--border-strong`、`--disabled-foreground`，状态色（`--success`、`--warning`，以及浅色铺底 `--*-muted` 和铺底上的文字 `--*-strong`），阴影（`--shadow-low` / `--shadow-med` / `--shadow-button`）。
 
-组件里用二级和应用语义，不直接用色板（数据可视化除外）。手写 CSS 里也用同一套名字（`var(--foreground)`），没有另一套别名。每个颜色是一对 `light-dark()`，跟着 `<html>` 的 `color-scheme` 走；`color-scheme` 由 `<html>` 上的 `dark` 类决定（外观设置维护这个类，`styles.css` 据此设 `color-scheme`），所以 `dark:` 类和 token 永远一致。取值来自 affectUI 的 clean 主题：文字、细边和浅色铺底是半透明的黑或白，焦点环是蓝色，基础圆角 7px（`--radius`，Tailwind 的 `rounded-*` 按它缩放）。
+组件里用二级和应用语义，不直接用色板（数据可视化除外）。手写 CSS 里也用同一套名字（`var(--foreground)`），没有另一套别名。每个颜色是一对 `light-dark()`，跟着 `<html>` 的 `color-scheme` 走；`color-scheme` 由 `<html>` 上的 `dark` 类决定（外观设置维护这个类，`styles.css` 据此设 `color-scheme`），所以 `dark:` 类和 token 永远一致。取值来自 affectUI 的 clean 主题：文字、细边和浅色铺底是半透明的黑或白，焦点环是蓝色，基础圆角 8px（`--radius`，Tailwind 的 `rounded-*` 按它缩放）。
 
 `styles.css` 开头的 `@layer` 顺序不能动，也不要跑 `shadcn init`（它会改写 `styles.css`）。
 
@@ -164,10 +164,6 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 - 文件：`size="xs"` 的横排卡片，`AttachmentMedia` 放文件图标，`AttachmentTitle` 是文件名，`AttachmentDescription` 是大小；上传中写 `Uploading · 38%`，失败写 `Failed`（`state="error"` 把卡片变红，文字说明原因，不只靠颜色）。封装在 `entities/attachment/file-attachments.tsx`。
 - 图片：只有图的 64px 卡片，封装在 `shared/ui/thumbnail.tsx` 的 `Thumbnail`；能点开大图的整张卡片是按钮（`AttachmentTrigger`）。
 - 重试、移除用 `AttachmentAction`。压在图片上的移除按钮是深色角标，悬停或聚焦才出现（触屏常驻）。
-
-### 输入框
-
-对话输入框的外壳在 `ChatComposer`（`shared/ui/chat-kit/chat-composer.tsx`），照 shadcn 的 Prompt Input：圆角 18px，填充 `--surface-field`，平时没有描边和阴影；编辑区聚焦时只多一圈 `--border-strong` 描边，不用蓝色聚焦环（输入框大部分时间都有焦点，蓝环太吵）。发送和停止按钮是圆的。暂存的附件放在壳内最上面一行（`header`），不在壳外另起一层。别的地方不用 `--surface-field`。
 
 ## 文字和布局
 

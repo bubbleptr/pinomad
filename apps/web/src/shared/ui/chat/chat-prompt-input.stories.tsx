@@ -58,7 +58,7 @@ export const StreamingSteerDraft: Story = {
 export const WithActionsAndFooter: Story = {
   args: {
     startActions: (
-      <IconButton label="More actions" size="sm" icon={<Plus aria-hidden="true" />} />
+      <IconButton label="More actions" icon={<Plus aria-hidden="true" />} />
     ),
     // The draft's tray: where the conversation will run.
     footer: (

@@ -3,7 +3,7 @@
 // from local state.
 import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../shared/ui/select.tsx";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "../../shared/ui/select.tsx";
 import { Field, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { Textarea } from "../../shared/ui/textarea.tsx";
@@ -148,9 +148,11 @@ export function AgentEditorDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {modelOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                  ))}
+                  <SelectGroup>
+                    {modelOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
             </Field>
@@ -167,9 +169,11 @@ export function AgentEditorDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {levelOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                  ))}
+                  <SelectGroup>
+                    {levelOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                    ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
             </Field>
