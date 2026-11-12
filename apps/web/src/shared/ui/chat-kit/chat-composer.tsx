@@ -62,15 +62,15 @@ export interface ChatComposerProps extends Omit<BaseProps<HTMLDivElement>, "onCh
 // =============================================================================
 
 // The shell follows shadcn's prompt input: a filled box with no edge or lift
-// at rest, and the focus ring of a text field while the editor has focus (not
-// the buttons inside, which draw their own). Forced colors drop the ring, so
-// the focused editor gets an outline there.
+// at rest. The editor is focused most of the time, so its focus (not that of
+// the buttons inside, which draw their own ring) is a gray edge rather than a
+// text field's blue ring; forced colors get an outline.
 const rootClass =
   "relative z-0 isolate flex flex-col [--_chat-composer-radius:18px] [--_chat-composer-padding:var(--spacing-2)]";
 
 const bodyClass = cn(
-  "relative z-[2] flex cursor-text flex-col gap-3 rounded-[var(--_chat-composer-radius)] border border-transparent bg-[var(--surface-field)] p-[calc(var(--_chat-composer-padding)_-_1px)] transition-[border-color,box-shadow] duration-[var(--duration-fast)] ease-[var(--ease-standard)]",
-  "has-[[aria-multiline=true]:focus]:border-[var(--ring)] has-[[aria-multiline=true]:focus]:ring-3 has-[[aria-multiline=true]:focus]:ring-ring/30",
+  "relative z-[2] flex cursor-text flex-col gap-3 rounded-[var(--_chat-composer-radius)] border border-transparent bg-[var(--surface-field)] p-[calc(var(--_chat-composer-padding)_-_1px)] transition-[border-color] duration-[var(--duration-fast)] ease-[var(--ease-standard)]",
+  "has-[[aria-multiline=true]:focus]:border-[var(--border-strong)]",
   "forced-colors:border-[CanvasText] forced-colors:has-[[aria-multiline=true]:focus]:outline-2 forced-colors:has-[[aria-multiline=true]:focus]:outline-offset-2 forced-colors:has-[[aria-multiline=true]:focus]:outline-[Highlight]",
 );
 

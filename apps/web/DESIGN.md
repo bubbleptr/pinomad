@@ -167,7 +167,7 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 
 ### 输入框
 
-对话输入框的外壳在 `ChatComposer`（`shared/ui/chat-kit/chat-composer.tsx`），照 shadcn 的 Prompt Input：圆角 18px，填充 `--surface-field`，平时没有描边和阴影；编辑区聚焦时是文本框的聚焦环（`--ring` 描边加 3px 光晕）。发送和停止按钮是圆的。暂存的附件放在壳内最上面一行（`header`），不在壳外另起一层。别的地方不用 `--surface-field`。
+对话输入框的外壳在 `ChatComposer`（`shared/ui/chat-kit/chat-composer.tsx`），照 shadcn 的 Prompt Input：圆角 18px，填充 `--surface-field`，平时没有描边和阴影；编辑区聚焦时只多一圈 `--border-strong` 描边，不用蓝色聚焦环（输入框大部分时间都有焦点，蓝环太吵）。发送和停止按钮是圆的。暂存的附件放在壳内最上面一行（`header`），不在壳外另起一层。别的地方不用 `--surface-field`。
 
 ## 文字和布局
 
