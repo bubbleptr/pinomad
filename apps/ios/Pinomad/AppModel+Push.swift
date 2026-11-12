@@ -1,5 +1,6 @@
 import Foundation
 import PinomadCore
+import SwiftUI
 
 /// The push switch and tapped notifications. The decisions themselves live
 /// in `PinomadCore.Push`; this is the thin per-host assembly.
@@ -37,19 +38,15 @@ extension AppModel {
         advancePushTarget()
     }
 
-    /// Route the pending tap: drop it when the host is no longer paired,
-    /// wait for that host's first view, then open its conversation exactly
-    /// once — the screen moves only then, straight to it (#429).
+    /// Resolve the destination from local pairings before waiting on any network.
     func advancePushTarget() {
-        guard hostsLoaded, let target = pendingPush else { return }
+        guard let target = pendingPush else { return }
         var storedHostKeys = Set(hosts.hosts.map(\.hostKey))
         storedHostKeys.formUnion(unsavedHostKeys)
-        let runtime = runtimes[target.hostKey] ?? (pairingRuntime?.hostKey == target.hostKey
-            ? pairingRuntime : nil)
         let action = pushTargetAction(
             target,
             storedHostKeys: storedHostKeys,
-            hostReady: runtime?.isConnectedNow == true && runtime?.snapshot != nil)
+            hostsLoaded: hostsLoaded)
         switch action {
         case .drop:
             pendingPush = nil
@@ -57,8 +54,12 @@ extension AppModel {
             break
         case .open(let ref):
             pendingPush = nil
-            navPath = [.conversation(ref)]
-            openConversation(ref)
+            // A notification is a destination, not an animated trip through Home.
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                navPath = [.conversation(ref)]
+            }
         }
     }
 

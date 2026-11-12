@@ -153,26 +153,23 @@ public func pushForgetPlan(
     return canClear ? .clearThenForget : .forgetWithWarning
 }
 
-/// What the pending tap does once the stored hosts and their connection
-/// state are known.
+/// Navigation waits only for local pairing records, never for the network.
 public enum PushTargetAction: Equatable, Sendable {
     /// The host is no longer paired — nothing to open.
     case drop
-    /// The host has not finished connecting and loading its conversations.
+    /// Local pairing records have not been loaded yet.
     case wait
     case open(ConversationRef)
 }
 
-/// Decide a tap. Every paired host is already connected (#429), so the
-/// focus plays no part: opening the conversation moves it. The pending tap
-/// stays queued until that host is ready, so a slow connect neither drops
-/// it nor moves the screen early.
+/// Open a known host's conversation immediately; its page owns loading and
+/// connection errors. A cold launch must load pairings before rejecting a tap.
 public func pushTargetAction(
     _ target: PushTarget,
     storedHostKeys: Set<String>,
-    hostReady: Bool
+    hostsLoaded: Bool
 ) -> PushTargetAction {
+    guard hostsLoaded else { return .wait }
     guard storedHostKeys.contains(target.hostKey) else { return .drop }
-    guard hostReady else { return .wait }
     return .open(ConversationRef(hostKey: target.hostKey, conversationId: target.conversationId))
 }
