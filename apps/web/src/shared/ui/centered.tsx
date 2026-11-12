@@ -3,7 +3,7 @@ import { hostWindowChrome } from "../host-chrome.ts";
 
 const page: CSSProperties = {
   width: "100%",
-  color: "var(--color-text-primary)",
+  color: "var(--foreground)",
 };
 
 /**

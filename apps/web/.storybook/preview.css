@@ -10,8 +10,8 @@ body.sb-show-main {
   min-height: 100vh;
   box-sizing: border-box;
   padding: 1.5rem;
-  background: var(--color-background-surface);
-  color: var(--color-text-primary);
+  background: var(--surface);
+  color: var(--foreground);
 }
 
 /* Stories sit in the conversation column's width (max-w-[44rem], centred,

@@ -8,7 +8,7 @@ import { cn } from "cn";
 import { themeProps } from "./theme-props";
 
 const variants = {
-  neutral: "bg-[light-dark(#e5e5e5,var(--color-neutral))] text-[light-dark(#262626,#e5e5e5)]",
+  neutral: "bg-[light-dark(#e5e5e5,var(--default))] text-[light-dark(#262626,#e5e5e5)]",
   info: "bg-[light-dark(#0074e2,#6d9cfe)] text-[light-dark(#ffffff,#171717)]",
   success: "bg-[light-dark(#198100,#64af4c)] text-[light-dark(#ffffff,#171717)]",
   warning: "bg-[#ffce2f] text-[#171717]",

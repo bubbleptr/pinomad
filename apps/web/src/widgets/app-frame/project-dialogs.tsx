@@ -279,7 +279,7 @@ export function AddProjectDialog({
                 aria-label="Selected folder"
                 data-testid="picker-path"
                 data-path={selected}
-                className="flex h-8 min-w-0 items-center gap-0.5 border-t border-[var(--border)] bg-[var(--color-background-muted)] px-2 text-[13px] text-[var(--color-text-secondary)]"
+                className="flex h-8 min-w-0 items-center gap-0.5 border-t border-[var(--border)] bg-[var(--surface-muted)] px-2 text-[13px] text-[var(--muted-foreground)]"
               >
                 {pathBar.map((crumb, index) => {
                   const last = index === pathBar.length - 1;
@@ -292,8 +292,8 @@ export function AddProjectDialog({
                         disabled={adding}
                         aria-current={last ? "location" : undefined}
                         onClick={() => pick(crumb.path)}
-                        className={`max-w-[14rem] min-w-0 truncate rounded px-1 py-0.5 hover:bg-[var(--color-overlay-hover)] focus-visible:outline-2 focus-visible:outline-[var(--color-border-emphasized)] ${
-                          last ? "text-[var(--color-text-primary)]" : ""
+                        className={`max-w-[14rem] min-w-0 truncate rounded px-1 py-0.5 hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-strong)] ${
+                          last ? "text-[var(--foreground)]" : ""
                         }`}
                       >
                         {crumb.label}
@@ -396,10 +396,10 @@ function FolderColumn({
               onClick={() => onPick(folder.path)}
               className={`flex h-7 shrink-0 cursor-default items-center gap-2 rounded-[7px] px-2 text-sm ${
                 isSelected
-                  ? "bg-[var(--color-overlay-pressed)] group-focus:bg-[var(--primary)] group-focus:text-[var(--primary-foreground)]"
+                  ? "bg-[var(--surface-pressed)] group-focus:bg-[var(--primary)] group-focus:text-[var(--primary-foreground)]"
                   : folder.path === next
-                    ? "bg-[var(--color-overlay-pressed)]"
-                    : "hover:bg-[var(--color-overlay-hover)]"
+                    ? "bg-[var(--surface-pressed)]"
+                    : "hover:bg-[var(--surface-hover)]"
               }`}
             >
               <FolderClosed aria-hidden="true" className="size-4 shrink-0 opacity-70" />

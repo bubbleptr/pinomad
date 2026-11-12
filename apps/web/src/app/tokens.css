@@ -1,9 +1,14 @@
-/* The app's design tokens (ADR-0048).
+/* The app's design tokens (ADR-0048), in three tiers:
 
-   Colors use shadcn's variable names, so components added with the shadcn
-   CLI read them as-is. Each is one light-dark() pair: the value follows the
-   element's color-scheme, which styles.css sets on <html> from the `.dark`
-   class that the appearance setting drives (the class `dark:` follows too).
+   1. Primitives: the hue palette and the scales (spacing, radius, type,
+      motion). Raw values; nothing here says what a value is for.
+   2. Semantic colors under shadcn's names, so components added with the
+      shadcn CLI read them as-is.
+   3. App semantics shadcn has no name for: surfaces, status colors, shadows.
+
+   Every color is one light-dark() pair: the value follows the element's
+   color-scheme, which styles.css sets on <html> from the `.dark` class that
+   the appearance setting drives (the class `dark:` follows too).
 
    The values are affectUI's "clean" theme (MIT, docs/licenses/affectui.md):
    text, hairlines and washes are translucent black or white, so one value
@@ -12,136 +17,25 @@
    white, short of the 4.5:1 that hints and second lines need), and dark keeps
    a lift between the main pane, raised surfaces (the composer, settings
    groups) and popovers, since this app separates those by fill. */
+
+/* —— 1. Primitives —— */
 :root {
-  --background: light-dark(#ffffff, #1c1c1e);
-  --foreground: light-dark(rgb(0 0 0 / 88%), rgb(255 255 255 / 90%));
-  --card: light-dark(#ffffff, #1f1f22);
-  --card-foreground: var(--foreground);
-  --popover: light-dark(#ffffff, #252528);
-  --popover-foreground: var(--foreground);
-  --primary: light-dark(rgb(0 0 0 / 88%), rgb(255 255 255 / 90%));
-  --primary-foreground: light-dark(#ffffff, #161618);
-  /* Quiet fills and hover washes (clean's --aui-subtle). The accent, which
-     marks the highlighted menu item and the selected row, is a step
-     stronger so it still reads as a selection. */
-  --secondary: light-dark(rgb(0 0 0 / 3%), rgb(255 255 255 / 4%));
-  --secondary-foreground: var(--foreground);
-  --muted: light-dark(rgb(0 0 0 / 3%), rgb(255 255 255 / 4%));
-  --muted-foreground: light-dark(rgb(0 0 0 / 55%), rgb(255 255 255 / 50%));
-  --accent: light-dark(rgb(0 0 0 / 5%), rgb(255 255 255 / 8%));
-  --accent-foreground: var(--foreground);
-  --destructive: light-dark(#c4320a, #ff8a7a);
-  /* The red wash a destructive button or error notice sits on, and the text
-     that reads on it. */
-  --destructive-muted: light-dark(rgb(240 68 56 / 10%), rgb(255 107 95 / 14%));
-  --destructive-strong: var(--destructive);
-  --border: light-dark(rgb(0 0 0 / 8%), rgb(255 255 255 / 14%));
-  --input: var(--border);
-  --ring: light-dark(rgb(0 96 226 / 70%), rgb(77 141 255 / 80%));
-  --radius: 7px;
-  --sidebar: light-dark(#f7f7f7, #161618);
-  --sidebar-foreground: var(--foreground);
-  --sidebar-primary: var(--primary);
-  --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: var(--accent);
-  --sidebar-accent-foreground: var(--foreground);
-  --sidebar-border: var(--border);
-  --sidebar-ring: var(--ring);
+  /* The hue palette (clean's --aui-blue … --aui-cyan). Charts and meters
+     paint with these directly, as fills that only need to read against each
+     other and the card; the status dots below point at them. Not text
+     colors: most are under 4.5:1 on white. */
+  --palette-blue: light-dark(#0190fe, #4fb0fe);
+  --palette-green: light-dark(#5fc88a, #7dcf9f);
+  --palette-amber: light-dark(#e8b000, #e6c24d);
+  --palette-orange: light-dark(#f28a2e, #f2a15c);
+  --palette-red: light-dark(#f04438, #ff6b5f);
+  --palette-pink: light-dark(#ee3e9e, #f06db5);
+  --palette-purple: light-dark(#a651f0, #b98af0);
+  --palette-teal: light-dark(#13b3a0, #4fc3b4);
+  --palette-cyan: light-dark(#14b3f0, #5cc6ee);
 
-  /* App tokens shadcn has no name for. */
-  /* Inset fills (code, chips): recessed, so darker than the pane they sit in. */
-  --surface-muted: light-dark(rgb(0 0 0 / 4%), rgb(0 0 0 / 22%));
-  --surface-hover: light-dark(rgb(0 0 0 / 3%), rgb(255 255 255 / 4%));
-  /* A secondary button's edge, from clean's button (--ui-btnc-shadow): a
-     half-pixel ring and a soft drop; hover firms both up instead of tinting
-     the fill. Dark has one drop layer, so the second is transparent there. */
-  --shadow-button:
-    0 0 0 0.5px light-dark(rgb(0 0 0 / 6%), rgb(255 255 255 / 10%)),
-    0 1px 1px -1px light-dark(rgb(0 0 0 / 10%), transparent),
-    0 1px 2px 0 light-dark(rgb(0 0 0 / 5%), rgb(0 0 0 / 40%));
-  --shadow-button-hover:
-    0 0 0 0.5px light-dark(rgb(0 0 0 / 10%), rgb(255 255 255 / 16%)),
-    0 1px 1px -1px light-dark(rgb(0 0 0 / 12%), transparent),
-    0 1px 3px 0 light-dark(rgb(0 0 0 / 7%), rgb(0 0 0 / 40%));
-  --default: light-dark(rgb(0 0 0 / 6%), rgb(255 255 255 / 10%));
-  --success: light-dark(#1e8a4f, #7dcf9f);
-  --warning: light-dark(#b25e00, #ffb35c);
-  /* Status washes (Alert, Badge) and the text that reads on each. Clean sets
-     the status color itself on its soft wash; in light that is under 4.5:1
-     for green, orange and blue (3.96, 4.21, 4.37), so their light text is
-     the same hue darkened just past it (about 4.6:1). The red wash is
-     --destructive-muted above. */
-  --info-muted: light-dark(rgb(1 144 254 / 10%), rgb(79 176 254 / 14%));
-  --info-strong: light-dark(#006ccd, #4fb0fe);
-  --success-muted: light-dark(rgb(95 200 138 / 14%), rgb(125 207 159 / 14%));
-  --success-strong: light-dark(#1b7e48, #7dcf9f);
-  --warning-muted: light-dark(rgb(242 138 46 / 12%), rgb(242 161 92 / 14%));
-  --warning-strong: light-dark(#a75800, #ffb35c);
-  /* Status dots: clean's palette fills, brighter than the text colors so 8px
-     still reads. */
-  --dot-success: light-dark(#5fc88a, #7dcf9f);
-  --dot-warning: light-dark(#e8b000, #e6c24d);
-  --dot-error: light-dark(#f04438, #ff6b5f);
-  /* Categorical data colors for charts and meters (clean's --aui-blue …
-     --aui-cyan): fills, not text, so they only need to read against each
-     other and the card. */
-  --data-blue: light-dark(#0190fe, #4fb0fe);
-  --data-green: light-dark(#5fc88a, #7dcf9f);
-  --data-amber: light-dark(#e8b000, #e6c24d);
-  --data-orange: light-dark(#f28a2e, #f2a15c);
-  --data-red: light-dark(#f04438, #ff6b5f);
-  --data-pink: light-dark(#ee3e9e, #f06db5);
-  --data-purple: light-dark(#a651f0, #b98af0);
-  --data-teal: light-dark(#13b3a0, #4fc3b4);
-  --data-cyan: light-dark(#14b3f0, #5cc6ee);
-  /* Toasts sit on the opposite of the page: near-black on light, white on
-     dark; an error toast is a deep red on both. */
-  --inverse: light-dark(#0a1317, #ffffff);
-  --inverse-foreground: light-dark(#ffffff, #171717);
-  --destructive-inverse: light-dark(#aa071e, #e3193b);
-  --skeleton: light-dark(#ebebeb, #525252);
-  /* The unfilled ring under a spinner's arc. */
-  --track: light-dark(#ccd3db, #5a5e66);
-  /* Reading size for message text and the composer that writes it. One step
-     above the 14px chrome (sidebar, trace rows, menus) so the conversation
-     reads as body copy rather than UI labels. */
-  --text-transcript-size: 0.9375rem;
-}
-
-/* —— Scales and the surface ladder ——
-   The spacing, radius, type and motion scales the app's own CSS (chat.css,
-   the ported chat kit, markdown and code block) is written against. The
-   names predate ADR-0048; the colors point at the tokens above, except the
-   --color-background-* ladder, which a dialog shifts up a step (styles.css),
-   so what paints with it matches the layer it sits on. */
-:root {
-  --color-background-body: var(--sidebar);
-  --color-background-surface: var(--background);
-  --color-background-card: var(--card);
-  --color-background-popover: var(--popover);
-  --color-background-muted: var(--surface-muted);
-  --color-border-emphasized: light-dark(rgb(0 0 0 / 13%), rgb(255 255 255 / 20%));
-  --color-text-primary: var(--foreground);
-  --color-text-secondary: var(--muted-foreground);
-  --color-text-disabled: light-dark(rgb(0 0 0 / 30%), rgb(255 255 255 / 30%));
-  --color-text-accent: var(--primary);
-  --color-text-blue: var(--info-strong);
-  --color-neutral: var(--default);
-  --color-overlay-hover: var(--surface-hover);
-  --color-overlay-pressed: light-dark(oklch(0 0 0 / 10%), oklch(1 0 0 / 10%));
-  /* Error text sits on --color-error-muted (error banners). */
-  --color-error: var(--destructive-strong);
-  --color-error-muted: var(--destructive-muted);
-  --color-shadow: light-dark(oklch(0 0 0 / 10%), oklch(0 0 0 / 30%));
-
-  --radius-inner: 5px;
-  --radius-element: var(--radius);
-  --radius-container: 10px;
-  --radius-full: 9999px;
-  --border-width: 1px;
-  --size-element-sm: 28px;
-  --size-element-md: 32px;
-
+  /* The scales the app's own CSS (chat.css, the ported chat kit, markdown and
+     code block) is written against; Tailwind classes use Tailwind's. */
   --spacing-0-5: 2px;
   --spacing-1: 4px;
   --spacing-1-5: 6px;
@@ -150,6 +44,15 @@
   --spacing-4: 16px;
   --spacing-6: 24px;
   --spacing-8: 32px;
+
+  --radius: 7px;
+  --radius-inner: 5px;
+  --radius-element: var(--radius);
+  --radius-container: 10px;
+  --radius-full: 9999px;
+  --border-width: 1px;
+  --size-element-sm: 28px;
+  --size-element-md: 32px;
 
   /* System UI faces on every platform, Latin and CJK paired from the same
      vendor (SF Pro + PingFang, Segoe UI + Microsoft YaHei, Roboto + Noto Sans
@@ -171,13 +74,102 @@
   --font-weight-normal: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
-  --text-supporting-size: var(--font-size-sm);
-  --text-supporting-leading: 1.6667;
+  /* Reading size for message text and the composer that writes it. One step
+     above the 14px chrome (sidebar, trace rows, menus) so the conversation
+     reads as body copy rather than UI labels. */
+  --text-transcript-size: 0.9375rem;
+
+  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-fast: 125ms;
+  --duration-fast-max: 165ms;
+}
+
+/* —— 2. Semantic colors (shadcn's names) —— */
+:root {
+  --background: light-dark(#ffffff, #1c1c1e);
+  --foreground: light-dark(rgb(0 0 0 / 88%), rgb(255 255 255 / 90%));
+  --card: light-dark(#ffffff, #1f1f22);
+  --card-foreground: var(--foreground);
+  --popover: light-dark(#ffffff, #252528);
+  --popover-foreground: var(--foreground);
+  --primary: var(--foreground);
+  --primary-foreground: light-dark(#ffffff, #161618);
+  /* Quiet fills and hover washes (clean's --aui-subtle). The accent, which
+     marks the highlighted menu item and the selected row, is a step
+     stronger so it still reads as a selection. */
+  --muted: light-dark(rgb(0 0 0 / 3%), rgb(255 255 255 / 4%));
+  --muted-foreground: light-dark(rgb(0 0 0 / 55%), rgb(255 255 255 / 50%));
+  --secondary: var(--muted);
+  --secondary-foreground: var(--foreground);
+  --accent: light-dark(rgb(0 0 0 / 5%), rgb(255 255 255 / 8%));
+  --accent-foreground: var(--foreground);
+  --destructive: light-dark(#c4320a, #ff8a7a);
+  --border: light-dark(rgb(0 0 0 / 8%), rgb(255 255 255 / 14%));
+  --input: var(--border);
+  --ring: light-dark(rgb(0 96 226 / 70%), rgb(77 141 255 / 80%));
+  --sidebar: light-dark(#f7f7f7, #161618);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+/* —— 3. App semantics —— */
+:root {
+  /* The surface a component sits on and the raised fill one step above it.
+     A dialog shifts both up a step (styles.css), so what paints with them
+     matches the layer it is on; --background, --card and --popover stay the
+     fixed layers. */
+  --surface: var(--background);
+  --surface-raised: var(--card);
+  /* Inset fills (code, chips): recessed, so darker than the pane they sit in. */
+  --surface-muted: light-dark(rgb(0 0 0 / 4%), rgb(0 0 0 / 22%));
+  /* Hover and press washes, painted over whatever fill is underneath. */
+  --surface-hover: var(--muted);
+  --surface-pressed: light-dark(oklch(0 0 0 / 10%), oklch(1 0 0 / 10%));
+  /* The neutral fill: a secondary chat action, a muted badge. */
+  --default: light-dark(rgb(0 0 0 / 6%), rgb(255 255 255 / 10%));
+  --border-strong: light-dark(rgb(0 0 0 / 13%), rgb(255 255 255 / 20%));
+  --disabled-foreground: light-dark(rgb(0 0 0 / 30%), rgb(255 255 255 / 30%));
+
+  /* Status text on the page. */
+  --success: light-dark(#1e8a4f, #7dcf9f);
+  --warning: light-dark(#b25e00, #ffb35c);
+  /* Status washes (Alert, Badge) and the text that reads on each. Clean sets
+     the status color itself on its soft wash; in light that is under 4.5:1
+     for green, orange and blue (3.96, 4.21, 4.37), so their light text is
+     the same hue darkened just past it (about 4.6:1). */
+  --destructive-muted: light-dark(rgb(240 68 56 / 10%), rgb(255 107 95 / 14%));
+  --destructive-strong: var(--destructive);
+  --info-muted: light-dark(rgb(1 144 254 / 10%), rgb(79 176 254 / 14%));
+  --info-strong: light-dark(#006ccd, #4fb0fe);
+  --success-muted: light-dark(rgb(95 200 138 / 14%), rgb(125 207 159 / 14%));
+  --success-strong: light-dark(#1b7e48, #7dcf9f);
+  --warning-muted: light-dark(rgb(242 138 46 / 12%), rgb(242 161 92 / 14%));
+  --warning-strong: light-dark(#a75800, #ffb35c);
+  /* Status dots: the palette fills, brighter than the text colors so 8px
+     still reads. */
+  --dot-success: var(--palette-green);
+  --dot-warning: var(--palette-amber);
+  --dot-error: var(--palette-red);
+
+  /* Toasts sit on the opposite of the page: near-black on light, white on
+     dark; an error toast is a deep red on both. */
+  --inverse: light-dark(#0a1317, #ffffff);
+  --inverse-foreground: light-dark(#ffffff, #171717);
+  --destructive-inverse: light-dark(#aa071e, #e3193b);
+  --skeleton: light-dark(#ebebeb, #525252);
+  /* The unfilled ring under a spinner's arc. */
+  --track: light-dark(#ccd3db, #5a5e66);
 
   /* Raised chat chrome (the composer, the pasted-text preview, the
      scroll-to-bottom button): clean's card and popover depth, a half-pixel
      edge plus a lift. A layer whose color is transparent in one scheme
      belongs to the other's shadow. */
+  --shadow-color: light-dark(oklch(0 0 0 / 10%), oklch(0 0 0 / 30%));
   --shadow-low: 0 0 0 0.5px light-dark(rgb(0 0 0 / 6%), rgb(255 255 255 / 10%)),
     0 1px 1px -1px light-dark(rgb(0 0 0 / 10%), transparent),
     0 1px 2px 0 light-dark(rgb(0 0 0 / 5%), rgb(0 0 0 / 40%));
@@ -185,8 +177,13 @@
     0 8px 24px -6px light-dark(rgb(0 0 0 / 14%), transparent),
     0 12px 32px -8px light-dark(transparent, rgb(0 0 0 / 60%)),
     0 2px 6px -2px light-dark(rgb(0 0 0 / 6%), transparent);
-
-  --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
-  --duration-fast: 125ms;
-  --duration-fast-max: 165ms;
+  /* A secondary button's edge, from clean's button (--ui-btnc-shadow): the
+     low shadow at rest; hover firms the ring and the drop up instead of
+     tinting the fill. Declared here, so it keeps this value where a
+     component redefines --shadow-low for itself (the composer). */
+  --shadow-button: var(--shadow-low);
+  --shadow-button-hover:
+    0 0 0 0.5px light-dark(rgb(0 0 0 / 10%), rgb(255 255 255 / 16%)),
+    0 1px 1px -1px light-dark(rgb(0 0 0 / 12%), transparent),
+    0 1px 3px 0 light-dark(rgb(0 0 0 / 7%), rgb(0 0 0 / 40%));
 }

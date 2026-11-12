@@ -25,10 +25,10 @@ const fileStyle: CSSProperties = {
 };
 
 const kindStyles: Record<string, CSSProperties> = {
-  add: { backgroundColor: "var(--success-muted)", color: "var(--color-text-primary)" },
-  del: { backgroundColor: "var(--color-error-muted)", color: "var(--color-text-primary)" },
-  ctx: { color: "var(--color-text-secondary)" },
-  meta: { color: "var(--color-text-accent)", backgroundColor: "var(--color-background-muted)" },
+  add: { backgroundColor: "var(--success-muted)", color: "var(--foreground)" },
+  del: { backgroundColor: "var(--destructive-muted)", color: "var(--foreground)" },
+  ctx: { color: "var(--muted-foreground)" },
+  meta: { color: "var(--primary)", backgroundColor: "var(--surface-muted)" },
 };
 
 /** Above this many diff lines, a collapsible view starts with every file folded. */
@@ -104,7 +104,7 @@ function FileToggle({ open, onToggle, children }: { open: boolean; onToggle: () 
     <button
       type="button"
       aria-expanded={open}
-      className="flex min-w-0 items-center gap-2 rounded-[var(--radius-sm,6px)] p-1 text-left hover:bg-[var(--color-overlay-hover)] focus-visible:outline-2 focus-visible:outline-[var(--color-border-emphasized)]"
+      className="flex min-w-0 items-center gap-2 rounded-[var(--radius-sm,6px)] p-1 text-left hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-strong)]"
       onClick={onToggle}
     >
       <ChevronRight className={`size-3.5 shrink-0 text-muted-foreground ${open ? "rotate-90" : ""}`} aria-hidden="true" />

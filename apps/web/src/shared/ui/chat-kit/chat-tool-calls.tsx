@@ -71,9 +71,9 @@ const chevronTransition =
 
 const styles = {
   root: "mt-2 flex flex-col",
-  groupIcon: "inline-flex size-4 shrink-0 items-center justify-center text-[var(--color-text-secondary)]",
-  groupLabel: cn(supporting, "font-sans font-medium text-[var(--color-text-secondary)]"),
-  chevron: cn("inline-flex size-3.5 shrink-0 items-center justify-center text-[var(--color-text-disabled)]", chevronTransition),
+  groupIcon: "inline-flex size-4 shrink-0 items-center justify-center text-[var(--muted-foreground)]",
+  groupLabel: cn(supporting, "font-sans font-medium text-[var(--muted-foreground)]"),
+  chevron: cn("inline-flex size-3.5 shrink-0 items-center justify-center text-[var(--disabled-foreground)]", chevronTransition),
   chevronExpanded: "[transform:rotate(180deg)]",
   groupContent:
     "grid grid-rows-[0fr] transition-[grid-template-rows] duration-300 ease-[var(--ease-standard)] motion-reduce:transition-none",
@@ -81,26 +81,26 @@ const styles = {
   groupContentInner: "min-h-0 overflow-hidden",
   list: "-mx-1 flex flex-col px-1",
   callRow: "flex min-h-6 items-center gap-1.5 py-0.5",
-  callRowClickable: "-mx-1 cursor-pointer rounded-[var(--radius-element)] px-1 hover:bg-[var(--color-overlay-hover)]",
+  callRowClickable: "-mx-1 cursor-pointer rounded-[var(--radius-element)] px-1 hover:bg-[var(--surface-hover)]",
   callRowToggle: "cursor-pointer",
   statusIcon: "relative inline-flex size-4 shrink-0 items-center justify-center rounded-[var(--radius-full)]",
   statusIconCircle: "absolute inset-0 rounded-[inherit] bg-current opacity-15",
   statusIconInner: "relative inline-flex",
   callName: cn(
     supporting,
-    "min-w-[4ch] shrink truncate font-mono font-medium text-[var(--color-text-secondary)]",
+    "min-w-[4ch] shrink truncate font-mono font-medium text-[var(--muted-foreground)]",
   ),
-  callLabel: cn(supporting, "min-w-0 shrink-[10] truncate font-sans text-[var(--color-text-disabled)]"),
-  callDuration: cn(supporting, "shrink-0 font-sans whitespace-nowrap text-[var(--color-text-disabled)]"),
-  stats: cn(supporting, "flex shrink-0 items-center gap-1 font-sans text-[var(--color-text-disabled)]"),
+  callLabel: cn(supporting, "min-w-0 shrink-[10] truncate font-sans text-[var(--disabled-foreground)]"),
+  callDuration: cn(supporting, "shrink-0 font-sans whitespace-nowrap text-[var(--disabled-foreground)]"),
+  stats: cn(supporting, "flex shrink-0 items-center gap-1 font-sans text-[var(--disabled-foreground)]"),
   statsAdditions: "text-[var(--success)]",
-  statsDeletions: "text-[var(--color-error)]",
+  statsDeletions: "text-[var(--destructive-strong)]",
   callDetailChevron: cn(
-    "ms-auto inline-flex size-3.5 shrink-0 items-center justify-center text-[var(--color-text-disabled)]",
+    "ms-auto inline-flex size-3.5 shrink-0 items-center justify-center text-[var(--disabled-foreground)]",
     chevronTransition,
   ),
   callDetailContent: "ps-[calc(16px_+_var(--spacing-1-5))] pb-2",
-  callCount: cn(supporting, "inline-flex shrink-0 items-center gap-0.5 font-sans text-[var(--color-text-disabled)]"),
+  callCount: cn(supporting, "inline-flex shrink-0 items-center gap-0.5 font-sans text-[var(--disabled-foreground)]"),
 };
 
 // =============================================================================
@@ -115,10 +115,10 @@ const STATUS_ICON_NAMES: Record<ChatToolCallStatus, ChatKitIconName | null> = {
 };
 
 const STATUS_STYLES: Record<ChatToolCallStatus, string> = {
-  pending: "text-[var(--color-text-disabled)]",
+  pending: "text-[var(--disabled-foreground)]",
   running: "text-[var(--primary)]",
   complete: "text-[var(--success)]",
-  error: "text-[var(--color-error)]",
+  error: "text-[var(--destructive-strong)]",
 };
 
 function getToolCallKey(call: ChatToolCallItem): string {

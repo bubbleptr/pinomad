@@ -18,7 +18,7 @@ export function SettingsGroup({
   return (
     <div className="flex flex-col gap-2" style={{ width: "100%" }}>
       {title === undefined ? null : tone === "danger" ? (
-        <h4 className="text-sm/5 font-bold" style={{ color: "var(--color-error)" }}>
+        <h4 className="text-sm/5 font-bold" style={{ color: "var(--destructive-strong)" }}>
           {title}
         </h4>
       ) : (

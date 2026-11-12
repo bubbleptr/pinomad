@@ -189,11 +189,11 @@ const styles = {
   root: "relative flex min-h-[22px] flex-col",
   editable: cn(
     textClass,
-    "overflow-y-auto [word-break:break-word] whitespace-pre-wrap text-[var(--color-text-primary)] caret-[var(--primary)] outline-none",
+    "overflow-y-auto [word-break:break-word] whitespace-pre-wrap text-[var(--foreground)] caret-[var(--primary)] outline-none",
   ),
   placeholder: cn(
     textClass,
-    "pointer-events-none absolute inset-x-0 top-0 text-[var(--color-text-secondary)] select-none",
+    "pointer-events-none absolute inset-x-0 top-0 text-[var(--muted-foreground)] select-none",
   ),
   disabled: "pointer-events-none opacity-50",
 };

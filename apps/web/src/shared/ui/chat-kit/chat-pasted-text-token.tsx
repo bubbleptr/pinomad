@@ -44,13 +44,13 @@ export function ChatPastedTextToken({ text, onExpand }: ChatPastedTextTokenProps
       />
       <PreviewCard.Portal>
         <PreviewCard.Positioner side="top" align="start" sideOffset={4}>
-          <PreviewCard.Popup className="rounded-[var(--radius-container)] bg-[var(--color-background-surface)] p-3 font-sans [box-shadow:var(--shadow-med)]">
+          <PreviewCard.Popup className="rounded-[var(--radius-container)] bg-[var(--surface)] p-3 font-sans [box-shadow:var(--shadow-med)]">
             <div className="flex max-w-[480px] flex-col gap-2">
-              <div className="max-h-60 overflow-y-auto font-mono text-[length:var(--font-size-sm)] leading-[1.6667] [word-break:break-word] whitespace-pre-wrap text-[var(--color-text-primary)]">
+              <div className="max-h-60 overflow-y-auto font-mono text-[length:var(--font-size-sm)] leading-[1.6667] [word-break:break-word] whitespace-pre-wrap text-[var(--foreground)]">
                 {text}
               </div>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">{label}</span>
+                <span className="text-[length:var(--font-size-sm)] text-[var(--muted-foreground)]">{label}</span>
                 {onExpand && <ChatActionButton label="Expand" variant="ghost" size="sm" onClick={onExpand} />}
               </div>
             </div>

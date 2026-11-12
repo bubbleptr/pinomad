@@ -82,7 +82,7 @@ const rootClass =
   "relative z-0 isolate flex flex-col [--_chat-composer-radius:28px] [--_chat-composer-padding:var(--spacing-3)] [--_button-radius:max(var(--radius-element),calc(var(--_chat-composer-radius)_-_var(--_chat-composer-padding)))]";
 
 const bodyClass =
-  "relative z-[2] flex cursor-text flex-col gap-2 rounded-[var(--_chat-composer-radius)] bg-[var(--color-background-popover)] p-[var(--_chat-composer-padding)] transition-[box-shadow,border-color] duration-[var(--duration-fast)] ease-[var(--ease-standard)]";
+  "relative z-[2] flex cursor-text flex-col gap-2 rounded-[var(--_chat-composer-radius)] bg-[var(--popover)] p-[var(--_chat-composer-padding)] transition-[box-shadow,border-color] duration-[var(--duration-fast)] ease-[var(--ease-standard)]";
 
 // --shadow-low / --shadow-med come from tokens.css; chat.css redefines
 // --shadow-low on the composer root.
@@ -90,7 +90,7 @@ const elevationClasses = {
   low: "[box-shadow:var(--shadow-low)] hover:[box-shadow:var(--shadow-med)] focus-within:[box-shadow:var(--shadow-med)]",
   // The border is drawn inside the padding, so content geometry matches the
   // elevated case.
-  none: "border border-solid border-[var(--color-border-emphasized)] p-[calc(var(--_chat-composer-padding)_-_1px)] [box-shadow:none] focus-within:border-[var(--primary)] hover:not-focus-within:[box-shadow:inset_0_0_0_2px_color-mix(in_srgb,var(--color-border-emphasized)_30%,transparent)] focus-within:[box-shadow:inset_0_0_0_2px_light-dark(#f1f1f1,#262626)]",
+  none: "border border-solid border-[var(--border-strong)] p-[calc(var(--_chat-composer-padding)_-_1px)] [box-shadow:none] focus-within:border-[var(--primary)] hover:not-focus-within:[box-shadow:inset_0_0_0_2px_color-mix(in_srgb,var(--border-strong)_30%,transparent)] focus-within:[box-shadow:inset_0_0_0_2px_light-dark(#f1f1f1,#262626)]",
 } as const;
 
 const statusClass =
@@ -103,7 +103,7 @@ const statusPositionClasses = {
 } as const;
 
 const statusTypeClasses = {
-  error: "bg-[var(--color-error-muted)] text-[light-dark(#89001a,#ffc6c1)]",
+  error: "bg-[var(--destructive-muted)] text-[light-dark(#89001a,#ffc6c1)]",
   warning: "bg-[light-dark(#f8da9d,#deb4333D)] text-[light-dark(#584400,#fdcf4f)]",
 } as const;
 
@@ -210,7 +210,7 @@ export function ChatComposer(props: ChatComposerProps) {
       <ChatKitIcon
         name={status.type === "error" ? "error" : "warning"}
         size="md"
-        className={status.type === "error" ? "text-[var(--color-error)]" : "text-[var(--warning)]"}
+        className={status.type === "error" ? "text-[var(--destructive-strong)]" : "text-[var(--warning)]"}
       />
       {status.message}
     </div>
@@ -257,7 +257,7 @@ export function ChatComposer(props: ChatComposerProps) {
           {(headerActions || headerContext) && (
             <div className="flex min-h-7 items-center justify-between gap-2">
               <div className="flex items-center gap-1">{headerActions}</div>
-              <div className="ms-auto flex items-center gap-2 text-[length:var(--font-size-sm)] leading-[1.6667] text-[var(--color-text-secondary)]">
+              <div className="ms-auto flex items-center gap-2 text-[length:var(--font-size-sm)] leading-[1.6667] text-[var(--muted-foreground)]">
                 {headerContext}
               </div>
             </div>

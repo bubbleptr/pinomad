@@ -99,7 +99,7 @@ export function ChatMessage({
           {hasName && (
             <div
               id={nameId}
-              className="mb-1 text-[length:var(--font-size-sm)] leading-[1.6667] font-semibold text-[var(--color-text-secondary)]"
+              className="mb-1 text-[length:var(--font-size-sm)] leading-[1.6667] font-semibold text-[var(--muted-foreground)]"
             >
               {name}
             </div>

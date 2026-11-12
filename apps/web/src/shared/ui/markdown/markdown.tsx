@@ -462,7 +462,7 @@ function renderBlock(node: BlockNode, index: number, blockCount: number, ctx: Re
           data-slot="markdown-blockquote"
           data-density={density}
           className={cn(
-            "mx-0 border-s-2 border-solid border-[var(--color-border-emphasized)] ps-4 text-muted-foreground",
+            "mx-0 border-s-2 border-solid border-[var(--border-strong)] ps-4 text-muted-foreground",
             margins,
             proseWidth,
           )}
@@ -639,7 +639,7 @@ function TaskListItem({ checked, children }: { checked: boolean; children: React
               "flex size-5 items-center justify-center rounded-[var(--radius-inner)] border border-solid peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--primary)]",
               checked
                 ? "border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)]"
-                : "border-[var(--color-border-emphasized)] bg-background text-[var(--primary)]",
+                : "border-[var(--border-strong)] bg-background text-[var(--primary)]",
             )}
           >
             {checked ? (

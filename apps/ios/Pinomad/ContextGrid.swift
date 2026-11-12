@@ -2,11 +2,11 @@ import PinomadChat
 import SwiftUI
 
 extension ContextBreakdownReading.Part {
-    /// The web's data palette (`--data-*` in `tokens.css`), light and dark.
+    /// The web's palette (`--palette-*` in `tokens.css`), light and dark.
     /// The fixed overhead the host sends every request is one blue family,
-    /// darkest first: `--data-blue`, then its 60% and 30% steps toward white,
-    /// mixed in oklab. MCP, the part servers add, is `--data-teal`; messages,
-    /// the part that grows, `--data-purple`.
+    /// darkest first: `--palette-blue`, then its 60% and 30% steps toward white,
+    /// mixed in oklab. MCP, the part servers add, is `--palette-teal`; messages,
+    /// the part that grows, `--palette-purple`.
     var color: Color {
         switch self {
         case .system: Color(light: 0x0190FE, dark: 0x4FB0FE)

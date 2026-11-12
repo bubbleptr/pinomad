@@ -50,7 +50,7 @@ function LabelledDivider({ label }: { label: ReactNode }) {
       {label && (
         <div
           id={labelId}
-          className="shrink-0 px-3 text-[length:var(--font-size-sm)] leading-[1.6667] text-[var(--color-text-secondary)]"
+          className="shrink-0 px-3 text-[length:var(--font-size-sm)] leading-[1.6667] text-[var(--muted-foreground)]"
         >
           {label}
         </div>
@@ -92,7 +92,7 @@ export function ChatSystemMessage({
       {...theme}
       className={cn(
         theme.className,
-        "flex items-center justify-center gap-2 py-1 text-center font-sans text-[length:var(--font-size-sm)] font-normal text-[var(--color-text-secondary)]",
+        "flex items-center justify-center gap-2 py-1 text-center font-sans text-[length:var(--font-size-sm)] font-normal text-[var(--muted-foreground)]",
         className,
       )}
       style={styleProp}

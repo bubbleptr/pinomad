@@ -44,7 +44,7 @@ export interface ChatComposerDrawerProps extends BaseProps<HTMLDivElement> {
 // the surface color as a background image, so it paints behind the content
 // whether muted is opaque or translucent.
 const rootClass =
-  "relative z-[1] flex flex-col overflow-hidden px-4 pt-3 pb-[calc(var(--spacing-3)_+_28px)] -mb-[28px] rounded-t-[28px] bg-[var(--color-background-surface)] [background-image:linear-gradient(var(--color-background-muted),var(--color-background-muted))]";
+  "relative z-[1] flex flex-col overflow-hidden px-4 pt-3 pb-[calc(var(--spacing-3)_+_28px)] -mb-[28px] rounded-t-[28px] bg-[var(--surface)] [background-image:linear-gradient(var(--surface-muted),var(--surface-muted))]";
 
 // The bar handle and the count + label share one grid cell and crossfade.
 const toggleRowClass = "group/drawer-toggle -mx-4 grid h-5 cursor-pointer grid-cols-1 items-center px-4 select-none";
@@ -134,7 +134,7 @@ export function ChatComposerDrawer({
             )}
           >
             <ChatBadge variant="neutral" label={count} />
-            <span className="text-[length:var(--font-size-base)] leading-5 text-[var(--color-text-secondary)] transition-[color] duration-[var(--duration-fast)] ease-[var(--ease-standard)] group-hover/drawer-toggle:text-[var(--color-text-primary)]">
+            <span className="text-[length:var(--font-size-base)] leading-5 text-[var(--muted-foreground)] transition-[color] duration-[var(--duration-fast)] ease-[var(--ease-standard)] group-hover/drawer-toggle:text-[var(--foreground)]">
               {label}
             </span>
           </div>

@@ -4,7 +4,13 @@ Web 和桌面端（renderer 就是 `apps/web`）共用这份规则。组件都�
 
 ## 颜色和 token
 
-token 都在 `src/app/tokens.css`。颜色用 shadcn 的变量名，Tailwind 类直接用（`bg-card`、`text-muted-foreground`、`text-destructive`），不要写死颜色值。每个颜色是一对 `light-dark()`，跟着 `<html>` 的 `color-scheme` 走；`color-scheme` 由 `<html>` 上的 `dark` 类决定（外观设置维护这个类，`styles.css` 据此设 `color-scheme`），所以 `dark:` 类和 token 永远一致。取值来自 affectUI 的 clean 主题：文字、细边和浅色铺底是半透明的黑或白，焦点环是蓝色，基础圆角 7px（`--radius`，Tailwind 的 `rounded-*` 按它缩放）。图表和计量条的分类色是 `--data-blue` / `green` / `amber` / `orange` / `red` / `pink` / `purple` / `teal` / `cyan`（clean 的 `--aui-*` 同名色），只作填充，不作文字色。`tokens.css` 下半段是 `chat.css` 等手写 CSS 用的间距、圆角、字号和动效刻度，以及会被对话框抬高一级的表面色阶（`--color-background-*`，见下面“外框和面板”）。
+token 都在 `src/app/tokens.css`，分三层：
+
+- **一级（原始值）**：色板 `--palette-blue` / `green` / `amber` / `orange` / `red` / `pink` / `purple` / `teal` / `cyan`（clean 的 `--aui-*` 同名色），和 `chat.css` 等手写 CSS 用的间距、圆角、字号、动效刻度。色板只作填充，不作文字色：图表和计量条直接用，状态圆点（`--dot-*`）指向它。
+- **二级（shadcn 语义名）**：`--background`、`--foreground`、`--primary`、`--muted-foreground`、`--border` 这一套。Tailwind 类直接用（`bg-card`、`text-muted-foreground`、`text-destructive`），不要写死颜色值。
+- **应用专有语义**：shadcn 没有名字的那些。表面：`--surface` 和高一级的 `--surface-raised` 在对话框里各抬高一级（`styles.css` 里按 `data-slot` 设置），`--surface-muted` 是凹陷的填充，`--surface-hover` / `--surface-pressed` 是盖在任意底色上的悬停和按下层。还有 `--default`（中性填充）、`--border-strong`、`--disabled-foreground`，状态色（`--success`、`--warning`，以及浅色铺底 `--*-muted` 和铺底上的文字 `--*-strong`），阴影（`--shadow-low` / `--shadow-med` / `--shadow-button`）。
+
+组件里用二级和应用语义，不直接用色板（数据可视化除外）。手写 CSS 里也用同一套名字（`var(--foreground)`），没有另一套别名。每个颜色是一对 `light-dark()`，跟着 `<html>` 的 `color-scheme` 走；`color-scheme` 由 `<html>` 上的 `dark` 类决定（外观设置维护这个类，`styles.css` 据此设 `color-scheme`），所以 `dark:` 类和 token 永远一致。取值来自 affectUI 的 clean 主题：文字、细边和浅色铺底是半透明的黑或白，焦点环是蓝色，基础圆角 7px（`--radius`，Tailwind 的 `rounded-*` 按它缩放）。
 
 `styles.css` 开头的 `@layer` 顺序不能动，也不要跑 `shadcn init`（它会改写 `styles.css`）。
 
@@ -151,7 +157,7 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 
 ## 外框和面板
 
-窗口底色是框架色（`--color-background-body`），侧栏直接放在底色上；工作区是从窗口边缘内缩的圆角卡片（面板，pane）：主区一张，右侧面板（Tasks / Changes / Terminal）打开时是旁边单独的一张，两张之间露出底色间隙。样式只在 `src/app/styles.css` 的 “Inset shell” 一段里定义：
+窗口底色是框架色（`--sidebar`），侧栏直接放在底色上；工作区是从窗口边缘内缩的圆角卡片（面板，pane）：主区一张，右侧面板（Tasks / Changes / Terminal）打开时是旁边单独的一张，两张之间露出底色间隙。样式只在 `src/app/styles.css` 的 “Inset shell” 一段里定义：
 
 - 面板加 `pigui-pane`，底色 `--background`，圆角 `--pigui-pane-radius`（`--radius-container`，10px），边缘是 `--pigui-pane-ring` 的 1px 细边，不加投影。离窗口边缘 `--pigui-pane-inset`（8px），两张面板之间 `--pigui-pane-gap`（4px）。
 - 内缩只在宽屏（≥1024px，AppFrame 给外壳加 `pigui-inset`）。窄屏没有侧栏，面板贴满窗口，不要圆角和描边。

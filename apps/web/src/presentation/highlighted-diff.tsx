@@ -19,8 +19,8 @@ import { use, type ReactNode } from "react";
 // rather than the one the appearance setting forces; inherit the page's instead.
 const SURFACE_CSS = [
   ":host{color-scheme:inherit;",
-  "--diffs-light-bg:var(--color-background-surface);",
-  "--diffs-dark-bg:var(--color-background-surface);",
+  "--diffs-light-bg:var(--surface);",
+  "--diffs-dark-bg:var(--surface);",
   "--diffs-font-family:var(--font-family-code)}",
 ].join("");
 
