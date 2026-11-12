@@ -209,7 +209,7 @@ function SidebarSectionHeader({
           <DisclosureChevron className="size-4" />
         </span>
       </DisclosureButton>
-      <div className={cn("flex items-center gap-0.5", !pinnedActions && "pigui-sidenav-hover-actions")}>
+      <div className={cn("ms-auto flex items-center gap-0.5", !pinnedActions && "pigui-sidenav-hover-actions")}>
         {actions}
       </div>
     </div>
