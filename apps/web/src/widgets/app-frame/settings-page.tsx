@@ -864,7 +864,7 @@ function HostNameField({ settings, remote, connected }: { settings: HostSettings
   const save = (): void => void remote.controller.updateSettings({ hostName: cleaned });
   const invalid = draft !== "" && cleaned === "";
   return (
-    <SettingsRow label="Host name" description="How paired devices name this machine. Without a custom name the hostname is used.">
+    <SettingsRow label="Host name" description="How paired devices name this machine.">
       <Field disabled={!connected} invalid={invalid} className="w-40 max-w-full">
         <Input
           aria-label="Host name"
