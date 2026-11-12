@@ -1,7 +1,6 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { Field, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
-import { Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui/tooltip.tsx";
 import { useEffect, useState, type CSSProperties } from "react";
 import type { AccountError, HostLinkRequest } from "@pinomad/client/account.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
@@ -270,7 +269,6 @@ export function HostLinkCodeForm({
 const iconSize: CSSProperties = { width: "var(--spacing-4)", height: "var(--spacing-4)" };
 
 /** The hostId's ends, enough to compare with the terminal; the full id is in the tooltip and on Copy. */
-const shortHostId = (hostId: string): string => (hostId.length > 16 ? `${hostId.slice(0, 8)}…${hostId.slice(-6)}` : hostId);
 
 /** Which machine is asking, and the two answers. */
 export function HostLinkConfirm({
@@ -321,13 +319,8 @@ export function HostLinkConfirm({
         <dt>Host ID</dt>
         <dd>
           <div className="flex flex-wrap items-center gap-2">
-            <Tooltip>
-              {/* Focusable so keyboard users reach the full id too. */}
-              <TooltipTrigger render={<span tabIndex={0} aria-label={`Host ID ${request.hostId}`} />}>
-                <span className="font-mono text-sm/5">{shortHostId(request.hostId)}</span>
-              </TooltipTrigger>
-              <TooltipContent>{request.hostId}</TooltipContent>
-            </Tooltip>
+            {/* In full: it is compared against the host's terminal. */}
+            <span className="font-mono text-sm/5 break-all">{request.hostId}</span>
             <Button
               variant="secondary"
               size="sm"

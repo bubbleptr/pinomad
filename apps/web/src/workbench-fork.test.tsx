@@ -312,7 +312,7 @@ describe("fork handoff through the invisible side", () => {
       publish(withForkSummaries(base, [{ id: FORK_ID, entry: entry!, title: "fork one" }]));
     });
     await act(async () => releaseSubmit());
-    await waitFor(() => expect(screen.getByRole("button", { name: "Fork" })).not.toBeDisabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Fork" })).not.toHaveAttribute("aria-disabled"));
     expect(onFocus).toHaveBeenCalledTimes(1);
     expect(onFocus).toHaveBeenCalledWith({ hostKey: HOME_HOST.hostKey, conversationId: FORK_ID });
   });
@@ -424,13 +424,13 @@ describe("fork command settlement", () => {
     await screen.findAllByRole("button", { name: "Fork" });
     await forkFromRun(user);
     const action = screen.getAllByRole("button", { name: "Fork" })[0]!;
-    await waitFor(() => expect(action).toBeDisabled());
+    await waitFor(() => expect(action).toHaveAttribute("aria-disabled", "true"));
     await user.click(action);
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(remote.controller.fork).toHaveBeenCalledTimes(1);
 
     await act(async () => release());
-    await waitFor(() => expect(screen.getAllByRole("button", { name: "Fork" })[0]).not.toBeDisabled());
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Fork" })[0]).not.toHaveAttribute("aria-disabled"));
     expect(focusConversation).not.toHaveBeenCalled();
 
     // A retry uses the same entry after the failed handoff released the lock.
@@ -472,7 +472,7 @@ describe("fork command settlement", () => {
 
     // Back on the parent, the handoff lock is gone.
     act(() => publish(withForkSummaries(base, [{ id: FORK_ID, entry: entry!, title: "fork one" }])));
-    await waitFor(() => expect(screen.getAllByRole("button", { name: "Fork" })[0]).not.toBeDisabled());
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Fork" })[0]).not.toHaveAttribute("aria-disabled"));
   });
 
   it("leaves another Task side open instead of clearing it", async () => {
@@ -500,7 +500,7 @@ describe("fork command settlement", () => {
     remote.controller.showSide = showSide;
     await act(async () => release());
 
-    await waitFor(() => expect(screen.getAllByRole("button", { name: "Fork" })[0]).not.toBeDisabled());
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Fork" })[0]).not.toHaveAttribute("aria-disabled"));
     expect(remote.view.current().side?.id).toBe(SUBAGENT_ID);
     expect(showSide).not.toHaveBeenCalledWith(undefined);
   });

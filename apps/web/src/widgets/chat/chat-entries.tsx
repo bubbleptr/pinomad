@@ -334,7 +334,6 @@ function RunEntry({
                 // Quiet like the copy action beside it.
                 className="chat-message__local-action text-muted-foreground hover:text-foreground"
                 aria-label={`${forks.length} ${forks.length === 1 ? "fork" : "forks"}`}
-                title="Open fork"
                 disabled={!connected}
                 onClick={() => onOpenFork(forks[0]!)}
               >

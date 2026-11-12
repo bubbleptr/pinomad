@@ -27,7 +27,7 @@ token 都在 `src/app/tokens.css`，分三层：
 
 每档的样子只写在 `button.tsx` 的 `buttonVariants` 里。`secondary` 照 affectUI clean 的按钮：0.5px 的细环加一层柔和投影（`--shadow-button`），悬停时环和投影加深（`--shadow-button-hover`），底色不变；只有浅灰底时放在输入框旁边像一段文字，深色下几乎看不见。设置页里去掉投影和底色，只留 1px 细线，悬停时加一层浅灰。`destructive` 的字用 `--destructive-strong`（浅红底上的文字色，现在和 `--destructive` 同值）。不要在调用处用 `className` 给按钮加边框、阴影或背景。
 
-文字写成 children，图标放在文字前面（`<Button><Plus aria-hidden="true" />Add</Button>`）。另有两个属性：`loading` 在文字上盖一个转圈并禁用按钮，宽度和无障碍名称不变；`tooltip` 悬停和聚焦时显示，禁用的按钮带 `tooltip` 时仍能用键盘聚焦。默认 `type="button"`，提交表单要写 `type="submit"`。
+文字写成 children，图标放在文字前面（`<Button><Plus aria-hidden="true" />Add</Button>`）。另有两个属性：`loading` 在文字上盖一个转圈并禁用按钮，宽度和无障碍名称不变；`tooltip` 悬停约 700ms 后或聚焦时显示，禁用的按钮带 `tooltip` 时仍能用键盘聚焦。默认 `type="button"`，提交表单要写 `type="submit"`。
 
 ### 选哪一档
 
@@ -124,7 +124,7 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 | `skeleton.tsx` 的 `Skeleton` | 内容的形状已知、还在路上时的占位块，尺寸和圆角写在 `className` 里。它先等 1 秒再淡入淡出，快的加载不会闪一下；一组用 `index` 错开。 |
 | `empty.tsx` 的 `Empty` | 一屏或一个面板没东西可显示，或在等一个状态过去（Connecting）：`EmptyHeader` 里放 `EmptyTitle` 和 `EmptyDescription`，操作放 `EmptyContent`。 |
 | `avatar.tsx` 的 `Avatar` | 账号的圆形头像，里面是 `AvatarFallback` 和 `initials(name)` 算出的首字母，根元素写 `aria-label`。尺寸 `xs`（20px，侧栏）和 `lg`（48px，账号页）。 |
-| `tooltip.tsx` | 悬停说明。按钮用 `Button` 的 `tooltip` 属性；其余元素用 `Tooltip` / `TooltipTrigger render={…}` / `TooltipContent`。 |
+| `tooltip.tsx` | 悬停说明，700ms 后才出现（`TooltipProvider` 的默认值），免得用户已经知道点哪、点的同时弹出来。只用于给纯图标按钮命名、补全被截断的文字、说明禁用原因；操作需要的信息（错误、要核对的 ID）直接写在界面上，有文字标签的控件不再加解释性 tooltip。按钮用 `Button` 的 `tooltip` 属性；其余元素用 `Tooltip` / `TooltipTrigger render={…}` / `TooltipContent`。 |
 
 只给读屏看的文字用 `<span className="sr-only">`。
 

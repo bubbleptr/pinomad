@@ -340,7 +340,7 @@ export function CustomEndpointForm({
           <IconButton
             variant="secondary"
             label="Fetch models"
-            tooltip="Fetch models from the endpoint"
+            tooltip="Fetch models"
             icon={<RefreshCw />}
             loading={fetching}
             disabled={!connected}

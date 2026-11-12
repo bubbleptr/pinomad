@@ -308,7 +308,7 @@ export function AddProjectDialog({
         <DialogFooter className="justify-between">
           <div className="min-w-0 flex-1">
             {addError !== undefined ? (
-              <span className="block truncate text-xs/5 text-destructive" role="alert" title={addError}>
+              <span className="block text-xs/5 break-words text-destructive" role="alert">
                 {addError}
               </span>
             ) : (
