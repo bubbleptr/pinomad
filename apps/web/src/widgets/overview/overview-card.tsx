@@ -5,7 +5,7 @@
 // busy, which tool sources are up — and links out for the detail: the
 // side panel's Changes and Tasks surfaces. It replaces the side panel's
 // Live tab.
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { classify } from "@pinomad/protocol/presentation.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -303,6 +303,11 @@ function SubagentsSection({
 
 const MCP_VARIANT = { connecting: "warning", connected: "success", failed: "error", disabled: "neutral" } as const;
 
+/** An MCP error in full: it is what the user needs to fix the config. */
+function SourceProblem({ children, inline = false }: { children: string; inline?: boolean }) {
+  return <p className={`m-0 text-xs/5 break-words text-destructive ${inline ? "min-w-0 flex-1" : "-mt-1 mb-1 ps-6.5"}`}>{children}</p>;
+}
+
 /** The host's MCP servers (ADR-0012); hidden when MCP is off or unconfigured. */
 function SourcesSection({ view }: { view: DurableView }) {
   const mcp = view.mcp;
@@ -324,23 +329,27 @@ function SourcesSection({ view }: { view: DurableView }) {
       }
     >
       {mcp.servers.map((server) => (
-        <Row
-          key={server.name}
-          icon={<StatusDot variant={MCP_VARIANT[server.state]} label={server.state} pulsing={server.state === "connecting"} />}
-          title={server.error}
-          end={
-            <span className="text-xs text-muted-foreground">
-              {server.state === "connected" ? `${server.tools} tool${server.tools === 1 ? "" : "s"}` : server.state}
-            </span>
-          }
-        >
-          {server.name}
-        </Row>
+        <Fragment key={server.name}>
+          <Row
+            icon={<StatusDot variant={MCP_VARIANT[server.state]} label={server.state} pulsing={server.state === "connecting"} />}
+            end={
+              <span className="text-xs text-muted-foreground">
+                {server.state === "connected" ? `${server.tools} tool${server.tools === 1 ? "" : "s"}` : server.state}
+              </span>
+            }
+          >
+            {server.name}
+          </Row>
+          {server.error === undefined ? null : <SourceProblem>{server.error}</SourceProblem>}
+        </Fragment>
       ))}
       {mcp.errors.map((error, index) => (
-        <Row key={index} icon={<StatusDot variant="error" label="config error" />} title={error}>
-          <span className="text-destructive">{error}</span>
-        </Row>
+        <div key={index} className="flex items-start gap-2.5 py-1.5">
+          <span className="flex h-5 w-4 shrink-0 items-center justify-center">
+            <StatusDot variant="error" label="config error" />
+          </span>
+          <SourceProblem inline>{error}</SourceProblem>
+        </div>
       ))}
     </Section>
   );

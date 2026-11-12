@@ -49,7 +49,9 @@ export function useFileAttachments(
     get failed() {
       return state.fileEntries.some((entry) => entry.status === "failed");
     },
-    error: state.fileError,
+    // A failed chip is too small for its reason, so it goes to the composer's
+    // error line, first: it is what keeps Send disabled.
+    error: joinErrors(failedUploadError(state.fileEntries), state.fileError),
     add: (files) => active.addFiles(files, enabled),
     retry: (key) => active.retryFile(key),
     remove: (key) => active.removeFile(key),
@@ -58,4 +60,14 @@ export function useFileAttachments(
     ids: () => active.ids(),
     details: () => active.details(),
   };
+}
+
+function failedUploadError(entries: readonly FileAttachmentEntry[]): string | null {
+  const failed = entries.find((entry) => entry.status === "failed" && entry.error !== undefined);
+  return failed === undefined ? null : `${failed.name}: ${failed.error}`;
+}
+
+function joinErrors(first: string | null, second: string | null): string | null {
+  if (first === null || second === null) return first ?? second;
+  return `${/[.!?]$/.test(first) ? first : `${first}.`} ${second}`;
 }

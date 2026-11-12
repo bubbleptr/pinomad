@@ -60,3 +60,13 @@ const broken = {
 };
 /** The host's breakdown of the reply the meter counts, under the Context row. */
 export const ContextBreakdown: Story = { args: { view: broken, remote: fakeRemote(broken) } };
+
+const problems = {
+  ...view,
+  mcp: {
+    ...view.mcp!,
+    errors: ["mcp.json: servers.notion.command must be a string, got a number on line 14"],
+  },
+};
+/** Why a source failed is written out under it, not hidden behind a hover. */
+export const SourceProblems: Story = { args: { view: problems, remote: fakeRemote(problems) } };
