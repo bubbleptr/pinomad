@@ -17,6 +17,7 @@
     "@lydell/node-pty": "1.2.0-beta.18",
     "@noble/curves": "2.4.0",
     "@pinomad/client": "workspace:*",
+    "@pinomad/plugin": "workspace:*",
     "@pinomad/protocol": "workspace:*",
     "diff": "8.0.4",
     "node-datachannel": "0.33.4",

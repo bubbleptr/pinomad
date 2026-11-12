@@ -77,6 +77,7 @@ import { startTerminals, type StartTerminalsOptions, type Terminals, type Termin
 import type { Processes } from "./processes.ts";
 import type { HostUpgrade, UpgradeWhen } from "@pinomad/protocol/upgrade.ts";
 import type { ExtensionDoc } from "./builtin-extension.ts";
+import type { Plugins } from "./plugins.ts";
 import { branchOf, changesOf, checkoutAt, gitBase, worktreeExists, worktreeSettled } from "./checkout.ts";
 import { packagedVersion } from "./distribution.ts";
 import { listFolders } from "./folders.ts";
@@ -297,6 +298,8 @@ export interface GatewayOptions {
   readonly docs?: readonly ExtensionDoc[];
   /** Tool name → presentation of its result `details`, announced in the hello. */
   readonly toolPresentations?: Record<string, PresentationType>;
+  /** Loaded plugins (ADR-0049): `hello.plugins`, `pluginBundle`, `pluginCall`. Absent → none. */
+  readonly plugins?: Pick<Plugins, "info" | "bundle" | "method">;
   /** Built web client served over plain HTTP on both listeners; absent → 503. */
   readonly webRoot?: string;
   /** Name conversations after their first successful run; default on. */
@@ -2040,6 +2043,7 @@ class GatewayClient {
         ...(doc.presentation === undefined ? {} : { presentation: doc.presentation }),
       })),
       toolPresentations: options.toolPresentations ?? {},
+      ...(options.plugins === undefined || options.plugins.info.length === 0 ? {} : { plugins: options.plugins.info }),
       // Re-probed per hello, not the listener's startup address (ADR-0032 §2).
       // A loopback-only host publishes an explicit empty set so clients clear
       // stale remote candidates without ever seeing 127.0.0.1.
@@ -2679,11 +2683,18 @@ class GatewayClient {
         if (this.#shownImage(input.ref) === undefined) throw new Error("Unknown image");
         return derived;
       }
-      // Plugins don't load yet (ADR-0049), so every name is unknown.
-      case "pluginBundle":
-        throw new Error(`Unknown plugin ${(args as CallMethods["pluginBundle"]["args"]).name}`);
-      case "pluginCall":
-        throw new Error(`Unknown plugin ${(args as CallMethods["pluginCall"]["args"]).plugin}`);
+      case "pluginBundle": {
+        const { name } = args as CallMethods["pluginBundle"]["args"];
+        if (this.#options.plugins === undefined) throw new Error(`Unknown plugin ${name}`);
+        return { code: this.#options.plugins.bundle(name) };
+      }
+      case "pluginCall": {
+        const input = args as CallMethods["pluginCall"]["args"];
+        if (this.#options.plugins === undefined) throw new Error(`Unknown plugin ${input.plugin}`);
+        const run = this.#options.plugins.method(input.plugin, input.method);
+        await this.#conversation(input.conversationId);
+        return await run(input.args, this.#options.harness, input.conversationId, context);
+      }
       case "beginAttachment": {
         const input = args as CallMethods["beginAttachment"]["args"];
         const store = this.#attachmentStore();
