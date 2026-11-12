@@ -16,7 +16,7 @@ const buttonVariants = cva(
     "disabled:pointer-events-none data-disabled:cursor-not-allowed data-disabled:opacity-50",
     "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
     // A confirmation dialog's footer (.pigui-confirm): pills, Cancel and the action at either end.
-    "in-[.pigui-confirm]:rounded-full in-[.pigui-confirm]:px-4",
+    "in-[.pigui-confirm]:h-9 in-[.pigui-confirm]:rounded-full in-[.pigui-confirm]:px-4",
   ],
   {
     variants: {

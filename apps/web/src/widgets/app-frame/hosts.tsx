@@ -630,12 +630,12 @@ function UnpairHostDialog({
   };
   return (
     <Dialog open onOpenChange={(open) => (open ? undefined : onClose(false))} disablePointerDismissal>
-      <DialogContent className="w-[440px]">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
+      <DialogContent className="w-[440px]" showCloseButton={false}>
+        <DialogHeader className="gap-1.5 px-6 pt-6 pb-0">
+          <DialogTitle className="text-lg/7">{title}</DialogTitle>
           <DialogDescription className="text-sm/6 text-foreground/80">{unpairText(label, info)}</DialogDescription>
         </DialogHeader>
-        <DialogFooter className="pigui-confirm justify-between">
+        <DialogFooter className="pigui-confirm justify-between px-6 pt-5 pb-6">
           <Button variant="secondary" onClick={() => onClose(false)}>Cancel</Button>
           <Button variant="destructive" onClick={unpair}>Unpair</Button>
         </DialogFooter>
