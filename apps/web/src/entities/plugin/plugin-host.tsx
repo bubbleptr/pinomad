@@ -3,7 +3,7 @@
 // when the connection does. Slot components read the shown conversation from
 // PluginScope, which the workbench (main column) and a side transcript set.
 import * as React from "react";
-import { Component, createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Component, createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { JsonValue, WebApi } from "@pinomad/plugin/v1/web";
 import type { PluginInfo } from "@pinomad/protocol/frames.ts";
@@ -99,27 +99,38 @@ export function PluginHostProvider({
   evaluate?: EvaluateModule;
   children: ReactNode;
 }) {
-  const plugins = useDurableView(remote).host?.plugins;
+  const view = useDurableView(remote);
+  const plugins = view.host?.plugins;
   const key = bundlesKey(plugins);
+  // Calls are only accepted once the connection is ready, and a bundle that
+  // failed (often because the connection dropped) is retried on the next ready.
+  const connected = view.connection === "connected";
   const bridge = useMemo<PluginBridge>(() => ({ conversationId: undefined, openSurface: undefined }), [remote]);
   const [registry, setRegistry] = useState(EMPTY_PLUGIN_REGISTRY);
   // Read through the key, so the effect runs when the bundles change and not on every view.
   const toLoad = useMemo(() => plugins ?? [], [key]);
+  /** The last finished load: a reconnect reloads only when it left a plugin out. */
+  const settled = useRef<{ readonly toLoad: readonly PluginInfo[]; readonly failed: boolean }>(undefined);
   useEffect(() => {
-    setRegistry(EMPTY_PLUGIN_REGISTRY);
-    if (!toLoad.some((plugin) => plugin.web !== undefined)) return;
+    if (!connected) return;
+    const last = settled.current;
+    if (last?.toLoad === toLoad && !last.failed) return;
+    // A new bundle set replaces the old registrations; a retry keeps them meanwhile.
+    if (last?.toLoad !== toLoad) setRegistry(EMPTY_PLUGIN_REGISTRY);
     let live = true;
     void loadPlugins(toLoad, {
       bundle: (name) => remote.plugins.bundle(name),
       evaluate,
       api: (name, registrar) => webApi(name, registrar, remote, bridge),
-    }).then((loaded) => {
-      if (live) setRegistry(loaded);
+    }).then(({ registry: loaded, failed }) => {
+      if (!live) return;
+      settled.current = { toLoad, failed };
+      setRegistry(loaded);
     });
     return () => {
       live = false;
     };
-  }, [bridge, evaluate, remote, toLoad]);
+  }, [bridge, connected, evaluate, remote, toLoad]);
   const host = useMemo(() => ({ registry, bridge }), [registry, bridge]);
   return <PluginHostContext.Provider value={host}>{children}</PluginHostContext.Provider>;
 }
@@ -141,6 +152,11 @@ export function usePluginWorkbench(
     if (bridge === undefined) return;
     bridge.conversationId = conversationId;
     bridge.openSurface = openSurface;
+    // Once the workbench is gone, a late `call` has no conversation to write to.
+    return () => {
+      bridge.conversationId = undefined;
+      bridge.openSurface = undefined;
+    };
   }, [bridge, conversationId, openSurface]);
   return registry;
 }

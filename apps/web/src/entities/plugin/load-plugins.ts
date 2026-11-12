@@ -111,12 +111,18 @@ export interface LoadOptions {
   readonly api: (name: string, registrar: Registrar) => WebApi;
 }
 
-/** Every plugin with a browser half, loaded in parallel; a failing one is logged once and left out. */
-export async function loadPlugins(plugins: readonly PluginInfo[], options: LoadOptions): Promise<PluginRegistry> {
+/**
+ * Every plugin with a browser half, loaded in parallel; a failing one is
+ * logged once and left out, and `failed` says whether any was.
+ */
+export async function loadPlugins(
+  plugins: readonly PluginInfo[],
+  options: LoadOptions,
+): Promise<{ registry: PluginRegistry; failed: boolean }> {
   const loaded = await Promise.all(
     plugins.map(async (plugin) => {
       const web = plugin.web;
-      if (web === undefined) return undefined;
+      if (web === undefined) return { panels: [], toolCards: [] };
       try {
         return await register({ ...plugin, web }, options);
       } catch (error) {
@@ -127,10 +133,14 @@ export async function loadPlugins(plugins: readonly PluginInfo[], options: LoadO
   );
   const panels: PluginPanel[] = [];
   const toolCards = new Map<string, PluginToolCard>();
+  let failed = false;
   for (const entry of loaded) {
-    if (entry === undefined) continue;
+    if (entry === undefined) {
+      failed = true;
+      continue;
+    }
     panels.push(...entry.panels);
     for (const [name, card] of entry.toolCards) if (!toolCards.has(name)) toolCards.set(name, card);
   }
-  return { panels, toolCards };
+  return { registry: { panels, toolCards }, failed };
 }

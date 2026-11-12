@@ -15,7 +15,7 @@ import { fakeRemote, fakeView, PARSER_ID } from "../../test/story-fixtures.tsx";
 import { SidePanel, SurfaceButtons, type PanelSurface } from "../../widgets/side-panel/side-panel.tsx";
 import { fillToolDetails } from "../../widgets/chat/tool-detail.tsx";
 import { PluginHostProvider, PluginScope, usePluginRegistry, usePluginWorkbench } from "./plugin-host.tsx";
-import type { EvaluateModule, PluginRegistry } from "./load-plugins.ts";
+import { EMPTY_PLUGIN_REGISTRY, type EvaluateModule, type PluginRegistry } from "./load-plugins.ts";
 
 const BOARD = "plugin.notes.board";
 
@@ -204,5 +204,91 @@ describe("plugin tool cards", () => {
     expect(screen.queryByText(/Card for/)).toBeNull();
     render(<PluginScope conversationId={PARSER_ID} docs={[]}>{card!.detail}</PluginScope>);
     expect(screen.getByText("Card for milk")).toBeVisible();
+  });
+});
+
+/** A remote whose view the test drives; only what PluginHostProvider reads. */
+function liveRemote(plugins: readonly PluginInfo[], connection: DurableView["connection"]) {
+  let view: DurableView = fakeView({ host: { protocol: { major: 5, minor: 34 }, plugins }, docs: [], connection });
+  const listeners = new Set<() => void>();
+  const bundle = vi.fn<RemotePlugins["bundle"]>(async (name) => codeOf(name));
+  const call = vi.fn<RemotePlugins["call"]>(async () => null);
+  const remote = {
+    ...fakeRemote(view),
+    view: {
+      current: () => view,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    },
+    plugins: { bundle, call },
+  } as RemoteDurable;
+  const setConnection = (next: DurableView["connection"]) =>
+    act(() => {
+      view = { ...view, connection: next };
+      for (const listener of listeners) listener();
+    });
+  return { remote, bundle, call, setConnection };
+}
+
+function RegistryProbe({ onRegistry }: { onRegistry: (registry: PluginRegistry) => void }) {
+  onRegistry(usePluginRegistry());
+  return null;
+}
+
+describe("plugin loading across reconnects", () => {
+  it("waits for the connection to accept calls, then retries only the bundle that failed", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { remote, bundle, setConnection } = liveRemote([info("flaky"), info("steady")], "reconnecting");
+    let first = true;
+    bundle.mockImplementation(async (name) => {
+      if (name === "flaky" && first) {
+        first = false;
+        throw new Error("Disconnected from host");
+      }
+      return codeOf(name);
+    });
+    let registry = EMPTY_PLUGIN_REGISTRY;
+    const panel = (id: string): WebPlugin => (pinomad) => pinomad.panel({ id, label: id, component: () => null });
+    render(
+      <PluginHostProvider remote={remote} evaluate={evaluator({ flaky: panel("flaky"), steady: panel("steady") })}>
+        <RegistryProbe onRegistry={(next) => (registry = next)} />
+      </PluginHostProvider>,
+    );
+    await act(async () => {});
+    expect(bundle).not.toHaveBeenCalled();
+
+    setConnection("connected");
+    await waitFor(() => expect(registry.panels.map((entry) => entry.plugin)).toEqual(["steady"]));
+
+    setConnection("reconnecting");
+    setConnection("connected");
+    await waitFor(() => expect(registry.panels.map((entry) => entry.plugin)).toEqual(["flaky", "steady"]));
+    expect(bundle.mock.calls.map(([name]) => name).sort()).toEqual(["flaky", "flaky", "steady"]);
+  });
+});
+
+describe("plugin calls after the workbench goes", () => {
+  it("rejects a late call instead of writing to the conversation that was shown", async () => {
+    const { remote, call } = liveRemote([info("late")], "connected");
+    let api: Parameters<WebPlugin>[0] | undefined;
+    function Workbench() {
+      usePluginWorkbench(PARSER_ID, () => {});
+      return null;
+    }
+    const ui = (workbench: boolean) => (
+      <PluginHostProvider remote={remote} evaluate={evaluator({ late: (pinomad) => void (api = pinomad) })}>
+        {workbench ? <Workbench /> : null}
+      </PluginHostProvider>
+    );
+    const { rerender } = render(ui(true));
+    await waitFor(() => expect(api).toBeDefined());
+    await api!.call("add", "while shown");
+    expect(call).toHaveBeenCalledTimes(1);
+
+    rerender(ui(false));
+    await expect(api!.call("add", "too late")).rejects.toThrow("No conversation is shown");
+    expect(call).toHaveBeenCalledTimes(1);
   });
 });
