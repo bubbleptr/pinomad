@@ -6,7 +6,7 @@ import { RadioGroup, RadioGroupItem } from "../../shared/ui/radio-group.tsx";
 import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import type { LoginEvent, LoginFlow, LoginMethod, LoginPrompt } from "@pinomad/protocol/auth.ts";
 import { DisconnectedError, type RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
-import { CopyIcon } from "../../shared/ui/copy-icon.tsx";
+import { CopyIcon } from "../../shared/ui/icon-swap.tsx";
 import { LinkExternal } from "../../shared/ui/icons.tsx";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 import { Spinner } from "../../shared/ui/spinner.tsx";

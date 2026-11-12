@@ -6,7 +6,7 @@ import type { AccountError, HostLinkRequest } from "@pinomad/client/account.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { formatUserCode, isCompleteUserCode, normalizeUserCode } from "../../entities/account/host-link-code.ts";
 import { browserKnownHosts, type KnownHostsStore } from "../../entities/account/known-hosts.ts";
-import { CopyIcon } from "../../shared/ui/copy-icon.tsx";
+import { CopyIcon } from "../../shared/ui/icon-swap.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { accountErrorMessage } from "./account-error.ts";
 import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";

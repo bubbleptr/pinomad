@@ -50,16 +50,19 @@ export function attachmentRow({
   pending,
   onRemove,
   files,
+  entrance = false,
 }: {
   images: readonly MessageImage[];
   pending: boolean;
   onRemove: (index: number) => void;
   /** File chips share the same row and density as the image thumbnails. */
   files?: ReactNode;
+  /** Chips added from now on fade in (styles.css); pass false while the composer mounts. */
+  entrance?: boolean;
 }): ReactNode | undefined {
   if (images.length === 0 && !pending && files === undefined) return undefined;
   return (
-    <div className="flex flex-wrap gap-2" data-testid="composer-attachments">
+    <div className={`flex flex-wrap gap-2${entrance ? " pigui-attachment-entrance" : ""}`} data-testid="composer-attachments">
       {images.map((image, index) => (
         <Thumbnail
           key={index}

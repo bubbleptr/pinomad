@@ -829,3 +829,23 @@ html {
 .pigui-theme-switching *::after {
   transition: none !important;
 }
+
+/* A file chip or the image placeholder added to the composer fades and
+   scales in (entities/image/attachments.tsx). An image replacing its
+   placeholder doesn't, or it would dip. The colors keep Attachment's tween. */
+.pigui-attachment-entrance > :is([data-slot="attachment"], [data-slot="thumbnail"]:not(:has(img))) {
+  transition-property: color, background-color, border-color, opacity, scale;
+  transition-duration: var(--duration-fast);
+  transition-timing-function: var(--ease-standard);
+
+  @starting-style {
+    opacity: 0;
+    scale: 0.97;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pigui-attachment-entrance > :is([data-slot="attachment"], [data-slot="thumbnail"]:not(:has(img))) {
+    transition: none;
+  }
+}

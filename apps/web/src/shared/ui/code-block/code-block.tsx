@@ -17,7 +17,7 @@ import {
 } from "react";
 import { IconButton } from "@/shared/ui/icon-button";
 import { ChevronRight } from "@/shared/ui/icons";
-import { CopyIcon } from "@/shared/ui/copy-icon";
+import { CopyIcon } from "@/shared/ui/icon-swap";
 import { applyHighlightRangesChunked } from "./highlight-ranges";
 import { SYNC_TOKENIZE_THRESHOLD, tokenize, tokenizeAsync, type SyntaxToken, type TokenLine } from "./tokenizer";
 

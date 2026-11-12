@@ -4,6 +4,7 @@
 import type { ComponentProps, ReactNode, Ref } from "react";
 import { cn } from "cn";
 import { IconButton } from "@/shared/ui/icon-button";
+import { IconSwap } from "@/shared/ui/icon-swap";
 import { ChatKitGlyph } from "./chat-kit-icons";
 import { useChatComposerContext } from "./chat-context";
 import { themeProps } from "./theme-props";
@@ -74,7 +75,13 @@ export function ChatSendButton(props: ChatSendButtonProps): ReactNode {
       // in dark.
       variant="primary"
       size={size}
-      icon={isStopShown ? (stopIcon ?? <ChatKitGlyph name="stop" />) : (sendIcon ?? <ChatKitGlyph name="arrowUp" />)}
+      icon={
+        <IconSwap
+          swapped={isStopShown}
+          icon={sendIcon ?? <ChatKitGlyph name="arrowUp" />}
+          swappedIcon={stopIcon ?? <ChatKitGlyph name="stop" />}
+        />
+      }
       disabled={!isStopShown && isDisabled}
       onClick={isStopShown ? onStop : handleSend}
       {...rest}
