@@ -49,7 +49,8 @@ export function useFileAttachments(
     get failed() {
       return state.fileEntries.some((entry) => entry.status === "failed");
     },
-    error: state.fileError,
+    // A failed chip is too small for its reason, so it goes to the composer's error line.
+    error: state.fileError ?? failedUploadError(state.fileEntries),
     add: (files) => active.addFiles(files, enabled),
     retry: (key) => active.retryFile(key),
     remove: (key) => active.removeFile(key),
@@ -58,4 +59,9 @@ export function useFileAttachments(
     ids: () => active.ids(),
     details: () => active.details(),
   };
+}
+
+function failedUploadError(entries: readonly FileAttachmentEntry[]): string | null {
+  const failed = entries.find((entry) => entry.status === "failed" && entry.error !== undefined);
+  return failed === undefined ? null : `${failed.name}: ${failed.error}`;
 }

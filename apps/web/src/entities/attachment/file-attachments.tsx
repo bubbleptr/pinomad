@@ -33,7 +33,7 @@ export function FileAttachmentChip({
       state={STATE[entry.status]}
       data-status={entry.status}
       data-testid="file-attachment-chip"
-      title={entry.error ?? entry.name}
+      title={entry.name}
       className="max-w-64"
     >
       <AttachmentMedia>

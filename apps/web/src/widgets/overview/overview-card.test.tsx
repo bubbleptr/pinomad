@@ -132,6 +132,11 @@ describe("OverviewCard collapsible sections", () => {
     expect(header).toHaveTextContent("1 problem");
   });
 
+  it("shows why a source failed without a hover", () => {
+    withSources();
+    expect(screen.getByText("401 Unauthorized")).toBeVisible();
+  });
+
   it("remembers a collapsed section the next time the card opens", async () => {
     const first = withSources();
     await userEvent.click(screen.getByRole("button", { name: /^Sources/ }));

@@ -38,6 +38,19 @@ describe("useFileAttachments", () => {
     expect(beginAttachment).not.toHaveBeenCalled();
   });
 
+  it("names the file and the reason when an upload fails", async () => {
+    const remote = remoteWith({
+      beginAttachment: async () => "A".repeat(22),
+      appendAttachment: async () => {
+        throw new Error("Disk full on the host");
+      },
+    });
+    const { result } = renderHook(() => useFileAttachments(remote, true));
+    act(() => result.current.add([file("notes.txt", "hello")]));
+    await waitFor(() => expect(result.current.failed).toBe(true));
+    expect(result.current.error).toBe("notes.txt: Disk full on the host");
+  });
+
   it("tracks progress and exposes finished ids", async () => {
     let finish!: (value: { received: number; complete: boolean }) => void;
     const appendAttachment = vi.fn(
