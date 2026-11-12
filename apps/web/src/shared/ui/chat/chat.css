@@ -1134,8 +1134,8 @@ mark.chat-skill-mention {
   display: flex;
   align-items: center;
   min-height: var(--size-element-sm);
-  /* Cancel the column gap as well as tucking under the card. */
-  margin: calc(-1 * (var(--_prompt-tray-tuck) + var(--spacing-1-5))) var(--spacing-4) 0;
+  /* Cancel the column gap as well as tucking under the card; full card width. */
+  margin: calc(-1 * (var(--_prompt-tray-tuck) + var(--spacing-1-5))) 0 0;
   padding: calc(var(--_prompt-tray-tuck) + var(--spacing-1)) var(--spacing-3) var(--spacing-1-5);
   /* Concentric with the pickers: the tray's side padding + their radius. */
   border-radius: 0 0 calc(var(--spacing-3) + var(--radius-element)) calc(var(--spacing-3) + var(--radius-element));
