@@ -3,6 +3,8 @@ import {
   ChatMessage as KitChatMessage,
   ChatMessageBubble as KitChatMessageBubble,
 } from "@/shared/ui/chat-kit";
+import { cn } from "cn";
+import { IconButton, type IconButtonProps } from "@/shared/ui/icon-button";
 import { Copy, ThumbsDown, ThumbsUp } from "@/shared/ui/icons";
 
 type MessageSectionProps = ComponentProps<"div">;
@@ -79,10 +81,7 @@ type ChatMessageActionOwnProps = {
   children?: ReactNode;
 };
 
-type ChatMessageActionProps = Omit<
-  ComponentProps<"button">,
-  keyof ChatMessageActionOwnProps | "onClick" | "type"
-> &
+type ChatMessageActionProps = Omit<IconButtonProps, "label" | "icon" | "title" | "onClick" | "type" | "variant" | "size"> &
   ChatMessageActionOwnProps;
 
 function ChatMessageAction({
@@ -90,21 +89,20 @@ function ChatMessageAction({
   tooltip,
   onPress,
   children,
-  className = "",
+  className,
   ...rest
 }: ChatMessageActionProps) {
   return (
-    <button
-      aria-label={ariaLabel}
-      className={`chat-message__action ${className}`.trim()}
-      data-slot="chat-message-action"
+    <IconButton
+      label={ariaLabel}
+      icon={children}
+      size="sm"
+      // Quieter than the answer above it until hovered.
+      className={cn("text-muted-foreground hover:text-foreground", className)}
       title={tooltip}
-      type="button"
       onClick={onPress}
       {...rest}
-    >
-      {children}
-    </button>
+    />
   );
 }
 

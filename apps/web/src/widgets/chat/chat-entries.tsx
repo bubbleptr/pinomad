@@ -326,9 +326,11 @@ function RunEntry({
               />
             )}
             {entry.forkEntryId === undefined ? null : forks.length > 0 ? (
-              <button
-                type="button"
-                className="pigui-fork-chip"
+              <Button
+                variant="ghost"
+                size="sm"
+                // Quiet like the copy action beside it.
+                className="chat-message__local-action text-muted-foreground hover:text-foreground"
                 aria-label={`${forks.length} ${forks.length === 1 ? "fork" : "forks"}`}
                 title="Open fork"
                 disabled={!connected}
@@ -336,7 +338,7 @@ function RunEntry({
               >
                 <GitFork aria-hidden="true" />
                 {forks.length} {forks.length === 1 ? "fork" : "forks"}
-              </button>
+              </Button>
             ) : canFork ? (
               <ChatMessage.Action
                 aria-label="Fork"
