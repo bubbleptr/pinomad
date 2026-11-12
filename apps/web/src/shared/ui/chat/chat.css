@@ -1136,9 +1136,14 @@ mark.chat-skill-mention {
   min-height: var(--size-element-sm);
   /* Cancel the column gap as well as tucking under the card; full card width. */
   margin: calc(-1 * (var(--_prompt-tray-tuck) + var(--spacing-1-5))) 0 0;
-  padding: calc(var(--_prompt-tray-tuck) + var(--spacing-1)) var(--spacing-3) var(--spacing-1-5);
-  /* Concentric with the pickers: the tray's side padding + their radius. */
-  border-radius: 0 0 calc(var(--spacing-3) + var(--radius-element)) calc(var(--spacing-3) + var(--radius-element));
+  /* The tray's corners match the card's (its 12px padding + the control
+     radius); the pickers inside take what is left after the tray's padding. */
+  --_prompt-tray-padding: var(--spacing-2);
+  --_prompt-tray-radius: calc(var(--spacing-3) + var(--radius-element));
+  /* The same gap above, beside and below the pickers. */
+  padding: calc(var(--_prompt-tray-tuck) + var(--_prompt-tray-padding)) var(--_prompt-tray-padding)
+    var(--_prompt-tray-padding);
+  border-radius: 0 0 var(--_prompt-tray-radius) var(--_prompt-tray-radius);
   background: light-dark(var(--surface-muted), oklch(0.235 0 0));
   color: var(--muted-foreground);
   font-size: var(--font-size-sm);
@@ -1156,6 +1161,11 @@ mark.chat-skill-mention {
 .prompt-input__footer button {
   color: var(--muted-foreground) !important;
   font-weight: var(--font-weight-normal, 400) !important;
+}
+
+/* Concentric with the tray: its radius minus its padding. */
+.prompt-input__footer [data-slot="select-trigger"] {
+  border-radius: calc(var(--_prompt-tray-radius) - var(--_prompt-tray-padding));
 }
 
 /* —— Chain of thought: rail skin —— */
