@@ -32,9 +32,23 @@ describe("HostUpgradeSection", () => {
   it("warns in the confirmation when the release crosses a protocol major", async () => {
     const { user } = renderSection({ available: { version: "1.0.0", publishedAt: Date.now(), crossesMajor: true } });
     await user.click(screen.getByRole("button", { name: "Upgrade" }));
-    const confirm = screen.getByRole("group", { name: "Upgrade the host to pinomad 1.0.0?" });
+    const confirm = screen.getByRole("dialog", { name: "Upgrade the host to pinomad 1.0.0?" });
     expect(confirm).toHaveTextContent("Apps that haven't updated yet can't connect");
     expect(confirm).toHaveTextContent("Open terminals close");
+  });
+
+  it("closes the confirmation when another device starts the upgrade", async () => {
+    const view = fakeView({ upgrade: fakeUpgrade() });
+    const remote = fakeRemote(view);
+    const { rerender } = render(<HostUpgradeSection view={view} remote={remote} />);
+    await userEvent.setup().click(screen.getByRole("button", { name: "Upgrade" }));
+    expect(screen.getByRole("dialog", { name: /Upgrade the host/ })).toBeInTheDocument();
+    const waiting = fakeView({ upgrade: fakeUpgrade({ phase: "waiting", target: "0.14.0" }) });
+    rerender(<HostUpgradeSection view={waiting} remote={remote} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // Cancelled again elsewhere, the dialog stays closed.
+    rerender(<HostUpgradeSection view={view} remote={remote} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("cancels a wait", async () => {
@@ -55,7 +69,7 @@ describe("HostUpgradeSection", () => {
     const { user } = renderSection({}, {}, { startUpgrade: () => new Promise(() => {}) });
     await user.click(screen.getByRole("button", { name: "Upgrade" }));
     await user.click(screen.getByRole("button", { name: "Upgrade when idle" }));
-    expect(screen.getByRole("group", { name: /Upgrade the host/ })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: /Upgrade the host/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
     await act(async () => {
       vi.advanceTimersByTime(CALL_TIMEOUT_MS);

@@ -4591,18 +4591,21 @@ it("upgrades the host from Settings: waits for a run, cancels, then restarts (AD
 
   const settings = await openSettings(page, "About");
   await settings.getByText("pinomad 0.14.0 is available", { exact: false }).waitFor();
+  await shot(page, "host-upgrade-about");
   // The page's own Upgrade, not the sidebar entry of the same name.
   const upgrade = settings.getByRole("region", { name: "Version" }).getByRole("button", { name: "Upgrade", exact: true });
+  // The confirmation is a dialog, portaled outside the Settings region.
+  const confirm = page.getByRole("dialog", { name: /Upgrade the host/ });
   await upgrade.click();
   await shot(page, "host-upgrade-confirm");
-  await settings.getByRole("button", { name: "Upgrade when idle" }).click();
+  await confirm.getByRole("button", { name: "Upgrade when idle" }).click();
   await settings.getByText("once running tasks finish", { exact: false }).waitFor();
   await settings.getByRole("button", { name: "Cancel upgrade" }).click();
   await upgrade.waitFor();
 
   // Started again, the wait ends with the run; the install closes the host.
   await upgrade.click();
-  await settings.getByRole("button", { name: "Upgrade when idle" }).click();
+  await confirm.getByRole("button", { name: "Upgrade when idle" }).click();
   await settings.getByText("once running tasks finish", { exact: false }).waitFor();
   gate.resolve();
   await settingsNav(page).getByRole("button", { name: "Close settings" }).click();

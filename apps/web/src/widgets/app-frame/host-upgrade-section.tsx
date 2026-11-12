@@ -8,6 +8,8 @@ import type { AutoUpgradeMode, HostUpgrade, UpgradeBlocker, UpgradeWhen } from "
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { useNow } from "../../shared/use-now.ts";
 import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
+import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../shared/ui/dialog.tsx";
+import { GROUP_ROWS, SettingsRow } from "../../shared/ui/settings-group.tsx";
 
 /** "5m ago", "just now": `relativeTime` is the sidebar's compact form. */
 const ago = (at: number, now: number): string => {
@@ -54,34 +56,43 @@ const AUTO_DESCRIPTIONS: Record<AutoUpgradeMode, string> = {
 };
 
 /**
- * Settings → Upgrade (ADR-0043): the host's release, a newer one if npm has
- * it, and the upgrade in progress — all from the `upgrade` stream, so another
- * device starting or cancelling shows here too. The open confirmation is the
- * only local state. A host that can't upgrade itself shows the command to
- * run on it instead.
+ * Settings → About → Version (ADR-0043): the rows of the Version group — the
+ * host's release with its actions, and the automatic upgrade mode. Everything
+ * comes from the `upgrade` stream, so another device starting or cancelling
+ * shows here too. The confirmation dialog is the only local state. A host
+ * that can't upgrade itself shows the command to run on it instead.
  */
 export function HostUpgradeSection({ view, remote }: { view: DurableView; remote: RemoteDurable }) {
   const minor = view.host?.protocol.minor ?? 0;
   const upgrade = view.upgrade;
   if (!hostSupportsCall(minor, "startUpgrade") || upgrade === null) {
     return (
-      <Alert variant="warning">
-        <AlertTitle>This host is too old to upgrade from here</AlertTitle>
-        <AlertDescription>Run `pinomad upgrade` on the host.</AlertDescription>
-      </Alert>
+      <div className="p-4">
+        <Alert variant="warning">
+          <AlertTitle>This host is too old to upgrade from here</AlertTitle>
+          <AlertDescription>Run `pinomad upgrade` on the host.</AlertDescription>
+        </Alert>
+      </div>
     );
   }
   const connected = view.connection === "connected";
   const mode = view.settings?.autoUpgrade;
   return (
-    <div className="flex flex-col gap-4">
+    <div className={GROUP_ROWS}>
       <UpgradeStatus upgrade={upgrade} remote={remote} connected={connected} checksOff={mode === "off"} />
       {mode === undefined || !hostSupportsFeature(minor, "autoUpgrade") ? null : (
-        <AutoUpgradeSetting
-          mode={mode}
-          disabled={!connected}
-          onChange={(next) => void remote.controller.updateSettings({ autoUpgrade: next })}
-        />
+        <SettingsRow label="Automatic upgrades" description={AUTO_DESCRIPTIONS[mode]}>
+          <SegmentedControl
+            value={mode}
+            onValueChange={(next) => void remote.controller.updateSettings({ autoUpgrade: next as AutoUpgradeMode })}
+            aria-label="Automatic upgrades"
+            disabled={!connected}
+          >
+            <SegmentedControlItem value="off">Off</SegmentedControlItem>
+            <SegmentedControlItem value="notify">Notify</SegmentedControlItem>
+            <SegmentedControlItem value="auto">When idle</SegmentedControlItem>
+          </SegmentedControl>
+        </SettingsRow>
       )}
     </div>
   );
@@ -126,148 +137,149 @@ function UpgradeStatus({
   else summary = checksOff ? "Release checks are off." : "Not checked yet.";
 
   const canStart = connected && blocked === null && phase === "idle" && available !== null;
+  // Another device started or cancelled, or the host dropped: the dialog
+  // closes for good rather than coming back on its own later.
+  if (confirming && !canStart) setConfirming(false);
+  const confirmPending = pending === "idle" || pending === "now" ? pending : undefined;
+  const alerts = [
+    upgrade.checkError === null ? null : (
+      <Alert key="check" variant="warning"><AlertTitle>Couldn't check for releases</AlertTitle><AlertDescription>{upgrade.checkError}</AlertDescription></Alert>
+    ),
+    failure === null || phase !== "idle" ? null : (
+      <Alert key="failure" variant="destructive">
+        <AlertTitle>{`Upgrading to pinomad ${failure.version} failed`}</AlertTitle>
+        <AlertDescription><span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{failure.message}</span></AlertDescription>
+      </Alert>
+    ),
+    blocked === null ? null : (
+      <Alert key="blocked" variant="info">
+        <AlertTitle>{BLOCKED[blocked].title}</AlertTitle>
+        <AlertDescription>{BLOCKED[blocked].description}</AlertDescription>
+      </Alert>
+    ),
+    // While the dialog is open the error shows in it, not behind the overlay.
+    error === undefined || confirming ? null : <CallError key="error" message={error} />,
+  ].filter((alert) => alert !== null);
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-col gap-1">
-        <span className="text-sm/5 font-semibold">{running}</span>
-        <span className="text-xs/5 text-muted-foreground">{summary}</span>
-        {available !== null && available.crossesMajor && phase === "idle" ? (
-          <span className="text-xs/5 text-muted-foreground">Apps that haven't updated yet can't connect to this release.</span>
+    <>
+      <SettingsRow
+        label={running}
+        description={
+          available !== null && available.crossesMajor && phase === "idle"
+            ? `${summary} Apps that haven't updated yet can't connect to this release.`
+            : summary
+        }
+      >
+        {phase === "waiting" ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!connected || pending !== undefined}
+            loading={pending === "cancel"}
+            onClick={() => act("cancel", () => remote.controller.cancelUpgrade())}
+          >
+            Cancel upgrade
+          </Button>
         ) : null}
-      </div>
-      {upgrade.checkError === null ? null : (
-        <Alert variant="warning"><AlertTitle>Couldn't check for releases</AlertTitle><AlertDescription>{upgrade.checkError}</AlertDescription></Alert>
-      )}
-      {failure === null || phase !== "idle" ? null : (
-        <Alert variant="destructive">
-          <AlertTitle>{`Upgrading to pinomad ${failure.version} failed`}</AlertTitle>
-          <AlertDescription><span style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{failure.message}</span></AlertDescription>
-        </Alert>
-      )}
-      {blocked === null ? null : (
-        <Alert variant="info">
-          <AlertTitle>{BLOCKED[blocked].title}</AlertTitle>
-          <AlertDescription>{BLOCKED[blocked].description}</AlertDescription>
-        </Alert>
-      )}
-      {error === undefined ? null : <Alert variant="destructive"><AlertTitle>That didn't go through</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
+        {/* A source checkout has no upgrader to ask. */}
+        {phase === "idle" && blocked !== "source" ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={!connected || checksOff || upgrade.checking || pending !== undefined}
+            loading={upgrade.checking || pending === "check"}
+            onClick={() => act("check", () => remote.controller.checkUpgrade())}
+          >
+            Check now
+          </Button>
+        ) : null}
+        {canStart ? (
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={pending !== undefined}
+            onClick={() => {
+              setError(undefined);
+              setConfirming(true);
+            }}
+          >
+            Upgrade
+          </Button>
+        ) : null}
+      </SettingsRow>
+      {alerts.length === 0 ? null : <div className="flex flex-col gap-2 p-4">{alerts}</div>}
       {confirming && canStart ? (
-        <UpgradeConfirm
+        <UpgradeDialog
           version={available.version}
           crossesMajor={available.crossesMajor}
-          pending={pending === "idle" || pending === "now" ? pending : undefined}
-          onCancel={() => setConfirming(false)}
+          pending={confirmPending}
+          error={error}
+          onCancel={() => {
+            setError(undefined);
+            setConfirming(false);
+          }}
           onStart={start}
         />
-      ) : (
-        <div className="flex flex-wrap gap-2">
-          {phase === "waiting" ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={!connected || pending !== undefined}
-              loading={pending === "cancel"}
-              onClick={() => act("cancel", () => remote.controller.cancelUpgrade())}
-            >
-              Cancel upgrade
-            </Button>
-          ) : null}
-          {canStart ? (
-            <Button variant="secondary" size="sm" onClick={() => setConfirming(true)}>Upgrade</Button>
-          ) : null}
-          {/* A source checkout has no upgrader to ask. */}
-          {phase === "idle" && blocked !== "source" ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={!connected || checksOff || upgrade.checking || pending !== undefined}
-              loading={upgrade.checking || pending === "check"}
-              onClick={() => act("check", () => remote.controller.checkUpgrade())}
-            >
-              Check now
-            </Button>
-          ) : null}
-        </div>
-      )}
-    </div>
+      ) : null}
+    </>
   );
 }
 
-function UpgradeConfirm({
+function CallError({ message }: { message: string }) {
+  return (
+    <Alert variant="destructive">
+      <AlertTitle>That didn't go through</AlertTitle>
+      <AlertDescription>{message}</AlertDescription>
+    </Alert>
+  );
+}
+
+function UpgradeDialog({
   version,
   crossesMajor,
   pending,
+  error,
   onCancel,
   onStart,
 }: {
   version: string;
   crossesMajor: boolean;
-  /** The choice sent and not yet answered. */
+  /** The choice sent and not yet answered: the dialog stays until the host answers. */
   pending: UpgradeWhen | undefined;
+  error: string | undefined;
   onCancel: () => void;
   onStart: (when: UpgradeWhen) => void;
 }) {
-  const title = `Upgrade the host to pinomad ${version}?`;
   return (
-    <div className="flex flex-col gap-2" role="group" aria-label={title}>
-      <span className="text-sm/5 font-semibold">{title}</span>
-      <span className="text-xs/5 text-muted-foreground">
-        The host restarts after installing, and every device reconnects. Open terminals close.
-        {crossesMajor ? " Apps that haven't updated yet can't connect to this release." : ""}
-      </span>
-      <span className="text-xs/5 text-muted-foreground">Upgrading now interrupts running tasks; they continue after the restart.</span>
-      <div className="flex flex-wrap justify-end gap-2">
-        <Button variant="secondary" size="sm" disabled={pending !== undefined} onClick={onCancel}>Cancel</Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={pending !== undefined}
-          loading={pending === "now"}
-          onClick={() => onStart("now")}
-        >
-          Upgrade now
-        </Button>
-        <Button
-          variant="primary"
-          size="sm"
-          disabled={pending !== undefined}
-          loading={pending === "idle"}
-          onClick={() => onStart("idle")}
-        >
-          Upgrade when idle
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function AutoUpgradeSetting({
-  mode,
-  disabled,
-  onChange,
-}: {
-  mode: AutoUpgradeMode;
-  disabled: boolean;
-  onChange: (mode: AutoUpgradeMode) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-sm/5">Automatic upgrades</span>
-      {/* In an HStack the control hugs its items; a VStack would stretch it across the page. */}
-      <div className="flex">
-        <SegmentedControl
-          className="shrink-0"
-          value={mode}
-          onValueChange={(next) => onChange(next as AutoUpgradeMode)}
-          aria-label="Automatic upgrades"
-          disabled={disabled}
-        >
-          <SegmentedControlItem value="off">Off</SegmentedControlItem>
-          <SegmentedControlItem value="notify">Notify</SegmentedControlItem>
-          <SegmentedControlItem value="auto">When idle</SegmentedControlItem>
-        </SegmentedControl>
-      </div>
-      <span className="text-xs/5 text-muted-foreground">{AUTO_DESCRIPTIONS[mode]}</span>
-    </div>
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && pending === undefined) onCancel();
+      }}
+      disablePointerDismissal
+    >
+      <DialogContent className="w-[480px]" showCloseButton={pending === undefined}>
+        <DialogHeader>
+          <DialogTitle>{`Upgrade the host to pinomad ${version}?`}</DialogTitle>
+        </DialogHeader>
+        <DialogBody className="flex flex-col gap-2">
+          <DialogDescription>
+            The host restarts after installing, and every device reconnects. Open terminals close.
+            {crossesMajor ? " Apps that haven't updated yet can't connect to this release." : ""}
+          </DialogDescription>
+          <p className="m-0 text-xs/5 text-muted-foreground">Upgrading now interrupts running tasks; they continue after the restart.</p>
+          {error === undefined ? null : <CallError message={error} />}
+        </DialogBody>
+        <DialogFooter className="flex-wrap">
+          <Button variant="secondary" disabled={pending !== undefined} onClick={onCancel}>Cancel</Button>
+          <Button variant="secondary" disabled={pending !== undefined} loading={pending === "now"} onClick={() => onStart("now")}>
+            Upgrade now
+          </Button>
+          <Button variant="primary" disabled={pending !== undefined} loading={pending === "idle"} onClick={() => onStart("idle")}>
+            Upgrade when idle
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

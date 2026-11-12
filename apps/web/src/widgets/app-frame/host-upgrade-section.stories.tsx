@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { userEvent, within } from "storybook/test";
 import { fakeRemote, fakeUpgrade, fakeView } from "../../test/story-fixtures.tsx";
+import { SettingsGroup } from "../../shared/ui/settings-group.tsx";
 import { HostUpgradeSection } from "./host-upgrade-section.tsx";
 
 const view = fakeView({ upgrade: fakeUpgrade() });
@@ -9,6 +10,8 @@ const meta = {
   title: "Widgets/AppFrame/HostUpgradeSection",
   component: HostUpgradeSection,
   args: { view, remote: fakeRemote(view) },
+  // As on the About page: the section is the rows of the Version group.
+  decorators: [(Story) => <div className="pigui-settings"><SettingsGroup title="Version"><Story /></SettingsGroup></div>],
 } satisfies Meta<typeof HostUpgradeSection>;
 
 export default meta;

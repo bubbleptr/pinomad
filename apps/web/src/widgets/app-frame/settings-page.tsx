@@ -20,7 +20,7 @@ import {
 } from "../../shared/ui/combobox.tsx";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue, selectTriggerClassName } from "../../shared/ui/select.tsx";
 import { SideNav, SideNavItem, SideNavSection } from "../../shared/ui/side-nav.tsx";
-import { Field, FieldDescription, FieldError, FieldLabel } from "../../shared/ui/field.tsx";
+import { Field, FieldError, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../../shared/ui/input-group.tsx";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -590,9 +590,7 @@ function sectionBody(
             <HostNameGroup view={view} remote={remote} connected={connected} />
             <section aria-label="Version">
               <SettingsGroup title="Version">
-                <div className="p-4">
-                  <HostUpgradeSection view={view} remote={remote} />
-                </div>
+                <HostUpgradeSection view={view} remote={remote} />
               </SettingsGroup>
             </section>
             <AboutDetails view={view} />
@@ -819,9 +817,7 @@ function HostNameGroup({ view, remote, connected }: { view: DurableView; remote:
   if (settings === null || !hostSupportsFeature(view.host?.protocol.minor ?? 0, "hostName")) return null;
   return (
     <SettingsGroup>
-      <div className="p-4">
-        <HostNameField settings={settings} remote={remote} connected={connected} />
-      </div>
+      <HostNameField settings={settings} remote={remote} connected={connected} />
     </SettingsGroup>
   );
 }
@@ -830,35 +826,26 @@ function AboutDetails({ view }: { view: DurableView }) {
   const host = view.host;
   return (
     <SettingsGroup title="Details">
-      <ItemGroup className={GROUP_ROWS}>
+      <div className={GROUP_ROWS}>
         {/* A host with the upgrade stream names its release under Version. */}
         {view.upgrade === null ? (
-          <Item render={<li />}>
-            <ItemContent>
-              <ItemTitle>Host version</ItemTitle>
-              <ItemDescription>{host?.version ?? "Source checkout"}</ItemDescription>
-            </ItemContent>
-          </Item>
+          <SettingsRow label="Host version">
+            <span className="text-sm/5 text-muted-foreground">{host?.version ?? "Source checkout"}</span>
+          </SettingsRow>
         ) : null}
-        <Item render={<li />}>
-          <ItemContent>
-            <ItemTitle>Protocol</ItemTitle>
-            <ItemDescription>{host === undefined ? "—" : `${host.protocol.major}.${host.protocol.minor}`}</ItemDescription>
-          </ItemContent>
-        </Item>
-        <Item render={<li />}>
-          <ItemContent>
-            <ItemTitle>Website</ItemTitle>
-            <ItemDescription className="overflow-visible whitespace-normal">
-              {/* `?home` keeps the site on its home page instead of forwarding
-                  a marked browser back to the app. */}
-              <Link href="https://pinomad.si/?home" external className="text-sm/5">
-                pinomad.si
-              </Link>
-            </ItemDescription>
-          </ItemContent>
-        </Item>
-      </ItemGroup>
+        <SettingsRow label="Protocol">
+          <span className="text-sm/5 text-muted-foreground tabular-nums">
+            {host === undefined ? "—" : `${host.protocol.major}.${host.protocol.minor}`}
+          </span>
+        </SettingsRow>
+        <SettingsRow label="Website">
+          {/* `?home` keeps the site on its home page instead of forwarding
+              a marked browser back to the app. */}
+          <Link href="https://pinomad.si/?home" external className="text-sm/5">
+            pinomad.si
+          </Link>
+        </SettingsRow>
+      </div>
     </SettingsGroup>
   );
 }
@@ -875,34 +862,32 @@ function HostNameField({ settings, remote, connected }: { settings: HostSettings
   const cleaned = cleanHostName(draft);
   const canSave = connected && cleaned !== "" && cleaned !== current;
   const save = (): void => void remote.controller.updateSettings({ hostName: cleaned });
+  const invalid = draft !== "" && cleaned === "";
   return (
-    <div className="flex flex-col gap-1">
-      <Field disabled={!connected} invalid={draft !== "" && cleaned === ""}>
-        <FieldLabel>Host name</FieldLabel>
-        <FieldDescription>How paired devices name this machine. Without a custom name the hostname is used.</FieldDescription>
+    <SettingsRow label="Host name" description="How paired devices name this machine.">
+      <Field disabled={!connected} invalid={invalid} className="w-40 max-w-full">
         <Input
+          aria-label="Host name"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && canSave) save();
           }}
         />
-        <FieldError>{draft !== "" && cleaned === "" ? "The name needs at least one displayable character" : undefined}</FieldError>
+        <FieldError>{invalid ? "The name needs at least one displayable character" : undefined}</FieldError>
       </Field>
-      <div className="flex justify-end gap-2">
-        {settings.custom.includes("hostName") ? (
-          <Button
-            variant="secondary"
-            size="sm"
-            disabled={!connected}
-            onClick={() => void remote.controller.updateSettings({ hostName: null })}
-          >
-            Use machine name
-          </Button>
-        ) : null}
-        <Button variant="secondary" size="sm" disabled={!canSave} onClick={save}>Save</Button>
-      </div>
-    </div>
+      {settings.custom.includes("hostName") ? (
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={!connected}
+          onClick={() => void remote.controller.updateSettings({ hostName: null })}
+        >
+          Use machine name
+        </Button>
+      ) : null}
+      <Button variant="secondary" size="sm" disabled={!canSave} onClick={save}>Save</Button>
+    </SettingsRow>
   );
 }
 
