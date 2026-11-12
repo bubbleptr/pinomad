@@ -1,7 +1,7 @@
 // jsdom: the overview card's Workspace branch row — a 5.11 host's
 // changes() answer owns it, an older host's checkout record does — and
 // sections that fold away but keep their status.
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CallMethods } from "@pinomad/protocol/frames.ts";
@@ -65,12 +65,23 @@ describe("OverviewCard changes refresh", () => {
 
     changes.mockResolvedValue({ available: true, base: "c0ffee", patch: "", truncated: false });
     setBusy(false);
-    expect(await screen.findByText("None")).toBeVisible();
+    // A clean checkout has nothing to open: the Changes row goes away.
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Changes/ })).not.toBeInTheDocument());
     expect(changes).toHaveBeenCalledTimes(2);
 
     setBusy(true);
     expect(changes).toHaveBeenCalledTimes(2);
-    expect(screen.getByText("None")).toBeVisible();
+  });
+});
+
+describe("OverviewCard workspace folder", () => {
+  it("follows the project's name with its parent folder, not the full path", () => {
+    renderCard(11, { available: false, reason: "Not in a git repository" }, undefined, {
+      home: { kind: "project", path: "/code/opensource/pinomad" },
+    } as Partial<DurableView>);
+    const row = screen.getByTitle("/repo");
+    expect(within(row).getByText("pinomad")).toBeInTheDocument();
+    expect(row).toHaveTextContent(/pinomad\u200E?\/code\/opensource$/);
   });
 });
 
@@ -92,10 +103,23 @@ describe("OverviewCard workspace branch", () => {
   it("hides the branch row when a 5.11 host omits it", async () => {
     // A worktree in detached HEAD sends no branch; the recorded name must
     // not come back as a fallback.
-    renderCard(11, { available: true, base: "c0ffee", patch: "", truncated: false }, "pinomad/1-dead");
+    const { changes } = renderCard(11, { available: true, base: "c0ffee", patch: "", truncated: false }, "pinomad/1-dead");
     // Wait for the fetch to land so "hidden" isn't just "still loading".
-    expect(await screen.findByText("None")).toBeInTheDocument();
+    await waitFor(() => expect(changes).toHaveBeenCalled());
+    await changes.mock.results[0]!.value;
     expect(screen.queryByText("pinomad/1-dead")).not.toBeInTheDocument();
+  });
+
+  it("labels a worktree's branch, and only a worktree's", async () => {
+    const result = { available: true, base: "c0ffee", branch: "pinomad/1-dead", patch: "", truncated: false } as const;
+    const { unmount } = renderCard(11, result, "pinomad/1-dead");
+    const row = (await screen.findByText("pinomad/1-dead")).closest("div")!;
+    expect(within(row).getByText("Worktree")).toBeVisible();
+    unmount();
+
+    renderCard(11, { ...result, branch: "main" });
+    expect(await screen.findByText("main")).toBeInTheDocument();
+    expect(screen.queryByText("Worktree")).not.toBeInTheDocument();
   });
 
   it("falls back to the recorded checkout branch on a pre-5.11 host", async () => {

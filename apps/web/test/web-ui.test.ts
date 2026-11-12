@@ -2640,6 +2640,7 @@ it("shows where a conversation runs in the overview and honors the draft checkou
   await overview.getByText(repoName, { exact: true }).waitFor();
   expect(await overview.getByText("Git worktree", { exact: true }).count()).toBe(0);
   await overview.getByText(/pinomad\/[0-9]+-[0-9a-f]+/).waitFor();
+  await overview.getByText("Worktree", { exact: true }).waitFor();
 
   // A plain project with "Project folder" works directly in its directory.
   await page.getByRole("button", { name: "New chat", exact: true }).click();
@@ -2654,6 +2655,7 @@ it("shows where a conversation runs in the overview and honors the draft checkou
   await page.getByText("direct done", { exact: true }).waitFor();
   await overview.getByRole("img", { name: "Project folder" }).waitFor();
   await overview.getByText(plainName, { exact: true }).waitFor();
+  expect(await overview.getByText("Worktree", { exact: true }).count()).toBe(0);
   await expect.poll(async () => {
     const id = observer.view.current().organized.projects.find((p) => p.project.name === plainName)
       ?.conversations.find((node) => node.summary.title === "direct hi")?.summary.id;
