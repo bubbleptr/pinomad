@@ -285,27 +285,6 @@ html {
   margin-inline-end: -6px;
 }
 
-/* Low-frequency action buttons (send, steer/withdraw, refresh).
-   ChatActionButton already presses via `transform: scale(0.98)`; neutralize
-   that so the individual `scale` does not multiply below 0.95. */
-.pigui-pressable {
-  transition: scale 150ms ease-out;
-}
-
-.pigui-pressable:active {
-  transform: none;
-  scale: 0.96;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .pigui-pressable,
-  .pigui-pressable:active {
-    transition: none;
-    scale: none;
-    transform: none;
-  }
-}
-
 /* —— Scrollbars ——
    Chromium's classic scrollbar is a wide, near-black slab that outweighs the
    content beside it. A thin translucent thumb on a transparent track reads as

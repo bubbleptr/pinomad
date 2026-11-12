@@ -4,7 +4,7 @@
 // placement and surface.
 
 import { PreviewCard } from "@base-ui/react/preview-card";
-import { ChatActionButton } from "./chat-action-button";
+import { Button } from "@/shared/ui/button";
 import { ChatBadge } from "./chat-badge";
 
 // =============================================================================
@@ -51,7 +51,11 @@ export function ChatPastedTextToken({ text, onExpand }: ChatPastedTextTokenProps
               </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[length:var(--font-size-sm)] text-[var(--muted-foreground)]">{label}</span>
-                {onExpand && <ChatActionButton label="Expand" variant="ghost" size="sm" onClick={onExpand} />}
+                {onExpand && (
+                  <Button variant="ghost" size="sm" onClick={onExpand}>
+                    Expand
+                  </Button>
+                )}
               </div>
             </div>
           </PreviewCard.Popup>

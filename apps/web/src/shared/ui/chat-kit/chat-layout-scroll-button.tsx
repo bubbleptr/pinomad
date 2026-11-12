@@ -3,8 +3,8 @@
 
 import type { Ref } from "react";
 import { cn } from "cn";
-import { ChatActionButton } from "./chat-action-button";
-import { ChatKitIcon } from "./chat-kit-icons";
+import { Button } from "@/shared/ui/button";
+import { ChatKitGlyph } from "./chat-kit-icons";
 import type { BaseProps } from "./theme-props";
 
 // =============================================================================
@@ -53,19 +53,16 @@ export function ChatLayoutScrollButton({
           label ? "max-w-[200px]" : "max-w-8",
         )}
       >
-        <ChatActionButton
-          label={label ?? "Scroll to bottom"}
+        {/* 7px and 11px: with the button's 1px border, 8px to the icon and 12px after the label. */}
+        <Button
           aria-label={label ?? "Scroll to bottom"}
-          icon={<ChatKitIcon name="chevronDown" size="md" />}
           variant="ghost"
-          size="md"
           onClick={onClick}
-          // Astryx sets --radius-element to full on the button itself, so the
-          // pill's hover fill keeps the pill shape.
-          className={cn("px-2 whitespace-nowrap [--radius-element:var(--radius-full)]", label ? "pe-3" : null)}
+          className={cn("rounded-full px-[7px]", label ? "pe-[11px]" : null)}
         >
-          {label ?? undefined}
-        </ChatActionButton>
+          <ChatKitGlyph name="chevronDown" />
+          {label}
+        </Button>
       </div>
     </div>
   );

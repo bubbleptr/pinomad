@@ -44,6 +44,8 @@ token 都在 `src/app/tokens.css`，分三层：
       └─ 都不是 → secondary
 ```
 
+输入框的发送按钮是 `primary`；回合进行中它换成 Stop，仍是 `primary`：同一个位置、当下唯一的主动作，只换图标。
+
 “都不是”是常态：拿不准时用 `secondary`。按钮单独放在内容区里却用 `ghost`，看起来就是一段文字，用户找不到它。
 
 ### 文字

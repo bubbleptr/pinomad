@@ -333,7 +333,6 @@ export function ChatPromptInput({
         sendActions={endActions}
         sendButton={
           <ChatSendButton
-            className="pigui-pressable"
             isDisabled={isDisabled || (!isStopShown && !canSubmit)}
             // Bypass the composer's submit path, which force-clears the value.
             onSend={handleSubmit}
