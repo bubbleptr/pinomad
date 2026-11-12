@@ -151,6 +151,30 @@ public func workspaceBranch(
     return checkout?.branch
 }
 
+/// The path under the workspace folder's name. The name already says which
+/// folder, so the path stops at its parent — a project's, even when the
+/// conversation runs in its worktree. A chat's folder is shown as "Chat
+/// folder", not by its own name, so it keeps the full path.
+public func workspaceFolderPath(cwd: String, home: Home?) -> String {
+    switch home {
+    case .project(let path): return parentFolder(path)
+    case .chat: return cwd
+    default: return parentFolder(cwd)
+    }
+}
+
+private func parentFolder(_ path: String) -> String {
+    guard let slash = path.lastIndex(of: "/"), slash != path.startIndex else { return "/" }
+    return String(path[..<slash])
+}
+
+/// Whether the checkout has anything to open. A clean one, one with no
+/// repository, and one not answered yet show no Changes row.
+public func workspaceHasChanges(_ changes: ConversationChanges?) -> Bool {
+    if case .available(_, let files, _, _)? = changes { return !files.isEmpty }
+    return false
+}
+
 extension ChatAdapter {
     /// The run whose subagent call delegated `child` — where the reader
     /// returns to after opening the child from outside its card.

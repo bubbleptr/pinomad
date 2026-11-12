@@ -167,11 +167,18 @@ struct OverviewSheet: View {
     /// sent a breakdown of the reply the meter counts).
     private func contextRow(_ reading: ContextMeterReading, breakdown: ContextBreakdownReading) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            LabeledContent("Context window") {
-                Text(reading.detail)
-                    .monospacedDigit()
-                    .foregroundStyle(reading.warning ? Color(uiColor: .systemOrange) : .secondary)
+            // The section header already says "Context": the row leads with
+            // the figures, as the Web card's headline does.
+            HStack(alignment: .firstTextBaseline) {
+                Text(reading.figures)
+                    .foregroundStyle(reading.percent == nil ? .secondary : .primary)
+                Spacer(minLength: 12)
+                if let percent = reading.percent {
+                    Text("\(percent)%")
+                        .foregroundStyle(reading.warning ? Color(uiColor: .systemOrange) : .secondary)
+                }
             }
+            .monospacedDigit()
             ContextGrid(meter: reading, breakdown: breakdown)
         }
         .accessibilityElement(children: .ignore)
@@ -217,7 +224,7 @@ struct OverviewSheet: View {
                 changes: panel.changes,
                 checkout: conversation.checkout
             ),
-            showsChanges: !isChat && !isUnavailable
+            showsChanges: !isChat && workspaceHasChanges(panel.changes)
         )
         guard workspace.cwd != nil || workspace.branch != nil || workspace.showsChanges
         else { return nil }
@@ -260,7 +267,7 @@ struct OverviewSheet: View {
                             .background(.secondary.opacity(0.14), in: Capsule())
                     }
                 }
-                Text(cwd)
+                Text(workspaceFolderPath(cwd: cwd, home: home))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -286,28 +293,13 @@ struct OverviewSheet: View {
         }
     }
 
-    /// No repository behind the conversation: the Web card hides the row,
-    /// and so does the overview.
-    private var isUnavailable: Bool {
-        if case .unavailable? = panel.changes { return true }
-        return false
-    }
-
+    /// The row only shows once the checkout has files (`workspaceHasChanges`).
     @ViewBuilder
     private var changeStat: some View {
-        switch panel.changes {
-        case nil:
-            Text(panel.error == nil ? "…" : "—")
-                .foregroundStyle(.secondary)
-        case .unavailable?:
-            EmptyView()
-        case .available(_, let files, let truncated, _)?:
+        if case .available(_, let files, let truncated, _)? = panel.changes {
             let additions = files.reduce(UInt64(0)) { $0 + $1.additions }
             let deletions = files.reduce(UInt64(0)) { $0 + $1.deletions }
-            if files.isEmpty {
-                Text("None")
-                    .foregroundStyle(.secondary)
-            } else if additions == 0 && deletions == 0 {
+            if additions == 0 && deletions == 0 {
                 // Binary edits, renames and mode changes touch files
                 // without text lines.
                 Text("\(files.count) file\(files.count == 1 ? "" : "s")")
