@@ -50,12 +50,8 @@ export interface ChatComposerProps extends Omit<BaseProps<HTMLDivElement>, "onCh
 
   // --- Slot props ---
 
-  /** Collapsible drawer rendered above the input — attachments, context chips, etc. Use ChatComposerDrawer. */
-  drawer?: ReactNode;
-  /** Actions rendered on the left side of the header (e.g. attach, mention buttons). Use icon-only `size="sm"` buttons. */
-  headerActions?: ReactNode;
-  /** Contextual info rendered on the right side of the header (e.g. context window usage, ProgressBar). */
-  headerContext?: ReactNode;
+  /** A row inside the shell, above the input: staged attachments, context chips. */
+  header?: ReactNode;
   /** Custom input element — replaces the default textarea */
   input?: ReactNode;
   /** Actions rendered on the left side of the footer. Use `size="md"` buttons to match the send button height. */
@@ -112,7 +108,7 @@ const statusTypeClasses = {
 // =============================================================================
 
 /**
- * Layout shell for a chat composer with slots for drawer, input,
+ * Layout shell for a chat composer with slots for a header row, input,
  * actions, and a send button.
  *
  * @example
@@ -135,9 +131,7 @@ export function ChatComposer(props: ChatComposerProps) {
     isDisabled = false,
     density = "balanced",
     elevation = "low",
-    drawer,
-    headerActions,
-    headerContext,
+    header,
     input,
     footerActions,
     sendActions,
@@ -243,8 +237,6 @@ export function ChatComposer(props: ChatComposerProps) {
         {...rest}
       >
         {statusPosition === "top" && statusEl}
-        {drawer}
-
         <div
           ref={bodyRef}
           onClick={handleBodyClick}
@@ -254,14 +246,7 @@ export function ChatComposer(props: ChatComposerProps) {
             density === "compact" && "gap-1 [--_chat-composer-padding:var(--spacing-2)]",
           )}
         >
-          {(headerActions || headerContext) && (
-            <div className="flex min-h-7 items-center justify-between gap-2">
-              <div className="flex items-center gap-1">{headerActions}</div>
-              <div className="ms-auto flex items-center gap-2 text-[length:var(--font-size-sm)] leading-[1.6667] text-[var(--muted-foreground)]">
-                {headerContext}
-              </div>
-            </div>
-          )}
+          {header ? <div className="cursor-default">{header}</div> : null}
 
           <div className="flex flex-col">{input ?? <ChatComposerInput />}</div>
 

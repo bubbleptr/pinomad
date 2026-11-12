@@ -1,7 +1,7 @@
 // Visual reference for issue #321: the three upload states in the composer
-// drawer and a sent bubble's file chips, in whichever theme the toolbar picks.
+// row and a sent bubble's file chips, in whichever theme the toolbar picks.
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { attachmentDrawer } from "../image/attachments.tsx";
+import { attachmentRow } from "../image/attachments.tsx";
 import { ChatMessage } from "@/shared/ui/chat/chat-message";
 import { ChatPromptInput } from "@/shared/ui/chat/chat-prompt-input";
 import { FileAttachmentChip, MessageAttachments } from "./file-attachments.tsx";
@@ -56,7 +56,7 @@ const meta = {
         value=""
         status="ready"
         hasAttachments
-        attachments={attachmentDrawer({
+        attachments={attachmentRow({
           images: [],
           pending: false,
           onRemove: () => {},

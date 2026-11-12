@@ -13,7 +13,7 @@ import { draftMessage } from "../../entities/agent/skill-bindings.ts";
 import { splitFiles } from "../../entities/attachment/file-attachments.ts";
 import { FileAttachmentChip } from "../../entities/attachment/file-attachments.tsx";
 import { useFileAttachments } from "../../entities/attachment/use-file-attachments.ts";
-import { attachmentDrawer, FilePickerInput, ImageFileInput } from "../../entities/image/attachments.tsx";
+import { attachmentRow, FilePickerInput, ImageFileInput } from "../../entities/image/attachments.tsx";
 import { useImageAttachments } from "../../entities/image/use-image-attachments.ts";
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { useDraftModelPick } from "../../entities/model/use-draft-model-pick.ts";
@@ -242,7 +242,7 @@ export function DraftHome({
               commands: false,
               skills: skills.trigger !== undefined,
             })}
-            attachments={attachmentDrawer({
+            attachments={attachmentRow({
               images,
               pending,
               onRemove: remove,

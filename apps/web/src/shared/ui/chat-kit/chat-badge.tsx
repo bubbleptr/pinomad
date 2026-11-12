@@ -1,7 +1,6 @@
 // Copyright (c) Meta Platforms, Inc. and affiliates.
 // Ported from @astryxdesign/core 0.3.0 src/Badge/Badge.tsx (MIT), with the
-// neutral theme's variant colors: the pill the composer's tokens and the
-// drawer's count render as.
+// neutral theme's variant colors: the pill the composer's tokens render as.
 
 import type { ComponentProps, ReactNode, Ref } from "react";
 import { cn } from "cn";

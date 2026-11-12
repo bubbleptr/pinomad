@@ -14,7 +14,7 @@ import { useSlashCommands } from "../../entities/command/slash-commands.tsx";
 import { splitFiles } from "../../entities/attachment/file-attachments.ts";
 import { FileAttachmentChip } from "../../entities/attachment/file-attachments.tsx";
 import { useFileAttachments } from "../../entities/attachment/use-file-attachments.ts";
-import { attachmentDrawer, FilePickerInput, ImageFileInput } from "../../entities/image/attachments.tsx";
+import { attachmentRow, FilePickerInput, ImageFileInput } from "../../entities/image/attachments.tsx";
 import { loadImageBytes, primeImages } from "../../entities/image/image-cache.ts";
 import { useComposerSlot } from "../../entities/composer/composer-context.tsx";
 import { conversationDraftKey } from "../../entities/composer/composer-store.ts";
@@ -498,7 +498,7 @@ export function ConversationComposer({
         }}
         triggers={triggers.length === 0 ? undefined : triggers}
         onStop={busy ? () => void remote.controller.abort() : undefined}
-        attachments={attachmentDrawer({
+        attachments={attachmentRow({
           images,
           pending: imagesPending,
           onRemove: remove,
