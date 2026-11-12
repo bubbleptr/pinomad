@@ -11,6 +11,7 @@ import type { DurableView } from "@pinomad/protocol/view.ts";
 import { familyStatus, threadsOf, type FamilyStatus } from "@pinomad/client/family.ts";
 import { useAppUpdate } from "../../entities/app-update/use-app-update.ts";
 import { ArchiveArrowDown, ChatBubble, ChevronRight, FolderAdd, FolderClosed, FolderOpenState, MoreHorizontal, Pencil, Plus, Settings, Trash2, UserCircle } from "../../shared/ui/icons.tsx";
+import { DisclosureButton, DisclosureChevron } from "../../shared/ui/disclosure-button.tsx";
 import { AnimatedNewChat, AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
 import { AddProjectDialog, RemoveProjectDialog } from "./project-dialogs.tsx";
 import { RenameConversationDialog } from "./rename-dialog.tsx";
@@ -191,11 +192,10 @@ function SidebarSectionHeader({
 }) {
   return (
     <div className="pigui-sidenav-section-header">
-      <button
-        type="button"
+      <DisclosureButton
+        open={expanded}
         className="pigui-sidenav-section-toggle"
         aria-label={expanded ? `Collapse ${title}` : `Expand ${title}`}
-        aria-expanded={expanded}
         aria-controls={contentId}
         onClick={onToggle}
       >
@@ -206,10 +206,10 @@ function SidebarSectionHeader({
           className="pigui-sidenav-section-toggle__chevron"
           data-expanded={expanded ? "true" : "false"}
         >
-          <ChevronRight aria-hidden="true" className="size-4" />
+          <DisclosureChevron className="size-4" />
         </span>
-      </button>
-      <div className={cn("flex items-center gap-0.5", !pinnedActions && "pigui-sidenav-hover-actions")}>
+      </DisclosureButton>
+      <div className={cn("ms-auto flex items-center gap-0.5", !pinnedActions && "pigui-sidenav-hover-actions")}>
         {actions}
       </div>
     </div>

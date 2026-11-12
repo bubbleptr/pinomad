@@ -96,6 +96,19 @@ token 都在 `src/app/tokens.css`，分三层：
 
 iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.borderedProminent` / `.glassProminent`，`secondary` ↔ `.bordered` / `.glass`，`ghost` ↔ `.plain` / `.borderless`，`destructive` ↔ `role: .destructive`。改 iOS 按钮另开 PR。
 
+### 展开/收起
+
+标题下面的内容能折叠时，标题用 `src/shared/ui/disclosure-button.tsx` 的 `DisclosureButton`，箭头用放在它里面的 `DisclosureChevron`，不要手写 `<button aria-expanded>`。`DisclosureButton` 只管 `aria-expanded`（`open` 属性）和焦点环，`DisclosureChevron` 只管箭头的大小（14px）、旋转和减弱动效；布局、悬停底色、文字由调用处写，箭头放前放后都行。被折叠的区域有 id 就传 `aria-controls`。
+
+```tsx
+<DisclosureButton open={open} aria-controls={region} className="flex items-center gap-2 rounded-md p-1 hover:bg-surface-hover" onClick={toggle}>
+  <DisclosureChevron />
+  {title}
+</DisclosureButton>
+```
+
+整行宽、箭头朝下放在行尾、下面是 Base UI 面板的那种（Add a host 里的说明），用 `collapsible.tsx` 的 `CollapsibleTrigger`。
+
 ## 反馈
 
 状态和通知用 `src/shared/ui/` 里这几个组件，样子和颜色都写在组件里，调用处不加 `className` 改底色或字色。各自的样子见 Storybook 的 `Shared/Feedback`（`src/shared/ui/feedback.stories.tsx`），明暗两套都要看。

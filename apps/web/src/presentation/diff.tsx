@@ -6,7 +6,7 @@
 // folds a long patch's files so opening it stays cheap.
 import { parsePatch } from "@pinomad/client/patch.ts";
 import { lazy, Suspense, useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import { ChevronRight } from "../shared/ui/icons.tsx";
+import { DisclosureButton, DisclosureChevron } from "../shared/ui/disclosure-button.tsx";
 import { Badge } from "../shared/ui/badge.tsx";
 
 // Suspense doesn't catch a chunk that fails to load; without this, a network
@@ -101,14 +101,13 @@ function PlainLines({ lines }: { lines: ReturnType<typeof parsePatch>[number]["l
 /** A file's header as the button that folds its lines. */
 function FileToggle({ open, onToggle, children }: { open: boolean; onToggle: () => void; children: ReactNode }) {
   return (
-    <button
-      type="button"
-      aria-expanded={open}
-      className="flex min-w-0 items-center gap-2 rounded-[var(--radius-sm,6px)] p-1 text-left hover:bg-[var(--surface-hover)] focus-visible:outline-2 focus-visible:outline-[var(--border-strong)]"
+    <DisclosureButton
+      open={open}
+      className="flex min-w-0 items-center gap-2 rounded-sm p-1 text-left hover:bg-surface-hover"
       onClick={onToggle}
     >
-      <ChevronRight className={`size-3.5 shrink-0 text-muted-foreground ${open ? "rotate-90" : ""}`} aria-hidden="true" />
+      <DisclosureChevron className="text-muted-foreground" />
       {children}
-    </button>
+    </DisclosureButton>
   );
 }

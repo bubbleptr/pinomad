@@ -97,6 +97,11 @@ export const SeveralFiles: Story = {
   args: { patch: [modified, newFile, deleted, renamed].join("") },
 };
 
+/** Each file header folds its lines (the Changes panel). */
+export const Collapsible: Story = {
+  args: { patch: [modified, newFile, deleted, renamed].join(""), collapsible: true },
+};
+
 export const TwoHunks: Story = {
   args: { patch: twoHunks },
 };

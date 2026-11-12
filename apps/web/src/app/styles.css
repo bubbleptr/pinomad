@@ -449,7 +449,8 @@ html {
 
 /* Section header (Chats / Projects): the title is the collapse toggle, laid
    out on the same row grid as the items so the hover-only "+" lines up with
-   the project-row actions below it. */
+   the project-row actions below it. Only the title and its chevron take the
+   click; the rest of the row is not a target. */
 .pigui-sidenav-section-header {
   display: flex;
   align-items: center;
@@ -460,7 +461,7 @@ html {
 
 .pigui-sidenav-section-toggle {
   display: inline-flex;
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   align-items: center;
   gap: var(--spacing-1);
@@ -474,11 +475,6 @@ html {
   line-height: 1.6667;
   text-align: start;
   cursor: default;
-}
-
-.pigui-sidenav-section-toggle:focus-visible {
-  outline: 2px solid var(--primary);
-  outline-offset: 2px;
 }
 
 .pigui-sidenav-section-toggle__title {
@@ -499,13 +495,7 @@ html {
   justify-content: center;
   translate: 0 -1px;
   opacity: 0;
-  transition:
-    opacity 120ms ease-out,
-    rotate 150ms ease-out;
-}
-
-.pigui-sidenav-section-toggle__chevron[data-expanded="true"] {
-  rotate: 90deg;
+  transition: opacity 120ms ease-out;
 }
 
 /* Actions (new chat, add project, row menus) are hidden until the row is
