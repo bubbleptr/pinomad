@@ -15,6 +15,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { IconButton } from "@/shared/ui/icon-button";
 import { Check, ChevronRight, Copy } from "@/shared/ui/icons";
 import { applyHighlightRangesChunked } from "./highlight-ranges";
 import { SYNC_TOKENIZE_THRESHOLD, tokenize, tokenizeAsync, type SyntaxToken, type TokenLine } from "./tokenizer";
@@ -344,21 +345,25 @@ function CodeBlock({
 
   const CopyIcon = copied ? Check : Copy;
   const copyButtonEl = hasCopyButton ? (
-    <button
-      type="button"
+    <IconButton
+      label={copied ? "Copied" : "Copy code"}
+      icon={<CopyIcon aria-hidden />}
+      size="sm"
       onClick={(e) => {
         // Stop propagation so copying does not toggle the collapsible header.
         e.stopPropagation();
         void handleCopy();
       }}
-      aria-label={copied ? "Copied" : "Copy code"}
+      // Offsets that leave the icon where the 24px button had it: the header
+      // row keeps its height, and without a header the button hangs 2px past
+      // the block's clipped edge, so its focus ring is drawn inset. Important,
+      // so the Settings rule for a card's trailing icon button (styles.css)
+      // does not move it.
       className={cn(
-        "-me-2 inline-flex cursor-pointer items-center justify-center rounded-[var(--radius-inner)] border-0 bg-transparent p-1 leading-[0] text-[var(--syntax-comment)] hover:bg-surface-hover",
-        !showHeader && "absolute end-2 top-2",
+        "text-[var(--syntax-comment)]",
+        showHeader ? "-my-0.5 -me-2.5!" : "absolute -end-0.5 top-1.5 me-0! focus-visible:ring-inset",
       )}
-    >
-      <CopyIcon size={16} aria-hidden />
-    </button>
+    />
   ) : null;
 
   const headerEl = showHeader ? (

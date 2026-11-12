@@ -320,30 +320,6 @@ mark.chat-skill-mention {
   line-height: 1.667;
 }
 
-.chat-message__action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--size-element-sm);
-  height: var(--size-element-sm);
-  border: none;
-  border-radius: var(--radius-inner);
-  background: transparent;
-  color: var(--muted-foreground);
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard);
-}
-
-.chat-message__action:hover {
-  background: var(--surface-hover);
-  color: var(--foreground);
-}
-
-.chat-message__action:active {
-  background: var(--surface-pressed);
-}
-
 /* —— Chain of thought —— */
 
 .chain-of-thought {
