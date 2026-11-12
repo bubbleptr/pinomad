@@ -1,0 +1,21 @@
+---
+title: A fresh look for the web and Mac app, and a context grid
+version: v0.15.0
+date: 2026-11-12
+---
+
+**Before you upgrade**
+
+- Upgrade the host from Settings → the host → About, or with `pinomad upgrade`.
+
+**Web and Mac app**
+
+- A new look: softer text and borders, smaller corners, cooler dark surfaces, and a blue focus ring.
+- Screens like "Couldn't connect" or a revoked device scroll in a short window, so Unpair and Pair again stay reachable.
+
+**Context** (web, Mac app and iPhone)
+
+- The Usage section is now **Context**. Its meter is a grid of cells on the window's scale, so a short conversation in a 1M window still shows, and every part that takes space gets at least one cell.
+- The legend shows tokens for each part, plus how many are **Left** in the window. The cost row is gone.
+- On the web and in the Mac app the section opens with the tokens used, the window size and the share, highlighted at 80% or more.
+- Chinese, Japanese and Korean text in AGENTS.md and other prompts is counted closer to its real cost, so System no longer reads low and Messages high. This needs a 0.15.0 host.
