@@ -26,6 +26,7 @@ import { SkillMentionText } from "../../entities/agent/skill-mentions.tsx";
 import { messageTime } from "./chat-time.ts";
 import { SubagentCards } from "./subagent-card.tsx";
 import { fillToolDetails } from "./tool-detail.tsx";
+import { usePluginRegistry } from "../../entities/plugin/plugin-host.tsx";
 import { HOST_UPGRADING_ERROR } from "@pinomad/protocol/upgrade.ts";
 import { Badge } from "../../shared/ui/badge.tsx";
 
@@ -276,7 +277,8 @@ function RunEntry({
 }) {
   // Subagent calls anchor cards under the run instead of rows in the CoT.
   const { view: cotWithoutSubagents, subagents } = useMemo(() => splitSubagentCalls(entry.cot), [entry.cot]);
-  const cot = useMemo(() => fillToolDetails(cotWithoutSubagents), [cotWithoutSubagents]);
+  const pluginCards = usePluginRegistry().toolCards;
+  const cot = useMemo(() => fillToolDetails(cotWithoutSubagents, pluginCards), [cotWithoutSubagents, pluginCards]);
   const answer = cot.answer;
   // A forked message's chip opens that fork in main rather than the dialog.
   const forks = entry.forkEntryId === undefined ? [] : (forksAt?.(entry.forkEntryId) ?? []);

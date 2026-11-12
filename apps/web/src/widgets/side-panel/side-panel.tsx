@@ -4,7 +4,8 @@
 // family's subagents grouped by owner (ADR-0047 §1), opening their transcript
 // via `view.side`, next to its background processes.
 // Changes is the shown conversation's checkout diff (changes-surface.tsx);
-// Terminal is the terminals' owner's shells (terminal-surface.tsx).
+// Terminal is the terminals' owner's shells (terminal-surface.tsx). Plugin
+// panels follow the built-in surfaces (ADR-0049).
 import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogContent } from "@/shared/ui/dialog";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
@@ -23,7 +24,9 @@ import { useNow } from "../../shared/use-now.ts";
 import { taskTally } from "../../entities/conversation/task-tally.ts";
 import { useProcessList } from "../../entities/process/use-process-list.ts";
 import { AnimatedSidebarRight } from "../../shared/ui/animated-icons.tsx";
-import { ArrowLeft, Bot, Cancel, CommandLine, FileDiff } from "../../shared/ui/icons.tsx";
+import { ArrowLeft, Bot, Cancel, CommandLine, FileDiff, Puzzle } from "../../shared/ui/icons.tsx";
+import type { PluginPanel, PluginSurfaceId } from "../../entities/plugin/load-plugins.ts";
+import { PluginScope, PluginSlot } from "../../entities/plugin/plugin-host.tsx";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
 import { ConversationSkeleton } from "../chat/conversation-skeleton.tsx";
@@ -33,18 +36,31 @@ import { SurfaceBar } from "./surface-bar.tsx";
 import { TerminalSurface } from "./terminal-surface.tsx";
 import { StatusDot } from "../../shared/ui/status-dot.tsx";
 
-export type PanelSurface = "tasks" | "changes" | "terminal";
+type BuiltInSurface = "tasks" | "changes" | "terminal";
+export type PanelSurface = BuiltInSurface | PluginSurfaceId;
 
-const SURFACES: readonly { readonly id: PanelSurface; readonly label: string; readonly icon: ReactNode }[] = [
+const SURFACES: readonly { readonly id: BuiltInSurface; readonly label: string; readonly icon: ReactNode }[] = [
   { id: "tasks", label: "Tasks", icon: <Bot className="size-4" aria-hidden="true" /> },
   { id: "changes", label: "Changes", icon: <FileDiff className="size-4" aria-hidden="true" /> },
   { id: "terminal", label: "Terminal", icon: <CommandLine className="size-4" aria-hidden="true" /> },
 ];
 
-/** A stored surface id, or Tasks when it names none of today's surfaces. */
+/**
+ * A stored surface id, or Tasks when it names none of today's surfaces. A
+ * plugin surface is kept as stored: plugins load after this runs, and
+ * `shownSurface` falls back while it is not registered.
+ */
 export function panelSurfaceOf(stored: string | null): PanelSurface {
+  if (stored?.startsWith("plugin:") === true) return stored as PluginSurfaceId;
   return SURFACES.find((surface) => surface.id === stored)?.id ?? "tasks";
 }
+
+/** The surface to show: Tasks while a plugin surface is not (or no longer) registered. */
+export function shownSurface(surface: PanelSurface, panels: readonly PluginPanel[]): PanelSurface {
+  return surface.startsWith("plugin:") && !panels.some((panel) => panel.surface === surface) ? "tasks" : surface;
+}
+
+const PLUGIN_ICON = <Puzzle className="size-4" aria-hidden="true" />;
 
 function LiveDot() {
   return (
@@ -65,8 +81,9 @@ function LiveDot() {
 export function SurfaceButtons({
   narrow,
   open,
-  surface,
+  surface: selected,
   liveActivity,
+  pluginPanels = [],
   onSelect,
 }: {
   narrow: boolean;
@@ -74,8 +91,11 @@ export function SurfaceButtons({
   surface: PanelSurface;
   /** Foreground work Tasks would show is running. */
   liveActivity: boolean;
+  /** Plugin surfaces, after the built-in ones; one shared icon, told apart by label. */
+  pluginPanels?: readonly PluginPanel[];
   onSelect: (surface: PanelSurface) => void;
 }) {
+  const surface = shownSurface(selected, pluginPanels);
   if (narrow) {
     return (
       <span className="relative">
@@ -93,7 +113,10 @@ export function SurfaceButtons({
   }
   return (
     <>
-      {SURFACES.map((entry) => {
+      {[
+        ...SURFACES,
+        ...pluginPanels.map((panel) => ({ id: panel.surface, label: panel.label, icon: PLUGIN_ICON })),
+      ].map((entry: { id: PanelSurface; label: string; icon: ReactNode }) => {
         const shown = open && surface === entry.id;
         return (
           <span key={entry.id} className="relative">
@@ -523,27 +546,46 @@ function TaskDetail({
         {side.conversation === undefined ? (
           <ConversationSkeleton />
         ) : (
-          <ConversationTranscript
-            conversation={side.conversation}
-            onLoadEarlier={onLoadEarlier}
-            docs={side.docs}
-            submissions={view.submissions}
-            mergeQueuedSubmissions
-            toolPresentations={view.toolPresentations}
-            connected={view.connection === "connected"}
-            canFork={false}
-            openInPanel={openInPanel}
-            onOpenFork={onOpenInMain}
-            onFork={() => {}}
-            summaryOf={(id) => findConversation(view.organized, id)?.summary}
-            forksAt={(entryId) => forksAt(view.organized, side.id, entryId)}
-          />
+          <PluginScope conversationId={side.id} docs={side.docs}>
+            <ConversationTranscript
+              conversation={side.conversation}
+              onLoadEarlier={onLoadEarlier}
+              docs={side.docs}
+              submissions={view.submissions}
+              mergeQueuedSubmissions
+              toolPresentations={view.toolPresentations}
+              connected={view.connection === "connected"}
+              canFork={false}
+              openInPanel={openInPanel}
+              onOpenFork={onOpenInMain}
+              onFork={() => {}}
+              summaryOf={(id) => findConversation(view.organized, id)?.summary}
+              forksAt={(entryId) => forksAt(view.organized, side.id, entryId)}
+            />
+          </PluginScope>
         )}
       </div>
       <div className="flex justify-center gap-2 p-2 shrink-0 border-t border-border">
         {onStop === undefined ? null : <Button variant="secondary" size="sm" onClick={onStop}>Stop</Button>}
         <Button variant="ghost" size="sm" onClick={() => onOpenInMain(side.id)}>Open in main</Button>
       </div>
+    </div>
+  );
+}
+
+/** A plugin's panel: its label in the bar, its component below, isolated from the shell. */
+function PluginSurface({ panel, barStart, barEnd }: { panel: PluginPanel; barStart?: ReactNode; barEnd?: ReactNode }) {
+  const Panel = panel.component;
+  return (
+    <div className="flex flex-col h-full min-h-0">
+      <SurfaceBar start={barStart} end={barEnd}>
+        <span className="min-w-0 flex-1 truncate text-sm">{panel.label}</span>
+      </SurfaceBar>
+      <Scrollable>
+        <PluginSlot key={panel.surface} plugin={panel.plugin}>
+          <Panel />
+        </PluginSlot>
+      </Scrollable>
     </div>
   );
 }
@@ -582,7 +624,8 @@ export function SidePanel({
   shownId,
   narrow,
   open,
-  surface,
+  surface: selected,
+  pluginPanels = [],
   busy,
   liveActivity,
   onOpenChange,
@@ -597,6 +640,7 @@ export function SidePanel({
   narrow: boolean;
   open: boolean;
   surface: PanelSurface;
+  pluginPanels?: readonly PluginPanel[];
   /** The shown conversation is running; Changes refreshes once it settles. */
   busy: boolean;
   liveActivity: boolean;
@@ -606,6 +650,8 @@ export function SidePanel({
   onOpenInMain: (id: ConversationId) => void;
 }) {
   const [panel, setPanel] = useState<HTMLDivElement | null>(null);
+  const surface = shownSurface(selected, pluginPanels);
+  const pluginPanel = pluginPanels.find((entry) => entry.surface === surface);
   const room = useRoomBeside(panel);
   const maxSizePx = Math.max(PANEL_MIN_PX, Math.min(PANEL_MAX_PX, room ?? PANEL_MAX_PX));
   const resizable = useResizableWidth({
@@ -621,7 +667,9 @@ export function SidePanel({
     if (size > maxSizePx) resize(maxSizePx);
   }, [size, maxSizePx, resize]);
   const content = (barStart?: ReactNode, barEnd?: ReactNode) =>
-    surface === "changes" ? (
+    pluginPanel !== undefined ? (
+      <PluginSurface panel={pluginPanel} barStart={barStart} barEnd={barEnd} />
+    ) : surface === "changes" ? (
       <ChangesSurface view={view} remote={remote} shownId={shownId} busy={busy} barStart={barStart} barEnd={barEnd} />
     ) : surface === "terminal" ? (
       <TerminalSurface
@@ -650,7 +698,14 @@ export function SidePanel({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent variant="fullscreen" aria-label="Side panel" showCloseButton={false}>
           {content(
-            <SurfaceButtons narrow={false} open surface={surface} liveActivity={liveActivity} onSelect={onSelectSurface} />,
+            <SurfaceButtons
+              narrow={false}
+              open
+              surface={surface}
+              liveActivity={liveActivity}
+              pluginPanels={pluginPanels}
+              onSelect={onSelectSurface}
+            />,
             <IconButton
               icon={<Cancel className="size-4" aria-hidden="true" />}
               label="Close side panel"

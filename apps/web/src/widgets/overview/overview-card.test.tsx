@@ -177,3 +177,16 @@ describe("OverviewCard context breakdown", () => {
     expect(screen.getByRole("meter")).toBeVisible();
   });
 });
+
+describe("OverviewCard documents", () => {
+  it("leaves a plugin's shared state out of Documents; the plugin's own UI shows it", () => {
+    renderCard(11, { available: true, base: "c0ffee", patch: "", truncated: false }, undefined, {
+      docs: [
+        { kind: "plugin.notes.board", value: { notes: ["plugin-only note"] } },
+        { kind: "acme.status", value: { phase: "visible phase" } },
+      ],
+    });
+    expect(screen.getByText("acme.status")).toBeVisible();
+    expect(screen.queryByText("plugin.notes.board")).toBeNull();
+  });
+});

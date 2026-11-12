@@ -354,7 +354,8 @@ function SourcesSection({ view }: { view: DurableView }) {
  */
 function DocumentsSection({ view, remote }: { view: DurableView; remote: RemoteDurable }) {
   const docs = view.docs.filter((doc) => {
-    if (doc.value === null) return false;
+    // A plugin's shared state is its own UI's to show (ADR-0049).
+    if (doc.value === null || doc.kind.startsWith("plugin.")) return false;
     const type = classify(doc.presentation, doc.value).type;
     return type !== "pinomad.todo" && type !== "pinomad.question" && type !== "pinomad.context";
   });
