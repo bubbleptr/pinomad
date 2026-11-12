@@ -16,7 +16,7 @@ import { createLocalHost, type LocalHost } from "./local-host.ts";
 import { LAUNCHER_EXECUTABLE } from "../../host/src/service/definition.ts";
 import { navigateAwayAction, windowOpenAction } from "./navigation-policy.ts";
 import { loopbackLinks, loopbackSignIn, type LoopbackSignInInput } from "./oauth-loopback.ts";
-import { APP_HOST, APP_SCHEME, contentTypeFor, rendererFilePath, RENDERER_CSP } from "./renderer-files.ts";
+import { APP_HOST, APP_SCHEME, contentTypeFor, cspFor, rendererFilePath } from "./renderer-files.ts";
 import { createAppUpdater, type AppUpdater, type AutoUpdaterLike } from "./updater.ts";
 import { desktopUserDataDir } from "./user-data.ts";
 import { platformWindowChrome } from "./window-chrome.ts";
@@ -414,7 +414,7 @@ if (!app.requestSingleInstanceLock()) {
         return new Response(new Uint8Array(body), {
           headers: {
             "content-type": contentTypeFor(file),
-            "content-security-policy": RENDERER_CSP,
+            "content-security-policy": cspFor(file, rendererDirectory),
           },
         });
       } catch {

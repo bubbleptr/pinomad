@@ -49,6 +49,23 @@ const SECURITY_HEADERS: Readonly<Record<string, string>> = {
   "referrer-policy": "no-referrer",
 };
 
+/**
+ * The page plugins render model-written HTML in (ADR-0049): it is framed with
+ * `sandbox="allow-scripts"`, receives the HTML by postMessage and writes it
+ * into itself. Its scripts must run, so the page cannot share the client's
+ * policy; instead it gets no network at all, keeps an opaque origin even when
+ * opened directly (`sandbox`), and only the client's own origin may frame it.
+ */
+export const SANDBOX_PAGE = "sandbox.html";
+export const SANDBOX_CSP = [
+  "default-src 'none'",
+  "script-src 'unsafe-inline' 'unsafe-eval'",
+  "style-src 'unsafe-inline'",
+  "img-src data: blob:",
+  "frame-ancestors 'self'",
+  "sandbox allow-scripts",
+].join("; ");
+
 /** The listener's HTTP side: the built web client, nothing else. */
 export async function serveWebClient(request: IncomingMessage, response: ServerResponse, webRoot: string | undefined): Promise<void> {
   for (const [name, value] of Object.entries(SECURITY_HEADERS)) response.setHeader(name, value);
@@ -95,6 +112,7 @@ export async function serveWebClient(request: IncomingMessage, response: ServerR
   // bundle matching the new protocol. Hashed assets keep the default.
   const headers: Record<string, string> = { "content-type": WEB_TYPES[extname(file)] ?? "application/octet-stream" };
   if (file === index) headers["cache-control"] = "no-cache";
+  if (file === join(root, SANDBOX_PAGE)) headers["content-security-policy"] = SANDBOX_CSP;
   response.writeHead(200, headers);
   response.end(request.method === "HEAD" ? undefined : body);
 }

@@ -26,6 +26,13 @@ export interface PanelDefinition {
   readonly component: ComponentType;
 }
 
+export interface SandboxProps {
+  /** A whole document; its scripts run. A new value starts a new document. */
+  readonly html: string;
+  /** The frame's accessible name. */
+  readonly title: string;
+}
+
 export interface WebApi {
   /** The shell's React; use it for elements and hooks. */
   readonly React: typeof import("react");
@@ -41,6 +48,11 @@ export interface WebApi {
   call<T = JsonValue>(method: string, args: JsonValue): Promise<T>;
   /** Opens one of this plugin's panels by id. */
   openPanel(id: string): void;
+  /**
+   * Renders model-written HTML, scripts included, in a frame cut off from the
+   * shell (no storage, no DOM access) and from the network. It fills its slot.
+   */
+  readonly Sandbox: ComponentType<SandboxProps>;
 }
 
 /** The default export of a plugin's `web.js`. */

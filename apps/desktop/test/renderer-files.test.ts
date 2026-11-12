@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { contentTypeFor, rendererFilePath } from "../electron/renderer-files.ts";
+import { contentTypeFor, cspFor, rendererFilePath } from "../electron/renderer-files.ts";
 
 const dir = "/srv/renderer";
 
@@ -52,5 +52,23 @@ describe("contentTypeFor", () => {
     expect(contentTypeFor("font.woff2")).toBe("font/woff2");
     expect(contentTypeFor("icon.svg")).toBe("image/svg+xml");
     expect(contentTypeFor("x.bin")).toBe("application/octet-stream");
+  });
+});
+
+describe("cspFor", () => {
+  it("gives the sandbox page its own policy and every other file the renderer's", () => {
+    const sandbox = cspFor(join(dir, "sandbox.html"), dir);
+    // Model-written HTML runs there: its scripts run, in an opaque origin,
+    // with no network, framed only by the app itself.
+    expect(sandbox).toContain("default-src 'none'");
+    expect(sandbox).toContain("script-src 'unsafe-inline'");
+    expect(sandbox).toContain("frame-ancestors 'self'");
+    expect(sandbox).toMatch(/sandbox allow-scripts$/);
+    for (const file of ["index.html", "assets/sandbox.html", "assets/app-abc123.js"]) {
+      const policy = cspFor(join(dir, file), dir);
+      expect(policy).toContain("default-src 'self'");
+      expect(policy).not.toMatch(/script-src[^;]*'unsafe-inline'/);
+      expect(policy).not.toContain("sandbox");
+    }
   });
 });

@@ -225,6 +225,21 @@ describe("gateway boundaries", () => {
     expect(index.headers.get("x-content-type-options")).toBe("nosniff");
     expect(index.headers.get("referrer-policy")).toBe("no-referrer");
 
+    // The sandbox page runs model-written HTML (ADR-0049): its scripts run, in
+    // an opaque origin, with no network, framed only by the client's own origin.
+    await writeFile(join(webRoot.path, "sandbox.html"), "<html>sandbox</html>");
+    const sandbox = await fetch(`http://127.0.0.1:${port}/sandbox.html`);
+    expect(sandbox.status).toBe(200);
+    const sandboxCsp = sandbox.headers.get("content-security-policy") ?? "";
+    expect(sandboxCsp).toContain("default-src 'none'");
+    expect(sandboxCsp).toContain("script-src 'unsafe-inline'");
+    expect(sandboxCsp).toContain("frame-ancestors 'self'");
+    expect(sandboxCsp).toMatch(/sandbox allow-scripts$/);
+    expect(sandbox.headers.get("x-content-type-options")).toBe("nosniff");
+    // Every other file keeps the client's policy.
+    const missing = await fetch(`http://127.0.0.1:${port}/nested/sandbox.html`);
+    expect(missing.headers.get("content-security-policy")).toBe(csp);
+
     const own = await socketTo(gateway.url, host.token, `http://127.0.0.1:${port}`);
     // The hello may already be collected; wait on the frames array, not a listener.
     while (!own.frames.some((frame) => frame.type === "hello")) await once(own.socket, "message");

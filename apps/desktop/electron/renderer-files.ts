@@ -15,6 +15,19 @@ import { extname, isAbsolute, relative, resolve } from "node:path";
 export const RENDERER_CSP =
   "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src ws: wss: https:";
 
+/**
+ * The page plugins render model-written HTML in (ADR-0049), the same policy
+ * as apps/host/src/web-client.ts sends: its scripts run, with no network, in
+ * an opaque origin, framed only by the app itself.
+ */
+const SANDBOX_CSP =
+  "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; frame-ancestors 'self'; sandbox allow-scripts";
+
+/** The policy a bundled file is served with: the sandbox page's own, every other file the renderer's. */
+export function cspFor(file: string, rendererDir: string): string {
+  return file === resolve(rendererDir, "sandbox.html") ? SANDBOX_CSP : RENDERER_CSP;
+}
+
 export const APP_SCHEME = "app";
 export const APP_HOST = "pinomad";
 
