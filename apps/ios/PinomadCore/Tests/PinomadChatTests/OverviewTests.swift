@@ -101,6 +101,30 @@ private func checkout(branch: String?) -> WorktreeCheckout {
         #expect(workspaceBranch(hostMinor: 10, changes: detached, checkout: record) == "pinomad/fix-auth")
         #expect(workspaceBranch(hostMinor: nil, changes: nil, checkout: nil) == nil)
     }
+
+    /// The folder's name is already on the row, so the path under it stops
+    /// at the parent — a project's, even from its worktree. A chat's folder
+    /// is named "Chat folder", so it keeps its full path.
+    @Test func thePathUnderTheNameStopsAtTheParent() {
+        let project = Home.project(path: "/Users/k/code/pinomad")
+        #expect(workspaceFolderPath(cwd: "/Users/k/.pinomad/worktrees/1", home: project) == "/Users/k/code")
+        #expect(workspaceFolderPath(cwd: "/Users/k/.pinomad/chats/4", home: .chat) == "/Users/k/.pinomad/chats/4")
+        #expect(workspaceFolderPath(cwd: "/srv/app", home: nil) == "/srv")
+        #expect(workspaceFolderPath(cwd: "/app", home: nil) == "/")
+    }
+
+    /// A clean checkout has nothing to open, so the Changes row waits for
+    /// an answer with at least one file.
+    @Test func onlyACheckoutWithFilesHasChanges() {
+        let file = PatchFile(
+            path: "a.txt", oldPath: nil, isNew: false, isDeleted: false, binary: true,
+            additions: 0, deletions: 0, lines: []
+        )
+        #expect(workspaceHasChanges(.available(base: "abc", files: [file], truncated: false, branch: nil)))
+        #expect(!workspaceHasChanges(.available(base: "abc", files: [], truncated: false, branch: "main")))
+        #expect(!workspaceHasChanges(.unavailable(reason: "no repo", branch: nil)))
+        #expect(!workspaceHasChanges(nil))
+    }
 }
 
 private func process(
