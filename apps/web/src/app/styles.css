@@ -762,7 +762,7 @@ html {
    card (right gutter = (W + p - 44rem) / 2 >= card + both gaps), zero when
    the gutter already fits it, and capped so the chat keeps at least 32rem. */
 .pigui-app-layout {
-  --pigui-overview-width: 15rem;
+  --pigui-overview-width: 20rem;
 }
 
 /* Expanding a section fades its rows in; collapsing is instant. */

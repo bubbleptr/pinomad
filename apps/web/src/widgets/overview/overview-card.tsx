@@ -197,13 +197,16 @@ function WorkspaceSection({
       : isChat
         ? "Chat folder"
         : cwd?.split("/").at(-1);
+  // The name already says which folder, so the path after it stops at the
+  // parent; a chat's folder has no name of its own and keeps its full path.
+  const folderPath = home?.kind === "project" ? parentOf(home.path) : isChat ? cwd : cwd === undefined ? undefined : parentOf(cwd);
   const stat = useChangeStat(remote, conversation.conversation.id, busy, view.connection === "connected", !isChat);
   const branch = branchOf(view, stat);
   return (
     <Section
       section="workspace"
       title="Workspace"
-      summary={isChat || stat.kind === "unavailable" ? branch : <ChangeFigure stat={stat} />}
+      summary={hasChanges(stat) ? <ChangeFigure stat={stat} /> : branch}
     >
       {cwd === undefined ? null : (
         <Row
@@ -215,18 +218,29 @@ function WorkspaceSection({
             <span className="min-w-0 truncate">{folderName}</span>
             {/* A path's tail says where it is: an rtl box clips from the left,
                 and the LRM keeps the leading "/" from flipping to the end. */}
-            <span className="min-w-0 flex-1 truncate text-right text-muted-foreground [direction:rtl]">{`\u200E${cwd}`}</span>
+            <span className="min-w-0 flex-1 truncate text-right text-muted-foreground [direction:rtl]">{`\u200E${folderPath}`}</span>
           </span>
         </Row>
       )}
-      {branch === undefined ? null : <Row icon={<GitBranch className="size-4" />}>{branch}</Row>}
-      {isChat ? null : <ChangesRow stat={stat} onOpen={onOpenChanges} />}
+      {branch === undefined ? null : (
+        <Row
+          icon={<GitBranch className="size-4" />}
+          end={worktree ? <span className="text-xs text-muted-foreground">Worktree</span> : undefined}
+        >
+          {branch}
+        </Row>
+      )}
+      {isChat || !hasChanges(stat) ? null : <ChangesRow stat={stat} onOpen={onOpenChanges} />}
     </Section>
   );
 }
 
-function ChangesRow({ stat, onOpen }: { stat: ChangeStat; onOpen: () => void }) {
-  if (stat.kind === "unavailable") return null;
+const parentOf = (path: string): string => path.slice(0, path.lastIndexOf("/")) || "/";
+
+/** Only a checkout with something in it gets a Changes row; a clean one has nothing to open. */
+const hasChanges = (stat: ChangeStat): stat is Extract<ChangeStat, { kind: "ready" }> => stat.kind === "ready" && stat.files > 0;
+
+function ChangesRow({ stat, onOpen }: { stat: Extract<ChangeStat, { kind: "ready" }>; onOpen: () => void }) {
   return (
     <Row icon={<FileDiff className="size-4" />} end={<ChangeFigure stat={stat} />} onClick={onOpen}>
       Changes
