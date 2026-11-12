@@ -19,7 +19,7 @@ token 都在 `src/app/tokens.css`。颜色用 shadcn 的变量名，Tailwind 类
 | `ghost` | 透明，只有字或图标 | 只有下面四种情况，见流程图。 |
 | `destructive` | 浅红底红字；确认对话框页脚里是红色实底白字 | 不可撤销动作的**最后一步确认**，旁边必须有一个 `secondary` 的 Cancel。 |
 
-每档的样子只写在 `button.tsx` 的 `buttonVariants` 里。确认对话框的页脚带 `pigui-confirm` 类（`AlertDialogFooter` 自带，`ConfirmDialog` 和自己拼的确认 `DialogFooter` 手动加）：里面的按钮是胶囊形，Cancel 在最左、动作在最右，`destructive` 换成实底（`--destructive-inverse` 配白字）。`secondary` 有描边和投影，是因为只有浅灰底时放在输入框旁边像一段文字，深色下几乎看不见。`destructive` 的字用 `--destructive-strong`（浅红底上的文字色，现在和 `--destructive` 同值）。不要在调用处用 `className` 给按钮加边框、阴影或背景。
+每档的样子只写在 `button.tsx` 的 `buttonVariants` 里。确认对话框的页脚带 `pigui-confirm` 类（`AlertDialogFooter` 自带，`ConfirmDialog` 和自己拼的确认 `DialogFooter` 手动加）：里面的按钮是胶囊形，Cancel 在最左、动作在最右，`destructive` 换成实底（`--destructive-inverse` 配白字）。这类对话框的说明用 `text-sm/6 text-foreground/80`，只写后果，一两句。`secondary` 有描边和投影，是因为只有浅灰底时放在输入框旁边像一段文字，深色下几乎看不见。`destructive` 的字用 `--destructive-strong`（浅红底上的文字色，现在和 `--destructive` 同值）。不要在调用处用 `className` 给按钮加边框、阴影或背景。
 
 文字写成 children，图标放在文字前面（`<Button><Plus aria-hidden="true" />Add</Button>`）。另有两个属性：`loading` 在文字上盖一个转圈并禁用按钮，宽度和无障碍名称不变；`tooltip` 悬停和聚焦时显示，禁用的按钮带 `tooltip` 时仍能用键盘聚焦。默认 `type="button"`，提交表单要写 `type="submit"`。
 

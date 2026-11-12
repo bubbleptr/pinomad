@@ -47,4 +47,24 @@ describe("EmailForm", () => {
     expect(account.setEmail).toHaveBeenLastCalledWith({ email: "new@example.com", code: "222222", reauth: "grant-2" });
     await vi.waitFor(() => expect(onSaved).toHaveBeenCalled());
   });
+
+  it("asks again on the save step once the grant it opened with runs out", async () => {
+    let held: { readonly reauth: string } | undefined = { reauth: "grant-0" };
+    const account: AccountModel = {
+      ...fakeAccount(signedIn({ email: "old@example.com" })),
+      identities: vi.fn(() => Promise.resolve({ ok: true as const, value: { hasPassword: true, identities: [] } })),
+      recentGrant: () => held,
+      forgetGrant: () => {
+        held = undefined;
+      },
+    };
+    render(<EmailForm account={account} submitLabel="Save" onSaved={vi.fn()} />);
+    await userEvent.type(screen.getByLabelText("Email"), "new@example.com");
+    await userEvent.click(screen.getByRole("button", { name: "Send code to new email" }));
+    expect(account.requestEmailCode).toHaveBeenCalledWith({ email: "new@example.com", reauth: "grant-0" });
+    held = undefined;
+    await userEvent.type(await screen.findByLabelText("Code"), "222222");
+    expect(screen.getByLabelText("Password")).toBeTruthy();
+  });
 });
+

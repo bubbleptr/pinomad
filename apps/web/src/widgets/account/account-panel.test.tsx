@@ -384,9 +384,9 @@ describe("account devices (#452)", () => {
     renderPanel(model);
     await deviceRow("iPhone");
     await fromMenu("More for iPhone", "Remove");
-    expect(screen.getByText(/asks each host it joined through your account to revoke it/)).toBeTruthy();
+    expect(screen.getByText(/signs iPhone out and removes it from the hosts it joined/)).toBeTruthy();
     // Hosts that don't report devices can't be asked; the form names them.
-    expect(screen.getByText(/attic can't be asked/)).toBeTruthy();
+    expect(screen.getByText(/If it joined attic, revoke it there yourself/)).toBeTruthy();
     await act(async () => {
       await userEvent.type(await screen.findByLabelText("Password"), "my password{Enter}");
     });

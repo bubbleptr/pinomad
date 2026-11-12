@@ -96,4 +96,30 @@ describe("useConfirmIdentity", () => {
     await vi.waitFor(() => expect(confirmed).toHaveBeenCalledTimes(2));
     expect(model.reauth).toHaveBeenCalledOnce();
   });
+
+  it("hands nothing over when the dialog closed while the password was being checked", async () => {
+    const model = account(true);
+    let answer!: () => void;
+    vi.mocked(model.reauth).mockImplementationOnce(
+      () => new Promise((resolve) => (answer = () => resolve({ ok: true, value: { reauth: "grant-1", expiresAt: Date.now() + 300_000 } }))),
+    );
+    const confirmed = vi.fn();
+    const view = render(<Harness account={model} onConfirmed={confirmed} />);
+    await userEvent.type(await screen.findByLabelText("Password"), "pw");
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+    view.unmount();
+    answer();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(confirmed).not.toHaveBeenCalled();
+  });
+
+  it("sends the password itself to a server without re-auth grants", async () => {
+    const model = account(true);
+    vi.mocked(model.reauth).mockResolvedValueOnce({ ok: false, error: { code: "unknown", status: 404 } });
+    const confirmed = vi.fn();
+    render(<Harness account={model} onConfirmed={confirmed} />);
+    await userEvent.type(await screen.findByLabelText("Password"), "pw");
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+    await vi.waitFor(() => expect(confirmed).toHaveBeenCalledWith("pw"));
+  });
 });

@@ -26,7 +26,7 @@ export function ConfirmDialog({
       <DialogContent className="w-[460px]">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          {description === undefined ? null : <DialogDescription>{description}</DialogDescription>}
+          {description === undefined ? null : <DialogDescription className="text-sm/6 text-foreground/80">{description}</DialogDescription>}
         </DialogHeader>
         <DialogBody>
           {children === undefined ? null : (

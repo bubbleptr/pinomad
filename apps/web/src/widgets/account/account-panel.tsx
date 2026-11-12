@@ -625,12 +625,8 @@ function RemoveDeviceDialog({
   };
   const identity = useConfirmIdentity(account, submit);
   const description =
-    `This signs ${name} out of your account and asks each host it joined through your account to revoke it. Hosts that are offline revoke it when they reconnect.` +
-    (unreachable.length === 0
-      ? ""
-      : unreachable.length === 1
-        ? ` The host ${unreachable[0]} can't be asked. If ${name} joined it, revoke it in that host's Devices.`
-        : ` The hosts ${listNames(unreachable)} can't be asked. If ${name} joined them, revoke it in each one's Devices.`);
+    `This signs ${name} out and removes it from the hosts it joined.` +
+    (unreachable.length === 0 ? "" : ` If it joined ${listNames(unreachable)}, revoke it there yourself.`);
   return (
     <ConfirmDialog
       title={`Remove ${name}?`}

@@ -1,7 +1,7 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { Field, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
-import { useEffect, useReducer, useState, type ReactElement } from "react";
+import { useEffect, useReducer, useRef, useState, type ReactElement } from "react";
 import type { AccountConfirmation, AccountError, AccountResult } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
 import { accountErrorMessage } from "./account-error.ts";
@@ -44,6 +44,14 @@ export function useConfirmIdentity(account: AccountModel, onEnter?: () => void):
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<AccountError>();
+  // Closed while the password was checked: the action must not go ahead.
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
   useEffect(() => {
     let live = true;
     void account.identities().then((result) => {
@@ -92,6 +100,9 @@ export function useConfirmIdentity(account: AccountModel, onEnter?: () => void):
         return { ok: false, error: { code: "invalid_reauth" } };
       }
       const result = await account.reauth(method === "password" ? { password } : { code: code.trim() });
+      if (!live.current) return { ok: false, error: { code: "cancelled" } };
+      // A server without grants takes the password on the action itself.
+      if (!result.ok && method === "password" && result.error.status === 404) return { ok: true, value: password };
       if (!result.ok) return result;
       redraw();
       return { ok: true, value: { reauth: result.value.reauth } };
