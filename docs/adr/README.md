@@ -12,14 +12,15 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0003](0003-self-hosted-host-remote-clients.md) | 以 coding 为核心：自托管宿主执行，桌面 / Web / 移动端都只是客户端 |
 | [0017](0017-client-forms-electron-and-expo.md) | 客户端形态：桌面端 Electron 只做 macOS、页面打包进 App；Linux 用 Web；移动端 Expo；`packages/protocol` 要能在 Hermes 上运行（§3、§4 由 0024 取代；§4 已于 2026-10-19 随 `apps/mobile` 删除失效；2026-11-04 补充：App 带宿主服务的启动器） |
 | [0024](0024-native-mobile-rust-core.md) | 移动端改成原生（iOS SwiftUI，以后安卓 Compose），客户端协议核心用 Rust 写一份两端共用；核心不做 I/O，流状态是保留 UTF-16 的完整 JSON；TS 是参照，三层测试对齐 |
-| [0004](0004-built-in-first-plugin-protocol-later.md) | 先内置后开放：内置功能按扩展边界写，满足三个条件才公开插件协议 |
+| [0004](0004-built-in-first-plugin-protocol-later.md) | 先内置后开放：内置功能按扩展边界写，满足三个条件才公开插件协议（§4、§5 由 0049 修订） |
+| [0049](0049-plugins-ship-ui.md) | 开放插件：插件装在数据目录 `plugins/` 下、宿主启动时加载，可以带和 Web 外壳同页运行的界面代码，只经具名插槽（侧边面板、工具卡片）贡献界面；插件界面只在 Web 和桌面端，iOS 只有插件工具；按 PiNomad 自己的插件 API 写（修订 0004 §4、§5，0005 的前提） |
 
 ## 运行时与呈现
 
 | ADR | 一句话 |
 | --- | --- |
 | [0002](0002-pi-durable-as-runtime.md) | 以 Pi Durable 的 Harness 为内核，Durable 存储是唯一事实来源 |
-| [0005](0005-structured-presentation-types.md) | 插件状态通过带运行时 schema 的展示类型呈现，不符合时兜底渲染 |
+| [0005](0005-structured-presentation-types.md) | 插件状态通过带运行时 schema 的展示类型呈现，不符合时兜底渲染（插件自带界面由 0049 修订，展示类型留给内置扩展） |
 | [0014](0014-web-client-adopts-pace-design-system.md) | Web 客户端整套采用 Pace 的视觉基础（Tailwind v4、token 桥、Hugeicons；字体后来换成系统字体），搬界面不搬数据模型（思维链组件由 0026 修订；§1、§2 由 0048 修订） |
 | [0026](0026-run-process-folds-out-of-transcript.md) | 运行过程在对话里收成一行：Web / 桌面按插话分段成灰色摘要行、原地展开，iOS 每次运行一颗胶囊加 sheet；todo 跟在最新一次运行后面；不加提示词凑插话和 todo |
 | [0034](0034-submission-delivery-and-recovery.md) | 提交的送达状态与断线恢复：只读 `submission` 查询、宿主在预处理前按 `requestId` 去重、`submit` 结果带 `entry`；重连后先查询再决定是否重发，是“断线不重放”的窄例外，“未确认”不等于失败 |
@@ -129,4 +130,6 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | 0038 §2、§5：Background 子代理在左侧按 root 家族压成一层 | 由 0047 修订：所有子代理都在右侧 Tasks，侧栏只放顶层对话和 fork |
 | 0046 §6：主区可以给子代理发消息；被接着聊的前台子代理挪到左侧 | 由 0047 修订：子代理对用户只读加 Stop；`lifecycle` 不再决定位置 |
 | 0046 §4：用户直接聊的只给父对话写一行通知 | 由 0047 修订：用户不能给子代理发消息，这条通知去掉；"用户停了它"的说明保留 |
+| 0004 §4：插件不能自带界面组件；§5：满足三个条件才公开插件协议 | 由 0049 修订：插件可以带和 Web 外壳同页运行的界面代码，只在 Web 和桌面端；因 artifact 的需求开放，不再等三个条件 |
+| 0005：插件状态通过展示类型呈现 | 由 0049 修订：插件可以自带界面，展示类型留给内置扩展 |
 | 其余"以后再做" | 统一收在 GitHub Issues，带 `later` 标签 |
