@@ -402,7 +402,7 @@ function renderBlock(node: BlockNode, index: number, blockCount: number, ctx: Re
           data-density={density}
           data-level={level}
           className={cn(
-            "font-[family-name:var(--font-family-heading)] text-foreground",
+            "font-[family-name:var(--font-family-body)] text-foreground",
             headingClassNames[level],
             margins,
             proseWidth,
@@ -636,10 +636,10 @@ function TaskListItem({ checked, children }: { checked: boolean; children: React
           <span
             aria-hidden
             className={cn(
-              "flex size-5 items-center justify-center rounded-[var(--radius-inner)] border border-solid peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--color-accent)]",
+              "flex size-5 items-center justify-center rounded-[var(--radius-inner)] border border-solid peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--primary)]",
               checked
-                ? "border-[var(--color-accent)] bg-[var(--color-accent)] text-[var(--color-on-accent)]"
-                : "border-[var(--color-border-emphasized)] bg-background text-[var(--color-accent)]",
+                ? "border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)]"
+                : "border-[var(--color-border-emphasized)] bg-background text-[var(--primary)]",
             )}
           >
             {checked ? (

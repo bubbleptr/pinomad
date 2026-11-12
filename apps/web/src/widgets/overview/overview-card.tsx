@@ -84,7 +84,7 @@ function readCollapsed(): Partial<Record<SectionKey, boolean>> {
   }
 }
 
-const CARD = "flex shrink-0 flex-col gap-0.5 rounded-[var(--radius-element)] border border-[var(--color-border)] bg-[var(--color-background-popover)] px-2.5";
+const CARD = "flex shrink-0 flex-col gap-0.5 rounded-[var(--radius-element)] border border-[var(--border)] bg-[var(--color-background-popover)] px-2.5";
 
 /**
  * One section card. A titled one folds its rows away under its header — the

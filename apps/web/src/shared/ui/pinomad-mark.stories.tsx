@@ -14,7 +14,7 @@ export const Default: Story = {};
 
 export const InheritsTextColor: Story = {
   render: (args) => (
-    <span style={{ color: "var(--color-accent)" }}>
+    <span style={{ color: "var(--primary)" }}>
       <PinomadMark {...args} />
     </span>
   ),

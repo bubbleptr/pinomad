@@ -355,7 +355,7 @@ function MethodMark({ children }: { children: ReactNode }) {
   return (
     <span
       aria-hidden="true"
-      className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)]"
+      className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-[var(--border)]"
     >
       {children}
     </span>

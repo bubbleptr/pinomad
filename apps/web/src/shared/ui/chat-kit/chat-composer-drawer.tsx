@@ -140,7 +140,7 @@ export function ChatComposerDrawer({
           </div>
           <div
             className={cn(
-              "col-start-1 row-start-1 h-0.5 w-5 self-start justify-self-center rounded-[var(--radius-full)] bg-[var(--color-icon-secondary)] opacity-100 transition-[background-color,opacity] duration-[var(--duration-fast)] ease-[var(--ease-standard)] group-hover/drawer-toggle:bg-[var(--color-icon-primary)]",
+              "col-start-1 row-start-1 h-0.5 w-5 self-start justify-self-center rounded-[var(--radius-full)] bg-[var(--muted-foreground)] opacity-100 transition-[background-color,opacity] duration-[var(--duration-fast)] ease-[var(--ease-standard)] group-hover/drawer-toggle:bg-[var(--foreground)]",
               isCollapsed && "pointer-events-none opacity-0",
             )}
           />
