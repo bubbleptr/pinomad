@@ -61,6 +61,7 @@ function framesVector(): VectorFile {
     { name: "hello", wire: wire({ type: "hello", protocol: { major: PROTOCOL.major, minor: PROTOCOL.minor }, hostVersion: "1.2.3", session: { id: "s1", directory: "/data" }, models: [], docs: [], toolPresentations: { edit: "pinomad.diff" } }), expect: "hello" },
     { name: "hello-legacy-int-protocol", wire: wire({ type: "hello", protocol: 4, session: { id: "s", directory: "/d" }, models: [], docs: [], toolPresentations: {} }), expect: "hello" },
     { name: "hello-unknown-fields", wire: wire({ type: "hello", protocol: { major: PROTOCOL.major, minor: PROTOCOL.minor }, session: { id: "s", directory: "/d" }, models: [], docs: [], toolPresentations: {}, future: { anything: [1, 2] } }), expect: "hello" },
+    { name: "hello-plugins", wire: wire({ type: "hello", protocol: { major: PROTOCOL.major, minor: PROTOCOL.minor }, session: { id: "s", directory: "/d" }, models: [], docs: [], toolPresentations: {}, plugins: [{ name: "artifact", api: 1, web: { hash: "ab".repeat(32), size: 1024 } }] }), expect: "hello" },
     { name: "signalHello", wire: wire({ type: "signalHello", protocol: { major: PROTOCOL.major, minor: PROTOCOL.minor }, rtc: { stun: [...RTC_DEFAULT_STUN], signalOnly: true } }), expect: "signalHello" },
     { name: "signalHello-no-rtc", wire: wire({ type: "signalHello", protocol: { major: PROTOCOL.major, minor: PROTOCOL.minor } }), expect: "signalHello" },
     { name: "snapshot", wire: wire({ type: "snapshot", stream: "index", value: snapshotValue }), expect: "snapshot", stream: "index" },

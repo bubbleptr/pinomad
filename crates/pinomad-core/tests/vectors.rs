@@ -131,6 +131,7 @@ fn feature_of(name: &str) -> HostFeature {
         "autoUpgrade" => HostFeature::AutoUpgrade,
         "processes" => HostFeature::Processes,
         "subagentStop" => HostFeature::SubagentStop,
+        "plugins" => HostFeature::Plugins,
         other => panic!("unknown feature {other}"),
     }
 }

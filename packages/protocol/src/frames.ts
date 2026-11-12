@@ -1,3 +1,4 @@
+import type { JsonValue } from "@earendil-works/chord";
 import type { Op } from "@earendil-works/chord/delta";
 import type { ConversationId, EntryId, ModelRef } from "@earendil-works/pi-durable";
 import type { AgentRole, AgentRoles } from "./agents.ts";
@@ -106,7 +107,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 33 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 34 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -424,6 +425,18 @@ export interface CallMethods {
   cancelUpgrade: { args: Record<string, never>; result: null };
   /** Checks npm now; refused while `autoUpgrade` is `off`. */
   checkUpgrade: { args: Record<string, never>; result: null };
+  /**
+   * A plugin's browser bundle (5.34, ADR-0049): the `web.js` behind
+   * `hello.plugins[].web`, whole. One result frame like `image`; the secure
+   * channel splits it into records. An unknown name or one without a web
+   * half is an `ok:false`.
+   */
+  pluginBundle: { args: { name: string }; result: { code: string } };
+  /** A plugin's host method, called from its UI for one conversation (5.34, ADR-0049). */
+  pluginCall: {
+    args: { conversationId: ConversationId; plugin: string; method: string; args: JsonValue };
+    result: JsonValue;
+  };
 }
 
 /** APNs device-token registration (ADR-0025 §7, protocol 5.9). */
@@ -441,6 +454,15 @@ export interface ApnsPushToken {
 export type PushToken = string | ApnsPushToken;
 
 export type CallMethod = keyof CallMethods;
+
+/** One `hello.plugins` entry (ADR-0049). */
+export interface PluginInfo {
+  readonly name: string;
+  /** The plugin API version its `plugin.json` targets. */
+  readonly api: number;
+  /** The browser half: sha-256 hex of the `web.js` bytes and their count. Absent → tools only. */
+  readonly web?: { readonly hash: string; readonly size: number };
+}
 
 /**
  * Minor version that introduced each call (ADR-0018 §2); calls dated 0 are
@@ -502,6 +524,8 @@ export const CALL_SINCE: Record<CallMethod, number> = {
   startUpgrade: 30,
   cancelUpgrade: 30,
   checkUpgrade: 30,
+  pluginBundle: 34,
+  pluginCall: 34,
 };
 
 /** Whether a host of the given minor version knows `method`. */
@@ -549,6 +573,8 @@ export const FEATURE_SINCE = {
    * Named `subagentMessages` before 5.33 was released (ADR-0047 §5).
    */
   subagentStop: 33,
+  /** `hello.plugins` and the `pluginBundle` / `pluginCall` calls (34, ADR-0049). */
+  plugins: 34,
 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
@@ -587,6 +613,8 @@ export type ServerFrame =
       readonly terminals?: TerminalsHello;
       /** Background processes (5.32, ADR-0045). Absent → the pty module is not loaded, or the host predates them. */
       readonly processes?: ProcessesHello;
+      /** Installed plugins (5.34, ADR-0049). Absent → the host has none, or predates them. */
+      readonly plugins?: readonly PluginInfo[];
     }
   | {
       /**
@@ -846,6 +874,11 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
       return conversationId();
     case "earlierEntries":
       return conversationId() && positive(args.before) && positive(args.limit);
+    case "pluginBundle":
+      return nonempty(args.name);
+    case "pluginCall":
+      // `args` is the plugin's own JSON; `null` is a value, only a missing key is malformed.
+      return conversationId() && nonempty(args.plugin) && nonempty(args.method) && args.args !== undefined;
     case "image":
       return nonempty(args.ref) && (args.variant === undefined || args.variant === "thumbnail" || args.variant === "preview");
     case "beginAttachment":
