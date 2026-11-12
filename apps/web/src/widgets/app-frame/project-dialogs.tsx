@@ -251,7 +251,7 @@ export function AddProjectDialog({
               )}
             </div>
           ) : (
-            <div className="overflow-hidden rounded-[var(--radius-inner)] border border-[var(--color-border)]">
+            <div className="overflow-hidden rounded-[var(--radius-inner)] border border-[var(--border)]">
               <div
                 ref={strip}
                 role="group"
@@ -279,7 +279,7 @@ export function AddProjectDialog({
                 aria-label="Selected folder"
                 data-testid="picker-path"
                 data-path={selected}
-                className="flex h-8 min-w-0 items-center gap-0.5 border-t border-[var(--color-border)] bg-[var(--color-background-muted)] px-2 text-[13px] text-[var(--color-text-secondary)]"
+                className="flex h-8 min-w-0 items-center gap-0.5 border-t border-[var(--border)] bg-[var(--color-background-muted)] px-2 text-[13px] text-[var(--color-text-secondary)]"
               >
                 {pathBar.map((crumb, index) => {
                   const last = index === pathBar.length - 1;
@@ -363,7 +363,7 @@ function FolderColumn({
       aria-label={label}
       // Contain vertically only: a sideways trackpad swipe over a column must
       // reach the strip, which owns horizontal scrolling.
-      className={`flex shrink-0 flex-col overflow-y-auto overscroll-y-contain border-r border-[var(--color-border)] p-1 last:border-r-0 ${
+      className={`flex shrink-0 flex-col overflow-y-auto overscroll-y-contain border-r border-[var(--border)] p-1 last:border-r-0 ${
         fills ? "min-w-56 flex-1" : "w-56"
       }`}
     >
@@ -396,7 +396,7 @@ function FolderColumn({
               onClick={() => onPick(folder.path)}
               className={`flex h-7 shrink-0 cursor-default items-center gap-2 rounded-[7px] px-2 text-sm ${
                 isSelected
-                  ? "bg-[var(--color-overlay-pressed)] group-focus:bg-[var(--color-accent)] group-focus:text-[var(--color-on-accent)]"
+                  ? "bg-[var(--color-overlay-pressed)] group-focus:bg-[var(--primary)] group-focus:text-[var(--primary-foreground)]"
                   : folder.path === next
                     ? "bg-[var(--color-overlay-pressed)]"
                     : "hover:bg-[var(--color-overlay-hover)]"

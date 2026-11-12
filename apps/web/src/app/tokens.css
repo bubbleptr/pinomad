@@ -71,17 +71,12 @@
      for green, orange and blue (3.96, 4.21, 4.37), so their light text is
      the same hue darkened just past it (about 4.6:1). The red wash is
      --destructive-muted above. */
-  --red-strong: var(--destructive);
   --info-muted: light-dark(rgb(1 144 254 / 10%), rgb(79 176 254 / 14%));
   --info-strong: light-dark(#006ccd, #4fb0fe);
   --success-muted: light-dark(rgb(95 200 138 / 14%), rgb(125 207 159 / 14%));
   --success-strong: light-dark(#1b7e48, #7dcf9f);
   --warning-muted: light-dark(rgb(242 138 46 / 12%), rgb(242 161 92 / 14%));
   --warning-strong: light-dark(#a75800, #ffb35c);
-  --orange-muted: var(--warning-muted);
-  --orange-strong: var(--warning-strong);
-  --gray-muted: var(--default);
-  --gray-strong: var(--foreground);
   /* Status dots: clean's palette fills, brighter than the text colors so 8px
      still reads. */
   --dot-success: light-dark(#5fc88a, #7dcf9f);
@@ -125,27 +120,18 @@
   --color-background-card: var(--card);
   --color-background-popover: var(--popover);
   --color-background-muted: var(--surface-muted);
-  --color-border: var(--border);
   --color-border-emphasized: light-dark(rgb(0 0 0 / 13%), rgb(255 255 255 / 20%));
   --color-text-primary: var(--foreground);
   --color-text-secondary: var(--muted-foreground);
   --color-text-disabled: light-dark(rgb(0 0 0 / 30%), rgb(255 255 255 / 30%));
   --color-text-accent: var(--primary);
   --color-text-blue: var(--info-strong);
-  --color-icon-primary: var(--foreground);
-  --color-icon-secondary: var(--muted-foreground);
-  --color-icon-accent: var(--primary);
-  --color-accent: var(--primary);
-  --color-on-accent: var(--primary-foreground);
   --color-neutral: var(--default);
   --color-overlay-hover: var(--surface-hover);
   --color-overlay-pressed: light-dark(oklch(0 0 0 / 10%), oklch(1 0 0 / 10%));
   /* Error text sits on --color-error-muted (error banners). */
   --color-error: var(--destructive-strong);
   --color-error-muted: var(--destructive-muted);
-  --color-success: var(--success);
-  --color-success-muted: var(--success-muted);
-  --color-warning: var(--warning);
   --color-shadow: light-dark(oklch(0 0 0 / 10%), oklch(0 0 0 / 30%));
 
   --radius-inner: 5px;
@@ -173,7 +159,6 @@
   --font-family-body: -apple-system, BlinkMacSystemFont, "Segoe UI",
     "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Roboto,
     "Noto Sans CJK SC", Helvetica, Arial, sans-serif;
-  --font-family-heading: var(--font-family-body);
   /* Code is the one bundled face: ui-monospace and "SF Mono" only resolve in
      Safari, so Chromium (and Electron) fell through to Monaco on macOS,
      Consolas on Windows and Liberation Mono on Linux. */
@@ -202,11 +187,6 @@
     0 2px 6px -2px light-dark(rgb(0 0 0 / 6%), transparent);
 
   --ease-standard: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-out: var(--ease-standard);
   --duration-fast: 125ms;
   --duration-fast-max: 165ms;
-
-  /* The inset panes' edge: lighter than --border, since the fill step from
-     the frame already separates them. */
-  --pigui-pane-ring: light-dark(rgb(0 0 0 / 6%), rgb(255 255 255 / 8%));
 }

@@ -149,7 +149,7 @@ mark.chat-skill-mention {
 /* The chat kit's controls draw a 2px accent outline on focus; the chip
    follows the same ring rather than the browser default. */
 .chat-markdown .chat-file-link:focus-visible {
-  outline: var(--spacing-0-5) solid var(--color-accent);
+  outline: var(--spacing-0-5) solid var(--primary);
   outline-offset: var(--spacing-0-5);
   border-radius: var(--radius-element);
 }
@@ -184,7 +184,7 @@ mark.chat-skill-mention {
 }
 
 .chat-markdown .chat-inline-code-link:focus-visible {
-  outline: var(--spacing-0-5) solid var(--color-accent);
+  outline: var(--spacing-0-5) solid var(--primary);
   outline-offset: var(--spacing-0-5);
   border-radius: var(--radius-element);
 }
@@ -329,7 +329,7 @@ mark.chat-skill-mention {
   border: none;
   border-radius: var(--radius-inner);
   background: transparent;
-  color: var(--color-icon-secondary);
+  color: var(--muted-foreground);
   cursor: pointer;
   transition: background var(--duration-fast) var(--ease-standard),
     color var(--duration-fast) var(--ease-standard);
@@ -337,7 +337,7 @@ mark.chat-skill-mention {
 
 .chat-message__action:hover {
   background: var(--color-overlay-hover);
-  color: var(--color-icon-primary);
+  color: var(--foreground);
 }
 
 .chat-message__action:active {
@@ -658,7 +658,7 @@ mark.chat-skill-mention {
   flex-shrink: 0;
   width: var(--chat-icon-size, 13px);
   height: var(--chat-icon-size, 13px);
-  color: var(--color-icon-secondary);
+  color: var(--muted-foreground);
   rotate: 0deg;
   transition: rotate var(--duration-fast) var(--ease-standard);
 }
@@ -710,7 +710,7 @@ mark.chat-skill-mention {
   justify-content: center;
   width: var(--chat-icon-size, 13px);
   height: var(--chat-icon-size, 13px);
-  color: var(--color-icon-secondary);
+  color: var(--muted-foreground);
 }
 
 .chat-tool-kind svg {
@@ -918,7 +918,7 @@ mark.chat-skill-mention {
   flex-shrink: 0;
   width: var(--chat-icon-size);
   height: 1.5em;
-  color: var(--color-icon-secondary);
+  color: var(--muted-foreground);
 }
 
 .todo-card__status *,
@@ -931,7 +931,7 @@ mark.chat-skill-mention {
 }
 
 .todo-card__item[data-status="in_progress"] .todo-card__status {
-  color: var(--color-icon-accent);
+  color: var(--primary);
 }
 
 .todo-card__status--running {
@@ -1076,7 +1076,7 @@ mark.chat-skill-mention {
 }
 
 .prompt-input[data-drop] [data-slot="chat-composer"] {
-  --_composer-shadow-color: color-mix(in srgb, var(--color-accent) 24%, transparent);
+  --_composer-shadow-color: color-mix(in srgb, var(--primary) 24%, transparent);
 }
 
 /* ChatComposer's balanced density uses --spacing-2 between the input and the
@@ -1089,7 +1089,7 @@ mark.chat-skill-mention {
      off the transcript. The negative spread keeps that shadow out from under
      the ring, so the edge itself never thickens or darkens. */
   --_composer-lift: 0 6px 24px -8px light-dark(oklch(0 0 0 / 10%), oklch(0 0 0 / 40%));
-  box-shadow: inset 0 0 0 1px var(--color-border), var(--_composer-lift);
+  box-shadow: inset 0 0 0 1px var(--border), var(--_composer-lift);
 }
 
 /* Focus steps the hairline up to the emphasized border, the same neutral
@@ -1277,7 +1277,7 @@ mark.chat-skill-mention {
   top: 18px;
   bottom: -8px;
   width: var(--border-width);
-  background: var(--color-border);
+  background: var(--border);
 }
 
 .chain-of-thought-rail__node[data-kind="tool"]::before {
@@ -1390,7 +1390,7 @@ mark.chat-skill-mention {
 
 .chain-of-thought-rail__disclosure {
   display: inline-flex;
-  color: var(--color-icon-secondary);
+  color: var(--muted-foreground);
   transition: transform var(--duration-fast) var(--ease-standard);
   flex-shrink: 0;
 }

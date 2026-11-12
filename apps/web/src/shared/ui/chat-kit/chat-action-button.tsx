@@ -8,7 +8,7 @@ import { cn } from "cn";
 export type ChatActionButtonVariant = "primary" | "secondary" | "ghost";
 
 const variantClasses: Record<ChatActionButtonVariant, string> = {
-  primary: "bg-[var(--color-accent)] text-[var(--color-on-accent)]",
+  primary: "bg-[var(--primary)] text-[var(--primary-foreground)]",
   secondary: "bg-[var(--color-neutral)] text-[var(--color-text-primary)]",
   ghost: "bg-transparent text-[var(--color-text-primary)]",
 };
@@ -60,7 +60,7 @@ export function ChatActionButton({
         "relative inline-flex items-center justify-center gap-2 border-0 border-none px-3 py-2",
         "rounded-[var(--_button-radius,var(--radius-element))] [font-family:inherit] text-[length:var(--font-size-base)] leading-[1.4286] font-medium whitespace-nowrap",
         "cursor-pointer transition-[background-image,background-color,color,opacity,transform] duration-[var(--duration-fast)] ease-[var(--ease-standard)] motion-reduce:duration-0",
-        "focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-[var(--color-accent)] focus-visible:outline-solid",
+        "focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-[var(--primary)] focus-visible:outline-solid",
         size === "md" ? "h-[var(--size-element-md)]" : "h-[var(--size-element-sm)]",
         variantClasses[variant],
         isIconOnly && "aspect-square p-0",

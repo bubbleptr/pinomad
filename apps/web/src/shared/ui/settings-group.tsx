@@ -32,7 +32,7 @@ export function SettingsGroup({
 }
 
 /** The rows of a SettingsGroup, a divider between each: put it on the `ItemGroup` or `ul`. */
-export const GROUP_ROWS = "m-0 flex list-none flex-col gap-0 p-0 divide-y divide-[var(--color-border)] *:rounded-none";
+export const GROUP_ROWS = "m-0 flex list-none flex-col gap-0 p-0 divide-y divide-[var(--border)] *:rounded-none";
 
 /**
  * One setting in a SettingsGroup: what it is on the left, its control on the

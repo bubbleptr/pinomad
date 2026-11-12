@@ -46,7 +46,7 @@ function LabelledDivider({ label }: { label: ReactNode }) {
       data-variant="subtle"
       data-orientation="horizontal"
     >
-      <div className="h-px shrink grow bg-[var(--color-border)]" />
+      <div className="h-px shrink grow bg-[var(--border)]" />
       {label && (
         <div
           id={labelId}
@@ -55,7 +55,7 @@ function LabelledDivider({ label }: { label: ReactNode }) {
           {label}
         </div>
       )}
-      {label && <div className="h-px shrink grow bg-[var(--color-border)]" />}
+      {label && <div className="h-px shrink grow bg-[var(--border)]" />}
     </div>
   );
 }

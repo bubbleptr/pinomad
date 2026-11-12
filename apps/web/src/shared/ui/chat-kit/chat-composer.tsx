@@ -90,7 +90,7 @@ const elevationClasses = {
   low: "[box-shadow:var(--shadow-low)] hover:[box-shadow:var(--shadow-med)] focus-within:[box-shadow:var(--shadow-med)]",
   // The border is drawn inside the padding, so content geometry matches the
   // elevated case.
-  none: "border border-solid border-[var(--color-border-emphasized)] p-[calc(var(--_chat-composer-padding)_-_1px)] [box-shadow:none] focus-within:border-[var(--color-accent)] hover:not-focus-within:[box-shadow:inset_0_0_0_2px_color-mix(in_srgb,var(--color-border-emphasized)_30%,transparent)] focus-within:[box-shadow:inset_0_0_0_2px_light-dark(#f1f1f1,#262626)]",
+  none: "border border-solid border-[var(--color-border-emphasized)] p-[calc(var(--_chat-composer-padding)_-_1px)] [box-shadow:none] focus-within:border-[var(--primary)] hover:not-focus-within:[box-shadow:inset_0_0_0_2px_color-mix(in_srgb,var(--color-border-emphasized)_30%,transparent)] focus-within:[box-shadow:inset_0_0_0_2px_light-dark(#f1f1f1,#262626)]",
 } as const;
 
 const statusClass =
@@ -210,7 +210,7 @@ export function ChatComposer(props: ChatComposerProps) {
       <ChatKitIcon
         name={status.type === "error" ? "error" : "warning"}
         size="md"
-        className={status.type === "error" ? "text-[var(--color-error)]" : "text-[var(--color-warning)]"}
+        className={status.type === "error" ? "text-[var(--color-error)]" : "text-[var(--warning)]"}
       />
       {status.message}
     </div>

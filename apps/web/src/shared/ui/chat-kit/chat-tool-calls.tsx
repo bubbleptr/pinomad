@@ -93,7 +93,7 @@ const styles = {
   callLabel: cn(supporting, "min-w-0 shrink-[10] truncate font-sans text-[var(--color-text-disabled)]"),
   callDuration: cn(supporting, "shrink-0 font-sans whitespace-nowrap text-[var(--color-text-disabled)]"),
   stats: cn(supporting, "flex shrink-0 items-center gap-1 font-sans text-[var(--color-text-disabled)]"),
-  statsAdditions: "text-[var(--color-success)]",
+  statsAdditions: "text-[var(--success)]",
   statsDeletions: "text-[var(--color-error)]",
   callDetailChevron: cn(
     "ms-auto inline-flex size-3.5 shrink-0 items-center justify-center text-[var(--color-text-disabled)]",
@@ -116,8 +116,8 @@ const STATUS_ICON_NAMES: Record<ChatToolCallStatus, ChatKitIconName | null> = {
 
 const STATUS_STYLES: Record<ChatToolCallStatus, string> = {
   pending: "text-[var(--color-text-disabled)]",
-  running: "text-[var(--color-accent)]",
-  complete: "text-[var(--color-success)]",
+  running: "text-[var(--primary)]",
+  complete: "text-[var(--success)]",
   error: "text-[var(--color-error)]",
 };
 

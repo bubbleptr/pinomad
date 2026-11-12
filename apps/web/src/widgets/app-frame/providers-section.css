@@ -22,7 +22,7 @@
   border: 0;
   border-radius: var(--radius-container);
   background: var(--color-background-card);
-  box-shadow: 0 0 0 1px var(--color-border) inset;
+  box-shadow: 0 0 0 1px var(--border) inset;
   color: inherit;
   font: inherit;
   text-align: start;
@@ -115,7 +115,7 @@
 
 .providers-logo-stack > * {
   box-shadow:
-    0 0 0 1px var(--color-border) inset,
+    0 0 0 1px var(--border) inset,
     0 0 0 2px var(--color-background-card);
 }
 

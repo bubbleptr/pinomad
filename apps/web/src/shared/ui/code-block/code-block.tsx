@@ -382,7 +382,7 @@ function CodeBlock({
         className={cn(
           "flex min-w-0 flex-1 items-center border-0 bg-transparent p-0 text-start",
           canCollapse &&
-            "cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]",
+            "cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--primary)]",
         )}
       >
         <span className="m-0 flex items-center font-mono text-[0.75rem] leading-[1.6667] font-medium text-[var(--syntax-comment)]">

@@ -189,7 +189,7 @@ const styles = {
   root: "relative flex min-h-[22px] flex-col",
   editable: cn(
     textClass,
-    "overflow-y-auto [word-break:break-word] whitespace-pre-wrap text-[var(--color-text-primary)] caret-[var(--color-accent)] outline-none",
+    "overflow-y-auto [word-break:break-word] whitespace-pre-wrap text-[var(--color-text-primary)] caret-[var(--primary)] outline-none",
   ),
   placeholder: cn(
     textClass,

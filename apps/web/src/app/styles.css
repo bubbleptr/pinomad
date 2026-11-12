@@ -36,7 +36,7 @@
     outline: none;
   }
   :where(h1, h2, h3, h4, h5, h6) {
-    font-family: var(--font-family-heading);
+    font-family: var(--font-family-body);
     color: var(--foreground);
   }
   :where(h1) {
@@ -120,7 +120,7 @@
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted-foreground);
+  --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
@@ -143,17 +143,12 @@
   --color-default: var(--default);
   --color-success: var(--success);
   --color-warning: var(--warning);
-  --color-red-strong: var(--red-strong);
   --color-info-muted: var(--info-muted);
   --color-info-strong: var(--info-strong);
   --color-success-muted: var(--success-muted);
   --color-success-strong: var(--success-strong);
   --color-warning-muted: var(--warning-muted);
   --color-warning-strong: var(--warning-strong);
-  --color-orange-muted: var(--orange-muted);
-  --color-orange-strong: var(--orange-strong);
-  --color-gray-muted: var(--gray-muted);
-  --color-gray-strong: var(--gray-strong);
   --color-dot-success: var(--dot-success);
   --color-dot-warning: var(--dot-warning);
   --color-dot-error: var(--dot-error);
@@ -169,6 +164,8 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  /* Tailwind's `ease-out` takes the app's one curve. */
+  --ease-out: var(--ease-standard);
 }
 
 /* Skeleton: waits, then fades between a quarter and full opacity in ten
@@ -258,24 +255,10 @@
   --pigui-icon-motion-duration: 800ms;
 
   --pigui-sidebar-item-radius: var(--radius);
-  --pigui-sidebar-content-padding-x: 0.5rem;
-  --pigui-sidebar-group-gap: 0.25rem;
-  --pigui-sidebar-indent: 0.8rem;
   --pigui-sidebar-row-gap: var(--spacing-1);
   --pigui-sidebar-row-height: 1.875rem;
-  --pigui-sidebar-row-icon-gap: 0.625rem;
   --pigui-sidebar-row-padding-x: 0.5rem;
-  --pigui-sidebar-row-padding-y: 0.3125rem;
-  --pigui-sidebar-icon-box-size: 1.25rem;
   --pigui-sidebar-icon-size: 1rem;
-  --pigui-sidebar-action-size: 1.25rem;
-  --pigui-sidebar-dropdown-padding: 0.25rem;
-  --pigui-sidebar-dropdown-menu-gap: var(--pigui-sidebar-row-gap);
-  --pigui-sidebar-dropdown-item-height: 1.75rem;
-  --pigui-sidebar-dropdown-item-gap: 0.5rem;
-  --pigui-sidebar-dropdown-item-padding-x: 0.5rem;
-  --pigui-sidebar-dropdown-item-padding-y: 0.25rem;
-  --pigui-sidebar-dropdown-icon-size: 0.875rem;
 }
 
 html,
@@ -603,8 +586,8 @@ html {
   width: var(--pigui-sidebar-icon-size);
   height: var(--pigui-sidebar-icon-size);
   transition:
-    opacity 120ms var(--ease-out),
-    rotate 150ms var(--ease-out);
+    opacity 120ms var(--ease-standard),
+    rotate 150ms var(--ease-standard);
 }
 
 .pigui-project-expansion-indicator__state {
@@ -655,6 +638,9 @@ html {
      reads as one work area. */
   --pigui-pane-gap: 0.25rem;
   --pigui-pane-radius: var(--radius-container);
+  /* The inset panes' edge: lighter than --border, since the fill step from
+     the frame already separates them. */
+  --pigui-pane-ring: light-dark(rgb(0 0 0 / 6%), rgb(255 255 255 / 8%));
 }
 
 .pigui-inset .pigui-main {

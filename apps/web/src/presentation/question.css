@@ -9,7 +9,7 @@
   gap: 12px;
   min-width: 0;
   padding: 16px;
-  border: 1px solid var(--color-border-primary, var(--color-background-muted));
+  border: 1px solid var(--color-background-muted);
   border-radius: 24px;
   background-color: var(--color-background-surface);
 }

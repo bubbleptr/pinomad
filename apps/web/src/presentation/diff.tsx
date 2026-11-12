@@ -18,14 +18,14 @@ const HighlightedFile = lazy(() =>
 const fileStyle: CSSProperties = {
   fontFamily: "var(--font-family-code)",
   fontSize: "var(--font-size-sm)",
-  lineHeight: "var(--line-height-sm, 1.5)",
+  lineHeight: 1.5,
   overflowX: "auto",
   whiteSpace: "pre",
   borderRadius: "var(--radius-sm, 6px)",
 };
 
 const kindStyles: Record<string, CSSProperties> = {
-  add: { backgroundColor: "var(--color-success-muted)", color: "var(--color-text-primary)" },
+  add: { backgroundColor: "var(--success-muted)", color: "var(--color-text-primary)" },
   del: { backgroundColor: "var(--color-error-muted)", color: "var(--color-text-primary)" },
   ctx: { color: "var(--color-text-secondary)" },
   meta: { color: "var(--color-text-accent)", backgroundColor: "var(--color-background-muted)" },

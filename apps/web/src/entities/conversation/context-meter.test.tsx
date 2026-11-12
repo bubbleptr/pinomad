@@ -14,7 +14,7 @@ describe("ContextHeadline", () => {
 
   it("turns warning at four fifths of the window", () => {
     render(<ContextHeadline usage={{ used: 160_000, window: 200_000 }} />);
-    expect(screen.getByText("80%").closest("[data-slot=badge]")).toHaveClass("bg-orange-muted");
+    expect(screen.getByText("80%").closest("[data-slot=badge]")).toHaveClass("bg-warning-muted");
   });
 
   it("reports an over-window share verbatim after a model swap", () => {

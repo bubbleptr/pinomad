@@ -14,7 +14,7 @@ const SIZES = {
 const SPREAD = 0.375;
 
 const shades = {
-  default: "text-[var(--color-accent)]",
+  default: "text-[var(--primary)]",
   subtle: "text-[var(--color-text-secondary)]",
 } as const;
 

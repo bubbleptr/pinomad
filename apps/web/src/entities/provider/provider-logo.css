@@ -8,7 +8,7 @@
   block-size: var(--provider-logo-size, 32px);
   border-radius: calc(var(--provider-logo-size, 32px) * 0.25);
   background: var(--color-background-card);
-  box-shadow: 0 0 0 1px var(--color-border) inset;
+  box-shadow: 0 0 0 1px var(--border) inset;
   color: var(--color-text-primary);
 }
 

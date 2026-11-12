@@ -14,7 +14,7 @@ const alertVariants = cva(
         info: "bg-info-muted text-info-strong",
         success: "bg-success-muted text-success-strong",
         warning: "bg-warning-muted text-warning-strong",
-        destructive: "bg-destructive-muted text-red-strong",
+        destructive: "bg-destructive-muted text-destructive-strong",
       },
     },
   },
