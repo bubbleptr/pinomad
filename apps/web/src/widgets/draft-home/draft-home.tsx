@@ -1,4 +1,4 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../shared/ui/select.tsx";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "../../shared/ui/select.tsx";
 import { useRef, useState } from "react";
 import { hostSupportsCall, hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import type { Home } from "@pinomad/protocol/organization.ts";
@@ -330,12 +330,14 @@ export function DraftHome({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {machine.options.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          <Computer aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-                          {option.label}
-                        </SelectItem>
-                      ))}
+                      <SelectGroup>
+                        {machine.options.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            <Computer aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
                     </SelectContent>
                   </Select>
                 )}
@@ -355,14 +357,16 @@ export function DraftHome({
                     <SelectValue>{(value: string) => projectItems.find((item) => item.value === value)?.label ?? "No project"}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    {projectItems.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.value === "chat"
-                          ? <ChatAdd aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-                          : <FolderClosed aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />}
-                        {item.label}
-                      </SelectItem>
-                    ))}
+                    <SelectGroup>
+                      {projectItems.map((item) => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {item.value === "chat"
+                            ? <ChatAdd aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+                            : <FolderClosed aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />}
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
                 {draft.kind === "project" ? (
