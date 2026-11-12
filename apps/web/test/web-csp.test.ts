@@ -148,3 +148,52 @@ it("loads a plugin's panel under the CSP and updates it through a plugin call", 
   expect(refused).toEqual([]);
   expect(errors).toEqual([]);
 });
+
+it("runs a plugin's model-written HTML in the sandbox, cut off from the shell and from fetch", async () => {
+  const dataDir = await tempDir();
+  defer(dataDir.remove);
+  await cp(NOTES_PLUGIN, join(dataDir.path, "plugins", "notes"), { recursive: true });
+  const project = await tempDir();
+  defer(project.remove);
+  const projectName = project.path.split("/").at(-1)!;
+  const host = await startFauxHost(defer, {
+    dataDir: dataDir.path,
+    webRoot: join(out.path, "dist"),
+    projects: [project.path],
+    answers: ["Artifact ready."],
+  });
+  const origin = new URL(host.url.replace(/^ws/, "http")).origin;
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  const page = await browser.newPage({ viewport: { width: 1280, height: 844 }, colorScheme: "light" });
+  const refused = await watchCsp(page);
+  await page.goto(`${origin}/#token=${encodeURIComponent(host.token)}&url=${encodeURIComponent(host.url)}`);
+  const prompt = page.getByRole("textbox", { name: "Prompt" }).or(page.getByRole("combobox", { name: "Prompt" }));
+  await prompt.waitFor();
+  await page.getByRole("button", { name: projectName, exact: true }).hover();
+  await page.getByRole("button", { name: `New conversation in ${projectName}`, exact: true }).click();
+  await prompt.fill("hello");
+  await prompt.press("Enter");
+  await page.getByText("Artifact ready.").waitFor();
+
+  await page.getByRole("button", { name: "Artifact", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  const sandbox = panel.frameLocator('iframe[title="Artifact"]');
+  await sandbox.getByText("script ran ✓").waitFor();
+  await sandbox.getByText("fetch: ").waitFor();
+  const outcomes = await sandbox.locator("p[id]:not(#ran)").allTextContents();
+  expect(outcomes.sort()).toEqual([
+    "fetch: blocked TypeError",
+    "indexedDB: blocked SecurityError",
+    "localStorage: blocked SecurityError",
+    "top: blocked SecurityError",
+  ]);
+  // The only violations are the sandbox's refused fetch; the shell ran clean.
+  expect(refused.length).toBeGreaterThan(0);
+  expect(refused.filter((text) => !text.includes(`${origin}/index.html`))).toEqual([]);
+
+  await panel.getByRole("button", { name: "Show second page" }).click();
+  await sandbox.getByText("Second page ✓").waitFor();
+  await expect.poll(() => sandbox.getByText("script ran ✓").count()).toBe(0);
+});

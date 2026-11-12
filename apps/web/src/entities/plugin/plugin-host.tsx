@@ -20,6 +20,7 @@ import {
   type PluginSurfaceId,
   type Registrar,
 } from "./load-plugins.ts";
+import { Sandbox } from "./sandbox.tsx";
 
 /**
  * What a WebApi's non-hook calls (`call`, `openPanel`) reach outside React:
@@ -86,6 +87,7 @@ function webApi(plugin: string, registrar: Registrar, remote: RemoteDurable, bri
       return (await remote.plugins.call(conversationId, plugin, method, args)) as T;
     },
     openPanel: (id) => bridge.openSurface?.(pluginSurface(plugin, id)),
+    Sandbox,
   };
 }
 

@@ -26,6 +26,13 @@ export interface PanelDefinition {
   readonly component: ComponentType;
 }
 
+export interface SandboxProps {
+  /** A whole document; its scripts run, isolated from the client. A new value starts a new document. */
+  readonly html: string;
+  /** The frame's accessible name. */
+  readonly title: string;
+}
+
 export interface WebApi {
   /** The shell's React; use it for elements and hooks. */
   readonly React: typeof import("react");
@@ -41,6 +48,14 @@ export interface WebApi {
   call<T = JsonValue>(method: string, args: JsonValue): Promise<T>;
   /** Opens one of this plugin's panels by id. */
   openPanel(id: string): void;
+  /**
+   * Renders model-written HTML, scripts included, in a frame that cannot reach
+   * anything of the client: not its device key, its storage or the shell's
+   * page. Network access is not part of the promise: fetches, navigation and
+   * external resources are blocked as best effort, and WebRTC is not blocked.
+   * It fills its slot.
+   */
+  readonly Sandbox: ComponentType<SandboxProps>;
 }
 
 /** The default export of a plugin's `web.js`. */

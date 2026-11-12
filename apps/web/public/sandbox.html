@@ -1,0 +1,16 @@
+<!doctype html>
+<!-- Where plugins render model-written HTML (ADR-0049). Served with its own
+     CSP (opaque origin; fetches blocked as best effort) and framed with sandbox="allow-scripts":
+     it tells the parent it is ready, then writes the parent's first message
+     into itself. -->
+<meta charset="utf-8" />
+<script>
+  addEventListener("message", function write(event) {
+    if (event.source !== parent) return;
+    removeEventListener("message", write);
+    document.open();
+    document.write(String(event.data));
+    document.close();
+  });
+  parent.postMessage("pinomad-sandbox-ready", "*");
+</script>
