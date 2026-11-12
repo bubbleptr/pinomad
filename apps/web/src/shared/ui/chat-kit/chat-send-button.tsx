@@ -3,7 +3,7 @@
 
 import type { ComponentProps, ReactNode, Ref } from "react";
 import { cn } from "cn";
-import { ChatActionButton } from "./chat-action-button";
+import { IconButton } from "@/shared/ui/icon-button";
 import { ChatKitGlyph } from "./chat-kit-icons";
 import { useChatComposerContext } from "./chat-context";
 import { themeProps } from "./theme-props";
@@ -66,17 +66,19 @@ export function ChatSendButton(props: ChatSendButtonProps): ReactNode {
   const theme = themeProps("chat-send-button");
 
   return (
-    <ChatActionButton
+    <IconButton
       ref={ref}
       label={isStopShown ? "Stop" : "Send"}
-      variant={isStopShown ? "secondary" : "primary"}
+      // Stop takes the send button's place and tier: it is the one action
+      // while a turn runs. Secondary's surface fill sits below the composer
+      // in dark.
+      variant="primary"
       size={size}
       icon={isStopShown ? (stopIcon ?? <ChatKitGlyph name="stop" />) : (sendIcon ?? <ChatKitGlyph name="arrowUp" />)}
-      isIconOnly
-      isDisabled={!isStopShown && isDisabled}
+      disabled={!isStopShown && isDisabled}
       onClick={isStopShown ? onStop : handleSend}
       {...rest}
-      className={cn(theme.className, "shrink-0 rounded-[var(--_button-radius,var(--radius-full))]", className)}
+      className={cn(theme.className, "rounded-[var(--_button-radius,var(--radius-full))]", className)}
       style={style}
     />
   );
