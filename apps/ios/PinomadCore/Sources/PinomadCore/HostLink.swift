@@ -47,13 +47,6 @@ public enum HostLinkCopy {
         "curl -fsSL https://pinomad.si/install.sh | sh -s -- up --origin \(normalizeServerOrigin(origin: serverOrigin))"
     }
 
-    /// Both ends of the host id, to compare with the one `pinomad join`
-    /// prints in full.
-    public static func shortHostId(_ hostId: String) -> String {
-        guard hostId.count > 12 else { return hostId }
-        return hostId.prefix(6) + "…" + hostId.suffix(4)
-    }
-
     public static let warning = "Only confirm a computer you are setting up yourself right now."
 
     public static let ipDiffersWarning =

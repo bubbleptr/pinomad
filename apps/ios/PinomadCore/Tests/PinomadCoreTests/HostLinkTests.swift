@@ -75,15 +75,6 @@ struct HostLinkTests {
         }
     }
 
-    // MARK: - The host id
-
-    /// The host prints its full id; the confirm page shows both ends of it
-    /// to compare, and copies all of it.
-    @Test func hostIdShowsBothEnds() {
-        #expect(HostLinkCopy.shortHostId(request.hostId) == "Kx3f9Q…mN4o")
-        #expect(HostLinkCopy.shortHostId("short") == "short")
-    }
-
     // MARK: - Errors
 
     /// The server answers one 404 for a wrong, used and expired code alike:
