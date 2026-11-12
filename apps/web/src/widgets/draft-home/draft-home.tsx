@@ -21,6 +21,7 @@ import { summaryOf, type AgentDraftProblem } from "@pinomad/client/model.ts";
 import { ChatAddMenu, ChatAddMenuItem } from "@/shared/ui/chat/chat-add-menu";
 import { ChatPromptInput, type ChatPromptInputHandle } from "@/shared/ui/chat/chat-prompt-input";
 import { composerPlaceholder } from "@/shared/ui/chat/chat-placeholder";
+import { useMounted } from "@/shared/use-mounted";
 import { Bot, ChatAdd, Computer, FileIcon, FolderClosed, ImageIcon, Sparkles } from "@/shared/ui/icons";
 import { PinomadMark } from "@/shared/ui/pinomad-mark";
 
@@ -100,6 +101,7 @@ export function DraftHome({
   const model = summaryOf(view.models, pick.model);
   const accepts = model?.images === true;
   const { images, pending, error, add, remove, clear: clearImages } = useImageAttachments(accepts, slot);
+  const mounted = useMounted();
   const fileInput = useRef<HTMLInputElement>(null);
   const minor = view.host?.protocol.minor;
   const attachmentsEnabled =
@@ -243,6 +245,7 @@ export function DraftHome({
               skills: skills.trigger !== undefined,
             })}
             attachments={attachmentRow({
+              entrance: mounted,
               images,
               pending,
               onRemove: remove,

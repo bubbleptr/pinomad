@@ -1625,6 +1625,19 @@ function ConnectionBanner({
       <VersionMismatch wsUrl={wsUrl} mismatch={view.protocolMismatch} {...(hostKey === undefined ? {} : { hostKey })} />
     );
   }
+  const alert = connectionAlert(view);
+  if (alert === null) return null;
+  // A dropped connection opens its row as it fades in, so the layout below
+  // eases down instead of jumping; one wrapper for every variant, so a
+  // change of variant doesn't replay it. Removal is instant.
+  return (
+    <div className="grid shrink-0 grid-rows-[1fr] transition-[grid-template-rows,opacity] duration-200 ease-(--ease-standard) starting:grid-rows-[0fr] starting:opacity-0 motion-reduce:transition-none">
+      <div className="min-h-0 overflow-hidden">{alert}</div>
+    </div>
+  );
+}
+
+function connectionAlert(view: DurableView): ReactNode {
   // The host exits once an upgrade installs (ADR-0043): this drop is the restart.
   if (view.connection === "reconnecting" && view.upgrade?.phase === "installing") {
     return (
