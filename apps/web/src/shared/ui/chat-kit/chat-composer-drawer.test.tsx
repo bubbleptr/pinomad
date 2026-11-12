@@ -37,6 +37,21 @@ describe("ChatComposerDrawer", () => {
     expect(region).toContainElement(screen.getByText("Drawer content"));
   });
 
+  it("takes collapsed content out of focus and the accessibility tree", () => {
+    render(
+      <ChatComposerDrawer count={1} label="Attachments">
+        <button type="button">Remove</button>
+      </ChatComposerDrawer>,
+    );
+
+    const toggle = screen.getByRole("button", {name: /Attachments/});
+    const region = document.getElementById(toggle.getAttribute("aria-controls") as string);
+    expect(region).not.toHaveAttribute("inert");
+
+    fireEvent.click(toggle);
+    expect(region).toHaveAttribute("inert");
+  });
+
   it("toggles aria-expanded when the toggle is activated", () => {
     render(
       <ChatComposerDrawer count={2} label="Attachments">

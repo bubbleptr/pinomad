@@ -149,6 +149,7 @@ export function ChatComposerDrawer({
 
       <div
         id={contentId}
+        inert={canCollapse && isCollapsed}
         className={cn(
           "grid grid-rows-[1fr] transition-[grid-template-rows] duration-300 ease-[var(--ease-standard)]",
           canCollapse && isCollapsed && "grid-rows-[0fr]",
