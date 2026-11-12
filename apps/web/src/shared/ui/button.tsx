@@ -15,8 +15,6 @@ const buttonVariants = cva(
     "active:not-aria-[haspopup]:not-data-[disabled]:translate-y-px",
     "disabled:pointer-events-none data-disabled:cursor-not-allowed data-disabled:opacity-50",
     "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-    // A confirmation dialog's footer (.pigui-confirm): pills, Cancel and the action at either end.
-    "in-[.pigui-confirm]:h-9 in-[.pigui-confirm]:rounded-full in-[.pigui-confirm]:px-4",
   ],
   {
     variants: {
@@ -42,9 +40,6 @@ const buttonVariants = cva(
         destructive: [
           "bg-destructive-muted text-destructive-strong focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40",
           "not-data-[disabled]:hover:overlay-hover",
-          // The last step of a confirmation dialog is a solid red, white text
-          // at 7.6:1 light and 4.7:1 dark (the error toast's pair).
-          "in-[.pigui-confirm]:bg-destructive-inverse in-[.pigui-confirm]:text-white",
         ],
       },
       size: {

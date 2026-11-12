@@ -180,7 +180,7 @@ describe("AccountPanel", () => {
     });
     renderPanel(model);
     await userEvent.click(screen.getByRole("button", { name: "Sign out everywhere" }));
-    const dialog = screen.getByRole("dialog", { name: "Sign out everywhere?" });
+    const dialog = screen.getByRole("alertdialog", { name: "Sign out everywhere?" });
     await userEvent.click(within(dialog).getByRole("button", { name: "Sign out everywhere" }));
     expect(await screen.findByText(/Other devices may still be signed in/)).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Sign in" })).toBeTruthy();
@@ -191,7 +191,7 @@ describe("AccountPanel", () => {
     renderPanel(model);
     const signOut = async (shared: boolean) => {
       await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
-      const dialog = screen.getByRole("dialog", { name: "Sign out of nomad.example?" });
+      const dialog = screen.getByRole("alertdialog", { name: "Sign out of nomad.example?" });
       const box = within(dialog).getByRole("checkbox", { name: /shared computer/ });
       expect(box).not.toBeChecked();
       if (shared) await userEvent.click(box);
@@ -211,7 +211,7 @@ describe("AccountPanel", () => {
     });
     renderPanel(model);
     await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
-    const dialog = screen.getByRole("dialog", { name: "Sign out of nomad.example?" });
+    const dialog = screen.getByRole("alertdialog", { name: "Sign out of nomad.example?" });
     await userEvent.click(within(dialog).getByRole("checkbox", { name: /shared computer/ }));
     await userEvent.click(within(dialog).getByRole("button", { name: "Sign out" }));
     expect(await screen.findByText(/may still connect to them/)).toBeTruthy();

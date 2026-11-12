@@ -121,7 +121,7 @@ it("signs up with Google through the no-account-yet page, then confirms by maile
   await shoot(page, "sign-in-methods");
 
   await dialog.getByRole("button", { name: "Set password" }).click();
-  const confirm = page.getByRole("dialog", { name: "Set password" });
+  const confirm = page.getByRole("alertdialog", { name: "Set password" });
   await confirm.getByText("We'll email a code to ada@gmail.com.").waitFor();
   await confirm.getByRole("button", { name: "Send code" }).click();
   await confirm.getByLabel("Confirmation code").waitFor();

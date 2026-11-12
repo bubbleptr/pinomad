@@ -1,5 +1,5 @@
 import { Button } from "../../shared/ui/button.tsx";
-import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
+import { ConfirmDialog } from "./confirm-dialog.tsx";
 import { useState } from "react";
 import type { AccountError } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
@@ -21,7 +21,7 @@ export interface RemoveHostProps {
  * device (ADR-0037 §3, ADR-0044 §6): a session left on a lost phone mustn't be able to
  * take the owner's hosts away.
  */
-export function RemoveHost({ account, hostId, name, serverOrigin, onClose }: RemoveHostProps) {
+export function RemoveHostDialog({ account, hostId, name, serverOrigin, onClose }: RemoveHostProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<AccountError>();
   const submit = (): void => {
@@ -42,11 +42,12 @@ export function RemoveHost({ account, hostId, name, serverOrigin, onClose }: Rem
   };
   const identity = useConfirmIdentity(account, submit);
   return (
-    <div className="flex flex-col gap-2">
-      <span className="text-xs/5 text-muted-foreground">
-        {name} leaves your account and stops connecting through {new URL(serverOrigin).host}. Only running pinomad up on
-        that machine brings it back. This device forgets it too, unless you paired it with a QR code.
-      </span>
+    <ConfirmDialog
+      title={`Remove ${name}?`}
+      description={`${name} stops connecting through ${new URL(serverOrigin).host}. Only running pinomad up on it brings it back.`}
+      onClose={() => onClose(false)}
+      action={<Button variant="destructive" loading={busy} disabled={!identity.ready} onClick={submit}>Remove host</Button>}
+    >
       {identity.field}
       {error === undefined ? null : (
         <Alert variant="destructive">
@@ -54,28 +55,6 @@ export function RemoveHost({ account, hostId, name, serverOrigin, onClose }: Rem
           <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
         </Alert>
       )}
-      <div className="flex gap-2">
-        <Button variant="destructive" loading={busy} disabled={!identity.ready} onClick={submit}>Remove host</Button>
-        <Button variant="secondary" onClick={() => onClose(false)}>Cancel</Button>
-      </div>
-    </div>
-  );
-}
-
-/** The same form on its own, for the new-host notice. */
-export function RemoveHostDialog(props: RemoveHostProps) {
-  return (
-    <Dialog open disablePointerDismissal onOpenChange={(open) => (open ? undefined : props.onClose(false))}>
-      <DialogContent className="w-[440px]">
-        <DialogHeader>
-          <DialogTitle>{`Remove ${props.name}`}</DialogTitle>
-        </DialogHeader>
-        <DialogBody>
-          <div style={{ padding: "var(--spacing-2)" }}>
-            <RemoveHost {...props} />
-          </div>
-        </DialogBody>
-      </DialogContent>
-    </Dialog>
+    </ConfirmDialog>
   );
 }

@@ -1,5 +1,12 @@
-import { Button } from "../../shared/ui/button.tsx";
-import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/shared/ui/alert-dialog";
 import type { ReactNode } from "react";
 
 /**
@@ -22,24 +29,18 @@ export function ConfirmDialog({
   onClose: () => void;
 }) {
   return (
-    <Dialog open onOpenChange={(open) => (open ? undefined : onClose())} disablePointerDismissal>
-      {/* Cancel is the way out, so no close button; 24px all round and the field flush with the title. */}
-      <DialogContent className="w-[460px]" showCloseButton={false}>
-        <DialogHeader className="gap-1.5 px-6 pt-6 pb-4">
-          <DialogTitle className="text-lg/7">{title}</DialogTitle>
-          {description === undefined ? null : <DialogDescription className="text-sm/6 text-foreground/80">{description}</DialogDescription>}
-        </DialogHeader>
-        <DialogBody className="px-5">
-          {children === undefined ? null : (
-            // 4px in from the body's edge: room for the focus ring, which the scrolling body would clip.
-            <div className="flex flex-col gap-3 p-1">{children}</div>
-          )}
-        </DialogBody>
-        <DialogFooter className="pigui-confirm justify-between px-6 pt-5 pb-6">
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+    <AlertDialog open onOpenChange={(open) => (open ? undefined : onClose())}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          {description === undefined ? null : <AlertDialogDescription>{description}</AlertDialogDescription>}
+        </AlertDialogHeader>
+        {children === undefined ? null : <div className="flex flex-col gap-3">{children}</div>}
+        <AlertDialogFooter>
+          <AlertDialogCancel />
           {action}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

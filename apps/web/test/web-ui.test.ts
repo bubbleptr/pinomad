@@ -3459,7 +3459,7 @@ it("unpairs a host from Settings → Hosts only after confirmation, at both ends
   const settings = await openSettings(page, "Hosts");
   await settings.getByRole("button", { name: `${labelB} details`, exact: true }).click();
   await settings.getByRole("button", { name: "Unpair", exact: true }).click();
-  const confirm = page.getByRole("dialog", { name: `Unpair ${labelB}?`, exact: true });
+  const confirm = page.getByRole("alertdialog", { name: `Unpair ${labelB}?`, exact: true });
   await confirm.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect.poll(() => confirm.count()).toBe(0);
   expect(await storedHostCount(page)).toBe(2);
@@ -3482,7 +3482,7 @@ it("unpairs a host from Settings → Hosts only after confirmation, at both ends
   await settings.getByRole("button", { name: `${labelB} details`, exact: true }).click();
   await settings.getByRole("button", { name: "Unpair", exact: true }).click();
   await page
-    .getByRole("dialog", { name: `Unpair ${labelB}?`, exact: true })
+    .getByRole("alertdialog", { name: `Unpair ${labelB}?`, exact: true })
     .getByRole("button", { name: "Unpair", exact: true })
     .click();
   await waitForView(tokenB.view, (view) => view.devices.length === 0);
@@ -3508,7 +3508,7 @@ it("unpairs a host from Settings → Hosts only after confirmation, at both ends
   await lastSettings.getByRole("button", { name: `${labelA} details`, exact: true }).click();
   await lastSettings.getByRole("button", { name: "Unpair", exact: true }).click();
   await page
-    .getByRole("dialog", { name: `Unpair ${labelA}?`, exact: true })
+    .getByRole("alertdialog", { name: `Unpair ${labelA}?`, exact: true })
     .getByRole("button", { name: "Unpair", exact: true })
     .click();
   await page.getByLabel("Pairing link").waitFor();

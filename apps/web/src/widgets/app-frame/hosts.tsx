@@ -1,7 +1,7 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../shared/ui/collapsible.tsx";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/shared/ui/alert-dialog";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "../../shared/ui/item.tsx";
 import { SegmentedControl, SegmentedControlItem } from "../../shared/ui/segmented-control.tsx";
@@ -629,18 +629,18 @@ function UnpairHostDialog({
     );
   };
   return (
-    <Dialog open onOpenChange={(open) => (open ? undefined : onClose(false))} disablePointerDismissal>
-      <DialogContent className="w-[440px]" showCloseButton={false}>
-        <DialogHeader className="gap-1.5 px-6 pt-6 pb-0">
-          <DialogTitle className="text-lg/7">{title}</DialogTitle>
-          <DialogDescription className="text-sm/6 text-foreground/80">{unpairText(label, info)}</DialogDescription>
-        </DialogHeader>
-        <DialogFooter className="pigui-confirm justify-between px-6 pt-5 pb-6">
-          <Button variant="secondary" onClick={() => onClose(false)}>Cancel</Button>
-          <Button variant="destructive" onClick={unpair}>Unpair</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <AlertDialog open onOpenChange={(open) => (open ? undefined : onClose(false))}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription>{unpairText(label, info)}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel />
+          <AlertDialogAction variant="destructive" onClick={unpair}>Unpair</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
