@@ -19,7 +19,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 33 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 34 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -130,6 +130,8 @@ pub enum CallMethod {
     StartUpgrade,
     CancelUpgrade,
     CheckUpgrade,
+    PluginBundle,
+    PluginCall,
 }
 
 impl CallMethod {
@@ -190,6 +192,8 @@ impl CallMethod {
             "startUpgrade" => Self::StartUpgrade,
             "cancelUpgrade" => Self::CancelUpgrade,
             "checkUpgrade" => Self::CheckUpgrade,
+            "pluginBundle" => Self::PluginBundle,
+            "pluginCall" => Self::PluginCall,
             _ => return None,
         })
     }
@@ -243,6 +247,7 @@ impl CallMethod {
             Self::EarlierEntries => 28,
             Self::ReorderQueued => 29,
             Self::StartUpgrade | Self::CancelUpgrade | Self::CheckUpgrade => 30,
+            Self::PluginBundle | Self::PluginCall => 34,
         }
     }
 }
@@ -279,6 +284,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
         HostFeature::AutoUpgrade => 30,
         HostFeature::Processes => 32,
         HostFeature::SubagentStop => 33,
+        HostFeature::Plugins => 34,
     };
     host_minor >= since
 }
@@ -334,6 +340,9 @@ pub enum HostFeature {
     /// Subagents take the user's `abort`, and summaries carry `name` (33,
     /// ADR-0046). The host refuses the user's `submit` to one (ADR-0047 §2).
     SubagentStop,
+    /// `hello.plugins` and the `pluginBundle` / `pluginCall` calls (34,
+    /// ADR-0049). Plugin UI is web and desktop only; iOS ignores both.
+    Plugins,
 }
 
 

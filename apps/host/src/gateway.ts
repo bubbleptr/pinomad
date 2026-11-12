@@ -2679,6 +2679,11 @@ class GatewayClient {
         if (this.#shownImage(input.ref) === undefined) throw new Error("Unknown image");
         return derived;
       }
+      // Plugins don't load yet (ADR-0049), so every name is unknown.
+      case "pluginBundle":
+        throw new Error(`Unknown plugin ${(args as CallMethods["pluginBundle"]["args"]).name}`);
+      case "pluginCall":
+        throw new Error(`Unknown plugin ${(args as CallMethods["pluginCall"]["args"]).plugin}`);
       case "beginAttachment": {
         const input = args as CallMethods["beginAttachment"]["args"];
         const store = this.#attachmentStore();

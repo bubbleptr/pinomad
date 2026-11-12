@@ -1,12 +1,12 @@
 {
   "protocol": {
     "major": 5,
-    "minor": 33
+    "minor": 34
   },
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":33},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":34},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -16,17 +16,22 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":33},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":34},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "expect": "hello"
+    },
+    {
+      "name": "hello-plugins",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":34},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"plugins\":[{\"name\":\"artifact\",\"api\":1,\"web\":{\"hash\":\"abababababababababababababababababababababababababababababababab\",\"size\":1024}}]}",
       "expect": "hello"
     },
     {
       "name": "signalHello",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":33},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":34},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
       "expect": "signalHello"
     },
     {
       "name": "signalHello-no-rtc",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":33}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":34}}",
       "expect": "signalHello"
     },
     {
@@ -376,6 +381,14 @@
         "since": 23
       },
       {
+        "name": "pluginBundle",
+        "since": 34
+      },
+      {
+        "name": "pluginCall",
+        "since": 34
+      },
+      {
         "name": "removeCustomProvider",
         "since": 21
       },
@@ -558,6 +571,10 @@
       {
         "name": "liveBranch",
         "since": 11
+      },
+      {
+        "name": "plugins",
+        "since": 34
       },
       {
         "name": "processes",
@@ -878,6 +895,30 @@
       "name": "ping@22",
       "minor": 22,
       "call": "ping",
+      "expect": false
+    },
+    {
+      "name": "pluginBundle@34",
+      "minor": 34,
+      "call": "pluginBundle",
+      "expect": true
+    },
+    {
+      "name": "pluginBundle@33",
+      "minor": 33,
+      "call": "pluginBundle",
+      "expect": false
+    },
+    {
+      "name": "pluginCall@34",
+      "minor": 34,
+      "call": "pluginCall",
+      "expect": true
+    },
+    {
+      "name": "pluginCall@33",
+      "minor": 33,
+      "call": "pluginCall",
       "expect": false
     },
     {
@@ -1268,6 +1309,18 @@
       "name": "liveBranch@10",
       "minor": 10,
       "feature": "liveBranch",
+      "expect": false
+    },
+    {
+      "name": "plugins@34",
+      "minor": 34,
+      "feature": "plugins",
+      "expect": true
+    },
+    {
+      "name": "plugins@33",
+      "minor": 33,
+      "feature": "plugins",
       "expect": false
     },
     {
