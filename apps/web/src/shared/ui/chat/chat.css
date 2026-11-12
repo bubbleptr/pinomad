@@ -1043,12 +1043,10 @@ mark.chat-skill-mention {
   /* One step below ChatComposer's default so the chrome sits closer to the edge.
      The elevated shell has no border; the total content inset is unchanged. */
   --_chat-composer-padding: var(--spacing-2);
-  /* ChatComposer pairs --radius-chat (28) with --spacing-3 (12) so the 32px
-     send button stays a circle: 28 − 12 = 16. Padding dropped one step,
-     so the shell must follow: outer = padding + half the md button. */
-  --_chat-composer-radius: calc(
-    var(--_chat-composer-padding) + var(--size-element-md) / 2
-  );
+  /* An 18px shell around controls at the button radius (7px): the send
+     button and model picker read --_button-radius. */
+  --_chat-composer-radius: 18px;
+  --_button-radius: var(--radius-element);
 }
 
 .prompt-input[data-drop] [data-slot="chat-composer"] {
@@ -1142,8 +1140,8 @@ mark.chat-skill-mention {
   /* Cancel the column gap as well as tucking under the card. */
   margin: calc(-1 * (var(--_prompt-tray-tuck) + var(--spacing-1-5))) var(--spacing-4) 0;
   padding: calc(var(--_prompt-tray-tuck) + var(--spacing-1)) var(--spacing-3) var(--spacing-1-5);
-  /* The tuck equals the card's corner radius; the tray's bottom corners match it. */
-  border-radius: 0 0 var(--_prompt-tray-tuck) var(--_prompt-tray-tuck);
+  /* The tray's bottom corners match the shell's. */
+  border-radius: 0 0 18px 18px;
   background: light-dark(var(--surface-muted), oklch(0.235 0 0));
   color: var(--muted-foreground);
   font-size: var(--font-size-sm);
