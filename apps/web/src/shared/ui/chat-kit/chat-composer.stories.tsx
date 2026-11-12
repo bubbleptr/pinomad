@@ -4,7 +4,6 @@ import { fn } from "storybook/test";
 import { createStaticSource } from "@/shared/ui/typeahead";
 import { ChatBadge } from "./chat-badge";
 import { ChatComposer } from "./chat-composer";
-import { ChatComposerDrawer } from "./chat-composer-drawer";
 import { ChatComposerInput, type ChatComposerTrigger } from "./chat-composer-input";
 
 const agents = createStaticSource([
@@ -65,13 +64,13 @@ export const StopShown: Story = {
   args: { isStopShown: true },
 };
 
-export const WithDrawer: Story = {
+export const WithHeader: Story = {
   args: {
-    drawer: (
-      <ChatComposerDrawer count={2} label="Attachments">
+    header: (
+      <div className="flex flex-wrap gap-2">
         <ChatBadge label="screenshot.png" />
         <ChatBadge label="trace.log" />
-      </ChatComposerDrawer>
+      </div>
     ),
   },
 };
@@ -82,10 +81,6 @@ export const WithError: Story = {
 
 export const WithWarning: Story = {
   args: { status: { type: "warning", message: "Context window is almost full." } },
-};
-
-export const Flat: Story = {
-  args: { elevation: "none" },
 };
 
 export const Disabled: Story = {

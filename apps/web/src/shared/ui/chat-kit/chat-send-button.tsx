@@ -78,7 +78,7 @@ export function ChatSendButton(props: ChatSendButtonProps): ReactNode {
       disabled={!isStopShown && isDisabled}
       onClick={isStopShown ? onStop : handleSend}
       {...rest}
-      className={cn(theme.className, "rounded-[var(--_button-radius,var(--radius-full))]", className)}
+      className={cn(theme.className, "rounded-full", className)}
       style={style}
     />
   );

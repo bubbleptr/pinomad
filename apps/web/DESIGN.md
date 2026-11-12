@@ -165,6 +165,10 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 - 图片：只有图的 64px 卡片，封装在 `shared/ui/thumbnail.tsx` 的 `Thumbnail`；能点开大图的整张卡片是按钮（`AttachmentTrigger`）。
 - 重试、移除用 `AttachmentAction`。压在图片上的移除按钮是深色角标，悬停或聚焦才出现（触屏常驻）。
 
+### 输入框
+
+对话输入框的外壳在 `ChatComposer`（`shared/ui/chat-kit/chat-composer.tsx`），照 shadcn 的 Prompt Input：圆角 18px，填充 `--surface-field`，平时没有描边和阴影；编辑区聚焦时只多一圈 `--border-strong` 描边，不用蓝色聚焦环（输入框大部分时间都有焦点，蓝环太吵）。发送和停止按钮是圆的。暂存的附件放在壳内最上面一行（`header`），不在壳外另起一层。别的地方不用 `--surface-field`。
+
 ## 文字和布局
 
 布局用 Tailwind 的 flex 类（`flex flex-col gap-2`），文字用原生元素加类，没有专门的布局或文字组件。没写类的 `p`、`h1`–`h6`、`small`、`code` 由 `styles.css` 的 `reset` 层给一套默认字号（`p` 是 14px），但组件里照样写类。字号和行高固定这几档：
