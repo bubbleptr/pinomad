@@ -59,9 +59,6 @@ struct ConversationListView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: "Search conversations")
-        .navigationDestination(for: Route.self) { route in
-            RouteDestination(model: model, route: route)
-        }
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button {

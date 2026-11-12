@@ -247,12 +247,12 @@ struct ConversationView: View {
             }
         }
         .task {
-            model.openConversation(ref)
+            if connected { model.openConversation(ref) }
         }
-        // A failed open seen offline (the session was gone when it began)
-        // retries once connected; one the host refused waits for Retry.
+        // A push can show this page before the host connects. Subscribe only
+        // when ready, rather than turning the initial load into a failed open.
         .onChange(of: connected) { _, connected in
-            if connected, failed { model.openConversation(ref) }
+            if connected, conversation == nil { model.openConversation(ref) }
         }
         .task(id: scenePhase) {
             // A suspended app's timer does not run; the active pass is what

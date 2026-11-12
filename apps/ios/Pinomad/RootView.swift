@@ -24,6 +24,9 @@ struct RootView: View {
             }
             // Connected, the home page has no title: its machine groups say where you are.
             .navigationTitle(model.phase == .home ? "" : "PiNomad")
+            .navigationDestination(for: Route.self) { route in
+                RouteDestination(model: model, route: route)
+            }
         }
         .environment(\.popToProviders, PopToProvidersAction(stack: "root") { model.navPath.popToProviders() })
         .overlay(alignment: .top) {

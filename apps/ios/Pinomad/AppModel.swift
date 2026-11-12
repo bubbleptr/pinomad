@@ -998,6 +998,7 @@ final class AppModel {
             pairing.clear()
             hostBeforePairing = nil
             syncPhase()
+            advancePushTarget()
         }
     }
 
