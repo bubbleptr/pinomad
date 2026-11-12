@@ -270,7 +270,7 @@ function UpgradeDialog({
           <p className="m-0 text-xs/5 text-muted-foreground">Upgrading now interrupts running tasks; they continue after the restart.</p>
           {error === undefined ? null : <CallError message={error} />}
         </DialogBody>
-        <DialogFooter>
+        <DialogFooter className="flex-wrap">
           <Button variant="secondary" disabled={pending !== undefined} onClick={onCancel}>Cancel</Button>
           <Button variant="secondary" disabled={pending !== undefined} loading={pending === "now"} onClick={() => onStart("now")}>
             Upgrade now
