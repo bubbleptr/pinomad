@@ -13,8 +13,9 @@ public struct ContextMeterReading: Equatable, Sendable {
 
     public let percent: Int?
     public let warning: Bool
-    /// The row's figures, e.g. "42% · 84k / 200k".
-    public let detail: String
+    /// The row's headline under the section's "Context" title, e.g.
+    /// "84k of 200k tokens"; the percent sits apart, at the trailing edge.
+    public let figures: String
     public let accessibilityLabel: String
 
     public init(_ usage: ContextUsage?) {
@@ -25,7 +26,7 @@ public struct ContextMeterReading: Equatable, Sendable {
         guard let used, let window, Self.isKnown(used: used, window: window) else {
             percent = nil
             warning = false
-            detail = "No usage data yet"
+            figures = "No usage data yet"
             accessibilityLabel = "Context usage unknown"
             return
         }
@@ -35,7 +36,7 @@ public struct ContextMeterReading: Equatable, Sendable {
         // the window.
         self.percent = percent
         warning = percent >= Self.warningPercent
-        detail = "\(percent)% · \(Self.formatTokens(used)) / \(Self.formatTokens(window))"
+        figures = "\(Self.formatTokens(used)) of \(Self.formatTokens(window)) tokens"
         accessibilityLabel =
             "Context \(percent)% used, \(Self.formatTokens(used)) of \(Self.formatTokens(window)) tokens"
     }

@@ -167,11 +167,18 @@ struct OverviewSheet: View {
     /// sent a breakdown of the reply the meter counts).
     private func contextRow(_ reading: ContextMeterReading, breakdown: ContextBreakdownReading) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            LabeledContent("Context window") {
-                Text(reading.detail)
-                    .monospacedDigit()
-                    .foregroundStyle(reading.warning ? Color(uiColor: .systemOrange) : .secondary)
+            // The section header already says "Context": the row leads with
+            // the figures, as the Web card's headline does.
+            HStack(alignment: .firstTextBaseline) {
+                Text(reading.figures)
+                    .foregroundStyle(reading.percent == nil ? .secondary : .primary)
+                Spacer(minLength: 12)
+                if let percent = reading.percent {
+                    Text("\(percent)%")
+                        .foregroundStyle(reading.warning ? Color(uiColor: .systemOrange) : .secondary)
+                }
             }
+            .monospacedDigit()
             ContextGrid(meter: reading, breakdown: breakdown)
         }
         .accessibilityElement(children: .ignore)

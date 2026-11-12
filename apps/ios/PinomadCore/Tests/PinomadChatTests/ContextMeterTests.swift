@@ -5,7 +5,7 @@ import Testing
     @Test func readsTheShareAndFigures() {
         let reading = ContextMeterReading(used: 84_000, window: 200_000)
         #expect(reading.percent == 42)
-        #expect(reading.detail == "42% · 84k / 200k")
+        #expect(reading.figures == "84k of 200k tokens")
         #expect(reading.accessibilityLabel == "Context 42% used, 84k of 200k tokens")
         #expect(reading.warning == false)
     }
@@ -22,7 +22,7 @@ import Testing
     @Test func overflowKeepsTheHonestPercent() {
         let reading = ContextMeterReading(used: 240_000, window: 200_000)
         #expect(reading.percent == 120)
-        #expect(reading.detail == "120% · 240k / 200k")
+        #expect(reading.figures == "240k of 200k tokens")
         #expect(reading.warning)
     }
 
@@ -39,7 +39,7 @@ import Testing
     @Test func absurdCountsFallBackInsteadOfTrapping() {
         let huge = ContextMeterReading(used: 1e308, window: 200_000)
         #expect(huge.percent == nil)
-        #expect(huge.detail == "No usage data yet")
+        #expect(huge.figures == "No usage data yet")
 
         // A sub-token window divides up instead of down; it is no scale.
         let tinyWindow = ContextMeterReading(used: 1, window: 1e-300)
@@ -52,7 +52,7 @@ import Testing
         let reading = ContextMeterReading(nil)
         #expect(reading.percent == nil)
         #expect(reading.warning == false)
-        #expect(reading.detail == "No usage data yet")
+        #expect(reading.figures == "No usage data yet")
         #expect(reading.accessibilityLabel == "Context usage unknown")
     }
 }
