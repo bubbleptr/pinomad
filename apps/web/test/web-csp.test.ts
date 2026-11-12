@@ -17,6 +17,7 @@ import { startFauxHost, tempDir, useCleanups } from "@pinomad/host/test/support.
 const defer = useCleanups();
 const webConfig = fileURLToPath(new URL("../vite.config.ts", import.meta.url));
 const NOTES_PLUGIN = fileURLToPath(new URL("../../host/test/fixtures/plugins/notes", import.meta.url));
+const ARTIFACT_EXAMPLE = fileURLToPath(new URL("../../../examples/plugins/artifact", import.meta.url));
 
 let out: Awaited<ReturnType<typeof tempDir>>;
 beforeAll(async () => {
@@ -143,6 +144,57 @@ it("loads a plugin's panel under the CSP and updates it through a plugin call", 
   await panel.getByRole("button", { name: "Add note" }).click();
   await panel.getByText("1 on the board ✓").waitFor();
   expect(await panel.getByRole("list", { name: "Notes" }).getByRole("listitem").allTextContents()).toEqual(["Note from the panel"]);
+  if (process.env.PINOMAD_PLUGIN_SHOT !== undefined) await page.screenshot({ path: process.env.PINOMAD_PLUGIN_SHOT });
+
+  expect(refused).toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+it("opens the artifact example's page from its tool card and runs it in the sandbox", async () => {
+  const dataDir = await tempDir();
+  defer(dataDir.remove);
+  await cp(ARTIFACT_EXAMPLE, join(dataDir.path, "plugins", "artifact"), { recursive: true });
+  const project = await tempDir();
+  defer(project.remove);
+  const projectName = project.path.split("/").at(-1)!;
+  const html = '<!doctype html><p id="out">static</p><script>document.getElementById("out").textContent = "Drawn by its script";</script>';
+  const host = await startFauxHost(defer, {
+    dataDir: dataDir.path,
+    webRoot: join(out.path, "dist"),
+    projects: [project.path],
+    answers: [
+      fauxAssistantMessage(fauxToolCall("artifact_write", { title: "Greeting page", html }), { stopReason: "toolUse" }),
+      "Wrote the page.",
+    ],
+  });
+  const origin = new URL(host.url.replace(/^ws/, "http")).origin;
+
+  const browser = await chromium.launch();
+  defer(() => browser.close());
+  const page = await browser.newPage({ viewport: { width: 1280, height: 844 }, colorScheme: "light" });
+  const refused = await watchCsp(page);
+  const errors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text().slice(0, 200));
+  });
+  await page.goto(`${origin}/#token=${encodeURIComponent(host.token)}&url=${encodeURIComponent(host.url)}`);
+  const prompt = page.getByRole("textbox", { name: "Prompt" }).or(page.getByRole("combobox", { name: "Prompt" }));
+  await prompt.waitFor();
+  await page.getByRole("button", { name: projectName, exact: true }).hover();
+  await page.getByRole("button", { name: `New conversation in ${projectName}`, exact: true }).click();
+  await prompt.fill("make a page");
+  await prompt.press("Enter");
+  await page.getByText("Wrote the page.").waitFor();
+
+  await page.locator('[data-slot="chat-trace-trigger"]').click();
+  await page.locator(".chat-step__trigger", { hasText: "artifact_write" }).click();
+  await page.getByText("Greeting page").waitFor();
+  await page.getByRole("button", { name: "Open", exact: true }).click();
+
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  const frame = panel.locator('iframe[title="Greeting page"]');
+  await panel.frameLocator('iframe[title="Greeting page"]').getByText("Drawn by its script").waitFor();
+  expect((await frame.boundingBox())!.height).toBeGreaterThan(300);
   if (process.env.PINOMAD_PLUGIN_SHOT !== undefined) await page.screenshot({ path: process.env.PINOMAD_PLUGIN_SHOT });
 
   expect(refused).toEqual([]);

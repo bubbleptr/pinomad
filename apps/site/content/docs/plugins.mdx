@@ -1,0 +1,148 @@
+---
+title: Plugins
+description: Add tools, a side panel and tool cards to your host; install a plugin by copying a directory, or write your own.
+---
+
+A plugin is a directory on the host. It can give the agent new tools, keep its own state per conversation, and bring UI to the web and desktop apps: a page in the side panel and a card for its tool calls in the transcript.
+
+Plugin UI is a web and desktop feature. On the iPhone a plugin's tools still work, but its panel and cards don't show.
+
+## Install a plugin
+
+1. Copy the plugin's directory into `plugins/` in the host's data directory: `~/.pinomad/plugins/<name>/`, or under `--data-dir` if you run the host with one. A symlink to a directory elsewhere works too.
+2. Restart the host: `pinomad service restart` if it runs as a service (it waits for running tasks to finish first), or stop and start it again if you run it in a terminal. The host loads plugins only when it starts, so restart it again after you change, add or remove one.
+
+A plugin that fails to load is skipped with one line in the host's log, and the host and the other plugins carry on.
+
+**Installing a plugin means trusting it.** Its host half runs inside the host process with the host's permissions. Its UI runs in the same page as the web and desktop apps, so it can read what that page can, including the device's key for the host. Only install plugins whose code you trust.
+
+There is no plugin store, npm install or per-project plugin yet.
+
+## Write a plugin
+
+A plugin directory holds a manifest and up to two code files:
+
+```
+artifact/
+  plugin.json
+  host.ts     runs on the host: tools, state, methods
+  web.js      runs in the web and desktop apps: side panel, tool cards
+```
+
+`plugin.json`:
+
+```json
+{ "name": "artifact", "api": 1, "host": "host.ts", "web": "web.js" }
+```
+
+- `name` must match the directory name: lowercase letters, digits and `-`, starting with a letter.
+- `api` is the plugin API version; it is `1`.
+- `host` and `web` are file names inside the directory. Either can be left out: a plugin with only tools has no `web`, a plugin with only UI has no `host`.
+
+The API's types are in the PiNomad repository, in [`packages/plugin/src/v1.ts`](https://github.com/bubbleptr/pinomad/blob/main/packages/plugin/src/v1.ts) (host) and [`v1-web.ts`](https://github.com/bubbleptr/pinomad/blob/main/packages/plugin/src/v1-web.ts) (browser). They aren't published as a package. Import them with `import type` only: the API object is passed to your plugin as an argument, so there's nothing to import at runtime.
+
+### The host half
+
+The host runs `host.ts` directly with Node's type stripping, so write TypeScript that only needs its types removed (no `enum` or `namespace`), or plain JavaScript. Its default export is a function that receives the host API and registers everything while the plugin loads:
+
+- `state(name, { version, initial, shared })`: JSON state kept per conversation. `initial()` gives the value for a conversation that never wrote it. With `shared: false` the state stays on the host; otherwise (the default) clients receive it and the UI can read it with `useState`. Shared state is synced to every client showing the conversation, so keep large content host-only and fetch it through a method.
+- `tool({ name, description, parameters, run })`: a tool the model can call. `parameters` is a JSON Schema object. `run(args, ctx)` returns `{ text }`, which is what the model sees; if it throws, the model gets the error message as a failed result. Tool names use letters, digits and `_`, at most 64 characters, must not start with `mcp__`, and must not clash with another tool on the host; a plugin whose tool name is taken is skipped. A call cut off by a host restart isn't run again.
+- `method(name, run)`: a function your UI calls with `call` or `useCall`. `run(args, ctx)` takes and returns JSON; if it throws, the call fails with its message.
+
+`ctx` is the conversation the tool or method runs for:
+
+- `ctx.conversationId`
+- `ctx.read(state)`: the committed value.
+- `ctx.change(async (tx) => { … })`: one commit. `await tx.get(state)` returns a draft you change in place; every draft you change is stored together, or none is.
+
+Plugin state follows the conversation's history like the rest of the conversation: a Fork starts with the state as it was at that point.
+
+### The browser half
+
+`web.js` is an ES module whose default export receives the browser API. You build it yourself; the host serves the file as is, and each client checks it against the hash the host announced before running it. Take React from the API instead of bundling your own copy, or hooks won't work.
+
+- `React`: the app's React.
+- `panel({ id, label, component })`: a page in the side panel. `label` names its button in the chat header.
+- `toolCard(toolName, component)`: replaces the detail of every call of that tool in the transcript (what you see when you expand the call). The component gets `tool`: `name`, `args` (parsed, or `undefined` while they stream in), `output` (the text the model saw, once the call finishes) and `state`.
+- `useState(stateName)`: hook; this plugin's shared state for the conversation on screen, `undefined` until it arrives.
+- `useCall(method, args, deps)`: hook; the method's result, called again when `deps` change. Pass `undefined` as `args` to skip the call.
+- `call(method, args)`: calls a method for the conversation on screen and returns a promise.
+- `openPanel(id)`: opens one of this plugin's panels.
+- `Sandbox`: a component that renders an HTML document, see below.
+
+Register panels and cards while the default export runs; later registrations are ignored. If a plugin component throws, its slot shows a short message and the rest of the app keeps working.
+
+### The sandbox
+
+Your plugin's UI is trusted code, but what the model writes isn't. `Sandbox` takes `html` (a whole document) and `title` (the frame's accessible name) and renders the document in a frame, scripts included. It fills the space it's given. A new `html` starts a new document.
+
+What the sandbox promises: content in it can't reach anything of the client, not the device key, not its storage and not the app's page. It does not promise to keep the content offline. Fetches, navigation and external scripts, styles and images are blocked as best effort, but WebRTC is not, so a page can still send data out through STUN or DNS. Inline scripts and styles work, and images load from `data:` URLs.
+
+## Example: artifact
+
+The repository has a complete plugin in [`examples/plugins/artifact`](https://github.com/bubbleptr/pinomad/tree/main/examples/plugins/artifact): the model writes a web page, its tool card shows the page's title with an **Open** button, and the **Artifact** panel shows the page in the sandbox. It isn't built in; copy the directory to `~/.pinomad/plugins/artifact/` and restart the host to try it.
+
+The host half keeps the page on the host and shares only its title and a revision number:
+
+```ts
+import type { HostApi } from "@pinomad/plugin/v1";
+
+export default (pinomad: HostApi): void => {
+  const page = pinomad.state("page", { version: 1, shared: false, initial: () => ({ title: "", html: "" }) });
+  const current = pinomad.state("current", { version: 1, initial: () => ({ title: "", revision: 0 }) });
+
+  pinomad.tool({
+    name: "artifact_write",
+    description: "Show a page to the user in the side panel. …",
+    parameters: {
+      type: "object",
+      properties: { title: { type: "string" }, html: { type: "string" } },
+      required: ["title", "html"],
+    },
+    run: async (args, ctx) => {
+      const title = String(args.title);
+      const html = String(args.html);
+      await ctx.change(async (tx) => {
+        Object.assign(await tx.get(page), { title, html });
+        const shown = await tx.get(current);
+        shown.title = title;
+        shown.revision += 1;
+      });
+      return { text: `Showing "${title}" in the side panel.` };
+    },
+  });
+
+  pinomad.method("read", async (_args, ctx) => ctx.read(page));
+};
+```
+
+The browser half is a plain ES module that uses `React.createElement` instead of JSX, so it needs no build step. The panel reads the shared revision and fetches the page again whenever it changes:
+
+```js
+export default function artifact(pinomad) {
+  const h = pinomad.React.createElement;
+
+  function Panel() {
+    const current = pinomad.useState("current");
+    const revision = current === undefined ? 0 : current.revision;
+    const page = pinomad.useCall("read", revision > 0 ? null : undefined, [revision]);
+    if (revision === 0) return h("p", null, "No artifact yet. Ask the agent to make a page.");
+    if (page === undefined) return h("p", null, "Loading…");
+    return h("div", { style: { display: "flex", height: "100%" } }, h(pinomad.Sandbox, { title: page.title, html: page.html }));
+  }
+
+  function Card({ tool }) {
+    return h(
+      "div",
+      null,
+      h("span", null, tool.args?.title ?? "Untitled page"),
+      h("button", { type: "button", onClick: () => pinomad.openPanel("page") }, "Open"),
+    );
+  }
+
+  pinomad.panel({ id: "page", label: "Artifact", component: Panel });
+  pinomad.toolCard("artifact_write", Card);
+}
+```
+
+The card shows only the title: the arguments also carry the whole document, which doesn't belong in the transcript. The files in the repository add styling and comments.

@@ -18,6 +18,7 @@ import { connectTo, startChat, startFauxHost, tempDir, useCleanups, waitForView 
 
 const defer = useCleanups();
 const FIXTURE = fileURLToPath(new URL("./fixtures/plugins/notes", import.meta.url));
+const ARTIFACT_EXAMPLE = fileURLToPath(new URL("../../../examples/plugins/artifact", import.meta.url));
 const BOARD = "plugin.notes.board";
 const WRITES = "plugin.notes.writes";
 
@@ -190,6 +191,28 @@ describe("gateway plugins", () => {
     const hello = await next((frame) => frame.type === "hello");
     if (hello.type !== "hello") throw new Error("unreachable");
     expect(hello.plugins?.map((plugin) => plugin.name)).toEqual(["notes"]);
+  });
+
+  it("runs the artifact example: the tool replaces the page, the method returns it, and the page stays on the host", async () => {
+    const dataDir = await tempDir();
+    defer(dataDir.remove);
+    await cp(ARTIFACT_EXAMPLE, join(dataDir.path, "plugins", "artifact"), { recursive: true });
+    const write = (title: string, html: string) =>
+      fauxAssistantMessage(fauxToolCall("artifact_write", { title, html }), { stopReason: "toolUse" });
+    const { client, conversationId, next } = await setup({
+      dataDir: dataDir.path,
+      answers: [write("Draft", "<p>first</p>"), write("Clock", "<p>second</p>"), "done"],
+    });
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "done");
+
+    expect(await client.plugins.call(conversationId, "artifact", "read", null)).toEqual({ title: "Clock", html: "<p>second</p>" });
+    const hello = await next((frame) => frame.type === "hello");
+    if (hello.type !== "hello") throw new Error("unreachable");
+    expect(hello.plugins?.map((plugin) => plugin.name)).toEqual(["artifact"]);
+    // Clients see that the page changed, never the page itself.
+    const shared = (view: DurableView) => view.docs.filter((doc) => doc.kind.startsWith("plugin.artifact.") && doc.value != null);
+    await waitForView(client.view, (view) => JSON.stringify(shared(view)).includes("Clock"));
+    expect(JSON.stringify(shared(client.view.current()))).not.toContain("<p>");
   });
 
   it("skips broken plugins and still loads the good one", async () => {

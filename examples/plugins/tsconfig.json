@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // The example plugins sit outside the Bun workspaces, so point the type-only imports at the source.
+    "paths": {
+      "@pinomad/plugin/v1": ["../../packages/plugin/src/v1.ts"],
+      "@pinomad/plugin/v1/web": ["../../packages/plugin/src/v1-web.ts"]
+    }
+  },
+  "include": ["*/host.ts"]
+}

@@ -16,6 +16,7 @@ The agent has pi's four tools (read, bash, edit, write) plus:
 | Questions, not approvals | Tools run without approval prompts; when the direction is unclear, the agent asks 1–4 multiple-choice questions |
 | codemode | The model writes JavaScript that calls other tools in a QuickJS sandbox; only the script's output enters the context |
 | MCP | Servers configured in `~/.agents/mcp.json`, in the usual `mcpServers` format |
+| Plugins | Directories in `<data dir>/plugins/` that add tools, per-conversation state and, in the web and desktop apps, a side panel and tool cards. See [Plugins](/docs/plugins/) |
 | Images | Paste, drop, or pick up to 4 images per message in the Web/desktop composer — resized to JPEG before sending |
 | File attachments | Attach up to 10 files per message in the Web/desktop composer, each up to 10 MiB. They upload to the host as you attach them; the model gets read-only paths and copies a file into the working directory before changing it |
 | Slash commands | Type `/` at the start of a message to run a command the host declares. The built-in `/compact [instructions]` summarizes older context; commands run on the host and are not sent to the model |

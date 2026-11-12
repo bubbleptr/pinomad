@@ -27,7 +27,8 @@ name: CI
 #             package.json (tests/interop.rs spawns `node apps/host/src/main.ts`)
 #
 # packages/plugin (types only) rides with every filter that includes apps/host,
-# whose src/plugins.ts imports it.
+# whose src/plugins.ts imports it. examples/plugins rides with host and web, whose
+# tests load the artifact example.
 #
 # Root package.json, bun.lock, tsconfig.base.json, vitest.config.ts and this
 # file run everything. Two edges are left out on purpose: web skips apps/server
@@ -93,6 +94,7 @@ jobs:
               - packages/client/**
               - packages/plugin/**
               - packages/protocol/**
+              - examples/plugins/**
             server:
               - *root
               - apps/server/**
@@ -124,6 +126,7 @@ jobs:
               - packages/client/**
               - packages/plugin/**
               - packages/protocol/**
+              - examples/plugins/**
             cargo:
               - *root
               - crates/**
