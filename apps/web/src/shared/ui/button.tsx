@@ -20,17 +20,17 @@ const buttonVariants = cva(
     variants: {
       variant: {
         primary: "bg-primary text-primary-foreground not-data-[disabled]:hover:bg-primary/85",
-        // Surface fill, hairline and a 1px drop, so a standalone action looks
-        // pressable beside a field and on the dark surface. The surface
-        // token, not bg-background, because dialogs shift it a step up.
+        // clean's secondary: surface fill, a half-pixel ring and a soft drop;
+        // hover and an open menu firm the shadow up rather than tint the fill.
+        // The surface token, not bg-background, because dialogs shift it a step up.
         secondary: [
-          "bg-(--color-background-surface) text-foreground",
-          "shadow-[inset_0_0_0_1px_var(--border),0_1px_2px_light-dark(oklch(0_0_0/6%),oklch(0_0_0/30%))]",
-          "not-data-[disabled]:hover:overlay-hover not-data-[disabled]:active:overlay-pressed aria-expanded:overlay-hover",
-          // Settings is a page of flat rows: keep the hairline, drop the drop
+          "bg-(--color-background-surface) text-foreground shadow-(--shadow-button)",
+          "not-data-[disabled]:hover:shadow-(--shadow-button-hover) aria-expanded:shadow-(--shadow-button-hover)",
+          // Settings is a page of flat rows: keep a hairline, drop the drop
           // (it stood out against the bordered groups) and the fill (a step
-          // below the card in dark mode).
+          // below the card in dark mode), so hover tints there instead.
           "in-[.pigui-settings]:bg-transparent in-[.pigui-settings]:shadow-[inset_0_0_0_1px_var(--border)]",
+          "in-[.pigui-settings]:not-data-[disabled]:hover:shadow-[inset_0_0_0_1px_var(--border)] in-[.pigui-settings]:not-data-[disabled]:hover:overlay-hover",
         ],
         ghost:
           "bg-transparent text-foreground not-data-[disabled]:hover:overlay-hover not-data-[disabled]:active:overlay-pressed aria-expanded:overlay-hover aria-pressed:overlay-hover",

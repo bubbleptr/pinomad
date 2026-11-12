@@ -15,11 +15,11 @@ token 都在 `src/app/tokens.css`。颜色用 shadcn 的变量名，Tailwind 类
 | variant | 样子 | 用在哪 |
 |---|---|---|
 | `primary` | 强调色实底 | 完成当前流程的那一步：Save、Sign in、Pair、Create account。一个对话框或一屏最多一个。 |
-| `secondary`（默认） | 表面色底 + 1px 描边 + 1px 投影 | 其余所有带文字的独立动作：设置行里的 Refresh / Remove / Connection / Unpair，对话框页脚的 Cancel / Close，打开危险确认的那个按钮（Delete account、Log out）。 |
+| `secondary`（默认） | 表面色底 + 0.5px 细环 + 柔和投影，悬停时加深 | 其余所有带文字的独立动作：设置行里的 Refresh / Remove / Connection / Unpair，对话框页脚的 Cancel / Close，打开危险确认的那个按钮（Delete account、Log out）。 |
 | `ghost` | 透明，只有字或图标 | 只有下面四种情况，见流程图。 |
 | `destructive` | 浅红底红字 | 不可撤销动作的**最后一步确认**，旁边必须有一个 `secondary` 的 Cancel。 |
 
-每档的样子只写在 `button.tsx` 的 `buttonVariants` 里。`secondary` 有描边和投影，是因为只有浅灰底时放在输入框旁边像一段文字，深色下几乎看不见。`destructive` 的字用 `--destructive-strong`（浅红底上的文字色，现在和 `--destructive` 同值）。不要在调用处用 `className` 给按钮加边框、阴影或背景。
+每档的样子只写在 `button.tsx` 的 `buttonVariants` 里。`secondary` 照 affectUI clean 的按钮：0.5px 的细环加一层柔和投影（`--shadow-button`），悬停时环和投影加深（`--shadow-button-hover`），底色不变；只有浅灰底时放在输入框旁边像一段文字，深色下几乎看不见。设置页里去掉投影和底色，只留 1px 细线，悬停时加一层浅灰。`destructive` 的字用 `--destructive-strong`（浅红底上的文字色，现在和 `--destructive` 同值）。不要在调用处用 `className` 给按钮加边框、阴影或背景。
 
 文字写成 children，图标放在文字前面（`<Button><Plus aria-hidden="true" />Add</Button>`）。另有两个属性：`loading` 在文字上盖一个转圈并禁用按钮，宽度和无障碍名称不变；`tooltip` 悬停和聚焦时显示，禁用的按钮带 `tooltip` 时仍能用键盘聚焦。默认 `type="button"`，提交表单要写 `type="submit"`。
 

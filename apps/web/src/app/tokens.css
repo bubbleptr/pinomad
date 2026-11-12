@@ -52,6 +52,17 @@
   /* Inset fills (code, chips): recessed, so darker than the pane they sit in. */
   --surface-muted: light-dark(rgb(0 0 0 / 4%), rgb(0 0 0 / 22%));
   --surface-hover: light-dark(rgb(0 0 0 / 3%), rgb(255 255 255 / 4%));
+  /* A secondary button's edge, from clean's button (--ui-btnc-shadow): a
+     half-pixel ring and a soft drop; hover firms both up instead of tinting
+     the fill. Dark has one drop layer, so the second is transparent there. */
+  --shadow-button:
+    0 0 0 0.5px light-dark(rgb(0 0 0 / 6%), rgb(255 255 255 / 10%)),
+    0 1px 1px -1px light-dark(rgb(0 0 0 / 10%), transparent),
+    0 1px 2px 0 light-dark(rgb(0 0 0 / 5%), rgb(0 0 0 / 40%));
+  --shadow-button-hover:
+    0 0 0 0.5px light-dark(rgb(0 0 0 / 10%), rgb(255 255 255 / 16%)),
+    0 1px 1px -1px light-dark(rgb(0 0 0 / 12%), transparent),
+    0 1px 3px 0 light-dark(rgb(0 0 0 / 7%), rgb(0 0 0 / 40%));
   --default: light-dark(rgb(0 0 0 / 6%), rgb(255 255 255 / 10%));
   --success: light-dark(#1e8a4f, #7dcf9f);
   --warning: light-dark(#b25e00, #ffb35c);
