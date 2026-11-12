@@ -4591,6 +4591,7 @@ it("upgrades the host from Settings: waits for a run, cancels, then restarts (AD
 
   const settings = await openSettings(page, "About");
   await settings.getByText("pinomad 0.14.0 is available", { exact: false }).waitFor();
+  await shot(page, "host-upgrade-about");
   // The page's own Upgrade, not the sidebar entry of the same name.
   const upgrade = settings.getByRole("region", { name: "Version" }).getByRole("button", { name: "Upgrade", exact: true });
   // The confirmation is a dialog, portaled outside the Settings region.

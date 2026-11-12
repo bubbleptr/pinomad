@@ -195,7 +195,7 @@ function UpgradeStatus({
         ) : null}
         {canStart ? (
           <Button
-            variant="primary"
+            variant="secondary"
             size="sm"
             disabled={pending !== undefined}
             onClick={() => {
