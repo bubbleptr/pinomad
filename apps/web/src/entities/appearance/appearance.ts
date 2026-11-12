@@ -65,6 +65,14 @@ export function useDarkClass(): void {
   );
   const dark = appearance === "dark" || (appearance === "system" && systemDark);
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", dark);
+    const root = document.documentElement;
+    if (root.classList.contains("dark") === dark) return;
+    // Swap with transitions off, or every color and shadow on the page
+    // tweens to the new theme on its own (styles.css).
+    root.classList.add("pigui-theme-switching");
+    root.classList.toggle("dark", dark);
+    // Flush styles in the new theme before transitions come back.
+    void getComputedStyle(root).color;
+    root.classList.remove("pigui-theme-switching");
   }, [dark]);
 }

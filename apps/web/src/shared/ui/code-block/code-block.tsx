@@ -16,7 +16,8 @@ import {
   type ReactNode,
 } from "react";
 import { IconButton } from "@/shared/ui/icon-button";
-import { Check, ChevronRight, Copy } from "@/shared/ui/icons";
+import { ChevronRight } from "@/shared/ui/icons";
+import { CopyIcon } from "@/shared/ui/copy-icon";
 import { applyHighlightRangesChunked } from "./highlight-ranges";
 import { SYNC_TOKENIZE_THRESHOLD, tokenize, tokenizeAsync, type SyntaxToken, type TokenLine } from "./tokenizer";
 
@@ -343,11 +344,10 @@ function CodeBlock({
   // region stays mounted when collapsed, so aria-controls always resolves.
   const regionId = useId();
 
-  const CopyIcon = copied ? Check : Copy;
   const copyButtonEl = hasCopyButton ? (
     <IconButton
       label={copied ? "Copied" : "Copy code"}
-      icon={<CopyIcon aria-hidden />}
+      icon={<CopyIcon copied={copied} />}
       size="sm"
       onClick={(e) => {
         // Stop propagation so copying does not toggle the collapsible header.

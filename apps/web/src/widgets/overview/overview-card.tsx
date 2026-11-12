@@ -380,6 +380,8 @@ export function OverviewCard({
   onOpenChanges,
   onOpenTasks,
   onClose,
+  entering = false,
+  onEntered,
 }: {
   view: DurableView;
   remote: RemoteDurable;
@@ -391,12 +393,19 @@ export function OverviewCard({
   /** Opens the side panel's Tasks list, on a subagent's detail when one is given. */
   onOpenTasks: (id?: ConversationId) => void;
   onClose: () => void;
+  /** Plays the entrance once, then `onEntered` clears it. */
+  entering?: boolean;
+  onEntered?: () => void;
 }) {
   return (
     <aside
       aria-label="Overview"
       // A bare stack of bordered section cards, no tray behind them.
-      className={`absolute end-3 top-3 z-20 flex max-h-[calc(100%-1.5rem)] ${narrow ? "w-[min(20rem,calc(100%-1.5rem))]" : "w-[var(--pigui-overview-width)]"} flex-col gap-1.5 overflow-y-auto`}
+      className={`absolute end-3 top-3 z-20 flex max-h-[calc(100%-1.5rem)] ${narrow ? "w-[min(20rem,calc(100%-1.5rem))]" : "w-[var(--pigui-overview-width)]"} flex-col gap-1.5 overflow-y-auto ${entering ? "motion-safe:animate-[pigui-overview-enter_200ms_ease-out]" : ""}`}
+      onAnimationEnd={(event) => {
+        // The sections' own reveals bubble up here too.
+        if (event.target === event.currentTarget) onEntered?.();
+      }}
       onKeyDown={(event) => {
         if (event.key !== "Escape") return;
         event.stopPropagation();

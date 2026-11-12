@@ -1,12 +1,12 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { Field, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState } from "react";
 import type { AccountError, HostLinkRequest } from "@pinomad/client/account.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { formatUserCode, isCompleteUserCode, normalizeUserCode } from "../../entities/account/host-link-code.ts";
 import { browserKnownHosts, type KnownHostsStore } from "../../entities/account/known-hosts.ts";
-import { Check, Copy } from "../../shared/ui/icons.tsx";
+import { CopyIcon } from "../../shared/ui/copy-icon.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { accountErrorMessage } from "./account-error.ts";
 import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
@@ -266,10 +266,6 @@ export function HostLinkCodeForm({
   );
 }
 
-const iconSize: CSSProperties = { width: "var(--spacing-4)", height: "var(--spacing-4)" };
-
-/** The hostId's ends, enough to compare with the terminal; the full id is in the tooltip and on Copy. */
-
 /** Which machine is asking, and the two answers. */
 export function HostLinkConfirm({
   request,
@@ -328,7 +324,7 @@ export function HostLinkConfirm({
                 void navigator.clipboard?.writeText(request.hostId).then(() => setCopied(true), () => undefined);
               }}
             >
-              {copied ? <Check aria-hidden="true" style={iconSize} /> : <Copy aria-hidden="true" style={iconSize} />}
+              <CopyIcon copied={copied} />
               {copied ? "Copied" : "Copy"}
             </Button>
           </div>
