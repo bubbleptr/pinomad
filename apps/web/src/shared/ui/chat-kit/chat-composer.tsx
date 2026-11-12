@@ -39,10 +39,23 @@ export interface ChatComposerProps extends Omit<BaseProps<HTMLDivElement>, "onCh
   isDisabled?: boolean;
   /** Density variant */
   density?: ChatComposerDensity;
+  /**
+   * Resting elevation of the composer body. `low` (the default) keeps today's
+   * raised look — low at rest, bumping to med on hover / focus. `none` flattens
+   * it and draws a border with the same rest / hover / focus treatment as a
+   * text input (emphasized border → accent on focus, with matching inset rings).
+   * @default 'low'
+   */
+  elevation?: "none" | "low";
+
   // --- Slot props ---
 
-  /** A row inside the shell, above the input: staged attachments, context chips. */
-  header?: ReactNode;
+  /** Collapsible drawer rendered above the input — attachments, context chips, etc. Use ChatComposerDrawer. */
+  drawer?: ReactNode;
+  /** Actions rendered on the left side of the header (e.g. attach, mention buttons). Use icon-only `size="sm"` buttons. */
+  headerActions?: ReactNode;
+  /** Contextual info rendered on the right side of the header (e.g. context window usage, ProgressBar). */
+  headerContext?: ReactNode;
   /** Custom input element — replaces the default textarea */
   input?: ReactNode;
   /** Actions rendered on the left side of the footer. Use `size="md"` buttons to match the send button height. */
@@ -61,18 +74,24 @@ export interface ChatComposerProps extends Omit<BaseProps<HTMLDivElement>, "onCh
 // Styles
 // =============================================================================
 
-// The shell follows shadcn's prompt input: a filled box with no edge or lift
-// at rest. The editor is focused most of the time, so its focus (not that of
-// the buttons inside, which draw their own ring) is a gray edge rather than a
-// text field's blue ring; forced colors get an outline.
+// Component CSS vars, overridable from outside (chat.css does):
+// --_chat-composer-radius (28px, the chat radius) and --_chat-composer-padding
+// (--spacing-3). Buttons follow the shell's curvature through --_button-radius:
+// 28px − 12px = 16px fully rounds a 32px button.
 const rootClass =
-  "relative z-0 isolate flex flex-col [--_chat-composer-radius:18px] [--_chat-composer-padding:var(--spacing-2)]";
+  "relative z-0 isolate flex flex-col [--_chat-composer-radius:28px] [--_chat-composer-padding:var(--spacing-3)] [--_button-radius:max(var(--radius-element),calc(var(--_chat-composer-radius)_-_var(--_chat-composer-padding)))]";
 
-const bodyClass = cn(
-  "relative z-[2] flex cursor-text flex-col gap-3 rounded-[var(--_chat-composer-radius)] border border-transparent bg-[var(--surface-field)] p-[calc(var(--_chat-composer-padding)_-_1px)] transition-[border-color] duration-[var(--duration-fast)] ease-[var(--ease-standard)]",
-  "has-[[aria-multiline=true]:focus]:border-[var(--border-strong)]",
-  "forced-colors:border-[CanvasText] forced-colors:has-[[aria-multiline=true]:focus]:outline-2 forced-colors:has-[[aria-multiline=true]:focus]:outline-offset-2 forced-colors:has-[[aria-multiline=true]:focus]:outline-[Highlight]",
-);
+const bodyClass =
+  "relative z-[2] flex cursor-text flex-col gap-2 rounded-[var(--_chat-composer-radius)] bg-[var(--popover)] p-[var(--_chat-composer-padding)] transition-[box-shadow,border-color] duration-[var(--duration-fast)] ease-[var(--ease-standard)]";
+
+// --shadow-low / --shadow-med come from tokens.css; chat.css redefines
+// --shadow-low on the composer root.
+const elevationClasses = {
+  low: "[box-shadow:var(--shadow-low)] hover:[box-shadow:var(--shadow-med)] focus-within:[box-shadow:var(--shadow-med)]",
+  // The border is drawn inside the padding, so content geometry matches the
+  // elevated case.
+  none: "border border-solid border-[var(--border-strong)] p-[calc(var(--_chat-composer-padding)_-_1px)] [box-shadow:none] focus-within:border-[var(--primary)] hover:not-focus-within:[box-shadow:inset_0_0_0_2px_color-mix(in_srgb,var(--border-strong)_30%,transparent)] focus-within:[box-shadow:inset_0_0_0_2px_light-dark(#f1f1f1,#262626)]",
+} as const;
 
 const statusClass =
   "relative z-0 flex items-center gap-2 px-4 font-sans text-[length:var(--font-size-sm)] leading-[1.6667]";
@@ -93,7 +112,7 @@ const statusTypeClasses = {
 // =============================================================================
 
 /**
- * Layout shell for a chat composer with slots for a header row, input,
+ * Layout shell for a chat composer with slots for drawer, input,
  * actions, and a send button.
  *
  * @example
@@ -115,7 +134,10 @@ export function ChatComposer(props: ChatComposerProps) {
     placeholder: placeholderFromProps,
     isDisabled = false,
     density = "balanced",
-    header,
+    elevation = "low",
+    drawer,
+    headerActions,
+    headerContext,
     input,
     footerActions,
     sendActions,
@@ -221,15 +243,25 @@ export function ChatComposer(props: ChatComposerProps) {
         {...rest}
       >
         {statusPosition === "top" && statusEl}
+        {drawer}
+
         <div
           ref={bodyRef}
           onClick={handleBodyClick}
           className={cn(
             bodyClass,
-            density === "compact" && "gap-1",
+            elevationClasses[elevation],
+            density === "compact" && "gap-1 [--_chat-composer-padding:var(--spacing-2)]",
           )}
         >
-          {header ? <div className="cursor-default px-1 pt-1">{header}</div> : null}
+          {(headerActions || headerContext) && (
+            <div className="flex min-h-7 items-center justify-between gap-2">
+              <div className="flex items-center gap-1">{headerActions}</div>
+              <div className="ms-auto flex items-center gap-2 text-[length:var(--font-size-sm)] leading-[1.6667] text-[var(--muted-foreground)]">
+                {headerContext}
+              </div>
+            </div>
+          )}
 
           <div className="flex flex-col">{input ?? <ChatComposerInput />}</div>
 

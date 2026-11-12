@@ -3,12 +3,13 @@
 // caller-owned submit contract (the composer must not force-clear a failed
 // draft), focus/focusAtEnd handles, Pace's allowSubmitWhileRunning behavior
 // (always on — we steer), status, startActions/footer/endActions
-// slots, the attachments row, and trigger menus (callers pass the chat
+// slots, the attachments drawer, and trigger menus (callers pass the chat
 // kit's ChatComposerTrigger[]; an open menu consumes Enter/Arrows/Escape before our
 // submit path, so Enter selects rather than sends).
 import { type ComponentProps, type DragEvent, type KeyboardEvent, type ReactNode, type RefObject, useEffect, useRef } from "react";
 import {
   ChatComposer,
+  ChatComposerDrawer,
   ChatComposerInput,
   type ChatComposerInputHandle,
   type ChatComposerTrigger,
@@ -309,7 +310,8 @@ export function ChatPromptInput({
       {...rest}
     >
       <ChatComposer
-        header={attachments}
+        elevation="low"
+        {...(attachments === undefined ? {} : { drawer: <ChatComposerDrawer>{attachments}</ChatComposerDrawer> })}
         footerActions={startActions}
         input={
           <PromptComposerInput

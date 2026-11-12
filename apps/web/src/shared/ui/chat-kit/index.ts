@@ -7,6 +7,8 @@ export type { ChatComposerProps, ChatComposerStatus, ChatComposerDensity } from 
 export { ChatSendButton } from "./chat-send-button";
 export type { ChatSendButtonProps } from "./chat-send-button";
 
+export { ChatComposerDrawer } from "./chat-composer-drawer";
+export type { ChatComposerDrawerProps } from "./chat-composer-drawer";
 
 export { ChatComposerInput, ChatComposerTokenElement } from "./chat-composer-input";
 export type {
