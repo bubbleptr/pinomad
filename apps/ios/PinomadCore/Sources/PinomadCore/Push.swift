@@ -153,23 +153,26 @@ public func pushForgetPlan(
     return canClear ? .clearThenForget : .forgetWithWarning
 }
 
-/// Navigation waits only for local pairing records, never for the network.
+/// Navigation requires local pairings and a screen not owned by manual pairing.
 public enum PushTargetAction: Equatable, Sendable {
     /// The host is no longer paired — nothing to open.
     case drop
-    /// Local pairing records have not been loaded yet.
+    /// Local pairings are still loading, or a manual pairing owns navigation.
     case wait
     case open(ConversationRef)
 }
 
 /// Open a known host's conversation immediately; its page owns loading and
 /// connection errors. A cold launch must load pairings before rejecting a tap.
+/// Manual pairing keeps the target queued because completing it resets navigation.
 public func pushTargetAction(
     _ target: PushTarget,
     storedHostKeys: Set<String>,
-    hostsLoaded: Bool
+    hostsLoaded: Bool,
+    manualPairingActive: Bool
 ) -> PushTargetAction {
     guard hostsLoaded else { return .wait }
     guard storedHostKeys.contains(target.hostKey) else { return .drop }
+    guard !manualPairingActive else { return .wait }
     return .open(ConversationRef(hostKey: target.hostKey, conversationId: target.conversationId))
 }

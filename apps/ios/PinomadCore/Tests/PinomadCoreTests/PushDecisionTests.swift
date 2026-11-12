@@ -149,10 +149,29 @@ import Testing
         let target = try #require(PushTarget(hostKey: "office", conversationId: 42))
         let ref = ConversationRef(hostKey: "office", conversationId: 42)
         // An empty store during cold launch must not discard the tap.
-        #expect(pushTargetAction(target, storedHostKeys: [], hostsLoaded: false) == .wait)
-        #expect(pushTargetAction(target, storedHostKeys: ["home"], hostsLoaded: true) == .drop)
+        #expect(pushTargetAction(target, storedHostKeys: [], hostsLoaded: false, manualPairingActive: false) == .wait)
+        #expect(pushTargetAction(target, storedHostKeys: ["home"], hostsLoaded: true, manualPairingActive: false) == .drop)
         // Local pairing is sufficient, regardless of the host's connection.
-        #expect(pushTargetAction(target, storedHostKeys: ["home", "office"], hostsLoaded: true) == .open(ref))
+        #expect(pushTargetAction(target, storedHostKeys: ["home", "office"], hostsLoaded: true, manualPairingActive: false) == .open(ref))
+    }
+
+    @Test func tappedNotificationSurvivesManualPairingUntilItReleasesNavigation() throws {
+        let target = try #require(PushTarget(hostKey: "office", conversationId: 42))
+        let ref = ConversationRef(hostKey: "office", conversationId: 42)
+        var pairings = PairingRuntimeRegistry()
+        pairings.start(.manual)
+        pairings.start(.automatic(hostId: "background"))
+
+        #expect(pushTargetAction(
+            target, storedHostKeys: ["office"], hostsLoaded: true,
+            manualPairingActive: pairings.isManualActive) == .wait)
+
+        // Completing or cancelling the manual pairing releases navigation;
+        // an automatic pairing still in flight must not delay the push.
+        pairings.finish(.manual)
+        #expect(pushTargetAction(
+            target, storedHostKeys: ["office"], hostsLoaded: true,
+            manualPairingActive: pairings.isManualActive) == .open(ref))
     }
 
     @Test func forgettingClearsExactlyWhenThisDeviceMayStillBeRegistered() {

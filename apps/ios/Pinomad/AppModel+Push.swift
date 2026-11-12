@@ -46,7 +46,8 @@ extension AppModel {
         let action = pushTargetAction(
             target,
             storedHostKeys: storedHostKeys,
-            hostsLoaded: hostsLoaded)
+            hostsLoaded: hostsLoaded,
+            manualPairingActive: pairingRegistry.isManualActive)
         switch action {
         case .drop:
             pendingPush = nil
