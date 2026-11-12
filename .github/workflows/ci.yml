@@ -26,6 +26,9 @@ name: CI
 #             (the Rust vectors live in their test/fixtures); apps/host/src and its
 #             package.json (tests/interop.rs spawns `node apps/host/src/main.ts`)
 #
+# packages/plugin (types only) rides with every filter that includes apps/host,
+# whose src/plugins.ts imports it.
+#
 # Root package.json, bun.lock, tsconfig.base.json, vitest.config.ts and this
 # file run everything. Two edges are left out on purpose: web skips apps/server
 # (host/test/support.ts imports server/src/accounts.ts, but only the host tests
@@ -88,12 +91,14 @@ jobs:
               - apps/host/**
               - apps/server/**
               - packages/client/**
+              - packages/plugin/**
               - packages/protocol/**
             server:
               - *root
               - apps/server/**
               - apps/host/**
               - packages/client/**
+              - packages/plugin/**
               - packages/protocol/**
             cli:
               - *root
@@ -101,6 +106,7 @@ jobs:
               - apps/host/**
               - apps/server/**
               - packages/client/**
+              - packages/plugin/**
               - packages/protocol/**
             desktop:
               - *root
@@ -109,12 +115,14 @@ jobs:
               - apps/host/**
               - apps/server/**
               - packages/client/**
+              - packages/plugin/**
               - packages/protocol/**
             web:
               - *root
               - apps/web/**
               - apps/host/**
               - packages/client/**
+              - packages/plugin/**
               - packages/protocol/**
             cargo:
               - *root

@@ -22,6 +22,7 @@ import lockfile from "proper-lockfile";
 import { readServerBinding } from "./server-config.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import type { BuiltinExtension } from "./builtin-extension.ts";
+import { loadPlugins } from "./plugins.ts";
 import { startGateway, validatePublicUrl } from "./gateway.ts";
 import type { RtcOptions } from "./rtc.ts";
 import type { StartTerminalsOptions } from "./terminals.ts";
@@ -223,6 +224,11 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
             ...(processes === undefined ? {} : { processes }),
           })
         : (options.extensions ?? []);
+    // Plugins load once, after the built-ins so their tool names are taken first (ADR-0049).
+    const plugins = await loadPlugins(join(options.dataDir, "plugins"), {
+      reservedTools: extensions.flatMap(({ extension }) => (extension.tools ?? []).map((tool) => tool.name)),
+    });
+    extensions = [...extensions, ...plugins.extensions];
     for (const { extension } of extensions) registry.install(extension);
     // Connections run in the background; the `mcp` extension (re)installs as tools arrive.
     // Namespace changes rebuild the extensions that opt in (codemode's section).
@@ -338,6 +344,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       ...(options.browserOrigins === undefined ? {} : { browserOrigins: options.browserOrigins }),
       docs: extensions.flatMap((extension) => extension.docs ?? []),
       toolPresentations: Object.assign({}, ...extensions.map((extension) => extension.tools ?? {})),
+      plugins,
       ...(mcp === undefined ? {} : { mcp: mcp.status }),
       ...(options.modelAuth === undefined ? {} : { modelAuth: options.modelAuth }),
       ...(options.webRoot === undefined ? {} : { webRoot: options.webRoot }),
