@@ -240,7 +240,6 @@ describe("a forked message", () => {
       />,
     );
     const chip = screen.getByRole("button", { name: "1 fork" });
-    expect(chip).toHaveAttribute("title", "Open fork");
     await userEvent.click(chip);
     expect(onOpenFork).toHaveBeenCalledWith(42);
   });

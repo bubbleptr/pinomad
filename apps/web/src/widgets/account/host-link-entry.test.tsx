@@ -89,8 +89,8 @@ describe("HostLinkEntry", () => {
     expect(screen.getByText("macOS 26.1")).toBeInTheDocument();
     expect(screen.getByText("203.0.113.7")).toBeInTheDocument();
     expect(screen.getByText("Only confirm a computer you are setting up yourself right now.")).toBeInTheDocument();
-    // The full id stays reachable behind the shortened fingerprint.
-    expect(screen.getByLabelText("Host ID Or-983sVxD715Pir-F61GmSkh4kPJVn1RvqZkt9MnSA")).toBeInTheDocument();
+    // The full id is on the page to compare against the host's terminal, not behind a hover.
+    expect(screen.getByText("Or-983sVxD715Pir-F61GmSkh4kPJVn1RvqZkt9MnSA")).toBeVisible();
     expect(screen.queryByText(/different network address/)).toBeNull();
   });
 

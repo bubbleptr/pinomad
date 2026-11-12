@@ -599,7 +599,6 @@ export function ConversationComposer({
             <Button
               variant="ghost"
               size={narrow ? "md" : "sm"}
-              tooltip="Queue after the running turn"
               disabled={disconnected || imagesPending || editLocked || files.uploading || files.failed}
               onClick={() => submit("followUp")}
             >

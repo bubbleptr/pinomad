@@ -99,7 +99,7 @@ function ChatMessageAction({
       size="sm"
       // Quieter than the answer above it until hovered.
       className={cn("text-muted-foreground hover:text-foreground", className)}
-      title={tooltip}
+      tooltip={tooltip}
       onClick={onPress}
       {...rest}
     />
