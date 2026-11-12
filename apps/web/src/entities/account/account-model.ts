@@ -199,7 +199,15 @@ export interface AccountModel {
   setEmail(input: { email: string; code: string } & EmailConfirmation): Promise<AccountResult<void>>;
   identities(): Promise<AccountResult<AccountIdentities>>;
   requestReauthCode(): Promise<AccountResult<void>>;
+  /** Trades the password or a mailed code for a grant, which `recentGrant` then hands out until it expires. */
   reauth(proof: { password: string } | { code: string }): Promise<AccountResult<ReauthGrant>>;
+  /**
+   * This session's last grant while it lasts (ADR-0044 §6: five minutes):
+   * guarded actions send it instead of asking again.
+   */
+  recentGrant(): { readonly reauth: string } | undefined;
+  /** Drops the grant after an action refused it. */
+  forgetGrant(): void;
   /**
    * Adds a provider to the signed-in account (ADR-0044 §4). "redirect":
    * the provider page to send this browser to, which comes back with
@@ -363,6 +371,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
    * acting. An explicit cancel sets `flight.cancelled` and leaves it alone.
    */
   let epoch = 0;
+  let grant: ReauthGrant | undefined;
   /**
    * Bumped by every sign-in attempt and every session end. A sign-in whose
    * number moved on while it waited (a slow system-browser flow overtaken by
@@ -451,6 +460,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     client = undefined;
     attempt += 1;
     profile = {};
+    grant = undefined;
     epoch += 1;
     for (const flight of flights.values()) flight.cancelled = true;
     flights.clear();
@@ -1238,7 +1248,17 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     },
     identities: () => authed((active) => active.identities()),
     requestReauthCode: () => authed((active) => active.requestReauthCode()),
-    reauth: (proof) => authed((active) => active.reauth(proof)),
+    reauth: (proof) =>
+      authed(
+        (active) => active.reauth(proof),
+        (value) => {
+          grant = value;
+        },
+      ),
+    recentGrant: () => (grant !== undefined && grant.expiresAt > Date.now() ? { reauth: grant.reauth } : undefined),
+    forgetGrant: () => {
+      grant = undefined;
+    },
     linkProvider: async (provider, confirmation) => {
       if (providerFlow === "loopback") {
         return authed(async (active) => {

@@ -635,7 +635,7 @@ function UnpairHostDialog({
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{unpairText(label, info)}</DialogDescription>
         </DialogHeader>
-        <DialogFooter>
+        <DialogFooter className="pigui-confirm justify-between">
           <Button variant="secondary" onClick={() => onClose(false)}>Cancel</Button>
           <Button variant="destructive" onClick={unpair}>Unpair</Button>
         </DialogFooter>

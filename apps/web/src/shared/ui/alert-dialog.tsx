@@ -44,7 +44,7 @@ function AlertDialogFooter({ className, ...props }: React.ComponentProps<"div">)
   return (
     <div
       data-slot="alert-dialog-footer"
-      className={cn("flex items-center justify-end gap-2 p-4", className)}
+      className={cn("pigui-confirm flex items-center justify-between gap-2 p-4", className)}
       {...props}
     />
   )

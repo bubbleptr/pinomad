@@ -35,7 +35,7 @@ export function ConfirmDialog({
             </div>
           )}
         </DialogBody>
-        <DialogFooter>
+        <DialogFooter className="pigui-confirm justify-between">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
           {action}
         </DialogFooter>

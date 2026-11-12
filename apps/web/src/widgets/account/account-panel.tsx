@@ -479,7 +479,9 @@ function Devices({ account, hosts }: { account: AccountModel; hosts: readonly Ac
   const load = (): Promise<void> =>
     account.listDevices().then((result) => {
       if (result.ok) {
-        setDevices(result.value);
+        // Removing a device is asking not to see it again. The server keeps it
+        // until its hosts confirm the revocation; that needs nothing from the user.
+        setDevices(result.value.filter((device) => device.kickedAt === undefined));
         setError(undefined);
       } else if (result.error.status === 404) setUnsupported(true);
       else setError(result.error);
@@ -549,11 +551,8 @@ function DeviceRow({
   onRemove: () => void;
 }) {
   const name = device.name ?? "Unknown device";
-  const signIn = `Last sign-in ${ago(device.lastSeenAt, now)}`;
   const end = device.current ? (
     <Badge>This device</Badge>
-  ) : device.kickedAt !== undefined ? (
-    <Badge variant="muted">Removed</Badge>
   ) : (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -570,9 +569,7 @@ function DeviceRow({
       <ItemContent>
         <ItemTitle>{name}</ItemTitle>
         <ItemDescription className="overflow-visible whitespace-normal flex flex-col">
-          <span>
-            {device.kickedAt === undefined ? signIn : `${signIn} · removed ${ago(device.kickedAt, now)}`}
-          </span>
+          <span>Last sign-in {ago(device.lastSeenAt, now)}</span>
           {device.hosts.length === 0 ? null : (
             <span>
               {device.hosts.map((host) => `${host.name}: ${DEVICE_HOST_STATE[host.state]}`).join(" · ")}

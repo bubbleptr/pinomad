@@ -1121,6 +1121,8 @@ export function fakeAccount(state: AccountState): AccountModel {
     identities: fn(async () => ({ ok: true as const, value: ACCOUNT_IDENTITIES })),
     requestReauthCode: fn(async () => ({ ok: true as const, value: undefined })),
     reauth: fn(async () => ({ ok: true as const, value: { reauth: "grant", expiresAt: Date.now() + 5 * MINUTE } })),
+    recentGrant: fn(() => undefined),
+    forgetGrant: fn(),
     linkProvider: fn(() => new Promise<never>(() => {})),
     unlinkProvider: fn(async () => ({ ok: true as const, value: undefined })),
     pendingSignIn: fn(async () => ({ ok: true as const, value: PENDING_SIGN_IN })),

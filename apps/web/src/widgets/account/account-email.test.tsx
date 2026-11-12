@@ -11,10 +11,18 @@ import { EmailForm } from "./account-email.tsx";
 describe("EmailForm", () => {
   it("asks for the confirmation again when the grant lapsed before saving, keeping the new email's code", async () => {
     let grants = 0;
+    let held: { readonly reauth: string } | undefined;
     const account: AccountModel = {
       ...fakeAccount(signedIn({ email: "old@example.com" })),
       identities: vi.fn(() => Promise.resolve({ ok: true as const, value: { hasPassword: false, identities: [] } })),
-      reauth: vi.fn(() => Promise.resolve({ ok: true as const, value: { reauth: `grant-${++grants}`, expiresAt: Date.now() + 300_000 } })),
+      reauth: vi.fn(() => {
+        held = { reauth: `grant-${++grants}` };
+        return Promise.resolve({ ok: true as const, value: { ...held, expiresAt: Date.now() + 300_000 } });
+      }),
+      recentGrant: () => held,
+      forgetGrant: () => {
+        held = undefined;
+      },
       setEmail: vi
         .fn<AccountModel["setEmail"]>()
         .mockResolvedValueOnce({ ok: false, error: { code: "invalid_reauth", status: 403 } })

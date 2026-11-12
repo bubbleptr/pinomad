@@ -17,9 +17,9 @@ token 都在 `src/app/tokens.css`。颜色用 shadcn 的变量名，Tailwind 类
 | `primary` | 强调色实底 | 完成当前流程的那一步：Save、Sign in、Pair、Create account。一个对话框或一屏最多一个。 |
 | `secondary`（默认） | 表面色底 + 1px 描边 + 1px 投影 | 其余所有带文字的独立动作：设置行里的 Refresh / Remove / Connection / Unpair，对话框页脚的 Cancel / Close，打开危险确认的那个按钮（Delete account、Log out）。 |
 | `ghost` | 透明，只有字或图标 | 只有下面四种情况，见流程图。 |
-| `destructive` | 浅红底红字 | 不可撤销动作的**最后一步确认**，旁边必须有一个 `secondary` 的 Cancel。 |
+| `destructive` | 浅红底红字；确认对话框页脚里是红色实底白字 | 不可撤销动作的**最后一步确认**，旁边必须有一个 `secondary` 的 Cancel。 |
 
-每档的样子只写在 `button.tsx` 的 `buttonVariants` 里。`secondary` 有描边和投影，是因为只有浅灰底时放在输入框旁边像一段文字，深色下几乎看不见。`destructive` 的字用 `--destructive-strong`（浅红底上的文字色，现在和 `--destructive` 同值）。不要在调用处用 `className` 给按钮加边框、阴影或背景。
+每档的样子只写在 `button.tsx` 的 `buttonVariants` 里。确认对话框的页脚带 `pigui-confirm` 类（`AlertDialogFooter` 自带，`ConfirmDialog` 和自己拼的确认 `DialogFooter` 手动加）：里面的按钮是胶囊形，Cancel 在最左、动作在最右，`destructive` 换成实底（`--destructive-inverse` 配白字）。`secondary` 有描边和投影，是因为只有浅灰底时放在输入框旁边像一段文字，深色下几乎看不见。`destructive` 的字用 `--destructive-strong`（浅红底上的文字色，现在和 `--destructive` 同值）。不要在调用处用 `className` 给按钮加边框、阴影或背景。
 
 文字写成 children，图标放在文字前面（`<Button><Plus aria-hidden="true" />Add</Button>`）。另有两个属性：`loading` 在文字上盖一个转圈并禁用按钮，宽度和无障碍名称不变；`tooltip` 悬停和聚焦时显示，禁用的按钮带 `tooltip` 时仍能用键盘聚焦。默认 `type="button"`，提交表单要写 `type="submit"`。
 
@@ -112,7 +112,7 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 
 | 组件 | 用在哪 |
 | --- | --- |
-| `dialog.tsx` | 要用户停下来填写或查看的一屏内容：重命名、添加项目、账号。`<Dialog open onOpenChange>` 里放 `DialogContent`，依次是 `DialogHeader`（`DialogTitle`、可选的 `DialogDescription`）、`DialogBody`（内容，过长时自己滚动）、`DialogFooter`（按钮靠右，Cancel 在主按钮左边）。宽度用 `className`（默认 400px，如 `w-[480px]`，最宽 90vw），右上角自带关闭按钮（`showCloseButton={false}` 去掉）；`variant="fullscreen"` 铺满屏幕（窄屏的右侧面板）。有输入的对话框加 `disablePointerDismissal`，点外面不会丢掉填了一半的内容。打开时焦点落在带 `data-autofocus` 的元素上，没有就落在标题上。 |
+| `dialog.tsx` | 要用户停下来填写或查看的一屏内容：重命名、添加项目、账号。`<Dialog open onOpenChange>` 里放 `DialogContent`，依次是 `DialogHeader`（`DialogTitle`、可选的 `DialogDescription`）、`DialogBody`（内容，过长时自己滚动）、`DialogFooter`（按钮靠右，Cancel 在主按钮左边；确认一个动作的对话框加 `className="pigui-confirm justify-between"`，见“按钮”）。宽度用 `className`（默认 400px，如 `w-[480px]`，最宽 90vw），右上角自带关闭按钮（`showCloseButton={false}` 去掉）；`variant="fullscreen"` 铺满屏幕（窄屏的右侧面板）。有输入的对话框加 `disablePointerDismissal`，点外面不会丢掉填了一半的内容。打开时焦点落在带 `data-autofocus` 的元素上，没有就落在标题上。 |
 | `alert-dialog.tsx` | 不可撤销动作的确认：`AlertDialogContent` 里放 `AlertDialogHeader`（`AlertDialogTitle` 写成问句，`AlertDialogDescription` 说后果）和 `AlertDialogFooter`（`AlertDialogCancel` 是 `secondary`，`AlertDialogAction` 用 `variant="destructive"`）。点外面不关，打开时焦点在 Cancel 上。 |
 | `dropdown-menu.tsx` | 按钮打开的一列动作：行尾的 …（`MoreHorizontal`）、输入框的 +、侧栏底部的主机列表。触发按钮通过 `render` 传入（`<DropdownMenuTrigger render={<IconButton icon={…} label="Conversation actions" size="sm" />} />`），保留它自己的样子和名称。`DropdownMenuItem` 是文字，前面可以放图标；禁用的项仍能聚焦、会被读出来。上下键移动，打字跳到对应项。 |
 | `context-menu.tsx` | 右键（触屏长按）打开的菜单，目前只有终端标签。`ContextMenuSeparator` 分组；从键盘（菜单键、Shift+F10）打开时用 `anchor` 让它出现在元素下方而不是左上角。 |

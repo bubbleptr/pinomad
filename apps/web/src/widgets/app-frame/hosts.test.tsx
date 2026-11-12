@@ -225,7 +225,7 @@ describe("HostsSection with an account", () => {
     await act(async () => {
       await userEvent.type(await within(dialog).findByLabelText("Password"), "my password{Enter}");
     });
-    expect(removeHost).toHaveBeenCalledWith({ hostId: "u".repeat(43), confirmation: "my password" });
+    expect(removeHost).toHaveBeenCalledWith({ hostId: "u".repeat(43), confirmation: { reauth: "grant" } });
   });
 
   it("moves an unpaired account host to the account's section before the next refresh (dureview #641)", async () => {

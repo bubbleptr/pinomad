@@ -43,6 +43,8 @@ const noAccount: AccountModel = {
   identities: unavailable,
   requestReauthCode: unavailable,
   reauth: unavailable,
+  recentGrant: () => undefined,
+  forgetGrant: () => {},
   linkProvider: unavailable,
   unlinkProvider: unavailable,
   pendingSignIn: unavailable,

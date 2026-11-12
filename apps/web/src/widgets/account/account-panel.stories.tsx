@@ -106,7 +106,7 @@ export const DeletingAccount: Story = {
 export const DeleteAccountWrongPassword: Story = {
   decorators: [
     withAccount(signedIn(), {
-      deleteAccount: fn(async () => ({ ok: false as const, error: { code: "wrong_password", status: 403 } })),
+      reauth: fn(async () => ({ ok: false as const, error: { code: "wrong_password", status: 403 } })),
     }),
   ],
   play: async ({ canvasElement }) => {
@@ -138,7 +138,7 @@ export const RemovingDevice: Story = {
 export const RemoveDeviceWrongPassword: Story = {
   decorators: [
     withAccount(signedIn(), {
-      kickDevice: fn(async () => ({ ok: false as const, error: { code: "wrong_password", status: 403 } })),
+      reauth: fn(async () => ({ ok: false as const, error: { code: "wrong_password", status: 403 } })),
     }),
   ],
   play: async ({ canvasElement }) => {
@@ -163,7 +163,7 @@ export const RemoveHostWrongPassword: Story = {
   args: { initialPage: "hosts" },
   decorators: [
     withAccount(signedIn(), {
-      removeHost: fn(async () => ({ ok: false as const, error: { code: "wrong_password", status: 403 } })),
+      reauth: fn(async () => ({ ok: false as const, error: { code: "wrong_password", status: 403 } })),
     }),
   ],
   play: async ({ canvasElement }) => {
