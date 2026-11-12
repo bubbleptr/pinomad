@@ -195,7 +195,7 @@ function NotInstalled({ bridge, onFinished }: { bridge: LocalHostBridge; onFinis
 const STOP_LOG: CSSProperties = {
   fontFamily: "var(--font-family-code)",
   fontSize: "var(--font-size-sm)",
-  color: "var(--color-text-secondary)",
+  color: "var(--muted-foreground)",
   whiteSpace: "pre-wrap",
 };
 

@@ -110,9 +110,9 @@ function SideNavSection({
 
 const itemClassName = cn(
   "flex h-8 w-full cursor-pointer items-center gap-2 rounded-(--pigui-sidebar-item-radius) px-2 text-start text-sm/5 text-foreground",
-  "not-aria-[current=page]:active:bg-(--color-overlay-pressed) [@media(hover:hover)]:not-aria-[current=page]:hover:bg-surface-hover",
+  "not-aria-[current=page]:active:bg-(--surface-pressed) [@media(hover:hover)]:not-aria-[current=page]:hover:bg-surface-hover",
   "aria-[current=page]:bg-default",
-  "disabled:pointer-events-none disabled:text-(--color-text-disabled)",
+  "disabled:pointer-events-none disabled:text-(--disabled-foreground)",
   "[&_svg]:size-(--pigui-sidebar-icon-size) [&_svg]:shrink-0 [&_svg]:[shape-rendering:geometricPrecision]",
 );
 

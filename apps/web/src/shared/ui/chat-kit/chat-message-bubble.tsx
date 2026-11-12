@@ -128,8 +128,8 @@ export function ChatMessageBubble({
           // Sender backgrounds share a default; the data-sender attribute
           // leaves room to tell them apart.
           variant === "ghost"
-            ? "bg-transparent text-[var(--color-text-primary)]"
-            : "bg-[var(--color-neutral)] text-[var(--color-text-primary)]",
+            ? "bg-transparent text-[var(--foreground)]"
+            : "bg-[var(--default)] text-[var(--foreground)]",
           paddingClasses[density],
           variant === "ghost" && "py-0",
           group == null ? null : groupClasses[isUser ? "user" : "assistant"][group],

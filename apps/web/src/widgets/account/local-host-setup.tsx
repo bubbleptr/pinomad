@@ -97,7 +97,7 @@ function Progress({ label }: { label: string }) {
 const LOG: CSSProperties = {
   fontFamily: "var(--font-family-code)",
   fontSize: "var(--font-size-sm)",
-  color: "var(--color-text-secondary)",
+  color: "var(--muted-foreground)",
   whiteSpace: "pre-wrap",
   overflowWrap: "anywhere",
 };

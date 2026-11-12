@@ -60,7 +60,7 @@ type Page =
 const HOME: Page = { at: "home" };
 
 const chevron = (
-  <ChevronRight aria-hidden="true" style={{ width: "var(--spacing-4)", height: "var(--spacing-4)", color: "var(--color-text-secondary)" }} />
+  <ChevronRight aria-hidden="true" style={{ width: "var(--spacing-4)", height: "var(--spacing-4)", color: "var(--muted-foreground)" }} />
 );
 
 /**

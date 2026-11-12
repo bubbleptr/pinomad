@@ -85,7 +85,7 @@ function themeFor(element: HTMLElement): ITheme {
     foreground,
     cursor: foreground,
     cursorAccent: resolveColor(element, "var(--background)"),
-    selectionBackground: resolveColor(element, "var(--color-overlay-pressed)"),
+    selectionBackground: resolveColor(element, "var(--surface-pressed)"),
   };
 }
 

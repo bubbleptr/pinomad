@@ -94,14 +94,13 @@
 }
 
 /* A dialog floats over the pane at card level (dialog.tsx paints it bg-card).
-   Shift the ladder up one step inside it: what it paints with the surface
-   color (secondary buttons, diffs) matches the dialog, its cards sit
-   at popover level, its inset fills between the two. */
+   Shift the surface pair up one step inside it: what it paints with the
+   surface color (secondary buttons, diffs) matches the dialog, and its cards
+   sit at popover level. */
 [data-slot="dialog-content"],
 [data-slot="alert-dialog-content"] {
-  --color-background-surface: var(--card);
-  --color-background-card: var(--popover);
-  --color-background-muted: var(--surface-muted);
+  --surface: var(--card);
+  --surface-raised: var(--popover);
 }
 
 /* Tailwind utility names for the tokens in tokens.css. `inline` keeps the
@@ -239,10 +238,10 @@
 /* Hover and press for buttons: an overlay painted over whatever fill the
    button has, so one pair serves every tier. */
 @utility overlay-hover {
-  background-image: linear-gradient(var(--color-overlay-hover), var(--color-overlay-hover));
+  background-image: linear-gradient(var(--surface-hover), var(--surface-hover));
 }
 @utility overlay-pressed {
-  background-image: linear-gradient(var(--color-overlay-pressed), var(--color-overlay-pressed));
+  background-image: linear-gradient(var(--surface-pressed), var(--surface-pressed));
 }
 
 @custom-variant data-vertical {
@@ -455,7 +454,7 @@ html {
   /* The action overlay is a sibling, so hovering it does not hover the
      navigation button. Keep the same row wash across that boundary. */
   .pigui-sidenav-row-with-actions:has(> .pigui-sidenav-row-actions:hover) > div > [data-slot="side-nav-item"]:not([aria-current="page"]) {
-    background-color: var(--color-overlay-hover);
+    background-color: var(--surface-hover);
   }
 }
 
@@ -492,8 +491,8 @@ html {
   background: none;
   color: var(--muted-foreground);
   font: inherit;
-  font-size: var(--text-supporting-size);
-  line-height: var(--text-supporting-leading);
+  font-size: var(--font-size-sm);
+  line-height: 1.6667;
   text-align: start;
   cursor: default;
 }
@@ -710,7 +709,7 @@ html {
    window on the frame color. */
 .pigui-centered {
   height: 100dvh;
-  background-color: var(--color-background-body);
+  background-color: var(--sidebar);
 }
 
 /* —— Animated icons (shared/ui/animated-icons) —— */
@@ -815,7 +814,7 @@ html {
 @media (hover: hover) {
   .pigui-fork-chip:hover {
     color: var(--foreground);
-    background: var(--color-overlay-hover);
+    background: var(--surface-hover);
   }
 }
 

@@ -62,7 +62,7 @@ export function ChatMessageMetadata({
       {...theme}
       className={cn(
         theme.className,
-        "mt-1 flex items-center gap-1 text-[length:var(--font-size-sm)] leading-[1.6667] font-normal text-[var(--color-text-secondary)]",
+        "mt-1 flex items-center gap-1 text-[length:var(--font-size-sm)] leading-[1.6667] font-normal text-[var(--muted-foreground)]",
         sender === "user" ? "flex-row-reverse" : "flex-row",
         className,
       )}
@@ -79,7 +79,7 @@ export function ChatMessageMetadata({
           aria-label={`Message ${statusLabel.toLowerCase()}`}
           className={cn(
             "inline-flex items-center gap-1",
-            status === "error" && "text-[var(--color-error)]",
+            status === "error" && "text-[var(--destructive-strong)]",
             // Tailwind's pulse keyframes (opacity 1 → 0.5 → 1) at Astryx's timing.
             status === "sending" &&
               "animate-pulse [animation-duration:1.5s] [animation-timing-function:ease-in-out] motion-reduce:animate-none",

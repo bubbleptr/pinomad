@@ -24,7 +24,7 @@ const buttonVariants = cva(
         // hover and an open menu firm the shadow up rather than tint the fill.
         // The surface token, not bg-background, because dialogs shift it a step up.
         secondary: [
-          "bg-(--color-background-surface) text-foreground shadow-(--shadow-button)",
+          "bg-(--surface) text-foreground shadow-(--shadow-button)",
           "not-data-[disabled]:hover:shadow-(--shadow-button-hover) aria-expanded:shadow-(--shadow-button-hover)",
           // Settings is a page of flat rows: keep a hairline, drop the drop
           // (it stood out against the bordered groups) and the fill (a step

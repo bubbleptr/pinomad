@@ -251,7 +251,7 @@ export function useAnchoredPopover({ onHide }: { onHide?: () => void } = {}): Us
           } as CSSProperties}
         >
           <div
-            className="relative rounded-[var(--radius-container)] bg-[var(--color-background-popover)] [box-shadow:var(--shadow-low)]"
+            className="relative rounded-[var(--radius-container)] bg-[var(--popover)] [box-shadow:var(--shadow-low)]"
           >
             {children}
           </div>

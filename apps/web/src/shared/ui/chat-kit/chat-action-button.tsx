@@ -9,8 +9,8 @@ export type ChatActionButtonVariant = "primary" | "secondary" | "ghost";
 
 const variantClasses: Record<ChatActionButtonVariant, string> = {
   primary: "bg-[var(--primary)] text-[var(--primary-foreground)]",
-  secondary: "bg-[var(--color-neutral)] text-[var(--color-text-primary)]",
-  ghost: "bg-transparent text-[var(--color-text-primary)]",
+  secondary: "bg-[var(--default)] text-[var(--foreground)]",
+  ghost: "bg-transparent text-[var(--foreground)]",
 };
 
 export type ChatActionButtonProps = Omit<ComponentProps<"button">, "children"> & {
@@ -69,7 +69,7 @@ export function ChatActionButton({
         "[transform:scale(1)] active:[transform:scale(0.98)]",
         isDisabled
           ? "cursor-not-allowed opacity-50"
-          : "hover:[background-image:linear-gradient(var(--color-overlay-hover),var(--color-overlay-hover))] active:[background-image:linear-gradient(var(--color-overlay-pressed),var(--color-overlay-pressed))]",
+          : "hover:[background-image:linear-gradient(var(--surface-hover),var(--surface-hover))] active:[background-image:linear-gradient(var(--surface-pressed),var(--surface-pressed))]",
         className,
       )}
     >

@@ -9,10 +9,10 @@
    The resting text is lighter than secondary so the sweep reads, and still
    about 4.5:1 on white. */
 .text-shimmer {
-  --chat-shimmer-rest: color-mix(in oklab, var(--color-text-secondary), var(--color-text-disabled) 30%);
+  --chat-shimmer-rest: color-mix(in oklab, var(--muted-foreground), var(--disabled-foreground) 30%);
   display: inline-block;
   background-image:
-    linear-gradient(100deg, transparent, var(--color-text-primary), transparent),
+    linear-gradient(100deg, transparent, var(--foreground), transparent),
     linear-gradient(var(--chat-shimmer-rest), var(--chat-shimmer-rest));
   background-repeat: no-repeat;
   background-size: 2.6em 100%, 100% 100%;
@@ -123,7 +123,7 @@
    underline, the leading file icon already marks it as a link. display stays
    inline so the chip wraps inside a paragraph like any other text. */
 .chat-markdown .chat-file-link {
-  color: var(--color-text-accent);
+  color: var(--primary);
   text-decoration: none;
 }
 
@@ -133,11 +133,11 @@
    `pinomad-skill-mention` HighlightRegistry entry; sent bubbles wrap the
    expanded skills' mentions in .chat-skill-mention marks. */
 ::highlight(pinomad-skill-mention) {
-  color: var(--color-text-blue);
+  color: var(--info-strong);
 }
 
 mark.chat-skill-mention {
-  color: var(--color-text-blue);
+  color: var(--info-strong);
   background: transparent;
 }
 
@@ -175,7 +175,7 @@ mark.chat-skill-mention {
    few lightness points off body text, so the rest underline is what makes
    the link distinguishable (the same affordance markdown links rely on). */
 .chat-markdown .chat-inline-code-link {
-  color: var(--color-text-accent);
+  color: var(--primary);
   text-decoration: underline;
 }
 
@@ -247,7 +247,7 @@ mark.chat-skill-mention {
 /* Message times read like the actions beside them: secondary, and tabular so
    a column of rows does not jitter. */
 .chat-message__time {
-  color: var(--color-text-secondary);
+  color: var(--muted-foreground);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -301,7 +301,7 @@ mark.chat-skill-mention {
   min-width: 0;
   max-width: 18rem;
   overflow: hidden;
-  color: var(--color-text-secondary);
+  color: var(--muted-foreground);
   font-size: var(--font-size-sm, 0.75rem);
   line-height: 1.667;
   text-overflow: ellipsis;
@@ -336,12 +336,12 @@ mark.chat-skill-mention {
 }
 
 .chat-message__action:hover {
-  background: var(--color-overlay-hover);
+  background: var(--surface-hover);
   color: var(--foreground);
 }
 
 .chat-message__action:active {
-  background: var(--color-overlay-pressed);
+  background: var(--surface-pressed);
 }
 
 /* —— Chain of thought —— */
@@ -400,7 +400,7 @@ mark.chat-skill-mention {
   border: none;
   background: transparent;
   padding: 0;
-  color: var(--color-text-secondary);
+  color: var(--muted-foreground);
   font-size: var(--font-size-base);
   line-height: 1.5;
   min-height: 1.5em;
@@ -408,7 +408,7 @@ mark.chat-skill-mention {
 }
 
 .chain-of-thought__trigger:hover {
-  color: var(--color-text-primary);
+  color: var(--foreground);
 }
 
 /* —— Trace row (ADR-0026 §2) —— */
@@ -449,7 +449,7 @@ mark.chat-skill-mention {
   max-width: 100%;
   min-width: 0;
   margin: 0;
-  color: var(--color-text-secondary);
+  color: var(--muted-foreground);
   font-size: var(--font-size-base);
   line-height: 1.5;
   min-height: 1.5em;
@@ -618,7 +618,7 @@ mark.chat-skill-mention {
   padding: 0;
   min-width: 0;
   max-width: 100%;
-  color: var(--color-text-secondary);
+  color: var(--muted-foreground);
   font-size: var(--font-size-base);
   line-height: 1.5;
 }
@@ -628,7 +628,7 @@ mark.chat-skill-mention {
 }
 
 .chat-step__trigger:hover {
-  color: var(--color-text-primary);
+  color: var(--foreground);
 }
 
 .chat-step__label {
@@ -643,7 +643,7 @@ mark.chat-skill-mention {
    at 12px #a3a3a3, fell below AA contrast. Tabular figures keep "1.2s" and
    "4.7s" the same width so a live burst does not nudge its chevron. */
 .chat-step__meta {
-  color: var(--color-text-secondary);
+  color: var(--muted-foreground);
   font-size: inherit;
   font-variant-numeric: tabular-nums;
 }
@@ -673,7 +673,7 @@ mark.chat-skill-mention {
 
 .chat-step__body {
   margin-block-start: var(--spacing-1);
-  color: var(--color-text-secondary);
+  color: var(--muted-foreground);
   overflow-wrap: anywhere;
 }
 
@@ -783,12 +783,12 @@ mark.chat-skill-mention {
   display: none;
 }
 
-/* ChatToolCalls paints the row's target path and duration in --color-text-disabled
+/* ChatToolCalls paints the row's target path and duration in --disabled-foreground
    (#a3a3a3 at 12px, ~2.6:1 on white). They are read, not disabled: lift them
    to the secondary tone the step rows above already use. The name span keeps
    its own color; the trailing chevron span carries no text. */
 .chat-tool-step__item [data-slot="chat-tool-calls"] [role="button"] > span:not(:first-child):not(:last-child) {
-  color: var(--color-text-secondary);
+  color: var(--muted-foreground);
 }
 
 /* ChatToolCalls sets the call name in its code face and the target and duration a
@@ -1002,7 +1002,7 @@ mark.chat-skill-mention {
   margin-block-start: var(--spacing-1-5);
   padding: var(--spacing-2);
   border-radius: var(--radius-inner);
-  background: var(--color-background-muted);
+  background: var(--surface-muted);
   font-family: var(--font-family-code);
   font-size: var(--font-size-sm);
   line-height: 1.5;
@@ -1061,7 +1061,7 @@ mark.chat-skill-mention {
 .prompt-input [data-slot="chat-composer"] {
   /* Neutral's elevation tokens include an inset highlight in dark mode.
      Keep the outer-only replacement local to the composer, not TextInput. */
-  --_composer-shadow-color: var(--color-shadow);
+  --_composer-shadow-color: var(--shadow-color);
   --shadow-low: 0 var(--border-width) var(--spacing-0-5) var(--_composer-shadow-color),
     0 var(--spacing-0-5) var(--spacing-2) var(--_composer-shadow-color);
   /* One step below ChatComposer's default so the chrome sits closer to the edge.
@@ -1095,7 +1095,7 @@ mark.chat-skill-mention {
 /* Focus steps the hairline up to the emphasized border, the same neutral
    in both themes' terms; no brand color. */
 .prompt-input [data-slot="chat-composer"] > div:has(.prompt-input__input):focus-within {
-  box-shadow: inset 0 0 0 1px var(--color-border-emphasized), var(--_composer-lift);
+  box-shadow: inset 0 0 0 1px var(--border-strong), var(--_composer-lift);
 }
 
 /* Preserve a focus indicator when the OS suppresses shadows. */
@@ -1123,7 +1123,7 @@ mark.chat-skill-mention {
 
 .prompt-input__input > [aria-multiline="true"] {
   min-height: var(--size-element-md) !important;
-  color: var(--color-text-primary) !important;
+  color: var(--foreground) !important;
 }
 
 /* The composer sets an inline baseline alignment on each token span. */
@@ -1132,15 +1132,15 @@ mark.chat-skill-mention {
 }
 
 /* Hint copy recedes below composer chrome (model selector uses
-   --color-text-secondary via text-muted-foreground). Opacity is reset so Firefox
+   --muted-foreground via text-muted-foreground). Opacity is reset so Firefox
    does not further fade the token color. */
 .prompt-input__input > [aria-hidden="true"] {
-  color: var(--color-text-disabled) !important;
+  color: var(--disabled-foreground) !important;
   opacity: 1;
 }
 
 .prompt-input__input > [aria-disabled="true"] {
-  color: var(--color-text-disabled) !important;
+  color: var(--disabled-foreground) !important;
   cursor: not-allowed;
 }
 
@@ -1168,8 +1168,8 @@ mark.chat-skill-mention {
   padding: calc(var(--_prompt-tray-tuck) + var(--spacing-1)) var(--spacing-3) var(--spacing-1-5);
   /* The tuck equals the card's corner radius; the tray's bottom corners match it. */
   border-radius: 0 0 var(--_prompt-tray-tuck) var(--_prompt-tray-tuck);
-  background: light-dark(var(--color-background-muted), oklch(0.235 0 0));
-  color: var(--color-text-secondary);
+  background: light-dark(var(--surface-muted), oklch(0.235 0 0));
+  color: var(--muted-foreground);
   font-size: var(--font-size-sm);
 }
 
@@ -1183,7 +1183,7 @@ mark.chat-skill-mention {
    text. !important dates from Astryx's StyleX classes, which carried
    :not(#\#) specificity. */
 .prompt-input__footer button {
-  color: var(--color-text-secondary) !important;
+  color: var(--muted-foreground) !important;
   font-weight: var(--font-weight-normal, 400) !important;
 }
 
@@ -1207,7 +1207,7 @@ mark.chat-skill-mention {
   border: none;
   background: transparent;
   padding: 0;
-  color: var(--color-text-secondary);
+  color: var(--muted-foreground);
   font-size: var(--font-size-base);
   cursor: pointer;
   touch-action: manipulation;
@@ -1216,7 +1216,7 @@ mark.chat-skill-mention {
 
 @media (hover: hover) and (pointer: fine) {
   .chain-of-thought-rail__trigger:hover {
-    color: var(--color-text-primary);
+    color: var(--foreground);
   }
 }
 
@@ -1251,7 +1251,7 @@ mark.chat-skill-mention {
   font-weight: var(--font-weight-medium);
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--color-text-disabled);
+  color: var(--disabled-foreground);
 }
 
 .chain-of-thought-rail__nodes {
@@ -1297,7 +1297,7 @@ mark.chat-skill-mention {
   width: 8px;
   height: 8px;
   border-radius: var(--radius-full);
-  background: var(--color-border-emphasized);
+  background: var(--border-strong);
   pointer-events: none;
 }
 
@@ -1307,7 +1307,7 @@ mark.chat-skill-mention {
 
 .chain-of-thought-rail__marker[data-kind="thinking"] {
   background: transparent;
-  border: var(--border-width) solid var(--color-border-emphasized);
+  border: var(--border-width) solid var(--border-strong);
 }
 
 .chain-of-thought-rail__marker[data-state="output-error"] {
@@ -1316,7 +1316,7 @@ mark.chat-skill-mention {
 
 .chain-of-thought-rail__marker[data-state="input-streaming"],
 .chain-of-thought-rail__marker[data-state="input-available"] {
-  background: var(--color-text-secondary);
+  background: var(--muted-foreground);
   animation: chain-of-thought-rail-pulse 1.2s ease-in-out infinite;
 }
 
@@ -1334,13 +1334,13 @@ mark.chat-skill-mention {
 
 .chain-of-thought-rail__thinking-label {
   font-weight: var(--font-weight-medium);
-  color: var(--color-text-primary);
+  color: var(--foreground);
 }
 
 .chain-of-thought-rail__thinking-text {
   margin: var(--spacing-0-5) 0 0;
   max-width: 65ch;
-  color: var(--color-text-secondary);
+  color: var(--muted-foreground);
   text-wrap: pretty;
   overflow-wrap: anywhere;
 }
@@ -1355,7 +1355,7 @@ mark.chat-skill-mention {
 
 .chain-of-thought-rail__duration {
   font-size: var(--font-size-sm);
-  color: var(--color-text-disabled);
+  color: var(--disabled-foreground);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1382,7 +1382,7 @@ mark.chat-skill-mention {
 
 @media (hover: hover) and (pointer: fine) {
   details > .chain-of-thought-rail__tool-row:hover {
-    background: var(--color-overlay-hover);
+    background: var(--surface-hover);
     margin-inline: calc(-1 * var(--spacing-1-5));
     padding-inline: var(--spacing-1-5);
   }
@@ -1405,14 +1405,14 @@ details[open] > .chain-of-thought-rail__tool-row .chain-of-thought-rail__disclos
 
 .chain-of-thought-rail__tool-name {
   font-weight: var(--font-weight-medium);
-  color: var(--color-text-primary);
+  color: var(--foreground);
   flex-shrink: 0;
 }
 
 .chain-of-thought-rail__tool-target {
   font-family: var(--font-family-code);
   font-size: var(--font-size-sm);
-  color: var(--color-text-secondary);
+  color: var(--muted-foreground);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1431,7 +1431,7 @@ details[open] > .chain-of-thought-rail__tool-row .chain-of-thought-rail__disclos
 }
 
 .chain-of-thought-rail__badge[data-tone="running"] {
-  color: var(--color-text-secondary);
+  color: var(--muted-foreground);
 }
 
 .chain-of-thought-rail__tool-detail {
@@ -1444,8 +1444,8 @@ details[open] > .chain-of-thought-rail__tool-row .chain-of-thought-rail__disclos
   font-family: var(--font-family-code);
   font-size: var(--font-size-sm);
   line-height: 1.5;
-  color: var(--color-text-secondary);
-  background: var(--color-background-muted);
+  color: var(--muted-foreground);
+  background: var(--surface-muted);
   border-radius: var(--radius-inner);
   overflow-x: auto;
   white-space: pre;
@@ -1458,7 +1458,7 @@ details[open] > .chain-of-thought-rail__tool-row .chain-of-thought-rail__disclos
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--color-text-disabled);
+  color: var(--disabled-foreground);
   user-select: none;
 }
 
@@ -1476,7 +1476,7 @@ details[open] > .chain-of-thought-rail__tool-row .chain-of-thought-rail__disclos
 }
 
 .chain-of-thought-rail__pre::-webkit-scrollbar-thumb {
-  background: var(--color-border-emphasized);
+  background: var(--border-strong);
   border-radius: 4px;
 }
 
@@ -1529,7 +1529,7 @@ details[open] > .chain-of-thought-rail__tool-row .chain-of-thought-rail__disclos
 }
 
 .chat-queued-message__body {
-  color: var(--color-text-primary);
+  color: var(--foreground);
   transition:
     color 150ms var(--ease-standard),
     opacity 150ms var(--ease-standard);
@@ -1539,7 +1539,7 @@ details[open] > .chain-of-thought-rail__tool-row .chain-of-thought-rail__disclos
 .chat-queued-message[data-local] .chat-queued-message__body,
 .chat-queued-message[data-withdrawn] .chat-queued-message__body,
 .chat-queued-message[data-steered] .chat-queued-message__body {
-  color: var(--color-text-secondary);
+  color: var(--muted-foreground);
 }
 
 @starting-style {

@@ -15,7 +15,7 @@ const SPREAD = 0.375;
 
 const shades = {
   default: "text-[var(--primary)]",
-  subtle: "text-[var(--color-text-secondary)]",
+  subtle: "text-[var(--muted-foreground)]",
 } as const;
 
 export function ChatSpinner({

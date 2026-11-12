@@ -169,7 +169,7 @@ export function AppFrame({
             sidebar's place, its section in the main pane. The sidebar and the
             workbench stay mounted underneath, hidden. */}
         <div
-          className={`pigui-app-layout flex h-dvh bg-(--color-background-body) text-foreground${narrow ? "" : " pigui-inset"}${
+          className={`pigui-app-layout flex h-dvh bg-(--sidebar) text-foreground${narrow ? "" : " pigui-inset"}${
             narrow || sidebarOpen || settingsOpen ? "" : " pigui-inset--bare"
           }`}
         >
@@ -366,7 +366,7 @@ export function FrameHeader({
       {showOverview ? (
         <IconButton
           aria-pressed={overviewOpen}
-          className={overviewOpen ? "bg-[var(--color-overlay-pressed)]" : undefined}
+          className={overviewOpen ? "bg-[var(--surface-pressed)]" : undefined}
           icon={<AppleReminder className="size-4" />}
           label="Overview"
           size="sm"

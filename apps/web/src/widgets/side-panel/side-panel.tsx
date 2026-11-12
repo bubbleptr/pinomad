@@ -99,7 +99,7 @@ export function SurfaceButtons({
           <span key={entry.id} className="relative">
             <IconButton
               aria-pressed={shown}
-              className={shown ? "bg-[var(--color-overlay-pressed)]" : undefined}
+              className={shown ? "bg-[var(--surface-pressed)]" : undefined}
               icon={entry.icon}
               label={entry.label}
               size="sm"

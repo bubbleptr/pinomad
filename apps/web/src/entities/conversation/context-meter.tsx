@@ -29,11 +29,11 @@ const tint = (color: string, percent: number): string => `color-mix(in oklab, ${
 // first; MCP, the part servers add, is teal; messages, the part that grows,
 // purple.
 export const PARTS = [
-  { key: "system", label: "System", color: "var(--data-blue)" },
-  { key: "tools", label: "Tools", color: tint("var(--data-blue)", 60) },
-  { key: "skills", label: "Skills", color: tint("var(--data-blue)", 30) },
-  { key: "mcp", label: "MCP", color: "var(--data-teal)" },
-  { key: "messages", label: "Messages", color: "var(--data-purple)" },
+  { key: "system", label: "System", color: "var(--palette-blue)" },
+  { key: "tools", label: "Tools", color: tint("var(--palette-blue)", 60) },
+  { key: "skills", label: "Skills", color: tint("var(--palette-blue)", 30) },
+  { key: "mcp", label: "MCP", color: "var(--palette-teal)" },
+  { key: "messages", label: "Messages", color: "var(--palette-purple)" },
 ] as const;
 
 /**
