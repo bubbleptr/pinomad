@@ -23,7 +23,9 @@ import { useImageAttachments } from "../../entities/image/use-image-attachments.
 import { ModelSelector } from "../../entities/model/model-selector.tsx";
 import { agentOf, queueItems, queuedInput, statusText, type QueueItem } from "@pinomad/client/chat.ts";
 import { parseCommandInput } from "@pinomad/client/command-input.ts";
-import { summaryOf } from "@pinomad/client/model.ts";
+import { clampLevel, summaryOf } from "@pinomad/client/model.ts";
+import type { ModelRef } from "@earendil-works/pi-durable";
+import type { ThinkingLevel } from "@pinomad/protocol/view.ts";
 import { ChatAddMenu, ChatAddMenuItem } from "../../shared/ui/chat/chat-add-menu.tsx";
 import { ChatPromptInput, type ChatPromptInputHandle } from "../../shared/ui/chat/chat-prompt-input.tsx";
 import { composerPlaceholder } from "../../shared/ui/chat/chat-placeholder.ts";
@@ -145,6 +147,22 @@ export function ConversationComposer({
     && hostSupportsCall(view.host?.protocol.minor ?? 0, "setAgent");
 
   const model = summaryOf(view.models, agent.model);
+  // The level the user last picked here. A model without it runs at the
+  // nearest level below; switching to one that has it puts it back. Kept per
+  // conversation, and dropped when the agent changes (the role sets it).
+  const [pickedLevel, setPickedLevel] = useState<{ readonly id: typeof conversation.conversation.id; readonly level: ThinkingLevel } | undefined>(undefined);
+  const currentLevel = agent.thinkingLevel ?? "off";
+  const levelIntent = pickedLevel?.id === conversation.conversation.id ? pickedLevel.level : currentLevel;
+  const switchModel = (next: ModelRef): void => {
+    const levels = summaryOf(view.models, next)?.thinkingLevels ?? ["off"];
+    const want = clampLevel(levels, levelIntent);
+    setPickedLevel({ id: conversation.conversation.id, level: levelIntent });
+    // The host clamps the current level on its own; only a different target needs a second call.
+    void remote.controller
+      .setModel(next)
+      .then(() => (want === clampLevel(levels, currentLevel) ? undefined : remote.controller.setThinkingLevel(want)))
+      .catch(showError);
+  };
   const accepts = model?.images === true;
   const { images, pending: imagesPending, error, add, restore, remove, clear } = useImageAttachments(accepts, slot);
   const mounted = useMounted();
@@ -585,6 +603,7 @@ export function ConversationComposer({
                       roles,
                       value: currentAgent,
                       onChange: (name) => {
+                        setPickedLevel(undefined);
                         void remote.controller.setAgent(name ?? null).catch(showError);
                       },
                     }
@@ -592,8 +611,11 @@ export function ConversationComposer({
                     ? undefined
                     : { kind: "fixed", name: role, description: roles.find((each) => each.name === role)?.description }
               }
-              onModelChange={(model) => void remote.controller.setModel(model)}
-              onLevelChange={(level) => void remote.controller.setThinkingLevel(level)}
+              onModelChange={switchModel}
+              onLevelChange={(level) => {
+                setPickedLevel({ id: conversation.conversation.id, level });
+                void remote.controller.setThinkingLevel(level);
+              }}
             />
           </>
         }

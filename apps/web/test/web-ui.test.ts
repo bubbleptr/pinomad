@@ -1573,6 +1573,16 @@ it("changes the model and thinking level from the composer capsule", async () =>
     const agent = await host.harness.snapshot(AgentDoc, id, BACKGROUND_CONTEXT);
     return `${agent?.model?.provider}/${agent?.model?.modelId}:${agent?.thinkingLevel}`;
   }).toBe("faux/faux-thinker:high");
+
+  // A model without High drops the level; coming back restores the picked High.
+  await capsule.click();
+  await page.getByRole("button", { name: "Faux Model", exact: false }).click();
+  await page.keyboard.press("Escape");
+  await expect.poll(() => level.count()).toBe(0);
+  await capsule.click();
+  await page.getByRole("button", { name: "Faux Thinker", exact: false }).click();
+  await page.keyboard.press("Escape");
+  await expect.poll(() => level.textContent()).toBe("High");
 });
 
 it("organizes conversations under projects and chats", async () => {
