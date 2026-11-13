@@ -78,9 +78,11 @@ function LiveDot() {
 
 /**
  * The surface switch: one icon per surface. An icon opens its surface; the
- * shown surface's icon closes the panel. The Tasks icon carries the
- * live-activity dot while Tasks is out of sight. A phone header has room for
- * one button, which opens the last surface.
+ * shown surface's icon closes the panel. No fill marks the shown one (only
+ * the Overview toggle has an on state): while the panel is open the other
+ * icons dim instead. The Tasks icon carries the live-activity dot while
+ * Tasks is out of sight. A phone header has room for one button, which opens
+ * the last surface.
  */
 export function SurfaceButtons({
   narrow,
@@ -126,7 +128,7 @@ export function SurfaceButtons({
           <span key={entry.id} className="relative">
             <IconButton
               aria-pressed={shown}
-              className={shown ? "bg-[var(--surface-pressed)]" : undefined}
+              className={open && !shown ? "text-muted-foreground" : undefined}
               icon={entry.icon}
               label={entry.label}
               size="sm"
@@ -591,8 +593,9 @@ function useRoomBeside(panel: HTMLElement | null): number | undefined {
 
 /**
  * Desktop: a resizable, full-height panel docked right of the chat column; its
- * first row sits level with the chat header. Narrow: a fullscreen dialog whose
- * first row adds the surface switch and a close button.
+ * first row sits level with the chat header and ends in a close button.
+ * Narrow: a fullscreen dialog whose first row also starts with the surface
+ * switch.
  */
 export function SidePanel({
   view,
@@ -669,6 +672,15 @@ export function SidePanel({
         onOpenInMain={onOpenInMain}
       />
     );
+  const close = (
+    <IconButton
+      icon={<Cancel className="size-4" aria-hidden="true" />}
+      label="Close side panel"
+      size="sm"
+      variant="ghost"
+      onClick={() => onOpenChange(false)}
+    />
+  );
   if (narrow) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -682,13 +694,7 @@ export function SidePanel({
               pluginPanels={pluginPanels}
               onSelect={onSelectSurface}
             />,
-            <IconButton
-              icon={<Cancel className="size-4" aria-hidden="true" />}
-              label="Close side panel"
-              size="sm"
-              variant="ghost"
-              onClick={() => onOpenChange(false)}
-            />,
+            close,
           )}
         </DialogContent>
       </Dialog>
@@ -706,7 +712,7 @@ export function SidePanel({
       role="complementary"
     >
       <div className="h-full min-h-0 overflow-hidden">
-        {content()}
+        {content(undefined, close)}
       </div>
       <ResizeHandle
         // The handle defaults to the end edge; reversed only changes drag direction.

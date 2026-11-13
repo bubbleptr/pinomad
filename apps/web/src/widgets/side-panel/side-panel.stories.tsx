@@ -113,7 +113,7 @@ export const Drafting: Story = { args: { shownId: undefined } };
 /** On a phone the panel is a fullscreen dialog. */
 export const Narrow: Story = { args: { narrow: true } };
 
-/** The owner's terminals: one tab each, an exited one greyed with its code. */
+/** The owner's terminals: the selected tab a raised card on the muted strip, + after the last, an exited one greyed with its code. */
 export const Terminal: Story = {
   args: { surface: "terminal", remote: { ...fakeRemote(view), terminals: fakeTerminals({ lists: { [PARSER_ID]: TERMINALS } }) } },
 };
@@ -129,7 +129,7 @@ export const TerminalUnavailable: Story = {
   },
 };
 
-/** On a phone the tabs take a second row under the surface switch. */
+/** On a phone the tabs take a second row under the surface switch; those that don't fit go to the menu. */
 export const TerminalNarrow: Story = {
   args: { ...Terminal.args, narrow: true },
 };
