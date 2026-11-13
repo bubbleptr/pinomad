@@ -278,12 +278,6 @@ type TaskRow =
   | { kind: "subagent"; task: ConversationSummary }
   | { kind: "process"; process: ProcessInfo };
 
-const endedAt = (row: TaskRow): number =>
-  row.kind === "subagent" ? (row.task.updatedAt ?? 0) : (row.process.endedAt ?? row.process.startedAt);
-
-const rowFailed = (row: TaskRow): boolean =>
-  row.kind === "subagent" ? row.task.status === "failed" : processTone(row.process.state) === "failed";
-
 /** "2 more running · 2 done · 1 failed", the failures in red; nothing when there is nothing to add. */
 function tallyLine(more: number, done: number, failed: number): ReactNode {
   const parts: ReactNode[] = [];
@@ -337,8 +331,8 @@ function TaskRowView({ row, onOpenTasks }: { row: TaskRow; onOpenTasks: (id?: Co
 
 /**
  * The family's subagents and background processes: the ones at work by name
- * (subagents first), or the latest to finish while nothing is at work, then
- * a line into the side panel's Tasks list.
+ * (subagents first), or the latest subagents to finish while nothing is at
+ * work, then a line into the side panel's Tasks list.
  */
 function TasksSection({
   view,
@@ -361,10 +355,12 @@ function TasksSection({
     ...active.map((task) => ({ kind: "subagent" as const, task })),
     ...processes.filter((process) => isProcessActive(process.state)).map((process) => ({ kind: "process" as const, process })),
   ];
-  const ended: TaskRow[] = [
-    ...tasks.filter((task) => subagentTone(task.status) !== "running").map((task) => ({ kind: "subagent" as const, task })),
-    ...processes.filter((process) => !isProcessActive(process.state)).map((process) => ({ kind: "process" as const, process })),
-  ].sort((a, b) => Number(rowFailed(b)) - Number(rowFailed(a)) || endedAt(b) - endedAt(a));
+  // Only subagents: ended processes (a lost one never ages out) stay in the
+  // Tasks list rather than crowding out the family's finished work.
+  const ended: TaskRow[] = tasks
+    .filter((task) => subagentTone(task.status) !== "running")
+    .sort((a, b) => Number(b.status === "failed") - Number(a.status === "failed") || (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+    .map((task) => ({ kind: "subagent" as const, task }));
   const rows = live.length > 0 ? live.slice(0, ACTIVE_ROWS) : ended.slice(0, ENDED_ROWS);
   const tally = tallyLine(live.length - rows.length, done, failed);
   const footer = live.length > 0 ? tally : "All tasks";

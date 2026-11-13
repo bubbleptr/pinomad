@@ -267,7 +267,10 @@ describe("OverviewCard tasks", () => {
   });
 
   it("lists the latest finished tasks, failed first, when nothing is running", () => {
-    const { rows } = renderTasks(withSubagents(fakeView(), FINISHED_SUBAGENTS), fakeProcesses());
+    // Ended processes stay in the Tasks list: a lost or failed one must not
+    // push the family's finished subagents out of the card.
+    const ended = PROCESSES.filter((process) => process.state !== "running");
+    const { rows } = renderTasks(withSubagents(fakeView(), FINISHED_SUBAGENTS), fakeProcesses({ lists: { [PARSER_ID]: ended } }));
     expect(rows()).toEqual([
       "Reproduce on Node 22Failed",
       "Update the changelogDone",

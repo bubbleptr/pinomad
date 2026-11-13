@@ -88,5 +88,6 @@ export const Tasks: Story = {
 };
 
 const finished = withSubagents(view, FINISHED_SUBAGENTS);
-/** Nothing at work: the latest to finish, failures first. */
-export const TasksFinished: Story = { args: { view: finished, remote: fakeRemote(finished) } };
+const ended = fakeProcesses({ lists: { [PARSER_ID]: PROCESSES.filter((process) => process.state !== "running") } });
+/** Nothing at work: the latest subagents to finish, failures first; ended processes stay in Tasks. */
+export const TasksFinished: Story = { args: { view: finished, remote: fakeRemote(finished, {}, ended) } };
