@@ -55,9 +55,11 @@ function useTerminalsState(
 
 /**
  * How many tabs fit before the row overflows: start from all of them and drop
- * one per layout pass until the row fits. A wider row or new labels (a
+ * one per layout pass until the row fits. More room or new labels (a
  * shell's new title) start over; tabs that change size on their own (styles
- * arriving after the first measure) are measured again.
+ * arriving after the first measure) are measured again. The room is the
+ * row's parent: the row itself is only as wide as the tabs that fit, so it
+ * never grows when the panel does.
  */
 function useFittingTabs(row: RefObject<HTMLDivElement | null>, count: number, labels: string): number {
   const [width, setWidth] = useState(0);
@@ -72,10 +74,12 @@ function useFittingTabs(row: RefObject<HTMLDivElement | null>, count: number, la
   useEffect(() => {
     const element = row.current;
     if (element === null) return;
+    const room = element.parentElement ?? element;
     const observer = new ResizeObserver(() => {
-      setWidth(element.clientWidth);
+      setWidth(room.clientWidth);
       remeasure((n) => n + 1);
     });
+    observer.observe(room);
     observer.observe(element);
     if (element.firstElementChild !== null) observer.observe(element.firstElementChild);
     return () => observer.disconnect();
