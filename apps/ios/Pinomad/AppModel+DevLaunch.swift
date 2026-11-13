@@ -40,6 +40,14 @@ extension AppModel {
             devSignInPage = page
             present(.account)
         }
+        if let message = env["PINOMAD_DEMO_TOAST"] {
+            // An error toast a moment after launch, over whatever sheet the
+            // other demo channels opened: shows where toasts land.
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                self?.showToast(message, level: .error, key: "demo")
+            }
+        }
         if let file = env["PINOMAD_ATTACH_FILE"] {
             pendingAttachFile = file
             pendingAttachSend = env["PINOMAD_AUTOSEND"] != nil

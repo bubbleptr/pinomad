@@ -203,7 +203,8 @@ private struct FailureView: View {
             if hostKey == nil, let warning = model.pairingSaveWarning {
                 Text(warning)
                     .font(.footnote)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.red)
+                    .announces(warning)
                     .multilineTextAlignment(.center)
             }
             VStack(spacing: 10) {
