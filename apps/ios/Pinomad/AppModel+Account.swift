@@ -146,7 +146,8 @@ extension AppModel {
             username: value.user.username,
             token: token,
             expiresAt: value.expiresAt,
-            email: value.user.email)
+            email: value.user.email,
+            accountId: value.user.accountId)
         let record = AccountRecord(session: session)
         // A sign-in over a live session (a pending sign-in's new account)
         // replaces it: its sign-in attempts are stale.
@@ -248,7 +249,8 @@ extension AppModel {
                 stored: stored,
                 rejectedHostKeys: accountRejectedHostKeys,
                 declined: declinedHostRefs(),
-                storedRead: storedRead)
+                storedRead: storedRead,
+                accountId: session.accountId)
             if result.changed {
                 // Adopting a pre-account pairing is bookkeeping, not a
                 // pairing: a failed write just leaves it to the next refresh.
@@ -262,7 +264,8 @@ extension AppModel {
                             stored: current,
                             rejectedHostKeys: accountRejectedHostKeys,
                             declined: declinedHostRefs(),
-                            storedRead: true).stored
+                            storedRead: true,
+                            accountId: session.accountId).stored
                     }
                     reloadHosts()
                 } catch {
@@ -286,7 +289,8 @@ extension AppModel {
                     serverOrigin: session.serverOrigin,
                     listedBefore: listedBefore,
                     hosts: heldBefore,
-                    listed: hosts.map(\.hostId))
+                    listed: hosts.map(\.hostId),
+                    accountId: session.accountId)
                 for hostId in delisted { forgetRemovedHost(hostId, session: session) }
             }
         }
@@ -392,7 +396,8 @@ extension AppModel {
                 accountRegistrationInFlight.remove(hostId)
                 return
             }
-            let account = AccountLink(serverOrigin: session.serverOrigin, hostId: hostId, vouched: true)
+            let account = AccountLink(
+                serverOrigin: session.serverOrigin, hostId: hostId, vouched: true, accountId: session.accountId)
             guard beginPairing(
                 link: link, account: account, focus: false,
                 autoRegisterHostId: hostId) != nil
@@ -464,7 +469,7 @@ extension AppModel {
         let warning = endAccountSession(notice: nil)
         // After the session ended, so no account refresh can register a
         // host again while it is being forgotten.
-        if revoke { forgetAccountHosts(serverOrigin: session.serverOrigin) }
+        if revoke { forgetAccountHosts(serverOrigin: session.serverOrigin, accountId: session.accountId) }
         let serverWarning = AccountCopy.signOutWarning(everywhere: everywhere, revoke: revoke, failure: failure)
         let pushWarning = pushRemoved ? nil
             : "The server didn't confirm removing this device's notification token, so hosts on the account may still notify it. Sign in again and turn notifications off to remove it."
@@ -474,16 +479,18 @@ extension AppModel {
 
     /// Forget every stored host linked to `serverOrigin`'s account, or only
     /// `hostId`'s, without declining it (#494, #512). Hosts paired by QR
-    /// code carry no vouch and stay.
-    private func forgetAccountHosts(serverOrigin: String, hostId: String? = nil) {
+    /// code carry no vouch and stay, and so do keys another account on the
+    /// same server vouched for (#640).
+    private func forgetAccountHosts(serverOrigin: String, hostId: String? = nil, accountId: String?) {
         let candidates = accountHostCandidates()
         let unsavedOurs = AccountHosts.vouchedHostKeys(
-            serverOrigin: serverOrigin, hostId: hostId, hosts: Array(unsavedAccountHosts.values))
+            serverOrigin: serverOrigin, hostId: hostId, accountId: accountId, hosts: Array(unsavedAccountHosts.values))
         for (slot, host) in unsavedAccountHosts where unsavedOurs.contains(host.hostKey) {
             unsavedAccountHosts.removeValue(forKey: slot)
         }
         var keys: [String] = []
-        for key in AccountHosts.vouchedHostKeys(serverOrigin: serverOrigin, hostId: hostId, hosts: candidates)
+        for key in AccountHosts.vouchedHostKeys(
+            serverOrigin: serverOrigin, hostId: hostId, accountId: accountId, hosts: candidates)
             + unsavedOurs
         where !keys.contains(key) && hostRecord(for: key) != nil {
             keys.append(key)
@@ -628,14 +635,16 @@ extension AppModel {
         // Only this host's asks: a join of another one started while the
         // removal waited carries on (and clears its own busy state).
         refuseAccountPairings(hostId: hostId)
-        forgetAccountHosts(serverOrigin: session.serverOrigin, hostId: hostId)
+        forgetAccountHosts(serverOrigin: session.serverOrigin, hostId: hostId, accountId: session.accountId)
     }
 
     /// How this iPhone holds `hostId`, for the removal form to say what
     /// stays.
     func removedHostPairing(_ hostId: String) -> RemovedHostPairing {
         guard let session = accountSession else { return .none }
-        if !AccountHosts.vouchedHostKeys(serverOrigin: session.serverOrigin, hostId: hostId, hosts: hosts.hosts).isEmpty {
+        if !AccountHosts.vouchedHostKeys(
+            serverOrigin: session.serverOrigin, hostId: hostId, accountId: session.accountId, hosts: hosts.hosts
+        ).isEmpty {
             return .account
         }
         let stored = accountRows.first { $0.hostId == hostId }?.storedHostKey
@@ -767,7 +776,8 @@ extension AppModel {
             }
             return beginPairing(
                 link: link,
-                account: AccountLink(serverOrigin: session.serverOrigin, hostId: hostId, vouched: true),
+                account: AccountLink(
+                    serverOrigin: session.serverOrigin, hostId: hostId, vouched: true, accountId: session.accountId),
                 focus: true,
                 autoRegisterHostId: nil) != nil
         }

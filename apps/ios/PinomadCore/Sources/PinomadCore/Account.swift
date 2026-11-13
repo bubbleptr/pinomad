@@ -24,13 +24,21 @@ public struct AccountSession: Codable, Equatable, Sendable {
     /// The account's verified email (ADR-0044 §8); nil on a legacy account
     /// that has none yet, and on records saved before emails existed.
     public var email: String?
+    /// The account's stable id (#640): what the pairings it vouches for are
+    /// filed under. Nil from a server without account ids, and on sessions
+    /// saved before it until the next profile read.
+    public var accountId: String?
 
-    public init(serverOrigin: String, username: String, token: String, expiresAt: Double, email: String? = nil) {
+    public init(
+        serverOrigin: String, username: String, token: String, expiresAt: Double, email: String? = nil,
+        accountId: String? = nil
+    ) {
         self.serverOrigin = serverOrigin
         self.username = username
         self.token = token
         self.expiresAt = expiresAt
         self.email = email
+        self.accountId = accountId
     }
 
     /// The same session with the profile `me` or `setEmail` reported. The
@@ -39,6 +47,8 @@ public struct AccountSession: Codable, Equatable, Sendable {
     public func with(user: AccountUser) -> AccountSession {
         var next = self
         next.email = user.email
+        // An account's id never changes; a profile without one says nothing.
+        next.accountId = user.accountId ?? accountId
         return next
     }
 
@@ -66,15 +76,19 @@ public struct AccountRecord: Codable, Equatable, Sendable {
     public var expiresAt: Double?
     /// Optional so records from before ADR-0044 still decode.
     public var email: String?
+    /// Optional so records from before #640 still decode.
+    public var accountId: String?
 
     public init(
-        serverOrigin: String, username: String, token: String? = nil, expiresAt: Double? = nil, email: String? = nil
+        serverOrigin: String, username: String, token: String? = nil, expiresAt: Double? = nil, email: String? = nil,
+        accountId: String? = nil
     ) {
         self.serverOrigin = serverOrigin
         self.username = username
         self.token = token
         self.expiresAt = expiresAt
         self.email = email
+        self.accountId = accountId
     }
 
     public init(session: AccountSession) {
@@ -83,7 +97,8 @@ public struct AccountRecord: Codable, Equatable, Sendable {
             username: session.username,
             token: session.token,
             expiresAt: session.expiresAt,
-            email: session.email)
+            email: session.email,
+            accountId: session.accountId)
     }
 
     public var session: AccountSession? {
@@ -93,7 +108,8 @@ public struct AccountRecord: Codable, Equatable, Sendable {
             username: username,
             token: token,
             expiresAt: expiresAt,
-            email: email)
+            email: email,
+            accountId: accountId)
     }
 
     /// Keep the address and username for the next sign-in, drop the token.
@@ -883,7 +899,8 @@ public enum AccountHosts {
         stored: StoredHosts,
         rejectedHostKeys: Set<String>,
         declined: [AccountHostRef] = [],
-        storedRead: Bool = true
+        storedRead: Bool = true,
+        accountId: String? = nil
     ) -> AccountReconciliation {
         let origin = normalizeServerOrigin(origin: serverOrigin)
         let matches = matchAccountHosts(
@@ -904,6 +921,19 @@ public enum AccountHosts {
                 serverOrigin: origin,
                 hostId: match.host.hostId)
             changed = true
+        }
+        // A key this server vouched for before #640 carries no account: the
+        // account whose list has its host files it, so a later delisting
+        // forgets it and another account's refresh leaves it alone.
+        if let accountId {
+            let listed = Set(hosts.map(\.hostId))
+            for index in next.hosts.indices {
+                guard let link = next.hosts[index].account, link.vouched == true, link.accountId == nil,
+                      normalizeServerOrigin(origin: link.serverOrigin) == origin, listed.contains(link.hostId)
+                else { continue }
+                next.hosts[index].account?.accountId = accountId
+                changed = true
+            }
         }
 
         let rows = matches.map { match -> AccountHostRow in
@@ -949,12 +979,17 @@ public enum AccountHosts {
     /// came from `serverOrigin`'s own offer. A link `reconcile` adopted onto
     /// a QR pairing isn't vouched, so that pairing stays. With `hostId`, only
     /// that host's: what removing it from the account forgets (#512).
-    public static func vouchedHostKeys(serverOrigin: String, hostId: String? = nil, hosts: [HostRecord]) -> [String] {
+    /// With `accountId`, another account's keys on the same server stay
+    /// (#640); a key filed under no account goes with this one's.
+    public static func vouchedHostKeys(
+        serverOrigin: String, hostId: String? = nil, accountId: String? = nil, hosts: [HostRecord]
+    ) -> [String] {
         let origin = normalizeServerOrigin(origin: serverOrigin)
         return hosts.compactMap { host in
             guard let link = host.account, link.vouched == true,
                   normalizeServerOrigin(origin: link.serverOrigin) == origin,
-                  hostId == nil || link.hostId == hostId
+                  hostId == nil || link.hostId == hostId,
+                  accountId == nil || link.accountId == nil || link.accountId == accountId
             else { return nil }
             return host.hostKey
         }
@@ -964,13 +999,17 @@ public enum AccountHosts {
     /// before, or held with a key `serverOrigin`'s account issued, and missing
     /// now. Each goes as a removal does; a QR pairing among them stays,
     /// since only vouched keys are forgotten.
+    /// With `accountId`, only keys filed under that account count (#640):
+    /// another account's stay, and so does a key filed under none, which
+    /// `reconcile` files once its account lists the host.
     public static func delistedHostIds(
-        serverOrigin: String, listedBefore: [String], hosts: [HostRecord], listed: [String]
+        serverOrigin: String, listedBefore: [String], hosts: [HostRecord], listed: [String], accountId: String? = nil
     ) -> [String] {
         let origin = normalizeServerOrigin(origin: serverOrigin)
         let vouched = hosts.compactMap { host -> String? in
             guard let link = host.account, link.vouched == true,
-                  normalizeServerOrigin(origin: link.serverOrigin) == origin
+                  normalizeServerOrigin(origin: link.serverOrigin) == origin,
+                  accountId == nil || link.accountId == accountId
             else { return nil }
             return link.hostId
         }

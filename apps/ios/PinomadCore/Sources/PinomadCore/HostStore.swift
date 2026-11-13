@@ -12,14 +12,22 @@ public struct AccountLink: Codable, Sendable, Equatable {
     /// shared-device sign-out keeps such a key. Same field as the web's
     /// `StoredHostAccount.vouched`.
     public var vouched: Bool?
+    /// The account whose offer the key came from (#640), on vouched links
+    /// only: a refresh or a shared-device sign-out forgets only the
+    /// signed-in account's keys. Nil on links written before it, or through
+    /// a server without account ids. Same field as the web's
+    /// `StoredHostAccount.accountId`.
+    public var accountId: String?
 
-    public init(serverOrigin: String, hostId: String, vouched: Bool = false) {
+    public init(serverOrigin: String, hostId: String, vouched: Bool = false, accountId: String? = nil) {
         self.serverOrigin = serverOrigin
         self.hostId = hostId
         self.vouched = vouched ? true : nil
+        self.accountId = vouched ? accountId : nil
     }
 
-    /// The same link without the vouch: what a re-pair under another key keeps.
+    /// The same link without the vouch (and so without the account it was
+    /// filed under): what a re-pair under another key keeps.
     public var unvouched: AccountLink {
         AccountLink(serverOrigin: serverOrigin, hostId: hostId)
     }
