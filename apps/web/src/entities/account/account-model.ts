@@ -68,11 +68,14 @@ export type AccountChannelMessage =
       readonly hostId: string;
       /** The stored keys the sender took out; the shared store no longer has them. */
       readonly hostKeys: readonly string[];
+      /** The account the sender acted for (#640); absent from a server without account ids. */
+      readonly accountId?: string;
     }
   | {
       readonly kind: "account-hosts-left";
       readonly serverOrigin: string;
       readonly hostKeys: readonly string[];
+      readonly accountId?: string;
     };
 
 /** The cross-tab channel; BroadcastChannel sends to the other tabs, never back to the sender. */
@@ -355,7 +358,14 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
   let lastOrigin: string | undefined;
   /** The signed-in account's email and needsEmail flag, as its last profile said. */
   let profile: Pick<Extract<AccountState, { status: "signed-in" }>, "email" | "needsEmail"> = {};
+  /**
+   * Each session's account id (#640), keyed by its client so a flight that
+   * outlived its session still files and forgets under the right account.
+   */
+  const accountIds = new WeakMap<AccountClient, string>();
+  /** Called right after `client` became the session `value` describes. */
   const takeProfile = (value: AccountProfile): void => {
+    if (client !== undefined && value.user.accountId !== undefined) accountIds.set(client, value.user.accountId);
     profile = {
       ...(value.user.email === undefined ? {} : { email: value.user.email }),
       ...(value.needsEmail === true ? { needsEmail: true as const } : {}),
@@ -513,7 +523,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
    * is false when any of them may still be stored; `hostKeys` names the
    * records the removal attempted, so another tab can close its runtimes.
    */
-  const forgetAccountHosts = async (origin: string, hostId?: string): Promise<ForgotAccountHosts> => {
+  const forgetAccountHosts = async (origin: string, hostId?: string, accountId?: string): Promise<ForgotAccountHosts> => {
     let stored: StoredHost[];
     try {
       stored = await deps.hosts.list();
@@ -522,11 +532,13 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       return { forgotten: false, hostKeys: [] };
     }
     // Only keys the account issued: a QR pairing that later adopted the link
-    // is the host's own, and stays.
+    // is the host's own, and stays. Another account's keys on the same server
+    // stay too (#640); a key filed under no account is forgotten with it.
     const vouched = (host: StoredHost): boolean =>
       host.account?.vouched === true
       && normalizeServerOrigin(host.account.serverOrigin) === origin
-      && (hostId === undefined || host.account.hostId === hostId);
+      && (hostId === undefined || host.account.hostId === hostId)
+      && (accountId === undefined || host.account.accountId === undefined || host.account.accountId === accountId);
     const dropped = stored.filter(vouched).map((host) => host.hostKey);
     for (const hostKey of dropped) {
       await (deps.removeHost?.(hostKey) ?? deps.hosts.remove(hostKey)).catch((error: unknown) =>
@@ -558,14 +570,14 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
    * The local half of taking `hostId` off this device, shared by this page's
    * removal and the same change from another tab: no server call, no channel.
    */
-  const dropHostLocally = async (serverOrigin: string, hostId: string): Promise<ForgotAccountHosts> => {
+  const dropHostLocally = async (serverOrigin: string, hostId: string, accountId?: string): Promise<ForgotAccountHosts> => {
     const slot = slotKey(serverOrigin, hostId);
     removals.set(slot, (removals.get(slot) ?? 0) + 1);
     cancelAccountRegistration(hostId);
     if (unsaved.delete(slot)) publishUnsaved();
     clearTimeout(hostWatches.get(hostId)?.timer);
     hostWatches.delete(hostId);
-    return forgetAccountHosts(serverOrigin, hostId);
+    return forgetAccountHosts(serverOrigin, hostId, accountId);
   };
 
   /**
@@ -573,7 +585,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
    * leaves this device. Bumps the origin generation so saves and handshakes
    * that began before it cannot write a key back after the cleanup.
    */
-  const leaveAccountHosts = async (serverOrigin: string, broadcast: boolean): Promise<boolean> => {
+  const leaveAccountHosts = async (serverOrigin: string, broadcast: boolean, accountId?: string): Promise<boolean> => {
     const origin = normalizeServerOrigin(serverOrigin);
     originLeaves.set(origin, (originLeaves.get(origin) ?? 0) + 1);
     cancelAccountRegistration();
@@ -585,15 +597,22 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       }
     }
     if (dropped) publishUnsaved();
-    const { forgotten, hostKeys } = await forgetAccountHosts(serverOrigin);
-    if (broadcast) channel?.post({ kind: "account-hosts-left", serverOrigin, hostKeys: [...hostKeys] });
+    const { forgotten, hostKeys } = await forgetAccountHosts(serverOrigin, undefined, accountId);
+    if (broadcast) {
+      channel?.post({
+        kind: "account-hosts-left",
+        serverOrigin,
+        hostKeys: [...hostKeys],
+        ...(accountId === undefined ? {} : { accountId }),
+      });
+    }
     return forgotten;
   };
 
   /** Apply another tab's change locally; it never goes back out on the channel. */
   const applyRemoteChange = async (message: AccountChannelMessage): Promise<void> => {
-    if (message.kind === "host-removed") await dropHostLocally(message.serverOrigin, message.hostId);
-    else await leaveAccountHosts(message.serverOrigin, false);
+    if (message.kind === "host-removed") await dropHostLocally(message.serverOrigin, message.hostId, message.accountId);
+    else await leaveAccountHosts(message.serverOrigin, false, message.accountId);
     // The sender removed the records before posting, so its list is the only
     // way to find the runtimes this page still has open for them.
     await dropHostRuntimes(message.hostKeys);
@@ -657,7 +676,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     if (host.account !== undefined && removedSince(active.origin, slot, seen)) {
       // A removal is about the stored key, not the session: the key still
       // has to be forgotten even when this save outlived its session.
-      await forgetAccountHosts(active.origin, host.account.hostId);
+      await forgetAccountHosts(active.origin, host.account.hostId, accountIds.get(active));
       return false;
     }
     // The save may have outlived its session: it must not clear the new
@@ -696,9 +715,34 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       ? state.hosts.find((match) => match.host.hostId === hostId)?.host.name
       : undefined;
 
-  const enrich = (hostId: string, host: StoredHost): StoredHost => {
+  /**
+   * What `active` reads now is `accountId`'s. A cookie session is shared
+   * by every tab, and another tab's sign-in switches it to another account
+   * under this one (#640): that account's list must not forget or adopt this
+   * account's keys, nor its offer be filed under this account. Asked only
+   * when there is something to forget, adopt or file.
+   */
+  const sessionStillOf = async (active: AccountClient, accountId: string | undefined): Promise<boolean> => {
+    if (accountId === undefined || mode === "bearer") return true;
+    const me = await active.me();
+    return client === active && me.ok && me.value.user.accountId === accountId;
+  };
+
+  /**
+   * A fresh account pairing as it is stored: the host's announced name, and
+   * filed under `active`'s account (#640) once the cookie is confirmed to
+   * still be that account's. Left unfiled otherwise; the refresh of the
+   * account that lists the host files it then.
+   */
+  const enrich = async (active: AccountClient, hostId: string, host: StoredHost): Promise<StoredHost> => {
     const announced = accountName(hostId);
-    return announced === undefined || announced === "" ? host : { ...host, name: announced };
+    const accountId = accountIds.get(active);
+    const filed = host.account?.vouched === true && accountId !== undefined && (await sessionStillOf(active, accountId));
+    return {
+      ...host,
+      ...(announced === undefined || announced === "" ? {} : { name: announced }),
+      ...(filed ? { account: { ...host.account!, accountId: accountId! } } : {}),
+    };
   };
 
   const autoRegisterRound = async (
@@ -758,7 +802,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
           handlePairFailure(active, match.host.hostId, result.error);
           return;
         }
-        const enriched = enrich(match.host.hostId, result.value);
+        const enriched = await enrich(active, match.host.hostId, result.value);
         clearRejected(enriched.hostKey);
         try {
           await deps.paired(enriched);
@@ -767,7 +811,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
           return;
         }
         if (removedSince(active.origin, key, removed)) {
-          await forgetAccountHosts(active.origin, match.host.hostId);
+          await forgetAccountHosts(active.origin, match.host.hostId, accountIds.get(active));
           return;
         }
         if (client === active) await refresh(active, user);
@@ -835,21 +879,36 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     // runtime keeps dialing a host the relay will never connect it to.
     const listed = new Set(rows.value.map((row) => row.hostId));
     const before = state.status === "signed-in" && state.serverOrigin === active.origin ? state.hosts : [];
+    // Keys this server vouched for, of this account only (#640): another
+    // account signed in here before keeps its pairings when it isn't the one
+    // listing. A key filed under no account (before #640) is adopted by the
+    // account whose list has its host, and never forgotten unlisted.
+    const accountId = accountIds.get(active);
+    const vouchedHere = stored.filter(
+      (host) => host.account?.vouched === true && normalizeServerOrigin(host.account.serverOrigin) === active.origin,
+    );
     const delisted = new Set([
       ...before.map((match) => match.host.hostId),
-      ...stored.flatMap((host) =>
-        host.account?.vouched === true && normalizeServerOrigin(host.account.serverOrigin) === active.origin
-          ? [host.account.hostId]
-          : [],
+      ...vouchedHere.flatMap((host) =>
+        accountId === undefined || host.account!.accountId === accountId ? [host.account!.hostId] : [],
       ),
     ].filter((hostId) => !listed.has(hostId)));
+    const unfiled =
+      accountId === undefined
+        ? []
+        : vouchedHere.filter((host) => host.account!.accountId === undefined && listed.has(host.account!.hostId));
     setState(signedInState(active, user, matches));
     watchVisibility();
     void autoRegisterRound(active, user, matches, storedRead);
     // Only the newest refresh may forget: an older list answered before a host
     // joined would drop the pairing a newer refresh just saved.
-    if (started === refreshes) {
-      for (const hostId of delisted) await forgetRemovedHost(active.origin, hostId);
+    const confirmed =
+      started === refreshes && (delisted.size > 0 || unfiled.length > 0) && (await sessionStillOf(active, accountId));
+    if (confirmed && started === refreshes) {
+      for (const host of unfiled) {
+        void deps.paired({ ...host, account: { ...host.account!, accountId: accountId! } }).catch(() => undefined);
+      }
+      for (const hostId of delisted) await forgetRemovedHost(active.origin, hostId, accountId);
     }
     return { ok: true, value: matches };
   };
@@ -927,7 +986,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     // Removed from the account while the handshake ran: storing the key
     // would bring the host back on this device.
     if (removedSince(active.origin, slot, removed)) return fail("host_removed");
-    const enriched = enrich(hostId, result.value);
+    const enriched = await enrich(active, hostId, result.value);
     clearRejected(enriched.hostKey);
     try {
       await deps.paired(enriched);
@@ -939,7 +998,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
       return fail("pairing_not_saved");
     }
     if (removedSince(active.origin, slot, removed)) {
-      await forgetAccountHosts(active.origin, hostId);
+      await forgetAccountHosts(active.origin, hostId, accountIds.get(active));
       return fail("host_removed");
     }
     forgetUnsaved(enriched);
@@ -999,9 +1058,15 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
    * the account gave this device goes. A failure to forget is logged there;
    * the server side is done, and the host stops answering through it either way.
    */
-  const forgetRemovedHost = async (origin: string, hostId: string): Promise<void> => {
-    const { hostKeys } = await dropHostLocally(origin, hostId);
-    channel?.post({ kind: "host-removed", serverOrigin: origin, hostId, hostKeys: [...hostKeys] });
+  const forgetRemovedHost = async (origin: string, hostId: string, accountId: string | undefined): Promise<void> => {
+    const { hostKeys } = await dropHostLocally(origin, hostId, accountId);
+    channel?.post({
+      kind: "host-removed",
+      serverOrigin: origin,
+      hostId,
+      hostKeys: [...hostKeys],
+      ...(accountId === undefined ? {} : { accountId }),
+    });
   };
 
   const removeHost = async ({
@@ -1028,12 +1093,12 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
         if (listed.value.some((match) => match.host.hostId === hostId)) return fail("remove_unsupported");
         // Gone from the account: this device forgets it as after a 204. The
         // list just read already leaves it out, so no second refresh.
-        await forgetRemovedHost(active.origin, hostId);
+        await forgetRemovedHost(active.origin, hostId, accountIds.get(active));
         return { ok: true, value: undefined };
       }
       return result;
     }
-    await forgetRemovedHost(active.origin, hostId);
+    await forgetRemovedHost(active.origin, hostId, accountIds.get(active));
     if (live(active, started)) await refresh(active, user);
     return { ok: true, value: undefined };
   };
@@ -1320,7 +1385,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
         setState({ status: "checking" });
       }
       const settled = (async () => ({
-        forgotten: revoke ? await leaveAccountHosts(active.origin, true) : true,
+        forgotten: revoke ? await leaveAccountHosts(active.origin, true, accountIds.get(active)) : true,
         result: await active.logout(revoke ? { revoke: true } : undefined),
       }))();
       const waited = settled.then(() => undefined);

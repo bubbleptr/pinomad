@@ -24,6 +24,13 @@ export interface StoredHostAccount {
    * sign-out keeps it.
    */
   readonly vouched?: true;
+  /**
+   * The account whose offer the key came from (`AccountUser.accountId`,
+   * #640), on vouched links only: a refresh or a shared-computer sign-out
+   * forgets only the signed-in account's keys. Absent on links written
+   * before it, or through a server that predates account ids.
+   */
+  readonly accountId?: string;
 }
 
 /** One paired host: where to dial and this device's identity on it (base64url, 32 bytes each). */

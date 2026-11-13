@@ -1999,3 +1999,138 @@ describe("removing a host from the account (#512)", () => {
     expect(setup.store.stored).toHaveLength(1);
   });
 });
+
+describe("pairings of other accounts on the same server (#640)", () => {
+  type Answer = Awaited<ReturnType<AccountFetch>>;
+  const answer = (status: number, body?: unknown): Answer => ({
+    status,
+    json: () => (body === undefined ? Promise.reject(new Error("empty")) : Promise.resolve(body)),
+    text: () => Promise.resolve(body === undefined ? "" : JSON.stringify(body)),
+  });
+  const A = "a".repeat(32);
+  const B = "b".repeat(32);
+  const profileOf = (accountId: string) => ({ user: { username: `${accountId[0]}@example.com`, accountId }, expiresAt: 1 });
+  /** Paired through an account's own offer, filed under `accountId` (absent: written before #640). */
+  const vouched = (hostId: string, accountId?: string) =>
+    storedHost({ account: { serverOrigin: ORIGIN, hostId, vouched: true, ...(accountId === undefined ? {} : { accountId }) } });
+  const offer = (hostId: string) => ({
+    url: `wss://relay.example.com/c/${hostId}`,
+    hostKey: toBase64Url(generateKeyPair().publicKey),
+    secret: toBase64Url(generateKeyPair().privateKey),
+    expiresAt: Date.now() + 60_000,
+  });
+
+  /**
+   * A cookie-mode server with one signed-in account at a time: `/api/me` and
+   * `/api/hosts` answer for whoever the cookie belongs to now. `switchTo`
+   * changes that under the model, as another tab signing in would.
+   */
+  const server = (signedIn: string, lists: Record<string, string[]>) => {
+    let current = signedIn;
+    const calls: { url: string; init: AccountFetchInit | undefined }[] = [];
+    const impl: AccountFetch = (url, init) => {
+      calls.push({ url, init });
+      if (url.endsWith("/api/me")) return Promise.resolve(answer(200, profileOf(current)));
+      if (url.endsWith("/api/logout")) return Promise.resolve(answer(204));
+      if (url.endsWith("/api/hosts")) {
+        return Promise.resolve(answer(200, (lists[current] ?? []).map((hostId) => accountHost("A".repeat(43), hostId))));
+      }
+      const [, hostId] = /\/api\/hosts\/([^/]+)\/pairing$/.exec(url) ?? [];
+      if (hostId !== undefined) return Promise.resolve(answer(200, offer(hostId)));
+      return Promise.resolve(answer(404, { error: "not_found" }));
+    };
+    return {
+      fake: { impl, calls },
+      lists,
+      switchTo: (accountId: string) => {
+        current = accountId;
+      },
+    };
+  };
+
+  const start = async (stored: StoredHost[], fake: ReturnType<typeof server>) => {
+    const removed: string[] = [];
+    const store = hosts(stored);
+    const setup = makeModel({
+      fake: fake.fake,
+      store,
+      removeHost: (hostKey) => {
+        removed.push(hostKey);
+        return store.remove(hostKey);
+      },
+    });
+    await vi.waitFor(() => expect(setup.model.state.status).toBe("signed-in"));
+    // Let the first refresh's forgets and adoptions land.
+    await flushMicrotasks();
+    return { ...setup, removed };
+  };
+
+  it("signing in as another account keeps the pairings the first one vouched for", async () => {
+    const theirs = vouched("h1", A);
+    const setup = await start([theirs], server(B, { [B]: [] }));
+    expect(setup.removed).toEqual([]);
+    expect(setup.store.stored).toEqual([theirs]);
+  });
+
+  it("still forgets the signed-in account's own pairing once its host leaves the account", async () => {
+    const mine = vouched("h1", A);
+    const theirs = vouched("h2", B);
+    const setup = await start([mine, theirs], server(A, { [A]: [] }));
+    await vi.waitFor(() => expect(setup.removed).toEqual([mine.hostKey]));
+    expect(setup.store.stored).toEqual([theirs]);
+  });
+
+  it("files a pairing from before #640 under the account that lists its host, and only then forgets it", async () => {
+    const legacy = vouched("h1");
+    const fake = server(B, { [A]: ["h1"], [B]: [] });
+    const asB = await start([legacy], fake);
+    // B's list doesn't have it, and nothing says it was B's: it stays.
+    expect(asB.removed).toEqual([]);
+    expect(asB.store.stored).toEqual([legacy]);
+
+    fake.switchTo(A);
+    const asA = await start([legacy], fake);
+    await vi.waitFor(() => expect(asA.store.stored[0]!.account).toEqual({ ...legacy.account, accountId: A }));
+    fake.lists[A] = [];
+    await asA.model.refreshHosts();
+    await vi.waitFor(() => expect(asA.removed).toEqual([legacy.hostKey]));
+  });
+
+  it("forgets nothing on a list another tab's sign-in answered for a different account", async () => {
+    const mine = vouched("h1", A);
+    const fake = server(A, { [A]: ["h1"], [B]: [] });
+    const setup = await start([mine], fake);
+    // Another tab signs in as B: the shared cookie now lists B's hosts.
+    fake.switchTo(B);
+    await setup.model.refreshHosts();
+    await flushMicrotasks();
+    expect(setup.removed).toEqual([]);
+    expect(setup.store.stored).toEqual([mine]);
+  });
+
+  it("files a pairing made through the account under that account", async () => {
+    const setup = await start([], server(A, { [A]: ["h1"] }));
+    const result = await setup.model.pairHost("h1");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.account).toEqual({ serverOrigin: ORIGIN, hostId: "h1", vouched: true, accountId: A });
+  });
+
+  it("leaves a pairing unfiled when another tab's sign-in switched the session before it was saved", async () => {
+    const fake = server(A, { [A]: ["h1"], [B]: ["h1"] });
+    const setup = await start([], fake);
+    fake.switchTo(B);
+    const result = await setup.model.pairHost("h1");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.account).toEqual({ serverOrigin: ORIGIN, hostId: "h1", vouched: true });
+  });
+
+  it("signing out of a shared computer forgets this account's pairings and old unfiled ones, not another account's", async () => {
+    const mine = vouched("h1", A);
+    const legacy = vouched("h2");
+    const theirs = vouched("h3", B);
+    const setup = await start([mine, legacy, theirs], server(A, { [A]: ["h1"] }));
+    expect(await setup.model.logout({ revoke: true })).toEqual({ ok: true, value: undefined });
+    expect(setup.removed.sort()).toEqual([mine.hostKey, legacy.hostKey].sort());
+    expect(setup.store.stored).toEqual([theirs]);
+  });
+});

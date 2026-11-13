@@ -104,10 +104,11 @@ describe("connection preferences", () => {
 
   it("keeps the account link across a re-pair, but not the vouch for a key it didn't issue (#494)", () => {
     const link = { serverOrigin: "https://relay.example.com", hostId: HOST_KEY_A };
-    const vouched = { ...valid(), account: { ...link, vouched: true as const } };
+    const vouched = { ...valid(), account: { ...link, vouched: true as const, accountId: "a".repeat(32) } };
     // The same key saved again (a name or endpoint refresh) is still the account's.
     expect(mergeStoredHost(vouched, { ...vouched, account: undefined })).toEqual(vouched);
-    // A QR re-pair under a new key keeps the link but drops the vouch.
+    // A QR re-pair under a new key keeps the link but drops the vouch, and
+    // with it the account the key was filed under (#640).
     const qr = { ...vouched, privateKey: key(), account: undefined };
     expect(mergeStoredHost(vouched, qr)).toEqual({ ...qr, account: link });
   });
