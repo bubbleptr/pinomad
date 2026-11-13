@@ -1,7 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn, userEvent, within } from "storybook/test";
 import type { AgentRole } from "@pinomad/protocol/agents.ts";
-import type { ModelSummary } from "@pinomad/protocol/view.ts";
+import type { ModelRef } from "@earendil-works/pi-durable";
+import type { ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";
+import { clampLevel, sameModel } from "@pinomad/client/model.ts";
+import { useState } from "react";
+import { Plus, ArrowUp } from "@/shared/ui/icons";
+import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { ModelSelector } from "./model-selector.tsx";
 
 const models: ModelSummary[] = [
@@ -116,4 +121,83 @@ export const ConversationAgentMissing: Story = {
 export const FixedRole: Story = {
   args: { agent: { kind: "fixed", name: "reviewer", description: roles[0]!.description } },
   play: open,
+};
+
+// ── Playground: every pick works, wired like the draft composer ─────────────
+
+const playgroundModels: ModelSummary[] = [
+  { provider: "anthropic", modelId: "claude-opus-5-5", name: "Claude Opus 5.5", contextWindow: 1_000_000, thinkingLevels: ["off", "low", "medium", "high", "xhigh", "max"] },
+  { provider: "anthropic", modelId: "claude-sonnet-5-5", name: "Claude Sonnet 5.5", contextWindow: 1_000_000, thinkingLevels: ["off", "low", "medium", "high", "max"] },
+  { provider: "anthropic", modelId: "claude-haiku-5-5", name: "Claude Haiku 5.5", contextWindow: 200_000, thinkingLevels: ["off", "high"] },
+  { provider: "openai", modelId: "gpt-6", name: "GPT-6", contextWindow: 400_000, thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"] },
+  { provider: "openai", modelId: "o3", name: "o3", contextWindow: 200_000, thinkingLevels: ["low", "medium", "high"] },
+  { provider: "openai", modelId: "o4-mini", name: "o4-mini", contextWindow: 200_000, thinkingLevels: ["low", "medium", "high"] },
+  { provider: "moonshot", modelId: "kimi-k3", name: "Kimi K3", contextWindow: 256_000, thinkingLevels: ["off", "low", "high", "max"] },
+  { provider: "google", modelId: "gemini-3-pro", name: "Gemini 3 Pro", contextWindow: 2_000_000, thinkingLevels: ["low", "high"] },
+  { provider: "ollama", modelId: "llama-5-70b", name: "Llama 5 70B", contextWindow: 128_000, thinkingLevels: ["off"] },
+];
+
+const playgroundRoles: AgentRole[] = [
+  { name: "reviewer", description: "Reads the diff against the repo's ADRs and flags what breaks them.", model: "anthropic/claude-opus-5-5", thinkingLevel: "high", prompt: "" },
+  { name: "planner", description: "Turns a request into an ordered plan before any code changes.", prompt: "" },
+  { name: "fast-fix", description: "Small, quick edits.", model: "openai/o4-mini", prompt: "" },
+  { name: "release-notes", description: "Writes user-facing notes from merged PRs.", model: "gone/claude-z", prompt: "" },
+];
+
+const toRef = (pinned: string): ModelRef => {
+  const slash = pinned.indexOf("/");
+  return { provider: pinned.slice(0, slash), modelId: pinned.slice(slash + 1) };
+};
+
+/**
+ * The draft composer's rules in miniature: the level is kept as picked and
+ * clamped per model; an agent's pins win and lock that side; the side it
+ * doesn't pin stays the user's until the agent changes.
+ */
+function Playground() {
+  const [model, setModel] = useState<ModelRef>({ provider: "openai", modelId: "gpt-6" });
+  const [level, setLevel] = useState<ThinkingLevel>("high");
+  const [agent, setAgent] = useState<string | undefined>(undefined);
+  const [override, setOverride] = useState<{ model?: ModelRef; level?: ThinkingLevel }>({});
+  const role = playgroundRoles.find((each) => each.name === agent);
+  const shownModel = role?.model !== undefined ? toRef(role.model) : (override.model ?? model);
+  const levels = playgroundModels.find((each) => sameModel(each, shownModel))?.thinkingLevels ?? ["off"];
+  const shownLevel = clampLevel(levels, role?.thinkingLevel ?? override.level ?? level);
+  const locked = { model: role?.model !== undefined, level: role?.thinkingLevel !== undefined };
+  return (
+    <div className="flex min-h-[90vh] flex-col justify-end gap-3 p-6">
+      <div className="w-full max-w-[44rem] rounded-2xl bg-card p-3 shadow-[0_0_0_1px_var(--border),0_2px_8px_oklch(0_0_0/6%)]">
+        <p className="px-1 pb-6 text-muted-foreground">Do anything with Pinomad</p>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1">
+            <IconButton label="More actions" icon={<Plus />} />
+            <ModelSelector
+              models={playgroundModels}
+              selected={{ model: shownModel, level: shownLevel }}
+              agent={{ kind: "pick", roles: playgroundRoles, problems: [{ file: "drafty.md", reason: "description is required" }], value: agent, onChange: (next) => {
+                  setAgent(next);
+                  setOverride({});
+                },
+              }}
+              locked={locked}
+              onModelChange={(next) => (agent === undefined ? setModel(next) : setOverride((current) => ({ ...current, model: next })))}
+              onLevelChange={(next) => (agent === undefined ? setLevel(next) : setOverride((current) => ({ ...current, level: next })))}
+            />
+          </div>
+          <IconButton label="Send" variant="primary" icon={<ArrowUp />} />
+        </div>
+      </div>
+      <p className="px-1 text-xs text-muted-foreground tabular-nums">
+        Sends {shownModel.provider}/{shownModel.modelId} · {shownLevel}
+        {agent === undefined ? "" : ` · @${agent}`} — picked level: {level}
+      </p>
+    </div>
+  );
+}
+
+/** Every interaction works here: switch models and levels, pick or clear an agent, try a locked side. */
+export const Playground_: Story = {
+  name: "Playground",
+  parameters: { canvasWidth: "full" },
+  render: () => <Playground />,
 };

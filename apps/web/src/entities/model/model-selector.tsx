@@ -106,7 +106,8 @@ export function ModelSelector({
               <span className="truncate text-destructive">{problem.label}</span>
             )}
             {agentName === undefined ? null : (
-              <span className="shrink-0 text-xs text-muted-foreground">
+              // Shrinks before the model name does.
+              <span className="min-w-0 shrink-[4] truncate text-xs text-muted-foreground">
                 {locked.model ? "from" : "with"} @{agentName}
               </span>
             )}
@@ -155,7 +156,10 @@ export function ModelSelector({
                             title={model.name}
                             selected={sameModel(model, selected.model)}
                             disabled={isDisabled || locked.model}
-                            onPick={() => onModelChange({ provider: model.provider, modelId: model.modelId })}
+                            onPick={() => {
+                              onModelChange({ provider: model.provider, modelId: model.modelId });
+                              setModelOpen(false);
+                            }}
                           />
                         ))}
                       </ItemGroup>
