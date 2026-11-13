@@ -5,7 +5,9 @@ import { ChevronDown } from "@/shared/ui/icons";
 
 /*
  * A row of navigation tabs: buttons in a <nav>, the current one marked
- * aria-current="page" and underlined. Unlike Base UI Tabs there are no
+ * aria-current="page" (data-current) and in the foreground color; the caller
+ * draws its surface (the terminal tabs put it on a slot that also holds the
+ * close button). Unlike Base UI Tabs there are no
  * panels and no tablist role, so a close button can sit between two tabs and
  * a menu can take the tabs that don't fit. Arrow keys move focus along the
  * row; Tab enters it on the current tab.
@@ -60,42 +62,17 @@ function TabList({
 }
 
 const tabClassName = cn(
-  "group/tab relative inline-flex h-7 cursor-pointer items-center justify-center gap-1 rounded-lg px-3",
+  "group/tab relative inline-flex h-7 cursor-pointer items-center justify-center gap-1.5 rounded-lg px-3",
   "text-sm/5 whitespace-nowrap text-muted-foreground transition-colors duration-(--duration-fast)",
-  "outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-2 focus-visible:outline-primary",
-  "data-current:font-semibold data-current:text-foreground",
+  "outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-2 focus-visible:outline-primary",
+  "data-current:text-foreground",
 );
 
-/** The hover wash and the current tab's underline, shared by Tab and TabMenu. */
-function TabChrome({ current }: { current: boolean }) {
-  return (
-    <>
-      <span
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 rounded-[inherit] transition-colors duration-(--duration-fast) [@media(hover:hover)]:group-hover/tab:bg-surface-hover"
-      />
-      <span
-        aria-hidden="true"
-        className={cn(
-          "pointer-events-none absolute inset-x-3 -bottom-px h-0.5 rounded-full transition-opacity duration-(--duration-fast)",
-          current ? "bg-primary" : "opacity-0",
-        )}
-      />
-    </>
-  );
-}
-
-/**
- * The label over a hidden bold copy of itself, so the tab keeps its width
- * when it turns bold as the current one. It truncates inside a capped tab.
- */
+/** The label; it truncates inside a capped tab. */
 function TabLabel({ children }: { children: string }) {
   return (
-    <span data-slot="tab-label" className="inline-grid min-w-0">
-      <span className="col-start-1 row-start-1 truncate">{children}</span>
-      <span aria-hidden="true" className="invisible col-start-1 row-start-1 truncate font-semibold">
-        {children}
-      </span>
+    <span data-slot="tab-label" className="min-w-0 truncate">
+      {children}
     </span>
   );
 }
@@ -103,10 +80,17 @@ function TabLabel({ children }: { children: string }) {
 function Tab({
   value,
   label,
+  startContent,
   endContent,
   className,
   ...props
-}: Omit<ComponentProps<"button">, "value" | "children"> & { value: string; label: string; endContent?: ReactNode }) {
+}: Omit<ComponentProps<"button">, "value" | "children"> & {
+  value: string;
+  label: string;
+  /** A leading icon, inside the button so it selects the tab too. */
+  startContent?: ReactNode;
+  endContent?: ReactNode;
+}) {
   const list = useContext(TabListContext);
   const current = list.value === value;
   return (
@@ -121,7 +105,7 @@ function Tab({
       onClick={() => list.onChange(value)}
       {...props}
     >
-      <TabChrome current={current} />
+      {startContent === undefined ? null : <span className="inline-flex shrink-0 items-center">{startContent}</span>}
       <TabLabel>{label}</TabLabel>
       {endContent === undefined ? null : <span className="inline-flex shrink-0 items-center">{endContent}</span>}
     </button>
@@ -139,9 +123,8 @@ function TabMenu({ label, options }: { label: string; options: readonly { value:
         data-tab-menu=""
         data-current={selected === undefined ? undefined : true}
         tabIndex={selected === undefined ? -1 : 0}
-        className={tabClassName}
+        className={cn(tabClassName, "[@media(hover:hover)]:hover:bg-surface-hover")}
       >
-        <TabChrome current={selected !== undefined} />
         <TabLabel>{selected?.label ?? label}</TabLabel>
         <ChevronDown aria-hidden="true" className="size-4 shrink-0 transition-transform group-data-popup-open/tab:rotate-180" />
       </DropdownMenuTrigger>

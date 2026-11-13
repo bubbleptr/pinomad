@@ -356,3 +356,27 @@ describe("SidePanel Changes", () => {
     expect(screen.queryByText("src/parser.ts")).toBeNull();
   });
 });
+
+describe("SidePanel close", () => {
+  it.each(["tasks", "changes", "terminal"] as const)("closes the docked panel from its %s header", (surface) => {
+    const onOpenChange = vi.fn();
+    render(
+      <SidePanel
+        view={view}
+        remote={fakeRemote(view)}
+        shownId={PARSER_ID}
+        narrow={false}
+        open
+        surface={surface}
+        busy={false}
+        liveActivity={false}
+        onOpenChange={onOpenChange}
+        onSelectSurface={vi.fn()}
+        openInPanel={vi.fn()}
+        onOpenInMain={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Close side panel" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+});

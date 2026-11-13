@@ -195,7 +195,8 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 
 - `side-nav.tsx`：侧栏和设置导航。`SideNav` 是一列（顶部、可滚动的中段、底部），`resizable` 时宽度可拖、可用方向键调（`ResizeHandle`），并存进 localStorage；`SideNavSection` 是带标题的一组行；`SideNavItem` 是 32px 的一行，`onClick` 打开、`isSelected` 标当前（`aria-current="page"`），带 `collapsible` 和子行时折叠子行。行上的悬浮操作和行宽的样式在 `styles.css` 的侧栏一段，按 `data-slot="side-nav-item"` 选。
 - `resize-handle.tsx`：`useResizableWidth`（px 宽度、上下限、存盘）和贴在面板边上的 `ResizeHandle`（`separator`，拖动或方向键，Shift 步长更大，Home / End 到上下限）。侧栏、设置导航和右侧面板都用它。
-- `tab-list.tsx`：一排导航式的标签（`nav` 里的按钮，当前那个 `aria-current="page"` 加下划线），放不下的进末尾的 `TabMenu`。没有面板，所以标签之间可以夹关闭按钮：终端标签就是这样。
+- `tab-list.tsx`：一排导航式的标签（`nav` 里的按钮，当前那个 `aria-current="page"`、前景色），放不下的进末尾的 `TabMenu`。没有面板，所以标签之间可以夹关闭按钮：终端标签就是这样。当前标签的底由调用处画：终端标签条铺在凹陷的 `--surface-muted` 上，选中的标签（连同它的关闭按钮）是一张 `--card` 底、`--shadow-low` 的小卡片，其余是平的文字，New terminal 的 + 紧跟在最后一个标签后面。
+- 右侧面板的开关：顶栏里 Overview 是唯一带“按下”底色的开关；Tasks / Changes / Terminal 和插件面板的图标是普通的 `ghost` 图标按钮，面板打开时其余几个变成 `text-muted-foreground`，不加底色。面板第一行最右边是关闭整个面板的 `ghost` 图标按钮（Close side panel）。
 
 ## 设置页
 

@@ -14,7 +14,7 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import type { RemoteTerminals, TerminalsState } from "@pinomad/protocol/remote-durable.ts";
 import type { TerminalId, TerminalInfo, TerminalList } from "@pinomad/protocol/terminals.ts";
 import { exitLabel, partitionTabs, resolveSelection, type SelectionMemory } from "../../entities/terminal/terminal-tabs.ts";
-import { Cancel, Pencil, Plus, RefreshCw, Trash2 } from "../../shared/ui/icons.tsx";
+import { Cancel, CommandLine, Pencil, Plus, RefreshCw, Trash2 } from "../../shared/ui/icons.tsx";
 import { LazyXtermView } from "./lazy-xterm-view.tsx";
 import { RenameTerminalDialog } from "./rename-terminal-dialog.tsx";
 import { SurfaceBar } from "./surface-bar.tsx";
@@ -136,6 +136,7 @@ export function TerminalSurface({
     run(terminals.restart(terminal.id, { cols: terminal.cols, rows: terminal.rows }), "Couldn't restart the terminal");
   const close = (terminal: TerminalInfo): void => run(terminals.close(terminal.id), "Couldn't close the terminal");
   const full = list !== undefined && list.terminals.length >= list.limit;
+  // With no terminal yet, the body's New terminal button is the one way in.
   const tabs = list === undefined || list.terminals.length === 0 ? null : (
     <TerminalTabs
       list={list}
@@ -146,11 +147,7 @@ export function TerminalSurface({
       onRestart={restart}
       onClose={close}
       onNew={full ? undefined : openTerminal}
-    />
-  );
-  // With no terminal yet, the body's New terminal button is the one way in.
-  const actions =
-    list === undefined || list.terminals.length === 0 ? null : (
+      newButton={
         <IconButton
           icon={<Plus className="size-4" aria-hidden="true" />}
           label="New terminal"
@@ -158,9 +155,12 @@ export function TerminalSurface({
           variant="ghost"
           tooltip={full ? `Terminal limit reached (${list.limit})` : "New terminal"}
           disabled={!live || full}
+          className="shrink-0"
           onClick={openTerminal}
         />
-    );
+      }
+    />
+  );
 
   return (
     <div className="flex flex-col h-full min-h-0 bg-background">
@@ -169,21 +169,12 @@ export function TerminalSurface({
           <SurfaceBar start={barStart} end={barEnd}>
             {null}
           </SurfaceBar>
-          <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-3">
-            <div className="flex min-w-0 flex-1 items-center">{tabs}</div>
-            {actions}
+          <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border bg-surface-muted px-1.5">
+            {tabs}
           </div>
         </>
       ) : (
-        <SurfaceBar
-          start={barStart}
-          end={
-            <>
-              {actions}
-              {barEnd}
-            </>
-          }
-        >
+        <SurfaceBar start={barStart} end={barEnd} className="bg-surface-muted ps-1.5">
           {tabs}
         </SurfaceBar>
       )}
@@ -258,8 +249,10 @@ function Message({ children }: { children: ReactNode }) {
 
 /**
  * Tabs in creation order; those that don't fit go to the menu, never the
- * selected one. Each tab has its own close button beside it (not inside: the
- * tab is a button too) and a context menu with the rest of its actions.
+ * selected one, and New terminal follows the last. The selected tab is a
+ * raised card on the strip's muted band, the rest flat text. Each tab has its
+ * own close button beside it (not inside: the tab is a button too), drawn
+ * into the same card, and a context menu with the rest of its actions.
  */
 function TerminalTabs({
   list,
@@ -270,6 +263,7 @@ function TerminalTabs({
   onRestart,
   onClose,
   onNew,
+  newButton,
 }: {
   list: TerminalList;
   selectedId: TerminalId | undefined;
@@ -281,6 +275,8 @@ function TerminalTabs({
   onClose: (terminal: TerminalInfo) => void;
   /** Undefined at the host's limit. */
   onNew: (() => void) | undefined;
+  /** After the last tab, outside the measured row and the context menu. */
+  newButton: ReactNode;
 }) {
   const row = useRef<HTMLDivElement>(null);
   // The tab the context menu acts on: the one under the pointer when it went
@@ -304,7 +300,7 @@ function TerminalTabs({
   };
   return (
     <div
-      className="min-w-0 flex-1"
+      className="flex min-w-0 flex-1 items-center gap-1"
       onPointerDownCapture={aim}
       onContextMenuCapture={(event) => {
         aim(event);
@@ -312,13 +308,14 @@ function TerminalTabs({
       }}
     >
       <ContextMenu disabled={!live}>
-        <ContextMenuTrigger ref={row} className="overflow-hidden">
+        <ContextMenuTrigger ref={row} className="min-w-0 overflow-hidden px-0.5 py-1">
           <TabList value={selectedId ?? ""} onChange={onSelect}>
             {inline.map((terminal) => (
               <span key={terminal.id} className="pinomad-terminal-tab-slot group">
                 <Tab
                   value={terminal.id}
                   label={terminal.name}
+                  startContent={<CommandLine className="size-4" aria-hidden="true" />}
                   className={terminal.exit === undefined ? "pinomad-terminal-tab" : "pinomad-terminal-tab text-muted-foreground"}
                   onAuxClick={(event) => {
                     if (event.button === 1 && live) onClose(terminal);
@@ -379,6 +376,7 @@ function TerminalTabs({
           )}
         </ContextMenuContent>
       </ContextMenu>
+      {newButton}
     </div>
   );
 }

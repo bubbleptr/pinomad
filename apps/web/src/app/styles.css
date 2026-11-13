@@ -805,19 +805,35 @@ html {
 /* A terminal tab carries the shell's window title, often a whole path: cap
    the tab and end its label in an ellipsis (tab-list.tsx truncates it).
    Tabs never shrink below their label, so tabs that don't fit go to the menu
-   instead of becoming indistinguishable stubs. */
+   instead of becoming indistinguishable stubs. The slot (tab and its close
+   button) is the visible tab: the selected one a raised card on the strip's
+   muted band, the rest flat text that washes on hover. */
 .pinomad-terminal-tab-slot {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
+  border-radius: var(--radius-lg);
+  transition: background-color var(--duration-fast);
+}
+
+.pinomad-terminal-tab-slot:has(> [data-current]) {
+  background-color: var(--card);
+  box-shadow: var(--shadow-low);
+}
+
+@media (hover: hover) {
+  .pinomad-terminal-tab-slot:not(:has(> [data-current])):hover {
+    background-color: var(--surface-hover);
+  }
 }
 
 .pinomad-terminal-tab {
-  max-width: 10rem;
+  max-width: 11rem;
+  padding-inline: 0.625rem 0.5rem;
 }
 
-/* The close button sits right after its tab's label, inside the tab's
-   hover area rather than as a separate stop in the row. */
+/* The close button sits right after its tab's label, inside the slot's card
+   rather than as a separate stop in the row. */
 .pinomad-terminal-tab-close {
   margin-inline-start: -0.375rem;
 }
