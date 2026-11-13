@@ -25,6 +25,18 @@ const refOf = (raw: string): ModelRef | undefined => {
   return { provider: raw.slice(0, slash), modelId: raw.slice(slash + 1) };
 };
 
+/**
+ * A new agent's name that is already a file on the host: a loaded role, or a
+ * `.md` it couldn't load. The host refuses it too, but only as a plain message.
+ */
+function takenProblem(view: DurableView, name: string): string | undefined {
+  const agents = view.agents;
+  if (agents === null || agents === undefined) return undefined;
+  const taken =
+    agents.roles.some((role) => role.name === name) || agents.problems.some((problem) => problem.file === `${name}.md`);
+  return taken ? `An agent named "${name}" already exists` : undefined;
+}
+
 export function AgentEditorDialog({
   view,
   remote,
@@ -92,7 +104,7 @@ export function AgentEditorDialog({
     };
     // The host re-checks on write — this just keeps the honest round trip off
     // the wire for the common typo. A bad name belongs to the Name field.
-    const badName = agentNameProblem(candidate.name);
+    const badName = agentNameProblem(candidate.name) ?? (editing ? undefined : takenProblem(view, candidate.name));
     const problem = badName === undefined ? agentRoleProblem(candidate) : undefined;
     setNameError(badName);
     setError(problem);

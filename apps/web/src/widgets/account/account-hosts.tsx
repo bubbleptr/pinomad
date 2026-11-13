@@ -105,11 +105,23 @@ const UNPAIRABLE: Record<Exclude<AccountHostMatch["host"]["pairing"], "available
  * Pairing that didn't finish: a pairing whose save failed (the key dies with
  * the page if it isn't kept), the last refresh's failure, and a failed Pair.
  */
-export function AccountPairingBanners({ state, pairing }: { state: SignedIn; pairing: AccountPairing }) {
+export function AccountPairingBanners({
+  state,
+  pairing,
+  rowHostIds = [],
+}: {
+  state: SignedIn;
+  pairing: AccountPairing;
+  /** Further account hosts whose rows show their own Pair failure, e.g. a paired row's Pair again. */
+  rowHostIds?: readonly string[];
+}) {
   const account = useAccountModel();
   const { hosts } = useHosts();
-  // A failed Pair on a row of AccountHostList is said on that row.
-  const onRow = pairing.failed !== undefined && unpairedAccountHosts(state, hosts).some((match) => match.host.hostId === pairing.failed);
+  // A failed Pair on a row of AccountHostList, or on one the caller names, is said on that row.
+  const failed = pairing.failed;
+  const onRow =
+    failed !== undefined &&
+    (rowHostIds.includes(failed) || unpairedAccountHosts(state, hosts).some((match) => match.host.hostId === failed));
   return (
     <>
       {state.unsavedHosts.map((host) => (

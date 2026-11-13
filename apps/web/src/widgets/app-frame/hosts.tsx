@@ -2,6 +2,7 @@ import { Button } from "../../shared/ui/button.tsx";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../shared/ui/collapsible.tsx";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/shared/ui/alert-dialog";
+import { FormError } from "../../shared/ui/field.tsx";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "../../shared/ui/item.tsx";
 import { SegmentedControl, SegmentedControlItem } from "../../shared/ui/segmented-control.tsx";
@@ -34,6 +35,7 @@ import {
   type AccountHostIssue,
   type AccountPairing,
 } from "../account/account-hosts.tsx";
+import { accountErrorMessage } from "../account/account-error.ts";
 import { AddHostDialog } from "../account/add-host.tsx";
 import { RemoveHostDialog } from "../account/remove-host.tsx";
 import { accountHostFor } from "../account/repair-via-account.tsx";
@@ -316,13 +318,15 @@ export function HostsSection({
 
   const accountState = account.state.status === "signed-in" ? account.state : undefined;
   const others = accountState === undefined ? [] : unpairedAccountHosts(accountState, paired.hosts);
+  // Paired rows with Pair again: a failed re-pair is said on its row, not up top.
+  const repairable = paired.hosts.flatMap((host) => accountHostIssue(account.state, host.hostKey)?.match.host.hostId ?? []);
   return (
     <div className="flex flex-col gap-4">
       {thisMac}
       <div className="flex justify-end">
         <Button variant="secondary" size="sm" onClick={() => setAdding(true)}>Add a host</Button>
       </div>
-      {accountState === undefined ? null : <AccountPairingBanners state={accountState} pairing={pairing} />}
+      {accountState === undefined ? null : <AccountPairingBanners state={accountState} pairing={pairing} rowHostIds={repairable} />}
       {paired.hosts.length === 0 ? (
         <span className="text-xs/5 text-muted-foreground">No paired hosts.</span>
       ) : (
@@ -405,6 +409,7 @@ function PairedHostRow({
         <ItemDescription className="line-clamp-2 whitespace-normal">
           {issue === undefined ? status : ACCOUNT_HOST_ISSUE[issue.kind]}
         </ItemDescription>
+        <FormError>{hostId !== undefined && pairing.failed === hostId && pairing.error !== undefined ? accountErrorMessage(pairing.error) : undefined}</FormError>
       </ItemContent>
       <ItemActions className="gap-1">
         {action}
