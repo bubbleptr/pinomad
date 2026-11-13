@@ -2,11 +2,13 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentRole } from "@pinomad/protocol/agents.ts";
-import type { ModelSummary } from "@pinomad/protocol/view.ts";
+import type { ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";
 import { ModelSelector, type ModelSelectorAgent } from "./model-selector.tsx";
 
 const models: readonly ModelSummary[] = [
   { provider: "anthropic", modelId: "claude-a", name: "Claude A", contextWindow: 200_000, thinkingLevels: ["off", "high"] },
+  { provider: "openai", modelId: "gpt-b", name: "GPT B", contextWindow: 400_000, thinkingLevels: ["off", "low", "medium"] },
+  { provider: "local", modelId: "llama-c", name: "Llama C", contextWindow: 128_000, thinkingLevels: ["off"] },
 ];
 
 const roles: readonly AgentRole[] = [
@@ -34,9 +36,56 @@ function setup(agent: AgentInput) {
 
 async function open(): Promise<HTMLElement> {
   const user = userEvent.setup();
-  await user.click(screen.getByTestId("model-thinking-trigger"));
-  return screen.getByTestId("model-thinking-popover");
+  await user.click(screen.getByTestId("model-trigger"));
+  return screen.getByTestId("model-popover");
 }
+
+describe("ModelSelector split capsules", () => {
+  function renderPick(model: string, level: ThinkingLevel) {
+    const onModelChange = vi.fn();
+    const onLevelChange = vi.fn();
+    render(
+      <ModelSelector
+        models={models}
+        selected={{ model: models.find((each) => each.modelId === model)!, level }}
+        onModelChange={onModelChange}
+        onLevelChange={onLevelChange}
+      />,
+    );
+    return { onModelChange, onLevelChange };
+  }
+
+  it("lists models under one heading per provider, without a search box", async () => {
+    const { onModelChange } = renderPick("claude-a", "high");
+    const popover = await open();
+    expect(within(popover).queryByRole("textbox")).toBeNull();
+    const groups = within(popover).getAllByRole("group").map((group) => group.getAttribute("aria-label"));
+    expect(groups).toEqual(["anthropic", "openai", "local"]);
+    await userEvent.setup().click(within(popover).getByRole("button", { name: "GPT B" }));
+    expect(onModelChange).toHaveBeenCalledWith({ provider: "openai", modelId: "gpt-b" });
+  });
+
+  it("keeps Thinking out of the model popover and picks the level from its own capsule", async () => {
+    const { onLevelChange } = renderPick("gpt-b", "low");
+    expect(screen.getByTestId("model-trigger")).not.toHaveTextContent("Low");
+    const thinking = screen.getByTestId("thinking-trigger");
+    expect(thinking).toHaveTextContent("Low");
+    expect(within(await open()).queryByRole("group", { name: "Thinking" })).toBeNull();
+
+    const user = userEvent.setup();
+    await user.click(thinking);
+    const levels = screen.getByRole("group", { name: "Thinking" });
+    // Strongest first, only the selected model's levels.
+    expect(within(levels).getAllByRole("button").map((button) => button.textContent)).toEqual(["Medium", "Low", "Off"]);
+    await user.click(within(levels).getByRole("button", { name: "Medium" }));
+    expect(onLevelChange).toHaveBeenCalledWith("medium");
+  });
+
+  it("has no Thinking capsule for a model that can't reason", () => {
+    renderPick("llama-c", "off");
+    expect(screen.queryByTestId("thinking-trigger")).toBeNull();
+  });
+});
 
 describe("ModelSelector agent section", () => {
   it("offers the same Agent heading for a pick and reports a role or none", async () => {

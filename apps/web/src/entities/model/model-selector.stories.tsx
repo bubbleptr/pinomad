@@ -6,6 +6,7 @@ import { ModelSelector } from "./model-selector.tsx";
 
 const models: ModelSummary[] = [
   { provider: "anthropic", modelId: "claude-a", name: "Claude A", contextWindow: 200_000, thinkingLevels: ["off", "medium", "high"] },
+  { provider: "anthropic", modelId: "claude-a-max", name: "Claude A Max", contextWindow: 1_000_000, thinkingLevels: ["off", "minimal", "low", "medium", "high", "xhigh", "max"] },
   { provider: "openai", modelId: "gpt-b", name: "GPT B", contextWindow: 400_000, thinkingLevels: ["off", "low", "medium"] },
   { provider: "local", modelId: "llama-c", name: "Llama C", contextWindow: 128_000, thinkingLevels: ["off"] },
   // The maker's logo, not OpenRouter's; then a model with no logo at all, whose row keeps the logo slot.
@@ -20,7 +21,7 @@ const roles: AgentRole[] = [
 ];
 
 const open = async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-  await userEvent.click(within(canvasElement).getByTestId("model-thinking-trigger"));
+  await userEvent.click(within(canvasElement).getByTestId("model-trigger"));
 };
 
 const meta = {
@@ -61,6 +62,14 @@ export const NoModels: Story = {
 };
 
 export const Open: Story = { play: open };
+
+/** The Thinking capsule's popover: the selected model's levels, strongest first. */
+export const ThinkingOpen: Story = {
+  args: { selected: { model: { provider: "anthropic", modelId: "claude-a-max" }, level: "high" } },
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByTestId("thinking-trigger"));
+  },
+};
 
 /** A draft on a host with named agents: the Agent section leads the popover. */
 export const AgentPick: Story = {

@@ -476,7 +476,7 @@ it("replaces a draft pick the restarted host no longer offers", async () => {
     answers: ["old host answer", "new host answer"],
   });
   const page = await openPage(host, 1280, webOrigin);
-  const capsule = page.getByRole("button", { name: "Model and Thinking", exact: true });
+  const capsule = page.getByTestId("model-trigger");
   await expect.poll(() => capsule.textContent()).toContain("Faux Thinker");
 
   // Restart on the same port/dataDir (the fixture's reconnect mechanism) with
@@ -511,7 +511,7 @@ it("preserves an unsent follow-up and disables write controls while reconnecting
   await page.getByText("Host connection lost", { exact: true }).waitFor();
   // Follow-up is only offered while a run is busy — the capsule and the
   // + menu are the always-present write controls here.
-  expect(await page.getByRole("button", { name: "Model and Thinking", exact: true }).isDisabled()).toBe(true);
+  expect(await page.getByTestId("model-trigger").isDisabled()).toBe(true);
   expect(await page.getByRole("button", { name: "More actions", exact: true }).isDisabled()).toBe(true);
   expect(await page.getByRole("button", { name: "Fork", exact: true }).isDisabled()).toBe(true);
   expect(await composer.textContent()).toBe("keep this draft");
@@ -1510,19 +1510,23 @@ it("creates the draft with the picked model and thinking level", async () => {
   const page = await openPage(host, 1280, webOrigin);
 
   // The default is the host's first model; the capsule picks the reasoning one + a level.
-  const capsule = page.getByRole("button", { name: "Model and Thinking", exact: true });
+  const capsule = page.getByTestId("model-trigger");
   await capsule.click();
   await page.getByRole("button", { name: "Faux Thinker", exact: false }).click();
-  await page.getByRole("button", { name: "Medium", exact: true }).click();
-  await expect.poll(() => capsule.textContent()).toContain("Faux Thinker · Medium");
   await page.keyboard.press("Escape");
+  const level = page.getByTestId("thinking-trigger");
+  await level.click();
+  await page.getByRole("group", { name: "Thinking" }).getByRole("button", { name: "Medium", exact: true }).click();
+  await expect.poll(() => capsule.textContent()).toContain("Faux Thinker");
+  await expect.poll(() => level.textContent()).toBe("Medium");
   await prompt(page).fill("deep work");
   await prompt(page).press("Enter");
   await page.getByText("thinking answer", { exact: true }).waitFor();
 
   // The new conversation's composer shows the picked model, and the agent doc carries it.
-  const liveCapsule = page.getByRole("button", { name: "Model and Thinking", exact: true });
-  await expect.poll(() => liveCapsule.textContent()).toContain("Faux Thinker · Medium");
+  const liveCapsule = page.getByTestId("model-trigger");
+  await expect.poll(() => liveCapsule.textContent()).toContain("Faux Thinker");
+  await expect.poll(() => page.getByTestId("thinking-trigger").textContent()).toBe("Medium");
   await expect.poll(async () => {
     const conversationId = observer.view.current().organized.chats.find((node) => node.summary.title === "deep work")?.summary.id;
     if (conversationId === undefined) return undefined;
@@ -1548,21 +1552,21 @@ it("changes the model and thinking level from the composer capsule", async () =>
   await prompt(page).press("Enter");
   await page.getByText("done", { exact: true }).waitFor();
 
-  // The default model is non-reasoning: plain name, no Thinking section.
-  const capsule = page.getByRole("button", { name: "Model and Thinking", exact: true });
+  // The default model is non-reasoning: plain name, no Thinking capsule.
+  const capsule = page.getByTestId("model-trigger");
+  const level = page.getByTestId("thinking-trigger");
   await expect.poll(() => capsule.textContent()).toContain("Faux Model");
-  await capsule.click();
-  // Non-reasoning model: no Thinking section (no level rows at all).
-  expect(await page.getByRole("group", { name: "Thinking" }).count()).toBe(0);
-  expect(await page.getByRole("button", { name: "Faux Thinker", exact: false }).textContent()).not.toContain("·");
+  expect(await level.count()).toBe(0);
 
-  // Picking the reasoning model reveals its levels once the setModel call
-  // round-trips; picking one relabels the trigger.
+  // Picking the reasoning model brings the Thinking capsule once the setModel
+  // call round-trips; picking a level there relabels it.
+  await capsule.click();
   await page.getByRole("button", { name: "Faux Thinker", exact: false }).click();
-  const thinking = page.getByRole("group", { name: "Thinking" });
-  await thinking.getByRole("button", { name: "High", exact: true }).click();
   await page.keyboard.press("Escape");
-  await expect.poll(() => capsule.textContent()).toContain("Faux Thinker · High");
+  await level.click();
+  await page.getByRole("group", { name: "Thinking" }).getByRole("button", { name: "High", exact: true }).click();
+  await expect.poll(() => capsule.textContent()).toContain("Faux Thinker");
+  await expect.poll(() => level.textContent()).toBe("High");
   await expect.poll(async () => {
     const id = observer.view.current().organized.chats.find((node) => node.summary.title === "hello")?.summary.id;
     if (id === undefined) return undefined;
@@ -3977,7 +3981,7 @@ it("lists named agents in a @ mention menu and inserts @name as plain text", asy
   await mkdir(join(dir.path, "agents"), { recursive: true });
   await writeFile(join(dir.path, "agents", "reviewer.md"), '---\ndescription: "Reviews code"\n---\n\nBe strict.\n');
   await writeFile(join(dir.path, "agents", "planner.md"), '---\ndescription: "Plans work"\n---\n\nPlan it.\n');
-  await page.getByTestId("model-thinking-trigger").click();
+  await page.getByTestId("model-trigger").click();
   await page.getByRole("group", { name: "Agent" }).getByRole("button", { name: /^reviewer/ }).waitFor();
   await dismissPopovers(page);
   const editable = page.getByRole("combobox", { name: "Prompt" });
@@ -4078,7 +4082,7 @@ const dismissPopovers = async (page: Page): Promise<void> => {
 
 /** Picks a named agent (or /^No agent/) from the model popover's Agent section, then closes it. */
 const pickAgent = async (page: Page, name: RegExp): Promise<void> => {
-  await page.getByTestId("model-thinking-trigger").click();
+  await page.getByTestId("model-trigger").click();
   await page.getByRole("group", { name: "Agent" }).getByRole("button", { name }).click();
   await dismissPopovers(page);
 };
@@ -4105,7 +4109,7 @@ it("creates the draft with a named agent, switches it, and shows @name on the co
   const page = await openPage(host, 1280, webOrigin);
 
   // The model popover lists the host's roles; picking one shows the inherited pick.
-  const capsule = page.getByTestId("model-thinking-trigger");
+  const capsule = page.getByTestId("model-trigger");
   if (shotDir !== undefined) {
     await capsule.click();
     await page.getByRole("group", { name: "Agent" }).waitFor();
@@ -4113,7 +4117,8 @@ it("creates the draft with a named agent, switches it, and shows @name on the co
     await dismissPopovers(page);
   }
   await pickAgent(page, /^reviewer/);
-  await expect.poll(() => capsule.textContent()).toContain("@reviewer · Faux Thinker · High");
+  await expect.poll(() => capsule.textContent()).toContain("@reviewer · Faux Thinker");
+  await expect.poll(() => page.getByTestId("thinking-trigger").textContent()).toBe("High");
   await expect.poll(() => capsule.textContent()).toContain("from @reviewer");
 
   const composer = page.getByRole("combobox", { name: "Prompt" });
@@ -4193,12 +4198,8 @@ it("sends only the overridden side once an agent draft's pick is changed", async
   await pickAgent(page, /^reviewer/);
 
   // Overriding the model keeps the level inherited — the hint narrows to it.
-  const capsule = page.getByTestId("model-thinking-trigger");
+  const capsule = page.getByTestId("model-trigger");
   await capsule.click();
-  // Opening still lands in the search box, though the Agent section comes first.
-  await expect
-    .poll(() => page.getByRole("textbox", { name: "Search models" }).evaluate((el) => el === document.activeElement))
-    .toBe(true);
   await page.getByRole("button", { name: "Thinker B", exact: false }).click();
   await dismissPopovers(page);
   await expect.poll(() => capsule.textContent()).toContain("level from @reviewer");
@@ -4235,7 +4236,7 @@ it("resets to inheritance on a new agent and back to the remembered pick on clea
     ],
   });
   const page = await openPage(host, 1280, webOrigin);
-  const capsule = page.getByTestId("model-thinking-trigger");
+  const capsule = page.getByTestId("model-trigger");
 
   await pickAgent(page, /^reviewer/);
   await capsule.click();
@@ -4287,7 +4288,7 @@ it("blocks the draft send while the agent's model is unavailable and unblocks on
   const page = await openPage(host, 1280, webOrigin);
 
   await pickAgent(page, /^broken/);
-  const capsule = page.getByTestId("model-thinking-trigger");
+  const capsule = page.getByTestId("model-trigger");
   await expect.poll(() => capsule.textContent()).toContain("gone/claude-z unavailable");
 
   const composer = page.getByRole("combobox", { name: "Prompt" });

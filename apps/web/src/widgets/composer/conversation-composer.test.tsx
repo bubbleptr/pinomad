@@ -219,14 +219,14 @@ const summary = (overrides: Partial<ConversationSummary> = {}): ConversationSumm
 });
 
 async function openAgentPopover(): Promise<HTMLElement> {
-  await userEvent.setup().click(screen.getByTestId("model-thinking-trigger"));
-  return screen.getByTestId("model-thinking-popover");
+  await userEvent.setup().click(screen.getByTestId("model-trigger"));
+  return screen.getByTestId("model-popover");
 }
 
 describe("ConversationComposer agent switching", () => {
   it("calls setAgent with the picked role and shows currentAgent over role", async () => {
     const { remote } = setup({ summary: summary({ role: "reviewer", currentAgent: "tester" }) });
-    expect(screen.getByTestId("model-thinking-trigger")).toHaveTextContent("@tester");
+    expect(screen.getByTestId("model-trigger")).toHaveTextContent("@tester");
 
     const popover = await openAgentPopover();
     await userEvent.setup().click(within(popover).getByRole("button", { name: /reviewer/ }));
@@ -242,7 +242,7 @@ describe("ConversationComposer agent switching", () => {
 
   it("treats a present null currentAgent as no agent, not the creation role", async () => {
     setup({ summary: summary({ role: "reviewer", currentAgent: null }) });
-    expect(screen.getByTestId("model-thinking-trigger")).not.toHaveTextContent("@");
+    expect(screen.getByTestId("model-trigger")).not.toHaveTextContent("@");
 
     const popover = await openAgentPopover();
     expect(within(popover).getByText("Agent · sets the system prompt")).toBeInTheDocument();
@@ -252,7 +252,7 @@ describe("ConversationComposer agent switching", () => {
 
   it("keeps a pre-5.18 host read-only", async () => {
     const { remote } = setup({ minor: 17, summary: summary({ role: "reviewer" }) });
-    expect(screen.getByTestId("model-thinking-trigger")).toHaveTextContent("@reviewer");
+    expect(screen.getByTestId("model-trigger")).toHaveTextContent("@reviewer");
 
     const popover = await openAgentPopover();
     expect(within(popover).getByText("Agent · fixed at creation")).toBeInTheDocument();
@@ -262,7 +262,7 @@ describe("ConversationComposer agent switching", () => {
 
   it("keeps a subagent read-only on a 5.18 host", async () => {
     const { remote } = setup({ summary: summary({ kind: "subagent", role: "tester", currentAgent: "tester" }) });
-    expect(screen.getByTestId("model-thinking-trigger")).toHaveTextContent("@tester");
+    expect(screen.getByTestId("model-trigger")).toHaveTextContent("@tester");
 
     const popover = await openAgentPopover();
     expect(within(popover).getByText("Agent · fixed at creation")).toBeInTheDocument();

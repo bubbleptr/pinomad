@@ -42,7 +42,7 @@ describe("subagent workbench (ADR-0047 §2)", () => {
 
     expect(screen.getByText("Read-only · subagent")).toBeInTheDocument();
     expect(screen.getAllByText("socket-owner").length).toBeGreaterThan(0);
-    expect(screen.queryByTestId("model-thinking-trigger")).toBeNull();
+    expect(screen.queryByTestId("model-trigger")).toBeNull();
     expect(promptInput()).toBeNull();
     // Idle: nothing to stop.
     expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
