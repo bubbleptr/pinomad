@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { contextUsage } from "@pinomad/client/context-usage.ts";
+import type { DurableView } from "@pinomad/protocol/view.ts";
 import {
   busyConversation,
   fakeProcesses,
@@ -91,3 +92,11 @@ const finished = withSubagents(view, FINISHED_SUBAGENTS);
 const ended = fakeProcesses({ lists: { [PARSER_ID]: PROCESSES.filter((process) => process.state !== "running") } });
 /** Nothing at work: the latest subagents to finish, failures first; ended processes stay in Tasks. */
 export const TasksFinished: Story = { args: { view: finished, remote: fakeRemote(finished, {}, ended) } };
+
+// The processes doc rides along in view.docs; Tasks shows it, Documents does not.
+const processesOnly: DurableView = {
+  ...withSubagents(view, []),
+  docs: [{ kind: "pinomad.processes", presentation: "pinomad.processes", value: { processes: [...PROCESSES] } }],
+};
+/** No subagents and nothing running: the latest processes to end, newest first. */
+export const TasksProcessesEnded: Story = { args: { view: processesOnly, remote: fakeRemote(processesOnly, {}, ended) } };

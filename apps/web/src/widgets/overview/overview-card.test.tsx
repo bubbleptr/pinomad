@@ -227,6 +227,14 @@ describe("OverviewCard documents", () => {
     expect(screen.getByText("acme.status")).toBeVisible();
     expect(screen.queryByText("plugin.notes.board")).toBeNull();
   });
+
+  it("leaves the processes doc to Tasks instead of showing it again as raw data", () => {
+    renderCard(11, { available: true, base: "c0ffee", patch: "", truncated: false }, undefined, {
+      docs: [{ kind: "pinomad.processes", presentation: "pinomad.processes", value: { processes: [...PROCESSES] } }],
+    });
+    expect(screen.queryByText("pinomad.processes")).toBeNull();
+    expect(screen.queryByText(/"id":"p-dev"/)).toBeNull();
+  });
 });
 
 describe("OverviewCard tasks", () => {
@@ -278,6 +286,17 @@ describe("OverviewCard tasks", () => {
       "Reproduce on Node 22Failed",
       "Update the changelogDone",
       "Survey existing parsersDone",
+      "All tasks",
+    ]);
+  });
+
+  it("lists the latest ended processes, newest first, when there are no subagents", () => {
+    const ended = PROCESSES.filter((process) => process.state !== "running");
+    const { rows } = renderTasks(withSubagents(fakeView(), []), fakeProcesses({ lists: { [PARSER_ID]: ended } }));
+    expect(rows()).toEqual([
+      expect.stringMatching(/^bun test --watch/),
+      expect.stringMatching(/^tail -f app\.log/),
+      expect.stringMatching(/^build/),
       "All tasks",
     ]);
   });
