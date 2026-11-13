@@ -2,10 +2,10 @@
 // at that image. Bytes render immediately; refs load near the viewport and
 // the lightbox only fetches the image it is showing.
 import { Button } from "../../shared/ui/button.tsx";
+import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { Lightbox } from "@/shared/ui/lightbox";
 import { Thumbnail } from "@/shared/ui/thumbnail";
-import { useToast } from "@/shared/ui/toast";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { ViewImage } from "@pinomad/protocol/images.ts";
 import { cachedImageSrc, useImageSrc, useNearViewport } from "./image-source.tsx";
 
@@ -81,22 +81,27 @@ export function MessageLightbox({
   const [attempt, setAttempt] = useState(0);
   const current = images[index];
   const shown = useImageSrc(current, true, "original", attempt);
-  // A failed original keeps the gallery open on the smaller copy; the toast
-  // says so and retries. It goes once the image loads or the gallery closes.
-  const toast = useToast();
-  const failed = shown.status === "error";
-  useEffect(() => {
-    if (!failed) return;
-    return toast({
-      description: "Couldn't load the original image",
-      type: "error",
-      action: (
-        <Button size="sm" variant="secondary" onClick={() => setAttempt((value) => value + 1)}>
-          Try again
-        </Button>
-      ),
-    });
-  }, [failed, toast]);
+  if (shown.status === "error") {
+    return (
+      <Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
+        <DialogContent className="w-[420px]">
+          <DialogHeader>
+            <DialogTitle>Image unavailable</DialogTitle>
+          </DialogHeader>
+          <DialogBody>
+            <div className="flex flex-col gap-3 p-3">
+              <div role="alert">
+                <span className="text-sm/5">Couldn't load the original image.</span>
+              </div>
+              <div>
+                <Button onClick={() => setAttempt((value) => value + 1)}>Try again</Button>
+              </div>
+            </div>
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
+    );
+  }
   const shownImages = images.map((image, itemIndex) => ({
     src: itemIndex === index && shown.status === "ready"
       ? shown.src

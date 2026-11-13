@@ -1060,7 +1060,7 @@ function AgentRoleCard({
             </div>
           </div>
         ) : null}
-        <FormError>{error}</FormError>
+        <FormError className="mt-2">{error}</FormError>
       </CardContent>
     </Card>
   );
@@ -1122,7 +1122,7 @@ function AgentProblemCard({
             </div>
           </div>
         ) : null}
-        <FormError>{error}</FormError>
+        <FormError className="mt-2">{error}</FormError>
       </CardContent>
     </Card>
   );

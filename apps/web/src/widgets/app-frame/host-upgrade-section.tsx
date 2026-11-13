@@ -1,6 +1,6 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { SegmentedControl, SegmentedControlItem } from "../../shared/ui/segmented-control.tsx";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { relativeTime } from "@pinomad/client/family.ts";
 import { hostSupportsCall, hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -127,8 +127,16 @@ function UpgradeStatus({
       .then(done, (reason: unknown) => fail(errorText(reason)))
       .finally(() => setPending(undefined));
   };
+  // The confirmation can close before the host answers (it dropped, or
+  // another device acted); a failure then still needs to be seen.
+  const dialogOpen = useRef(false);
   const start = (when: UpgradeWhen): void =>
-    act(when, () => remote.controller.startUpgrade(when), setError, () => setConfirming(false));
+    act(
+      when,
+      () => remote.controller.startUpgrade(when),
+      (message) => (dialogOpen.current ? setError(message) : callError.show(`Couldn't start the upgrade: ${message}`)),
+      () => setConfirming(false),
+    );
   const { available, phase, target, failure, blocked } = upgrade;
   const running = upgrade.current === null ? "Source checkout" : `pinomad ${upgrade.current}`;
 
@@ -146,6 +154,7 @@ function UpgradeStatus({
   // Another device started or cancelled, or the host dropped: the dialog
   // closes for good rather than coming back on its own later.
   if (confirming && !canStart) setConfirming(false);
+  dialogOpen.current = confirming && canStart;
   const confirmPending = pending === "idle" || pending === "now" ? pending : undefined;
   const alerts = [
     upgrade.checkError === null ? null : (

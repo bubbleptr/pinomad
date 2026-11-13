@@ -1,8 +1,7 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { ImageSourceProvider } from "@/entities/image/image-source";
-import { Toaster } from "@/shared/ui/toast";
 import {
   ChatTool,
   ChatToolGroup,
@@ -184,7 +183,7 @@ describe("ChatTool", () => {
     expect(document.querySelector('img[src=""]')).toBeNull();
   });
 
-  it("reports an original failure in a toast and retries it with the lightbox still open", async () => {
+  it("reports an original failure and retries it in the lightbox", async () => {
     const user = userEvent.setup();
     const preview = { data: "cHJldmlldw==", mimeType: "image/png" as const, variant: "preview" as const };
     const original = { data: "b3JpZ2luYWw=", mimeType: "image/png" as const };
@@ -196,30 +195,26 @@ describe("ChatTool", () => {
       return original;
     };
     const { container } = render(
-      <Toaster>
-        <ImageSourceProvider load={load}>
-          <ChatTool
-            argsText='{"path":"shot.png"}'
-            images={[{ ref: "lightbox-retry", mimeType: "image/png" }]}
-            output="read shot.png"
-            state="output-available"
-            toolName="read"
-          />
-        </ImageSourceProvider>
-      </Toaster>,
+      <ImageSourceProvider load={load}>
+        <ChatTool
+          argsText='{"path":"shot.png"}'
+          images={[{ ref: "lightbox-retry", mimeType: "image/png" }]}
+          output="read shot.png"
+          state="output-available"
+          toolName="read"
+        />
+      </ImageSourceProvider>,
     );
 
     await user.click(screen.getByRole("button", { name: /read/ }));
     await user.click(await screen.findByRole("button", { name: "View image" }));
-    const dialog = await screen.findByRole("dialog");
-    await waitFor(() => expect(document.querySelector("[data-toast-id]")).toHaveTextContent("Couldn't load the original image"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Couldn't load the original image");
 
-    // The open lightbox hides the rest of the page from the accessibility tree; the toast sits in the top layer above it.
-    await user.click(within(document.querySelector<HTMLElement>("[data-toast-id]")!).getByRole("button", { name: "Try again", hidden: true }));
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    const dialog = await screen.findByRole("dialog");
     await waitFor(() => {
       expect(dialog.querySelector('img[src="data:image/png;base64,b3JpZ2luYWw="]')).not.toBeNull();
     });
-    await waitFor(() => expect(document.querySelector("[data-toast-id]")).toBeNull());
     expect(originalAttempts).toBe(2);
     expect(container.querySelector('img[src="data:image/png;base64,cHJldmlldw=="]')).not.toBeNull();
   });

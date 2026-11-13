@@ -4,6 +4,8 @@ import { Alert, AlertAction, AlertDescription, AlertTitle } from "./alert.tsx";
 import { Avatar, AvatarFallback, initials } from "./avatar.tsx";
 import { Badge } from "./badge.tsx";
 import { Button } from "./button.tsx";
+import { Field, FieldError, FieldLabel, FormError } from "./field.tsx";
+import { Input } from "./input.tsx";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "./empty.tsx";
 import { Skeleton } from "./skeleton.tsx";
 import { Spinner } from "./spinner.tsx";
@@ -119,6 +121,24 @@ export const EmptyStates: Story = {
           <Button>Try again</Button>
         </EmptyContent>
       </Empty>
+    </div>
+  ),
+};
+
+/** A field's own problem under it, marked invalid; a form-wide one above the buttons. */
+export const FormErrors: Story = {
+  render: () => (
+    <div className="flex flex-col gap-3" style={{ maxWidth: 360 }}>
+      <Field invalid>
+        <FieldLabel>Password</FieldLabel>
+        <Input type="password" defaultValue="hunter2" />
+        <FieldError>Wrong email or password.</FieldError>
+      </Field>
+      <FormError>Too many attempts. Wait a few minutes and try again.</FormError>
+      <div className="flex gap-2">
+        <Button>Sign in</Button>
+        <Button variant="secondary">Cancel</Button>
+      </div>
     </div>
   ),
 };

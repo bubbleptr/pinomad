@@ -1,11 +1,12 @@
 // Settings → Upgrade (ADR-0043): which actions a host's `upgrade` state offers
 // and which calls they make. The fake remote's spies stand in for the host.
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { act } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HostUpgrade } from "@pinomad/protocol/upgrade.ts";
 import { fakeRemote, fakeUpgrade, fakeView } from "../../test/story-fixtures.tsx";
+import { Toaster } from "../../shared/ui/toast.tsx";
 import { CALL_TIMEOUT_MS, HostUpgradeSection } from "./host-upgrade-section.tsx";
 
 afterEach(() => vi.useRealTimers());
@@ -76,6 +77,23 @@ describe("HostUpgradeSection", () => {
     });
     expect(await screen.findByText(/The host didn't answer/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+  });
+
+  it("still reports a start that fails after its confirmation closed", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const view = fakeView({ upgrade: fakeUpgrade() });
+    const remote = fakeRemote(view, { startUpgrade: () => new Promise(() => {}) });
+    const { rerender } = render(<Toaster><HostUpgradeSection view={view} remote={remote} /></Toaster>);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Upgrade" }));
+    await user.click(screen.getByRole("button", { name: "Upgrade when idle" }));
+    // The host drops: the confirmation closes before the call times out.
+    rerender(<Toaster><HostUpgradeSection view={{ ...view, connection: "reconnecting" }} remote={remote} /></Toaster>);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await act(async () => {
+      vi.advanceTimersByTime(CALL_TIMEOUT_MS);
+    });
+    await waitFor(() => expect(document.querySelector("[data-toast-id]")).toHaveTextContent(/Couldn't start the upgrade: The host didn't answer/));
   });
 
   it("doesn't call a failed check up to date", () => {
