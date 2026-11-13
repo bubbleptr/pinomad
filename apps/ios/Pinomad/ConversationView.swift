@@ -147,8 +147,12 @@ struct ConversationView: View {
             if failure != nil { return .error }
             return interrupted ? nil : .success
         }
-        // A send the host refused; opening a conversation that already shows one doesn't count.
-        .sensoryFeedback(.error, trigger: conversation?.localSubmissions.filter { $0.status == .failed }.count) { old, new in
+        // A send the host refused, in the transcript or (sent during a run)
+        // in the queue; opening a conversation that already shows one doesn't count.
+        .sensoryFeedback(.error, trigger: conversation.map {
+            $0.localSubmissions.filter { $0.status == .failed }.count
+                + $0.localQueueItems.filter { $0.status == .failed }.count
+        }) { old, new in
             guard let old, let new else { return false }
             return new > old
         }

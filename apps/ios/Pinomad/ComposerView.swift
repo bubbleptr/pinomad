@@ -932,6 +932,7 @@ private struct QueueList: View {
     /// The host row being dragged, set when its handle lifts.
     @State private var dragged: UInt64?
     @State private var dropMark: QueueDropMark?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ScrollView {
@@ -945,7 +946,7 @@ private struct QueueList: View {
         .scrollClipDisabled()
         .frame(height: height)
         // After the frame, so the list's height eases with its rows.
-        .animation(.snappy, value: rows.map(\.id))
+        .animation(reduceMotion ? nil : .snappy, value: rows.map(\.id))
     }
 
     private var height: CGFloat {
