@@ -197,6 +197,49 @@ export function withBackgroundSubagents(
   };
 }
 
+/** A subagent of the parser conversation, for families with several tasks. */
+export function parserSubagent(n: number, title: string, extra: Partial<ConversationSummary> = {}): ConversationSummary {
+  return { id: id(100 + n), kind: "subagent", parent: PARSER_ID, title, ...extra };
+}
+
+/** The parser conversation's subagents replaced by `tasks`, in that order. */
+export function withSubagents(view: DurableView, tasks: readonly ConversationSummary[]): DurableView {
+  const attach = (node: ConversationNode): ConversationNode =>
+    node.summary.id === PARSER_ID
+      ? {
+          summary: node.summary,
+          children: [
+            ...node.children.filter((child) => child.summary.kind !== "subagent"),
+            ...tasks.map((summary) => ({ summary, children: [] })),
+          ],
+        }
+      : { summary: node.summary, children: node.children.map(attach) };
+  return {
+    ...view,
+    organized: {
+      ...view.organized,
+      chats: view.organized.chats.map(attach),
+      projects: view.organized.projects.map((project) => ({ ...project, conversations: project.conversations.map(attach) })),
+      archived: view.organized.archived.map((entry) => ({ ...entry, node: attach(entry.node) })),
+    },
+  };
+}
+
+/** Running, waiting, failed and finished subagents side by side. */
+export const MIXED_SUBAGENTS: readonly ConversationSummary[] = [
+  parserSubagent(1, "Write regression tests", { status: "running", updatedAt: now - MINUTE, activity: { tool: "bash", target: "bun test" } }),
+  parserSubagent(5, "Update the changelog", { updatedAt: now - 8 * MINUTE }),
+  parserSubagent(2, "Audit error handling", { status: "needs-answer", updatedAt: now - 2 * MINUTE }),
+  parserSubagent(7, "Reproduce on Node 22", { status: "failed", updatedAt: now - 12 * MINUTE }),
+  parserSubagent(3, "Trace reconnect path", { status: "running", updatedAt: now - 3 * MINUTE, activity: { tool: "read", target: "gateway.ts" } }),
+  parserSubagent(6, "Survey existing parsers", { updatedAt: now - 25 * MINUTE }),
+];
+
+/** The same family once every subagent has finished. */
+export const FINISHED_SUBAGENTS: readonly ConversationSummary[] = MIXED_SUBAGENTS.filter(
+  (task) => task.status !== "running" && task.status !== "needs-answer",
+);
+
 /** The same view with one conversation's summary changed, wherever it sits in the tree. */
 export function withSummary(view: DurableView, conversationId: ConversationId, patch: Partial<ConversationSummary>): DurableView {
   const visit = (node: ConversationNode): ConversationNode => ({

@@ -1,6 +1,6 @@
 // The side panel belongs to the family the main column shows. It lists only
 // Foreground Tasks; Forks are independent conversations in the sidebar now.
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import {
@@ -10,10 +10,12 @@ import {
   fakeView,
   FORK_ID,
   forkConversation,
+  MIXED_SUBAGENTS,
   PARSER_ID,
   PROCESSES,
   SUBAGENT_ID,
   subagentConversation,
+  withSubagents,
   withSummary,
 } from "../../test/story-fixtures.tsx";
 import { SidePanel } from "./side-panel.tsx";
@@ -153,6 +155,34 @@ describe("SidePanel subagents (ADR-0047)", () => {
     rerender(tasksPanel(view));
     expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
     expect(screen.getByRole("button", { name: "Open in main" })).toBeInTheDocument();
+  });
+});
+
+describe("SidePanel task rows", () => {
+  it("orders a family's tasks running, then failed, then done, each saying its state", () => {
+    renderPanel(PARSER_ID, withSubagents(fakeView(), MIXED_SUBAGENTS));
+    const list = screen.getByRole("list", { name: "This conversation" });
+    const rows = within(list).getAllByRole("listitem");
+    expect(rows.map((row) => within(row).getByRole("button").textContent)).toEqual([
+      "Write regression testsRunning · bash bun test",
+      "Audit error handlingWaiting for an answer",
+      "Trace reconnect pathRunning · read gateway.ts",
+      "Reproduce on Node 22Failed",
+      "Update the changelogDone",
+      "Survey existing parsersDone",
+    ]);
+    // Every row keeps its kind's glyph, a finished one too, so titles line up.
+    for (const row of rows) expect(row.querySelector('[data-slot="task-glyph"]')).not.toBeNull();
+  });
+
+  it("marks process rows apart from subagent rows", async () => {
+    renderPanel(PARSER_ID, withSubagents(fakeView(), MIXED_SUBAGENTS), fakeRemote(view, {}, fakeProcesses({ lists: { [PARSER_ID]: PROCESSES } })));
+    const processes = await screen.findByRole("list", { name: "Processes" });
+    const glyphs = [...processes.querySelectorAll('[data-slot="task-glyph"]')].map((glyph) => glyph.getAttribute("data-kind"));
+    expect(new Set(glyphs)).toEqual(new Set(["process"]));
+    const subagents = screen.getByRole("list", { name: "This conversation" });
+    expect(subagents.querySelector('[data-kind="process"]')).toBeNull();
+    expect(within(processes).getByRole("button", { name: /^bun test --watch/ })).toHaveTextContent("Exited 1");
   });
 });
 

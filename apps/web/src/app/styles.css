@@ -524,6 +524,19 @@ html {
     opacity: 1;
   }
 
+  /* A "Needs answer" tag takes the … menu's slot at rest and gives it back
+     while the row is hovered or focused. Without hover the menu always shows,
+     so the tag sits before it. */
+  .pigui-sidenav-status-tag + .pigui-sidenav-actions-spacer {
+    display: none;
+  }
+
+  .pigui-sidenav-session-row:hover .pigui-sidenav-status-tag,
+  .pigui-sidenav-session-row:focus-within .pigui-sidenav-status-tag,
+  .pigui-sidenav-session-row:has([aria-expanded="true"]) .pigui-sidenav-status-tag {
+    visibility: hidden;
+  }
+
   .pigui-sidenav-section-header:hover .pigui-sidenav-section-toggle__chevron,
   .pigui-sidenav-section-header:focus-within .pigui-sidenav-section-toggle__chevron,
   .pigui-sidenav-section-toggle__chevron[data-expanded="false"] {

@@ -20,13 +20,20 @@ import { ContextBreakdownList, matchingBreakdown } from "../../entities/conversa
 import { ContextBar, ContextHeadline } from "../../entities/conversation/context-meter.tsx";
 import { branchOf, ChangeFigure, changeStatOf, type ChangeStat } from "../../entities/conversation/change-stat.tsx";
 import { taskTally } from "../../entities/conversation/task-tally.ts";
+import { subagentTone, TaskGlyph } from "../../entities/conversation/task-glyph.tsx";
+import { ProcessDuration, processShortText, processTone } from "../../entities/process/process-status.tsx";
+import { useProcessList } from "../../entities/process/use-process-list.ts";
+import { isProcessActive, type ProcessInfo } from "@pinomad/protocol/processes.ts";
+import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 import { DocumentView } from "../../presentation/documents.tsx";
 import { DisclosureButton, DisclosureChevron } from "../../shared/ui/disclosure-button.tsx";
-import { FileDiff, FolderClosed, FolderGitTwo, GitBranch } from "../../shared/ui/icons.tsx";
+import { ChevronRight, FileDiff, FolderClosed, FolderGitTwo, GitBranch } from "../../shared/ui/icons.tsx";
 import { StatusDot } from "../../shared/ui/status-dot.tsx";
 
-/** Running subagents listed by name before the rest fold into the summary line. */
-const ACTIVE_ROWS = 3;
+/** Tasks at work listed by name before the rest fold into the summary line. */
+const ACTIVE_ROWS = 4;
+/** Finished tasks listed while nothing is at work. */
+const ENDED_ROWS = 3;
 
 /**
  * The checkout's +N −M against its base — and, on a 5.11 host, the
@@ -73,7 +80,7 @@ function useChangeStat(
   return stat;
 }
 
-type SectionKey = "workspace" | "usage" | "subagents" | "sources";
+type SectionKey = "workspace" | "usage" | "tasks" | "sources";
 
 const COLLAPSED_KEY = "pinomad.overview.collapsed";
 
@@ -99,13 +106,14 @@ function Section({ section, title, summary, children }: { section: SectionKey; t
   const [collapsed, setCollapsed] = useState(() => readCollapsed()[section] === true);
   const [toggled, setToggled] = useState(false);
   const body = useId();
+  const heading = useId();
   const toggle = () => {
     window.localStorage.setItem(COLLAPSED_KEY, JSON.stringify({ ...readCollapsed(), [section]: !collapsed }));
     setCollapsed(!collapsed);
     setToggled(true);
   };
   return (
-    <section className={`${CARD} pt-1 ${collapsed ? "pb-1" : "pb-1.5"}`}>
+    <section aria-labelledby={heading} className={`${CARD} pt-1 ${collapsed ? "pb-1" : "pb-1.5"}`}>
       <h2 className="-mx-1.5">
         <DisclosureButton
           open={!collapsed}
@@ -113,7 +121,7 @@ function Section({ section, title, summary, children }: { section: SectionKey; t
           className="flex h-7 w-full items-center gap-2 rounded-md px-1.5 text-xs font-medium text-muted-foreground hover:bg-surface-hover hover:text-foreground"
           onClick={toggle}
         >
-          <span className="shrink-0">{title}</span>
+          <span id={heading} className="shrink-0">{title}</span>
           <span className="min-w-0 flex-1 truncate text-end font-normal tabular-nums">{collapsed ? summary : null}</span>
           <DisclosureChevron />
         </DisclosureButton>
@@ -265,50 +273,109 @@ function UsageSection({ view, conversation }: { view: DurableView; conversation:
   );
 }
 
-function SubagentsSection({
+/** One Tasks row: a subagent or a background process, with what it is doing or how it ended. */
+type TaskRow =
+  | { kind: "subagent"; task: ConversationSummary }
+  | { kind: "process"; process: ProcessInfo };
+
+const endedAt = (row: TaskRow): number =>
+  row.kind === "subagent" ? (row.task.updatedAt ?? 0) : (row.process.endedAt ?? row.process.startedAt);
+
+const rowFailed = (row: TaskRow): boolean =>
+  row.kind === "subagent" ? row.task.status === "failed" : processTone(row.process.state) === "failed";
+
+/** "2 more running · 2 done · 1 failed", the failures in red; nothing when there is nothing to add. */
+function tallyLine(more: number, done: number, failed: number): ReactNode {
+  const parts: ReactNode[] = [];
+  if (more > 0) parts.push(`${more} more running`);
+  if (done > 0) parts.push(`${done} done`);
+  if (failed > 0) parts.push(<span key="failed" className="text-destructive">{`${failed} failed`}</span>);
+  if (parts.length === 0) return undefined;
+  return parts.flatMap((part, index) => (index === 0 ? [part] : [" · ", part]));
+}
+
+function TaskRowView({ row, onOpenTasks }: { row: TaskRow; onOpenTasks: (id?: ConversationId) => void }) {
+  if (row.kind === "process") {
+    const { process } = row;
+    const tone = processTone(process.state);
+    return (
+      <Row
+        icon={<TaskGlyph kind="process" tone={tone} label={`Process, ${processShortText(process.state)}`} />}
+        end={
+          <span className={`text-xs ${tone === "failed" ? "text-destructive" : "text-muted-foreground"}`}>
+            {isProcessActive(process.state) ? <ProcessDuration startedAt={process.startedAt} /> : processShortText(process.state)}
+          </span>
+        }
+        onClick={() => onOpenTasks()}
+      >
+        {process.name}
+      </Row>
+    );
+  }
+  const { task } = row;
+  const tone = subagentTone(task.status);
+  const state =
+    task.status === "needs-answer"
+      ? "waiting"
+      : task.status === "running"
+        ? task.activity === undefined
+          ? undefined
+          : (toolDisplayName(task.activity.tool) ?? task.activity.tool)
+        : tone === "failed"
+          ? "Failed"
+          : "Done";
+  return (
+    <Row
+      icon={<TaskGlyph kind="subagent" tone={tone} label={`Subagent, ${task.status === "needs-answer" ? "waiting for an answer" : tone}`} />}
+      end={state === undefined ? undefined : <span className={`text-xs ${tone === "failed" ? "text-destructive" : "text-muted-foreground"}`}>{state}</span>}
+      onClick={() => onOpenTasks(task.id)}
+    >
+      {conversationName(task)}
+    </Row>
+  );
+}
+
+/**
+ * The family's subagents and background processes: the ones at work by name
+ * (subagents first), or the latest to finish while nothing is at work, then
+ * a line into the side panel's Tasks list.
+ */
+function TasksSection({
   view,
+  remote,
   conversation,
   onOpenTasks,
 }: {
   view: DurableView;
+  remote: RemoteDurable;
   conversation: NonNullable<DurableView["conversation"]>;
   onOpenTasks: (id?: ConversationId) => void;
 }) {
   const root = rootOf(view.organized, conversation.conversation.id);
+  // The list belongs to the family root, so a shown fork reads the root's copy.
+  const processes = useProcessList(remote.processes, root?.summary.id)?.processes ?? [];
   const tasks = root === undefined ? [] : taskGroupsOf(root).flatMap((group) => group.tasks.map((node) => node.summary));
-  if (tasks.length === 0) return null;
+  if (tasks.length === 0 && processes.length === 0) return null;
   const { active, done, failed } = taskTally(tasks);
-  const hidden = active.length - ACTIVE_ROWS;
-  const summary = [
-    hidden > 0 ? `${hidden} more running` : undefined,
-    done > 0 ? `${done} done` : undefined,
-    failed > 0 ? `${failed} failed` : undefined,
-  ].filter((part) => part !== undefined);
+  const live: TaskRow[] = [
+    ...active.map((task) => ({ kind: "subagent" as const, task })),
+    ...processes.filter((process) => isProcessActive(process.state)).map((process) => ({ kind: "process" as const, process })),
+  ];
+  const ended: TaskRow[] = [
+    ...tasks.filter((task) => subagentTone(task.status) !== "running").map((task) => ({ kind: "subagent" as const, task })),
+    ...processes.filter((process) => !isProcessActive(process.state)).map((process) => ({ kind: "process" as const, process })),
+  ].sort((a, b) => Number(rowFailed(b)) - Number(rowFailed(a)) || endedAt(b) - endedAt(a));
+  const rows = live.length > 0 ? live.slice(0, ACTIVE_ROWS) : ended.slice(0, ENDED_ROWS);
+  const tally = tallyLine(live.length - rows.length, done, failed);
+  const footer = live.length > 0 ? tally : "All tasks";
   return (
-    <Section section="subagents" title="Subagents" summary={active.length > 0 ? `${active.length} running` : summary.join(" · ")}>
-      {active.slice(0, ACTIVE_ROWS).map((task) => (
-        <Row
-          key={task.id}
-          icon={
-            <StatusDot
-              variant={task.status === "needs-answer" ? "warning" : "success"}
-              label={task.status === "needs-answer" ? "Waiting for your answer" : "Running"}
-              pulsing
-            />
-          }
-          end={
-            task.activity === undefined ? undefined : (
-              <span className="text-xs text-muted-foreground">{toolDisplayName(task.activity.tool) ?? task.activity.tool}</span>
-            )
-          }
-          onClick={() => onOpenTasks(task.id)}
-        >
-          {conversationName(task)}
-        </Row>
+    <Section section="tasks" title="Tasks" summary={live.length > 0 ? `${live.length} running` : tally}>
+      {rows.map((row) => (
+        <TaskRowView key={row.kind === "subagent" ? `s${row.task.id}` : `p${row.process.id}`} row={row} onOpenTasks={onOpenTasks} />
       ))}
-      {summary.length === 0 ? null : (
-        <Row icon={null} onClick={() => onOpenTasks()}>
-          <span className="text-muted-foreground">{summary.join(" · ")}</span>
+      {footer === undefined ? null : (
+        <Row icon={null} end={<ChevronRight aria-hidden="true" className="size-4 text-muted-foreground" />} onClick={() => onOpenTasks()}>
+          <span className="text-muted-foreground">{footer}</span>
         </Row>
       )}
     </Section>
@@ -437,7 +504,7 @@ export function OverviewCard({
     >
       <WorkspaceSection view={view} remote={remote} conversation={conversation} busy={busy} onOpenChanges={onOpenChanges} />
       <UsageSection view={view} conversation={conversation} />
-      <SubagentsSection view={view} conversation={conversation} onOpenTasks={onOpenTasks} />
+      <TasksSection view={view} remote={remote} conversation={conversation} onOpenTasks={onOpenTasks} />
       <SourcesSection view={view} />
       <DocumentsSection view={view} remote={remote} />
     </aside>

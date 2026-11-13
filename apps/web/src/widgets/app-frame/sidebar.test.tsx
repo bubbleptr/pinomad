@@ -105,3 +105,19 @@ describe("fork rows", () => {
     expect(LegacyNestedForks.args.onOpen).toHaveBeenCalledWith(HOME_HOST.hostKey, SECOND_FORK_ID);
   });
 });
+
+describe("family status in the sidebar", () => {
+  it("tags a family waiting for an answer, and keeps the row's name to its title", () => {
+    render(<Default machines={fakeMachines({ home: withSummary(fakeView(), SUBAGENT_ID, { status: "needs-answer" }) })} />);
+
+    const waiting = row("Fix the parser's trailing-comma bug")!;
+    expect(waiting).toHaveAttribute("data-status", "needs-answer");
+    expect(within(waiting).getByText("Needs answer")).toBeVisible();
+    // The tag says it; no amber dot competes with it.
+    expect(waiting.querySelector('[data-slot="status-dot"]')).toBeNull();
+
+    const failed = row("Draft the 0.9 release notes")!;
+    expect(within(failed).queryByText("Needs answer")).toBeNull();
+    expect(failed.querySelector('[data-slot="status-dot"]')).not.toBeNull();
+  });
+});

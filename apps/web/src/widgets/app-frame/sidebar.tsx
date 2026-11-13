@@ -19,6 +19,7 @@ import { HostsMenu } from "./hosts.tsx";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { clientDeviceName } from "../../address.ts";
 import { StatusDot } from "../../shared/ui/status-dot.tsx";
+import { Badge } from "../../shared/ui/badge.tsx";
 import { Avatar, AvatarFallback, initials } from "../../shared/ui/avatar.tsx";
 
 const PROJECT_EXPANDED_KEY = "pinomad.projectSidebar.expanded";
@@ -227,9 +228,10 @@ const FAMILY_STATUS_TEXT = { "needs-answer": "Waiting for your answer", failed: 
  * The whole family's most urgent status in the glyph slot. The dot
  * is decorative inside the row's <button> — aria-hidden so the accessible name
  * stays exactly the title; the status itself is machine-readable on the row.
+ * A family waiting for an answer gets the end tag instead (`NeedsAnswerTag`).
  */
-function FamilyStatusGlyph({ status }: { status: FamilyStatus }) {
-  const variant = status === "needs-answer" ? "warning" : status === "failed" ? "error" : "success";
+function FamilyStatusGlyph({ status }: { status: Exclude<FamilyStatus, "needs-answer"> }) {
+  const variant = status === "failed" ? "error" : "success";
   const tooltip = FAMILY_STATUS_TEXT[status];
   return (
     <span className="pigui-session-glyph" aria-hidden="true">
@@ -302,13 +304,23 @@ function ConversationRow({
   const [renaming, setRenaming] = useState(false);
   const item = (
     <SideNavItem
-      icon={status === undefined ? <SessionGlyphSlot /> : <FamilyStatusGlyph status={status} />}
+      icon={status === undefined || status === "needs-answer" ? <SessionGlyphSlot /> : <FamilyStatusGlyph status={status} />}
       label={summary.title ?? "New conversation"}
       isSelected={selected}
       isDisabled={disabled}
       // A <button> row cannot contain the interactive … overlay; the spacer
       // reserves its single-button width so the title truncates first.
-      endContent={<span aria-hidden="true" className="pigui-sidenav-actions-spacer pigui-sidenav-actions-spacer--single" />}
+      endContent={
+        <>
+          {status === "needs-answer" ? (
+            // Decorative like the dot: the hidden sibling below reads the status.
+            <Badge aria-hidden="true" variant="warning" className="pigui-sidenav-status-tag shrink-0">
+              Needs answer
+            </Badge>
+          ) : null}
+          <span aria-hidden="true" className="pigui-sidenav-actions-spacer pigui-sidenav-actions-spacer--single" />
+        </>
+      }
       onClick={() => {
         onOpen(summary.id);
         onSelect?.();
