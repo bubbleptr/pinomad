@@ -1,7 +1,10 @@
 // The account hosts this device has already told the user about (#496). A
 // host confirmed on any device pairs everywhere on its own, so each device
-// says "New host X joined your account" once: the user's chance to notice a
-// machine they didn't add. One set per account, kept in this renderer's
+// says "New host X joined your account" once per join: the user's chance to
+// notice a machine they didn't add. A host removed and joined again is news
+// again (#531), so an entry is `hostId@joinedAt`. A bare `hostId` (written
+// before join times, or by a confirm on this device) stands for whichever
+// join comes next. One set per account, kept in this renderer's
 // localStorage; storage that fails just means no notices.
 import { normalizeServerOrigin } from "@pinomad/client/account.ts";
 
@@ -12,17 +15,26 @@ export interface KnownHostsAccount {
   readonly user: string;
 }
 
+/** One account host as the list reports it; `joinedAt` is absent from servers before #531. */
+export interface KnownHostJoin {
+  readonly hostId: string;
+  readonly joinedAt?: number;
+}
+
 export interface KnownHostsStore {
   /**
-   * The hostIds in `hostIds` this device hasn't announced, recorded as known
-   * now. The first call for an account seeds its set and returns none.
+   * The hostIds whose current join this device hasn't announced, recorded as
+   * known now. The first call for an account seeds its set and returns none.
    */
-  arrivals(account: KnownHostsAccount, hostIds: readonly string[]): readonly string[];
-  /** Marks a host known without announcing it; only once the account's set exists. */
+  arrivals(account: KnownHostsAccount, hosts: readonly KnownHostJoin[]): readonly string[];
+  /** Marks a host's next join known without announcing it; only once the account's set exists. */
   add(account: KnownHostsAccount, hostId: string): void;
 }
 
 type KnownHostsStorage = Pick<Storage, "getItem" | "setItem">;
+
+const entryOf = (host: KnownHostJoin): string =>
+  host.joinedAt === undefined ? host.hostId : `${host.hostId}@${host.joinedAt}`;
 
 const keyOf = (account: KnownHostsAccount): string =>
   `${normalizeServerOrigin(account.serverOrigin)}\u0000${account.user}`;
@@ -60,17 +72,31 @@ const write = (storage: KnownHostsStorage, sets: Record<string, string[]>): void
 
 export function createKnownHostsStore(storage: KnownHostsStorage = localStorage): KnownHostsStore {
   return {
-    arrivals: (account, hostIds) => {
+    arrivals: (account, hosts) => {
       const sets = read(storage);
       if (sets === undefined) return [];
       const key = keyOf(account);
       const known = sets[key];
       if (known === undefined) {
-        write(storage, { ...sets, [key]: [...hostIds] });
+        write(storage, { ...sets, [key]: hosts.map(entryOf) });
         return [];
       }
-      const arrived = hostIds.filter((id) => !known.includes(id));
-      if (arrived.length > 0) write(storage, { ...sets, [key]: [...known, ...arrived] });
+      let next = [...known];
+      const arrived: string[] = [];
+      for (const host of hosts) {
+        const entry = entryOf(host);
+        if (next.includes(entry)) continue;
+        const prefix = `${host.hostId}@`;
+        // A bare entry covers this join, once; without join times, any
+        // announced join of the host covers it.
+        const covered =
+          host.joinedAt === undefined ? next.some((each) => each.startsWith(prefix)) : next.includes(host.hostId);
+        if (!covered) arrived.push(host.hostId);
+        next = [...next.filter((each) => each !== host.hostId && !each.startsWith(prefix)), entry];
+      }
+      if (next.length !== known.length || next.some((each, index) => each !== known[index])) {
+        write(storage, { ...sets, [key]: next });
+      }
       return arrived;
     },
     add: (account, hostId) => {

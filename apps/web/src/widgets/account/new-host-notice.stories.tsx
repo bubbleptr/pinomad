@@ -16,7 +16,7 @@ function Notices() {
     });
     store.arrivals(
       { serverOrigin: "https://pinomad.si", user: "kieran@example.com" },
-      ACCOUNT_HOSTS.filter((match) => match.host.name !== "omarchy").map((match) => match.host.hostId),
+      ACCOUNT_HOSTS.filter((match) => match.host.name !== "omarchy").map((match) => ({ hostId: match.host.hostId })),
     );
     return store;
   });
