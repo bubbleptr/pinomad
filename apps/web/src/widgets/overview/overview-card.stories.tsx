@@ -1,7 +1,17 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { contextUsage } from "@pinomad/client/context-usage.ts";
-import { busyConversation, fakeRemote, fakeView } from "../../test/story-fixtures.tsx";
+import {
+  busyConversation,
+  fakeProcesses,
+  fakeRemote,
+  fakeView,
+  FINISHED_SUBAGENTS,
+  MIXED_SUBAGENTS,
+  PARSER_ID,
+  PROCESSES,
+  withSubagents,
+} from "../../test/story-fixtures.tsx";
 import { OverviewCard } from "./overview-card.tsx";
 
 const view = fakeView();
@@ -70,3 +80,14 @@ const problems = {
 };
 /** Why a source failed is written out under it, not hidden behind a hover. */
 export const SourceProblems: Story = { args: { view: problems, remote: fakeRemote(problems) } };
+
+const mixed = withSubagents(view, MIXED_SUBAGENTS);
+/** Subagents at work by name, then running processes; the rest counted in the line into Tasks. */
+export const Tasks: Story = {
+  args: { view: mixed, remote: fakeRemote(mixed, {}, fakeProcesses({ lists: { [PARSER_ID]: PROCESSES } })) },
+};
+
+const finished = withSubagents(view, FINISHED_SUBAGENTS);
+const ended = fakeProcesses({ lists: { [PARSER_ID]: PROCESSES.filter((process) => process.state !== "running") } });
+/** Nothing at work: the latest subagents to finish, failures first; ended processes stay in Tasks. */
+export const TasksFinished: Story = { args: { view: finished, remote: fakeRemote(finished, {}, ended) } };

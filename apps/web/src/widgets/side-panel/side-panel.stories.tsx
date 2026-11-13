@@ -9,7 +9,9 @@ import {
   PROCESSES,
   SUBAGENT_ID,
   subagentConversation,
+  MIXED_SUBAGENTS,
   TERMINALS,
+  withSubagents,
   withSummary,
 } from "../../test/story-fixtures.tsx";
 import { SidePanel } from "./side-panel.tsx";
@@ -48,6 +50,10 @@ type Story = StoryObj<typeof meta>;
 
 /** The family's subagents, grouped by their owner. */
 export const Tasks: Story = {};
+
+const mixed = withSubagents(view, MIXED_SUBAGENTS);
+/** At work, failed and finished subagents beside processes: each row says its state in words. */
+export const TasksMixed: Story = { args: { view: mixed, remote: fakeRemote(mixed, {}, fakeProcesses({ lists: { [PARSER_ID]: PROCESSES } })) } };
 
 /** A subagent's transcript: read-only, one click from main. No Stop for one from before names. */
 const withSubagent = fakeView({ side: { id: SUBAGENT_ID, conversation: subagentConversation(), docs: [] } });

@@ -23,6 +23,9 @@ import { canStopSubagent, conversationName } from "../../entities/conversation/s
 import { orderedProcesses, processStatusText } from "@pinomad/client/processes.ts";
 import { useNow } from "../../shared/use-now.ts";
 import { taskTally } from "../../entities/conversation/task-tally.ts";
+import { subagentTone, TaskGlyph } from "../../entities/conversation/task-glyph.tsx";
+import { agoText, orderedSubagents } from "../../entities/conversation/task-order.ts";
+import { processShortText, processTone } from "../../entities/process/process-status.tsx";
 import { useProcessList } from "../../entities/process/use-process-list.ts";
 import { AnimatedSidebarRight } from "../../shared/ui/animated-icons.tsx";
 import { ArrowLeft, Bot, Cancel, CommandLine, FileDiff, Puzzle } from "../../shared/ui/icons.tsx";
@@ -272,18 +275,13 @@ function TasksSurface({
             <>
               {groups.map((group) => (
                 <RowGroup key={group.owner.id} label={group.label}>
-                  {group.tasks.map((node) => (
-                    <SideRow
-                      key={node.summary.id}
-                      summary={node.summary}
-                      now={now}
-                      onOpen={() => openInPanel(node.summary.id)}
-                    />
+                  {orderedSubagents(group.tasks.map((node) => node.summary)).map((summary) => (
+                    <SideRow key={summary.id} summary={summary} now={now} onOpen={() => openInPanel(summary.id)} />
                   ))}
                 </RowGroup>
               ))}
               {processRows.length === 0 ? null : (
-                <ProcessGroup processes={processRows} onOpen={openProcess} />
+                <ProcessGroup processes={processRows} now={now} onOpen={openProcess} />
               )}
             </>
           )}
@@ -310,7 +308,25 @@ function Scrollable({ children }: { children: ReactNode }) {
   return <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>;
 }
 
-/** A task row: status dot, display name, relative time. */
+/** The second line of a subagent row: its state in words, and what it is doing while it works. */
+function subagentStateText(summary: ConversationSummary): string {
+  switch (summary.status) {
+    case "needs-answer":
+      return "Waiting for an answer";
+    case "failed":
+      return "Failed";
+    case "running": {
+      const activity = summary.activity;
+      if (activity === undefined) return "Running";
+      const tool = toolDisplayName(activity.tool) ?? activity.tool;
+      return `Running · ${tool}${activity.target === undefined ? "" : ` ${activity.target}`}`;
+    }
+    default:
+      return "Done";
+  }
+}
+
+/** A subagent row: its glyph, name, state in words, and when it last changed. */
 function SideRow({
   summary,
   now,
@@ -323,20 +339,18 @@ function SideRow({
   return (
     <Item size="sm" render={<li />}>
       <ItemMedia>
-        <StatusGlyph status={summary.status} />
+        <TaskGlyph kind="subagent" tone={subagentTone(summary.status)} />
       </ItemMedia>
       <ItemContent render={<button type="button" onClick={onOpen} />}>
         <ItemTitle>{conversationName(summary)}</ItemTitle>
-        {summary.status === "running" && summary.activity !== undefined ? (
-          <ItemDescription>
-            {`→ ${toolDisplayName(summary.activity.tool) ?? summary.activity.tool}${summary.activity.target === undefined ? "" : ` ${summary.activity.target}`}`}
-          </ItemDescription>
-        ) : null}
+        <ItemDescription className={summary.status === "failed" ? "text-destructive" : undefined}>
+          {subagentStateText(summary)}
+        </ItemDescription>
       </ItemContent>
       {summary.updatedAt === undefined ? null : (
         <ItemActions>
-          <span aria-hidden="true" className="text-xs text-muted-foreground">
-            {relativeTime(summary.updatedAt, now)}
+          <span aria-hidden="true" className="text-xs text-muted-foreground tabular-nums">
+            {agoText(relativeTime(summary.updatedAt, now))}
           </span>
         </ItemActions>
       )}
@@ -345,76 +359,42 @@ function SideRow({
 }
 
 
-/** "12s" under a minute, otherwise "1m 5s" — the tasks' whole-second clock. */
-function elapsedText(ms: number): string {
-  const seconds = Math.max(0, Math.floor(ms / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
-}
 
-/** The one-second ticker a live process row shows instead of a result. */
-function ProcessDuration({ startedAt }: { startedAt: number }) {
-  const now = useNow(1000);
-  return <>{elapsedText(now - startedAt)}</>;
-}
+const PROCESS_DOT = { running: "success", failed: "error", done: "neutral" } as const;
 
-type ProcessTone = "running" | "done" | "failed" | "stopped";
-
-/** Running uses the same green pulse as a running subagent; a clean exit is complete. */
-function processTone(state: ProcessState): ProcessTone {
-  if (state === "starting" || state === "running") return "running";
-  if (state === "lost") return "failed";
-  if (typeof state === "object" && "failed" in state) return "failed";
-  if (typeof state === "object" && "exited" in state) {
-    return state.signal === undefined && state.exited === 0 ? "done" : "failed";
-  }
-  return "stopped";
-}
-
-const PROCESS_TONE: Record<ProcessTone, { variant: "success" | "error" | "neutral"; pulse: boolean; label: string }> = {
-  running: { variant: "success", pulse: true, label: "Running" },
-  done: { variant: "neutral", pulse: false, label: "Done" },
-  failed: { variant: "error", pulse: false, label: "Failed" },
-  stopped: { variant: "neutral", pulse: false, label: "Stopped" },
-};
-
+/** A process detail's status light, beside its name in the bar. */
 function ProcessGlyph({ state }: { state: ProcessState }) {
-  const tone = PROCESS_TONE[processTone(state)];
+  const tone = processTone(state);
   return (
     <span aria-hidden="true">
-      <StatusDot variant={tone.variant} label={state === "starting" ? "Starting" : tone.label} pulsing={tone.pulse} />
+      <StatusDot variant={PROCESS_DOT[tone]} label={processShortText(state)} pulsing={tone === "running"} />
     </span>
   );
 }
 
-/** The short right-hand result: `exit 1`, `Stopped`, `Lost`. */
-function processResultText(state: ProcessState): string {
-  if (state === "lost") return "Lost";
-  if (typeof state === "object" && "failed" in state) return "Failed";
-  if (typeof state === "object" && "stopped" in state) return "Stopped";
-  if (typeof state === "object" && "exited" in state) {
-    if (state.signal !== undefined) return state.signal;
-    return `exit ${state.exited ?? "?"}`;
-  }
-  return "";
-}
-
-/** A process row: status, name (and command when it differs), duration or result. */
-function ProcessRow({ process, onOpen }: { process: ProcessInfo; onOpen: () => void }) {
+/** A process row: its glyph, name, state in words (and command when it differs), and when it last changed. */
+function ProcessRow({ process, now, onOpen }: { process: ProcessInfo; now: number; onOpen: () => void }) {
+  const tone = processTone(process.state);
   return (
     <Item size="sm" render={<li />}>
       <ItemMedia>
-        <ProcessGlyph state={process.state} />
+        <TaskGlyph kind="process" tone={tone} />
       </ItemMedia>
       <ItemContent render={<button type="button" onClick={onOpen} />}>
         <ItemTitle>{process.name}</ItemTitle>
-        {process.name === process.command ? null : (
-          <ItemDescription className="font-mono">{process.command}</ItemDescription>
-        )}
+        <ItemDescription>
+          <span className={tone === "failed" ? "text-destructive" : undefined}>{processShortText(process.state)}</span>
+          {process.name === process.command ? null : (
+            <>
+              {" · "}
+              <span className="font-mono">{process.command}</span>
+            </>
+          )}
+        </ItemDescription>
       </ItemContent>
       <ItemActions>
         <span aria-hidden="true" className="text-xs text-muted-foreground tabular-nums">
-          {isProcessActive(process.state) ? <ProcessDuration startedAt={process.startedAt} /> : processResultText(process.state)}
+          {agoText(relativeTime(process.endedAt ?? process.startedAt, now))}
         </span>
       </ItemActions>
     </Item>
@@ -422,11 +402,11 @@ function ProcessRow({ process, onOpen }: { process: ProcessInfo; onOpen: () => v
 }
 
 /** The family's processes beside its Foreground subagent groups. */
-function ProcessGroup({ processes, onOpen }: { processes: readonly ProcessInfo[]; onOpen: (id: ProcessId) => void }) {
+function ProcessGroup({ processes, now, onOpen }: { processes: readonly ProcessInfo[]; now: number; onOpen: (id: ProcessId) => void }) {
   return (
     <RowGroup label="Processes">
       {orderedProcesses(processes).map((process) => (
-        <ProcessRow key={process.id} process={process} onOpen={() => onOpen(process.id)} />
+        <ProcessRow key={process.id} process={process} now={now} onOpen={() => onOpen(process.id)} />
       ))}
     </RowGroup>
   );

@@ -1893,7 +1893,10 @@ it("summarizes changes and subagents in the overview card and links to their det
   await shot(page, "overview-changes-while-busy");
   gate.resolve();
   await page.getByText("parent final", { exact: true }).waitFor();
-  await overview.getByRole("button", { name: "1 done", exact: true }).click();
+  // Nothing is at work any more: the finished subagent is listed by name,
+  // and the line under it opens the whole list.
+  await overview.getByRole("button", { name: /count-the-lines/ }).waitFor();
+  await overview.getByRole("button", { name: "All tasks", exact: true }).click();
   const panel = page.getByRole("complementary", { name: "Side panel" });
   // The Tasks list, grouped by owner.
   await panel.getByText("This conversation", { exact: true }).waitFor();

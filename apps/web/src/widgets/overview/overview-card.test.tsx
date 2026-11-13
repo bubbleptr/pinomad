@@ -8,14 +8,23 @@ import type { CallMethods } from "@pinomad/protocol/frames.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { contextUsage } from "@pinomad/client/context-usage.ts";
-import { fakeRemote, fakeView } from "../../test/story-fixtures.tsx";
+import {
+  FINISHED_SUBAGENTS,
+  fakeProcesses,
+  fakeRemote,
+  fakeView,
+  MIXED_SUBAGENTS,
+  PARSER_ID,
+  PROCESSES,
+  withSubagents,
+} from "../../test/story-fixtures.tsx";
 import { OverviewCard } from "./overview-card.tsx";
 
 type ChangesResult = CallMethods["changes"]["result"];
 
 function renderCard(minor: number, result: ChangesResult, checkoutBranch?: string, overrides: Partial<DurableView> = {}, busy = false) {
   const changes = vi.fn(async () => result);
-  const remote = { controller: { changes } } as unknown as RemoteDurable;
+  const remote = { controller: { changes }, processes: fakeProcesses() } as unknown as RemoteDurable;
   const conversation = {
     conversation: { id: 1, kind: "conversation" },
     docs: { "pi.agent": { cwd: "/repo" } },
@@ -217,5 +226,59 @@ describe("OverviewCard documents", () => {
     });
     expect(screen.getByText("acme.status")).toBeVisible();
     expect(screen.queryByText("plugin.notes.board")).toBeNull();
+  });
+});
+
+describe("OverviewCard tasks", () => {
+  afterEach(() => window.localStorage.clear());
+
+  function renderTasks(view: DurableView, processes = fakeProcesses({ lists: { [PARSER_ID]: PROCESSES } })) {
+    const onOpenTasks = vi.fn();
+    render(
+      <OverviewCard
+        view={view}
+        remote={fakeRemote(view, {}, processes)}
+        conversation={view.conversation!}
+        narrow={false}
+        busy={false}
+        onOpenChanges={() => {}}
+        onOpenTasks={onOpenTasks}
+        onClose={() => {}}
+      />,
+    );
+    const section = screen.getByRole("region", { name: "Tasks" });
+    const rows = () => within(section).getAllByRole("button").slice(1).map((row) => row.textContent);
+    return { section, rows, onOpenTasks };
+  }
+
+  it("lists running subagents, then running processes, and counts the rest", async () => {
+    const { rows, onOpenTasks, section } = renderTasks(withSubagents(fakeView(), MIXED_SUBAGENTS));
+    await waitFor(() =>
+      expect(rows()).toEqual([
+        "Write regression testsbash",
+        "Audit error handlingwaiting",
+        "Trace reconnect pathread",
+        expect.stringMatching(/^dev server\d+m \d+s$/),
+        "2 done · 1 failed",
+      ]),
+    );
+    // The icon is the only thing telling a process from a subagent: screen readers get it in words.
+    expect(within(section).getByRole("img", { name: "Process, Running" })).toBeInTheDocument();
+    expect(within(section).getByRole("img", { name: "Subagent, waiting for an answer" })).toBeInTheDocument();
+    await userEvent.click(within(section).getByRole("button", { name: /2 done/ }));
+    expect(onOpenTasks).toHaveBeenCalledWith();
+  });
+
+  it("lists the latest finished tasks, failed first, when nothing is running", () => {
+    // Ended processes stay in the Tasks list: a lost or failed one must not
+    // push the family's finished subagents out of the card.
+    const ended = PROCESSES.filter((process) => process.state !== "running");
+    const { rows } = renderTasks(withSubagents(fakeView(), FINISHED_SUBAGENTS), fakeProcesses({ lists: { [PARSER_ID]: ended } }));
+    expect(rows()).toEqual([
+      "Reproduce on Node 22Failed",
+      "Update the changelogDone",
+      "Survey existing parsersDone",
+      "All tasks",
+    ]);
   });
 });
