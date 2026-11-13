@@ -75,21 +75,19 @@ export const ThinkingOpen: Story = {
   },
 };
 
-const openAgents = async (context: { canvasElement: HTMLElement }) => {
-  await open(context);
-  await userEvent.click(within(document.body).getByRole("button", { name: /^Agent:/ }));
+const openAgents = async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+  await userEvent.click(within(canvasElement).getByTestId("agent-trigger"));
 };
 
-/** A draft on a host with named agents: the Agent row leads the popover. */
+/** A draft on a host with named agents: the Agent menu comes first, just its icon while none is picked. */
 export const AgentPick: Story = {
   args: { agent: { kind: "pick", roles, problems, value: undefined, onChange: fn() } },
-  play: open,
 };
 
-/** The agent list one level down: pins, an unavailable model and a broken file. */
+/** The agent menu: pins, an unavailable model and a broken file. */
 export const AgentList: Story = { ...AgentPick, play: openAgents };
 
-/** An agent that pins model and level: "from @name", and both sides locked. */
+/** An agent that pins model and level: both disabled, "Set by @name" on hover. */
 export const AgentPicked: Story = {
   args: {
     agent: { kind: "pick", roles, problems, value: "reviewer", onChange: fn() },
@@ -98,9 +96,8 @@ export const AgentPicked: Story = {
   },
 };
 
-export const AgentPickedOpen: Story = { ...AgentPicked, play: open };
 
-/** An agent that pins nothing: "with @name", and both sides stay the user's. */
+/** An agent that pins nothing: both sides stay the user's. */
 export const AgentUnpinned: Story = {
   args: { agent: { kind: "pick", roles, value: "planner", onChange: fn() } },
 };
@@ -108,19 +105,18 @@ export const AgentUnpinned: Story = {
 /** A conversation on a 5.18 host: the current agent is picked like a draft's. */
 export const ConversationAgentPick: Story = {
   args: { agent: { kind: "pick", roles, value: "reviewer", onChange: fn() } },
-  play: open,
+  play: openAgents,
 };
 
 /** The conversation's current agent file is gone: still shown as selected, not offered again. */
 export const ConversationAgentMissing: Story = {
   args: { agent: { kind: "pick", roles, value: "retired", onChange: fn() } },
-  play: open,
+  play: openAgents,
 };
 
-/** A pre-5.18 host has no setAgent: the creation agent stays a read-only row. */
+/** A pre-5.18 host has no setAgent: the creation agent is a disabled trigger. */
 export const FixedRole: Story = {
   args: { agent: { kind: "fixed", name: "reviewer", description: roles[0]!.description } },
-  play: open,
 };
 
 // ── Playground: every pick works, wired like the draft composer ─────────────
