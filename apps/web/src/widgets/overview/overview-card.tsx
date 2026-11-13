@@ -334,7 +334,8 @@ function TaskRowView({ row, onOpenTasks }: { row: TaskRow; onOpenTasks: (id?: Co
 /**
  * The family's subagents and background processes: the ones at work by name
  * (subagents first), or the latest subagents to finish while nothing is at
- * work, then a line into the side panel's Tasks list.
+ * work (the latest processes to end when there are no subagents), then a
+ * line into the side panel's Tasks list.
  */
 function TasksSection({
   view,
@@ -357,12 +358,20 @@ function TasksSection({
     ...active.map((task) => ({ kind: "subagent" as const, task })),
     ...processes.filter((process) => isProcessActive(process.state)).map((process) => ({ kind: "process" as const, process })),
   ];
-  // Only subagents: ended processes (a lost one never ages out) stay in the
-  // Tasks list rather than crowding out the family's finished work.
-  const ended: TaskRow[] = tasks
+  // Subagents first: ended processes (a lost one never ages out) only fill the
+  // card when the family has no finished subagent work to show.
+  const endedTasks: TaskRow[] = tasks
     .filter((task) => subagentTone(task.status) !== "running")
     .sort((a, b) => Number(b.status === "failed") - Number(a.status === "failed") || (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
     .map((task) => ({ kind: "subagent" as const, task }));
+  const ended: TaskRow[] =
+    endedTasks.length > 0
+      ? endedTasks
+      : processes
+          .filter((process) => !isProcessActive(process.state))
+          // The Tasks list's order: newest first, so a lost one (it never ages out) sinks.
+          .sort((a, b) => (b.endedAt ?? b.startedAt) - (a.endedAt ?? a.startedAt))
+          .map((process) => ({ kind: "process" as const, process }));
   const rows = live.length > 0 ? live.slice(0, ACTIVE_ROWS) : ended.slice(0, ENDED_ROWS);
   const tally = tallyLine(live.length - rows.length, done, failed);
   const footer = live.length > 0 ? tally : "All tasks";
@@ -436,8 +445,8 @@ function SourcesSection({ view }: { view: DurableView }) {
 
 /**
  * Extension documents the transcript does not already show: the todo list
- * has its card under the run, questions sit above the composer, and the
- * context breakdown belongs to the Context section, so only other kinds —
+ * has its card under the run, questions sit above the composer, the context
+ * breakdown belongs to the Context section and processes to Tasks, so only other kinds —
  * including a malformed todo, inspected through the fallback — land here.
  */
 function DocumentsSection({ view, remote }: { view: DurableView; remote: RemoteDurable }) {
@@ -445,7 +454,7 @@ function DocumentsSection({ view, remote }: { view: DurableView; remote: RemoteD
     // A plugin's shared state is its own UI's to show (ADR-0049).
     if (doc.value === null || doc.kind.startsWith("plugin.")) return false;
     const type = classify(doc.presentation, doc.value).type;
-    return type !== "pinomad.todo" && type !== "pinomad.question" && type !== "pinomad.context";
+    return type !== "pinomad.todo" && type !== "pinomad.question" && type !== "pinomad.context" && type !== "pinomad.processes";
   });
   if (docs.length === 0) return null;
   return (
