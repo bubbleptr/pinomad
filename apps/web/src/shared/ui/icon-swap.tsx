@@ -4,9 +4,11 @@ import { cn } from "cn"
 import { Check, Copy } from "@/shared/ui/icons"
 
 // Both glyphs share one grid cell, so the swap cross-fades in place
-// instead of the button's content jumping.
+// instead of the button's content jumping. The outgoing glyph blurs as
+// it fades, which hides the frames where the two overlap.
 const layer =
-  "col-start-1 row-start-1 flex transition-[opacity,scale] duration-(--duration-fast) ease-(--ease-standard) motion-reduce:transition-none"
+  "col-start-1 row-start-1 flex transition-[opacity,scale,filter] duration-(--duration-fast) ease-(--ease-standard) motion-reduce:transition-none"
+const hidden = "scale-75 opacity-0 blur-[2px]"
 
 /** Shows `icon`, or `swappedIcon` once `swapped`; the two cross-fade. */
 function IconSwap({
@@ -20,8 +22,8 @@ function IconSwap({
 }): ReactElement {
   return (
     <span aria-hidden="true" className="inline-grid">
-      <span className={cn(layer, swapped && "scale-75 opacity-0")}>{icon}</span>
-      <span className={cn(layer, !swapped && "scale-75 opacity-0")}>{swappedIcon}</span>
+      <span className={cn(layer, swapped && hidden)}>{icon}</span>
+      <span className={cn(layer, !swapped && hidden)}>{swappedIcon}</span>
     </span>
   )
 }
