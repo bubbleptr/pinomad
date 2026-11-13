@@ -141,7 +141,7 @@ describe("account client against a real server", () => {
     expect(token).toBeDefined();
 
     const client = bearerClient(server.origin, token);
-    expect(unwrap(await client.me())).toEqual({ user: { username: "admin" } });
+    expect(unwrap(await client.me())).toEqual({ user: { username: "admin", accountId: expect.stringMatching(/^[0-9a-f]{32}$/) } });
 
     // The joined host is listed and pairable.
     const hosts = unwrap(await client.listHosts());
@@ -222,7 +222,7 @@ describe("account client against a real server", () => {
     expect(jar.session).toBeDefined();
 
     // The replayed cookie authenticates follow-up requests.
-    expect(unwrap(await client.me())).toEqual({ user: { username: "admin" } });
+    expect(unwrap(await client.me())).toEqual({ user: { username: "admin", accountId: expect.stringMatching(/^[0-9a-f]{32}$/) } });
 
     // Logout kills the session server-side: the same cookie now fails closed.
     unwrap(await client.logout());

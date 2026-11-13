@@ -19,7 +19,7 @@ import {
 import { addUser, openAccounts, resetPassword, type Accounts, type LoginLimits } from "../src/accounts.ts";
 import { startRelay, type Relay, type RelayOptions } from "../src/relay.ts";
 import { lockDataDir } from "../src/lock.ts";
-import { downgradeToSchema3, removeTempDir, tempDir } from "./support.ts";
+import { downgradeToSchema10, downgradeToSchema3, removeTempDir, tempDir } from "./support.ts";
 
 const ORIGIN = "https://relay.example.com";
 const GOOD_PASSWORD = "correct horse battery";
@@ -349,6 +349,39 @@ describe("server login and sessions", () => {
     ).toBe(413);
     expect((await api(relay, { method: "POST", path: "/api/login", body: "not json" })).status).toBe(400);
     expect((await api(relay, { method: "POST", path: "/api/login", body: { username: 5, password: "x" } })).status).toBe(400);
+  });
+});
+
+describe("account id (#640)", () => {
+  const bearer = (token: unknown): Record<string, string> => ({ authorization: `Bearer ${token as string}` });
+  const idOf = (response: ApiResponse): unknown => (response.json.user as Record<string, unknown>).accountId;
+
+  it("names each account with a stable opaque id on sign-in and /api/me", async () => {
+    const started = await startServer();
+    await addUser({ dataDir: started.dataDir, email: BOB, password: GOOD_PASSWORD });
+    const admin = await login(started.relay);
+    const bob = await login(started.relay, BOB);
+    const adminId = idOf(admin);
+    expect(adminId).toMatch(/^[0-9a-f]{32}$/);
+    expect(idOf(bob)).toMatch(/^[0-9a-f]{32}$/);
+    expect(idOf(bob)).not.toBe(adminId);
+    expect(idOf(await api(started.relay, { path: "/api/me", headers: bearer(admin.json.token) }))).toBe(adminId);
+  });
+
+  it("gives each account from before schema 11 an id of its own that then stays", async () => {
+    const first = await startServer();
+    await addUser({ dataDir: first.dataDir, email: BOB, password: GOOD_PASSWORD });
+    const token = (await login(first.relay)).json.token;
+    await stop(first);
+    downgradeToSchema10(first.dataDir);
+
+    const second = await startServer({ dataDir: first.dataDir, bootstrap: {} });
+    const id = idOf(await api(second.relay, { path: "/api/me", headers: bearer(token) }));
+    expect(id).toMatch(/^[0-9a-f]{32}$/);
+    expect(idOf(await login(second.relay))).toBe(id);
+    const bob = idOf(await login(second.relay, BOB));
+    expect(bob).toMatch(/^[0-9a-f]{32}$/);
+    expect(bob).not.toBe(id);
   });
 });
 

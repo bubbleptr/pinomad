@@ -285,6 +285,20 @@ export const RESPONSE_CASES: ResponseCase[] = [
   { name: "me-ok", kind: "me", status: 200, body: '{"user":{"username":"admin"}}' },
   { name: "me-email", kind: "me", status: 200, body: '{"user":{"username":"a@b.co","email":"a@b.co"}}' },
   { name: "me-needs-email", kind: "me", status: 200, body: '{"user":{"username":"kieran"},"needsEmail":true}' },
+  // #640: the stable id clients file vouched pairings under; a wrong type is left out.
+  {
+    name: "me-account-id",
+    kind: "me",
+    status: 200,
+    body: '{"user":{"accountId":"0123456789abcdef0123456789abcdef","username":"a@b.co","email":"a@b.co"}}',
+  },
+  { name: "me-account-id-not-string", kind: "me", status: 200, body: '{"user":{"accountId":7,"username":"a@b.co"}}' },
+  {
+    name: "login-account-id",
+    kind: "login",
+    status: 200,
+    body: '{"user":{"accountId":"0123456789abcdef0123456789abcdef","username":"admin"},"expiresAt":1}',
+  },
   { name: "me-user-null", kind: "me", status: 200, body: '{"user":null}' },
   // A fully-read body that isn't JSON is still a 2xx transport-wise — the
   // endpoint's shape check turns it into invalid_response.

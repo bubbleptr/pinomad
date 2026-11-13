@@ -763,6 +763,27 @@
       "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"kieran\"},\"needsEmail\":true}}"
     },
     {
+      "name": "me-account-id",
+      "kind": "me",
+      "status": 200,
+      "body": "{\"user\":{\"accountId\":\"0123456789abcdef0123456789abcdef\",\"username\":\"a@b.co\",\"email\":\"a@b.co\"}}",
+      "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"a@b.co\",\"email\":\"a@b.co\",\"accountId\":\"0123456789abcdef0123456789abcdef\"}}}"
+    },
+    {
+      "name": "me-account-id-not-string",
+      "kind": "me",
+      "status": 200,
+      "body": "{\"user\":{\"accountId\":7,\"username\":\"a@b.co\"}}",
+      "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"a@b.co\"}}}"
+    },
+    {
+      "name": "login-account-id",
+      "kind": "login",
+      "status": 200,
+      "body": "{\"user\":{\"accountId\":\"0123456789abcdef0123456789abcdef\",\"username\":\"admin\"},\"expiresAt\":1}",
+      "expect": "{\"ok\":true,\"value\":{\"user\":{\"username\":\"admin\",\"accountId\":\"0123456789abcdef0123456789abcdef\"},\"expiresAt\":1}}"
+    },
+    {
       "name": "me-user-null",
       "kind": "me",
       "status": 200,

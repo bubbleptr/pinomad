@@ -47,7 +47,20 @@ export function fakeMailer(): Mailer & { readonly sent: SentMail[]; codeFor(to: 
  * provider sign-ins, one-time codes or re-auth grants, and identities without
  * a name or Apple refresh token (#620).
  */
+/** Rewrites a current database back to schema 10: accounts without an account id (#640). */
+export function downgradeToSchema10(dataDir: string): void {
+  const db = new DatabaseSync(join(dataDir, "server.sqlite"), { enableForeignKeyConstraints: false });
+  db.exec(`
+    DROP TRIGGER users_account_id_fill;
+    DROP INDEX users_account_id;
+    ALTER TABLE users DROP COLUMN account_id;
+    PRAGMA user_version = 10;
+  `);
+  db.close();
+}
+
 export function downgradeToSchema9(dataDir: string): void {
+  downgradeToSchema10(dataDir);
   const db = new DatabaseSync(join(dataDir, "server.sqlite"), { enableForeignKeyConstraints: false });
   db.exec(`
     DROP TABLE reauth_grants;

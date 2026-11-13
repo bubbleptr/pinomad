@@ -148,12 +148,12 @@ describe("email sign-up", () => {
     const started = await startServer();
     const page = await signUp(started, "Bob@Example.com", { origin: ORIGIN });
     expect(page.status).toBe(200);
-    expect(page.json.user).toEqual({ username: "bob@example.com", email: "bob@example.com" });
+    expect(page.json.user).toEqual({ accountId: expect.any(String), username: "bob@example.com", email: "bob@example.com" });
     expect(page.json.token).toBeUndefined();
     expect(page.json.needsEmail).toBeUndefined();
     const cookie = String((page.headers["set-cookie"] as string[])[0]).split(";")[0]!;
     expect((await api(started.relay, { path: "/api/me", headers: { cookie } })).json).toEqual({
-      user: { username: "bob@example.com", email: "bob@example.com" },
+      user: { accountId: expect.any(String), username: "bob@example.com", email: "bob@example.com" },
     });
 
     const desktop = await signUp(started, "carol@example.com", { origin: "app://pinomad" });
@@ -319,16 +319,16 @@ describe("legacy username accounts", () => {
     const mailless = await startServer({ mailer: null });
     const plain = await login(mailless.relay, "admin");
     expect(plain.status).toBe(200);
-    expect(plain.json.user).toEqual({ username: "admin" });
+    expect(plain.json.user).toEqual({ accountId: expect.any(String), username: "admin" });
     expect(plain.json.needsEmail).toBeUndefined();
     expect(plain.json.admin).toBeUndefined();
 
     const mailing = await startServer();
     const asked = await login(mailing.relay, "admin");
-    expect(asked.json.user).toEqual({ username: "admin" });
+    expect(asked.json.user).toEqual({ accountId: expect.any(String), username: "admin" });
     expect(asked.json.needsEmail).toBe(true);
     expect((await api(mailing.relay, { path: "/api/me", headers: bearer(asked.json.token) })).json).toEqual({
-      user: { username: "admin" },
+      user: { accountId: expect.any(String), username: "admin" },
       needsEmail: true,
     });
   });
@@ -343,11 +343,11 @@ describe("legacy username accounts", () => {
     expect([wrong.status, wrong.json.error]).toEqual([400, "invalid_code"]);
     const set = await post(relay, "/api/me/email", { email: "kieran@example.com", code, password: PASSWORD }, bearer(token));
     expect(set.status).toBe(200);
-    expect(set.json).toEqual({ user: { username: "kieran@example.com", email: "kieran@example.com" } });
+    expect(set.json).toEqual({ user: { accountId: expect.any(String), username: "kieran@example.com", email: "kieran@example.com" } });
 
     const byEmail = await login(relay, "kieran@example.com");
     expect(byEmail.status).toBe(200);
-    expect(byEmail.json.user).toEqual({ username: "kieran@example.com", email: "kieran@example.com" });
+    expect(byEmail.json.user).toEqual({ accountId: expect.any(String), username: "kieran@example.com", email: "kieran@example.com" });
     expect(byEmail.json.needsEmail).toBeUndefined();
     // The username keeps working during the migration (ADR-0044 §8).
     expect((await login(relay, "admin")).status).toBe(200);
@@ -401,7 +401,7 @@ describe("legacy username accounts", () => {
     await setUserEmail({ dataDir: started.dataDir, user: "admin", email: "Ops@Example.com" });
     const response = await login(started.relay, "ops@example.com");
     expect(response.status).toBe(200);
-    expect(response.json.user).toEqual({ username: "ops@example.com", email: "ops@example.com" });
+    expect(response.json.user).toEqual({ accountId: expect.any(String), username: "ops@example.com", email: "ops@example.com" });
   });
 });
 
@@ -421,7 +421,7 @@ describe("accounts without an admin", () => {
   it("bootstraps an email account when the first user is an email", async () => {
     const started = await startServer({ bootstrapUser: "Owner@Example.com" });
     const response = await login(started.relay, "owner@example.com");
-    expect(response.json.user).toEqual({ username: "owner@example.com", email: "owner@example.com" });
+    expect(response.json.user).toEqual({ accountId: expect.any(String), username: "owner@example.com", email: "owner@example.com" });
   });
 
   it("adds accounts from the operator's CLI beside a running server", async () => {

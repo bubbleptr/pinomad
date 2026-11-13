@@ -557,6 +557,10 @@ pub struct AccountUser {
     pub username: String,
     #[cfg_attr(feature = "ffi", uniffi(default = None))]
     pub email: Option<String>,
+    /// Stable and opaque: what the device files the pairings the account
+    /// vouched for under (#640). `None` from servers that predate it.
+    #[cfg_attr(feature = "ffi", uniffi(default = None))]
+    pub account_id: Option<String>,
 }
 
 /// A completed login: the session's expiry in epoch ms, plus the bearer
@@ -864,7 +868,7 @@ fn num_field(value: &Json, key: &str) -> Option<f64> {
     value.get(key).and_then(Json::as_number)
 }
 
-/// `{user: {username, email?}}` — everything else in the object is dropped,
+/// `{user: {username, email?, accountId?}}` — everything else in the object is dropped,
 /// like the reference's fresh `{user: {username, email?}}` result; an email
 /// that isn't a string is left out.
 fn user_body(value: &Json) -> Option<AccountUser> {
@@ -875,6 +879,7 @@ fn user_body(value: &Json) -> Option<AccountUser> {
     Some(AccountUser {
         username: username.to_string_lossy(),
         email: str_field(user, "email"),
+        account_id: str_field(user, "accountId").filter(|id| !id.is_empty()),
     })
 }
 

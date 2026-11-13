@@ -13,7 +13,7 @@ import { removeTempDir, tempDir } from "./support.ts";
  */
 const REUSABLE_IDS: Record<string, string> = {
   // Nothing outside the database holds a user id: clients and hosts only see
-  // usernames, sessions are random tokens, and every row that references a
+  // usernames and the random account_id (#640), sessions are random tokens, and every row that references a
   // user cascades or nulls (checked below). The relay limiter's in-memory
   // per-account state is dropped on deletion (#483), and the routes that
   // carry a user id across an await re-read it from the session or

@@ -552,7 +552,11 @@ pub fn account_request_json(request: &AccountHttpRequest) -> Json {
 }
 
 fn account_user_json(user: &pinomad_core::account::AccountUser) -> Json {
-    obj(&[("username", Some(s(&user.username))), ("email", user.email.as_deref().map(s))])
+    obj(&[
+        ("username", Some(s(&user.username))),
+        ("email", user.email.as_deref().map(s)),
+        ("accountId", user.account_id.as_deref().map(s)),
+    ])
 }
 
 /// `session()`'s value: `needsEmail` only when true, spread right after `user`.
