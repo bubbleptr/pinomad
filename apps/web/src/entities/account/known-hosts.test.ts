@@ -100,6 +100,14 @@ describe("known account hosts", () => {
       expect(store.arrivals(kieran, [at("h1", 3)])).toEqual(["h1"]);
     });
 
+    it("doesn't let a confirm of a host already listed hide its next join", () => {
+      const store = createKnownHostsStore(localStorage);
+      store.arrivals(kieran, [at("h1", 1)]);
+      store.add(kieran, "h1");
+      expect(store.arrivals(kieran, [at("h1", 1)])).toEqual([]);
+      expect(store.arrivals(kieran, [at("h1", 2)])).toEqual(["h1"]);
+    });
+
     it("stays quiet when the server stops sending join times", () => {
       const store = createKnownHostsStore(localStorage);
       store.arrivals(kieran, [at("h1", 1)]);

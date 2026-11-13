@@ -85,7 +85,12 @@ export function createKnownHostsStore(storage: KnownHostsStorage = localStorage)
       const arrived: string[] = [];
       for (const host of hosts) {
         const entry = entryOf(host);
-        if (next.includes(entry)) continue;
+        if (next.includes(entry)) {
+          // A confirm here of a join already announced is spent: left
+          // behind, it would hide the host's next join.
+          if (host.joinedAt !== undefined) next = next.filter((each) => each !== host.hostId);
+          continue;
+        }
         const prefix = `${host.hostId}@`;
         // A bare entry covers this join, once; without join times, any
         // announced join of the host covers it.

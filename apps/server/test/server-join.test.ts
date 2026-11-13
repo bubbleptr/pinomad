@@ -18,7 +18,7 @@ import {
   type RegisterFrame,
   type RelayToHost,
 } from "@pinomad/protocol/relay.ts";
-import { openAccounts, type Accounts } from "../src/accounts.ts";
+import { addUser, openAccounts, type Accounts } from "../src/accounts.ts";
 import { startRelay, type Relay } from "../src/relay.ts";
 import { fillJoinCommand, tokenJoinCommands } from "./join-command-fixture.ts";
 import { removeTempDir, tempDir } from "./support.ts";
@@ -517,6 +517,28 @@ describe("removing a host from the account (#512)", () => {
     const again = await mintToken(relay, session);
     await register(relay, keys, { op: "join", joinToken: again.token, noisePublicKey: NOISE_KEY });
     expect(await joinedAt()).toBe(3_000_000);
+  });
+
+  it("gives a host that moves to another account and back a new join time each move (#531)", async () => {
+    let at = 1_000_000;
+    const { relay, dataDir } = await startServer({ now: () => at });
+    await addUser({ dataDir, email: "bob@example.com", password: GOOD_PASSWORD });
+    const admin = await login(relay);
+    const bob = await login(relay, "bob@example.com");
+    const joinedAt = async (session: string) =>
+      ((await api(relay, { path: "/api/hosts", headers: { authorization: `Bearer ${session}` } })).json as unknown as {
+        joinedAt: number;
+      }[])[0]?.joinedAt;
+    const { keys } = await joined(relay, admin);
+    const joinWith = async (session: string) =>
+      register(relay, keys, { op: "join", joinToken: (await mintToken(relay, session)).token, noisePublicKey: NOISE_KEY });
+
+    at = 2_000_000;
+    await joinWith(bob);
+    expect(await joinedAt(bob)).toBe(2_000_000);
+    at = 3_000_000;
+    await joinWith(admin);
+    expect(await joinedAt(admin)).toBe(3_000_000);
   });
 
   it("asks for the password and keeps the host on a wrong one", async () => {
