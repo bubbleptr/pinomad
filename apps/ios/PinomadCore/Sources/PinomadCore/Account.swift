@@ -1013,6 +1013,11 @@ public enum RemovedHostPairing: Sendable {
     case qrCode
 }
 
+/// An input on an account form a failure can be pinned to.
+public enum AccountField: Hashable, Sendable {
+    case server, email, password, newPassword, code
+}
+
 public enum AccountCopy {
     public static func deviceHostState(_ state: AccountDeviceHostState) -> String {
         switch state {
@@ -1120,6 +1125,34 @@ public enum AccountCopy {
         case "remove_host_unconfirmed": "Couldn't confirm the host was removed. Try again."
         default: "Something went wrong (" + failure.code + ")."
         }
+    }
+
+    /// The input a failure is about, for the codes the reader fixes by
+    /// editing it; form-wide failures have none. Mirrors the Web's
+    /// `accountErrorField`.
+    public static func field(_ failure: AccountFailure) -> AccountField? {
+        switch failure.code {
+        case "origin_required", "insecure_origin": .server
+        case "invalid_email", "email_taken": .email
+        case "invalid_credentials", "wrong_password": .password
+        case "weak_password", "password_required": .newPassword
+        case "invalid_code": .code
+        default: nil
+        }
+    }
+
+    /// What `field` shows: the message when `failure` is about it.
+    public static func fieldMessage(_ failure: AccountFailure?, _ field: AccountField) -> String? {
+        guard let failure, self.field(failure) == field else { return nil }
+        return message(failure)
+    }
+
+    /// What the form shows beside its button: a failure about none of
+    /// `fields`, the inputs on screen.
+    public static func formMessage(_ failure: AccountFailure?, fields: Set<AccountField>) -> String? {
+        guard let failure else { return nil }
+        if let field = field(failure), fields.contains(field) { return nil }
+        return message(failure)
     }
 
     /// Linking `provider` from settings (#631) refused: names the provider

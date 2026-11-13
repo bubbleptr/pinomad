@@ -85,12 +85,31 @@ private struct HostUpgradeSections: View {
     let upgrade: HostUpgradeState
     let mode: AutoUpgradeMode?
 
-    private enum Pending: Equatable { case start(UpgradeWhen), cancel, check, setting(AutoUpgradeMode) }
+    private enum Pending: Equatable {
+        case start(UpgradeWhen), cancel, check, setting(AutoUpgradeMode)
+
+        var action: String {
+            switch self {
+            case .start: "start the upgrade"
+            case .cancel: "cancel the upgrade"
+            case .check: "check for releases"
+            case .setting: "change automatic upgrades"
+            }
+        }
+
+        var toastKey: String {
+            switch self {
+            case .start: "upgrade-start"
+            case .cancel: "upgrade-cancel"
+            case .check: "upgrade-check"
+            case .setting: "upgrade-auto"
+            }
+        }
+    }
 
     @State private var confirming = false
     /// The call sent and not yet answered; one at a time.
     @State private var pending: Pending?
-    @State private var error: String?
 
     var body: some View {
         let controls = UpgradeControls(upgrade, connected: model.connected)
@@ -145,15 +164,12 @@ private struct HostUpgradeSections: View {
                 }
             }
         }
-        if let error {
-            notice(.circleAlert, tint: .red, title: "That didn't go through", detail: error)
-        }
         if let checkError = upgrade.checkError {
             notice(.triangleAlert, tint: .orange, title: "Couldn't check for releases", detail: checkError)
         }
         if controls.showsFailure, let failure = upgrade.failure {
             notice(.circleAlert, tint: .red, title: "Upgrading to pinomad \(failure.version) failed",
-                   detail: failure.message, monospaced: true)
+                   detail: failure.message, monospaced: true, destructive: true)
         }
         if let blocked = upgrade.blocked {
             let text = UpgradeSummary.blocked(blocked)
@@ -201,11 +217,20 @@ private struct HostUpgradeSections: View {
         act(.start(when)) { try await model.startUpgrade(when, on: hostKey) }
     }
 
+    /// One call at a time. A failure has no form to stay in (the start
+    /// confirmation is a system dialog that's gone by then), so it's a toast
+    /// naming the action, replaced by its next failure and cleared on a retry.
     private func act(_ kind: Pending, _ call: @escaping () async throws -> Void) {
-        error = nil
+        let runtime = model.runtimes[hostKey]
+        runtime?.clearToast(key: kind.toastKey)
         pending = kind
         Task {
-            do { try await call() } catch { self.error = model.describe(error) }
+            do {
+                try await call()
+            } catch {
+                runtime?.showToast(
+                    "Couldn't \(kind.action): \(model.describe(error))", level: .error, key: kind.toastKey)
+            }
             pending = nil
         }
     }
@@ -221,12 +246,14 @@ private struct HostUpgradeSections: View {
     }
 
     private func notice(
-        _ icon: ImageResource, tint: Color, title: String, detail: String, monospaced: Bool = false
+        _ icon: ImageResource, tint: Color, title: String, detail: String, monospaced: Bool = false,
+        destructive: Bool = false
     ) -> some View {
         Section {
             Label {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
+                        .foregroundStyle(destructive ? Color.red : Color.primary)
                     // Markdown, so a command in backticks reads as code.
                     Text(monospaced ? AttributedString(detail) : (try? AttributedString(markdown: detail)) ?? AttributedString(detail))
                         .font(monospaced ? .footnote.monospaced() : .footnote)

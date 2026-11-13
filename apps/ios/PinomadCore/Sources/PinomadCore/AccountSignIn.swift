@@ -316,6 +316,9 @@ public final class IdentityConfirmation {
     public private(set) var sent = false
     public private(set) var sending = false
     public private(set) var sendError: AccountFailure?
+    /// A refused password or code, shown on the step's own field until
+    /// it's edited or tried again.
+    public private(set) var fieldError: AccountFailure?
     /// The grant and the code it was traded for: a changed code drops it.
     private var grant: (value: ReauthGrant, code: String)?
 
@@ -375,6 +378,26 @@ public final class IdentityConfirmation {
         case .failure(let failure):
             return .failure(failure)
         }
+    }
+
+    /// Takes a refused password or code onto this step's field when the
+    /// step was the one asking: a password is sent with every action, a
+    /// code only when it was traded for a grant (`duringConfirm`) — a
+    /// reused grant means the code was the action's own. True when taken.
+    @discardableResult
+    public func claim(_ failure: AccountFailure, duringConfirm: Bool) -> Bool {
+        let field = AccountCopy.field(failure)
+        let asked = switch method {
+        case .password: field == .password
+        case .code: duringConfirm && field == .code
+        case .loading: false
+        }
+        if asked { fieldError = failure }
+        return asked
+    }
+
+    public func clearFieldError() {
+        fieldError = nil
     }
 
     /// The action came back refused. `invalid_reauth` (the grant lapsed or

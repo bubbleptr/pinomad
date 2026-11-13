@@ -221,13 +221,14 @@ final class AppModel {
         get { focusedRuntime?.opening ?? ConversationOpening() }
         set { focusedRuntime?.opening = newValue }
     }
-    /// A sheet is up and shows the toasts itself.
-    var sheetShowsToasts = false
+    /// The presented layers that draw the toast stack themselves, innermost
+    /// last: only the top one shows it, so a toast is never behind a sheet.
+    var toastHosts: [UUID] = []
     /// Notices currently shown as toasts, newest last. They are collected
     /// from every host, so a failure on a background host is still visible;
     /// with more than one host paired the message names its source.
-    var toasts: [Notice] = []
-    private var nextToastID: UInt64 = .max
+    private(set) var toastQueue = ToastQueue()
+    var toasts: [Toast] { toastQueue.toasts }
     var lastError: String {
         get { focusedRuntime?.lastError ?? globalError }
         set {
@@ -285,6 +286,9 @@ final class AppModel {
     var accountRefreshing = false
     var accountRefreshPending = false
     var accountPairingHostId: String?
+    /// The account host whose Pair failed last; `accountError` says why,
+    /// on that host's row.
+    var accountPairFailedHostId: String?
     var accountPairingEpochs = AccountPairingEpochs()
     /// In-flight automatic registrations, by hostId, so a refresh re-entry
     /// cannot start a second handshake for the same account host.
@@ -378,9 +382,7 @@ final class AppModel {
             let runtime = HostRuntime(
                 hostKey: host?.hostKey ?? "demo", host: host, isPairing: false)
             developmentRuntime = runtime
-            runtime.onToast = { [weak self] runtime, notice in
-                self?.presentToast(runtime, notice: notice)
-            }
+            wireToasts(runtime)
             if runtimeTable.hostKeys.isEmpty, let key = runtime.hostKey {
                 runtimeTable = HostRuntimeTable(hostKeys: [key], rememberedHostKey: key)
                 runtimes[key] = runtime
@@ -400,9 +402,7 @@ final class AppModel {
             hostKeys: stored.hosts.map(\.hostKey), rememberedHostKey: stored.activeHostKey)
         for host in stored.hosts {
             let runtime = HostRuntime(hostKey: host.hostKey, host: host, isPairing: false)
-            runtime.onToast = { [weak self] runtime, notice in
-                self?.presentToast(runtime, notice: notice)
-            }
+            wireToasts(runtime)
             runtimes[host.hostKey] = runtime
         }
         if let active = stored.active {
@@ -1086,9 +1086,7 @@ final class AppModel {
         runtime.onConnectedView = { [weak self] runtime in
             self?.retryQueuedEditIfNeeded(for: runtime)
         }
-        runtime.onToast = { [weak self] runtime, notice in
-            self?.presentToast(runtime, notice: notice)
-        }
+        wireToasts(runtime)
     }
 
     private func receivedSnapshot(_ runtime: HostRuntime, snapshot: ClientSnapshot) {
@@ -1254,30 +1252,52 @@ final class AppModel {
     }
 
     func dismissToast(_ id: UInt64) {
-        toasts.removeAll { $0.id == id }
+        toastQueue.dismiss(id)
     }
 
-    func showToast(_ message: String, level: String = "info") {
-        guard let runtime = focusedRuntime else { return }
-        presentToast(runtime, notice: Notice(id: 0, level: level, message: message))
+    /// A toast that isn't any one host's (account, local storage, demo).
+    /// `key` names the action: its next failure replaces this one and
+    /// `clearToast(key:)` on a retry removes it.
+    func showToast(_ message: String, level: ToastLevel = .info, key: String? = nil) {
+        presentToast(message, level: level, key: key)
     }
 
-    /// One toast stack for all hosts. Ids are renumbered here: core notice
-    /// ids restart per session and would collide across hosts. The source
-    /// machine is named only when there is more than one to tell apart.
-    private func presentToast(_ runtime: HostRuntime, notice: Notice) {
+    func clearToast(key: String) {
+        toastQueue.clear(key: key)
+    }
+
+    private func wireToasts(_ runtime: HostRuntime) {
+        runtime.onToast = { [weak self] runtime, message, level, key in
+            self?.presentToast(runtime, message, level: level, key: key)
+        }
+        runtime.onClearToast = { [weak self] runtime, key in
+            self?.clearToast(key: Self.toastKey(key, on: runtime))
+        }
+    }
+
+    /// One host's action key, so a retry on one host leaves another's error.
+    private static func toastKey(_ key: String, on runtime: HostRuntime) -> String {
+        "\(runtime.hostKey ?? ""):\(key)"
+    }
+
+    /// One toast stack for all hosts. The source machine is named only when
+    /// there is more than one to tell apart.
+    private func presentToast(_ runtime: HostRuntime, _ message: String, level: ToastLevel, key: String?) {
         // A host on its way out has nothing left to report: one from before
         // #529 closes a device that unpaired itself before answering, which
         // lands here as "Disconnected from host".
         if let hostKey = runtime.hostKey, forgettingHosts.contains(hostKey) { return }
-        nextToastID &-= 1
-        var message = notice.message
+        var message = message
         if hosts.hosts.count > 1, let hostKey = runtime.hostKey, let label = hostLabels[hostKey] {
             message = "\(label): \(message)"
         }
-        let toast = Notice(id: nextToastID, level: notice.level, message: message)
-        toasts.append(toast)
-        if toasts.count > 3 { toasts.removeFirst(toasts.count - 3) }
+        presentToast(message, level: level, key: key.map { Self.toastKey($0, on: runtime) })
+    }
+
+    private func presentToast(_ message: String, level: ToastLevel, key: String?) {
+        let toast = toastQueue.show(message, level: level, key: key)
+        UIAccessibility.post(notification: .announcement, argument: message)
+        guard !toast.sticky else { return }
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(4))
             self?.dismissToast(toast.id)

@@ -45,6 +45,7 @@ struct PairingSources: View {
                     .font(.footnote)
                     .foregroundStyle(.red)
                     .multilineTextAlignment(.center)
+                    .announces("That isn't a pairing link.")
             }
         }
     }

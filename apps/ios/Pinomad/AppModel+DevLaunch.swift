@@ -201,11 +201,11 @@ extension AppModel {
         guard let suffix = ProcessInfo.processInfo.environment["PINOMAD_PROMPT_HOST"]?
             .trimmingCharacters(in: .whitespaces), !suffix.isEmpty
         else {
-            showToast("PINOMAD_PROMPT_FILE requires PINOMAD_PROMPT_HOST", level: "error")
+            showToast("PINOMAD_PROMPT_FILE requires PINOMAD_PROMPT_HOST", level: .error)
             return
         }
         guard currentHostKey?.hasSuffix(suffix) == true else {
-            showToast("Dev prompt target does not match the active host", level: "error")
+            showToast("Dev prompt target does not match the active host", level: .error)
             return
         }
         let url = path.hasPrefix("/")
@@ -215,7 +215,7 @@ extension AppModel {
         guard let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8)
         else {
-            showToast("Dev prompt file is unreadable", level: "error")
+            showToast("Dev prompt file is unreadable", level: .error)
             return
         }
         Task { @MainActor [weak self] in
@@ -238,7 +238,7 @@ extension AppModel {
             }
             // The active host may have changed while waiting for P2P.
             guard self.currentHostKey?.hasSuffix(suffix) == true else {
-                self.showToast("Dev prompt target changed; nothing was sent", level: "error")
+                self.showToast("Dev prompt target changed; nothing was sent", level: .error)
                 return
             }
             self.drafts[Self.draftKey] = text
@@ -260,7 +260,7 @@ extension AppModel {
             : FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent(path)
         guard let data = try? Data(contentsOf: url) else {
-            showToast("Dev attach file is unreadable", level: "error")
+            showToast("Dev attach file is unreadable", level: .error)
             return
         }
         navPath = [demoNewConversationRoute()]

@@ -52,12 +52,14 @@ extension AppModel {
         guard let runtime = focusedRuntime, let session = runtime.session else { return }
         let text = runtime.drafts[id] ?? ""
         runtime.drafts[id] = ""
+        runtime.clearToast(key: "command")
         Task {
             do {
                 _ = try await session.invoke(.runCommand(name: name, args: args, target: id))
             } catch {
                 if (runtime.drafts[id] ?? "").isEmpty { runtime.drafts[id] = text }
-                runtime.lastError = "Couldn't run /\(name): \(error.localizedDescription)"
+                runtime.showToast(
+                    "Couldn't run /\(name): \(error.localizedDescription)", level: .error, key: "command")
             }
         }
     }

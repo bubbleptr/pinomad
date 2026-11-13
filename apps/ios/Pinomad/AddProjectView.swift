@@ -87,6 +87,7 @@ struct AddProjectView: View {
         VStack(alignment: .leading, spacing: 8) {
             if let addError {
                 Text(addError).font(.footnote).foregroundStyle(.red)
+                    .announces(addError)
             } else if let listing {
                 Text(listing.path)
                     .font(.footnote)

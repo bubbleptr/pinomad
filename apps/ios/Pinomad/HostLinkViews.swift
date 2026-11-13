@@ -123,11 +123,7 @@ struct HostLinkCodeEntry: View {
                 .disabled(!flow.canLookUp)
             }
 
-            if let error = flow.error, flow.request == nil {
-                Text(error)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-            }
+            if flow.request == nil { FieldError(message: flow.error) }
         }
         .onChange(of: text) { _, typed in
             flow.type(typed)
@@ -273,11 +269,7 @@ struct HostLinkConfirmView: View {
                 }
             }
 
-            if let error = flow.error {
-                Text(error)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-            }
+            FieldError(message: flow.error)
 
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 HStack(spacing: 12) {
@@ -455,9 +447,7 @@ struct OneTimeTokenDisclosure: View {
                 }
 
                 if let error {
-                    Text("Couldn't create a new command. \(error)")
-                        .font(.footnote)
-                        .foregroundStyle(.red)
+                    FieldError(message: error)
                 }
             }
         } else if let error {
@@ -465,6 +455,7 @@ struct OneTimeTokenDisclosure: View {
                 Text("Couldn't create a join command. \(error)")
                     .font(.footnote)
                     .foregroundStyle(.red)
+                    .announces(error)
                 Button("Try again") { Task { await create() } }
                     .buttonStyle(.tactile(.bordered))
                     .disabled(busy)

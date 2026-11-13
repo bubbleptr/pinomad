@@ -15,7 +15,7 @@ struct EmailFormSections: View {
     @State private var sentTo: String?
     @State private var code = ""
     @State private var busy = false
-    @State private var error: String?
+    @State private var failure: AccountFailure?
     /// The grant lapsed after the new address got its code: confirm again here.
     @State private var reconfirm = false
 
@@ -29,17 +29,21 @@ struct EmailFormSections: View {
                     .keyboardType(.numberPad)
                     .submitLabel(.go)
                     .onSubmit(save)
+                    .onChange(of: code) { clear(.code) }
+                FieldError(message: AccountCopy.fieldMessage(failure, .code))
             }
             if reconfirm {
                 ConfirmIdentitySection(model: model, step: step, onSubmit: save)
             }
-            FormActionButton(title: submitLabel, busy: busy, action: save)
+            FormActionButton(
+                title: submitLabel, busy: busy,
+                error: AccountCopy.formMessage(failure, fields: [.code]), action: save)
                 .disabled(busy || code.trimmed.isEmpty || !step.ready)
             Section {
                 Button("Use a different email") {
                     self.sentTo = nil
                     code = ""
-                    error = nil
+                    failure = nil
                     reconfirm = false
                 }
                 .disabled(busy)
@@ -52,12 +56,19 @@ struct EmailFormSections: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .submitLabel(.next)
+                    .onChange(of: email) { clear(.email) }
+                FieldError(message: AccountCopy.fieldMessage(failure, .email))
             }
             ConfirmIdentitySection(model: model, step: step, onSubmit: send)
-            FormActionButton(title: "Send code to new email", busy: busy, action: send)
+            FormActionButton(
+                title: "Send code to new email", busy: busy,
+                error: AccountCopy.formMessage(failure, fields: [.email]), action: send)
                 .disabled(busy || email.trimmed.isEmpty || !step.ready)
         }
-        FormErrorSection(message: error.map { (sentTo == nil ? "Couldn't send the code. " : "Couldn't save the email. ") + $0 })
+    }
+
+    private func clear(_ field: AccountField) {
+        if failure.flatMap(AccountCopy.field) == field { failure = nil }
     }
 
     private func send() {
@@ -76,14 +87,14 @@ struct EmailFormSections: View {
 
     private func run(_ call: @escaping (AccountConfirmation) async -> AccountFailure?, then: @escaping () -> Void) {
         busy = true
-        error = nil
+        failure = nil
         Task {
-            let failure = await step.run(model: model, call)
+            let refused = await step.run(model: model, call)
             busy = false
-            if let failure {
+            if let refused {
                 // Back to the confirmation, with what was typed kept.
-                if failure.code == "invalid_reauth" { reconfirm = true }
-                error = AccountCopy.message(failure)
+                if refused.code == "invalid_reauth" { reconfirm = true }
+                failure = step.unclaimed(refused)
             } else {
                 then()
             }
@@ -163,9 +174,8 @@ struct UnlinkProviderView: View {
                 model: model, step: step,
                 footer: "You won't be able to sign in with \(name) until you link it again.",
                 onSubmit: submit)
-            FormActionButton(title: "Remove \(name)", busy: busy, destructive: true, action: submit)
+            FormActionButton(title: "Remove \(name)", busy: busy, destructive: true, error: error, action: submit)
                 .disabled(busy || !step.ready)
-            FormErrorSection(message: error)
         }
         .navigationTitle("Remove \(name)")
         .navigationBarTitleDisplayMode(.inline)
@@ -180,7 +190,7 @@ struct UnlinkProviderView: View {
             let failure = await step.run(model: model) { await model.accountUnlinkProvider(provider, confirmation: $0) }
             busy = false
             if let failure {
-                error = AccountCopy.message(failure)
+                error = step.unclaimed(failure).map(AccountCopy.message)
             } else {
                 onRemoved("\(name) removed.")
                 dismiss()
@@ -213,9 +223,8 @@ struct LinkProviderView: View {
                 model: model, step: step,
                 footer: "Then sign in with \(name) to add it to this account.",
                 onSubmit: submit)
-            FormActionButton(title: "Link \(name)", busy: busy, action: submit)
+            FormActionButton(title: "Link \(name)", busy: busy, error: error, action: submit)
                 .disabled(busy || !step.ready)
-            FormErrorSection(message: error)
         }
         .navigationTitle("Link \(name)")
         .navigationBarTitleDisplayMode(.inline)
@@ -285,7 +294,7 @@ struct LinkProviderView: View {
                 return nil
             }
             busy = false
-            if let failure {
+            if let failure = step.unclaimed(failure) {
                 error = AccountCopy.linkMessage(failure, provider: name)
             } else if outcome == .linked {
                 onLinked("\(name) linked.")

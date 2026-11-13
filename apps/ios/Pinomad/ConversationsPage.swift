@@ -182,11 +182,19 @@ struct ConversationsPage: View {
 
     /// Rename is request-class: a refusal comes back as the host's reason,
     /// shown in the alert, which stays up for another try.
+    /// A title the shared rule rejects never reaches the host: the alert
+    /// comes back with the problem, as it does for a refusal.
     private func saveRename() {
         guard let ref = renaming else { return }
         let title = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !title.isEmpty, title != renamingFrom else {
+        guard title != renamingFrom else {
             renaming = nil
+            return
+        }
+        if let problem = ConversationTitle.problem(title) {
+            renameError = problem
+            // The alert is closing for the tap; show it again after.
+            Task { renaming = ref }
             return
         }
         Task {

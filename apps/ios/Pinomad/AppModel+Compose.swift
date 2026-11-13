@@ -23,8 +23,8 @@ extension AppModel {
         // Past the host's 24 h TTL the id may already be gone; drop it and
         // keep the source so Retry re-uploads instead of losing the draft.
         if files.expire() {
+            files.report("Attachment expired; attach it again")
             runtime.fileTrays[id] = files
-            runtime.lastError = "Attachment expired; attach it again"
             return
         }
         let images = tray.images
@@ -39,6 +39,7 @@ extension AppModel {
         runtime.trays[id] = nil
         runtime.fileTrays[id] = nil
         runtime.transcriptPin += 1
+        runtime.clearToast(key: "send")
         Task {
             do {
                 _ = try await session.invoke(
@@ -49,7 +50,7 @@ extension AppModel {
                 // putting the draft back would leave two resendable copies.
                 // Only a session that ended before admitting the call has no
                 // row, and there is no composer left to restore into then.
-                runtime.showToast("Couldn't send: \(self.describe(error))", level: "error")
+                runtime.showToast("Couldn't send: \(self.describe(error))", level: .error, key: "send")
             }
         }
     }
@@ -228,6 +229,7 @@ extension AppModel {
         guard let runtime = focusedRuntime, runtime.isConnectedNow, let session = runtime.session,
               runtime.submissionPending.insert(requestId).inserted
         else { return }
+        runtime.clearToast(key: "resend")
         let generation = runtime.generation
         Task {
             defer {
@@ -239,7 +241,7 @@ extension AppModel {
                 _ = try await session.invoke(.retrySubmission(requestId: requestId))
             } catch {
                 guard runtime.generation == generation else { return }
-                runtime.showToast(self.describe(error), level: "error")
+                runtime.showToast("Couldn't resend: \(self.describe(error))", level: .error, key: "resend")
             }
         }
     }
@@ -255,6 +257,7 @@ extension AppModel {
               runtime.submissionPending.insert(requestId).inserted
         else { return }
         runtime.takingBack = id
+        runtime.clearToast(key: "take-back")
         let generation = runtime.generation
         Task {
             defer {
@@ -282,7 +285,7 @@ extension AppModel {
                     guard runtime.generation == generation else { return }
                     runtime.showToast(
                         "Couldn't load the original images; the message text is back.",
-                        level: "error")
+                        level: .error)
                 }
                 guard runtime.generation == generation else { return }
                 self.putBack(
@@ -293,7 +296,7 @@ extension AppModel {
             } catch {
                 guard runtime.generation == generation else { return }
                 runtime.showToast(
-                    "Couldn't take the message back: \(self.describe(error))", level: "error")
+                    "Couldn't take the message back: \(self.describe(error))", level: .error, key: "take-back")
             }
         }
     }
@@ -334,6 +337,7 @@ extension AppModel {
               runtime.queuedEdit.copy?.id != item.id,
               runtime.queuePending.insert(item.id).inserted
         else { return }
+        runtime.clearToast(key: "withdraw")
         Task {
             defer { runtime.queuePending.remove(item.id) }
             do {
@@ -341,7 +345,7 @@ extension AppModel {
                     runtime.showToast("Already sent, can't withdraw")
                 }
             } catch {
-                runtime.showToast(self.describe(error), level: "error")
+                runtime.showToast("Couldn't withdraw the message: \(self.describe(error))", level: .error, key: "withdraw")
             }
         }
     }
@@ -356,12 +360,13 @@ extension AppModel {
               runtime.queuedEdit.copy?.id != item.id,
               runtime.queuePending.insert(item.id).inserted
         else { return }
+        runtime.clearToast(key: "steer")
         Task {
             defer { runtime.queuePending.remove(item.id) }
             do {
                 _ = try await session.steerQueued(submissionId: item.id, target: id)
             } catch {
-                runtime.showToast(self.describe(error), level: "error")
+                runtime.showToast("Couldn't steer with the message: \(self.describe(error))", level: .error, key: "steer")
             }
         }
     }
@@ -376,12 +381,13 @@ extension AppModel {
               runtime.queuedEdit.copy?.id != item.id,
               runtime.queuePending.insert(item.id).inserted
         else { return }
+        runtime.clearToast(key: "reorder")
         Task {
             defer { runtime.queuePending.remove(item.id) }
             do {
                 _ = try await session.reorderQueued(submissionId: item.id, before: before, target: id)
             } catch {
-                runtime.showToast(self.describe(error), level: "error")
+                runtime.showToast("Couldn't move the message: \(self.describe(error))", level: .error, key: "reorder")
             }
         }
     }
@@ -434,7 +440,7 @@ extension AppModel {
                 runtime.queuedEditPreparing.remove(id)
                 runtime.queuePending.remove(item.id)
                 runtime.showToast(
-                    "Couldn't load an image for editing. Try again.", level: "error")
+                    "Couldn't load an image for editing. Try again.", level: .error)
             }
         }
     }
@@ -486,7 +492,7 @@ extension AppModel {
                 // connection stayed up: nothing was withdrawn.
                 runtime.queuedEdit.failed(connected: true)
                 runtime.queuePending.remove(copy.id)
-                runtime.showToast(describe(error), level: "error")
+                runtime.showToast("Couldn't edit the message: \(describe(error))", level: .error, key: "edit-queued")
             case .sessionClosed:
                 await awaitReconnectOrRetry(copy, runtime: runtime)
             }

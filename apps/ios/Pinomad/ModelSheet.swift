@@ -82,10 +82,7 @@ struct ModelSheet: View {
                 }
             }
         }
-        // Below the sheet's own navigation bar.
-        .overlay(alignment: .top) { ToastStack(model: model).padding(.top, 64) }
-        .onAppear { model.sheetShowsToasts = true }
-        .onDisappear { model.sheetShowsToasts = false }
+        .hostsToasts(model)
         .presentationDetents([.medium, .large])
     }
 
