@@ -316,6 +316,7 @@ private struct DeviceRejectedView: View {
 struct ConnectionBanner: View {
     let model: AppModel
     let hostKey: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private enum Problem: Equatable { case closed, failed(ConnectFailure) }
 
@@ -338,7 +339,7 @@ struct ConnectionBanner: View {
                         .buttonStyle(.tactile(.bordered))
                         .controlSize(.small)
                 }
-                .transition(.move(edge: .top).combined(with: .opacity))
+                .transition(Motion.dropIn(reduceMotion: reduceMotion))
             case .failed(let failure)?:
                 bar {
                     Image(.triangleAlert)
@@ -348,7 +349,7 @@ struct ConnectionBanner: View {
                         .buttonStyle(.tactile(.bordered))
                         .controlSize(.small)
                 }
-                .transition(.move(edge: .top).combined(with: .opacity))
+                .transition(Motion.dropIn(reduceMotion: reduceMotion))
             case nil:
                 EmptyView()
             }
@@ -394,6 +395,7 @@ extension View {
 /// of why an action in it didn't stick.
 struct ToastStack: View {
     let model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 6) {
@@ -411,7 +413,7 @@ struct ToastStack: View {
                 .padding(.vertical, 10)
                 .glassEffect(.regular, in: .rect(cornerRadius: 18))
                 .onTapGesture { model.dismissToast(notice.id) }
-                .transition(.move(edge: .top).combined(with: .opacity))
+                .transition(Motion.dropIn(reduceMotion: reduceMotion))
             }
         }
         .padding(.horizontal, 16)

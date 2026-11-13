@@ -30,6 +30,7 @@ public struct Transcript<Content: View>: View {
     let onBottomChange: ((Bool) -> Void)?
     @State private var position = ScrollPosition(edge: .bottom)
     @State private var scroll = ScrollState()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(
         pin: Int = 0,
@@ -75,7 +76,7 @@ public struct Transcript<Content: View>: View {
                 reportBottom()
             }
             .onChange(of: pin) {
-                withAnimation { position.scrollTo(edge: .bottom) }
+                withAnimation(reduceMotion ? nil : .default) { position.scrollTo(edge: .bottom) }
             }
         }
     }

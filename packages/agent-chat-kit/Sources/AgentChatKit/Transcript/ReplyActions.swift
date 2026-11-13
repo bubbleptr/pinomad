@@ -22,6 +22,8 @@ public struct ReplyActions: View {
             } label: {
                 Image(copied ? Icon.check : .copy)
                     .contentTransition(.symbolEffect(.replace))
+                    // The replace effect only plays inside an animated change.
+                    .animation(.default, value: copied)
                     .font(.footnote)
                     .frame(width: 32, height: 32)
                     .contentShape(.rect)

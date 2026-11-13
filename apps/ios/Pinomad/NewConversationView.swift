@@ -8,6 +8,7 @@ import SwiftUI
 /// `AppModel.draftKey`, so leaving and coming back keeps them.
 struct NewConversationView: View {
     let model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var showModels = false
     @State private var showPhotos = false
@@ -373,7 +374,7 @@ struct NewConversationView: View {
                 }
             }
         }
-        .animation(.snappy(duration: 0.25), value: model.draftHome)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: model.draftHome)
     }
 
     /// Picking a machine shows that machine's own draft; nothing typed here

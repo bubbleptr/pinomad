@@ -147,6 +147,15 @@ struct ConversationView: View {
             if failure != nil { return .error }
             return interrupted ? nil : .success
         }
+        // A send the host refused, in the transcript or (sent during a run)
+        // in the queue; opening a conversation that already shows one doesn't count.
+        .sensoryFeedback(.error, trigger: conversation.map {
+            $0.localSubmissions.filter { $0.status == .failed }.count
+                + $0.localQueueItems.filter { $0.status == .failed }.count
+        }) { old, new in
+            guard let old, let new else { return false }
+            return new > old
+        }
         // A question arriving; opening a conversation that already has one doesn't count.
         .sensoryFeedback(.impact(weight: .medium), trigger: conversation?.questions.count) { old, new in
             guard let old, let new else { return false }
@@ -513,6 +522,7 @@ private struct UserRow: View, Equatable {
     let edit: (() -> Void)?
     let editDisabled: Bool
     let editTooltip: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let pending: Bool
 
     var body: some View {
@@ -543,6 +553,8 @@ private struct UserRow: View, Equatable {
                 Image(status.icon)
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(status == .failed ? Color.red : Color.secondary)
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(reduceMotion ? nil : .default, value: status)
                     .frame(width: 14, height: 14)
                     .accessibilityLabel(Text(status.label))
             }
@@ -692,6 +704,7 @@ private struct RunRow: View, Equatable {
 private struct RunFailureView: View {
     let raw: String
     @State private var showsDetails = false
+    @State private var errorCopies = 0
 
     var body: some View {
         let text = RunFailureText(raw)
@@ -713,10 +726,15 @@ private struct RunFailureView: View {
                         .padding(.vertical, 6)
                         .contentShape(.rect)
                     }
-                    Button("Copy error", image: .copy) {
+                    Button {
                         UIPasteboard.general.string = raw
+                        withAnimation { errorCopies += 1 }
+                    } label: {
+                        Label(errorCopies > 0 ? "Copied" : "Copy error", image: errorCopies > 0 ? .check : .copy)
+                            .contentTransition(.symbolEffect(.replace))
                     }
                     .labelStyle(.iconOnly)
+                    .sensoryFeedback(.success, trigger: errorCopies)
                 }
                 .font(.footnote)
                 .foregroundStyle(.secondary)

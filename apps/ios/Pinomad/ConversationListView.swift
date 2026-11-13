@@ -197,6 +197,7 @@ private struct MachineGroup: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
+                    .rollingNumber(count)
             }
             .padding(.vertical, 6)
             .shortSeparator()
@@ -269,12 +270,13 @@ private struct MachineHeader: View {
 /// the app shows host state (#252).
 struct ConnectionDot: View {
     let online: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Circle()
             .fill(online ? Color.green : Color.secondary.opacity(0.5))
             .frame(width: 10, height: 10)
-            .phaseAnimator(online ? [1.0, 0.35] : [1.0]) { dot, opacity in
+            .phaseAnimator(online && !reduceMotion ? [1.0, 0.35] : [1.0]) { dot, opacity in
                 dot.opacity(opacity)
             } animation: { _ in .easeInOut(duration: 1.2) }
     }
@@ -284,6 +286,7 @@ struct ConnectionDot: View {
 private struct StatusTiles: View {
     let roots: [ConversationNode]
     let open: (ConversationFilter) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let statuses = roots.map { familyStatus(node: $0) }
@@ -307,7 +310,7 @@ private struct StatusTiles: View {
                 Image(filter.image)
                     .font(.title2)
                     .foregroundStyle(filter.tint)
-                    .symbolEffect(.pulse, isActive: filter == .running && (count ?? 0) > 0)
+                    .symbolEffect(.pulse, isActive: filter == .running && (count ?? 0) > 0 && !reduceMotion)
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(filter.title)
                         .foregroundStyle(.primary)
@@ -315,6 +318,7 @@ private struct StatusTiles: View {
                         Text("\(count)")
                             .foregroundStyle(.secondary)
                             .monospacedDigit()
+                            .rollingNumber(count)
                     }
                 }
                 .font(.body.weight(.medium))

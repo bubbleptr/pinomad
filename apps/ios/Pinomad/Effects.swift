@@ -169,3 +169,22 @@ struct WorkingDots: View {
         .accessibilityHidden(true)
     }
 }
+
+extension View {
+    /// A count or figure that rolls its digits when `value` changes instead
+    /// of swapping them; it just swaps under Reduce Motion.
+    func rollingNumber(_ value: some Equatable) -> some View {
+        modifier(RollingNumber(value: value))
+    }
+}
+
+private struct RollingNumber<Value: Equatable>: ViewModifier {
+    let value: Value
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .contentTransition(reduceMotion ? .identity : .numericText())
+            .animation(reduceMotion ? nil : .default, value: value)
+    }
+}

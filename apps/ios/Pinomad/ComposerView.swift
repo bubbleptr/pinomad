@@ -31,6 +31,9 @@ struct ConversationComposer: View {
     @State private var focused = false
     /// Bumped by each send, for the tap's haptic.
     @State private var sends = 0
+    /// Bumped by each queue change made here (steer, reorder, withdraw).
+    @State private var queueActs = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var tray: AttachmentTray { model.trays[conversation.id] ?? AttachmentTray() }
     private var fileTray: FileAttachmentTray { model.fileTray(for: conversation.id) }
@@ -156,9 +159,13 @@ struct ConversationComposer: View {
             localActionsEnabled: connected,
             pending: queuePending,
             pendingRequests: model.submissionPending,
-            onSteer: { model.steerQueued(conversation: conversation.id, item: $0) },
+            onSteer: {
+                model.steerQueued(conversation: conversation.id, item: $0)
+                queueActs += 1
+            },
             onReorder: { item, before in
                 model.reorderQueued(conversation: conversation.id, item: item, before: before)
+                queueActs += 1
             },
             onRetryLocal: { requestId in
                 model.retrySubmission(conversation: conversation.id, requestId: requestId)
@@ -167,7 +174,10 @@ struct ConversationComposer: View {
             onEditLocal: { requestId in
                 model.editSubmission(conversation: conversation.id, requestId: requestId)
             },
-            onWithdraw: { model.withdrawQueued(conversation: conversation.id, item: $0) }
+            onWithdraw: {
+                model.withdrawQueued(conversation: conversation.id, item: $0)
+                queueActs += 1
+            }
         )
     }
 
@@ -205,9 +215,18 @@ struct ConversationComposer: View {
             }
             card
         }
+        // What sits above the card coming or going eases the card along
+        // instead of jumping it. Keyed on presence only: status text and
+        // the typed menus change without motion.
+        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: stackShape)
         .padding(.horizontal, 12)
         .padding(.bottom, Self.bottomInset)
         .sensoryFeedback(.impact(weight: .light), trigger: sends)
+        .sensoryFeedback(.selection, trigger: queueActs)
+        // A file upload failing; one already failed when the composer opens doesn't count.
+        .sensoryFeedback(.error, trigger: fileTray.entries.filter { $0.status == .failed }.count) { old, new in
+            new > old
+        }
         .onAppear {
             #if DEBUG
             if model.devShowsModelSheet {
@@ -445,15 +464,39 @@ struct ConversationComposer: View {
         sends += 1
     }
 
-    @ViewBuilder
     private var sendSlot: some View {
         // A blocked image set holds the send the same way preparing does.
-        switch SendSlot(draft: draft.wrappedValue, connected: connected, busy: conversation.busy,
-                        hasImages: !tray.images.isEmpty,
-                        preparing: tray.preparing > 0 || imagesBlocked || commandBlocked != nil,
-                        hasFiles: !fileTray.isEmpty || filesPreparing,
-                        filesBlocked: !fileTray.canSend || filesPreparing,
-                        command: submit != .message) {
+        let slot = SendSlot(draft: draft.wrappedValue, connected: connected, busy: conversation.busy,
+                            hasImages: !tray.images.isEmpty,
+                            preparing: tray.preparing > 0 || imagesBlocked || commandBlocked != nil,
+                            hasFiles: !fileTray.isEmpty || filesPreparing,
+                            filesBlocked: !fileTray.canSend || filesPreparing,
+                            command: submit != .message)
+        let isStop = if case .stop = slot { true } else { false }
+        // Send and Stop are different controls (a menu while steering is
+        // possible), so they cross-fade in one place rather than swap a glyph.
+        return ZStack {
+            slotControl(slot)
+                .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
+        }
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: isStop)
+    }
+
+    private struct StackShape: Equatable {
+        var questions: Int
+        var status: Bool
+        var queued: Int
+        var background: Bool
+    }
+
+    private var stackShape: StackShape {
+        StackShape(questions: conversation.questions.count, status: !conversation.statusText.isEmpty,
+                   queued: queuedRows.count, background: backgroundBar != nil)
+    }
+
+    @ViewBuilder
+    private func slotControl(_ slot: SendSlot) -> some View {
+        switch slot {
         case .stop(let enabled):
             Button {
                 model.stop(conversation: conversation.id)
@@ -677,6 +720,7 @@ struct AttachmentStrip: View {
     let removeFile: (String) -> Void
     let retryFile: (String) -> Void
     let view: (MessageImage) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -707,6 +751,7 @@ struct AttachmentStrip: View {
                                 retry: { retryFile(entry.id) },
                                 remove: { removeFile(entry.id) }
                             )
+                            .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.95)))
                         }
                         ForEach(0..<(tray.preparing + preparingFiles), id: \.self) { _ in
                             ProgressView()
@@ -716,6 +761,9 @@ struct AttachmentStrip: View {
                     }
                     .padding(.top, 6)
                     .padding(.trailing, 6)
+                    // Keyed on files only: an image takes its spinner's
+                    // place, and fading both would dip.
+                    .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: files.entries.map(\.id))
                 }
                 .scrollIndicators(.hidden)
             }
@@ -884,6 +932,7 @@ private struct QueueList: View {
     /// The host row being dragged, set when its handle lifts.
     @State private var dragged: UInt64?
     @State private var dropMark: QueueDropMark?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ScrollView {
@@ -892,11 +941,12 @@ private struct QueueList: View {
                     self.row(row)
                 }
             }
-            .animation(.snappy, value: rows.map(\.id))
         }
         .scrollBounceBehavior(.basedOnSize)
         .scrollClipDisabled()
         .frame(height: height)
+        // After the frame, so the list's height eases with its rows.
+        .animation(reduceMotion ? nil : .snappy, value: rows.map(\.id))
     }
 
     private var height: CGFloat {
@@ -1172,12 +1222,15 @@ private struct QueueDropDelegate: DropDelegate {
 /// because that row offers a retry.
 private struct QueueDeliveryMark: View {
     let status: MessageStatus
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 3) {
             Image(status.icon)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(status == .failed ? Color.red : Color.secondary)
+                .contentTransition(.symbolEffect(.replace))
+                .animation(reduceMotion ? nil : .default, value: status)
                 .accessibilityLabel(Text(status.label))
             if let caption = status.caption {
                 Text(caption)
