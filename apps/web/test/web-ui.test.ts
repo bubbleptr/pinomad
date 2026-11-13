@@ -519,8 +519,16 @@ it("preserves an unsent follow-up and disables write controls while reconnecting
 
 it("sends a typed steer from the button without stopping the run, and still stops with empty input", async () => {
   const webOrigin = await startWeb(defer);
-  // Slow enough that the answer is still streaming when the steer is sent.
-  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], tokensPerSecond: 20 });
+  // The run holds at the model until Stop aborts it, so the steer always
+  // lands mid-run however slow the machine is.
+  const untilAborted: FauxResponseStep = async (_context, options) => {
+    await new Promise<void>((resolve) => {
+      if (options?.signal?.aborted) resolve();
+      options?.signal?.addEventListener("abort", () => resolve(), { once: true });
+    });
+    return fauxAssistantMessage("stopped", { stopReason: "aborted" });
+  };
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: [untilAborted] });
   const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
   const composer = prompt(page);
