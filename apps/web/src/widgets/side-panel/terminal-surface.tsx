@@ -163,21 +163,24 @@ export function TerminalSurface({
   );
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-background">
+    // The tab strip sits on the muted band; the screen below is a card on it,
+    // its top corners rounded like the pane's. Pulled out by 1px on each side
+    // so its side borders hide under the pane's own edge and only the top
+    // edge and its curve show.
+    <div className="flex flex-col h-full min-h-0 bg-surface-muted">
       {stacked ? (
         <>
-          <SurfaceBar start={barStart} end={barEnd}>
+          <SurfaceBar start={barStart} end={barEnd} className="bg-background">
             {null}
           </SurfaceBar>
-          <div className="flex h-10 shrink-0 items-center gap-1 border-b border-border bg-surface-muted px-1.5">
-            {tabs}
-          </div>
+          <div className="flex h-10 shrink-0 items-center gap-1 px-1.5">{tabs}</div>
         </>
       ) : (
-        <SurfaceBar start={barStart} end={barEnd} className="bg-surface-muted ps-1.5">
+        <SurfaceBar start={barStart} end={barEnd} className="border-b-0 ps-1.5">
           {tabs}
         </SurfaceBar>
       )}
+      <div className="-mx-px flex min-h-0 flex-1 flex-col overflow-hidden rounded-t-(--pigui-pane-radius) border border-b-0 border-border bg-background">
       {!connected && list !== undefined ? (
         <div className="shrink-0 border-b border-border px-3 py-1 text-xs text-muted-foreground" role="status">
           Reconnecting…
@@ -226,6 +229,7 @@ export function TerminalSurface({
             )}
           </>
         )}
+      </div>
       </div>
       {renaming === undefined ? null : (
         <RenameTerminalDialog
