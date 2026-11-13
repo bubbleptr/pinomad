@@ -809,7 +809,7 @@ it("does not mark the Tasks button for a fork running outside it", async () => {
   await waitForView(observer.view, (view) => view.conversation !== undefined && !isBusy(view.conversation));
 });
 
-it("shows an empty family in the panel while drafting a new conversation", async () => {
+it("hides the panel and its built-in surfaces while drafting a new conversation", async () => {
   const webOrigin = await startWeb(defer);
   const host = await startFauxHost(defer, { browserOrigins: [webOrigin], answers: ["first answer", "fork answer"] });
   const observer = await connectTo(defer, host);
@@ -829,9 +829,10 @@ it("shows an empty family in the panel while drafting a new conversation", async
   await page.getByRole("button", { name: "Tasks", exact: true }).click();
   await panel.getByText("No tasks yet", { exact: true }).waitFor();
 
-  // The draft home has no family — the panel must not keep the previous one's.
+  // The draft home has no family: no panel, and no surface buttons to open one.
   await page.getByRole("button", { name: "New chat", exact: true }).click();
-  await panel.getByText("No tasks yet", { exact: true }).waitFor();
+  await panel.waitFor({ state: "hidden" });
+  expect(await page.getByRole("button", { name: "Tasks", exact: true }).count()).toBe(0);
 });
 
 it("on a phone, a fork row opens main and closes navigation", async () => {
@@ -2698,19 +2699,17 @@ it("surfaces a failed command as a toast without opening the dock", async () => 
   const toast = page.locator("[data-toast-id]");
   await toast.getByText("Unknown project", { exact: false }).waitFor();
 
-  // An undismissed error toast must not sit over the composer or the header's
-  // actions — it would block sending until dismissed. Settle the toast's own
+  // An undismissed error toast must not sit over the composer — it would block
+  // sending until dismissed. (The draft header has no surface buttons.) Settle the toast's own
   // animations only: the draft hero's shimmer loops forever.
   await page.waitForFunction(() =>
     document.querySelector("[data-toast-id]")?.getAnimations({ subtree: true }).every((a) => a.playState !== "running"),
   );
   const toastBox = (await toast.boundingBox())!;
   const composerBox = (await prompt(page).boundingBox())!;
-  const dockBox = (await page.getByRole("button", { name: "Tasks", exact: true }).boundingBox())!;
   const intersects = (a: typeof toastBox, b: typeof toastBox) =>
     a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
   expect(intersects(toastBox, composerBox)).toBe(false);
-  expect(intersects(toastBox, dockBox)).toBe(false);
 });
 
 it("keeps the Add project picker open with the host's error on failure", async () => {

@@ -1081,8 +1081,11 @@ export function Workbench({
   // opens, or a draft is up, the view's docs still belong to the old one.
   const pluginConversationId = conversation?.conversation.id;
   const plugins = usePluginWorkbench(pluginConversationId, openSurface);
+  // A draft has no conversation for the built-in surfaces: the panel stays
+  // open underneath and comes back once the conversation exists.
+  const panelShown = panelOpen && (!drafting || shownSurface(panelSurface, plugins.panels).startsWith("plugin:"));
   const selectSurface = (surface: PanelSurface): void => {
-    if (panelOpen && surface === shownSurface(panelSurface, plugins.panels)) setPanelOpen(false);
+    if (panelShown && surface === shownSurface(panelSurface, plugins.panels)) setPanelOpen(false);
     else openSurface(surface);
   };
   // A failed/unconfirmed send edited from the transcript flows back into the
@@ -1267,10 +1270,11 @@ export function Workbench({
         panelControls={
           <SurfaceButtons
             narrow={narrow}
-            open={panelOpen}
+            open={panelShown}
             surface={panelSurface}
             liveActivity={liveActivity}
             pluginPanels={plugins.panels}
+            drafting={drafting}
             onSelect={selectSurface}
           />
         }
@@ -1474,9 +1478,10 @@ export function Workbench({
           remote={remote}
           shownId={shownId}
           narrow={false}
-          open={panelOpen}
+          open={panelShown}
           surface={panelSurface}
           pluginPanels={plugins.panels}
+          drafting={drafting}
           busy={busy}
           liveActivity={liveActivity}
           onOpenChange={setPanelOpen}
@@ -1495,9 +1500,10 @@ export function Workbench({
           remote={remote}
           shownId={shownId}
           narrow
-          open={panelOpen}
+          open={panelShown}
           surface={panelSurface}
           pluginPanels={plugins.panels}
+          drafting={drafting}
           busy={busy}
           liveActivity={liveActivity}
           onOpenChange={setPanelOpen}

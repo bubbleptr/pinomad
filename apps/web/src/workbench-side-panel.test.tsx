@@ -17,21 +17,43 @@ import {
   settledConversation,
 } from "./test/story-fixtures.tsx";
 
+/** `conversationId: undefined` puts the host's new-chat draft on screen. */
+function workbench(view: ReturnType<typeof fakeView>, remote: ReturnType<typeof fakeRemote>, conversationId: typeof PARSER_ID | undefined) {
+  const hosts = { ...fakeHosts([HOME_HOST], HOME_HOST.hostKey), focus: { hostKey: HOME_HOST.hostKey, conversationId } };
+  return (
+    <HostsContext.Provider value={hosts}>
+      <Workbench remote={remote} wsUrl="ws://test" hostKey={HOME_HOST.hostKey} framed={false} notify={false} />
+    </HostsContext.Provider>
+  );
+}
+
 function renderWorkbench(
   view = fakeView(),
   remote = fakeRemote(view),
-  conversationId: typeof PARSER_ID = PARSER_ID,
+  conversationId: typeof PARSER_ID | undefined = PARSER_ID,
 ) {
-  const hosts = { ...fakeHosts([HOME_HOST], HOME_HOST.hostKey), focus: { hostKey: HOME_HOST.hostKey, conversationId } };
-  render(
-    <HostsContext.Provider value={hosts}>
-      <Workbench remote={remote} wsUrl="ws://test" hostKey={HOME_HOST.hostKey} framed={false} notify={false} />
-    </HostsContext.Provider>,
-  );
+  return render(workbench(view, remote, conversationId));
 }
 
 describe("side panel surfaces", () => {
   afterEach(() => window.localStorage.clear());
+
+  it("hides the built-in surfaces while drafting, and brings the open panel back after", async () => {
+    const user = userEvent.setup();
+    const view = fakeView();
+    const remote = fakeRemote(view);
+    const { rerender } = renderWorkbench(view, remote);
+    await user.click(screen.getByRole("button", { name: "Changes" }));
+    expect(screen.getByRole("complementary", { name: "Side panel" })).toBeInTheDocument();
+
+    rerender(workbench(view, remote, undefined));
+    for (const name of ["Tasks", "Changes", "Terminal"]) expect(screen.queryByRole("button", { name })).toBeNull();
+    expect(screen.queryByRole("complementary", { name: "Side panel" })).toBeNull();
+
+    rerender(workbench(view, remote, PARSER_ID));
+    const panel = screen.getByRole("complementary", { name: "Side panel" });
+    expect(await within(panel).findByText("src/parser.ts")).toBeInTheDocument();
+  });
 
   it("opens Changes from its icon, then switches to Tasks rather than closing", async () => {
     const user = userEvent.setup();

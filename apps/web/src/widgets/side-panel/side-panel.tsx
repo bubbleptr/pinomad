@@ -90,10 +90,13 @@ export function SurfaceButtons({
   surface: selected,
   liveActivity,
   pluginPanels = [],
+  drafting = false,
   onSelect,
 }: {
   narrow: boolean;
   open: boolean;
+  /** No conversation yet: Tasks, Changes and Terminal have nothing to show, so only plugin surfaces remain. */
+  drafting?: boolean;
   surface: PanelSurface;
   /** Foreground work Tasks would show is running. */
   liveActivity: boolean;
@@ -102,6 +105,11 @@ export function SurfaceButtons({
   onSelect: (surface: PanelSurface) => void;
 }) {
   const surface = shownSurface(selected, pluginPanels);
+  const entries: { id: PanelSurface; label: string; icon: ReactNode }[] = [
+    ...(drafting ? [] : SURFACES),
+    ...pluginPanels.map((panel) => ({ id: panel.surface, label: panel.label, icon: PLUGIN_ICON })),
+  ];
+  if (entries.length === 0) return null;
   if (narrow) {
     return (
       <span className="relative">
@@ -111,7 +119,7 @@ export function SurfaceButtons({
           size="sm"
           tooltip="Show side panel"
           variant="ghost"
-          onClick={() => onSelect(surface)}
+          onClick={() => onSelect(entries.some((entry) => entry.id === surface) ? surface : entries[0]!.id)}
         />
         {!open && liveActivity ? <LiveDot /> : null}
       </span>
@@ -119,10 +127,7 @@ export function SurfaceButtons({
   }
   return (
     <>
-      {[
-        ...SURFACES,
-        ...pluginPanels.map((panel) => ({ id: panel.surface, label: panel.label, icon: PLUGIN_ICON })),
-      ].map((entry: { id: PanelSurface; label: string; icon: ReactNode }) => {
+      {entries.map((entry) => {
         const shown = open && surface === entry.id;
         return (
           <span key={entry.id} className="relative">
@@ -612,6 +617,7 @@ export function SidePanel({
   open,
   surface: selected,
   pluginPanels = [],
+  drafting = false,
   busy,
   liveActivity,
   onOpenChange,
@@ -627,6 +633,8 @@ export function SidePanel({
   open: boolean;
   surface: PanelSurface;
   pluginPanels?: readonly PluginPanel[];
+  /** No conversation yet; the phone dialog's switch offers only plugin surfaces, as the header does. */
+  drafting?: boolean;
   /** The shown conversation is running; Changes refreshes once it settles. */
   busy: boolean;
   liveActivity: boolean;
@@ -699,6 +707,7 @@ export function SidePanel({
               surface={surface}
               liveActivity={liveActivity}
               pluginPanels={pluginPanels}
+              drafting={drafting}
               onSelect={onSelectSurface}
             />,
             close,
