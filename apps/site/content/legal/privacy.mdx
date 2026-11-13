@@ -13,7 +13,7 @@ This policy covers the official PiNomad server at `app.pinomad.si`, run by PiNom
 - Your agent runs on your own machine (the host). Conversations, files and commands travel between your devices and your host end-to-end encrypted. The server forwards them as ciphertext and can't read them.
 - The server stores your account (your email address, a password hash if you set a password, and the Google, GitHub or Apple sign-ins you linked), the hosts on your account, your sign-in sessions, the devices you sign in on and which hosts they joined, and push registrations from the iPhone app.
 - Your email address is used to sign you in, to send you codes and to tell you about changes to your account's security. No newsletters, no analytics, no ads. Nothing is sold, and nothing is shared beyond the services named under "Services that handle some of your data".
-- When you delete your account, the server's records of it go with it, and PiNomad's access to your Apple ID is revoked.
+- When you delete your account, the server's records of it go with it, and the server asks Apple to revoke PiNomad's access to your Apple ID.
 
 ## What the server stores
 
@@ -22,7 +22,7 @@ All of this lives in one database on the server.
 - **Account:** your email address and when it was verified, your password as a scrypt hash (never the password itself; an account that only signs in with Google, GitHub or Apple has none), a random account ID that your apps use to tell your pairings from another account's on the same device, and when the account was created. An account created before email sign-up existed keeps its username until an email address is added to it.
 - **Sign-in methods:** for each Google, GitHub or Apple sign-in you linked: which provider, the ID that provider gives you (a number or opaque string, not your email or username there), the email address it reported, and when you linked it. For Apple, also the name you chose to share the first time you signed in, if any, and a token Apple issued that the server keeps only so it can revoke PiNomad's access when you unlink Apple or delete your account.
 - **Emailed codes:** for each code the server mails you (to sign up, reset your password, add an email address or confirm an action): a hash of the code, what it's for, the email address, the account it belongs to if there is one yet, how many wrong guesses it has had, and when it expires.
-- **Sign-ins through Google, GitHub or Apple in progress:** while you're on the provider's pages, the state that ties the provider's answer to your browser or app. If no account matches when you come back, the server also holds what the provider reported (the ID, the email address and, for Apple, the name and token) while you choose to create an account or link it to one you have. Secrets in these records are stored as SHA-256 hashes.
+- **Sign-ins through Google, GitHub or Apple in progress:** while you're on the provider's pages, the state that ties the provider's answer to your browser or app. If no account matches when you come back, the server also holds what the provider reported (the ID, the email address and, for Apple, the name and token) while you choose to create an account or link it to one you have. The secrets your browser or app holds for these steps are stored only as SHA-256 hashes.
 - **Confirmations:** when you confirm an action with your password or an emailed code, a hash of the short-lived confirmation the server gives your session.
 - **Sign-in sessions:** one for each browser or app you sign in on: a SHA-256 hash of the session token, when it was issued and when it expires.
 - **Hosts on your account:** for each host you join with `pinomad join`: its ID, its public key (used to set up the encrypted channel), its display name (by default the machine's hostname), when it joined and when it last connected.
@@ -41,7 +41,7 @@ All of this lives in one database on the server.
 ## What passes through without being kept
 
 - **IP and email addresses.** Like any server, it sees the address of each connection. It keeps IP addresses in memory to limit sign-in, sign-up, code and host-join attempts, and email addresses to limit how many codes go to one address; those counters last up to an hour and are gone when the server restarts. Addresses aren't written to the server's own log, and the database only holds the IP address of a host waiting to join (see above).
-- **Logs.** The server's log records when it starts; for each push notification, the host ID, the build type, the result and how long it took; and failures: an email that couldn't be sent (only what it was for, not the address or the code), a sign-in through Google, GitHub or Apple that failed (the provider and the error), and an Apple revocation that failed. It doesn't log notification content, push tokens, passwords, codes, email addresses or connections. Logs stay on the server and are rotated by the system.
+- **Logs.** The server's log records when it starts; for each push notification, the host ID, the build type, the result and how long it took; and failures: an email that couldn't be sent (only what it was for, not the address or the code), a sign-in through Google, GitHub or Apple that failed (the provider and the error), and an Apple revocation that failed. It doesn't log notification content, push tokens, passwords, codes or connections. Logs stay on the server and are rotated by the system.
 
 ## Email the server sends
 
@@ -49,12 +49,12 @@ Only these, each to your account's address (or, for a sign-up, the address you e
 
 - A code to sign up, to reset your password, to add an email address, or to confirm an action such as deleting your account.
 - When someone tries to sign up with an address that already has an account: a note saying so, instead of a code.
-- A notice when a new sign-in method is linked to your account, and, sent to the old address, when your account's email address changes.
+- A notice when a Google, GitHub or Apple sign-in was linked to your account automatically because it reported the same verified email address, and, sent to the old address, when your account's email address changes.
 
 ## Services that handle some of your data
 
 - **Email delivery:** the official server sends mail through Resend, which sees the recipient address and the message (including a code) on its way to you.
-- **Google, GitHub and Apple:** only if you sign in with them. The provider knows you signed in to PiNomad and sends the server your ID there and your email address (Apple also sends the name you choose to share). PiNomad asks for nothing else.
+- **Google, GitHub and Apple:** only if you sign in with them. The provider knows you signed in to PiNomad. The server asks for your email address and your ID there (Google and GitHub also offer your basic profile, Apple the name you choose to share) and keeps only the ID, the email address and, for Apple, that name.
 - **Apple Push Notification service:** see "What the server can't see" and "Where data is stored".
 
 {/* TODO(#455): confirm the reverse proxy (Caddy) access-log setting and the journald retention, then state how long logs are kept. */}

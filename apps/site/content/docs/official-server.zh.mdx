@@ -14,7 +14,7 @@ description: 注册和登录、登录方式、账号下的宿主、P2P 直连、
 
 验证码 10 分钟内有效，输错五次作废；**Resend code** 会重发一个。账号建好就直接登录了。
 
-用 Google、GitHub 或 Apple 登录时，按这个登录方式找你的账号；找不到时，如果提供方确认邮箱已验证、并且和你账号的邮箱一致，也会认成同一个账号。两样都对不上（比如 Apple 的 **隐藏邮件地址**，或者 GitHub 的主邮箱不是你注册用的那个）时，会让你选 **Create account**，或者点 **I already have an account**，用平时的方式登录后把新的登录方式绑上，免得多出一个账号。
+用 Google、GitHub 或 Apple 登录时，按这个登录方式找你的账号；找不到时，如果提供方确认邮箱已验证、并且和你账号的邮箱一致，也会认成同一个账号，并给这个邮箱发一封通知。两样都对不上（比如 Apple 的 **隐藏邮件地址**，或者 GitHub 的主邮箱不是你注册用的那个）时，会让你选 **Create account**，或者点 **I already have an account**，用平时的方式登录后把新的登录方式绑上，免得多出一个账号。
 
 邮箱注册上线之前建的账号，仍在 **Email** 一栏填用户名登录。第一次登录会要求补一个邮箱，用验证码确认；之后就用邮箱登录。
 
@@ -22,7 +22,7 @@ Mac App 在还没连上宿主时，首页就是登录表单；之后点侧栏底
 
 ## 登录方式
 
-Web 和 Mac App 的 Settings → Account、iPhone 的账号页里有 **Sign-in methods**：密码，以及 Google、GitHub、Apple。**Link** 绑定一个（跳到提供方选账号，再回来），从某一项的 **⋯** 菜单选 **Remove** 解绑。最后一种登录方式不能解绑。绑定新的登录方式时，会给你的邮箱发一封通知。
+Web 和 Mac App 的 Settings → Account、iPhone 的账号页里有 **Sign-in methods**：密码，以及 Google、GitHub、Apple。**Link** 绑定一个（跳到提供方选账号，再回来），从某一项的 **⋯** 菜单选 **Remove** 解绑。最后一种登录方式不能解绑。
 
 上面的 **Email** 一组可以换邮箱：填新邮箱，再填发到新邮箱的验证码。旧邮箱会收到通知。
 
@@ -82,4 +82,4 @@ Web 和 Mac App 的 Settings → Account、iPhone 的账号页里的 Signed-in d
 
 删除账号：在 Web 或 Mac App 的 Settings → Account 里，点 Danger zone 下的 **Delete account**，或者 iPhone 账号页（首页左上角的账号按钮）里 Danger Zone 下的 **Delete Account**，再确认一次。服务端删掉账号和它的邮箱、登录方式、登录会话、宿主绑定、推送登记，所有设备都会被退出。绑定过 Apple 的，服务端还会撤销 PiNomad 对你 Apple ID 的授权。
 
-加入这个账号的宿主会立刻和服务端断开；要再经服务端连它，在宿主上重新跑 `pinomad up`，用另一个账号确认。设备在各台宿主上的登记还在，因为这份名单由宿主自己保存：能直连宿主的设备（同一网络或 Tailscale）照常能连。要移除某台设备，到宿主的 Settings → Devices 里解除它的配对，或者在删除账号之前先在 **Devices** 里移除它。
+加入这个账号的宿主会立刻和服务端断开；要再经服务端连它，在宿主上用另一个账号重新 `pinomad join`。设备在各台宿主上的登记还在，因为这份名单由宿主自己保存：能直连宿主的设备（同一网络或 Tailscale）照常能连。要移除某台设备，到宿主的 Settings → Devices 里解除它的配对，或者在删除账号之前先在 **Devices** 里移除它。

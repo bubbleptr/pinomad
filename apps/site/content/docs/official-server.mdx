@@ -14,7 +14,7 @@ Anyone can sign up. On [app.pinomad.si](https://app.pinomad.si/), in the Mac app
 
 A code works for 10 minutes and dies after five wrong tries; **Resend code** sends a new one. You're signed in as soon as the account exists.
 
-Signing in with Google, GitHub or Apple finds your account by that sign-in, or by its email address when the provider says the address is verified and it matches your account's. If neither matches (Apple's **Hide My Email** address, or a GitHub primary email that isn't the one you signed up with), you're asked to **Create account** or, with **I already have an account**, sign in the way you usually do and link the new one, so you don't end up with two accounts.
+Signing in with Google, GitHub or Apple finds your account by that sign-in, or by its email address when the provider says the address is verified and it matches your account's. When a sign-in is linked this way by its email address, the server emails you a notice. If neither matches (Apple's **Hide My Email** address, or a GitHub primary email that isn't the one you signed up with), you're asked to **Create account** or, with **I already have an account**, sign in the way you usually do and link the new one, so you don't end up with two accounts.
 
 An account made before email sign-up still signs in with its username in the **Email** field. The first time, it asks you to add an email address and confirm it with a code; after that you sign in with the email address.
 
@@ -22,7 +22,7 @@ In the Mac app, the home screen shows the sign-in form until a host is connected
 
 ## Sign-in methods
 
-Settings → Account on the web and in the Mac app, and the iPhone's account page, list your **Sign-in methods**: your password and Google, GitHub and Apple. **Link** adds one (you go to the provider to pick the account and come back), and **Remove** from a method's **⋯** menu takes it away. The last way to sign in can't be removed. A new link sends a notice to your email address.
+Settings → Account on the web and in the Mac app, and the iPhone's account page, list your **Sign-in methods**: your password and Google, GitHub and Apple. **Link** adds one (you go to the provider to pick the account and come back), and **Remove** from a method's **⋯** menu takes it away. The last way to sign in can't be removed.
 
 The **Email** group above it changes your address: enter the new one, then the code sent to it. The old address gets a notice.
 
@@ -82,4 +82,4 @@ The server only knows what went through the account:
 
 To delete your account, click **Delete account** under Danger zone in Settings → Account on the web or in the Mac app, or tap **Delete Account** under Danger Zone on the iPhone's account page (the button at the top left of the home screen), and confirm. The server deletes the account along with its email address, sign-in methods, sessions, host bindings and push registrations, and every device is signed out. If you linked Apple, the server also revokes PiNomad's access to your Apple ID.
 
-Hosts joined to the account lose their connection to the server right away. To reach one through a server again, run `pinomad up` on it and confirm with another account. Your devices stay registered on each host, because the host keeps that list itself: a device that reaches the host directly (same network or Tailscale) still connects. To remove a device, unpair it in the host's Settings → Devices, or remove it under **Devices** before you delete the account.
+Hosts joined to the account lose their connection to the server right away. To reach one through a server again, run `pinomad join` on it with another account. Your devices stay registered on each host, because the host keeps that list itself: a device that reaches the host directly (same network or Tailscale) still connects. To remove a device, unpair it in the host's Settings → Devices, or remove it under **Devices** before you delete the account.
