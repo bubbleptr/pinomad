@@ -66,7 +66,8 @@ struct FirstHostView: View {
                         Image(.circleAlert)
                     }
                     .font(.footnote)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.red)
+                    .announces(refreshError)
                 }
 
                 Divider()

@@ -33,7 +33,9 @@ struct HostsSections: View {
         }
 
         if signedIn {
-            if let error = model.accountHostsError ?? model.accountError {
+            // A failed Pair is said on its row; this is the list's own load.
+            if let error = model.accountHostsError
+                ?? (model.accountPairFailedHostId == nil ? model.accountError : nil) {
                 Section {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(error)
@@ -177,6 +179,7 @@ private struct PairedHostRow: View {
                         .font(.caption)
                         .foregroundStyle(issue == nil ? Color.secondary : Color.orange)
                         .lineLimit(3)
+                    if let issue { FieldError(message: model.accountPairError(for: issue.hostId)) }
                 }
                 Spacer(minLength: 8)
                 if let issue {
@@ -211,6 +214,7 @@ private struct AccountHostListRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
+                FieldError(message: model.accountPairError(for: row.hostId))
             }
             Spacer(minLength: 8)
             if row.pairable {
@@ -285,5 +289,12 @@ struct FormSheet<Content: View>: View {
                     }
                 }
         }
+    }
+}
+
+extension AppModel {
+    /// Why Pair failed on this account host's row, if it was the last one.
+    func accountPairError(for hostId: String) -> String? {
+        accountPairFailedHostId == hostId ? accountError : nil
     }
 }

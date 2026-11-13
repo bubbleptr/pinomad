@@ -19,7 +19,6 @@ struct OverviewSheet: View {
     /// Processes whose Stop is waiting for the host's answer; the row's
     /// button stays disabled until the call resolves.
     @State private var stopping: Set<String> = []
-    @State private var stopError: String?
     /// Bound to the host that opened the sheet, so a focus change while it
     /// is up cannot send the unwatch to another host.
     @State private var processWatch = ProcessWatchSession()
@@ -111,14 +110,7 @@ struct OverviewSheet: View {
             panel.close()
             processWatch.close()
         }
-        .alert("Couldn't stop process", isPresented: Binding(
-            get: { stopError != nil },
-            set: { if !$0 { stopError = nil } }
-        )) {
-            Button("OK", role: .cancel) { stopError = nil }
-        } message: {
-            Text(stopError ?? "")
-        }
+        .hostsToasts(model)
     }
 
     @ViewBuilder
@@ -455,11 +447,13 @@ struct OverviewSheet: View {
     private func stop(_ row: ProcessesOverview.Row) {
         guard let root = processRoot, !stopping.contains(row.id) else { return }
         stopping.insert(row.id)
+        model.clearToast(key: "stop-process")
         Task {
             do {
                 try await model.stopProcess(root: root, id: row.id)
             } catch {
-                stopError = model.describe(error)
+                model.showToast(
+                    "Couldn't stop the process: \(model.describe(error))", level: .error, key: "stop-process")
             }
             stopping.remove(row.id)
         }

@@ -218,9 +218,6 @@ private struct LoginPanel: View {
                         if method == .oauth {
                             Text(provider.oauthIntro)
                         }
-                        if let startError {
-                            ErrorNote(title: "Couldn't start the login", message: startError)
-                        }
                         HStack(spacing: 10) {
                             Button(method == .apiKey ? "Try again" : provider.signInLabel, action: start)
                                 .buttonStyle(.tactile(.borderedProminent))
@@ -229,6 +226,8 @@ private struct LoginPanel: View {
                                 .buttonStyle(.tactile(.bordered))
                             if starting { ProgressView() }
                         }
+                        // Beside the button that failed: the message only.
+                        if let startError { InlineError(message: startError) }
                     }
                 }
             } else if let flow {
@@ -551,6 +550,6 @@ struct InlineError: View {
     let message: String
 
     var body: some View {
-        Text(message).font(.footnote).foregroundStyle(.red)
+        Text(message).font(.footnote).foregroundStyle(.red).announces(message)
     }
 }

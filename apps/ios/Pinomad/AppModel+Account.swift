@@ -698,6 +698,7 @@ extension AppModel {
     func pairViaAccount(hostId: String) async -> Bool {
         guard let session = accountSession, let api = accountAPI() else {
             accountError = "Sign in first."
+            accountPairFailedHostId = hostId
             return false
         }
         guard !accountBusy else { return false }
@@ -713,6 +714,7 @@ extension AppModel {
         accountBusy = true
         accountPairingHostId = hostId
         accountError = nil
+        accountPairFailedHostId = nil
         declinedAccountHosts.remove(serverOrigin: session.serverOrigin, hostId: hostId)
         defer {
             // A connection, another pairing, or this host's removal or forget
@@ -737,6 +739,7 @@ extension AppModel {
                 return true
             } catch {
                 accountError = AccountCopy.message(AccountFailure(code: "pairing_not_saved"))
+                accountPairFailedHostId = hostId
                 return false
             }
         }
@@ -752,12 +755,14 @@ extension AppModel {
                         serverOrigin: session.serverOrigin, hostId: hostId)
                 }
                 accountError = AccountCopy.message(failure)
+                accountPairFailedHostId = hostId
             }
             return false
         case .success(let offer):
             guard session.isSameSignIn(as: accountSession), accountPairingEpochs.isCurrent(ticket) else { return false }
             guard let link = accountPairingLink(offer: offer) else {
                 accountError = AccountCopy.message(AccountFailure(code: "invalid_offer"))
+                accountPairFailedHostId = hostId
                 return false
             }
             return beginPairing(

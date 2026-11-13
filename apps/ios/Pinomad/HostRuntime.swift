@@ -60,7 +60,6 @@ final class HostRuntime {
     var opening = ConversationOpening()
     var reopenAfterReady: UInt64?
 
-    var toasts: [Notice] = []
     private var noticeFeed = NoticeFeed()
     private var reconnectNotice = ReconnectNotice()
     private var reconnectNoticeDeadline: ContinuousClock.Instant?
@@ -108,7 +107,8 @@ final class HostRuntime {
     var onConnectedView: ((HostRuntime) -> Void)?
     /// The composition root shows toasts for every host, not just the
     /// focused one, and attributes them when more than one is paired.
-    var onToast: ((HostRuntime, Notice) -> Void)?
+    var onToast: ((HostRuntime, _ message: String, ToastLevel, _ key: String?) -> Void)?
+    var onClearToast: ((HostRuntime, _ key: String) -> Void)?
 
     init(hostKey: String?, host: HostRecord?, isPairing: Bool) {
         self.hostKey = hostKey
@@ -150,7 +150,6 @@ final class HostRuntime {
         takingBack = nil
         fileReads = [:]
         replyStreams.sync(chat: nil)
-        toasts = []
         noticeFeed = NoticeFeed()
         reconnectNotice = ReconnectNotice()
         refreshReconnectNotice()
@@ -426,30 +425,19 @@ final class HostRuntime {
     }
 
     func show(_ notice: Notice) {
-        if let onToast {
-            onToast(self, notice)
-            return
-        }
-        toasts.append(notice)
-        if toasts.count > 3 { toasts.removeFirst(toasts.count - 3) }
-        Task { [weak self] in
-            try? await Task.sleep(for: .seconds(4))
-            self?.dismissToast(notice.id)
-        }
-    }
-
-    func dismissToast(_ id: UInt64) {
-        toasts.removeAll { $0.id == id }
+        onToast?(self, notice.message, ToastLevel(host: notice.level), nil)
     }
 
     /// A notice the app produced for this host (queued-action outcomes and
-    /// refusals). The descending id stays clear of the core's notice feed.
-    func showToast(_ message: String, level: String = "info") {
-        Self.nextLocalToastID &-= 1
-        show(Notice(id: Self.nextLocalToastID, level: level, message: message))
+    /// refusals). `key` names the action: its next failure replaces this
+    /// one, and `clearToast(key:)` on a retry removes it.
+    func showToast(_ message: String, level: ToastLevel = .info, key: String? = nil) {
+        onToast?(self, message, level, key)
     }
 
-    private static var nextLocalToastID: UInt64 = .max
+    func clearToast(key: String) {
+        onClearToast?(self, key)
+    }
 }
 
 extension HostRuntime: ProcessWatching {}

@@ -22,6 +22,8 @@ struct ConfirmIdentitySection: View {
                     .textContentType(.password)
                     .submitLabel(.go)
                     .onSubmit(onSubmit)
+                    .onChange(of: step.password) { step.clearFieldError() }
+                FieldError(message: step.fieldError.map(AccountCopy.message))
             case .code:
                 Text("We'll email a code to \(model.accountSession?.email ?? "your account's email").")
                     .font(.footnote)
@@ -32,11 +34,8 @@ struct ConfirmIdentitySection: View {
                         .keyboardType(.numberPad)
                         .submitLabel(.go)
                         .onSubmit(onSubmit)
-                }
-                if let error = step.sendError {
-                    Text("Couldn't send the code. " + AccountCopy.message(error))
-                        .font(.footnote)
-                        .foregroundStyle(.red)
+                        .onChange(of: step.code) { step.clearFieldError() }
+                    FieldError(message: step.fieldError.map(AccountCopy.message))
                 }
                 Button {
                     Task { await step.send { await model.accountRequestReauthCode() } }
@@ -47,6 +46,7 @@ struct ConfirmIdentitySection: View {
                     }
                 }
                 .disabled(step.sending)
+                FieldError(message: step.sendError.map(AccountCopy.message))
             }
         } footer: {
             if let footer { Text(footer) }
@@ -64,23 +64,35 @@ struct ConfirmIdentitySection: View {
 extension IdentityConfirmation {
     /// Confirm, then run the action with that confirmation. A refused grant
     /// puts the step back to Send code; the action's other fields stay.
+    /// A refused grant is asked again rather than blamed on a field; a
+    /// refused password or code this step asked for shows on its field.
     func run(model: AppModel, _ action: (AccountConfirmation) async -> AccountFailure?) async -> AccountFailure? {
+        clearFieldError()
         switch await confirm(reauth: { await model.accountReauth($0) }) {
         case .failure(let failure):
+            claim(failure, duringConfirm: true)
             return failure
         case .success(let confirmation):
             let failure = await action(confirmation)
-            if let failure { refused(failure) }
+            if let failure, !refused(failure) { claim(failure, duringConfirm: false) }
             return failure
         }
     }
+
+    /// `failure` unless this step showed it on its own field.
+    func unclaimed(_ failure: AccountFailure?) -> AccountFailure? {
+        fieldError == nil ? failure : nil
+    }
 }
 
-/// The full-width button at the foot of a confirmed form.
+/// The full-width button at the foot of a confirmed form, with the form's
+/// error right under it: the message only, since the button already says
+/// what was tried.
 struct FormActionButton: View {
     let title: String
     let busy: Bool
     var destructive = false
+    var error: String?
     let action: () -> Void
 
     var body: some View {
@@ -101,21 +113,8 @@ struct FormActionButton: View {
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets())
-        }
-    }
-}
-
-/// An error under a form, red, in its own section.
-struct FormErrorSection: View {
-    let message: String?
-
-    var body: some View {
-        if let message {
-            Section {
-                Text(message)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-            }
+        } footer: {
+            FieldError(message: error)
         }
     }
 }

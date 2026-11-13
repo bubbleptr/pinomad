@@ -30,7 +30,7 @@ struct RootView: View {
         }
         .environment(\.popToProviders, PopToProvidersAction(stack: "root") { model.navPath.popToProviders() })
         .overlay(alignment: .top) {
-            if !model.sheetShowsToasts { ToastStack(model: model) }
+            if model.toastHosts.isEmpty { ToastStack(model: model) }
         }
         // Above every page — conversations and the draft both stage and
         // show images — so a tap anywhere opens here and nothing lingers.
@@ -44,13 +44,16 @@ struct RootView: View {
                 .presentationBackground(.clear)
         }
         .sheet(item: $model.modal, onDismiss: model.modalDismissed) { modal in
-            switch modal {
-            case .settings: SettingsSheet(model: model)
-            case .account: AccountView(model: model)
-            case .pairingCode: PairingCodeView(model: model)
-            case .scanner: ScannerView(model: model)
-            case .confirm(let pending): PairConfirmView(model: model, pending: pending)
+            Group {
+                switch modal {
+                case .settings: SettingsSheet(model: model)
+                case .account: AccountView(model: model)
+                case .pairingCode: PairingCodeView(model: model)
+                case .scanner: ScannerView(model: model)
+                case .confirm(let pending): PairConfirmView(model: model, pending: pending)
+                }
             }
+            .hostsToasts(model)
         }
         .sensoryFeedback(.success, trigger: model.pairings)
         // `pinomad://pair#…` — the confirm page decides what to do with it.
@@ -200,7 +203,8 @@ private struct FailureView: View {
             if hostKey == nil, let warning = model.pairingSaveWarning {
                 Text(warning)
                     .font(.footnote)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.red)
+                    .announces(warning)
                     .multilineTextAlignment(.center)
             }
             VStack(spacing: 10) {
@@ -281,11 +285,7 @@ private struct DeviceRejectedView: View {
                     .buttonStyle(.tactile(.glassProminent))
                     .controlSize(.large)
                     .disabled(model.accountBusy)
-                    if let error = model.accountError {
-                        Text(error)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                    }
+                    FieldError(message: model.accountError)
                 }
             }
             VStack(alignment: .leading, spacing: 8) {
@@ -386,42 +386,6 @@ extension View {
                     .accessibilityElement(children: .combine)
                 }
             }
-        }
-    }
-}
-
-/// Host and core notices, newest at the bottom; tap to dismiss early.
-/// Also laid over sheets — a modal would otherwise hide the only report
-/// of why an action in it didn't stick.
-struct ToastStack: View {
-    let model: AppModel
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        VStack(spacing: 6) {
-            ForEach(model.toasts, id: \.id) { notice in
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    if notice.level == "error" || notice.level == "warning" {
-                        Image(.circleAlert)
-                            .foregroundStyle(notice.level == "error" ? .red : .orange)
-                    }
-                    Text(notice.message)
-                        .font(.footnote)
-                        .lineLimit(3)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .glassEffect(.regular, in: .rect(cornerRadius: 18))
-                .onTapGesture { model.dismissToast(notice.id) }
-                .transition(Motion.dropIn(reduceMotion: reduceMotion))
-            }
-        }
-        .padding(.horizontal, 16)
-        .animation(Motion.reveal, value: model.toasts.map(\.id))
-        // Only an error arriving buzzes; a dismissal also changes the ids.
-        .sensoryFeedback(trigger: model.toasts.map(\.id)) { old, new in
-            let added = Set(new).subtracting(old)
-            return model.toasts.contains { added.contains($0.id) && $0.level == "error" } ? .error : nil
         }
     }
 }

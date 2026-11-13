@@ -141,6 +141,7 @@ struct CustomEndpointView: View {
                         .confirmationDialog("Remove this endpoint?", isPresented: $confirmingRemove, titleVisibility: .visible) {
                             Button("Remove endpoint", role: .destructive) {
                                 guard let id = providerId else { return }
+                                removeError = nil
                                 Task {
                                     do {
                                         try await model.removeCustomProvider(id, on: hostKey)

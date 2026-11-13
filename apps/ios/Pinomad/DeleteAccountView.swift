@@ -22,10 +22,8 @@ struct DeleteAccountView: View {
                 footer: AccountCopy.deleteAccountExplanation(server: server),
                 onSubmit: submit)
 
-            FormActionButton(title: "Delete Account", busy: busy, destructive: true, action: submit)
+            FormActionButton(title: "Delete Account", busy: busy, destructive: true, error: error, action: submit)
                 .disabled(busy || !step.ready)
-
-            FormErrorSection(message: error)
         }
         .navigationTitle("Delete Account")
         .navigationBarTitleDisplayMode(.inline)
@@ -40,7 +38,7 @@ struct DeleteAccountView: View {
             let failure = await step.run(model: model) { await model.accountDeleteAccount(confirmation: $0) }
             busy = false
             if let failure {
-                error = AccountCopy.message(failure)
+                error = step.unclaimed(failure).map(AccountCopy.message)
             } else {
                 // Signed out by now; the sheet shows the sign-in form and
                 // says the account is gone.

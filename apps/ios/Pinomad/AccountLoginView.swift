@@ -20,8 +20,7 @@ struct AccountLoginView: View {
     @State private var password = ""
     @State private var phase = ProbePhase.idle
     @State private var methods: AuthMethods?
-    @State private var error: String?
-    @State private var notice: String?
+    @State private var failure: AccountFailure?
     /// "password", a provider id, or nil.
     @State private var busy: String?
     @State private var codeFlow: CodeFlowKind?
@@ -50,9 +49,9 @@ struct AccountLoginView: View {
         Form {
             // Why the reader is signed out, when it wasn't their doing
             // (expired, revoked) or the token outlived the sign-out.
-            if model.accountNotice != nil || model.accountSignOutWarning != nil || notice != nil {
+            if model.accountNotice != nil || model.accountSignOutWarning != nil {
                 Section {
-                    ForEach([notice, model.accountNotice, model.accountSignOutWarning].compactMap { $0 }, id: \.self) {
+                    ForEach([model.accountNotice, model.accountSignOutWarning].compactMap { $0 }, id: \.self) {
                         Text($0)
                             .font(.footnote)
                             .foregroundStyle(.orange)
@@ -74,8 +73,6 @@ struct AccountLoginView: View {
                 EmptyView()
             }
 
-            FormErrorSection(message: error)
-
             serverSection
 
             LegalLinksSection()
@@ -86,7 +83,7 @@ struct AccountLoginView: View {
             CodeFlowView(model: model, kind: kind, origin: server, email: $email) {
                 codeFlow = nil
                 if kind == .reset {
-                    notice = "Password reset. Sign in with your new password."
+                    model.showToast("Password reset. Sign in with your new password.", level: .success)
                 }
             }
         }
@@ -150,10 +147,14 @@ struct AccountLoginView: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .submitLabel(.next)
+                .onChange(of: email) { clear(.email) }
+            FieldError(message: AccountCopy.fieldMessage(failure, .email))
             SecureField("Password", text: $password)
                 .textContentType(.password)
                 .submitLabel(.go)
                 .onSubmit(login)
+                .onChange(of: password) { clear(.password) }
+            FieldError(message: AccountCopy.fieldMessage(failure, .password))
         } footer: {
             Text("See the hosts on your account and connect without a QR code.")
         }
@@ -176,6 +177,13 @@ struct AccountLoginView: View {
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets())
+
+            if let message = AccountCopy.formMessage(failure, fields: [.server, .email, .password]) {
+                FieldError(message: message)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 0, trailing: 4))
+            }
 
             if methods?.email == true {
                 HStack {
@@ -248,7 +256,7 @@ struct AccountLoginView: View {
         guard busy == nil else { return }
         let attempt = model.beginAppleSignIn()
         appleAttempt = attempt
-        error = nil
+        failure = nil
         appleRequest.start { request in
             request.requestedScopes = [.fullName, .email]
             request.nonce = AppleNonce.sha256Hex(attempt.nonce)
@@ -258,8 +266,7 @@ struct AccountLoginView: View {
     }
 
     private func go(_ kind: CodeFlowKind) {
-        error = nil
-        notice = nil
+        failure = nil
         codeFlow = kind
     }
 
@@ -267,20 +274,18 @@ struct AccountLoginView: View {
         let user = email.trimmed
         guard busy == nil, !server.isEmpty, !user.isEmpty, !password.isEmpty else { return }
         busy = "password"
-        error = nil
-        notice = nil
+        failure = nil
         Task {
             let failure = await model.accountLogin(origin: server, username: user, password: password)
             busy = nil
-            if let failure { error = AccountCopy.message(failure) }
+            if let failure { self.failure = failure }
         }
     }
 
     private func startProvider(_ provider: String) {
         guard busy == nil else { return }
         busy = provider
-        error = nil
-        notice = nil
+        failure = nil
         let session = webAuthenticationSession
         Task {
             let failure = await model.accountProviderSignIn(origin: server, provider: provider) { url in
@@ -293,7 +298,7 @@ struct AccountLoginView: View {
                     additionalHeaderFields: [:])
             }
             busy = nil
-            if let failure { error = AccountCopy.message(failure) }
+            if let failure { self.failure = failure }
         }
     }
 
@@ -301,10 +306,10 @@ struct AccountLoginView: View {
         guard let attempt = appleAttempt else { return }
         appleAttempt = nil
         switch result {
-        case .failure(let failure):
+        case .failure(let error):
             // Closing Apple's sheet is not an error worth showing.
-            if (failure as? ASAuthorizationError)?.code != .canceled {
-                error = AccountCopy.message(AccountFailure(code: "access_denied"))
+            if (error as? ASAuthorizationError)?.code != .canceled {
+                failure = AccountFailure(code: "access_denied")
             }
         case .success(let authorization):
             guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential else { return }
@@ -313,7 +318,7 @@ struct AccountLoginView: View {
                 let failure = await model.finishAppleSignIn(
                     origin: server, ticket: attempt.ticket, nonce: attempt.nonce, credential: credential)
                 busy = nil
-                if let failure { error = AccountCopy.message(failure) }
+                if let failure { self.failure = failure }
             }
         }
     }
@@ -333,18 +338,15 @@ struct AccountLoginView: View {
                 .onChange(of: origin) { _, _ in
                     if phase != .idle { phase = .idle }
                     methods = nil
-                    error = nil
+                    if failure.flatMap(AccountCopy.field) == .server { failure = nil }
                 }
+            FieldError(message: AccountCopy.fieldMessage(failure, .server))
 
             switch phase {
             case .disabled:
-                Text("This server doesn't have accounts turned on.")
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
+                FieldError(message: "This server doesn't have accounts turned on.")
             case .unreachable:
-                Text("Can't reach the server. Check the address and your connection.")
-                    .font(.footnote)
-                    .foregroundStyle(.orange)
+                FieldError(message: "Can't reach the server. Check the address and your connection.")
             case .idle, .probing, .enabled:
                 EmptyView()
             }
@@ -360,16 +362,20 @@ struct AccountLoginView: View {
         }
     }
 
+    private func clear(_ field: AccountField) {
+        if failure.flatMap(AccountCopy.field) == field { failure = nil }
+    }
+
     private func probe() {
         let server = self.server
-        error = nil
+        failure = nil
         guard !server.isEmpty else {
-            error = AccountCopy.message(AccountFailure(code: "origin_required"))
+            failure = AccountFailure(code: "origin_required")
             return
         }
         guard isSecureServerOrigin(origin: server) else {
             phase = .idle
-            error = AccountCopy.message(AccountFailure(code: "insecure_origin"))
+            failure = AccountFailure(code: "insecure_origin")
             return
         }
         phase = .probing
@@ -419,7 +425,7 @@ struct CodeFlowView: View {
     @State private var code = ""
     @State private var password = ""
     @State private var busy = false
-    @State private var error: String?
+    @State private var failure: AccountFailure?
 
     private var title: String { kind == .create ? "Create an Account" : "Reset Password" }
 
@@ -433,14 +439,20 @@ struct CodeFlowView: View {
                         .textContentType(.oneTimeCode)
                         .keyboardType(.numberPad)
                         .submitLabel(.next)
+                        .onChange(of: code) { clear(.code) }
+                    FieldError(message: AccountCopy.fieldMessage(failure, .code))
                     SecureField("New password", text: $password)
                         .textContentType(.newPassword)
                         .submitLabel(.go)
                         .onSubmit(finish)
+                        .onChange(of: password) { clear(.newPassword) }
+                    FieldError(message: AccountCopy.fieldMessage(failure, .newPassword))
                 } footer: {
                     Text("At least 12 characters.")
                 }
-                FormActionButton(title: kind == .create ? "Create account" : "Reset password", busy: busy, action: finish)
+                FormActionButton(
+                    title: kind == .create ? "Create account" : "Reset password", busy: busy,
+                    error: AccountCopy.formMessage(failure, fields: [.code, .newPassword]), action: finish)
                     .disabled(busy || code.trimmed.isEmpty || password.isEmpty)
                 Section {
                     TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -451,7 +463,7 @@ struct CodeFlowView: View {
                     Button("Use a different email") {
                         self.sentTo = nil
                         code = ""
-                        error = nil
+                        failure = nil
                     }
                     .disabled(busy)
                 }
@@ -464,15 +476,18 @@ struct CodeFlowView: View {
                         .autocorrectionDisabled()
                         .submitLabel(.send)
                         .onSubmit { send(email.trimmed) }
+                        .onChange(of: email) { clear(.email) }
+                    FieldError(message: AccountCopy.fieldMessage(failure, .email))
                 } footer: {
                     Text(kind == .create
                         ? "We'll email you a code to confirm it's yours."
                         : "If the email has an account, we'll send it a code.")
                 }
-                FormActionButton(title: "Send code", busy: busy) { send(email.trimmed) }
+                FormActionButton(
+                    title: "Send code", busy: busy,
+                    error: AccountCopy.formMessage(failure, fields: [.email])) { send(email.trimmed) }
                     .disabled(busy || email.trimmed.isEmpty)
             }
-            FormErrorSection(message: error.map { prefix + $0 })
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
@@ -486,22 +501,21 @@ struct CodeFlowView: View {
         }
     }
 
-    private var prefix: String {
-        if sentTo == nil { return "Couldn't send the code. " }
-        return kind == .create ? "Couldn't create the account. " : "Couldn't reset the password. "
+    private func clear(_ field: AccountField) {
+        if failure.flatMap(AccountCopy.field) == field { failure = nil }
     }
 
     private func send(_ address: String) {
         guard !address.isEmpty, !busy else { return }
         busy = true
-        error = nil
+        failure = nil
         Task {
             let failure = kind == .create
                 ? await model.accountRequestSignupCode(origin: origin, email: address)
                 : await model.accountRequestPasswordReset(origin: origin, email: address)
             busy = false
             if let failure {
-                error = AccountCopy.message(failure)
+                self.failure = failure
             } else {
                 sentTo = address
                 sentAt = .now
@@ -512,11 +526,11 @@ struct CodeFlowView: View {
     private func finish() {
         guard let sentTo, !busy, !code.trimmed.isEmpty, !password.isEmpty else { return }
         guard password.unicodeScalars.count >= 12 else {
-            error = AccountCopy.message(AccountFailure(code: "weak_password"))
+            failure = AccountFailure(code: "weak_password")
             return
         }
         busy = true
-        error = nil
+        failure = nil
         let typed = code.trimmed
         Task {
             let failure = kind == .create
@@ -524,7 +538,7 @@ struct CodeFlowView: View {
                 : await model.accountResetPassword(origin: origin, email: sentTo, code: typed, password: password)
             busy = false
             if let failure {
-                error = AccountCopy.message(failure)
+                self.failure = failure
             } else {
                 onDone()
             }
@@ -546,7 +560,7 @@ struct AppleNoAccountView: View {
     @State private var email = ""
     @State private var password = ""
     @State private var busy = false
-    @State private var error: String?
+    @State private var failure: AccountFailure?
     @State private var expired = false
 
     private var who: String { pending.email ?? "this Apple ID" }
@@ -582,8 +596,6 @@ struct AppleNoAccountView: View {
                 } else {
                     createSections
                 }
-
-                FormErrorSection(message: error)
             }
             .navigationTitle("Finish Signing In")
             .navigationBarTitleDisplayMode(.inline)
@@ -610,15 +622,19 @@ struct AppleNoAccountView: View {
                     .textContentType(.newPassword)
                     .submitLabel(.go)
                     .onSubmit(create)
+                    .onChange(of: newPassword) { clear(.newPassword) }
+                FieldError(message: AccountCopy.fieldMessage(failure, .newPassword))
             } footer: {
                 Text("At least 12 characters. You'll use it to confirm changes to your account.")
             }
         }
-        FormActionButton(title: "Create account", busy: busy, action: create)
+        FormActionButton(
+            title: "Create account", busy: busy,
+            error: AccountCopy.formMessage(failure, fields: asksPassword ? [.newPassword] : []), action: create)
             .disabled(busy || (asksPassword && newPassword.isEmpty))
         Section {
             Button("I already have an account") {
-                error = nil
+                failure = nil
                 linking = true
             }
             .frame(maxWidth: .infinity)
@@ -636,19 +652,27 @@ struct AppleNoAccountView: View {
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .submitLabel(.next)
+                    .onChange(of: email) { clear(.email) }
+                FieldError(message: AccountCopy.fieldMessage(failure, .email))
             }
             SecureField("Password", text: $password)
                 .textContentType(.password)
                 .submitLabel(.go)
                 .onSubmit(link)
+                .onChange(of: password) { clear(.password) }
+            FieldError(message: AccountCopy.fieldMessage(failure, .password))
         } footer: {
             Text("Signed up with Google or GitHub? Sign in with it first, then add Apple from Settings on the web.")
         }
-        FormActionButton(title: model.accountSession == nil ? "Sign in and link Apple" : "Link Apple", busy: busy, action: link)
+        FormActionButton(
+            title: model.accountSession == nil ? "Sign in and link Apple" : "Link Apple", busy: busy,
+            error: AccountCopy.formMessage(
+                failure, fields: model.accountSession == nil ? [.email, .password] : [.password]),
+            action: link)
             .disabled(busy || password.isEmpty || (model.accountSession == nil && email.trimmed.isEmpty))
         Section {
             Button("Back") {
-                error = nil
+                failure = nil
                 linking = false
             }
             .disabled(busy || model.accountSession != nil)
@@ -658,26 +682,24 @@ struct AppleNoAccountView: View {
     private func create() {
         guard !busy else { return }
         if asksPassword, newPassword.unicodeScalars.count < 12 {
-            error = AccountCopy.message(AccountFailure(code: "weak_password"))
+            failure = AccountFailure(code: "weak_password")
             return
         }
         busy = true
-        error = nil
+        failure = nil
         Task {
             let failure = await model.accountCreateFromPending(pending, password: asksPassword ? newPassword : nil)
             busy = false
             settle(failure)
-            if failure?.code == "password_required" {
-                asksPassword = true
-                error = nil
-            }
+            // The field it's about shows now, with the message on it.
+            if failure?.code == "password_required" { asksPassword = true }
         }
     }
 
     private func link() {
         guard !busy, !password.isEmpty else { return }
         busy = true
-        error = nil
+        failure = nil
         Task {
             let failure = await model.accountSignInAndLinkPending(pending, email: email.trimmed, password: password)
             busy = false
@@ -690,8 +712,12 @@ struct AppleNoAccountView: View {
         if failure.code == "not_found" {
             expired = true
         } else {
-            error = AccountCopy.message(failure)
+            self.failure = failure
         }
+    }
+
+    private func clear(_ field: AccountField) {
+        if failure.flatMap(AccountCopy.field) == field { failure = nil }
     }
 
     private func close() {

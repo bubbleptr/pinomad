@@ -23,10 +23,8 @@ struct RemoveHostView: View {
                     name: host.name, server: server, pairedHere: model.removedHostPairing(host.hostId)),
                 onSubmit: submit)
 
-            FormActionButton(title: "Remove Host", busy: busy, destructive: true, action: submit)
+            FormActionButton(title: "Remove Host", busy: busy, destructive: true, error: error, action: submit)
                 .disabled(busy || !step.ready)
-
-            FormErrorSection(message: error)
         }
         .navigationTitle("Remove \(host.name)")
         .navigationBarTitleDisplayMode(.inline)
@@ -41,7 +39,7 @@ struct RemoveHostView: View {
             let failure = await step.run(model: model) { await model.accountRemoveHost(host, confirmation: $0) }
             busy = false
             if let failure {
-                error = AccountCopy.message(failure)
+                error = step.unclaimed(failure).map(AccountCopy.message)
             } else {
                 dismiss()
             }

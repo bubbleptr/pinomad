@@ -68,8 +68,8 @@ extension AppModel {
               tray.preparing == 0, files.canSend, !filePreparing(key, in: runtime)
         else { return }
         if files.expire() {
+            files.report("Attachment expired; attach it again")
             runtime.fileTrays[key] = files
-            runtime.lastError = "Attachment expired; attach it again"
             return
         }
         guard let snapshot = runtime.snapshot else { return }
@@ -105,6 +105,7 @@ extension AppModel {
         // The `$` picks bind on the host only from 5.16 (ADR-0028).
         let payload = chips(for: key, in: runtime).payload(hostMinor: runtime.hostMinor)
         runtime.creating = true
+        runtime.clearToast(key: "create")
         defer { runtime.creating = false }
         do {
             _ = try await session.invoke(.createConversation(
@@ -112,7 +113,8 @@ extension AppModel {
                 model: modelArg, thinkingLevel: levelArg, agent: send?.agent, images: tray.images,
                 skills: payload.skills, attachments: files.ids))
         } catch {
-            runtime.lastError = "Couldn't create conversation: \(describe(error))"
+            runtime.showToast(
+                "Couldn't create the conversation: \(describe(error))", level: .error, key: "create")
             return
         }
         // The op resolves before its snapshot is published — wait for it.

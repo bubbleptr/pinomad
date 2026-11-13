@@ -107,6 +107,7 @@ struct PairingCodeView: View {
                 .font(.footnote)
                 .foregroundStyle(.red)
                 .multilineTextAlignment(.center)
+                .announces(error)
             Button("Try again") {
                 Task { await load() }
             }

@@ -23,10 +23,8 @@ struct RemoveDeviceView: View {
                 footer: AccountCopy.removeDeviceExplanation(name: name, hosts: model.accountRows),
                 onSubmit: submit)
 
-            FormActionButton(title: "Remove Device", busy: busy, destructive: true, action: submit)
+            FormActionButton(title: "Remove Device", busy: busy, destructive: true, error: error, action: submit)
                 .disabled(busy || !step.ready)
-
-            FormErrorSection(message: error)
         }
         .navigationTitle("Remove \(device.name ?? "Device")")
         .navigationBarTitleDisplayMode(.inline)
@@ -41,7 +39,7 @@ struct RemoveDeviceView: View {
             let failure = await step.run(model: model) { await model.accountKickDevice(device, confirmation: $0) }
             busy = false
             if let failure {
-                error = AccountCopy.message(failure)
+                error = step.unclaimed(failure).map(AccountCopy.message)
             } else {
                 dismiss()
             }

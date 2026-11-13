@@ -18,10 +18,12 @@ struct ConversationListView: View {
             if !model.lastError.isEmpty {
                 // Platform failures (e.g. the keychain rejecting a pairing
                 // write) are not fatal to the connection, but must be
-                // visible — a toast would lose them.
+                // visible — a toast would lose them. One-off action
+                // failures are toasts instead.
                 Label(model.lastError, image: .triangleAlert)
                     .font(.footnote)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.red)
+                    .announces(model.lastError)
                     .listRowBackground(Color.clear)
             }
             if !query.isEmpty {

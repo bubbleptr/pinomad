@@ -30,8 +30,11 @@ struct AccountPage: View {
 
     @State private var open: Sheet?
     @State private var confirmingSignOutEverywhere = false
-    /// What the last sign-in change said ("Password set.", "GitHub linked.").
-    @State private var notice: String?
+
+    /// A sign-in change went through ("Password set.", "GitHub linked.").
+    private func saved(_ message: String) {
+        model.showToast(message, level: .success)
+    }
 
     var body: some View {
         Group {
@@ -64,10 +67,10 @@ struct AccountPage: View {
                         .controlSize(.small)
                         .disabled(model.accountBusy)
                 }
-                ForEach([notice, model.accountNotice, model.accountSignOutWarning].compactMap { $0 }, id: \.self) { line in
+                ForEach([model.accountNotice, model.accountSignOutWarning].compactMap { $0 }, id: \.self) { line in
                     Text(line)
                         .font(.footnote)
-                        .foregroundStyle(line == notice ? .secondary : Color.orange)
+                        .foregroundStyle(.orange)
                 }
             }
 
@@ -115,13 +118,13 @@ struct AccountPage: View {
                 switch sheet {
                 case .signOut: SignOutForm(model: model, server: server)
                 case .delete: DeleteAccountView(model: model, server: server)
-                case .email: ChangeEmailView(model: model) { notice = "Email saved." }
+                case .email: ChangeEmailView(model: model) { saved("Email saved.") }
                 case .password(let hasPassword):
-                    ChangePasswordView(model: model, hasPassword: hasPassword) { notice = $0 }
+                    ChangePasswordView(model: model, hasPassword: hasPassword, onChanged: saved)
                 case .unlink(let provider):
-                    UnlinkProviderView(model: model, provider: provider) { notice = $0 }
+                    UnlinkProviderView(model: model, provider: provider, onRemoved: saved)
                 case .link(let provider):
-                    LinkProviderView(model: model, provider: provider) { notice = $0 }
+                    LinkProviderView(model: model, provider: provider, onLinked: saved)
                 case .removeDevice(let device): RemoveDeviceView(model: model, device: device)
                 }
             }
