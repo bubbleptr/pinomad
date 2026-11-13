@@ -15,8 +15,11 @@ const models: ModelSummary[] = [
   { provider: "openai", modelId: "gpt-5-mini", name: "GPT-5 mini", contextWindow: 128_000, thinkingLevels: ["off"] },
 ];
 
-// The dialog reads only the host's model list off the view.
-const view = { models } as unknown as DurableView;
+// The dialog reads the host's model list and, for a new name, the agents it already has.
+const view = {
+  models,
+  agents: { roles: [{ name: "reviewer", description: "Reviews diffs", prompt: "You review changes." }], problems: [] },
+} as unknown as DurableView;
 
 const remote = {
   controller: { createAgent: fn(async () => {}), updateAgent: fn(async () => {}) },

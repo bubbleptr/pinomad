@@ -174,8 +174,9 @@ describe("HostsSection with an account", () => {
     expect(pairHost).not.toHaveBeenCalled();
     await userEvent.click(within(hostRow).getByRole("button", { name: "Pair again" }));
     expect(pairHost).toHaveBeenCalledWith("h".repeat(43));
-    // The pairing failure surfaces in words, not as a code.
-    expect(await screen.findByText(/didn't answer in time/)).toBeTruthy();
+    // The pairing failure surfaces in words, not as a code, on the row whose Pair again failed.
+    expect(await within(hostRow).findByText(/didn't answer in time/)).toBeTruthy();
+    expect(screen.getAllByText(/didn't answer in time/)).toHaveLength(1);
   });
 
   it("offers a re-pair on a paired host that refused this device", () => {

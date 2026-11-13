@@ -1,6 +1,6 @@
 import { Button } from "../../shared/ui/button.tsx";
 import type { Decorator, Meta, StoryObj } from "@storybook/react-vite";
-import { userEvent, within } from "storybook/test";
+import { fn, userEvent, within } from "storybook/test";
 import type { RtcDiagnostics } from "@pinomad/protocol/remote-durable.ts";
 import type { RtcSelectedPair } from "@pinomad/protocol/rtc.ts";
 import type { StoredHost } from "@pinomad/client/stored-host.ts";
@@ -141,6 +141,20 @@ export const SectionRefused: Story = {
     withRuntime(relay),
     withAccount(signedIn({ rejectedHostKeys: [HOME_HOST.hostKey] })),
   ],
+};
+
+/** Pair again failed: the reason sits on that row, not at the top of the list. */
+export const SectionRefusedPairFailed: Story = {
+  decorators: [
+    withHosts(),
+    withRuntime(relay),
+    withAccount(signedIn({ rejectedHostKeys: [HOME_HOST.hostKey] }), {
+      pairHost: fn(async () => ({ ok: false as const, error: { code: "host_timeout" as const } })),
+    }),
+  ],
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: "Pair again" }));
+  },
 };
 
 /** The host's own page: connection, routes, and the ways to let it go. */
