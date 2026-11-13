@@ -140,6 +140,75 @@ struct AccountTests {
         #expect(delisted == ["was-listed", "gone"])
     }
 
+    // MARK: - Pairings of other accounts on the same server (#640)
+
+    /// Signing in as B on the server A paired through keeps A's keys: only
+    /// the signed-in account's vouched keys leave with its list, and a key
+    /// filed under no account (before #640) isn't forgotten unlisted.
+    @Test func delistingOnlyForgetsTheSignedInAccountsKeys() {
+        let origin = "https://relay.example.com"
+        let hosts = [
+            record("a", account: AccountLink(serverOrigin: origin, hostId: "hA", vouched: true, accountId: "A")),
+            record("b", account: AccountLink(serverOrigin: origin, hostId: "hB", vouched: true, accountId: "B")),
+            record("old", account: AccountLink(serverOrigin: origin, hostId: "hOld", vouched: true)),
+        ]
+        #expect(AccountHosts.delistedHostIds(
+            serverOrigin: origin, listedBefore: [], hosts: hosts, listed: [], accountId: "B") == ["hB"])
+        // A server without account ids keeps the old rule.
+        #expect(AccountHosts.delistedHostIds(
+            serverOrigin: origin, listedBefore: [], hosts: hosts, listed: []) == ["hA", "hB", "hOld"])
+    }
+
+    /// A shared-device sign-out or a removal forgets this account's keys and
+    /// unfiled ones, never another account's.
+    @Test func vouchedKeysOfAnotherAccountStay() {
+        let origin = "https://relay.example.com"
+        let hosts = [
+            record("a", account: AccountLink(serverOrigin: origin, hostId: "h1", vouched: true, accountId: "A")),
+            record("b", account: AccountLink(serverOrigin: origin, hostId: "h2", vouched: true, accountId: "B")),
+            record("old", account: AccountLink(serverOrigin: origin, hostId: "h3", vouched: true)),
+        ]
+        #expect(AccountHosts.vouchedHostKeys(serverOrigin: origin, accountId: "A", hosts: hosts) == ["a", "old"])
+        #expect(AccountHosts.vouchedHostKeys(serverOrigin: origin, hosts: hosts) == ["a", "b", "old"])
+    }
+
+    /// A vouched key from before #640 is filed under the account whose list
+    /// has its host; one not listed, another account's, or with no account id
+    /// to file under stays as it is.
+    @Test func reconcileFilesUnfiledVouchedKeysUnderTheListingAccount() {
+        let origin = "https://relay.example.com"
+        let stored = StoredHosts(hosts: [
+            record("old", account: AccountLink(serverOrigin: origin, hostId: "h1", vouched: true)),
+            record("unlisted", account: AccountLink(serverOrigin: origin, hostId: "h2", vouched: true)),
+            record("b", account: AccountLink(serverOrigin: origin, hostId: "h3", vouched: true, accountId: "B")),
+        ], activeHostKey: "old")
+        let listed = [
+            accountHost("h1", key: "old", pairing: .available),
+            accountHost("h3", key: "b", pairing: .available),
+        ]
+        let filed = AccountHosts.reconcile(
+            serverOrigin: origin, hosts: listed, stored: stored, rejectedHostKeys: [], accountId: "A")
+        #expect(filed.changed)
+        #expect(filed.stored.hosts.map(\.account?.accountId) == ["A", nil, "B"])
+        #expect(!AccountHosts.reconcile(
+            serverOrigin: origin, hosts: listed, stored: filed.stored, rejectedHostKeys: [], accountId: "A").changed)
+        #expect(!AccountHosts.reconcile(
+            serverOrigin: origin, hosts: listed, stored: stored, rejectedHostKeys: []).changed)
+    }
+
+    /// The account id comes from the profile and survives the keychain; a
+    /// re-pair under a new key drops it with the vouch.
+    @Test func accountIdIsKeptOnTheSessionAndDroppedWithTheVouch() throws {
+        let session = AccountSession(serverOrigin: "https://x", username: "a@b.co", token: "t", expiresAt: 1)
+        let profiled = session.with(user: AccountUser(username: "a@b.co", email: "a@b.co", accountId: "A"))
+        #expect(profiled.accountId == "A")
+        #expect(profiled.with(user: AccountUser(username: "a@b.co", email: nil, accountId: nil)).accountId == "A")
+        let record = AccountRecord(session: profiled)
+        #expect(try JSONDecoder().decode(AccountRecord.self, from: JSONEncoder().encode(record)).session?.accountId == "A")
+        let link = AccountLink(serverOrigin: "https://x", hostId: "h", vouched: true, accountId: "A")
+        #expect(link.unvouched == AccountLink(serverOrigin: "https://x", hostId: "h"))
+    }
+
     /// A 404 to removing a host (#512) is "already gone" only when a list
     /// fetched after it came back without the host. No such list (one was
     /// already in flight, or the fetch failed) is no verdict: the form must
