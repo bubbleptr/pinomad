@@ -477,7 +477,7 @@ struct ConversationComposer: View {
         // possible), so they cross-fade in one place rather than swap a glyph.
         return ZStack {
             slotControl(slot)
-                .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.8)))
+                .transition(reduceMotion ? .opacity : AnyTransition(.blurReplace))
         }
         .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: isStop)
     }
