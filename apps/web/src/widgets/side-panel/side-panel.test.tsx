@@ -3,6 +3,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
+import { isProcessActive } from "@pinomad/protocol/processes.ts";
 import {
   DARK_MODE_ID,
   fakeProcesses,
@@ -15,6 +16,7 @@ import {
   PROCESSES,
   SUBAGENT_ID,
   subagentConversation,
+  withBackgroundSubagents,
   withSubagents,
   withSummary,
 } from "../../test/story-fixtures.tsx";
@@ -175,6 +177,18 @@ describe("SidePanel task rows", () => {
     for (const row of rows) expect(row.querySelector('[data-slot="task-glyph"]')).not.toBeNull();
   });
 
+  it("names a lone group only for screen readers", () => {
+    renderPanel(PARSER_ID, withSubagents(fakeView(), MIXED_SUBAGENTS));
+    expect(screen.getByRole("list", { name: "This conversation" })).toBeInTheDocument();
+    expect(screen.queryByText("This conversation")).toBeNull();
+  });
+
+  it("heads each group once a fork has subagents too", () => {
+    renderPanel(PARSER_ID, withBackgroundSubagents(fakeView()));
+    expect(screen.getByText("This conversation")).toBeInTheDocument();
+    expect(screen.getByText("Try a recursive-descent rewrite")).toBeInTheDocument();
+  });
+
   it("marks process rows apart from subagent rows", async () => {
     renderPanel(PARSER_ID, withSubagents(fakeView(), MIXED_SUBAGENTS), fakeRemote(view, {}, fakeProcesses({ lists: { [PARSER_ID]: PROCESSES } })));
     const processes = await screen.findByRole("list", { name: "Processes" });
@@ -187,6 +201,14 @@ describe("SidePanel task rows", () => {
 });
 
 describe("SidePanel processes", () => {
+  it("titles the list Tasks in its bar, with no Processes heading over ended processes", async () => {
+    const ended = PROCESSES.filter((process) => !isProcessActive(process.state));
+    renderPanel(PARSER_ID, fakeView(), fakeRemote(view, {}, fakeProcesses({ lists: { [PARSER_ID]: ended } })));
+    expect(await screen.findByRole("list", { name: "Processes" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Tasks" })).toBeInTheDocument();
+    expect(screen.queryByText("Processes")).toBeNull();
+  });
+
   it("hides the Processes group when the family has none", () => {
     renderPanel(PARSER_ID);
     expect(screen.queryByText("Processes")).toBeNull();
@@ -197,7 +219,7 @@ describe("SidePanel processes", () => {
     const processes = fakeProcesses({ lists: { [PARSER_ID]: PROCESSES } });
     renderPanel(FORK_ID, fork, fakeRemote(fork, {}, processes));
     expect(processes.watch).toHaveBeenCalledWith(PARSER_ID, expect.any(Function));
-    expect(screen.getByText("Processes")).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Processes" })).toBeInTheDocument();
     expect(screen.getByText("dev server")).toBeInTheDocument();
     expect(screen.getByText(/1 process running/)).toBeInTheDocument();
   });
