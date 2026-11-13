@@ -70,12 +70,13 @@ export function ModelSelector({
   const disabled = isDisabled || models.length === 0;
 
   return (
-    <span className="flex min-w-0 items-center">
+    // Together no wider than the single capsule was; the model name truncates first.
+    <span className="flex min-w-0 max-w-[19rem] items-center">
       <Popover>
         <PopoverTrigger
           render={
             <Button
-              className="min-w-0 max-w-[17rem] flex-nowrap gap-1.5 px-2 text-muted-foreground"
+              className="min-w-0 shrink flex-nowrap gap-1.5 px-2 text-muted-foreground"
               data-testid="model-trigger"
               disabled={disabled}
               aria-label="Model"
@@ -297,7 +298,8 @@ function AgentChip({
           className={cn(
             chipClassName,
             "cursor-pointer outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50",
-            "[@media(hover:hover)]:not-disabled:hover:text-foreground",
+            // The picked chip keeps its inverted text on hover.
+            !selected && "[@media(hover:hover)]:not-disabled:hover:text-foreground",
           )}
         >
           {content}
