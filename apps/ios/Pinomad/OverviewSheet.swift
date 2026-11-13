@@ -22,7 +22,7 @@ struct OverviewSheet: View {
     /// Bound to the host that opened the sheet, so a focus change while it
     /// is up cannot send the unwatch to another host.
     @State private var processWatch = ProcessWatchSession()
-    /// Whether Subagents lists every row or folds the rest behind "Show all".
+    /// Whether Tasks lists every subagent or folds the rest behind "Show all".
     @State private var showAllSubagents = false
 
     private var snapshot: ClientSnapshot? { model.snapshot }
@@ -141,16 +141,16 @@ struct OverviewSheet: View {
                 if let workspace {
                     Section("Workspace") { workspaceRows(workspace) }
                 }
-                if let subagents {
-                    Section("Subagents") { subagentRows(subagents) }
-                }
-                if let processes {
+                // One Tasks list, as on the Web: subagents, then processes;
+                // each row's icon tells the kinds apart.
+                if subagents != nil || processes != nil {
                     Section {
-                        processRows(processes)
+                        if let subagents { subagentRows(subagents) }
+                        if let processes { processRows(processes) }
                     } header: {
-                        Text("Processes")
+                        Text("Tasks")
                     } footer: {
-                        Text(ProcessesOverview.footer)
+                        if processes != nil { Text(ProcessesOverview.footer) }
                     }
                 }
             }
