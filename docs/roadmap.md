@@ -4,15 +4,7 @@
 
 ## 现在
 
-[M8 多宿主](https://github.com/bubbleptr/pinomad/milestone/6)：一个客户端同时连着所有宿主，按「机器 → 项目 → 对话」浏览，不再靠切换。先定多连接的客户端模型（ADR-0035），再做 Web/桌面，然后是 iOS。跨宿主的 agent 协作排在它后面。
-
-[M9 公开发布](https://github.com/bubbleptr/pinomad/milestone/7)：官方服务端接纳作者以外的用户，不自己部署服务端也能用全部功能。先过 ADR-0025 的开放注册门槛（服务端核对推送 token 归属），再做注册、账号生命周期、多租户安全项和隐私条款，iOS 公开渠道排在账号之后。和 M8 并行，M8 不是它的门槛。
-
-[M10 上手简化](https://github.com/bubbleptr/pinomad/milestone/8)：以「官方服务端 + 账号」为唯一主线，新用户注册、在宿主上跑一行命令并在浏览器里确认、在其他设备上登录就能用，不用预装 Node、复制令牌或扫码；客户端只做控制面，不带宿主。先修过时文档、做没有宿主时的首页和退出登录撤销本机，再做浏览器确认加入，`pinomad up` 和安装脚本跟在它后面，文档改版和桌面端的本机宿主开关排在最后。设计见 `docs/research/account-first-onboarding.md`。
-
-[M11 右侧面板](https://github.com/bubbleptr/pinomad/milestone/9)：Web/桌面端的右侧面板改成可切换多个页的容器，现有的 Tasks 和 Changes 搬进来，再加 Terminal；Overview 浮层只放摘要，详情进面板。先定页模型并修订 ADR-0039，再落容器和 Tasks、Changes；Terminal 的宿主端和协议可以并行做，界面排在容器之后。iOS 不在本阶段。
-
-[M12 子代理](https://github.com/bubbleptr/pinomad/milestone/10)：子代理只保留一种（ADR-0046），每个都有名字，答完还能接着聊、能停，派出时选等不等它，用户也能在侧栏里直接跟它聊。先做宿主（含协议和 Rust 核心的同步），worktree 检出和 Web/桌面跟在它后面，iOS 最后单独做。
+[M9 公开发布](https://github.com/bubbleptr/pinomad/milestone/7)：官方服务端接纳作者以外的用户，不自己部署服务端也能用全部功能。先过 ADR-0025 的开放注册门槛（服务端核对推送 token 归属），再做注册、账号生命周期、多租户安全项和隐私条款，iOS 公开渠道排在账号之后。
 
 ## 以后
 
@@ -22,7 +14,7 @@
 
 ## 已完成的阶段
 
-M1 并行任务的审阅与对齐 · M2 coding 能力补齐 · M2.5 搬入 Pace 的界面 · M4 客户端完善（桌面端、设置） · [M5 手机推进 side project](https://github.com/bubbleptr/pinomad/milestone/2)（推送随 iOS 原生替换交付） · [M3 在哪都能连](https://github.com/bubbleptr/pinomad/milestone/3) · [iOS 原生替换（ADR-0024）](https://github.com/bubbleptr/pinomad/milestone/1) · [M6 对话体验](https://github.com/bubbleptr/pinomad/milestone/4) · [M7 iOS 布局](https://github.com/bubbleptr/pinomad/milestone/5)。细节在对应的 ADR 和 PR 里。
+M1 并行任务的审阅与对齐 · M2 coding 能力补齐 · M2.5 搬入 Pace 的界面 · M4 客户端完善（桌面端、设置） · [M5 手机推进 side project](https://github.com/bubbleptr/pinomad/milestone/2)（推送随 iOS 原生替换交付） · [M3 在哪都能连](https://github.com/bubbleptr/pinomad/milestone/3) · [iOS 原生替换（ADR-0024）](https://github.com/bubbleptr/pinomad/milestone/1) · [M6 对话体验](https://github.com/bubbleptr/pinomad/milestone/4) · [M7 iOS 布局](https://github.com/bubbleptr/pinomad/milestone/5) · [M8 多宿主](https://github.com/bubbleptr/pinomad/milestone/6) · [M10 上手简化](https://github.com/bubbleptr/pinomad/milestone/8) · [M11 右侧面板](https://github.com/bubbleptr/pinomad/milestone/9) · [M12 子代理](https://github.com/bubbleptr/pinomad/milestone/10)。细节在对应的 ADR 和 PR 里。
 
 ## 不在计划内
 
