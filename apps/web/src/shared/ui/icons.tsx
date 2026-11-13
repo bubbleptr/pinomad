@@ -12,6 +12,7 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   ArrowDown01Icon,
+  ArrowLeft01Icon,
   ArrowUp01Icon,
   ArrowUp02Icon,
   BarChartIcon,
@@ -113,6 +114,7 @@ export const CancelCircle = iconComponent(CancelCircleIcon);
 export const ChatAdd = iconComponent(ChatAddIcon);
 export const ChatBubble = iconComponent(BubbleChatIcon);
 export const ChevronDown = iconComponent(ArrowDown01Icon);
+export const ChevronLeft = iconComponent(ArrowLeft01Icon);
 export const ChevronRight = iconComponent(ChevronRightIcon);
 export const ChevronUp = iconComponent(ArrowUp01Icon);
 export const ChevronsUpDown = iconComponent(UnfoldMoreIcon);

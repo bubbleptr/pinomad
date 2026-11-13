@@ -15,10 +15,12 @@ const models: ModelSummary[] = [
 ];
 
 const roles: AgentRole[] = [
-  { name: "reviewer", description: "Reads the diff against the repo's ADRs and flags what breaks them.", prompt: "Be thorough." },
+  { name: "reviewer", description: "Reads the diff against the repo's ADRs and flags what breaks them.", model: "anthropic/claude-a", thinkingLevel: "high", prompt: "Be thorough." },
   { name: "planner", description: "Turns a request into an ordered plan before any code changes.", prompt: "Be concise." },
-  { name: "release-notes", description: "Writes user-facing notes from merged PRs.", prompt: "" },
+  { name: "release-notes", description: "Writes user-facing notes from merged PRs.", model: "gone/claude-z", prompt: "" },
 ];
+
+const problems = [{ file: "drafty.md", reason: "description is required" }];
 
 const open = async ({ canvasElement }: { canvasElement: HTMLElement }) => {
   await userEvent.click(within(canvasElement).getByTestId("model-trigger"));
@@ -44,9 +46,6 @@ export const NonReasoning: Story = {
   args: { selected: { model: { provider: "local", modelId: "llama-c" }, level: "off" } },
 };
 
-export const FromAgent: Story = {
-  args: { sourceHint: "from @reviewer" },
-};
 
 export const Problem: Story = {
   args: {
@@ -71,18 +70,35 @@ export const ThinkingOpen: Story = {
   },
 };
 
-/** A draft on a host with named agents: the Agent section leads the popover. */
+const openAgents = async (context: { canvasElement: HTMLElement }) => {
+  await open(context);
+  await userEvent.click(within(document.body).getByRole("button", { name: /^Agent:/ }));
+};
+
+/** A draft on a host with named agents: the Agent row leads the popover. */
 export const AgentPick: Story = {
-  args: { agent: { kind: "pick", roles, value: undefined, onChange: fn() } },
+  args: { agent: { kind: "pick", roles, problems, value: undefined, onChange: fn() } },
   play: open,
 };
 
-/** A picked agent prefixes the capsule; the inherited side reads "from @name". */
+/** The agent list one level down: pins, an unavailable model and a broken file. */
+export const AgentList: Story = { ...AgentPick, play: openAgents };
+
+/** An agent that pins model and level: "from @name", and both sides locked. */
 export const AgentPicked: Story = {
-  args: { agent: { kind: "pick", roles, value: "reviewer", onChange: fn() }, sourceHint: "from @reviewer" },
+  args: {
+    agent: { kind: "pick", roles, problems, value: "reviewer", onChange: fn() },
+    selected: { model: { provider: "anthropic", modelId: "claude-a" }, level: "high" },
+    locked: { model: true, level: true },
+  },
 };
 
 export const AgentPickedOpen: Story = { ...AgentPicked, play: open };
+
+/** An agent that pins nothing: "with @name", and both sides stay the user's. */
+export const AgentUnpinned: Story = {
+  args: { agent: { kind: "pick", roles, value: "planner", onChange: fn() } },
+};
 
 /** A conversation on a 5.18 host: the current agent is picked like a draft's. */
 export const ConversationAgentPick: Story = {

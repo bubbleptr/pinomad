@@ -147,6 +147,9 @@ export function ConversationComposer({
     && hostSupportsCall(view.host?.protocol.minor ?? 0, "setAgent");
 
   const model = summaryOf(view.models, agent.model);
+  // The agent shown in the capsule; the sides its file pins can't be changed here.
+  const shownAgent = canSwitchAgent ? currentAgent : role;
+  const shownRole = shownAgent === undefined ? undefined : roles.find((each) => each.name === shownAgent);
   // The level the user last picked here. A model without it runs at the
   // nearest level below; switching to one that has it puts it back. Kept per
   // conversation, and dropped when the agent changes (the role sets it).
@@ -601,6 +604,7 @@ export function ConversationComposer({
                   ? {
                       kind: "pick",
                       roles,
+                      problems: view.agents?.problems ?? [],
                       value: currentAgent,
                       onChange: (name) => {
                         setPickedLevel(undefined);
@@ -611,6 +615,7 @@ export function ConversationComposer({
                     ? undefined
                     : { kind: "fixed", name: role, description: roles.find((each) => each.name === role)?.description }
               }
+              locked={{ model: shownRole?.model !== undefined, level: shownRole?.thinkingLevel !== undefined }}
               onModelChange={switchModel}
               onLevelChange={(level) => {
                 setPickedLevel({ id: conversation.conversation.id, level });

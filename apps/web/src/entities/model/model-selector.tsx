@@ -1,32 +1,35 @@
 // Simplified port of Pace's ModelSelectorControl
 // (entities/model/model-selector/model-selector-control.tsx, PiGUI commit
-// 15b9084), split in two: the model capsule opens the models grouped by
-// provider, and a thinking capsule opens the selected model's levels —
-// without the hover flyout, fast mode, image badge or Settings management. The named agent (ADR-0023)
-// is part of the same pick (issue #254): a role is a model-level preset —
-// model, thinking level and system prompt — so it lives in this popover too.
+// 15b9084), split in two: the model capsule opens the agent and the models
+// grouped by provider, and a thinking capsule opens the selected model's
+// levels — without the hover flyout, fast mode, image badge or Settings
+// management. The named agent (ADR-0023) is part of the same pick (issue
+// #254): a role is a model-level preset — model, thinking level and system
+// prompt — so it lives in the model popover, one level down.
 import { Fragment, useState, type ReactNode } from "react";
 import { cn } from "cn";
 import { Button } from "../../shared/ui/button.tsx";
-import { Item, ItemActions, ItemContent, ItemGroup, ItemMedia, ItemTitle } from "../../shared/ui/item.tsx";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "../../shared/ui/item.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "../../shared/ui/popover.tsx";
 import { Separator } from "../../shared/ui/separator.tsx";
 import type { ModelRef } from "@earendil-works/pi-durable";
-import type { AgentRole } from "@pinomad/protocol/agents.ts";
+import type { AgentRole, AgentRoleProblem } from "@pinomad/protocol/agents.ts";
 import type { ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";
 import { sameModel, thinkingLevelLabels } from "@pinomad/client/model.ts";
-import { Check, ChevronDown } from "@/shared/ui/icons";
+import { Bot, Check, ChevronDown, ChevronLeft, ChevronRight } from "@/shared/ui/icons";
 import { ModelLogo } from "./model-logo.tsx";
 
 /**
- * The popover's Agent section: a draft or a 5.18 conversation picks one of
- * the host's roles (or none); before 5.18 a conversation shows the role it
- * was created with, read-only (ADR-0023).
+ * The popover's Agent row: a draft or a 5.18 conversation picks one of the
+ * host's roles (or none) from a list one level down; before 5.18 a
+ * conversation shows the role it was created with, read-only (ADR-0023).
  */
 export type ModelSelectorAgent =
   | {
       readonly kind: "pick";
       readonly roles: readonly AgentRole[];
+      /** Role files the host couldn't read: listed, not pickable. */
+      readonly problems?: readonly AgentRoleProblem[];
       /** The picked role's name, undefined for "No agent". */
       readonly value?: string;
       readonly onChange: (agent: string | undefined) => void;
@@ -34,19 +37,19 @@ export type ModelSelectorAgent =
   | { readonly kind: "fixed"; readonly name: string; readonly description?: string };
 
 /**
- * The composer's model and thinking capsules, side by side: a ghost button
- * `<model logo> <model name>` (prefixed with `@name` when a named agent is
- * set) opening the Agent section and the models grouped by provider, and —
- * when the model can reason — a second ghost button `<meter> <level>` opening
- * just the selected model's thinking levels. Each popover answers one
- * question, so neither grows with the other's list.
+ * The composer's model and thinking capsules, side by side. The model
+ * capsule reads `<logo> <model> from @agent` when the agent pins the model,
+ * `with @agent` when it doesn't, and opens the Agent row plus the models
+ * grouped by provider. The thinking capsule (only for a model that can
+ * reason) reads `<meter> <level>` and opens just that model's levels. A side
+ * the agent pins is shown but not pickable.
  */
 export function ModelSelector({
   models,
   selected,
   isDisabled = false,
   agent,
-  sourceHint,
+  locked = { model: false, level: false },
   problem,
   onModelChange,
   onLevelChange,
@@ -54,25 +57,34 @@ export function ModelSelector({
   models: readonly ModelSummary[];
   selected: { model?: ModelRef; level: ThinkingLevel };
   isDisabled?: boolean;
-  /** Undefined hides the Agent section (nothing to show: no pick, and no fixed creation agent). */
+  /** Undefined hides the Agent row (nothing to show: no pick, and no fixed creation agent). */
   agent?: ModelSelectorAgent;
-  /** Small muted suffix, e.g. which side of the pick is inherited from a named agent. */
-  sourceHint?: string;
+  /** The sides the current agent pins: shown, but not pickable. */
+  locked?: { readonly model: boolean; readonly level: boolean };
   /** Why the shown pick can't be sent — rendered in red instead of the label, with no Thinking capsule. */
   problem?: { readonly label: string; readonly title: string };
   onModelChange: (model: ModelRef) => void;
   onLevelChange: (level: ThinkingLevel) => void;
 }) {
+  const [modelOpen, setModelOpen] = useState(false);
+  const [showAgents, setShowAgents] = useState(false);
   const [thinkingOpen, setThinkingOpen] = useState(false);
   const selectedSummary = models.find((each) => sameModel(each, selected.model));
   const levels = selectedSummary?.thinkingLevels ?? ["off"];
   const agentName = agent === undefined ? undefined : agent.kind === "pick" ? agent.value : agent.name;
   const disabled = isDisabled || models.length === 0;
+  const lockNote = agentName === undefined ? undefined : `Set by @${agentName}`;
 
   return (
     // Together no wider than the single capsule was; the model name truncates first.
     <span className="flex min-w-0 max-w-[19rem] items-center">
-      <Popover>
+      <Popover
+        open={modelOpen}
+        onOpenChange={(open) => {
+          setModelOpen(open);
+          if (!open) setShowAgents(false);
+        }}
+      >
         <PopoverTrigger
           render={
             <Button
@@ -89,21 +101,20 @@ export function ModelSelector({
           <span className="flex min-w-0 items-center gap-1.5">
             {problem === undefined && selected.model !== undefined ? <ModelLogo model={selected.model} size={14} /> : null}
             {problem === undefined ? (
-              <span className="truncate">
-                {agentName === undefined ? "" : `@${agentName} · `}
-                {selectedSummary?.name ?? selected.model?.modelId ?? "No model"}
-              </span>
+              <span className="truncate">{selectedSummary?.name ?? selected.model?.modelId ?? "No model"}</span>
             ) : (
               <span className="truncate text-destructive">{problem.label}</span>
             )}
-            {sourceHint === undefined || problem !== undefined ? null : (
-              <span className="shrink-0 truncate text-xs text-muted-foreground">{sourceHint}</span>
+            {agentName === undefined ? null : (
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {locked.model ? "from" : "with"} @{agentName}
+              </span>
             )}
             {/* The Select trigger's glyph, so it matches the draft tray's pickers. */}
             <ChevronDown aria-hidden="true" strokeWidth={2} className="size-4" />
           </span>
         </PopoverTrigger>
-        <PopoverContent aria-label="Model" side="top" align="start" className="w-[248px] p-1">
+        <PopoverContent aria-label="Model" side="top" align="start" className="w-[264px] p-1">
           <div
             className="flex w-full flex-col"
             data-testid="model-popover"
@@ -114,32 +125,45 @@ export function ModelSelector({
             onMouseDown={stopPropagation}
             onPointerDown={stopPropagation}
           >
-            {agent === undefined ? null : (
+            {agent !== undefined && agent.kind === "pick" && showAgents ? (
+              <AgentList
+                agent={agent}
+                models={models}
+                isDisabled={isDisabled}
+                onBack={() => setShowAgents(false)}
+                onPicked={() => setShowAgents(false)}
+              />
+            ) : (
               <>
-                <AgentSection agent={agent} isDisabled={isDisabled} />
-                <Separator className="mx-2 my-1 w-auto" />
+                {agent === undefined ? null : (
+                  <>
+                    <AgentRow agent={agent} name={agentName} onOpen={() => setShowAgents(true)} />
+                    <Separator className="mx-2 my-1 w-auto" />
+                  </>
+                )}
+                {locked.model && lockNote !== undefined ? <SectionLabel>{lockNote}</SectionLabel> : null}
+                {groupByProvider(models).map((group, index) => (
+                  <Fragment key={group.provider}>
+                    {index === 0 ? null : <Separator className="mx-2 my-1 w-auto" />}
+                    <div role="group" aria-label={group.provider}>
+                      <SectionLabel>{group.provider}</SectionLabel>
+                      <ItemGroup>
+                        {group.models.map((model) => (
+                          <PickRow
+                            key={model.modelId}
+                            media={<ModelLogo model={model} reserve />}
+                            title={model.name}
+                            selected={sameModel(model, selected.model)}
+                            disabled={isDisabled || locked.model}
+                            onPick={() => onModelChange({ provider: model.provider, modelId: model.modelId })}
+                          />
+                        ))}
+                      </ItemGroup>
+                    </div>
+                  </Fragment>
+                ))}
               </>
             )}
-            {groupByProvider(models).map((group, index) => (
-              <Fragment key={group.provider}>
-                {index === 0 ? null : <Separator className="mx-2 my-1 w-auto" />}
-                <div role="group" aria-label={group.provider}>
-                  <SectionLabel>{group.provider}</SectionLabel>
-                  <ItemGroup>
-                    {group.models.map((model) => (
-                      <PickRow
-                        key={model.modelId}
-                        media={<ModelLogo model={model} reserve />}
-                        title={model.name}
-                        selected={sameModel(model, selected.model)}
-                        disabled={isDisabled}
-                        onPick={() => onModelChange({ provider: model.provider, modelId: model.modelId })}
-                      />
-                    ))}
-                  </ItemGroup>
-                </div>
-              </Fragment>
-            ))}
           </div>
         </PopoverContent>
       </Popover>
@@ -168,7 +192,7 @@ export function ModelSelector({
               onMouseDown={stopPropagation}
               onPointerDown={stopPropagation}
             >
-              <SectionLabel>Thinking</SectionLabel>
+              <SectionLabel>{locked.level && lockNote !== undefined ? `Thinking · ${lockNote.toLowerCase()}` : "Thinking"}</SectionLabel>
               <ItemGroup>
                 {[...levels].reverse().map((level) => (
                   <PickRow
@@ -176,7 +200,7 @@ export function ModelSelector({
                     media={<LevelMeter levels={levels} level={level} className="text-muted-foreground" />}
                     title={thinkingLevelLabels[level]}
                     selected={level === selected.level}
-                    disabled={isDisabled}
+                    disabled={isDisabled || locked.level}
                     onPick={() => {
                       onLevelChange(level);
                       setThinkingOpen(false);
@@ -204,109 +228,136 @@ function SectionLabel({ children }: { children: ReactNode }) {
   return <p className="px-2 pt-1.5 pb-1 text-xs text-muted-foreground">{children}</p>;
 }
 
-/**
- * The Agent section as a strip of chips, one line for a few roles. A role's
- * description is its tooltip; a role the host no longer lists stays as the
- * selected, unavailable chip until something else is picked.
- */
-function AgentSection({ agent, isDisabled }: { agent: ModelSelectorAgent; isDisabled: boolean }) {
-  const missing =
-    agent.kind === "pick" && agent.value !== undefined && !agent.roles.some((role) => role.name === agent.value)
-      ? agent.value
-      : undefined;
-  return (
-    <div aria-label="Agent" role="group">
-      <SectionLabel>{agent.kind === "pick" ? "Agent · sets the system prompt" : "Agent · fixed at creation"}</SectionLabel>
-      <ul className="flex flex-wrap gap-1 px-2 pb-1">
-        {agent.kind === "fixed" ? (
-          <AgentChip name={agent.name} description={agent.description} selected />
-        ) : (
-          <>
-            {missing === undefined ? null : <AgentChip name={missing} description="No longer available" selected unavailable />}
-            <AgentChip
-              label="No agent"
-              description="Default system prompt"
-              selected={agent.value === undefined}
-              disabled={isDisabled}
-              onPick={() => agent.onChange(undefined)}
-            />
-            {agent.roles.map((role) => (
-              <AgentChip
-                key={role.name}
-                name={role.name}
-                description={role.description}
-                selected={agent.value === role.name}
-                disabled={isDisabled}
-                onPick={() => agent.onChange(role.name)}
-              />
-            ))}
-          </>
+/** The Agent row at the top of the model popover: the current agent, opening the list when it can change. */
+function AgentRow({ agent, name, onOpen }: { agent: ModelSelectorAgent; name: string | undefined; onOpen: () => void }) {
+  const missing = agent.kind === "pick" && name !== undefined && !agent.roles.some((role) => role.name === name);
+  const description =
+    agent.kind === "fixed" ? "Fixed at creation" : missing ? "No longer available" : name === undefined ? "Default system prompt" : undefined;
+  const content = (
+    <>
+      <Bot aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm">{name === undefined ? "No agent" : `@${name}`}</span>
+        {description === undefined ? null : (
+          <span className={cn("block truncate text-xs", missing ? "text-destructive" : "text-muted-foreground")}>{description}</span>
         )}
-      </ul>
+      </span>
+    </>
+  );
+  if (agent.kind === "fixed") {
+    return (
+      <div role="group" aria-label="Agent" className="flex items-center gap-2 px-2 py-1.5">
+        {content}
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      aria-label={`Agent: ${name ?? "No agent"}`}
+      onClick={onOpen}
+      className={cn(
+        "flex w-full cursor-pointer items-center gap-2 rounded-[var(--radius-element)] px-2 py-1.5 text-start outline-none transition-colors duration-100",
+        "[@media(hover:hover)]:hover:bg-surface-hover active:bg-default focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+      )}
+    >
+      {content}
+      <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+    </button>
+  );
+}
+
+/**
+ * The agent list, one level down: No agent, then each role with its
+ * description and pinned model. A role whose pinned model the host doesn't
+ * offer, and a role file the host couldn't read, are listed but not pickable.
+ */
+function AgentList({
+  agent,
+  models,
+  isDisabled,
+  onBack,
+  onPicked,
+}: {
+  agent: Extract<ModelSelectorAgent, { kind: "pick" }>;
+  models: readonly ModelSummary[];
+  isDisabled: boolean;
+  onBack: () => void;
+  onPicked: () => void;
+}) {
+  const pick = (name: string | undefined) => {
+    agent.onChange(name);
+    onPicked();
+  };
+  const missing =
+    agent.value !== undefined && !agent.roles.some((role) => role.name === agent.value) ? agent.value : undefined;
+  return (
+    <div role="group" aria-label="Agent">
+      <button
+        type="button"
+        onClick={onBack}
+        className="flex h-7 w-full cursor-pointer items-center gap-1 rounded-[var(--radius-element)] px-1.5 text-xs text-muted-foreground outline-none transition-colors [@media(hover:hover)]:hover:bg-surface-hover [@media(hover:hover)]:hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+      >
+        <ChevronLeft aria-hidden="true" className="size-3.5" />
+        Agent
+      </button>
+      <Separator className="mx-2 my-1 w-auto" />
+      <ItemGroup className="max-h-80 overflow-y-auto">
+        {missing === undefined ? null : (
+          <PickRow
+            media={<Bot aria-hidden="true" className="size-4" />}
+            title={missing}
+            description="No longer available"
+            tone="destructive"
+            selected
+            disabled
+          />
+        )}
+        <PickRow
+          media={<Bot aria-hidden="true" className="size-4 text-muted-foreground" />}
+          title="No agent"
+          description="Default system prompt"
+          selected={agent.value === undefined}
+          disabled={isDisabled}
+          onPick={() => pick(undefined)}
+        />
+        {agent.roles.map((role) => {
+          const pinned = role.model === undefined ? undefined : models.find((model) => `${model.provider}/${model.modelId}` === role.model);
+          const unavailable = role.model !== undefined && pinned === undefined;
+          return (
+            <PickRow
+              key={role.name}
+              media={pinned === undefined ? <Bot aria-hidden="true" className="size-4 text-muted-foreground" /> : <ModelLogo model={pinned} reserve />}
+              title={role.name}
+              description={unavailable ? `${role.model} isn't available` : pinnedLabel(pinned, role.thinkingLevel) ?? role.description}
+              {...(unavailable ? { tone: "destructive" as const } : {})}
+              hint={role.description}
+              selected={agent.value === role.name}
+              disabled={isDisabled || unavailable}
+              onPick={() => pick(role.name)}
+            />
+          );
+        })}
+        {(agent.problems ?? []).map((broken) => (
+          <PickRow
+            key={broken.file}
+            media={<Bot aria-hidden="true" className="size-4 text-muted-foreground" />}
+            title={broken.file}
+            description={broken.reason}
+            tone="destructive"
+            selected={false}
+            disabled
+          />
+        ))}
+      </ItemGroup>
     </div>
   );
 }
 
-const chipClassName = cn(
-  "flex h-6 items-center rounded-full px-2.5 text-xs whitespace-nowrap text-muted-foreground shadow-[inset_0_0_0_1px_var(--border)] transition-colors",
-  "group-aria-[current=true]/chip:bg-foreground group-aria-[current=true]/chip:text-background group-aria-[current=true]/chip:shadow-none",
-);
-
-/** One agent chip: `@name` (the `@` is decoration), or a plain label for "No agent". Without `onPick` it is read-only. */
-function AgentChip({
-  name,
-  label,
-  description,
-  selected,
-  unavailable = false,
-  disabled = false,
-  onPick,
-}: {
-  name?: string;
-  label?: string;
-  description?: string | undefined;
-  selected: boolean;
-  unavailable?: boolean;
-  disabled?: boolean;
-  onPick?: () => void;
-}) {
-  const content = (
-    <>
-      {name === undefined ? label : (
-        <>
-          <span aria-hidden="true" className="opacity-60">@</span>
-          <span className={unavailable ? "line-through" : undefined}>{name}</span>
-        </>
-      )}
-      {unavailable ? <span className="sr-only">No longer available</span> : null}
-    </>
-  );
-  return (
-    <li
-      className="group/chip"
-      title={description}
-      aria-current={selected || undefined}
-      aria-disabled={unavailable || disabled || undefined}
-    >
-      {onPick === undefined ? (
-        <span className={cn(chipClassName, unavailable && "opacity-60")}>{content}</span>
-      ) : (
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={onPick}
-          className={cn(
-            chipClassName,
-            "cursor-pointer outline-none focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50",
-            // The picked chip keeps its inverted text on hover.
-            !selected && "[@media(hover:hover)]:not-disabled:hover:text-foreground",
-          )}
-        >
-          {content}
-        </button>
-      )}
-    </li>
-  );
+/** "Claude Opus 5.5 · High" for what a role pins, undefined when it pins neither. */
+function pinnedLabel(model: ModelSummary | undefined, level: ThinkingLevel | undefined): string | undefined {
+  const parts = [model?.name, level === undefined ? undefined : thinkingLevelLabels[level]].filter((part) => part !== undefined);
+  return parts.length === 0 ? undefined : parts.join(" · ");
 }
 
 /**
@@ -331,25 +382,38 @@ function LevelMeter({ levels, level, className }: { levels: readonly ThinkingLev
   );
 }
 
-/** One choice in a popover: a selected row is tinted, marked aria-current and checked. */
+/**
+ * One choice in a popover: a selected row is tinted, marked aria-current and
+ * checked; a row without `onPick` is read-only and has no button.
+ */
 function PickRow({
   title,
+  description,
+  hint,
+  tone,
   media,
   selected,
-  disabled,
+  disabled = false,
   onPick,
 }: {
   title: string;
+  description?: string | undefined;
+  /** Tooltip for the whole row. */
+  hint?: string;
+  tone?: "destructive";
   media: ReactNode;
   selected: boolean;
-  disabled: boolean;
-  onPick: () => void;
+  disabled?: boolean;
+  onPick?: () => void;
 }) {
   return (
-    <Item size="sm" render={<li />} aria-current={selected || undefined} aria-disabled={disabled || undefined}>
+    <Item size="sm" render={<li />} title={hint} aria-current={selected || undefined} aria-disabled={disabled || undefined}>
       <ItemMedia>{media}</ItemMedia>
-      <ItemContent render={<button type="button" disabled={disabled} onClick={onPick} />}>
+      <ItemContent render={onPick === undefined ? undefined : <button type="button" disabled={disabled} onClick={onPick} />}>
         <ItemTitle>{title}</ItemTitle>
+        {description === undefined ? null : (
+          <ItemDescription className={cn("truncate", tone === "destructive" && "text-destructive")}>{description}</ItemDescription>
+        )}
       </ItemContent>
       {selected ? (
         <ItemActions>

@@ -223,20 +223,27 @@ async function openAgentPopover(): Promise<HTMLElement> {
   return screen.getByTestId("model-popover");
 }
 
+/** The agent list, one level down from the model popover's Agent row. */
+async function openAgentList(): Promise<HTMLElement> {
+  const popover = await openAgentPopover();
+  await userEvent.setup().click(within(popover).getByRole("button", { name: /^Agent:/ }));
+  return within(screen.getByTestId("model-popover")).getByRole("group", { name: "Agent" });
+}
+
 describe("ConversationComposer agent switching", () => {
   it("calls setAgent with the picked role and shows currentAgent over role", async () => {
     const { remote } = setup({ summary: summary({ role: "reviewer", currentAgent: "tester" }) });
     expect(screen.getByTestId("model-trigger")).toHaveTextContent("@tester");
 
-    const popover = await openAgentPopover();
-    await userEvent.setup().click(within(popover).getByRole("button", { name: /reviewer/ }));
+    const list = await openAgentList();
+    await userEvent.setup().click(within(list).getByRole("button", { name: /^reviewer/ }));
     expect(remote.controller.setAgent).toHaveBeenCalledWith("reviewer");
   });
 
   it("calls setAgent(null) for No agent", async () => {
     const { remote } = setup({ summary: summary({ currentAgent: "tester" }) });
-    const popover = await openAgentPopover();
-    await userEvent.setup().click(within(popover).getByRole("button", { name: /No agent/ }));
+    const list = await openAgentList();
+    await userEvent.setup().click(within(list).getByRole("button", { name: /^No agent/ }));
     expect(remote.controller.setAgent).toHaveBeenLastCalledWith(null);
   });
 
@@ -244,9 +251,8 @@ describe("ConversationComposer agent switching", () => {
     setup({ summary: summary({ role: "reviewer", currentAgent: null }) });
     expect(screen.getByTestId("model-trigger")).not.toHaveTextContent("@");
 
-    const popover = await openAgentPopover();
-    expect(within(popover).getByText("Agent · sets the system prompt")).toBeInTheDocument();
-    const noAgent = within(popover).getByRole("button", { name: /No agent/ }).closest("li")!;
+    const list = await openAgentList();
+    const noAgent = within(list).getByRole("button", { name: /^No agent/ }).closest("li")!;
     expect(noAgent).toHaveAttribute("aria-current", "true");
   });
 
@@ -255,8 +261,8 @@ describe("ConversationComposer agent switching", () => {
     expect(screen.getByTestId("model-trigger")).toHaveTextContent("@reviewer");
 
     const popover = await openAgentPopover();
-    expect(within(popover).getByText("Agent · fixed at creation")).toBeInTheDocument();
-    expect(within(popover).queryByRole("button", { name: /No agent/ })).toBeNull();
+    expect(within(popover).getByText("Fixed at creation")).toBeInTheDocument();
+    expect(within(popover).queryByRole("button", { name: /^Agent:/ })).toBeNull();
     expect(remote.controller.setAgent).not.toHaveBeenCalled();
   });
 
@@ -265,15 +271,14 @@ describe("ConversationComposer agent switching", () => {
     expect(screen.getByTestId("model-trigger")).toHaveTextContent("@tester");
 
     const popover = await openAgentPopover();
-    expect(within(popover).getByText("Agent · fixed at creation")).toBeInTheDocument();
-    expect(within(popover).queryByRole("button", { name: /No agent/ })).toBeNull();
+    expect(within(popover).getByText("Fixed at creation")).toBeInTheDocument();
+    expect(within(popover).queryByRole("button", { name: /^Agent:/ })).toBeNull();
     expect(remote.controller.setAgent).not.toHaveBeenCalled();
   });
 
   it("keeps a current agent the host no longer lists selected and unavailable", async () => {
     setup({ summary: summary({ currentAgent: "deleted" }) });
-    const popover = await openAgentPopover();
-    const row = within(popover).getByText("deleted").closest("li")!;
+    const row = within(await openAgentList()).getByText("deleted").closest("li")!;
     expect(row).toHaveAttribute("aria-current", "true");
     expect(row).toHaveAttribute("aria-disabled", "true");
     expect(row).toHaveTextContent("No longer available");

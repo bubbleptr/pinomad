@@ -3992,6 +3992,7 @@ it("lists named agents in a @ mention menu and inserts @name as plain text", asy
   await writeFile(join(dir.path, "agents", "reviewer.md"), '---\ndescription: "Reviews code"\n---\n\nBe strict.\n');
   await writeFile(join(dir.path, "agents", "planner.md"), '---\ndescription: "Plans work"\n---\n\nPlan it.\n');
   await page.getByTestId("model-trigger").click();
+  await page.getByRole("button", { name: /^Agent:/ }).click();
   await page.getByRole("group", { name: "Agent" }).getByRole("button", { name: /^reviewer/ }).waitFor();
   await dismissPopovers(page);
   const editable = page.getByRole("combobox", { name: "Prompt" });
@@ -4090,9 +4091,10 @@ const dismissPopovers = async (page: Page): Promise<void> => {
   await page.waitForTimeout(100);
 };
 
-/** Picks a named agent (or /^No agent/) from the model popover's Agent section, then closes it. */
+/** Picks a named agent (or /^No agent/) from the model popover's agent list, then closes it. */
 const pickAgent = async (page: Page, name: RegExp): Promise<void> => {
   await page.getByTestId("model-trigger").click();
+  await page.getByRole("button", { name: /^Agent:/ }).click();
   await page.getByRole("group", { name: "Agent" }).getByRole("button", { name }).click();
   await dismissPopovers(page);
 };
@@ -4122,12 +4124,13 @@ it("creates the draft with a named agent, switches it, and shows @name on the co
   const capsule = page.getByTestId("model-trigger");
   if (shotDir !== undefined) {
     await capsule.click();
+    await page.getByRole("button", { name: /^Agent:/ }).click();
     await page.getByRole("group", { name: "Agent" }).waitFor();
     await shot(page, "draft-model-agent-section");
     await dismissPopovers(page);
   }
   await pickAgent(page, /^reviewer/);
-  await expect.poll(() => capsule.textContent()).toContain("@reviewer · Faux Thinker");
+  await expect.poll(() => capsule.textContent()).toContain("Faux Thinker");
   await expect.poll(() => page.getByTestId("thinking-trigger").textContent()).toBe("High");
   await expect.poll(() => capsule.textContent()).toContain("from @reviewer");
 
@@ -4149,8 +4152,9 @@ it("creates the draft with a named agent, switches it, and shows @name on the co
   await page.locator("h1").getByText("@reviewer", { exact: true }).waitFor();
   // …and on a 5.18 host the capsule offers the same Agent pick as a draft,
   // with the current role selected.
-  await expect.poll(() => capsule.textContent()).toContain("@reviewer ·");
+  await expect.poll(() => capsule.textContent()).toContain("from @reviewer");
   await capsule.click();
+  await page.getByRole("button", { name: /^Agent:/ }).click();
   const agentSection = page.getByRole("group", { name: "Agent" });
   await agentSection.getByText("reviewer", { exact: true }).waitFor();
   await expect
@@ -4165,7 +4169,7 @@ it("creates the draft with a named agent, switches it, and shows @name on the co
   await expect.poll(() => page.locator("h1").getByText("@reviewer", { exact: true }).count()).toBe(0);
   // …and picking the role again re-applies its file.
   await pickAgent(page, /^reviewer/);
-  await expect.poll(() => capsule.textContent()).toContain("@reviewer ·");
+  await expect.poll(() => capsule.textContent()).toContain("from @reviewer");
   await page.locator("h1").getByText("@reviewer", { exact: true }).waitFor();
   if (shotDir !== undefined) {
     await page.getByRole("button", { name: "More actions", exact: true }).click();
@@ -4182,16 +4186,13 @@ it("creates the draft with a named agent, switches it, and shows @name on the co
   await page.locator("h1").getByText("@reviewer", { exact: true }).waitFor();
 });
 
-it("sends only the overridden side once an agent draft's pick is changed", async () => {
+it("locks the side an agent pins and sends only the side the user changed", async () => {
   const webOrigin = await startWeb(defer);
   const dir = await tempDir();
   defer(dir.remove);
   await mkdir(join(dir.path, "agents"), { recursive: true });
-  await writeFile(
-    join(dir.path, "agents", "reviewer.md"),
-    '---\ndescription: "Reviews code"\nmodel: "faux/thinker-a"\nthinkingLevel: "high"\n---\n\nBe strict.\n',
-  );
-  await writeFile(join(dir.path, "agents", "planner.md"), '---\ndescription: "Plans work"\n---\n\nPlan it.\n');
+  // reviewer pins the model only; the level stays the user's.
+  await writeFile(join(dir.path, "agents", "reviewer.md"), '---\ndescription: "Reviews code"\nmodel: "faux/thinker-a"\n---\n\nBe strict.\n');
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
     dataDir: dir.path,
@@ -4206,13 +4207,17 @@ it("sends only the overridden side once an agent draft's pick is changed", async
   const page = await openPage(host, 1280, webOrigin);
 
   await pickAgent(page, /^reviewer/);
-
-  // Overriding the model keeps the level inherited — the hint narrows to it.
   const capsule = page.getByTestId("model-trigger");
+  await expect.poll(() => capsule.textContent()).toContain("Thinker A");
+  await expect.poll(() => capsule.textContent()).toContain("from @reviewer");
+
+  // The pinned model is shown but can't be changed…
   await capsule.click();
-  await page.getByRole("button", { name: "Thinker B", exact: false }).click();
+  expect(await page.getByRole("button", { name: "Thinker B", exact: false }).isDisabled()).toBe(true);
   await dismissPopovers(page);
-  await expect.poll(() => capsule.textContent()).toContain("level from @reviewer");
+  // …while the level, which reviewer doesn't pin, can.
+  await page.getByTestId("thinking-trigger").click();
+  await page.getByRole("group", { name: "Thinking" }).getByRole("button", { name: "Low", exact: true }).click();
 
   const composer = page.getByRole("combobox", { name: "Prompt" });
   await composer.fill("work");
@@ -4223,7 +4228,7 @@ it("sends only the overridden side once an agent draft's pick is changed", async
     if (id === undefined) return undefined;
     const agent = await host.harness.snapshot(AgentDoc, id, BACKGROUND_CONTEXT);
     return `${agent?.model?.provider}/${agent?.model?.modelId}:${agent?.thinkingLevel}`;
-  }).toBe("faux/thinker-b:high");
+  }).toBe("faux/thinker-a:low");
 });
 
 it("resets to inheritance on a new agent and back to the remembered pick on clear", async () => {
@@ -4231,10 +4236,7 @@ it("resets to inheritance on a new agent and back to the remembered pick on clea
   const dir = await tempDir();
   defer(dir.remove);
   await mkdir(join(dir.path, "agents"), { recursive: true });
-  await writeFile(
-    join(dir.path, "agents", "reviewer.md"),
-    '---\ndescription: "Reviews code"\nmodel: "faux/thinker-a"\nthinkingLevel: "high"\n---\n\nBe strict.\n',
-  );
+  await writeFile(join(dir.path, "agents", "reviewer.md"), '---\ndescription: "Reviews code"\nmodel: "faux/thinker-a"\n---\n\nBe strict.\n');
   await writeFile(join(dir.path, "agents", "planner.md"), '---\ndescription: "Plans work"\n---\n\nPlan it.\n');
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
@@ -4248,38 +4250,27 @@ it("resets to inheritance on a new agent and back to the remembered pick on clea
   const page = await openPage(host, 1280, webOrigin);
   const capsule = page.getByTestId("model-trigger");
 
-  await pickAgent(page, /^reviewer/);
-  await capsule.click();
-  await page.getByRole("button", { name: "Thinker B", exact: false }).click();
-  await dismissPopovers(page);
-  await expect.poll(() => capsule.textContent()).toContain("Thinker B");
-
-  // Switching agents drops the override — planner pins nothing, so the
-  // capsule falls back to the host default and reads "from @planner" again.
+  // planner pins nothing: the host default, "with @planner", and the model stays pickable.
   await pickAgent(page, /^planner/);
   await expect.poll(() => capsule.textContent()).toContain("Faux Model");
-  await expect.poll(() => capsule.textContent()).toContain("from @planner");
-
-  // Clearing the agent returns to the remembered draft pick, not the agent's.
-  await pickAgent(page, /^No agent/);
-  await expect.poll(() => capsule.textContent()).not.toContain("@planner");
-  await expect.poll(() => capsule.textContent()).toContain("Faux Model");
-  await expect.poll(() => capsule.textContent()).not.toContain("from @");
-
-  // Overrides made while an agent was picked never touched the remembered pick.
+  await expect.poll(() => capsule.textContent()).toContain("with @planner");
   await capsule.click();
   await page.getByRole("button", { name: "Thinker B", exact: false }).click();
   await dismissPopovers(page);
   await expect.poll(() => capsule.textContent()).toContain("Thinker B");
+
+  // Switching agents drops the override: reviewer's pin shows.
   await pickAgent(page, /^reviewer/);
-  await capsule.click();
-  await page.getByRole("button", { name: "Thinker A", exact: false }).click();
-  await dismissPopovers(page);
+  await expect.poll(() => capsule.textContent()).toContain("Thinker A");
+  await expect.poll(() => capsule.textContent()).toContain("from @reviewer");
+
+  // Clearing the agent returns to the remembered draft pick; the override under planner never touched it.
   await pickAgent(page, /^No agent/);
-  await expect.poll(() => capsule.textContent()).toContain("Thinker B");
+  await expect.poll(() => capsule.textContent()).toContain("Faux Model");
+  await expect.poll(() => capsule.textContent()).not.toContain("@");
 });
 
-it("blocks the draft send while the agent's model is unavailable and unblocks on an override", async () => {
+it("lists an agent whose pinned model the host doesn't offer, without letting the draft pick it", async () => {
   const webOrigin = await startWeb(defer);
   const dir = await tempDir();
   defer(dir.remove);
@@ -4292,29 +4283,16 @@ it("blocks the draft send while the agent's model is unavailable and unblocks on
     browserOrigins: [webOrigin],
     dataDir: dir.path,
     fauxModels: [{ id: "faux-1", name: "Faux Model" }],
-    answers: ["done"],
   });
-  const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
-  await pickAgent(page, /^broken/);
-  const capsule = page.getByTestId("model-trigger");
-  await expect.poll(() => capsule.textContent()).toContain("gone/claude-z unavailable");
-
-  const composer = page.getByRole("combobox", { name: "Prompt" });
-  await composer.fill("still a draft");
-  await composer.press("Enter");
-  // The send is blocked: nothing is created and the draft stays put.
-  await expect.poll(async () => observer.view.current().organized.chats.length, { timeout: 3000 }).toBe(0);
-  await expect.poll(() => composer.textContent()).toBe("still a draft");
-
-  // Overriding the model with an available one clears the problem.
-  await capsule.click();
-  await page.getByRole("button", { name: "Faux Model", exact: false }).click();
+  await page.getByTestId("model-trigger").click();
+  await page.getByRole("button", { name: /^Agent:/ }).click();
+  const row = page.getByRole("group", { name: "Agent" }).getByRole("listitem").filter({ hasText: "broken" });
+  await row.getByText("gone/claude-z isn't available").waitFor();
+  expect(await row.getByRole("button").isDisabled()).toBe(true);
   await dismissPopovers(page);
-  await expect.poll(() => capsule.textContent()).not.toContain("unavailable");
-  await composer.press("Enter");
-  await page.getByText("done", { exact: true }).waitFor();
+  await expect.poll(() => page.getByTestId("model-trigger").textContent()).not.toContain("@broken");
 });
 
 it("completes agents and files in the draft's @ menu, inserting @./path", async () => {
