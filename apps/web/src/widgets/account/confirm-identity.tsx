@@ -1,12 +1,11 @@
 import { Button } from "../../shared/ui/button.tsx";
-import { Field, FieldLabel } from "../../shared/ui/field.tsx";
+import { Field, FieldError, FieldLabel, FormError } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { useEffect, useReducer, useRef, useState, type ReactElement } from "react";
 import type { AccountConfirmation, AccountError, AccountResult } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
-import { accountErrorMessage } from "./account-error.ts";
+import { accountErrorField, accountErrorMessage } from "./account-error.ts";
 import { CODE_INPUT } from "./code-input.ts";
-import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 import { Spinner } from "../../shared/ui/spinner.tsx";
 
 /** The second check a guarded action takes, ready to send (ADR-0044 §6). */
@@ -22,6 +21,12 @@ export interface IdentityConfirmation {
    */
   confirm(): Promise<AccountResult<AccountConfirmation>>;
   reset(): void;
+  /**
+   * Shows a refused password or code on the field until it's edited; true
+   * when it did, so the caller leaves it out of its own error. A grant in
+   * hand means the field isn't asking, so the code is someone else's.
+   */
+  claim(error: AccountError): boolean;
 }
 
 type Method = "loading" | "password" | "code";
@@ -44,6 +49,7 @@ export function useConfirmIdentity(account: AccountModel, onEnter?: () => void):
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<AccountError>();
+  const [fieldError, setFieldError] = useState<AccountError>();
   // Closed while the password was checked: the action must not go ahead.
   const live = useRef(true);
   useEffect(() => {
@@ -78,9 +84,16 @@ export function useConfirmIdentity(account: AccountModel, onEnter?: () => void):
       method={method}
       email={email}
       password={password}
-      onPassword={setPassword}
+      onPassword={(value) => {
+        setFieldError(undefined);
+        setPassword(value);
+      }}
       code={code}
-      onCode={setCode}
+      onCode={(value) => {
+        setFieldError(undefined);
+        setCode(value);
+      }}
+      fieldError={fieldError}
       sent={sent}
       sending={sending}
       sendError={sendError}
@@ -92,6 +105,8 @@ export function useConfirmIdentity(account: AccountModel, onEnter?: () => void):
     field,
     ready: granted || (method === "password" ? password !== "" : method === "code" && sent && code.trim() !== ""),
     confirm: async () => {
+      // A new try: whatever the last one said about the field no longer stands.
+      setFieldError(undefined);
       const held = account.recentGrant();
       if (held !== undefined) return { ok: true, value: held };
       // It ran out while the dialog was open: ask now.
@@ -113,6 +128,13 @@ export function useConfirmIdentity(account: AccountModel, onEnter?: () => void):
       setPassword("");
       setCode("");
       setSent(false);
+      setFieldError(undefined);
+    },
+    claim: (error) => {
+      const field = accountErrorField(error);
+      const asked = account.recentGrant() === undefined && (method === "password" ? field === "password" : method === "code" && field === "code");
+      if (asked) setFieldError(error);
+      return asked;
     },
   };
 }
@@ -128,6 +150,7 @@ export function ConfirmIdentity({
   sent,
   sending,
   sendError,
+  fieldError,
   onSend,
   onEnter,
 }: {
@@ -140,13 +163,16 @@ export function ConfirmIdentity({
   sent: boolean;
   sending: boolean;
   sendError: AccountError | undefined;
+  /** A refused password or code, shown on its field. */
+  fieldError?: AccountError | undefined;
   onSend: () => void;
   onEnter?: (() => void) | undefined;
 }) {
   if (method === "loading") return <Spinner size="sm" />;
+  const error = fieldError === undefined ? undefined : accountErrorMessage(fieldError);
   if (method === "password") {
     return (
-      <Field>
+      <Field invalid={error !== undefined}>
         <FieldLabel>Password</FieldLabel>
         <Input
           type="password"
@@ -157,6 +183,7 @@ export function ConfirmIdentity({
             if (event.key === "Enter") onEnter?.();
           }}
         />
+        <FieldError>{error}</FieldError>
       </Field>
     );
   }
@@ -164,7 +191,7 @@ export function ConfirmIdentity({
     <div className="flex flex-col gap-2">
       <span className="text-xs/5 text-muted-foreground">We'll email a code to {email ?? "your account's email"}.</span>
       {sent ? (
-        <Field>
+        <Field invalid={error !== undefined}>
           <FieldLabel>Confirmation code</FieldLabel>
           <Input
             value={code}
@@ -174,14 +201,10 @@ export function ConfirmIdentity({
               if (event.key === "Enter") onEnter?.();
             }}
           />
+          <FieldError>{error}</FieldError>
         </Field>
       ) : null}
-      {sendError === undefined ? null : (
-        <Alert variant="destructive">
-          <AlertTitle>Couldn't send the code</AlertTitle>
-          <AlertDescription>{accountErrorMessage(sendError)}</AlertDescription>
-        </Alert>
-      )}
+      <FormError>{sendError === undefined ? undefined : accountErrorMessage(sendError)}</FormError>
       <div className="flex gap-2">
         <Button variant="secondary" size="sm" loading={sending} onClick={onSend}>{sent ? "Resend code" : "Send code"}</Button>
       </div>

@@ -18,6 +18,7 @@ import { localHostBridge, useLocalHostState, type LocalHostBridge } from "../../
 import { LocalHostSetup } from "../account/local-host-setup.tsx";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 import { Spinner } from "../../shared/ui/spinner.tsx";
+import { useErrorToast } from "../../shared/ui/toast.tsx";
 
 /**
  * Settings → This Mac, desktop on macOS only (#501): a switch over the host
@@ -37,19 +38,19 @@ function LocalHostControls({ bridge, pollIntervalMs }: { bridge: LocalHostBridge
   const { state, refresh, pollUntilInstalled } = useLocalHostState(bridge, pollIntervalMs);
   const [busy, setBusy] = useState<Busy>();
   const [confirming, setConfirming] = useState(false);
-  const [error, setError] = useState<string>();
+  const error = useErrorToast();
   // The stop outlives this view (main runs it); only the line subscription goes with it.
   const unsubscribe = useRef<() => void>(undefined);
   useEffect(() => () => unsubscribe.current?.(), []);
 
   const start = (): void => {
     setBusy({ kind: "starting" });
-    setError(undefined);
+    error.clear();
     void bridge
       .start()
       .catch((reason: unknown) => ({ ok: false as const, message: messageOf(reason) }))
       .then(async (result) => {
-        if (!result.ok) setError(result.message);
+        if (!result.ok) error.show(`Couldn't turn on the host: ${result.message}`);
         await refresh();
         setBusy(undefined);
       });
@@ -57,7 +58,7 @@ function LocalHostControls({ bridge, pollIntervalMs }: { bridge: LocalHostBridge
 
   const watchStop = (run: () => Promise<LocalHostStopResult | undefined>): void => {
     setBusy({ kind: "stopping", lines: [] });
-    setError(undefined);
+    error.clear();
     unsubscribe.current?.();
     unsubscribe.current = bridge.onStopLines((lines) =>
       setBusy((current) => (current?.kind === "stopping" ? { ...current, lines } : current)),
@@ -67,7 +68,7 @@ function LocalHostControls({ bridge, pollIntervalMs }: { bridge: LocalHostBridge
       .then(async (result) => {
         unsubscribe.current?.();
         unsubscribe.current = undefined;
-        if (result?.outcome === "failed") setError(result.message);
+        if (result?.outcome === "failed") error.show(`Couldn't turn off the host: ${result.message}`);
         await refresh();
         setBusy(undefined);
       });
@@ -93,11 +94,6 @@ function LocalHostControls({ bridge, pollIntervalMs }: { bridge: LocalHostBridge
       </div>
     );
   }
-
-  const banner =
-    error === undefined ? null : (
-      <Alert variant="destructive"><AlertTitle>Couldn't change the host</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>
-    );
 
   switch (state.kind) {
     case "error":
@@ -151,7 +147,6 @@ function LocalHostControls({ bridge, pollIntervalMs }: { bridge: LocalHostBridge
               </div>
             </div>
           ) : null}
-          {banner}
           <AlertDialog open={confirming} onOpenChange={setConfirming}>
             <AlertDialogContent>
               <AlertDialogHeader>

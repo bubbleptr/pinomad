@@ -2,7 +2,7 @@ import { Button } from "../../shared/ui/button.tsx";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "../../shared/ui/item.tsx";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
-import { Field, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
+import { Field, FieldDescription, FieldError, FieldLabel, FormError } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { AccountConfirmation, AccountError, AccountIdentities, AccountResult } from "@pinomad/client/account.ts";
@@ -10,11 +10,10 @@ import type { AccountModel } from "../../entities/account/account-model.ts";
 import { knownSignInProviders, signInProviderName, SignInProviderMark } from "../../entities/provider/sign-in-provider.tsx";
 import { KeyRound, MoreHorizontal } from "../../shared/ui/icons.tsx";
 import { GROUP_ROWS, SettingsGroup } from "../../shared/ui/settings-group.tsx";
-import { accountErrorMessage } from "./account-error.ts";
+import { fieldErrorMessage, formErrorMessage } from "./account-error.ts";
 import { ConfirmDialog } from "./confirm-dialog.tsx";
 import { MIN_PASSWORD_LENGTH, NEW_PASSWORD_INPUT, passwordLength } from "./code-input.ts";
 import { useConfirmIdentity } from "./confirm-identity.tsx";
-import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 import { Spinner } from "../../shared/ui/spinner.tsx";
 
 /** What the section has open: one form at a time. */
@@ -165,7 +164,6 @@ export function SignInMethods({
           description={`You won't be able to sign in with ${signInProviderName(open.provider)} until you link it again.`}
           label={`Remove ${signInProviderName(open.provider)}`}
           variant="destructive"
-          errorTitle="Couldn't remove it"
           action={(confirmation) => account.unlinkProvider(open.provider, confirmation)}
           onDone={() => close(`${signInProviderName(open.provider)} removed.`)}
           onCancel={() => close()}
@@ -181,7 +179,6 @@ export function SignInMethods({
           }
           label={`Continue to ${signInProviderName(open.provider)}`}
           variant="primary"
-          errorTitle="Couldn't start linking"
           action={async (confirmation) => {
             const result = await account.linkProvider(open.provider, confirmation);
             if (!result.ok || result.value.redirect === undefined) return result;
@@ -209,7 +206,6 @@ function ConfirmedAction({
   description,
   label,
   variant,
-  errorTitle,
   action,
   onDone,
   onCancel,
@@ -221,12 +217,14 @@ function ConfirmedAction({
   description?: string;
   label: string;
   variant: "primary" | "destructive";
-  errorTitle: string;
   action: (confirmation: AccountConfirmation) => Promise<AccountResult<unknown>>;
   onDone: () => void;
   onCancel: () => void;
-  /** More fields under the confirmation, given the submit for their Enter. */
-  extra?: (submit: () => void) => ReactNode;
+  /**
+   * More fields under the confirmation, given the submit for their Enter and
+   * the form's error with its clear: a new password the action refused shows on its field.
+   */
+  extra?: (submit: () => void, error: AccountError | undefined, clearError: () => void) => ReactNode;
   isReady?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
@@ -250,7 +248,7 @@ function ConfirmedAction({
       if (result.ok) onDone();
       else {
         if (result.error.code === "invalid_reauth") identity.reset();
-        setError(result.error);
+        setError(identity.claim(result.error) ? undefined : result.error);
       }
     })();
   };
@@ -263,8 +261,8 @@ function ConfirmedAction({
       action={<Button variant={variant} loading={busy} disabled={!identity.ready || !isReady} onClick={submit}>{label}</Button>}
     >
       {identity.field}
-      {extra?.(submit)}
-      {error === undefined ? null : <Alert variant="destructive"><AlertTitle>{errorTitle}</AlertTitle><AlertDescription>{accountErrorMessage(error)}</AlertDescription></Alert>}
+      {extra?.(submit, error, () => setError(undefined))}
+      <FormError>{formErrorMessage(error, extra === undefined ? [] : ["new-password"])}</FormError>
     </ConfirmDialog>
   );
 }
@@ -287,7 +285,6 @@ function PasswordForm({
       title={verb}
       label={verb}
       variant="primary"
-      errorTitle={hasPassword ? "Couldn't change the password" : "Couldn't set the password"}
       isReady={next !== ""}
       action={async (confirmation) =>
         passwordLength(next) < MIN_PASSWORD_LENGTH
@@ -296,19 +293,23 @@ function PasswordForm({
       }
       onDone={() => onClose(hasPassword ? "Password changed. Your other devices were signed out." : "Password set.")}
       onCancel={() => onClose()}
-      extra={(submit) => (
-        <Field>
+      extra={(submit, error, clearError) => (
+        <Field invalid={fieldErrorMessage(error, "new-password") !== undefined}>
           <FieldLabel>New password</FieldLabel>
           <FieldDescription>Your other devices will be signed out.</FieldDescription>
           <Input
             type="password"
             value={next}
-            onChange={(event) => setNext(event.target.value)}
+            onChange={(event) => {
+              if (fieldErrorMessage(error, "new-password") !== undefined) clearError();
+              setNext(event.target.value);
+            }}
             {...NEW_PASSWORD_INPUT}
             onKeyDown={(event) => {
               if (event.key === "Enter") submit();
             }}
           />
+          <FieldError>{fieldErrorMessage(error, "new-password")}</FieldError>
         </Field>
       )}
     />

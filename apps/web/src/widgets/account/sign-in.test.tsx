@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AuthMethods } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
 import { fakeAccount } from "../../test/story-fixtures.tsx";
+import { Toaster } from "../../shared/ui/toast.tsx";
 import { SignInScreen } from "./sign-in.tsx";
 
 const ALL: AuthMethods = { registration: true, email: true, providers: ["google", "github", "apple"] };
@@ -58,6 +59,37 @@ describe("SignInScreen", () => {
     expect(account.login).toHaveBeenCalledWith({ username: "kieran", password: "pw" });
   });
 
+  it("puts wrong credentials on the password field and clears them on edit", async () => {
+    const account = model({ login: vi.fn(() => Promise.resolve({ ok: false as const, error: { code: "invalid_credentials" } })) });
+    render(<SignInScreen account={account} />);
+    await userEvent.type(screen.getByLabelText("Email"), "ada@example.com");
+    const password = screen.getByLabelText("Password");
+    await userEvent.type(password, "pw{Enter}");
+    expect(await screen.findByText("Wrong email or password.")).toBeTruthy();
+    expect(password.getAttribute("aria-invalid")).toBe("true");
+    await userEvent.type(password, "x");
+    expect(screen.queryByText("Wrong email or password.")).toBeNull();
+    expect(password.getAttribute("aria-invalid")).toBeNull();
+  });
+
+  it("says a form-wide failure beside Sign in, not on a field", async () => {
+    const account = model({ login: vi.fn(() => Promise.resolve({ ok: false as const, error: { code: "rate_limited" } })) });
+    render(<SignInScreen account={account} />);
+    await userEvent.type(screen.getByLabelText("Email"), "ada@example.com");
+    await userEvent.type(screen.getByLabelText("Password"), "pw{Enter}");
+    expect((await screen.findByRole("alert")).textContent).toBe("Too many attempts. Wait a few minutes and try again.");
+    expect(screen.getByLabelText("Password").getAttribute("aria-invalid")).toBeNull();
+  });
+
+  it("puts an insecure server address on the Server field", async () => {
+    const account = { ...model({ login: vi.fn(() => Promise.resolve({ ok: false as const, error: { code: "insecure_origin" } })) }) };
+    render(<SignInScreen account={account} server={{ origin: "http://nomad.example.com", setOrigin: () => undefined }} />);
+    await userEvent.type(screen.getByLabelText("Email"), "ada@example.com");
+    await userEvent.type(screen.getByLabelText("Password"), "pw{Enter}");
+    expect(await screen.findByText("The server address must start with https://.")).toBeTruthy();
+    expect(screen.getByLabelText("Server").getAttribute("aria-invalid")).toBe("true");
+  });
+
   it("creates an account in two steps: the code, then the code and a password", async () => {
     const account = model();
     render(<SignInScreen account={account} />);
@@ -75,6 +107,7 @@ describe("SignInScreen", () => {
     await userEvent.type(screen.getByLabelText("New password"), "short");
     await userEvent.click(screen.getByRole("button", { name: "Create account" }));
     expect(await screen.findByText("Use a password of at least 12 characters.")).toBeTruthy();
+    expect(screen.getByLabelText("New password").getAttribute("aria-invalid")).toBe("true");
     expect(account.register).not.toHaveBeenCalled();
     await userEvent.type(screen.getByLabelText("New password"), " and longer");
     await userEvent.click(screen.getByRole("button", { name: "Create account" }));
@@ -106,7 +139,11 @@ describe("SignInScreen", () => {
 
   it("resets a forgotten password and lands on sign-in with the email filled in", async () => {
     const account = model();
-    render(<SignInScreen account={account} />);
+    render(
+      <Toaster>
+        <SignInScreen account={account} />
+      </Toaster>,
+    );
     await userEvent.click(await screen.findByRole("button", { name: "Forgot password?" }));
     await userEvent.type(screen.getByLabelText("Email"), "ada@example.com");
     await userEvent.click(screen.getByRole("button", { name: "Send code" }));

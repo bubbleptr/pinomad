@@ -1,4 +1,5 @@
 import { Button } from "../../shared/ui/button.tsx";
+import { FormError } from "../../shared/ui/field.tsx";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FolderListing, Project } from "@pinomad/protocol/organization.ts";
@@ -308,9 +309,7 @@ export function AddProjectDialog({
         <DialogFooter className="justify-between">
           <div className="min-w-0 flex-1">
             {addError !== undefined ? (
-              <span className="block text-xs/5 break-words text-destructive" role="alert">
-                {addError}
-              </span>
+              <FormError>{addError}</FormError>
             ) : (
               // Touch has no arrow keys to advertise.
               <div className="hidden pointer-fine:block">

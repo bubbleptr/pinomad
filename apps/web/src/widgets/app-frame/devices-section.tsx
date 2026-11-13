@@ -14,9 +14,8 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { useHosts } from "../../entities/host/host-store.ts";
 import { unansweredUnpair, unpairHost } from "../../entities/host/unpair.ts";
-import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 import { Badge } from "../../shared/ui/badge.tsx";
-import { useToast } from "../../shared/ui/toast.tsx";
+import { useErrorToast, useToast } from "../../shared/ui/toast.tsx";
 
 /** Settings → Devices: the devices paired with this host, the account switch, and a new pairing offer. */
 export function DevicesSection({
@@ -37,11 +36,11 @@ export function DevicesSection({
   const [unpairing, setUnpairing] = useState<DeviceEntry>();
   const toast = useToast();
   const [offer, setOffer] = useState<{ url: string; expiresAt: number }>();
-  const [pairError, setPairError] = useState<string>();
+  const pairError = useErrorToast();
   const pair = (): void => {
-    setPairError(undefined);
+    pairError.clear();
     void remote.controller.createPairing().then(setOffer, (error: unknown) => {
-      setPairError(error instanceof Error ? error.message : String(error));
+      pairError.show(`Couldn't create a pairing link: ${error instanceof Error ? error.message : String(error)}`);
     });
   };
   return (
@@ -82,7 +81,6 @@ export function DevicesSection({
         />
       )}
       <AccountDevicesSwitch view={view} remote={remote} />
-      {pairError === undefined ? null : <Alert variant="destructive"><AlertTitle>Could not create a pairing offer</AlertTitle><AlertDescription>{pairError}</AlertDescription></Alert>}
       {offer === undefined ? (
         <Button variant="secondary" disabled={!connected} onClick={pair}>Pair a device</Button>
       ) : (

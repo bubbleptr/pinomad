@@ -4,12 +4,12 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "../../shared/ui/select.tsx";
-import { Field, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
+import { Field, FieldDescription, FieldError, FieldLabel, FormError } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { Textarea } from "../../shared/ui/textarea.tsx";
 import { useState } from "react";
 import type { ModelRef } from "@earendil-works/pi-durable";
-import { agentRoleProblem, type AgentRole } from "@pinomad/protocol/agents.ts";
+import { agentNameProblem, agentRoleProblem, type AgentRole } from "@pinomad/protocol/agents.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { THINKING_LEVELS } from "@pinomad/protocol/settings.ts";
 import type { DurableView, ThinkingLevel } from "@pinomad/protocol/view.ts";
@@ -46,6 +46,7 @@ export function AgentEditorDialog({
   const [level, setLevel] = useState<ThinkingLevel | typeof UNPINNED>(role?.thinkingLevel ?? UNPINNED);
   const [prompt, setPrompt] = useState(role?.prompt ?? "");
   const [saving, setSaving] = useState(false);
+  const [nameError, setNameError] = useState<string>();
   const [error, setError] = useState<string | undefined>(undefined);
 
   const pinnedSummary = model === UNPINNED ? undefined : summaryOf(view.models, refOf(model));
@@ -90,14 +91,13 @@ export function AgentEditorDialog({
       prompt: prompt.trim(),
     };
     // The host re-checks on write — this just keeps the honest round trip off
-    // the wire for the common typo.
-    const problem = agentRoleProblem(candidate);
-    if (problem !== undefined) {
-      setError(problem);
-      return;
-    }
+    // the wire for the common typo. A bad name belongs to the Name field.
+    const badName = agentNameProblem(candidate.name);
+    const problem = badName === undefined ? agentRoleProblem(candidate) : undefined;
+    setNameError(badName);
+    setError(problem);
+    if (badName !== undefined || problem !== undefined) return;
     setSaving(true);
-    setError(undefined);
     void (editing ? remote.controller.updateAgent(candidate) : remote.controller.createAgent(candidate)).then(
       () => onClose(),
       (reason: unknown) => {
@@ -116,15 +116,19 @@ export function AgentEditorDialog({
         <DialogBody>
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-1">
-              <Field disabled={saving || editing}>
+              <Field disabled={saving || editing} invalid={nameError !== undefined}>
                 <FieldLabel>Name</FieldLabel>
                 <FieldDescription>{editing ? "The name is the file name and can't be changed." : undefined}</FieldDescription>
                 <Input
                   value={name}
-                  onChange={(event) => setName(event.target.value)}
+                  onChange={(event) => {
+                    setName(event.target.value);
+                    setNameError(undefined);
+                  }}
                   autoFocus={!editing}
                   data-autofocus={!editing || undefined}
                 />
+                <FieldError>{nameError}</FieldError>
               </Field>
             </div>
             <Field disabled={saving}>
@@ -185,11 +189,7 @@ export function AgentEditorDialog({
                 rows={4}
               />
             </Field>
-            {error === undefined ? null : (
-              <span className="text-xs/5 text-muted-foreground" role="alert" style={{ color: "var(--destructive)" }}>
-                {error}
-              </span>
-            )}
+            <FormError>{error}</FormError>
           </div>
         </DialogBody>
         <DialogFooter>

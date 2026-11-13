@@ -8,6 +8,7 @@ import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { PairingLinkForm } from "../../entities/host/pairing-link-form.tsx";
 import { localHostBridge, useLocalHostState } from "../../entities/local-host/use-local-host.ts";
 import { useNow } from "../../shared/use-now.ts";
+import { FormError } from "../../shared/ui/field.tsx";
 import { accountErrorMessage } from "./account-error.ts";
 import { HostLinkEntry } from "./host-link-entry.tsx";
 import { joinCommand } from "./join-command.ts";
@@ -95,12 +96,7 @@ function TokenCommand() {
         ) : (
           <JoinCommand token={token} onRenew={create} />
         )}
-        {token !== undefined && error !== undefined ? (
-          <Alert variant="destructive">
-            <AlertTitle>Couldn't create a new command</AlertTitle>
-            <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
-          </Alert>
-        ) : null}
+        <FormError>{token !== undefined && error !== undefined ? accountErrorMessage(error) : undefined}</FormError>
       </CollapsibleContent>
     </Collapsible>
   );

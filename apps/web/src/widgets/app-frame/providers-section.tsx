@@ -13,7 +13,8 @@ import type { DurableView } from "@pinomad/protocol/view.ts";
 import { ProviderLogo } from "../../entities/provider/provider-logo.tsx";
 import { ArrowLeft, Cancel, ChevronRight, MoreHorizontal } from "../../shared/ui/icons.tsx";
 import { CustomEndpointForm } from "./custom-endpoint-form.tsx";
-import { InlineError, LoginPanel } from "./provider-login.tsx";
+import { LoginPanel } from "./provider-login.tsx";
+import { FormError } from "../../shared/ui/field.tsx";
 import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 import { Badge } from "../../shared/ui/badge.tsx";
 
@@ -568,7 +569,7 @@ function Connection({
             {isKey ? "Remove key" : "Log out"}
           </Button>
           <Button variant="secondary" size="sm" onClick={() => setConfirming(false)}>Cancel</Button>
-          {error === undefined ? null : <InlineError message={error} />}
+          <FormError>{error}</FormError>
         </div>
       </div>
     );

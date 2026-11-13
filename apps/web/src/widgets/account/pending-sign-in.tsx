@@ -1,6 +1,6 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
-import { Field, FieldLabel } from "../../shared/ui/field.tsx";
+import { Field, FieldError, FieldLabel, FormError } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { useEffect, useState } from "react";
 import type { AccountError, AccountResult, PendingSignIn } from "@pinomad/client/account.ts";
@@ -8,7 +8,7 @@ import { useAccountModel } from "../../entities/account/account-context.tsx";
 import type { AccountModel } from "../../entities/account/account-model.ts";
 import { clearOAuthReturn, oauthReturn } from "../../entities/account/oauth-return.ts";
 import { signInProviderName, SignInProviderMark } from "../../entities/provider/sign-in-provider.tsx";
-import { accountErrorMessage } from "./account-error.ts";
+import { accountErrorMessage, fieldErrorMessage, formErrorMessage } from "./account-error.ts";
 import { MIN_PASSWORD_LENGTH, NEW_PASSWORD_INPUT, passwordLength } from "./code-input.ts";
 import { useConfirmIdentity } from "./confirm-identity.tsx";
 import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
@@ -194,25 +194,24 @@ function CreateFromPending({
   return (
     <div className="flex flex-col gap-3">
       {asksPassword ? (
-        <Field>
+        <Field invalid={fieldErrorMessage(error, "new-password") !== undefined}>
           <FieldLabel>New password</FieldLabel>
           <Input
             type="password"
             value={password}
-            onChange={(event) => setPassword(event.target.value)}
+            onChange={(event) => {
+              setError(undefined);
+              setPassword(event.target.value);
+            }}
             {...NEW_PASSWORD_INPUT}
             onKeyDown={(event) => {
               if (event.key === "Enter") create();
             }}
           />
+          <FieldError>{fieldErrorMessage(error, "new-password")}</FieldError>
         </Field>
       ) : null}
-      {error === undefined ? null : (
-        <Alert variant="destructive">
-          <AlertTitle>Couldn't create the account</AlertTitle>
-          <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
-        </Alert>
-      )}
+      <FormError>{formErrorMessage(error, asksPassword ? ["new-password"] : [])}</FormError>
       <Button
         variant="primary"
         className="w-full"
@@ -255,7 +254,8 @@ function LinkToCurrent({
       const result = confirmation.ok ? await account.linkPending(id, confirmation.value) : confirmation;
       setBusy(false);
       if (!result.ok && result.error.code === "invalid_reauth") identity.reset();
-      setError(finished(result, navigate, onDone));
+      const error = finished(result, navigate, onDone);
+      setError(error !== undefined && identity.claim(error) ? undefined : error);
     })();
   };
   const identity = useConfirmIdentity(account, submit);
@@ -265,12 +265,7 @@ function LinkToCurrent({
         Link {provider} to {current}
       </span>
       {identity.field}
-      {error === undefined ? null : (
-        <Alert variant="destructive">
-          <AlertTitle>{`Couldn't link ${provider}`}</AlertTitle>
-          <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
-        </Alert>
-      )}
+      <FormError>{error === undefined ? undefined : accountErrorMessage(error)}</FormError>
       <div className="flex gap-2">
         <Button variant="primary" loading={busy} disabled={!identity.ready} onClick={submit}>{`Link ${provider}`}</Button>
         <Button variant="secondary" onClick={onBack}>Back</Button>
@@ -311,35 +306,38 @@ function SignInAndLink({
   };
   return (
     <div className="flex flex-col gap-3">
-      <Field>
+      <Field invalid={fieldErrorMessage(error, "email") !== undefined}>
         <FieldLabel>Email</FieldLabel>
         <Input
           value={email}
-          onChange={(event) => setEmail(event.target.value)}
+          onChange={(event) => {
+            setError(undefined);
+            setEmail(event.target.value);
+          }}
           {...{ autoComplete: "username" }}
           onKeyDown={(event) => {
             if (event.key === "Enter") submit();
           }}
         />
+        <FieldError>{fieldErrorMessage(error, "email")}</FieldError>
       </Field>
-      <Field>
+      <Field invalid={fieldErrorMessage(error, "password") !== undefined}>
         <FieldLabel>Password</FieldLabel>
         <Input
           type="password"
           value={password}
-          onChange={(event) => setPassword(event.target.value)}
+          onChange={(event) => {
+            setError(undefined);
+            setPassword(event.target.value);
+          }}
           {...{ autoComplete: "current-password" }}
           onKeyDown={(event) => {
             if (event.key === "Enter") submit();
           }}
         />
+        <FieldError>{fieldErrorMessage(error, "password")}</FieldError>
       </Field>
-      {error === undefined ? null : (
-        <Alert variant="destructive">
-          <AlertTitle>{`Couldn't link ${provider}`}</AlertTitle>
-          <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
-        </Alert>
-      )}
+      <FormError>{formErrorMessage(error, ["email", "password"])}</FormError>
       <div className="flex gap-2">
         <Button variant="primary" loading={busy} disabled={!ready} onClick={submit}>{`Sign in and link ${provider}`}</Button>
         <Button variant="secondary" onClick={onBack}>Back</Button>

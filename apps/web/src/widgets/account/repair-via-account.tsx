@@ -5,7 +5,7 @@ import { useAccountModel } from "../../entities/account/account-context.tsx";
 import type { AccountState } from "../../entities/account/account-model.ts";
 import { useHosts } from "../../entities/host/host-store.ts";
 import { accountErrorMessage } from "./account-error.ts";
-import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
+import { FormError } from "../../shared/ui/field.tsx";
 
 /**
  * On the "this device isn't paired" screen: when the refused host belongs to
@@ -39,7 +39,7 @@ export function RepairViaAccount({ hostKey }: { hostKey: string }) {
       >
         Pair again with your account
       </Button>
-      {error === undefined ? null : <Alert variant="destructive"><AlertTitle>Couldn't pair</AlertTitle><AlertDescription>{accountErrorMessage(error)}</AlertDescription></Alert>}
+      <FormError>{error === undefined ? undefined : accountErrorMessage(error)}</FormError>
     </div>
   );
 }

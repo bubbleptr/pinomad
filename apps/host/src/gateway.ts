@@ -59,7 +59,7 @@ import {
 import type { HostAuth, HostProviders } from "@pinomad/protocol/auth.ts";
 import type { McpStatus } from "@pinomad/protocol/mcp.ts";
 import type { DeviceEntry } from "@pinomad/protocol/devices.ts";
-import type { ConversationSummary, ModelSummary, Notice, SessionInfo } from "@pinomad/protocol/view.ts";
+import { conversationTitleProblem, type ConversationSummary, type ModelSummary, type Notice, type SessionInfo } from "@pinomad/protocol/view.ts";
 import { type HandshakeResult, type KeyPair, respondIK } from "@pinomad/protocol/noise.ts";
 import { relayHostId } from "@pinomad/protocol/relay.ts";
 import {
@@ -2786,9 +2786,9 @@ class GatewayClient {
       }
       case "renameConversation": {
         const { title } = args as CallMethods["renameConversation"]["args"];
+        const problem = conversationTitleProblem(title);
+        if (problem !== undefined) throw new Error(problem);
         const trimmed = title.trim();
-        if (trimmed === "") throw new Error("Title cannot be empty");
-        if (trimmed.length > 200) throw new Error("Title is too long (200 characters at most)");
         await this.#options.harness.commit(async (tx) => {
           const record = await tx.conversation(conversation.id);
           if (record === undefined) throw new Error(`Conversation ${conversation.id} does not exist`);

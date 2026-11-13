@@ -2,7 +2,7 @@
 // the tab follows the shell's window title again.
 import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
-import { Field, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
+import { Field, FieldDescription, FieldLabel, FormError } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { useCallback, useState } from "react";
 import type { RemoteTerminals } from "@pinomad/protocol/remote-durable.ts";
@@ -63,11 +63,7 @@ export function RenameTerminalDialog({
               }}
             />
           </Field>
-          {error === undefined ? null : (
-            <span className="text-xs/5 text-muted-foreground" role="alert" style={{ color: "var(--destructive)" }}>
-              {error}
-            </span>
-          )}
+          <FormError>{error}</FormError>
         </DialogBody>
         <DialogFooter>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>

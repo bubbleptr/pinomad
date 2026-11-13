@@ -19,7 +19,8 @@ export const NotAPairingLink: Story = {
     const canvas = within(canvasElement);
     await userEvent.type(canvas.getByRole("textbox", { name: "Pairing link" }), "https://example.com/docs");
     await userEvent.click(canvas.getByRole("button", { name: "Connect" }));
-    await expect(await canvas.findByText("Not a pairing link")).toBeInTheDocument();
+    await expect(await canvas.findByText(/That isn't a pairing link/)).toBeInTheDocument();
+    await expect(canvas.getByRole("textbox", { name: "Pairing link" })).toHaveAttribute("aria-invalid", "true");
   },
 };
 

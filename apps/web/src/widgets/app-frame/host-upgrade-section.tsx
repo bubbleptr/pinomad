@@ -1,6 +1,6 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { SegmentedControl, SegmentedControlItem } from "../../shared/ui/segmented-control.tsx";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { relativeTime } from "@pinomad/client/family.ts";
 import { hostSupportsCall, hostSupportsFeature } from "@pinomad/protocol/frames.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
@@ -10,6 +10,8 @@ import { useNow } from "../../shared/use-now.ts";
 import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 import { Dialog, DialogBody, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../shared/ui/dialog.tsx";
 import { GROUP_ROWS, SettingsRow } from "../../shared/ui/settings-group.tsx";
+import { FormError } from "../../shared/ui/field.tsx";
+import { useErrorToast } from "../../shared/ui/toast.tsx";
 
 /** "5m ago", "just now": `relativeTime` is the sidebar's compact form. */
 const ago = (at: number, now: number): string => {
@@ -112,17 +114,29 @@ function UpgradeStatus({
   const now = useNow(60_000);
   const [confirming, setConfirming] = useState(false);
   const [pending, setPending] = useState<Pending>();
+  // A failed start shows in the confirmation; Cancel and Check now have no
+  // place of their own, so theirs is a toast.
   const [error, setError] = useState<string>();
+  const callError = useErrorToast();
   // One call at a time; the confirmation closes only once the host answered.
-  const act = (kind: Pending, action: () => Promise<void>, done?: () => void): void => {
+  const act = (kind: Pending, action: () => Promise<void>, fail: (message: string) => void, done?: () => void): void => {
     setError(undefined);
+    callError.clear();
     setPending(kind);
     void answeredWithin(action(), CALL_TIMEOUT_MS)
-      .then(done, (reason: unknown) => setError(errorText(reason)))
+      .then(done, (reason: unknown) => fail(errorText(reason)))
       .finally(() => setPending(undefined));
   };
+  // The confirmation can close before the host answers (it dropped, or
+  // another device acted); a failure then still needs to be seen.
+  const dialogOpen = useRef(false);
   const start = (when: UpgradeWhen): void =>
-    act(when, () => remote.controller.startUpgrade(when), () => setConfirming(false));
+    act(
+      when,
+      () => remote.controller.startUpgrade(when),
+      (message) => (dialogOpen.current ? setError(message) : callError.show(`Couldn't start the upgrade: ${message}`)),
+      () => setConfirming(false),
+    );
   const { available, phase, target, failure, blocked } = upgrade;
   const running = upgrade.current === null ? "Source checkout" : `pinomad ${upgrade.current}`;
 
@@ -140,6 +154,7 @@ function UpgradeStatus({
   // Another device started or cancelled, or the host dropped: the dialog
   // closes for good rather than coming back on its own later.
   if (confirming && !canStart) setConfirming(false);
+  dialogOpen.current = confirming && canStart;
   const confirmPending = pending === "idle" || pending === "now" ? pending : undefined;
   const alerts = [
     upgrade.checkError === null ? null : (
@@ -157,8 +172,6 @@ function UpgradeStatus({
         <AlertDescription>{BLOCKED[blocked].description}</AlertDescription>
       </Alert>
     ),
-    // While the dialog is open the error shows in it, not behind the overlay.
-    error === undefined || confirming ? null : <CallError key="error" message={error} />,
   ].filter((alert) => alert !== null);
   return (
     <>
@@ -176,7 +189,7 @@ function UpgradeStatus({
             size="sm"
             disabled={!connected || pending !== undefined}
             loading={pending === "cancel"}
-            onClick={() => act("cancel", () => remote.controller.cancelUpgrade())}
+            onClick={() => act("cancel", () => remote.controller.cancelUpgrade(), (message) => callError.show(`Couldn't cancel the upgrade: ${message}`))}
           >
             Cancel upgrade
           </Button>
@@ -188,7 +201,7 @@ function UpgradeStatus({
             size="sm"
             disabled={!connected || checksOff || upgrade.checking || pending !== undefined}
             loading={upgrade.checking || pending === "check"}
-            onClick={() => act("check", () => remote.controller.checkUpgrade())}
+            onClick={() => act("check", () => remote.controller.checkUpgrade(), (message) => callError.show(`Couldn't check for releases: ${message}`))}
           >
             Check now
           </Button>
@@ -222,15 +235,6 @@ function UpgradeStatus({
         />
       ) : null}
     </>
-  );
-}
-
-function CallError({ message }: { message: string }) {
-  return (
-    <Alert variant="destructive">
-      <AlertTitle>That didn't go through</AlertTitle>
-      <AlertDescription>{message}</AlertDescription>
-    </Alert>
   );
 }
 
@@ -268,7 +272,7 @@ function UpgradeDialog({
             {crossesMajor ? " Apps that haven't updated yet can't connect to this release." : ""}
           </DialogDescription>
           <p className="m-0 text-xs/5 text-muted-foreground">Upgrading now interrupts running tasks; they continue after the restart.</p>
-          {error === undefined ? null : <CallError message={error} />}
+          <FormError>{error}</FormError>
         </DialogBody>
         <DialogFooter className="flex-wrap">
           <Button variant="secondary" disabled={pending !== undefined} onClick={onCancel}>Cancel</Button>

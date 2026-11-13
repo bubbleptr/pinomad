@@ -1,9 +1,8 @@
 import { Button } from "../../shared/ui/button.tsx";
-import { Field, FieldLabel } from "../../shared/ui/field.tsx";
+import { Field, FieldError, FieldLabel } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { useState } from "react";
 import { pairingFragment } from "../../address.ts";
-import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 
 /**
  * Paste-a-pairing-link form: a valid link becomes the location fragment and a
@@ -33,27 +32,25 @@ export function PairingLinkForm({
     window.location.reload();
   };
   return (
-    <>
-      <div className="flex items-end gap-2" style={{ width: "100%" }}>
-        <div className="min-w-0 flex-1">
-          <Field>
-            <FieldLabel className="sr-only">Pairing link</FieldLabel>
-            <Input
-              placeholder="http://…/#pair=… or pinomad://pair#…"
-              value={pasted}
-              onChange={(event) => {
-                setError(undefined);
-                setPasted(event.target.value);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") connect();
-              }}
-            />
-          </Field>
-        </div>
-        <Button variant={connectVariant} disabled={pasted.trim() === ""} onClick={connect}>Connect</Button>
+    <div className="flex items-start gap-2" style={{ width: "100%" }}>
+      <div className="min-w-0 flex-1">
+        <Field invalid={error !== undefined}>
+          <FieldLabel className="sr-only">Pairing link</FieldLabel>
+          <Input
+            placeholder="http://…/#pair=… or pinomad://pair#…"
+            value={pasted}
+            onChange={(event) => {
+              setError(undefined);
+              setPasted(event.target.value);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") connect();
+            }}
+          />
+          <FieldError>{error}</FieldError>
+        </Field>
       </div>
-      {error === undefined ? null : <Alert variant="destructive"><AlertTitle>Not a pairing link</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
-    </>
+      <Button variant={connectVariant} disabled={pasted.trim() === ""} onClick={connect}>Connect</Button>
+    </div>
   );
 }

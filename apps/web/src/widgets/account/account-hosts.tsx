@@ -15,6 +15,7 @@ import { useNow } from "../../shared/use-now.ts";
 import { accountErrorMessage } from "./account-error.ts";
 import { RemoveHostDialog } from "./remove-host.tsx";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
+import { FormError } from "../../shared/ui/field.tsx";
 import { StatusDot } from "../../shared/ui/status-dot.tsx";
 
 type SignedIn = Extract<AccountState, { status: "signed-in" }>;
@@ -27,6 +28,8 @@ export interface AccountPairing {
   /** The account hostId being paired right now. */
   readonly pairing: string | undefined;
   readonly error: AccountError | undefined;
+  /** The account hostId whose Pair failed with `error`; undefined when a saved retry failed. */
+  readonly failed: string | undefined;
   pair(hostId: string): void;
   retrySave(host: StoredHost): void;
 }
@@ -35,25 +38,26 @@ export function useAccountPairing(): AccountPairing {
   const account = useAccountModel();
   const { focusHost } = useHosts();
   const [pairing, setPairing] = useState<string>();
-  const [error, setError] = useState<AccountError>();
+  const [failure, setFailure] = useState<{ readonly error: AccountError; readonly hostId?: string }>();
   return {
     pairing,
-    error,
+    error: failure?.error,
+    failed: failure?.hostId,
     pair: (hostId) => {
       setPairing(hostId);
-      setError(undefined);
+      setFailure(undefined);
       void account.pairHost(hostId).then((result) => {
         setPairing(undefined);
         if (result.ok) focusHost(result.value.hostKey);
-        else setError(result.error);
+        else setFailure({ error: result.error, hostId });
       });
     },
     // A saved retry finishes what Pair started: focus the host, no reload.
     retrySave: (host) => {
-      setError(undefined);
+      setFailure(undefined);
       void account.retryUnsavedHost(host.account?.hostId).then((result) => {
         if (result.ok) focusHost(host.hostKey);
-        else setError(result.error);
+        else setFailure({ error: result.error });
       });
     },
   };
@@ -103,6 +107,9 @@ const UNPAIRABLE: Record<Exclude<AccountHostMatch["host"]["pairing"], "available
  */
 export function AccountPairingBanners({ state, pairing }: { state: SignedIn; pairing: AccountPairing }) {
   const account = useAccountModel();
+  const { hosts } = useHosts();
+  // A failed Pair on a row of AccountHostList is said on that row.
+  const onRow = pairing.failed !== undefined && unpairedAccountHosts(state, hosts).some((match) => match.host.hostId === pairing.failed);
   return (
     <>
       {state.unsavedHosts.map((host) => (
@@ -119,12 +126,7 @@ export function AccountPairingBanners({ state, pairing }: { state: SignedIn; pai
           <AlertAction><Button variant="secondary" size="sm" onClick={() => void account.refreshHosts()}>Retry</Button></AlertAction>
         </Alert>
       )}
-      {pairing.error === undefined ? null : (
-        <Alert variant="destructive">
-          <AlertTitle>Couldn't pair</AlertTitle>
-          <AlertDescription>{accountErrorMessage(pairing.error)}</AlertDescription>
-        </Alert>
-      )}
+      <FormError>{pairing.error === undefined || onRow ? undefined : accountErrorMessage(pairing.error)}</FormError>
     </>
   );
 }
@@ -163,6 +165,7 @@ export function AccountHostList({
                 <ItemDescription className="line-clamp-2 whitespace-normal">
                   {pairable ? presence : `${presence} · ${UNPAIRABLE[host.pairing as keyof typeof UNPAIRABLE]}`}
                 </ItemDescription>
+                <FormError>{pairing.error !== undefined && pairing.failed === host.hostId ? accountErrorMessage(pairing.error) : undefined}</FormError>
               </ItemContent>
               <ItemActions className="gap-1">
                 {pairable ? (
