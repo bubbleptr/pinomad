@@ -236,6 +236,12 @@ struct ConversationView: View {
                 .accessibilityLabel("Overview")
             }
         }
+        #if DEBUG
+        // Screenshots and remote checks: open the overview without a tap.
+        .task {
+            if ProcessInfo.processInfo.environment["PINOMAD_OPEN_OVERVIEW"] != nil { showingOverview = true }
+        }
+        #endif
         .sheet(isPresented: $showingOverview, onDismiss: {
             guard let child = overviewSubagent else { return }
             overviewSubagent = nil

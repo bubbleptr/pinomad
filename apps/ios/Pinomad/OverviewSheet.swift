@@ -22,6 +22,8 @@ struct OverviewSheet: View {
     /// Bound to the host that opened the sheet, so a focus change while it
     /// is up cannot send the unwatch to another host.
     @State private var processWatch = ProcessWatchSession()
+    /// Whether Subagents lists every row or folds the rest behind "Show all".
+    @State private var showAllSubagents = false
 
     private var snapshot: ClientSnapshot? { model.snapshot }
 
@@ -85,6 +87,9 @@ struct OverviewSheet: View {
             if depth > 0 { detent = .large }
         }
         .task {
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["PINOMAD_OPEN_OVERVIEW"] == "large" { detent = .large }
+            #endif
             guard !isChat else { return }
             start(panel.open(busy: busy, connected: connected))
         }
@@ -317,43 +322,43 @@ struct OverviewSheet: View {
 
     // MARK: Subagents
 
+    /// Every subagent, at work first; past `listed` they fold behind
+    /// "Show all", since the sheet is the only list of them on iOS.
     @ViewBuilder
     private func subagentRows(_ overview: SubagentOverview) -> some View {
-        ForEach(overview.active) { row in
+        let shown = showAllSubagents ? overview.rows : Array(overview.rows.prefix(overview.listed))
+        ForEach(shown) { row in
             Button {
                 // The shown conversation is already open underneath.
                 if row.id != conversationId { openSubagent(row.id) }
                 dismiss()
             } label: {
                 HStack(spacing: 10) {
-                    Circle()
-                        .fill(row.waiting ? Color.orange : Color.green)
-                        .frame(width: 8, height: 8)
-                        .accessibilityHidden(true)
-                    Text(row.name)
-                        .lineLimit(1)
-                        .foregroundStyle(.primary)
+                    TaskIcon(kind: .subagent, tone: row.tone)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(row.name)
+                            .lineLimit(1)
+                            .foregroundStyle(.primary)
+                        Text(row.state)
+                            .font(.footnote)
+                            .foregroundStyle(row.tone == .failed ? Color.red : Color.secondary)
+                            .lineLimit(1)
+                    }
                     Spacer(minLength: 8)
-                    Text(row.waiting ? "Waiting for your answer" : (row.activity ?? "Running"))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
                     Image(.chevronRight)
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.tertiary)
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Subagent, \(row.name), \(row.state)")
             }
             // A row that pushes, not an action: keep the text unaccented.
             .tint(.primary)
         }
-        let summary = [
-            overview.moreRunning > 0 ? "\(overview.moreRunning) more running" : nil,
-            overview.finished > 0 ? "\(overview.finished) done" : nil,
-            overview.failed > 0 ? "\(overview.failed) failed" : nil,
-        ].compactMap { $0 }
-        if !summary.isEmpty {
-            Text(summary.joined(separator: " · "))
-                .foregroundStyle(.secondary)
+        if overview.rows.count > overview.listed {
+            Button(showAllSubagents ? "Show fewer" : "Show all \(overview.rows.count)") {
+                withAnimation(.snappy) { showAllSubagents.toggle() }
+            }
         }
     }
 
@@ -363,20 +368,23 @@ struct OverviewSheet: View {
     private func processRows(_ overview: ProcessesOverview) -> some View {
         ForEach(overview.rows) { row in
             HStack(spacing: 10) {
-                Circle()
-                    .fill(processColor(row))
-                    .frame(width: 8, height: 8)
-                    .accessibilityHidden(true)
+                TaskIcon(kind: .process, tone: row.tone)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(row.name)
                         .lineLimit(1)
-                    if let command = row.command {
-                        Text(command)
-                            .font(.caption.monospaced())
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                    HStack(spacing: 0) {
+                        Text(row.state)
+                            .foregroundStyle(row.tone == .failed ? Color.red : Color.secondary)
+                        if let command = row.command {
+                            Text(" · ").foregroundStyle(.secondary)
+                            Text(command)
+                                .monospaced()
+                                .foregroundStyle(.secondary)
+                                .truncationMode(.middle)
+                        }
                     }
+                    .font(.footnote)
+                    .lineLimit(1)
                 }
                 // The visible result is short; VoiceOver reads the long
                 // state line, including a lost process's old pid. Keep this
@@ -398,11 +406,6 @@ struct OverviewSheet: View {
                                 .accessibilityHidden(true)
                         }
                     }
-                } else if !row.result.isEmpty {
-                    Text(row.result)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
                 }
                 if row.canStop {
                     Button("Stop") { stop(row) }
@@ -424,22 +427,7 @@ struct OverviewSheet: View {
 
     private func processLabel(_ row: ProcessesOverview.Row) -> String {
         let command = row.command.map { ", \($0)" } ?? ""
-        return "\(row.name)\(command). \(row.status)"
-    }
-
-    /// A running process is green; a clean exit is neutral, and a lost
-    /// process or a failed/non-zero exit is the error color.
-    private func processColor(_ row: ProcessesOverview.Row) -> Color {
-        switch row.state {
-        case .starting, .running:
-            return .green
-        case .lost, .failed:
-            return .red
-        case let .exited(exited, signal):
-            return signal == nil && exited == 0 ? Color(uiColor: .secondaryLabel) : .red
-        case .stopped:
-            return Color(uiColor: .secondaryLabel)
-        }
+        return "Process, \(row.name)\(command). \(row.status)"
     }
 
     /// Stop is one tap and no confirmation; the row disables while its call
@@ -479,6 +467,30 @@ struct OverviewSheet: View {
             // The sheet is going away; `close()` already ended the epoch.
         } catch {
             panel.fail(token, model.describe(error))
+        }
+    }
+}
+
+/// A task row's icon: a robot for a subagent, a terminal for a background
+/// process, green while at work, red once failed, grey when over. Rows say
+/// the state in words too, so color is never the only signal.
+private struct TaskIcon: View {
+    enum Kind { case subagent, process }
+    let kind: Kind
+    let tone: TaskTone
+
+    var body: some View {
+        Image(kind == .subagent ? .bot : .squareTerminal)
+            .foregroundStyle(color)
+            .frame(width: 20)
+            .accessibilityHidden(true)
+    }
+
+    private var color: Color {
+        switch tone {
+        case .running: .green
+        case .failed: .red
+        case .done: .secondary
         }
     }
 }
