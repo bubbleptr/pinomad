@@ -1316,9 +1316,9 @@ it("opens a subagent's conversation from its card in the panel's Tasks detail", 
   // The main column still shows the parent.
   await expect.poll(() => page.locator("h1").textContent()).toBe("delegate");
 
-  // Back to the list: the task rows sit under their owner's group.
+  // Back to the list: the task rows sit in their owner's group.
   await panel.getByRole("button", { name: "Back to tasks", exact: true }).click();
-  await panel.getByText("This conversation", { exact: true }).waitFor();
+  await panel.getByRole("list", { name: "This conversation", exact: true }).waitFor();
   await panel.getByRole("button", { name: /count-the-lines/, exact: false }).click();
 
   await shot(page, "subagent-task-detail");
@@ -1899,7 +1899,7 @@ it("summarizes changes and subagents in the overview card and links to their det
   await overview.getByRole("button", { name: "All tasks", exact: true }).click();
   const panel = page.getByRole("complementary", { name: "Side panel" });
   // The Tasks list, grouped by owner.
-  await panel.getByText("This conversation", { exact: true }).waitFor();
+  await panel.getByRole("list", { name: "This conversation", exact: true }).waitFor();
   await panel.getByText("count-the-lines", { exact: true }).waitFor();
 
   // The Changes row switches the open panel to its Changes surface.

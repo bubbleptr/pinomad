@@ -135,7 +135,7 @@ describe("side panel surfaces", () => {
     await user.click(screen.getByRole("button", { name: "Tasks" }));
     const panel = screen.getByRole("complementary", { name: "Side panel" });
     // The header covers the chat column only; the panel's first row is its own.
-    expect(within(panel).queryByRole("heading")).toBeNull();
+    expect(within(panel).getAllByRole("heading").map((heading) => heading.textContent)).toEqual(["Tasks"]);
     expect(within(panel).getByText("1 running")).toBeInTheDocument();
   });
 });

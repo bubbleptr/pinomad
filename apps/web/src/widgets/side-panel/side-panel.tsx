@@ -266,7 +266,13 @@ function TasksSurface({
   return (
     <div className="flex flex-col h-full min-h-0">
       <SurfaceBar start={barStart} end={barEnd}>
-        <span className="truncate text-sm text-muted-foreground">{tally.join(" · ")}</span>
+        <h2 className="shrink-0 text-sm font-semibold">Tasks</h2>
+        {tally.length === 0 ? null : (
+          <>
+            <span aria-hidden="true" className="text-sm text-muted-foreground">·</span>
+            <span className="truncate text-sm text-muted-foreground">{tally.join(" · ")}</span>
+          </>
+        )}
       </SurfaceBar>
       <Scrollable>
           {groups.length === 0 && processRows.length === 0 ? (
@@ -276,7 +282,7 @@ function TasksSurface({
           ) : (
             <>
               {groups.map((group) => (
-                <RowGroup key={group.owner.id} label={group.label}>
+                <RowGroup key={group.owner.id} label={group.label} headed={groups.length > 1}>
                   {orderedSubagents(group.tasks.map((node) => node.summary)).map((summary) => (
                     <SideRow key={summary.id} summary={summary} now={now} onOpen={() => openInPanel(summary.id)} />
                   ))}
@@ -292,9 +298,10 @@ function TasksSurface({
   );
 }
 
-/** A titled run of rows; the title names the list. */
-function RowGroup({ label, children }: { label: string; children: ReactNode }) {
+/** A run of rows named by its owner; the name shows only when there are other owners to tell apart. */
+function RowGroup({ label, headed, children }: { label: string; headed: boolean; children: ReactNode }) {
   const id = useId();
+  if (!headed) return <ItemGroup aria-label={label} className="pt-2">{children}</ItemGroup>;
   return (
     <div className="flex flex-col">
       {/* Padded to sit on the rows' text edge. */}
@@ -403,14 +410,14 @@ function ProcessRow({ process, now, onOpen }: { process: ProcessInfo; now: numbe
   );
 }
 
-/** The family's processes beside its Foreground subagent groups. */
+/** The family's processes after its subagent groups; their glyphs mark them, so no heading. */
 function ProcessGroup({ processes, now, onOpen }: { processes: readonly ProcessInfo[]; now: number; onOpen: (id: ProcessId) => void }) {
   return (
-    <RowGroup label="Processes">
+    <ItemGroup aria-label="Processes" className="pt-2">
       {orderedProcesses(processes).map((process) => (
         <ProcessRow key={process.id} process={process} now={now} onOpen={() => onOpen(process.id)} />
       ))}
-    </RowGroup>
+    </ItemGroup>
   );
 }
 
