@@ -217,6 +217,7 @@ struct ConversationsPage: View {
 struct ConversationRowLabel: View {
     let node: ConversationNode
     let project: String?
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         let status = familyStatus(node: node)
@@ -232,16 +233,15 @@ struct ConversationRowLabel: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
+                // At accessibility sizes the tag would squeeze the title
+                // to a few letters, so it takes its own line under it.
+                if status == .needsAnswer && typeSize.isAccessibilitySize {
+                    NeedsAnswerTag()
+                }
             }
             Spacer(minLength: 8)
-            if status == .needsAnswer {
-                Text("Needs answer")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.orange)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(.orange.opacity(0.14), in: Capsule())
-                    .fixedSize()
+            if status == .needsAnswer && !typeSize.isAccessibilitySize {
+                NeedsAnswerTag()
             }
             let subagents = taskGroupsOf(root: node).reduce(0) { $0 + $1.tasks.count }
             if subagents > 0 {
@@ -257,6 +257,20 @@ struct ConversationRowLabel: View {
         }
         .padding(.vertical, 4)
         .shortSeparator()
+    }
+}
+
+/// A family waiting for an answer: an orange capsule at the row's end, in
+/// place of a dot, as in the Web sidebar.
+private struct NeedsAnswerTag: View {
+    var body: some View {
+        Text("Needs answer")
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.orange)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(.orange.opacity(0.14), in: Capsule())
+            .fixedSize()
     }
 }
 

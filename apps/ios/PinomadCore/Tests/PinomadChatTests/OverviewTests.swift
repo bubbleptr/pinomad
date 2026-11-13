@@ -50,6 +50,16 @@ private func checkout(branch: String?) -> WorktreeCheckout {
         #expect(overview.rows.map(\.tone) == [.running, .running, .running, .failed, .failed, .done, .done])
     }
 
+    /// "Show all" folds only finished work: every subagent at work stays
+    /// listed, however many there are, and a short list doesn't fold.
+    @Test func theFoldNeverHidesASubagentAtWork() {
+        let busy = SubagentOverview(tasks: (2...6).map { task($0, .running) } + [task(7, nil), task(8, .failed)])
+        #expect(busy.listed == 5)
+        #expect(busy.rows.prefix(busy.listed).allSatisfy { $0.tone == .running })
+        let quiet = SubagentOverview(tasks: [task(2, .running), task(3, nil), task(4, nil), task(5, nil)])
+        #expect(quiet.listed == SubagentOverview.minimumListed)
+    }
+
     /// Each row says where it stands in words, so the icon's color is never
     /// the only signal.
     @Test func subagentRowsSayTheirStateInWords() {
