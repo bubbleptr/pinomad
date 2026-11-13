@@ -105,6 +105,8 @@ export function useConfirmIdentity(account: AccountModel, onEnter?: () => void):
     field,
     ready: granted || (method === "password" ? password !== "" : method === "code" && sent && code.trim() !== ""),
     confirm: async () => {
+      // A new try: whatever the last one said about the field no longer stands.
+      setFieldError(undefined);
       const held = account.recentGrant();
       if (held !== undefined) return { ok: true, value: held };
       // It ran out while the dialog was open: ask now.

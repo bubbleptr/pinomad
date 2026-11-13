@@ -60,8 +60,10 @@ export function EmailForm({
           identity.reset();
           setReconfirm(true);
         }
-        // The save step shows the confirmation only once asked again.
-        const onField = (sentTo === undefined || reconfirm) && identity.claim(result.error);
+        // A refused confirmation (a spent code after its grant ran out) is
+        // asked again on the save step too, where it is otherwise hidden.
+        if (!confirmation.ok) setReconfirm(true);
+        const onField = (sentTo === undefined || reconfirm || !confirmation.ok) && identity.claim(result.error);
         setError(onField ? undefined : result.error);
       }
     })();

@@ -85,4 +85,39 @@ describe("EmailForm", () => {
     await userEvent.type(code, "3");
     expect(screen.queryByText(/That code is wrong/)).toBeNull();
   });
+
+  it("asks for the confirmation again when its grant ran out and the spent code is refused, not blaming the new email's code", async () => {
+    let held: { readonly reauth: string } | undefined;
+    const account: AccountModel = {
+      ...fakeAccount(signedIn({ email: "old@example.com" })),
+      identities: vi.fn(() => Promise.resolve({ ok: true as const, value: { hasPassword: false, identities: [] } })),
+      reauth: vi
+        .fn<AccountModel["reauth"]>()
+        .mockImplementationOnce(() => {
+          held = { reauth: "grant-1" };
+          return Promise.resolve({ ok: true, value: { ...held, expiresAt: Date.now() + 300_000 } });
+        })
+        // The same single-use code again, after the grant lapsed.
+        .mockResolvedValueOnce({ ok: false, error: { code: "invalid_code", status: 400 } }),
+      recentGrant: () => held,
+      forgetGrant: () => {
+        held = undefined;
+      },
+    };
+    render(<EmailForm account={account} submitLabel="Save" onSaved={vi.fn()} />);
+    await userEvent.type(screen.getByLabelText("Email"), "new@example.com");
+    await userEvent.click(await screen.findByRole("button", { name: "Send code" }));
+    await userEvent.type(await screen.findByLabelText("Confirmation code"), "111111");
+    await userEvent.click(screen.getByRole("button", { name: "Send code to new email" }));
+    const code = await screen.findByLabelText("Code");
+    held = undefined;
+    await userEvent.type(code, "222222");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    const confirmation = await screen.findByLabelText("Confirmation code");
+    await vi.waitFor(() => expect(confirmation.getAttribute("aria-invalid")).toBe("true"));
+    expect(screen.getByText(/That code is wrong/)).toBeTruthy();
+    expect(code.getAttribute("aria-invalid")).toBeNull();
+    expect(account.setEmail).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Resend code" })).toBeTruthy();
+  });
 });

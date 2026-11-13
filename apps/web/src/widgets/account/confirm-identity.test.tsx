@@ -155,4 +155,21 @@ describe("useConfirmIdentity", () => {
     expect(await screen.findByText(/That code is wrong/)).toBeTruthy();
     expect(code.getAttribute("aria-invalid")).toBe("true");
   });
+
+  it("drops the field's error when another try starts, whatever that try says", async () => {
+    const model = account(true);
+    vi.mocked(model.reauth)
+      .mockResolvedValueOnce({ ok: false, error: { code: "wrong_password" } })
+      .mockResolvedValueOnce({ ok: false, error: { code: "rate_limited" } });
+    render(<Harness account={model} onConfirmed={vi.fn()} />);
+    const password = await screen.findByLabelText("Password");
+    await userEvent.type(password, "pw");
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+    expect(await screen.findByText("The password is wrong.")).toBeTruthy();
+    // Again, without editing: the next answer isn't about the password.
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+    await vi.waitFor(() => expect(model.reauth).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(screen.queryByText("The password is wrong.")).toBeNull());
+    expect(password.getAttribute("aria-invalid")).toBeNull();
+  });
 });
