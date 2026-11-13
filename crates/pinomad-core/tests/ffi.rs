@@ -2244,6 +2244,7 @@ fn account_pairing_link_and_host_matching() {
         last_seen_at: 1.0,
         pairing: AccountHostPairing::Available,
         device_reports: None,
+        joined_at: None,
     };
     // Linked entry: same origin+hostId, matching key → paired, not linkable.
     let linked = StoredHost {

@@ -494,6 +494,31 @@ describe("removing a host from the account (#512)", () => {
     await controlFor(relay, keys, { noisePublicKey: NOISE_KEY });
   });
 
+  it("lists when each host joined: a new join after a removal is a new time, a repeat join keeps it (#531)", async () => {
+    let at = 1_000_000;
+    const { relay } = await startServer({ now: () => at });
+    const session = await login(relay);
+    const joinedAt = async () =>
+      ((await api(relay, { path: "/api/hosts", headers: { authorization: `Bearer ${session}` } })).json as unknown as {
+        joinedAt: number;
+      }[])[0]?.joinedAt;
+    const { keys, hostId } = await joined(relay, session);
+    expect(await joinedAt()).toBe(1_000_000);
+
+    // A retried join of a host already on the account is the same join.
+    at = 2_000_000;
+    const { token } = await mintToken(relay, session);
+    await register(relay, keys, { op: "join", joinToken: token, noisePublicKey: NOISE_KEY });
+    expect(await joinedAt()).toBe(1_000_000);
+
+    // Back after a removal: devices must hear about it again.
+    expect((await removeHost(relay, session, hostId)).status).toBe(204);
+    at = 3_000_000;
+    const again = await mintToken(relay, session);
+    await register(relay, keys, { op: "join", joinToken: again.token, noisePublicKey: NOISE_KEY });
+    expect(await joinedAt()).toBe(3_000_000);
+  });
+
   it("asks for the password and keeps the host on a wrong one", async () => {
     const { relay, accounts } = await startServer();
     const session = await login(relay);

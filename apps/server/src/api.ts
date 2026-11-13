@@ -1325,6 +1325,9 @@ export async function handleApiRequest(request: IncomingMessage, response: Serve
             hostId: row.hostId,
             name: row.name,
             noisePublicKey: row.noisePublicKey,
+            // Clients announce a host once per join (#531): a host back after
+            // a removal joined anew and is news again.
+            joinedAt: row.joinedAt,
             online: pairing !== "offline",
             lastSeenAt: row.lastSeenAt,
             pairing,
