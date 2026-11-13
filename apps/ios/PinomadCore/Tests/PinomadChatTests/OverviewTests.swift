@@ -2,11 +2,13 @@ import PinomadCore
 import Testing
 @testable import PinomadChat
 
-private func task(_ id: UInt64, _ status: ConversationStatus?) -> ConversationSummary {
+private func task(
+    _ id: UInt64, _ status: ConversationStatus?, updatedAt: Double? = nil, activity: SummaryActivity? = nil
+) -> ConversationSummary {
     ConversationSummary(
         id: id, kind: .subagent, parent: 1, forkedAt: nil,
-        title: "task \(id)", status: status, updatedAt: nil,
-        label: nil, role: nil, activity: nil
+        title: "task \(id)", status: status, updatedAt: updatedAt,
+        label: nil, role: nil, activity: activity
     )
 }
 
@@ -35,18 +37,29 @@ private func checkout(branch: String?) -> WorktreeCheckout {
 }
 
 @Suite struct OverviewTests {
-    /// Running and waiting tasks are listed up to the limit; the overflow,
-    /// finished and failed ones fold into counts, in the family's order.
-    @Test func runningTasksBeyondTheLimitFoldIntoCounts() {
+    /// iOS has no Tasks panel, so every subagent is listed: the ones at work
+    /// in the family's order, then failed, then finished, each newest first.
+    /// Waiting for an answer is at work, not singled out.
+    @Test func everySubagentIsListedAtWorkThenFailedThenDone() {
         let tasks = [
-            task(2, nil), task(3, .running), task(4, .needsAnswer), task(5, .failed),
-            task(6, .running), task(7, .running), task(8, .other("paused")),
+            task(2, nil, updatedAt: 10), task(3, .running), task(4, .needsAnswer), task(5, .failed, updatedAt: 5),
+            task(6, .running), task(7, nil, updatedAt: 30), task(8, .failed, updatedAt: 40),
         ]
         let overview = SubagentOverview(tasks: tasks)
-        #expect(overview.active.map(\.id) == [3, 4, 6])
-        #expect(overview.moreRunning == 1)
-        #expect(overview.finished == 2)
-        #expect(overview.failed == 1)
+        #expect(overview.rows.map(\.id) == [3, 4, 6, 8, 5, 7, 2])
+        #expect(overview.rows.map(\.tone) == [.running, .running, .running, .failed, .failed, .done, .done])
+    }
+
+    /// Each row says where it stands in words, so the icon's color is never
+    /// the only signal.
+    @Test func subagentRowsSayTheirStateInWords() {
+        let overview = SubagentOverview(tasks: [
+            task(3, .running, activity: SummaryActivity(tool: "bash", target: "bun test")),
+            task(4, .needsAnswer), task(5, .running), task(6, .failed), task(7, nil),
+        ])
+        #expect(overview.rows.map(\.state) == [
+            "Running · bash bun test", "Waiting for an answer", "Running", "Failed", "Done",
+        ])
     }
 
     /// The family's subagents, not only the shown conversation's own: a
@@ -68,8 +81,7 @@ private func checkout(branch: String?) -> WorktreeCheckout {
         )
         let organized = Organized(chats: [root], projects: [], archived: [])
         let overview = try #require(SubagentOverview.of(organized: organized, conversation: 9))
-        #expect(overview.active.map(\.id) == [10])
-        #expect(overview.finished == 1)
+        #expect(overview.rows.map(\.id) == [10, 2])
         let alone = Organized(chats: [ConversationNode(summary: root.summary, children: [])], projects: [], archived: [])
         #expect(SubagentOverview.of(organized: alone, conversation: 1) == nil)
     }
@@ -211,7 +223,7 @@ private func family() -> (Organized, UInt64, UInt64) {
         let old = overview.rows.last!
         #expect(old.status.contains("may still be running"))
         #expect(old.status.contains("pid 777"))
-        #expect(old.result == "Lost")
+        #expect(old.state == "Lost track")
         #expect(!old.canStop)
     }
 
@@ -224,6 +236,26 @@ private func family() -> (Organized, UInt64, UInt64) {
         #expect(overview.rows.count == 2)
         #expect(overview.rows.allSatisfy { !$0.canStop })
         #expect(overview.unavailable?.contains("process module") == true)
+    }
+
+    /// The icon's color comes from the state: a clean exit or a stop is
+    /// over, a non-zero exit, a failed start or a lost pty failed. The row
+    /// says it in a few words.
+    @Test func processRowsHaveAToneAndAShortState() {
+        let (organized, rootId, forkId) = family()
+        let processes = [
+            process("dev", .running),
+            process("test", .exited(exited: 1, signal: nil), endedAt: 4),
+            process("build", .exited(exited: 0, signal: nil), endedAt: 3),
+            process("old", .lost, endedAt: 2),
+        ]
+        let overview = ProcessesOverview.of(
+            organized: organized, conversation: forkId, processes: processView(rootId, processes))!
+        #expect(overview.rows.map(\.tone) == [.running, .failed, .done, .failed])
+        #expect(overview.rows.map(\.state) == ["Running", "Exited 1", "Exited 0", "Lost track"])
+        #expect(processShortText(.stopped(stopped: "user")) == "Stopped")
+        #expect(processShortText(.failed(failed: "ENOENT")) == "Failed to start")
+        #expect(processShortText(.exited(exited: nil, signal: "SIGKILL")) == "Exited (SIGKILL)")
     }
 
     @Test func elapsedTextUsesWholeSeconds() {

@@ -106,6 +106,7 @@ DEVICECTL_CHILD_PINOMAD_PERFLOG=1 DEVICECTL_CHILD_PINOMAD_KEEPSCREEN=1 \
 # 用于测已经停下的长对话（PerfLog 也每 5s 落盘一次，不依赖新快照）；
 # PINOMAD_AUTOPAIR 下配对失败每 15s 自动重试（约 10 分钟窗口）；
 # PINOMAD_OPEN_HOST_DETAIL=1 在 ready 后打开当前宿主的连接详情页；
+# PINOMAD_OPEN_OVERVIEW=1 打开对话页时直接弹出 Overview，=large 时直接全高（配合 PINOMAD_DEMO_OVERVIEW 截图）；
 # PINOMAD_PROMPT_FILE=<Documents 下路径> 在 Auto 的 P2P 准备结束后发送这份文本，必须同时给 PINOMAD_PROMPT_HOST=<hostKey 后缀>，不匹配就拒绝发送；
 # PINOMAD_PROMPT_MODEL=faux/faux-1 指定这份脚本消息用的模型（宿主快照里存在才生效）；
 # PINOMAD_ATTACH_DELAY_MS=200 给附件分片之间加延迟，让上传在压后台时仍在进行（仅 DEBUG）。

@@ -63,7 +63,7 @@ struct SubagentTests {
 
     /// Every subagent of the family is a task (ADR-0047 §1): a background
     /// one at work is listed by name next to a foreground one, and the idle
-    /// ones count as finished.
+    /// one after them as finished.
     @Test func overviewListsBackgroundSubagentsWithTheRest() {
         let tree = organized(root: [
             leaf(subagent(2, lifecycle: .foreground, name: "tester", status: .running)),
@@ -71,7 +71,7 @@ struct SubagentTests {
             leaf(subagent(4, lifecycle: .background, name: "linter", status: nil)),
         ])
         let overview = SubagentOverview.of(organized: tree, conversation: 1)
-        #expect(overview?.active.map(\.name) == ["tester", "auditor"])
-        #expect(overview?.finished == 1)
+        #expect(overview?.rows.map(\.name) == ["tester", "auditor", "linter"])
+        #expect(overview?.rows.map(\.tone) == [.running, .running, .done])
     }
 }

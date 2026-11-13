@@ -221,7 +221,8 @@ struct ConversationRowLabel: View {
     var body: some View {
         let status = familyStatus(node: node)
         HStack(spacing: 12) {
-            FamilyStatusDot(status: status)
+            // Waiting for an answer is the tag at the end, not a dot.
+            FamilyStatusDot(status: status == .needsAnswer ? nil : status)
             VStack(alignment: .leading, spacing: 2) {
                 Text(conversationName(summary: node.summary))
                     .lineLimit(1)
@@ -233,6 +234,15 @@ struct ConversationRowLabel: View {
                 }
             }
             Spacer(minLength: 8)
+            if status == .needsAnswer {
+                Text("Needs answer")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.orange.opacity(0.14), in: Capsule())
+                    .fixedSize()
+            }
             let subagents = taskGroupsOf(root: node).reduce(0) { $0 + $1.tasks.count }
             if subagents > 0 {
                 HStack(spacing: 2) {

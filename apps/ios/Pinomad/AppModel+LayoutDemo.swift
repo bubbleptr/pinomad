@@ -109,6 +109,7 @@ extension AppModel {
         case "settings": navPath = [.settings]
         case "machine": navPath = [.settings, .machine("demo-studio")]
         case "tile": navPath = [.conversations(hostKey: nil, filter: .needsAnswer)]
+        case "all": navPath = [.conversations(hostKey: nil, filter: .all)]
         case "unavailable": navPath = [.machineUnavailable("demo-studio")]
         default: break
         }

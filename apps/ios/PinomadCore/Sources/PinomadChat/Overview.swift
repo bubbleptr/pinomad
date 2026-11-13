@@ -1,45 +1,63 @@
 import Foundation
 import PinomadCore
 
-/// The overview sheet's subagent section (the Web card's Subagents): the
-/// whole family's tasks, the running ones listed by name up to a limit and
-/// everything else folded into counts.
+/// Where a task stands, the color of its icon: at work (running or waiting
+/// for an answer), failed, or over.
+public enum TaskTone: Equatable, Sendable {
+    case running, failed, done
+}
+
+/// The overview sheet's subagent section. iOS has no Tasks panel, so the
+/// sheet lists the family's every subagent: the ones at work in the
+/// family's order, then failed, then finished, each newest first. The view
+/// shows the first `listed` and folds the rest behind "Show all".
 public struct SubagentOverview: Equatable, Sendable {
-    /// A running task, or one waiting for the user's answer.
     public struct Row: Equatable, Sendable, Identifiable {
         public let id: UInt64
         public let name: String
-        public let waiting: Bool
-        /// The tool it is using right now, by display name.
-        public let activity: String?
+        public let tone: TaskTone
+        /// Where it stands in words: "Running · bash bun test", "Waiting
+        /// for an answer", "Failed", "Done".
+        public let state: String
+        public let updatedAt: Date?
     }
 
-    public let active: [Row]
-    /// Running tasks past the listed ones.
-    public let moreRunning: Int
-    /// Tasks neither running nor failed — the Web card's "done".
-    public let finished: Int
-    public let failed: Int
+    public let rows: [Row]
 
-    /// Running subagents listed by name before the rest fold into counts.
-    public static let listed = 3
+    /// Rows shown before "Show all" — at least every subagent at work.
+    public var listed: Int { max(Self.minimumListed, rows.prefix { $0.tone == .running }.count) }
+
+    public static let minimumListed = 3
 
     public init(tasks: [ConversationSummary]) {
-        let active = tasks.filter { $0.status == .running || $0.status == .needsAnswer }
-        let failed = tasks.filter { $0.status == .failed }.count
-        self.active = active.prefix(Self.listed).compactMap { task in
+        let rank: (TaskTone) -> Int = { tone in
+            switch tone {
+            case .running: 0
+            case .failed: 1
+            case .done: 2
+            }
+        }
+        let rows = tasks.compactMap { task -> Row? in
             guard let id = task.id else { return nil }
-            let name = conversationName(summary: task)
+            let tone = subagentTone(task.status)
             return Row(
                 id: id,
-                name: name,
-                waiting: task.status == .needsAnswer,
-                activity: task.activity.map { toolDisplayName(name: $0.tool) ?? $0.tool }
+                name: conversationName(summary: task),
+                tone: tone,
+                state: subagentStateText(task),
+                updatedAt: task.updatedAt.map { Date(timeIntervalSince1970: $0 / 1000) }
             )
         }
-        moreRunning = max(0, active.count - Self.listed)
-        finished = tasks.count - active.count - failed
-        self.failed = failed
+        // A stable sort: rows at work keep the family's order.
+        self.rows = rows.enumerated().sorted { a, b in
+            let (ra, rb) = (rank(a.element.tone), rank(b.element.tone))
+            if ra != rb { return ra < rb }
+            if a.element.tone != .running {
+                let (ta, tb) = (a.element.updatedAt ?? .distantPast, b.element.updatedAt ?? .distantPast)
+                if ta != tb { return ta > tb }
+            }
+            return a.offset < b.offset
+        }.map(\.element)
     }
 
     /// The overview for the family `conversation` belongs to, or nil when
@@ -48,6 +66,52 @@ public struct SubagentOverview: Equatable, Sendable {
         guard let root = rootOf(organized: organized, id: conversation) else { return nil }
         let tasks = taskGroupsOf(root: root).flatMap { $0.tasks.map(\.summary) }
         return tasks.isEmpty ? nil : SubagentOverview(tasks: tasks)
+    }
+}
+
+/// A subagent's tone; one with no status (or one this client doesn't know)
+/// has finished.
+public func subagentTone(_ status: ConversationStatus?) -> TaskTone {
+    switch status {
+    case .running?, .needsAnswer?: .running
+    case .failed?: .failed
+    default: .done
+    }
+}
+
+private func subagentStateText(_ task: ConversationSummary) -> String {
+    switch task.status {
+    case .needsAnswer?: return "Waiting for an answer"
+    case .failed?: return "Failed"
+    case .running?:
+        guard let activity = task.activity else { return "Running" }
+        let tool = toolDisplayName(name: activity.tool) ?? activity.tool
+        return "Running · \(tool)\(activity.target.map { " \($0)" } ?? "")"
+    default: return "Done"
+    }
+}
+
+/// A clean exit or a stop is over; a non-zero exit, a signal, a failed
+/// start or a lost pty failed.
+public func processTone(_ state: ProcessState) -> TaskTone {
+    switch state {
+    case .starting, .running: .running
+    case .lost, .failed: .failed
+    case let .exited(code, signal): signal == nil && code == 0 ? .done : .failed
+    case .stopped: .done
+    }
+}
+
+/// A few words for a process row: "Running", "Exited 1", "Stopped", "Lost track".
+public func processShortText(_ state: ProcessState) -> String {
+    switch state {
+    case .starting: "Starting"
+    case .running: "Running"
+    case .lost: "Lost track"
+    case .failed: "Failed to start"
+    case .stopped: "Stopped"
+    case let .exited(code, signal):
+        if let signal { "Exited (\(signal))" } else if let code { "Exited \(code)" } else { "Exited" }
     }
 }
 
@@ -63,9 +127,10 @@ public struct ProcessesOverview: Equatable, Sendable {
         public let command: String?
         /// The long state line, including the old pid for `lost`.
         public let status: String
-        /// The short right-hand result: `exit 1`, `Stopped`, `Lost`.
-        public let result: String
-        public let state: ProcessState
+        public let processState: ProcessState
+        public let tone: TaskTone
+        /// Where it stands in a few words: "Running", "Exited 1", "Lost track".
+        public let state: String
         public let active: Bool
         public let canStop: Bool
         public let startedAt: Date
@@ -94,8 +159,9 @@ public struct ProcessesOverview: Equatable, Sendable {
                 name: process.name,
                 command: process.command == process.name ? nil : process.command,
                 status: process.status,
-                result: process.result,
-                state: process.state,
+                processState: process.state,
+                tone: processTone(process.state),
+                state: processShortText(process.state),
                 active: process.active,
                 canStop: view.stopAvailable && process.active,
                 startedAt: Date(timeIntervalSince1970: process.startedAt / 1000)

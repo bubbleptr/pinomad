@@ -61,6 +61,7 @@ square-check
 square-diff
 square-pen
 square-slash
+square-terminal
 trash-2
 triangle-alert
 undo-2
