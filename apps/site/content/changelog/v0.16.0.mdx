@@ -1,0 +1,42 @@
+---
+title: Plugins, task lists at a glance, and errors where you can fix them
+version: v0.16.0
+date: 2026-11-13
+---
+
+**Before you upgrade**
+
+- Upgrade the host from Settings → the host → About, or with `pinomad upgrade`. Plugins need a 0.16.0 host.
+
+**Plugins** (web and Mac app)
+
+- The host loads plugins from `plugins/` in its data folder. A plugin can add tools, and on the web and in the Mac app it can show its own side panel and tool cards. Pages a plugin renders from model-written HTML run in a sandbox. A plugin's tools also work from iPhone, but its panel and cards don't show there. Install only plugins whose code you trust: they run with the host's permissions. See [Plugins](/docs/plugins/), which includes an example plugin that opens a page the model writes in the side panel.
+
+**Tasks** (web, Mac app and iPhone)
+
+- The Overview's Subagents section is now **Tasks**. Each row's icon tells a subagent from a background process, and its color and text say whether it is running, waiting for an answer, failed or done.
+- A conversation waiting for an answer shows a **Needs answer** label in the sidebar on the web and in the conversation list on iPhone.
+
+**Errors**
+
+- Errors show where you can fix them: on the field they are about, beside the button for the form, or as a toast for a one-off action. A new failure of the same action replaces the old toast, and retrying clears it. On the web and Mac app and on iPhone.
+- On the web, failed MCP servers and failed uploads show their reason on the page instead of only on hover.
+
+**Overview** (web, Mac app and iPhone)
+
+- The folder path shows the parent folder, so a worktree conversation shows where its project lives. The Changes row only appears when there are changes.
+- On the web and Mac app the card is wider, and a worktree's branch is labeled **Worktree**.
+
+**Web and Mac app**
+
+- The composer is a raised shell again, with the machine and project pickers in a tray under it. Attachments sit inside the shell, above the input.
+- After you confirm your password or a code, other account actions don't ask again for 5 minutes. Removed devices leave the device list.
+- Confirmation dialogs put Cancel on the left and the action on the right. Upgrading the host from About opens a dialog.
+- Tooltips wait a little longer before opening, and information you need is shown on the page instead of in a tooltip.
+- Smoother motion for dialogs, menus, the theme switch, the connection banner, Send/Stop and copy buttons.
+
+**iPhone**
+
+- Tapping a notification opens the conversation right away instead of waiting on the home screen.
+- The confirm-host page shows the full Host ID, so you can compare it with what `pinomad up` prints.
+- Motion and haptics polish.
