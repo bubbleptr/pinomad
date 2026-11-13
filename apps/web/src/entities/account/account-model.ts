@@ -803,6 +803,7 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
           return;
         }
         const enriched = await enrich(active, match.host.hostId, result.value);
+        if (flight.cancelled || !live(active, started)) return;
         clearRejected(enriched.hostKey);
         try {
           await deps.paired(enriched);
@@ -893,10 +894,11 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
         accountId === undefined || host.account!.accountId === accountId ? [host.account!.hostId] : [],
       ),
     ].filter((hostId) => !listed.has(hostId)));
-    const unfiled =
+    const unfiled = (
       accountId === undefined
         ? []
-        : vouchedHere.filter((host) => host.account!.accountId === undefined && listed.has(host.account!.hostId));
+        : vouchedHere.filter((host) => host.account!.accountId === undefined && listed.has(host.account!.hostId))
+    ).map((host) => ({ host, seen: removalMarks(active.origin, storedSlot(host)) }));
     setState(signedInState(active, user, matches));
     watchVisibility();
     void autoRegisterRound(active, user, matches, storedRead);
@@ -905,7 +907,13 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     const confirmed =
       started === refreshes && (delisted.size > 0 || unfiled.length > 0) && (await sessionStillOf(active, accountId));
     if (confirmed && started === refreshes) {
-      for (const host of unfiled) {
+      // Filed only as still stored: a removal here or another tab's
+      // shared-computer sign-out while /api/me was answering must not get
+      // the key back from the copy read before it.
+      const current = unfiled.length === 0 ? [] : await deps.hosts.list().catch(() => [] as readonly StoredHost[]);
+      for (const { host, seen } of unfiled) {
+        if (removedSince(active.origin, storedSlot(host), seen)) continue;
+        if (!current.some((each) => each.hostKey === host.hostKey && each.privateKey === host.privateKey)) continue;
         void deps.paired({ ...host, account: { ...host.account!, accountId: accountId! } }).catch(() => undefined);
       }
       for (const hostId of delisted) await forgetRemovedHost(active.origin, hostId, accountId);
@@ -987,6 +995,10 @@ export function createAccountModel(deps: AccountModelDeps): AccountModel {
     // would bring the host back on this device.
     if (removedSince(active.origin, slot, removed)) return fail("host_removed");
     const enriched = await enrich(active, hostId, result.value);
+    // The same two checks again: confirming the account may have waited on
+    // /api/me while the session ended or the host was removed.
+    if (!live(active, started)) return fail("stale");
+    if (removedSince(active.origin, slot, removed)) return fail("host_removed");
     clearRejected(enriched.hostKey);
     try {
       await deps.paired(enriched);

@@ -2028,9 +2028,20 @@ describe("pairings of other accounts on the same server (#640)", () => {
   const server = (signedIn: string, lists: Record<string, string[]>) => {
     let current = signedIn;
     const calls: { url: string; init: AccountFetchInit | undefined }[] = [];
-    const impl: AccountFetch = (url, init) => {
+    let meCalls = 0;
+    let held: { at: number; reached: () => void; release: Promise<void> } | undefined;
+    const impl: AccountFetch = async (url, init) => {
       calls.push({ url, init });
-      if (url.endsWith("/api/me")) return Promise.resolve(answer(200, profileOf(current)));
+      if (url.endsWith("/api/me")) {
+        meCalls += 1;
+        // Answered as of when it reached the server, delivered when released.
+        const body = profileOf(current);
+        if (held?.at === meCalls) {
+          held.reached();
+          await held.release;
+        }
+        return answer(200, body);
+      }
       if (url.endsWith("/api/logout")) return Promise.resolve(answer(204));
       if (url.endsWith("/api/hosts")) {
         return Promise.resolve(answer(200, (lists[current] ?? []).map((hostId) => accountHost("A".repeat(43), hostId))));
@@ -2045,15 +2056,27 @@ describe("pairings of other accounts on the same server (#640)", () => {
       switchTo: (accountId: string) => {
         current = accountId;
       },
+      /**
+       * Holds the `nth` /api/me call from now (1 = the next one): `reached`
+       * resolves once it is waiting, `release` lets its answer through.
+       */
+      holdMe: (nth = 1) => {
+        let reached!: () => void;
+        let release!: () => void;
+        const waiting = new Promise<void>((resolve) => (reached = resolve));
+        held = { at: meCalls + nth, reached, release: new Promise<void>((resolve) => (release = resolve)) };
+        return { reached: waiting, release };
+      },
     };
   };
 
-  const start = async (stored: StoredHost[], fake: ReturnType<typeof server>) => {
+  const start = async (stored: StoredHost[], fake: ReturnType<typeof server>, channel?: AccountChannel) => {
     const removed: string[] = [];
     const store = hosts(stored);
     const setup = makeModel({
       fake: fake.fake,
       store,
+      ...(channel === undefined ? {} : { channel }),
       removeHost: (hostKey) => {
         removed.push(hostKey);
         return store.remove(hostKey);
@@ -2122,6 +2145,38 @@ describe("pairings of other accounts on the same server (#640)", () => {
     const result = await setup.model.pairHost("h1");
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value.account).toEqual({ serverOrigin: ORIGIN, hostId: "h1", vouched: true });
+  });
+
+  it("doesn't file a pairing another tab's shared-computer sign-out forgot while the account was being confirmed", async () => {
+    const legacy = vouched("h1");
+    const fake = server(A, { [A]: ["h1"] });
+    let deliver!: (message: AccountChannelMessage) => void;
+    const channel: AccountChannel = { post: () => {}, subscribe: (listener) => ((deliver = listener), () => {}) };
+    // The probe and the sign-in read /api/me first; the third confirms the
+    // account before filing.
+    const hold = fake.holdMe(3);
+    const setup = await start([legacy], fake, channel);
+    await hold.reached;
+    // The other tab removed the record, then told this one.
+    await setup.store.remove(legacy.hostKey);
+    deliver({ kind: "account-hosts-left", serverOrigin: ORIGIN, hostKeys: [legacy.hostKey], accountId: A });
+    await flushMicrotasks();
+    hold.release();
+    await flushMicrotasks();
+    expect(setup.store.stored).toEqual([]);
+    expect(setup.paired).toEqual([]);
+  });
+
+  it("doesn't store a pairing whose session signed out while the account was being confirmed", async () => {
+    const fake = server(A, { [A]: ["h1"] });
+    const setup = await start([], fake);
+    const hold = fake.holdMe();
+    const pairing = setup.model.pairHost("h1");
+    await hold.reached;
+    expect(await setup.model.logout()).toEqual({ ok: true, value: undefined });
+    hold.release();
+    expect((await pairing).ok).toBe(false);
+    expect(setup.store.stored).toEqual([]);
   });
 
   it("signing out of a shared computer forgets this account's pairings and old unfiled ones, not another account's", async () => {
