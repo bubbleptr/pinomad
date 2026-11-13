@@ -294,7 +294,8 @@ function TaskRowView({ row, onOpenTasks }: { row: TaskRow; onOpenTasks: (id?: Co
     const tone = processTone(process.state);
     return (
       <Row
-        icon={<TaskGlyph kind="process" tone={tone} label={`Process, ${processShortText(process.state)}`} />}
+        icon={<TaskGlyph kind="process" tone={tone} />}
+        iconLabel={`Process, ${processShortText(process.state)}`}
         end={
           <span className={`text-xs ${tone === "failed" ? "text-destructive" : "text-muted-foreground"}`}>
             {isProcessActive(process.state) ? <ProcessDuration startedAt={process.startedAt} /> : processShortText(process.state)}
@@ -320,7 +321,8 @@ function TaskRowView({ row, onOpenTasks }: { row: TaskRow; onOpenTasks: (id?: Co
           : "Done";
   return (
     <Row
-      icon={<TaskGlyph kind="subagent" tone={tone} label={`Subagent, ${task.status === "needs-answer" ? "waiting for an answer" : tone}`} />}
+      icon={<TaskGlyph kind="subagent" tone={tone} />}
+      iconLabel={`Subagent, ${task.status === "needs-answer" ? "waiting for an answer" : tone}`}
       end={state === undefined ? undefined : <span className={`text-xs ${tone === "failed" ? "text-destructive" : "text-muted-foreground"}`}>{state}</span>}
       onClick={() => onOpenTasks(task.id)}
     >

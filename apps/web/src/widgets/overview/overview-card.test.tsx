@@ -262,6 +262,9 @@ describe("OverviewCard tasks", () => {
         "2 done · 1 failed",
       ]),
     );
+    // The icon is the only thing telling a process from a subagent: screen readers get it in words.
+    expect(within(section).getByRole("img", { name: "Process, Running" })).toBeInTheDocument();
+    expect(within(section).getByRole("img", { name: "Subagent, waiting for an answer" })).toBeInTheDocument();
     await userEvent.click(within(section).getByRole("button", { name: /2 done/ }));
     expect(onOpenTasks).toHaveBeenCalledWith();
   });

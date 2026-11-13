@@ -18,17 +18,17 @@ export function subagentTone(status: ConversationSummary["status"]): TaskTone {
 
 /**
  * A task row's glyph: the icon says which kind of task it is (a subagent or a
- * background process), the color where it stands. Decorative unless given a
- * `label`; rows say their state in words as well.
+ * background process), the color where it stands. Decorative: the row names
+ * it (a list row in words, an Overview row through its icon label).
  */
-export function TaskGlyph({ kind, tone, label }: { kind: "subagent" | "process"; tone: TaskTone; label?: string }) {
+export function TaskGlyph({ kind, tone }: { kind: "subagent" | "process"; tone: TaskTone }) {
   const Icon = kind === "subagent" ? Bot : CommandLine;
   return (
     <span
       data-slot="task-glyph"
       data-kind={kind}
       data-tone={tone}
-      {...(label === undefined ? { "aria-hidden": true } : { role: "img", "aria-label": label })}
+      aria-hidden="true"
       className={`flex size-4 shrink-0 items-center justify-center ${TONE_CLASS[tone]}`}
     >
       <Icon className="size-4" />
