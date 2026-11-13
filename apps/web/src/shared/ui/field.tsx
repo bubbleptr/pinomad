@@ -91,7 +91,22 @@ function FieldError({
   );
 }
 
+/**
+ * An error about a whole form or dialog rather than one field: the server
+ * didn't answer, the action was refused. Sits beside the submit button, or
+ * above the footer of a dialog. A problem the user fixes by editing one field
+ * goes in that field's `FieldError` instead.
+ */
+function FormError({ className, children, ...props }: ComponentProps<"p">): ReactElement | null {
+  if (isEmpty(children)) return null;
+  return (
+    <p role="alert" data-slot="form-error" className={cn("m-0 text-xs/5 break-words text-destructive", className)} {...props}>
+      {children}
+    </p>
+  );
+}
+
 const isEmpty = (children: ReactNode): boolean =>
   children === undefined || children === null || children === false || children === "";
 
-export { Field, FieldContent, FieldDescription, FieldError, FieldLabel };
+export { Field, FieldContent, FieldDescription, FieldError, FieldLabel, FormError };
