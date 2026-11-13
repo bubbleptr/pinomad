@@ -204,6 +204,11 @@ export interface AccountUser {
   readonly username: string;
   /** The account's verified email; absent on legacy accounts that have none yet. */
   readonly email?: string;
+  /**
+   * Stable and opaque: what this device files the pairings the account
+   * vouched for under (#640). Absent from servers that predate it.
+   */
+  readonly accountId?: string;
 }
 
 /** The signed-in account as GET /api/me reports it. */
@@ -594,9 +599,13 @@ const nativeRedirectBody = (value: unknown): string | undefined => {
 
 const userBody = (value: unknown): AccountProfile | undefined => {
   if (!isRecord(value) || !isRecord(value.user) || typeof value.user.username !== "string") return undefined;
-  const { username, email } = value.user;
+  const { username, email, accountId } = value.user;
   return {
-    user: { username, ...(typeof email === "string" ? { email } : {}) },
+    user: {
+      username,
+      ...(typeof email === "string" ? { email } : {}),
+      ...(typeof accountId === "string" && accountId !== "" ? { accountId } : {}),
+    },
     ...(value.needsEmail === true ? { needsEmail: true as const } : {}),
   };
 };

@@ -298,7 +298,7 @@ describe("Apple specifics", () => {
 
     const again = await post(started.relay, "/api/oauth/apple/native", started.idp.appleNative(IDENTITY.apple));
     expect(again.status).toBe(200);
-    expect(again.json.user).toEqual({ username: "ada@example.com", email: "ada@example.com" });
+    expect(again.json.user).toEqual({ accountId: expect.any(String), username: "ada@example.com", email: "ada@example.com" });
   });
 
   it("refuses a native token issued to another audience or with another nonce", async () => {
@@ -455,7 +455,7 @@ describe("a pending sign-in can't be finished by someone it was sent to", () => 
     const back = new URL(created.json.redirect as string);
     expect(back.protocol).toBe("pinomad:");
     const session = await post(started.relay, "/api/oauth/token", { code: back.searchParams.get("code"), code_verifier: verifier });
-    expect(session.json.user).toEqual({ username: STRANGER.email, email: STRANGER.email });
+    expect(session.json.user).toEqual({ accountId: expect.any(String), username: STRANGER.email, email: STRANGER.email });
   });
 
   it("lets only iOS itself finish a native Apple pending sign-in", async () => {
@@ -847,7 +847,7 @@ describe("re-auth without a password", () => {
     expect((await post(started.relay, "/api/me/email/code", { email: next, reauth }, a)).status).toBe(202);
     const changed = await post(started.relay, "/api/me/email", { email: next, code: started.mail.codeFor(next), reauth }, a);
     expect(changed.status).toBe(200);
-    expect((await api(started.relay, { path: "/api/me", headers: a })).json.user).toEqual({ username: next, email: next });
+    expect((await api(started.relay, { path: "/api/me", headers: a })).json.user).toEqual({ accountId: expect.any(String), username: next, email: next });
     // Neither works with no confirmation at all.
     expect((await post(started.relay, "/api/me/email/code", { email: "x@example.net" }, a)).status).toBe(400);
   });

@@ -24,7 +24,7 @@ import { isDataDirInUse, lockDataDir } from "./lock.ts";
 import type { OAuthProvider, ProviderIdentity } from "./oauth.ts";
 
 const DB_FILE = "server.sqlite";
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 11;
 
 // Sessions die 30 days after issue and are never renewed — a stolen token has a
 // hard ceiling, and re-logging-in is the only way forward.
@@ -271,6 +271,8 @@ export interface OAuthLimits {
  * username of an account that has none yet (ADR-0044 §8).
  */
 export interface AccountUser {
+  /** Stable and opaque (#640): what clients file the account's pairings under. */
+  readonly accountId: string;
   readonly username: string;
   readonly email?: string;
 }
@@ -869,16 +871,23 @@ const codeHash = (purpose: EmailCodePurpose, email: string, code: string): strin
 /** A users row as sign-in and the session read it. */
 interface UserRow {
   readonly id: number;
+  readonly accountId: string;
   readonly username: string | null;
   readonly email: string | null;
   readonly passwordHash: string | null;
 }
 
-const USER_SELECT = "SELECT id, username, email, password_hash AS passwordHash FROM users";
+const USER_SELECT = "SELECT id, account_id AS accountId, username, email, password_hash AS passwordHash FROM users";
 
 /** What responses show for an account (ADR-0044 §8). */
-const accountUser = (row: { readonly username: string | null; readonly email: string | null }): AccountUser =>
-  row.email === null ? { username: row.username ?? "" } : { username: row.email, email: row.email };
+const accountUser = (row: {
+  readonly accountId: string;
+  readonly username: string | null;
+  readonly email: string | null;
+}): AccountUser =>
+  row.email === null
+    ? { accountId: row.accountId, username: row.username ?? "" }
+    : { accountId: row.accountId, username: row.email, email: row.email };
 
 /** The login lockout's key for an existing account. */
 const accountLockKey = (userId: number): string => `user:${userId}`;
@@ -1143,6 +1152,24 @@ function migrate(db: DatabaseSync): void {
       );
       CREATE INDEX reauth_grants_session ON reauth_grants (session_hash);
       PRAGMA user_version = 10;
+      COMMIT;
+    `);
+  }
+  if (version < 11) {
+    // Clients key the pairings an account vouched for by this id (#640). Not
+    // users.id: that one may be reused after a deletion (schema.test.ts), and
+    // a random id says nothing about how many accounts there are. The trigger
+    // fills it on every insert, so no insert site has to know about it.
+    db.exec(`
+      BEGIN;
+      ALTER TABLE users ADD COLUMN account_id TEXT;
+      UPDATE users SET account_id = lower(hex(randomblob(16)));
+      CREATE UNIQUE INDEX users_account_id ON users (account_id);
+      CREATE TRIGGER users_account_id_fill AFTER INSERT ON users WHEN NEW.account_id IS NULL
+      BEGIN
+        UPDATE users SET account_id = lower(hex(randomblob(16))) WHERE id = NEW.id;
+      END;
+      PRAGMA user_version = 11;
       COMMIT;
     `);
   }
@@ -2083,9 +2110,10 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
             .run(email, at, hash, at).lastInsertRowid,
         );
         const session = issueSession(userId, device);
+        const created = userById(userId)!;
         db.exec("COMMIT");
         userFailures.reset(lockKey);
-        return { status: "ok", ...session, user: { username: email, email } };
+        return { status: "ok", ...session, user: accountUser(created) };
       } catch (error) {
         db.exec("ROLLBACK");
         throw error;
@@ -2165,6 +2193,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       if (typeof checked === "string") return { status: "refused", reason: checked };
       const lockKey = accountLockKey(userId);
       let previous: string | null | undefined;
+      let accountId = "";
       db.exec("BEGIN IMMEDIATE");
       try {
         // As for a password change: a reset while scrypt ran voids the
@@ -2186,6 +2215,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
         }
         db.prepare("UPDATE users SET email = ?, email_verified_at = ? WHERE id = ?").run(email, now(), userId);
         previous = user.email;
+        accountId = user.accountId;
         db.exec("COMMIT");
       } catch (error) {
         db.exec("ROLLBACK");
@@ -2202,17 +2232,17 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
             "Contact your server's operator.\n",
         );
       }
-      return { status: "ok", user: { username: email, email } };
+      return { status: "ok", user: { accountId, username: email, email } };
     },
 
     authenticate(token) {
       const row = db
         .prepare(
-          `SELECT s.user_id AS userId, u.username AS username, u.email AS email, s.expires_at AS expiresAt, s.device_id AS deviceId
+          `SELECT s.user_id AS userId, u.account_id AS accountId, u.username AS username, u.email AS email, s.expires_at AS expiresAt, s.device_id AS deviceId
            FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?`,
         )
         .get(sha256Hex(token)) as
-        | { userId: number; username: string | null; email: string | null; expiresAt: number; deviceId: number | null }
+        | { userId: number; accountId: string; username: string | null; email: string | null; expiresAt: number; deviceId: number | null }
         | undefined;
       if (row === undefined || row.expiresAt <= now()) return undefined;
       return {
