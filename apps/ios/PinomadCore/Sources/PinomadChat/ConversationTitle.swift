@@ -1,3 +1,5 @@
+import Foundation
+
 /// The title rule the host enforces, checked before sending so an invalid
 /// one never leaves the app. Mirrors `conversationTitleProblem` in
 /// packages/protocol/src/view.ts.

@@ -93,7 +93,9 @@ struct EmailFormSections: View {
             busy = false
             if let refused {
                 // Back to the confirmation, with what was typed kept.
-                if refused.code == "invalid_reauth" { reconfirm = true }
+                // A refused confirmation code shows on the step's own field, so
+                // the step has to be on screen to say it.
+                if refused.code == "invalid_reauth" || step.fieldError != nil { reconfirm = true }
                 failure = step.unclaimed(refused)
             } else {
                 then()

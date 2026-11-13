@@ -404,6 +404,7 @@ extension AppModel {
               runtime.queuedEditPreparing.isEmpty,
               let input = session.queuedInput(submissionId: item.id)
         else { return }
+        runtime.clearToast(key: "edit-queued")
         let copy = QueuedEdit.Copy(
             conversationId: id, id: item.id, text: input.text, images: input.images,
             skills: input.skills, attachments: input.attachments)
@@ -440,7 +441,7 @@ extension AppModel {
                 runtime.queuedEditPreparing.remove(id)
                 runtime.queuePending.remove(item.id)
                 runtime.showToast(
-                    "Couldn't load an image for editing. Try again.", level: .error)
+                    "Couldn't load an image for editing. Try again.", level: .error, key: "edit-queued")
             }
         }
     }
