@@ -380,3 +380,30 @@ describe("SidePanel close", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });
+
+describe("SidePanel while drafting", () => {
+  it("offers only plugin surfaces in the phone dialog's switch", () => {
+    const notes = { plugin: "notes", surface: "plugin:notes:board", label: "Board", component: () => <p>board</p> } as const;
+    render(
+      <SidePanel
+        view={fakeView()}
+        remote={fakeRemote(fakeView())}
+        shownId={undefined}
+        drafting
+        narrow
+        open
+        surface={notes.surface}
+        pluginPanels={[notes]}
+        busy={false}
+        liveActivity={false}
+        onOpenChange={vi.fn()}
+        onSelectSurface={vi.fn()}
+        openInPanel={vi.fn()}
+        onOpenInMain={vi.fn()}
+      />,
+    );
+    const dialog = screen.getByRole("dialog", { name: "Side panel" });
+    expect(within(dialog).getByRole("button", { name: "Board" })).toBeInTheDocument();
+    for (const name of ["Tasks", "Changes", "Terminal"]) expect(within(dialog).queryByRole("button", { name })).toBeNull();
+  });
+});

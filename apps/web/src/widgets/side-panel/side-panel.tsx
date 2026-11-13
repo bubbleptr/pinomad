@@ -610,6 +610,7 @@ export function SidePanel({
   open,
   surface: selected,
   pluginPanels = [],
+  drafting = false,
   busy,
   liveActivity,
   onOpenChange,
@@ -625,6 +626,8 @@ export function SidePanel({
   open: boolean;
   surface: PanelSurface;
   pluginPanels?: readonly PluginPanel[];
+  /** No conversation yet; the phone dialog's switch offers only plugin surfaces, as the header does. */
+  drafting?: boolean;
   /** The shown conversation is running; Changes refreshes once it settles. */
   busy: boolean;
   liveActivity: boolean;
@@ -697,6 +700,7 @@ export function SidePanel({
               surface={surface}
               liveActivity={liveActivity}
               pluginPanels={pluginPanels}
+              drafting={drafting}
               onSelect={onSelectSurface}
             />,
             close,

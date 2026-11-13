@@ -1481,6 +1481,7 @@ export function Workbench({
           open={panelShown}
           surface={panelSurface}
           pluginPanels={plugins.panels}
+          drafting={drafting}
           busy={busy}
           liveActivity={liveActivity}
           onOpenChange={setPanelOpen}
@@ -1502,6 +1503,7 @@ export function Workbench({
           open={panelShown}
           surface={panelSurface}
           pluginPanels={plugins.panels}
+          drafting={drafting}
           busy={busy}
           liveActivity={liveActivity}
           onOpenChange={setPanelOpen}
