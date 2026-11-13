@@ -7,6 +7,7 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "../../shared/ui/context-menu.tsx";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
+import { useErrorToast } from "../../shared/ui/toast.tsx";
 import { Tab, TabList, TabMenu } from "../../shared/ui/tab-list.tsx";
 import { Suspense, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
@@ -105,7 +106,7 @@ export function TerminalSurface({
   const live = connected && confirmed;
   const [, rerender] = useState(0);
   const [renaming, setRenaming] = useState<TerminalInfo>();
-  const [error, setError] = useState<string>();
+  const error = useErrorToast();
 
   const memory = memoryOf(terminals);
   const read = list === undefined ? undefined : memory.get(list.owner);
@@ -122,22 +123,18 @@ export function TerminalSurface({
     memory.set(list.owner, { ...(pending ? { selected: selectedId, pending: id } : { selected: id }), seen: list.terminals });
     rerender((n) => n + 1);
   };
-  const run = (action: Promise<unknown>): void => {
-    setError(undefined);
-    action.catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
+  const run = (action: Promise<unknown>, failure: string): void => {
+    error.clear();
+    action.catch((reason: unknown) => error.show(`${failure}: ${reason instanceof Error ? reason.message : String(reason)}`));
   };
   const openTerminal = (): void => {
     if (conversationId === undefined) return;
-    setError(undefined);
-    terminals.open(conversationId, OPEN_SIZE).then(
-      (id) => select(id, true),
-      (reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)),
-    );
+    run(terminals.open(conversationId, OPEN_SIZE).then((id) => select(id, true)), "Couldn't open a terminal");
   };
 
   const restart = (terminal: TerminalInfo): void =>
-    run(terminals.restart(terminal.id, { cols: terminal.cols, rows: terminal.rows }));
-  const close = (terminal: TerminalInfo): void => run(terminals.close(terminal.id));
+    run(terminals.restart(terminal.id, { cols: terminal.cols, rows: terminal.rows }), "Couldn't restart the terminal");
+  const close = (terminal: TerminalInfo): void => run(terminals.close(terminal.id), "Couldn't close the terminal");
   const full = list !== undefined && list.terminals.length >= list.limit;
   const tabs = list === undefined || list.terminals.length === 0 ? null : (
     <TerminalTabs
@@ -195,11 +192,6 @@ export function TerminalSurface({
           Reconnecting…
         </div>
       ) : null}
-      {error === undefined ? null : (
-        <span className="text-xs/5 text-muted-foreground shrink-0 px-3 py-2" role="alert">
-          {error}
-        </span>
-      )}
       <div className="flex min-h-0 flex-1 flex-col">
         {conversationId === undefined ? (
           <Message>Open a conversation to use its terminals.</Message>

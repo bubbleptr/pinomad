@@ -20,7 +20,7 @@ import {
 } from "../../shared/ui/combobox.tsx";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue, selectTriggerClassName } from "../../shared/ui/select.tsx";
 import { SideNav, SideNavItem, SideNavSection } from "../../shared/ui/side-nav.tsx";
-import { Field, FieldError, FieldLabel } from "../../shared/ui/field.tsx";
+import { Field, FieldError, FieldLabel, FormError } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../../shared/ui/input-group.tsx";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -1010,6 +1010,7 @@ function AgentRoleCard({
   const [error, setError] = useState<string | undefined>(undefined);
   const modelSummary = role.model === undefined ? undefined : summaryOf(view.models, refOfRoleModel(role.model));
   const remove = (): void => {
+    setError(undefined);
     void remote.controller.deleteAgent(role.name).catch((reason: unknown) => {
       setError(reason instanceof Error ? reason.message : String(reason));
     });
@@ -1059,11 +1060,7 @@ function AgentRoleCard({
             </div>
           </div>
         ) : null}
-        {error === undefined ? null : (
-          <span className="text-xs/5 text-muted-foreground" role="alert" style={{ color: "var(--destructive)" }}>
-            {error}
-          </span>
-        )}
+        <FormError>{error}</FormError>
       </CardContent>
     </Card>
   );
@@ -1086,6 +1083,7 @@ function AgentProblemCard({
   const [error, setError] = useState<string | undefined>(undefined);
   const deletable = agentNameProblem(problem.file.slice(0, -".md".length)) === undefined;
   const remove = (): void => {
+    setError(undefined);
     void remote.controller.deleteAgent(problem.file.slice(0, -".md".length)).catch((reason: unknown) => {
       setError(reason instanceof Error ? reason.message : String(reason));
     });
@@ -1124,11 +1122,7 @@ function AgentProblemCard({
             </div>
           </div>
         ) : null}
-        {error === undefined ? null : (
-          <span className="text-xs/5 text-muted-foreground" role="alert" style={{ color: "var(--destructive)" }}>
-            {error}
-          </span>
-        )}
+        <FormError>{error}</FormError>
       </CardContent>
     </Card>
   );

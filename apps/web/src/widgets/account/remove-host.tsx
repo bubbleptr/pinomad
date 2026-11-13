@@ -5,7 +5,7 @@ import type { AccountError } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
 import { accountErrorMessage } from "./account-error.ts";
 import { useConfirmIdentity } from "./confirm-identity.tsx";
-import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
+import { FormError } from "../../shared/ui/field.tsx";
 
 export interface RemoveHostProps {
   readonly account: AccountModel;
@@ -36,7 +36,7 @@ export function RemoveHostDialog({ account, hostId, name, serverOrigin, onClose 
       if (result.ok) onClose(true);
       else {
         if (result.error.code === "invalid_reauth") identity.reset();
-        setError(result.error);
+        setError(identity.claim(result.error) ? undefined : result.error);
       }
     })();
   };
@@ -49,12 +49,7 @@ export function RemoveHostDialog({ account, hostId, name, serverOrigin, onClose 
       action={<Button variant="destructive" loading={busy} disabled={!identity.ready} onClick={submit}>Remove host</Button>}
     >
       {identity.field}
-      {error === undefined ? null : (
-        <Alert variant="destructive">
-          <AlertTitle>Couldn't remove the host</AlertTitle>
-          <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
-        </Alert>
-      )}
+      <FormError>{error === undefined ? undefined : accountErrorMessage(error)}</FormError>
     </ConfirmDialog>
   );
 }

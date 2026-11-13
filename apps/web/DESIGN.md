@@ -89,6 +89,8 @@ token 都在 `src/app/tokens.css`，分三层：
 
 输入框、选择器等也在 `src/shared/ui/`：`input.tsx`、`textarea.tsx`、`select.tsx`、`combobox.tsx`（带搜索的选择器）、`checkbox.tsx`、`switch.tsx`、`radio-group.tsx`、`segmented-control.tsx`。名称、说明和错误用 `field.tsx` 的 `Field` / `FieldLabel` / `FieldDescription` / `FieldError` 包起来，它们自动关联到控件（`for`、`aria-describedby`）；只给读屏的名称用 `<FieldLabel className="sr-only">`。
 
+表单出错时分两种：改某一个输入就能解决的（密码错、验证码不对、名字不合法、链接格式不对）放进那个字段的 `FieldError`，并在 `Field` 上设 `invalid`；和整个表单有关的（连不上服务器、尝试太多次、宿主拒绝）用 `FormError`，放在提交按钮那一行上方，对话框里就放在 footer 上方，只写原因，不加 "Couldn't …" 标题，旁边的按钮已经说明了是什么操作。对话框里的错误留在对话框里，不弹 toast。表单错误都不用 `Alert`。
+
 ### 不归这里管的
 
 原生 `<button>` 做的可点区域不是动作按钮，不套这四档：设置里的提供方磁贴、侧栏会话行、附件和图片预览、问题卡片的分段指示。它们的样式跟着各自的组件走。
@@ -116,8 +118,8 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 
 | 组件 | 用在哪 |
 | --- | --- |
-| `alert.tsx` 的 `Alert` | 一直留着、直到情况变了才消失的说明：操作失败、连接断了、请求过期。`variant` 是 `info` / `success` / `warning` / `destructive`，图标随 `variant` 自动给。里面依次放 `AlertTitle`、可选的 `AlertDescription` 和 `AlertAction`（行尾的按钮，`size="sm"` 或默认尺寸都行）。`warning` 和 `destructive` 的角色是 `alert`，会打断读屏；`info` 和 `success` 是 `status`。贴着面板顶边、横跨整个面板的（连接状态、版本不匹配）加 `className="rounded-none"`。 |
-| `toast.tsx` 的 `useToast()` | 一闪而过、不需要留在页面上的结果：命令失败、对方没应答、新主机加入。`toast({ description, type, timeout, id, action, onClose })` 返回关闭函数。普通的 5 秒后消失（悬停、聚焦或窗口在后台时暂停），`type: "error"` 和 `timeout: 0` 的等用户关；相同 `id` 会替换旧的那条。最多显示 5 条，新的在最上面，F6 跳进去。要求外面有 `Toaster`：`App` 在最外层包了一层（`className="top-12"` 让开顶栏）；`AppFrame` 也包了一层，供单独渲染它的 story 和测试用，嵌在别的 `Toaster` 里时不另起一叠。外面没有时 toast 被丢掉，开发环境会警告。它是 `popover="manual"`，在顶层（top layer），对话框打开时也在最上层、能点。 |
+| `alert.tsx` 的 `Alert` | 一直留着、直到情况变了才消失的说明：连接断了、请求过期、宿主太旧、加载失败要重试、升级失败，或者整块内容被它替换（配对失败页、安装失败）。表单提交的错误不用它，见上面"表单控件"。`variant` 是 `info` / `success` / `warning` / `destructive`，图标随 `variant` 自动给。里面依次放 `AlertTitle`、可选的 `AlertDescription` 和 `AlertAction`（行尾的按钮，`size="sm"` 或默认尺寸都行）。`warning` 和 `destructive` 的角色是 `alert`，会打断读屏；`info` 和 `success` 是 `status`。贴着面板顶边、横跨整个面板的（连接状态、版本不匹配）加 `className="rounded-none"`。 |
+| `toast.tsx` 的 `useToast()` | 一闪而过、不需要留在页面上的结果：命令失败、对方没应答、新主机加入，以及旁边没有表单可挂的一次性操作失败（停止进程、关终端、开关本机宿主、生成配对链接）。错误文案以 "Couldn't …:" 开头，说清楚是哪个操作。能重试的操作用 `useErrorToast()`：`show` 替换这个操作上一条错误，重试时 `clear`，不然错误 toast 不会自动消失、会越堆越多。`toast({ description, type, timeout, id, action, onClose })` 返回关闭函数。普通的 5 秒后消失（悬停、聚焦或窗口在后台时暂停），`type: "error"` 和 `timeout: 0` 的等用户关；相同 `id` 会替换旧的那条。最多显示 5 条，新的在最上面，F6 跳进去。要求外面有 `Toaster`：`App` 在最外层包了一层（`className="top-12"` 让开顶栏）；`AppFrame` 也包了一层，供单独渲染它的 story 和测试用，嵌在别的 `Toaster` 里时不另起一叠。外面没有时 toast 被丢掉，开发环境会警告。它是 `popover="manual"`，在顶层（top layer），对话框打开时也在最上层、能点。 |
 | `badge.tsx` 的 `Badge` | 行名称旁边的短标签，只读：This device、Connected、new、interrupted。`variant` 是 `default` / `success` / `destructive` / `warning`（橙色）/ `muted`（灰色，用于已失效的东西）。 |
 | `status-dot.tsx` 的 `StatusDot` | 8px 的状态灯：在线、运行中、等待回答、失败。`label` 必填（读屏念它），`pulsing` 表示进行中，`tooltip` 悬停时也显示文字。 |
 | `spinner.tsx` 的 `Spinner` | 等待中的一小块区域，旁边通常有一行说明文字。`size="sm"`（14px）放在文字行里，默认 `md`（20px）放在空的面板中间。读屏念 "Loading"，知道在加载什么时写 `aria-label`。按钮自己的加载状态用 `Button` 的 `loading`，不要另放转圈。 |

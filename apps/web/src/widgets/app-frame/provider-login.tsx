@@ -1,6 +1,6 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { Link } from "../../shared/ui/link.tsx";
-import { Field, FieldContent, FieldDescription, FieldError, FieldLabel } from "../../shared/ui/field.tsx";
+import { Field, FieldContent, FieldDescription, FieldError, FieldLabel, FormError } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { RadioGroup, RadioGroupItem } from "../../shared/ui/radio-group.tsx";
 import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
@@ -159,8 +159,7 @@ export function LoginPanel({
     return (
       <div className="flex flex-col gap-3">
         {intro}
-        {startError === undefined ? null : <Alert variant="destructive"><AlertTitle>Couldn't start the login</AlertTitle><AlertDescription>{startError}</AlertDescription></Alert>}
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="primary"
             loading={starting}
@@ -170,6 +169,7 @@ export function LoginPanel({
             {method === "api_key" ? "Try again" : (signIn ?? "Sign in")}
           </Button>
           <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+          <FormError>{startError}</FormError>
         </div>
       </div>
     );
@@ -233,16 +233,8 @@ function CancelRow({ error, onCancel }: { error?: string; onCancel: () => void }
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Button variant="secondary" onClick={onCancel}>Cancel</Button>
-      {error === undefined ? null : <InlineError message={error} />}
+      <FormError>{error}</FormError>
     </div>
-  );
-}
-
-export function InlineError({ message }: { message: string }) {
-  return (
-    <span className="text-xs/5 text-muted-foreground" role="alert" style={{ color: "var(--destructive)" }}>
-      {message}
-    </span>
   );
 }
 
@@ -403,6 +395,7 @@ function PromptForm({
   };
 
   const groupLabel = useId();
+  const groupError = useId();
   return (
     <form onSubmit={submit} autoComplete="off">
       <div className="flex flex-col gap-3">
@@ -412,6 +405,7 @@ function PromptForm({
             <RadioGroup
               aria-labelledby={groupLabel}
               aria-invalid={error !== undefined || undefined}
+              aria-describedby={error === undefined ? undefined : groupError}
               value={value}
               onValueChange={(next: string) => setValue(next)}
               disabled={!connected}
@@ -426,7 +420,7 @@ function PromptForm({
                 </Field>
               ))}
             </RadioGroup>
-            {error === undefined ? null : <p role="alert" className="text-xs/5 text-destructive">{error}</p>}
+            <FormError id={groupError}>{error}</FormError>
           </div>
         ) : (
           <Field disabled={!connected} invalid={error !== undefined}>
@@ -448,7 +442,7 @@ function PromptForm({
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="primary" type="submit" loading={sending} disabled={!canSubmit}>Continue</Button>
           <Button variant="secondary" onClick={onCancel}>Cancel</Button>
-          {cancelError === undefined ? null : <InlineError message={cancelError} />}
+          <FormError>{cancelError}</FormError>
         </div>
       </div>
     </form>

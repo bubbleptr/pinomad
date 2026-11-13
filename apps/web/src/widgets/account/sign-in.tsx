@@ -1,14 +1,15 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { Separator } from "../../shared/ui/separator.tsx";
-import { Field, FieldLabel } from "../../shared/ui/field.tsx";
+import { Field, FieldError, FieldLabel, FormError } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { useEffect, useState } from "react";
 import { isSecureServerOrigin, type AccountError, type AccountResult, type AuthMethods } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
 import { knownSignInProviders, SignInProviderMark } from "../../entities/provider/sign-in-provider.tsx";
-import { accountErrorMessage } from "./account-error.ts";
+import { accountErrorMessage, fieldErrorMessage as fieldMessage, formErrorMessage } from "./account-error.ts";
 import { CODE_INPUT, MIN_PASSWORD_LENGTH, NEW_PASSWORD_INPUT, passwordLength } from "./code-input.ts";
 import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
+import { useToast } from "../../shared/ui/toast.tsx";
 
 /** The Server field's value and setter; absent on a cookie page, which is the server. */
 export interface ServerField {
@@ -18,11 +19,9 @@ export interface ServerField {
 
 type Step = "sign-in" | "create" | "reset";
 
-interface Notice {
-  readonly variant: "success" | "destructive";
-  readonly title: string;
-  readonly description: string;
-}
+/** A step's failure, also handed up so the screen can show a server address error on its Server field. */
+type OnError = (error: AccountError | undefined) => void;
+
 
 /** How long Resend code waits after a send. */
 export const RESEND_COOLDOWN_MS = 30_000;
@@ -74,16 +73,19 @@ export function SignInScreen({
 }) {
   const [step, setStep] = useState<Step>("sign-in");
   const [email, setEmail] = useState("");
-  const [notice, setNotice] = useState<Notice | undefined>(() =>
-    initialError === undefined
-      ? undefined
-      : { variant: "destructive", title: "Couldn't sign in", description: accountErrorMessage({ code: initialError }) },
-  );
+  const toast = useToast();
+  // A provider sign-in that came back refused; any new attempt ends it.
+  const [returned, setReturned] = useState(initialError);
+  const [serverError, setServerError] = useState<string>();
   const methods = useAuthMethods(account, server?.origin);
   const serverOrigin = server === undefined ? undefined : server.origin.trim();
   const target = serverOrigin === undefined ? {} : { serverOrigin };
+  const onError: OnError = (error) => {
+    setReturned(undefined);
+    setServerError(fieldMessage(error, "server"));
+  };
   const go = (next: Step): void => {
-    setNotice(undefined);
+    onError(undefined);
     setStep(next);
   };
   const heading = { "sign-in": "Sign in", create: "Create an account", reset: "Reset your password" }[step];
@@ -95,21 +97,25 @@ export function SignInScreen({
           <span className="text-xs/5 text-muted-foreground">See the hosts on your account and connect without a QR code.</span>
         ) : null}
       </div>
-      {notice === undefined ? null : (
-        <Alert variant={notice.variant}>
-          <AlertTitle>{notice.title}</AlertTitle>
-          <AlertDescription>{notice.description}</AlertDescription>
+      {returned === undefined ? null : (
+        <Alert variant="destructive">
+          <AlertTitle>Couldn't sign in</AlertTitle>
+          <AlertDescription>{accountErrorMessage({ code: returned })}</AlertDescription>
         </Alert>
       )}
       {server === undefined ? null : (
-        <Field>
+        <Field invalid={serverError !== undefined}>
           <FieldLabel>Server</FieldLabel>
           <Input
             placeholder="https://nomad.example.com"
             value={server.origin}
-            onChange={(event) => server.setOrigin(event.target.value)}
+            onChange={(event) => {
+              setServerError(undefined);
+              server.setOrigin(event.target.value);
+            }}
             {...{ autoComplete: "url" }}
           />
+          <FieldError>{serverError}</FieldError>
         </Field>
       )}
       {step === "sign-in" ? (
@@ -120,7 +126,7 @@ export function SignInScreen({
           onEmail={setEmail}
           target={target}
           onStep={go}
-          onError={(error) => setNotice(error === undefined ? undefined : { variant: "destructive", title: "Couldn't sign in", description: accountErrorMessage(error) })}
+          onError={onError}
         />
       ) : (
         <CodeFlow
@@ -138,10 +144,11 @@ export function SignInScreen({
               ? account.register({ email: address, code, password, ...target })
               : account.resetPassword({ email: address, code, password, ...target })
           }
+          onError={onError}
           onDone={() => {
             if (step === "reset") {
               setStep("sign-in");
-              setNotice({ variant: "success", title: "Password reset", description: "Password reset. Sign in with your new password." });
+              toast({ description: "Password reset. Sign in with your new password." });
             }
           }}
           onBack={() => go("sign-in")}
@@ -166,27 +173,32 @@ function SignInStep({
   onEmail: (email: string) => void;
   target: { serverOrigin?: string };
   onStep: (step: Step) => void;
-  onError: (error: AccountError | undefined) => void;
+  onError: OnError;
 }) {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState<string>();
+  const [error, setError] = useState<AccountError>();
+  const report = (next: AccountError | undefined): void => {
+    setError(next);
+    onError(next);
+  };
   const providers = account.providerFlow === undefined ? [] : knownSignInProviders(methods?.providers ?? []);
   const needsOrigin = "serverOrigin" in target && target.serverOrigin === "";
   const ready = email.trim() !== "" && password !== "" && !needsOrigin;
   const settle = (result: AccountResult<void>): void => {
     setBusy(undefined);
-    if (!result.ok) onError(result.error);
+    if (!result.ok) report(result.error);
   };
   const submit = (): void => {
     if (!ready || busy !== undefined) return;
     setBusy("password");
-    onError(undefined);
+    report(undefined);
     void account.login({ username: email.trim(), password, ...target }).then(settle);
   };
   const withProvider = (provider: string): void => {
     if (busy !== undefined) return;
     setBusy(provider);
-    onError(undefined);
+    report(undefined);
     void account.providerSignIn({ provider, ...target }).then(settle);
   };
   return (
@@ -213,29 +225,38 @@ function SignInStep({
           </div>
         </div>
       )}
-      <Field>
+      <Field invalid={fieldMessage(error, "email") !== undefined}>
         <FieldLabel>Email</FieldLabel>
         <Input
           value={email}
-          onChange={(event) => onEmail(event.target.value)}
+          onChange={(event) => {
+            setError(undefined);
+            onEmail(event.target.value);
+          }}
           {...{ autoComplete: "username" }}
           onKeyDown={(event) => {
             if (event.key === "Enter") submit();
           }}
         />
+        <FieldError>{fieldMessage(error, "email")}</FieldError>
       </Field>
-      <Field>
+      <Field invalid={fieldMessage(error, "password") !== undefined}>
         <FieldLabel>Password</FieldLabel>
         <Input
           type="password"
           value={password}
-          onChange={(event) => setPassword(event.target.value)}
+          onChange={(event) => {
+            setError(undefined);
+            setPassword(event.target.value);
+          }}
           {...{ autoComplete: "current-password" }}
           onKeyDown={(event) => {
             if (event.key === "Enter") submit();
           }}
         />
+        <FieldError>{fieldMessage(error, "password")}</FieldError>
       </Field>
+      <FormError>{formErrorMessage(error, ["server", "email", "password"])}</FormError>
       <Button variant="primary" className="w-full" loading={busy === "password"} disabled={!ready} onClick={submit}>Sign in</Button>
       {methods?.email !== true ? null : (
         <div className="flex justify-between gap-2">
@@ -259,6 +280,7 @@ function CodeFlow({
   onEmail,
   send,
   finish,
+  onError,
   onDone,
   onBack,
 }: {
@@ -267,6 +289,7 @@ function CodeFlow({
   onEmail: (email: string) => void;
   send: (email: string) => Promise<AccountResult<void>>;
   finish: (email: string, code: string, password: string) => Promise<AccountResult<void>>;
+  onError: OnError;
   onDone: () => void;
   onBack: () => void;
 }) {
@@ -275,7 +298,11 @@ function CodeFlow({
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<AccountError>();
+  const [error, setErrorState] = useState<AccountError>();
+  const setError = (next: AccountError | undefined): void => {
+    setErrorState(next);
+    onError(next);
+  };
   const now = useTicker(sentTo !== undefined && Date.now() - sentAt < RESEND_COOLDOWN_MS);
   const wait = Math.max(0, Math.ceil((sentAt + RESEND_COOLDOWN_MS - now) / 1000));
   const sendCode = (address: string): void => {
@@ -306,29 +333,26 @@ function CodeFlow({
       else setError(result.error);
     });
   };
-  const errorBanner =
-    error === undefined ? null : (
-      <Alert variant="destructive">
-        <AlertTitle>{sentTo === undefined ? "Couldn't send the code" : kind === "create" ? "Couldn't create the account" : "Couldn't reset the password"}</AlertTitle>
-        <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
-      </Alert>
-    );
   if (sentTo === undefined) {
     return (
       <div className="flex flex-col gap-3">
-        <Field>
+        <Field invalid={fieldMessage(error, "email") !== undefined}>
           <FieldLabel>Email</FieldLabel>
           <Input
             type="email"
             value={email}
-            onChange={(event) => onEmail(event.target.value)}
+            onChange={(event) => {
+              setErrorState(undefined);
+              onEmail(event.target.value);
+            }}
             {...{ autoComplete: "email" }}
             onKeyDown={(event) => {
               if (event.key === "Enter") sendCode(email.trim());
             }}
           />
+          <FieldError>{fieldMessage(error, "email")}</FieldError>
         </Field>
-        {errorBanner}
+        <FormError>{formErrorMessage(error, ["server", "email"])}</FormError>
         <Button variant="primary" className="w-full" loading={busy} disabled={email.trim() === ""} onClick={() => sendCode(email.trim())}>Send code</Button>
         <div className="flex">
           <Button variant="ghost" size="sm" onClick={onBack}>Sign in instead</Button>
@@ -339,30 +363,38 @@ function CodeFlow({
   return (
     <div className="flex flex-col gap-3">
       <span className="text-sm/5">Enter the 6-digit code we sent to {sentTo}.</span>
-      <Field>
+      <Field invalid={fieldMessage(error, "code") !== undefined}>
         <FieldLabel>Code</FieldLabel>
         <Input
           value={code}
-          onChange={(event) => setCode(event.target.value)}
+          onChange={(event) => {
+            if (error?.code === "invalid_code") setErrorState(undefined);
+            setCode(event.target.value);
+          }}
           {...CODE_INPUT}
           onKeyDown={(event) => {
             if (event.key === "Enter") submit();
           }}
         />
+        <FieldError>{fieldMessage(error, "code")}</FieldError>
       </Field>
-      <Field>
+      <Field invalid={fieldMessage(error, "new-password") !== undefined}>
         <FieldLabel>New password</FieldLabel>
         <Input
           type="password"
           value={password}
-          onChange={(event) => setPassword(event.target.value)}
+          onChange={(event) => {
+            if (fieldMessage(error, "new-password") !== undefined) setErrorState(undefined);
+            setPassword(event.target.value);
+          }}
           {...NEW_PASSWORD_INPUT}
           onKeyDown={(event) => {
             if (event.key === "Enter") submit();
           }}
         />
+        <FieldError>{fieldMessage(error, "new-password")}</FieldError>
       </Field>
-      {errorBanner}
+      <FormError>{formErrorMessage(error, ["server", "code", "new-password"])}</FormError>
       <Button
         variant="primary"
         className="w-full"

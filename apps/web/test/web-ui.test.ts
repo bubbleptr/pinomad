@@ -3850,10 +3850,12 @@ it("shows the agent editor's name rule and the host's already-exists error inlin
   const editor = page.getByRole("dialog", { name: "New agent" });
 
   // A bad name trips the shared rule without touching the host.
-  await editor.getByRole("textbox", { name: "Name", exact: true }).fill("Reviewer");
+  const nameInput = editor.getByRole("textbox", { name: "Name", exact: true });
+  await nameInput.fill("Reviewer");
   await editor.getByRole("textbox", { name: "Description", exact: true }).fill("d");
   await editor.getByRole("button", { name: "Save", exact: true }).click();
   await editor.getByText("Name must be lowercase letters, digits and hyphens (max 32)", { exact: true }).waitFor();
+  expect(await nameInput.getAttribute("aria-invalid")).toBe("true");
   await expect
     .poll(async () => (await import("node:fs/promises")).readdir(join(dir.path, "agents")))
     .toEqual([]);

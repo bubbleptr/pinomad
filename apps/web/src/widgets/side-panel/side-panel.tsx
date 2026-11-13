@@ -9,6 +9,7 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogContent } from "@/shared/ui/dialog";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
+import { useErrorToast } from "../../shared/ui/toast.tsx";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "../../shared/ui/item.tsx";
 import { ResizeHandle, useResizableWidth } from "../../shared/ui/resize-handle.tsx";
 import { Suspense, useEffect, useId, useState, type ReactNode } from "react";
@@ -451,7 +452,7 @@ function ProcessDetail({
 }) {
   const [ended, setEnded] = useState<string>();
   const [stopping, setStopping] = useState(false);
-  const [error, setError] = useState<string>();
+  const error = useErrorToast();
   const canStop = isProcessActive(process.state) && list.unavailable === undefined;
   const lost =
     process.state === "lost"
@@ -463,11 +464,11 @@ function ProcessDetail({
     + (process.state === "lost" && process.pid !== undefined ? ` (pid ${process.pid})` : "");
   const stop = (): void => {
     setStopping(true);
-    setError(undefined);
+    error.clear();
     remote.processes.stop(conversationId, process.id).then(
       () => setStopping(false),
       (reason: unknown) => {
-        setError(reason instanceof Error ? reason.message : String(reason));
+        error.show(`Couldn't stop ${process.name}: ${reason instanceof Error ? reason.message : String(reason)}`);
         setStopping(false);
       },
     );
@@ -496,11 +497,6 @@ function ProcessDetail({
       <div className="shrink-0 border-b border-border px-3 py-2">
         <div className="break-all font-mono text-xs">{process.command}</div>
         <div className="mt-1 text-xs text-muted-foreground">{status}</div>
-        {error === undefined ? null : (
-          <span role="alert" className="text-xs/5 text-muted-foreground mt-1">
-            {error}
-          </span>
-        )}
       </div>
       <div className="min-h-0 flex-1">
         {unavailable === undefined ? (

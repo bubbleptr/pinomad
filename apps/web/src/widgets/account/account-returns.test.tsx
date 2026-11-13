@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { AccountContext } from "../../entities/account/account-context.tsx";
 import type { AccountModel } from "../../entities/account/account-model.ts";
 import { HostsContext } from "../../entities/host/host-store.ts";
+import { Toaster } from "../../shared/ui/toast.tsx";
 import { fakeAccount, fakeHosts, signedIn } from "../../test/story-fixtures.tsx";
 import { AccountEmail } from "./account-email.tsx";
 import { AccountPanel } from "./account-panel.tsx";
@@ -19,13 +20,15 @@ vi.mock("../../entities/account/oauth-return.ts", () => ({
 describe("after the user moved on", () => {
   it("says how a provider link went on the account's hosts page too", async () => {
     render(
-      <HostsContext.Provider value={fakeHosts([])}>
-        <AccountContext.Provider value={fakeAccount(signedIn())}>
-          <AccountPanel initialPage="hosts" />
-        </AccountContext.Provider>
-      </HostsContext.Provider>,
+      <Toaster>
+        <HostsContext.Provider value={fakeHosts([])}>
+          <AccountContext.Provider value={fakeAccount(signedIn())}>
+            <AccountPanel initialPage="hosts" />
+          </AccountContext.Provider>
+        </HostsContext.Provider>
+      </Toaster>,
     );
-    expect(await screen.findByText("Google linked")).toBeTruthy();
+    expect(await screen.findByText("Google linked. You can sign in with Google now.")).toBeTruthy();
   });
 
   it("ignores an email save that lands after its dialog was closed and opened again", async () => {

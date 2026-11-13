@@ -101,15 +101,18 @@ describe("HostLinkEntry", () => {
   });
 
   it.each([
-    ["not_found", 404, /No host is waiting with this code/],
-    ["rate_limited", 429, /Too many wrong codes/],
-    ["network", undefined, /Can't reach the server/],
-  ])("says what a %s lookup means", async (code, status, message) => {
+    ["not_found", 404, /No host is waiting with this code/, true],
+    ["rate_limited", 429, /Too many wrong codes/, false],
+    ["network", undefined, /Can't reach the server/, false],
+  ])("says what a %s lookup means", async (code, status, message, onField) => {
     renderEntry(model({ lookupHostLink: vi.fn(() => fail(code, status)) }));
-    await lookUp();
+    const user = await lookUp();
     expect(await screen.findByText(message)).toBeInTheDocument();
-    // Still on the entry, with the code kept for another try.
+    // Still on the entry, with the code kept for another try; a wrong code is the field's to fix.
     expect(codeInput()).toHaveValue("KXHN-BWCV");
+    expect(codeInput().getAttribute("aria-invalid")).toBe(onField ? "true" : null);
+    await user.type(codeInput(), "{Backspace}");
+    expect(screen.queryByText(message)).toBeNull();
   });
 
   it("confirms, has the model watch for the host until it pairs, and remembers it so this device doesn't announce it", async () => {

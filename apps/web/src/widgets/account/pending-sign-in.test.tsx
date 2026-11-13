@@ -102,6 +102,25 @@ describe("PendingSignInSteps", () => {
     expect(account.signInAndLinkPending).toHaveBeenCalledWith(ID, { username: "ada@example.com", password: "pw" });
   });
 
+  it("puts wrong credentials on the password field, and a refusal beside the button", async () => {
+    const account = model(signedOut, {
+      signInAndLinkPending: vi
+        .fn<AccountModel["signInAndLinkPending"]>()
+        .mockResolvedValueOnce({ ok: false, error: { code: "invalid_credentials", status: 401 } })
+        .mockResolvedValueOnce({ ok: false, error: { code: "identity_taken", status: 409 } }),
+    });
+    renderSteps(account);
+    await userEvent.click(await screen.findByRole("button", { name: "I already have an account" }));
+    await userEvent.type(screen.getByLabelText("Email"), "ada@example.com");
+    const password = screen.getByLabelText("Password");
+    await userEvent.type(password, "pw{Enter}");
+    expect(await screen.findByText("Wrong email or password.")).toBeTruthy();
+    expect(password.getAttribute("aria-invalid")).toBe("true");
+    await userEvent.type(password, "2{Enter}");
+    expect((await screen.findByRole("alert")).textContent).toBe("That account is already linked to another PiNomad account.");
+    expect(password.getAttribute("aria-invalid")).toBeNull();
+  });
+
   it("says an expired sign-in expired", async () => {
     const account = model(signedOut, { pendingSignIn: vi.fn(() => Promise.resolve({ ok: false as const, error: { code: "not_found", status: 404 } })) });
     const { onDone } = renderSteps(account);

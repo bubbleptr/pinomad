@@ -66,5 +66,23 @@ describe("EmailForm", () => {
     await userEvent.type(await screen.findByLabelText("Code"), "222222");
     expect(screen.getByLabelText("Password")).toBeTruthy();
   });
-});
 
+  it("puts a wrong code for the new email on its Code field, not the confirmation", async () => {
+    const account: AccountModel = {
+      ...fakeAccount(signedIn({ email: "old@example.com" })),
+      identities: vi.fn(() => Promise.resolve({ ok: true as const, value: { hasPassword: false, identities: [] } })),
+      recentGrant: () => ({ reauth: "grant-0" }),
+      setEmail: vi.fn<AccountModel["setEmail"]>().mockResolvedValue({ ok: false, error: { code: "invalid_code", status: 400 } }),
+    };
+    render(<EmailForm account={account} submitLabel="Save" onSaved={vi.fn()} />);
+    await userEvent.type(screen.getByLabelText("Email"), "new@example.com");
+    await userEvent.click(screen.getByRole("button", { name: "Send code to new email" }));
+    const code = await screen.findByLabelText("Code");
+    await userEvent.type(code, "222222");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText(/That code is wrong/)).toBeTruthy();
+    expect(code.getAttribute("aria-invalid")).toBe("true");
+    await userEvent.type(code, "3");
+    expect(screen.queryByText(/That code is wrong/)).toBeNull();
+  });
+});

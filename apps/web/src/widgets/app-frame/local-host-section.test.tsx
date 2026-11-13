@@ -10,6 +10,7 @@ import type { AccountState } from "../../entities/account/account-model.ts";
 import type { DesktopBridge } from "../../entities/host/desktop-bridge.ts";
 import type { LocalHostState } from "../../entities/local-host/local-host-protocol.ts";
 import { fakeAccount, fakeLocalHost, signedIn, type FakeLocalHostOptions } from "../../test/story-fixtures.tsx";
+import { Toaster } from "../../shared/ui/toast.tsx";
 import { LocalHostSection } from "./local-host-section.tsx";
 
 const running: LocalHostState = { kind: "installed", running: true, stopped: false, stopping: false, detail: "running (pid 4242)" };
@@ -23,7 +24,9 @@ function renderSection(options: FakeLocalHostOptions, account: AccountState = si
   const localHost = fakeLocalHost(options);
   window.pinomadDesktop = { localHost } as unknown as DesktopBridge;
   const wrap = ({ children }: { children: ReactNode }) => (
-    <AccountContext.Provider value={fakeAccount(account)}>{children}</AccountContext.Provider>
+    <Toaster>
+      <AccountContext.Provider value={fakeAccount(account)}>{children}</AccountContext.Provider>
+    </Toaster>
   );
   render(<LocalHostSection pollIntervalMs={10} />, { wrapper: wrap });
   return { localHost, user: userEvent.setup() };
@@ -118,11 +121,11 @@ describe("LocalHostSection", () => {
     expect(screen.getByRole("switch")).toBeEnabled();
   });
 
-  it("puts a failed start in a banner and keeps the switch off", async () => {
+  it("puts a failed start in a toast and keeps the switch off", async () => {
     const { user } = renderSection({ state: off, startResult: { ok: false, message: "launchctl bootstrap failed: 5" } });
     await user.click(await hostSwitch());
 
-    expect(await screen.findByText("launchctl bootstrap failed: 5")).toBeInTheDocument();
+    await waitFor(() => expect(document.querySelector("[data-toast-id]")).toHaveTextContent("Couldn't turn on the host: launchctl bootstrap failed: 5"));
     expect(await hostSwitch()).not.toBeChecked();
   });
 

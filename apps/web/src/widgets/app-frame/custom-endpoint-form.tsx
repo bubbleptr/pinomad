@@ -22,13 +22,12 @@ import {
 } from "../../shared/ui/combobox.tsx";
 import { Spinner } from "../../shared/ui/spinner.tsx";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue, selectTriggerClassName } from "../../shared/ui/select.tsx";
-import { Field, FieldDescription, FieldError, FieldLabel } from "../../shared/ui/field.tsx";
+import { Field, FieldDescription, FieldError, FieldLabel, FormError } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { CUSTOM_PROVIDER_APIS, type CustomProviderApi, type ProviderInfo } from "@pinomad/protocol/auth.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { Plus, RefreshCw } from "../../shared/ui/icons.tsx";
-import { InlineError } from "./provider-login.tsx";
 
 /** The picker row that checks or clears every model; the NUL keeps it apart from any model ID. */
 const SELECT_ALL = "\u0000select all";
@@ -349,7 +348,7 @@ export function CustomEndpointForm({
           {modelsStatus === undefined ? null : (
             <div className="endpoint-models__status">
               {modelsStatus.type === "error" ? (
-                <p role="alert" className="text-xs/5 text-destructive">{modelsStatus.message}</p>
+                <FormError>{modelsStatus.message}</FormError>
               ) : (
                 <p role="status" className="text-xs/5 text-warning">{modelsStatus.message}</p>
               )}
@@ -379,10 +378,10 @@ export function CustomEndpointForm({
           {existing === undefined ? null : (
             <Button variant="secondary" disabled={!connected} onClick={() => setConfirmingRemove(true)}>Remove endpoint</Button>
           )}
-          {removeError === undefined ? null : <InlineError message={removeError} />}
+          <FormError>{removeError}</FormError>
           <div style={{ marginInlineStart: "auto" }}>
             <div className="flex flex-wrap items-center gap-2">
-              {saveError === undefined ? null : <InlineError message={saveError} />}
+              <FormError>{saveError}</FormError>
               <Button variant="secondary" onClick={onCancel}>Cancel</Button>
               <Button
                 variant="primary"

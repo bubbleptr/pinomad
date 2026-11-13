@@ -2,11 +2,11 @@
 // the host never auto-titles the conversation again.
 import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../../shared/ui/dialog.tsx";
-import { Field, FieldLabel } from "../../shared/ui/field.tsx";
+import { Field, FieldError, FieldLabel, FormError } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { useCallback, useState } from "react";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
-import type { ConversationSummary } from "@pinomad/protocol/view.ts";
+import { conversationTitleProblem, type ConversationSummary } from "@pinomad/protocol/view.ts";
 import { displayName } from "@pinomad/client/family.ts";
 
 export function RenameConversationDialog({
@@ -23,6 +23,9 @@ export function RenameConversationDialog({
   const initial = displayName(summary);
   const [value, setValue] = useState(initial);
   const [saving, setSaving] = useState(false);
+  // A title the shared rule rejects belongs to the field; anything else the
+  // host refuses (a subagent, a dropped connection) is about the dialog.
+  const [titleError, setTitleError] = useState<string>();
   const [error, setError] = useState<string | undefined>(undefined);
   // Select-all as the input mounts (the dialog portals it in after this
   // component's effects run), so typing replaces the old name.
@@ -30,9 +33,12 @@ export function RenameConversationDialog({
 
   const title = value.trim();
   const save = (): void => {
-    if (title === "" || title === initial || saving) return;
-    setSaving(true);
+    if (title === initial || saving) return;
+    const problem = conversationTitleProblem(title);
+    setTitleError(problem);
     setError(undefined);
+    if (problem !== undefined) return;
+    setSaving(true);
     void remote.controller.renameConversation(summary.id, title).then(
       () => onClose(),
       (reason: unknown) => {
@@ -49,24 +55,24 @@ export function RenameConversationDialog({
           <DialogTitle>Rename conversation</DialogTitle>
         </DialogHeader>
         <DialogBody>
-          <Field disabled={saving}>
+          <Field disabled={saving} invalid={titleError !== undefined}>
             <FieldLabel>Title</FieldLabel>
             <Input
               ref={selectAll}
               value={value}
-              onChange={(event) => setValue(event.target.value)}
+              onChange={(event) => {
+                setValue(event.target.value);
+                setTitleError(undefined);
+              }}
               autoFocus
               data-autofocus
               onKeyDown={(event) => {
                 if (event.key === "Enter") save();
               }}
             />
+            <FieldError>{titleError}</FieldError>
           </Field>
-          {error === undefined ? null : (
-            <span className="text-xs/5 text-muted-foreground" role="alert" style={{ color: "var(--destructive)" }}>
-              {error}
-            </span>
-          )}
+          <FormError>{error}</FormError>
         </DialogBody>
         <DialogFooter>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>

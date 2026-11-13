@@ -16,7 +16,12 @@ function Harness({ account, onConfirmed }: { account: AccountModel; onConfirmed:
       <button
         type="button"
         disabled={!identity.ready}
-        onClick={() => void identity.confirm().then((result) => result.ok && onConfirmed(result.value))}
+        onClick={() =>
+          void identity.confirm().then((result) => {
+            if (result.ok) onConfirmed(result.value);
+            else identity.claim(result.error);
+          })
+        }
       >
         Go
       </button>
@@ -121,5 +126,33 @@ describe("useConfirmIdentity", () => {
     await userEvent.type(await screen.findByLabelText("Password"), "pw");
     await userEvent.click(screen.getByRole("button", { name: "Go" }));
     await vi.waitFor(() => expect(confirmed).toHaveBeenCalledWith("pw"));
+  });
+
+  it("shows a wrong password on the password field until it is edited", async () => {
+    const model = account(true);
+    vi.mocked(model.reauth).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password" } });
+    render(<Harness account={model} onConfirmed={vi.fn()} />);
+    const password = await screen.findByLabelText("Password");
+    await userEvent.type(password, "pw");
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+    expect(await screen.findByText("The password is wrong.")).toBeTruthy();
+    expect(password.getAttribute("aria-invalid")).toBe("true");
+    await userEvent.type(password, "x");
+    expect(screen.queryByText("The password is wrong.")).toBeNull();
+  });
+
+  it("shows a wrong code on the code field, and a failed send beside Send code", async () => {
+    const model = account(false);
+    vi.mocked(model.requestReauthCode).mockResolvedValueOnce({ ok: false, error: { code: "rate_limited" } });
+    vi.mocked(model.reauth).mockResolvedValueOnce({ ok: false, error: { code: "invalid_code" } });
+    render(<Harness account={model} onConfirmed={vi.fn()} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Send code" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Too many attempts. Wait a few minutes and try again.");
+    await userEvent.click(screen.getByRole("button", { name: "Send code" }));
+    const code = await screen.findByLabelText("Confirmation code");
+    await userEvent.type(code, "123456");
+    await userEvent.click(screen.getByRole("button", { name: "Go" }));
+    expect(await screen.findByText(/That code is wrong/)).toBeTruthy();
+    expect(code.getAttribute("aria-invalid")).toBe("true");
   });
 });

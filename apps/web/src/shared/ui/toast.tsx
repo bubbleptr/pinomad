@@ -62,6 +62,36 @@ function useToast(): ShowToast {
   );
 }
 
+interface ErrorToast {
+  /** Shows `description` as an error toast, replacing this hook's previous one. */
+  show: (description: ReactNode) => void;
+  /** Closes this hook's error toast, e.g. when the action is tried again. */
+  clear: () => void;
+}
+
+/**
+ * The error toast of one action that can be retried: a new failure replaces
+ * the last one instead of stacking, and a retry clears it. Error toasts wait
+ * to be dismissed, so without this a failing button would pile them up.
+ */
+function useErrorToast(): ErrorToast {
+  const toast = useToast();
+  const dismiss = useRef<(() => void) | undefined>(undefined);
+  return useMemo<ErrorToast>(() => {
+    const clear = (): void => {
+      dismiss.current?.();
+      dismiss.current = undefined;
+    };
+    return {
+      clear,
+      show: (description) => {
+        clear();
+        dismiss.current = toast({ description, type: "error" });
+      },
+    };
+  }, [toast]);
+}
+
 /** Hands the provider's add/close to `useToast` without re-rendering the app on every toast. */
 function ManagerBridge({ children }: { children: ReactNode }): ReactElement {
   const { add, close } = ToastPrimitive.useToastManager<ToastData>();
@@ -157,4 +187,4 @@ function Toaster({ className, children }: { className?: string; children?: React
   );
 }
 
-export { Toaster, useToast, type ToastOptions };
+export { Toaster, useErrorToast, useToast, type ToastOptions };

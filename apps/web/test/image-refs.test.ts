@@ -210,3 +210,51 @@ it("does not withdraw a queued message when its original image cannot load", asy
   expect(withdrawals).toBe(0);
   await row.waitFor();
 });
+
+it("keeps the lightbox open when its original fails, and retries from the toast", async () => {
+  const webOrigin = await startWeb(defer);
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin] });
+  let failImages = false;
+  const page = await openPage(host, webOrigin, async (page) => {
+    await page.routeWebSocket(
+      (url) => url.origin === new URL(host.url).origin,
+      (ws) => {
+        const server = ws.connectToServer();
+        ws.onMessage((message) => {
+          const frame = recordFrame(message) as (Frame & { id?: number }) | undefined;
+          if (failImages && frame?.type === "call" && frame.method === "image" && typeof frame.id === "number") {
+            ws.send(JSON.stringify({ type: "result", id: frame.id, ok: false, error: "host offline" }));
+            return;
+          }
+          server.send(message);
+        });
+        server.onMessage((message) => ws.send(message));
+      },
+    );
+  });
+
+  await pasteImage(page);
+  await staged(page).waitFor();
+  await prompt(page).fill("look at this");
+  await prompt(page).press("Enter");
+  const transcript = page.getByTestId("message-images");
+  await transcript.getByRole("button", { name: /Image 1/ }).waitFor();
+
+  // A reload empties the cache; with every image fetch failing (the
+  // thumbnail falls back to the original) the lightbox can't load it either.
+  failImages = true;
+  await page.reload();
+  await prompt(page).waitFor();
+  await page.getByRole("button", { name: "look at this", exact: true }).click();
+  await transcript.getByRole("button", { name: /Image 1/ }).click();
+
+  const lightbox = page.getByRole("dialog", { name: "Image 1" });
+  const toast = page.locator("[data-toast-id]").filter({ hasText: "Couldn't load the original image" });
+  await toast.waitFor();
+  failImages = false;
+  // The modal lightbox hides the rest of the page from the accessibility tree;
+  // the toast sits in the top layer above it and still takes the click.
+  await toast.getByRole("button", { name: "Try again", includeHidden: true }).click();
+  await toast.waitFor({ state: "detached" });
+  expect(await lightbox.isVisible()).toBe(true);
+});

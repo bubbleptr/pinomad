@@ -1,5 +1,5 @@
 import { Button } from "../../shared/ui/button.tsx";
-import { Field, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
+import { Field, FieldDescription, FieldError, FieldLabel, FormError } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { useEffect, useState } from "react";
 import type { AccountError, HostLinkRequest } from "@pinomad/client/account.ts";
@@ -97,7 +97,10 @@ export function HostLinkEntry({
           code={code}
           error={step.error}
           isBusy={busy === "lookup"}
-          onChange={(value) => setCode(normalizeUserCode(value))}
+          onChange={(value) => {
+            setCode(normalizeUserCode(value));
+            if (step.error !== undefined) setStep({ kind: "entry" });
+          }}
           onSubmit={lookUp}
           {...(onClose === undefined ? {} : { onCancel: onClose })}
         />
@@ -238,9 +241,12 @@ export function HostLinkCodeForm({
   onSubmit: () => void;
   onCancel?: () => void;
 }) {
+  // A code no host is waiting with, or not a code at all: fixed in the field.
+  const message = error === undefined ? undefined : hostLinkErrorMessage(error, "lookup");
+  const onField = error?.code === "not_found" || error?.code === "invalid_request";
   return (
     <div className="flex flex-col gap-3" style={{ width: "100%" }}>
-      <Field>
+      <Field invalid={onField}>
         <FieldLabel>Code from the host</FieldLabel>
         <FieldDescription>The host's terminal shows it, like KXHN-BWCV.</FieldDescription>
         <Input
@@ -251,13 +257,9 @@ export function HostLinkCodeForm({
             if (event.key === "Enter") onSubmit();
           }}
         />
+        <FieldError>{onField ? message : undefined}</FieldError>
       </Field>
-      {error === undefined ? null : (
-        <Alert variant="destructive">
-          <AlertTitle>Couldn't find that host</AlertTitle>
-          <AlertDescription>{hostLinkErrorMessage(error, "lookup")}</AlertDescription>
-        </Alert>
-      )}
+      <FormError>{onField ? undefined : message}</FormError>
       <div className="flex items-center gap-2">
         <Button variant="primary" loading={isBusy} disabled={!isCompleteUserCode(code)} onClick={onSubmit}>Continue</Button>
         {onCancel === undefined ? null : <Button variant="secondary" onClick={onCancel}>Cancel</Button>}
@@ -341,12 +343,7 @@ export function HostLinkConfirm({
           {String(seconds % 60).padStart(2, "0")}
         </span>
       )}
-      {error === undefined ? null : (
-        <Alert variant="destructive">
-          <AlertTitle>Couldn't answer the host</AlertTitle>
-          <AlertDescription>{hostLinkErrorMessage(error, "answer")}</AlertDescription>
-        </Alert>
-      )}
+      <FormError>{error === undefined ? undefined : hostLinkErrorMessage(error, "answer")}</FormError>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex gap-2">
           <Button

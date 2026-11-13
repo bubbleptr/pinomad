@@ -263,6 +263,18 @@ describe("account settings", () => {
     expect(screen.queryByLabelText("Password")).toBeNull();
   });
 
+  it("puts a too-short new password on its field", async () => {
+    const model = fakeModel(signedIn([]));
+    renderPanel(model);
+    await userEvent.click(await screen.findByRole("button", { name: "Change password" }));
+    await userEvent.type(await screen.findByLabelText("Password"), "old password here");
+    await userEvent.type(screen.getByLabelText("New password"), "short{Enter}");
+    expect(await screen.findByText("Use a password of at least 12 characters.")).toBeTruthy();
+    expect(screen.getByLabelText("New password").getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByLabelText("Password").getAttribute("aria-invalid")).toBeNull();
+    expect(model.changePassword).not.toHaveBeenCalled();
+  });
+
   it("keeps the form and says so when the current password is wrong", async () => {
     const model = fakeModel(signedIn([]));
     vi.mocked(model.reauth).mockResolvedValueOnce({ ok: false, error: { code: "wrong_password", status: 403 } });
@@ -271,6 +283,7 @@ describe("account settings", () => {
     await userEvent.type(screen.getByLabelText("Password"), "wrong one");
     await userEvent.type(screen.getByLabelText("New password"), "new password here{Enter}");
     expect(await screen.findByText("The password is wrong.")).toBeTruthy();
+    expect(screen.getByLabelText("Password").getAttribute("aria-invalid")).toBe("true");
     expect(screen.getByLabelText("Password")).toBeTruthy();
   });
 
@@ -298,6 +311,7 @@ describe("account settings", () => {
     await userEvent.click(screen.getByRole("button", { name: "Delete account" }));
     await userEvent.type(await screen.findByLabelText("Password"), "wrong one{Enter}");
     expect(await screen.findByText("The password is wrong.")).toBeTruthy();
+    expect(screen.getByLabelText("Password").getAttribute("aria-invalid")).toBe("true");
     expect(screen.getByLabelText("Password")).toBeTruthy();
     expect(screen.getByText("kieran")).toBeTruthy();
   });
@@ -403,6 +417,7 @@ describe("account devices (#452)", () => {
     await fromMenu("More for iPhone", "Remove");
     await userEvent.type(await screen.findByLabelText("Password"), "wrong{Enter}");
     expect(await screen.findByText("The password is wrong.")).toBeTruthy();
+    expect(screen.getByLabelText("Password").getAttribute("aria-invalid")).toBe("true");
     expect(screen.getByLabelText("Password")).toBeTruthy();
     expect(model.listDevices).toHaveBeenCalledTimes(1);
   });
@@ -442,7 +457,16 @@ describe("removing a host (#512)", () => {
     await openRemove();
     await userEvent.type(await screen.findByLabelText("Password"), "wrong{Enter}");
     expect(await screen.findByText("The password is wrong.")).toBeTruthy();
+    expect(screen.getByLabelText("Password").getAttribute("aria-invalid")).toBe("true");
     expect(screen.getByLabelText("Password")).toBeTruthy();
+  });
+
+  it("says a failed Pair on that host's row, once", async () => {
+    renderPanel(withHost(), "hosts");
+    await userEvent.click(await screen.findByRole("button", { name: "Pair" }));
+    const message = accountErrorMessage({ code: "host_timeout" });
+    expect(await within(row("box")).findByText(message)).toBeTruthy();
+    expect(screen.getAllByText(message)).toHaveLength(1);
   });
 
   it("says so when the server can't remove hosts", async () => {

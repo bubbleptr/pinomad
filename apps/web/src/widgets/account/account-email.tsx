@@ -1,16 +1,15 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { Dialog, DialogBody, DialogContent, DialogHeader, DialogTitle } from "@/shared/ui/dialog";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "../../shared/ui/item.tsx";
-import { Field, FieldLabel } from "../../shared/ui/field.tsx";
+import { Field, FieldError, FieldLabel, FormError } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
 import { useEffect, useRef, useState } from "react";
 import type { AccountConfirmation, AccountError, EmailConfirmation } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
 import { SettingsGroup } from "../../shared/ui/settings-group.tsx";
-import { accountErrorMessage } from "./account-error.ts";
+import { fieldErrorMessage, formErrorMessage } from "./account-error.ts";
 import { CODE_INPUT } from "./code-input.ts";
 import { useConfirmIdentity } from "./confirm-identity.tsx";
-import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 
 const byName = (confirmation: AccountConfirmation): EmailConfirmation =>
   typeof confirmation === "string" ? { password: confirmation } : confirmation;
@@ -61,7 +60,9 @@ export function EmailForm({
           identity.reset();
           setReconfirm(true);
         }
-        setError(result.error);
+        // The save step shows the confirmation only once asked again.
+        const onField = (sentTo === undefined || reconfirm) && identity.claim(result.error);
+        setError(onField ? undefined : result.error);
       }
     })();
   };
@@ -82,25 +83,24 @@ export function EmailForm({
   if (sentTo === undefined) {
     return (
       <div className="flex flex-col gap-2">
-        <Field>
+        <Field invalid={fieldErrorMessage(error, "email") !== undefined}>
           <FieldLabel>Email</FieldLabel>
           <Input
             type="email"
             value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            onChange={(event) => {
+              setError(undefined);
+              setEmail(event.target.value);
+            }}
             {...{ autoComplete: "email" }}
             onKeyDown={(event) => {
               if (event.key === "Enter") send();
             }}
           />
+          <FieldError>{fieldErrorMessage(error, "email")}</FieldError>
         </Field>
         {identity.field}
-        {error === undefined ? null : (
-          <Alert variant="destructive">
-            <AlertTitle>Couldn't send the code</AlertTitle>
-            <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
-          </Alert>
-        )}
+        <FormError>{formErrorMessage(error, ["email"])}</FormError>
         <div className="flex gap-2">
           <Button variant="primary" loading={busy} disabled={email.trim() === "" || !identity.ready} onClick={send}>Send code to new email</Button>
           {cancel}
@@ -111,25 +111,24 @@ export function EmailForm({
   return (
     <div className="flex flex-col gap-2">
       <span className="text-sm/5">Enter the 6-digit code we sent to {sentTo}.</span>
-      <Field>
+      <Field invalid={fieldErrorMessage(error, "code") !== undefined}>
         <FieldLabel>Code</FieldLabel>
         <Input
           value={code}
-          onChange={(event) => setCode(event.target.value)}
+          onChange={(event) => {
+            setError(undefined);
+            setCode(event.target.value);
+          }}
           {...CODE_INPUT}
           onKeyDown={(event) => {
             if (event.key === "Enter") save();
           }}
         />
+        <FieldError>{fieldErrorMessage(error, "code")}</FieldError>
       </Field>
       {/* Asked again when the server refused the grant, or it ran out here. */}
       {reconfirm || !identity.ready ? identity.field : null}
-      {error === undefined ? null : (
-        <Alert variant="destructive">
-          <AlertTitle>Couldn't save the email</AlertTitle>
-          <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
-        </Alert>
-      )}
+      <FormError>{formErrorMessage(error, ["code"])}</FormError>
       <div className="flex gap-2">
         <Button variant="primary" loading={busy} disabled={code.trim() === "" || !identity.ready} onClick={save}>{submitLabel}</Button>
         <Button

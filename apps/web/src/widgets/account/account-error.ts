@@ -89,3 +89,39 @@ export function accountErrorMessage(error: AccountError): string {
       return `Something went wrong (${error.code}).`;
   }
 }
+
+/** The input an error is about, for the codes the user fixes by editing it; form-wide errors have none. */
+export type AccountErrorField = "server" | "email" | "password" | "new-password" | "code";
+
+export function accountErrorField(error: AccountError): AccountErrorField | undefined {
+  switch (error.code) {
+    case "origin_required":
+    case "insecure_origin":
+      return "server";
+    case "invalid_email":
+    case "email_taken":
+      return "email";
+    case "invalid_credentials":
+    case "wrong_password":
+      return "password";
+    case "weak_password":
+    case "password_required":
+      return "new-password";
+    case "invalid_code":
+      return "code";
+    default:
+      return undefined;
+  }
+}
+
+/** What `field` shows: the message when `error` is about it. */
+export function fieldErrorMessage(error: AccountError | undefined, field: AccountErrorField): string | undefined {
+  return error !== undefined && accountErrorField(error) === field ? accountErrorMessage(error) : undefined;
+}
+
+/** What the form shows beside its button: an error about none of `fields`, the inputs on screen. */
+export function formErrorMessage(error: AccountError | undefined, fields: readonly AccountErrorField[] = []): string | undefined {
+  if (error === undefined) return undefined;
+  const field = accountErrorField(error);
+  return field !== undefined && fields.includes(field) ? undefined : accountErrorMessage(error);
+}

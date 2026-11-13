@@ -477,3 +477,17 @@ export interface DurableController {
    */
   setPushToken(token: PushToken | null): Promise<void>;
 }
+
+export const MAX_CONVERSATION_TITLE = 200;
+
+/**
+ * Why a manual conversation title can't be saved, or undefined when it can.
+ * The host checks `renameConversation` with it; the Rename dialog checks
+ * first so the problem shows on the field.
+ */
+export function conversationTitleProblem(title: string): string | undefined {
+  const trimmed = title.trim();
+  if (trimmed === "") return "Title cannot be empty";
+  if (trimmed.length > MAX_CONVERSATION_TITLE) return `Title is too long (${MAX_CONVERSATION_TITLE} characters at most)`;
+  return undefined;
+}

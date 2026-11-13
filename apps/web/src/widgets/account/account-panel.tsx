@@ -1,7 +1,7 @@
 import { Avatar, AvatarFallback, initials } from "../../shared/ui/avatar.tsx";
 import { Button } from "../../shared/ui/button.tsx";
 import { Checkbox } from "../../shared/ui/checkbox.tsx";
-import { Field, FieldContent, FieldDescription, FieldLabel } from "../../shared/ui/field.tsx";
+import { Field, FieldContent, FieldDescription, FieldLabel, FormError } from "../../shared/ui/field.tsx";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemTitle } from "../../shared/ui/item.tsx";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
@@ -34,6 +34,7 @@ import { SignInScreen } from "./sign-in.tsx";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 import { Badge } from "../../shared/ui/badge.tsx";
 import { Spinner } from "../../shared/ui/spinner.tsx";
+import { useToast } from "../../shared/ui/toast.tsx";
 
 /** The account's pages: everything on one, and the hosts not paired here. */
 export type AccountPage = "overview" | "hosts";
@@ -171,22 +172,16 @@ function ProviderLinkReturn() {
     clearOAuthReturn("linked");
     clearOAuthReturn("error");
   }, [returned]);
-  if (returned?.linked !== undefined) {
-    return (
-      <Alert variant="success">
-        <AlertTitle>{`${signInProviderName(returned.linked)} linked`}</AlertTitle>
-        <AlertDescription>{`You can sign in with ${signInProviderName(returned.linked)} now.`}</AlertDescription>
-      </Alert>
-    );
-  }
-  if (returned?.error !== undefined) {
-    return (
-      <Alert variant="destructive">
-        <AlertTitle>Couldn't link the account</AlertTitle>
-        <AlertDescription>{accountErrorMessage({ code: returned.error })}</AlertDescription>
-      </Alert>
-    );
-  }
+  const toast = useToast();
+  useEffect(() => {
+    // One id for both: the page can mount this twice, and each says it once.
+    if (returned?.linked !== undefined) {
+      const name = signInProviderName(returned.linked);
+      toast({ id: "oauth-return", description: `${name} linked. You can sign in with ${name} now.` });
+    } else if (returned?.error !== undefined) {
+      toast({ id: "oauth-return", type: "error", description: `Couldn't link the account. ${accountErrorMessage({ code: returned.error })}` });
+    }
+  }, [returned, toast]);
   return null;
 }
 
@@ -402,7 +397,7 @@ function DeleteAccountDialog({
       }
       setBusy(false);
       if (result.error.code === "invalid_reauth") identity.reset();
-      setError(result.error);
+      setError(identity.claim(result.error) ? undefined : result.error);
     });
   };
   const identity = useConfirmIdentity(account, submit);
@@ -414,12 +409,7 @@ function DeleteAccountDialog({
       action={<Button variant="destructive" loading={busy} disabled={!identity.ready} onClick={submit}>Delete account</Button>}
     >
       {identity.field}
-      {error === undefined ? null : (
-        <Alert variant="destructive">
-          <AlertTitle>Couldn't delete the account</AlertTitle>
-          <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
-        </Alert>
-      )}
+      <FormError>{error === undefined ? undefined : accountErrorMessage(error)}</FormError>
     </ConfirmDialog>
   );
 }
@@ -619,7 +609,7 @@ function RemoveDeviceDialog({
       if (result.ok || result.error.code === "not_found") onClose(true);
       else {
         if (result.error.code === "invalid_reauth") identity.reset();
-        setError(result.error);
+        setError(identity.claim(result.error) ? undefined : result.error);
       }
     })();
   };
@@ -635,12 +625,7 @@ function RemoveDeviceDialog({
       action={<Button variant="destructive" loading={busy} disabled={!identity.ready} onClick={submit}>Remove device</Button>}
     >
       {identity.field}
-      {error === undefined ? null : (
-        <Alert variant="destructive">
-          <AlertTitle>Couldn't remove the device</AlertTitle>
-          <AlertDescription>{accountErrorMessage(error)}</AlertDescription>
-        </Alert>
-      )}
+      <FormError>{error === undefined ? undefined : accountErrorMessage(error)}</FormError>
     </ConfirmDialog>
   );
 }
