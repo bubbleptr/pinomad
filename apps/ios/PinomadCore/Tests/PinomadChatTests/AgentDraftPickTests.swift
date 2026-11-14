@@ -103,6 +103,15 @@ private func emptyOverrides() -> AgentDraftOverride {
         #expect(state.pick(agents: agents, models: models, defaults: defaults) == ModelPick(model: gpt, level: .high))
     }
 
+    /// Tapping the clamped level that is shown makes it the pick.
+    @Test func pickingTheShownClampedLevelReplacesThePick() {
+        var state = AgentDraftPick(remembered: ModelPick(model: gpt, level: .high))
+        state.setModel(sonnet, models: models, defaults: defaults)
+        state.setLevel(.medium, models: models, defaults: defaults)
+        state.setModel(gpt, models: models, defaults: defaults)
+        #expect(state.pick(agents: agents, models: models, defaults: defaults) == ModelPick(model: gpt, level: .medium))
+    }
+
     /// Another host has other models and agents — nothing carries over.
     @Test func resetDropsTheRememberedPickForAnotherHost() {
         var state = AgentDraftPick(remembered: ModelPick(model: gpt, level: .low),

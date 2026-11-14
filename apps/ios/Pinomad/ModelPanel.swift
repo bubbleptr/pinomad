@@ -208,7 +208,9 @@ struct ModelPanel: View {
                 ForEach(levels, id: \.self) { level in
                     Chip(title: thinkingLevelLabel(level: level) ?? "\(level)", selected: level == current,
                          enabled: enabled && !lock.level) {
-                        if level != current { onLevel(level) }
+                        // The shown level too: it may be a clamp of a
+                        // higher pick, and tapping it makes it the pick.
+                        onLevel(level)
                         dismiss()
                     }
                     .id("\(level)")

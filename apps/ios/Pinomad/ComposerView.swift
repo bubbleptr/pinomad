@@ -290,10 +290,13 @@ struct ConversationComposer: View {
                     agent: agentChoice,
                     lock: ModelLock(current: agentPick?.current, roles: roles),
                     onModel: {
-                        model.switchModel($0, conversation: conversation.id,
+                        model.switchModel($0, conversation: conversation.id, agent: agentPick?.current,
                                           current: agent.thinkingLevel ?? .off)
                     },
-                    onLevel: { model.pickThinkingLevel($0, conversation: conversation.id) }
+                    onLevel: {
+                        model.pickThinkingLevel($0, conversation: conversation.id, agent: agentPick?.current,
+                                                current: agent.thinkingLevel ?? .off)
+                    }
                 )
                 .presentationCompactAdaptation(.popover)
             }

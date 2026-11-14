@@ -76,7 +76,7 @@ final class HostRuntime {
     var fileReads: [UInt64: Set<UUID>] = [:]
     /// The thinking level picked in each conversation, kept across model
     /// switches until the agent changes.
-    var levelIntents: [UInt64: ThinkingLevel] = [:]
+    var levelIntents = LevelIntents()
     var queuedEdit = QueuedEdit()
     var queuedEditPreparing: Set<UInt64> = []
     var queuePending: Set<UInt64> = []

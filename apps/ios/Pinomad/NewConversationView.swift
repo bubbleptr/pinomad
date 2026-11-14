@@ -195,7 +195,13 @@ struct NewConversationView: View {
                     lock: ModelLock(draftAgent: selectedAgent, resolution: resolution),
                     locked: model.creating,
                     onModel: { model.setDraftModel($0) },
-                    onLevel: { model.setDraftLevel($0) }
+                    // Without an agent the shown level may be a clamp of a
+                    // higher pick, so tapping it makes it the pick; with one,
+                    // re-tapping the inherited level must not turn it into
+                    // an override.
+                    onLevel: { level in
+                        if selectedAgent == nil || level != pick.level { model.setDraftLevel(level) }
+                    }
                 )
                 .presentationCompactAdaptation(.popover)
             }

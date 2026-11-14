@@ -27,3 +27,55 @@ private let threeLevels: [ThinkingLevel] = [.off, .low, .medium]
         #expect(LevelIntent.afterSwitch(levels: [], intent: .high, current: .medium) == nil)
     }
 }
+
+@Suite struct LevelIntentsTests {
+    @Test func aSwitchBackAsksForThePickedLevel() {
+        var intents = LevelIntents()
+        intents.pick(.high, conversation: 1, agent: nil)
+        let away = intents.switchModel(conversation: 1, agent: nil, current: .high, levels: threeLevels)
+        #expect(away.follow == nil)
+        let back = intents.switchModel(conversation: 1, agent: nil, current: .medium, levels: fourLevels)
+        #expect(back.follow == .high)
+        #expect(intents.isCurrent(back.revision, conversation: 1))
+    }
+
+    /// A newer pick or an agent change while the switch is in flight makes
+    /// its follow-up stale.
+    @Test func aLaterChangeMakesTheFollowUpStale() {
+        var intents = LevelIntents()
+        intents.pick(.high, conversation: 1, agent: nil)
+        let back = intents.switchModel(conversation: 1, agent: nil, current: .medium, levels: fourLevels)
+        intents.pick(.low, conversation: 1, agent: nil)
+        #expect(!intents.isCurrent(back.revision, conversation: 1))
+
+        let again = intents.switchModel(conversation: 1, agent: nil, current: .medium, levels: fourLevels)
+        intents.forget(conversation: 1)
+        #expect(!intents.isCurrent(again.revision, conversation: 1))
+    }
+
+    /// The pick belongs to the agent it was made under; another agent,
+    /// even one switched from another device, sets its own level.
+    @Test func anotherAgentIgnoresThePick() {
+        var intents = LevelIntents()
+        intents.pick(.high, conversation: 1, agent: nil)
+        let switched = intents.switchModel(conversation: 1, agent: "planner", current: .low, levels: fourLevels)
+        #expect(switched.follow == nil)
+    }
+
+    /// Re-picking the clamped level that is already shown is still a pick.
+    @Test func pickingTheShownLevelReplacesTheIntent() {
+        var intents = LevelIntents()
+        intents.pick(.high, conversation: 1, agent: nil)
+        _ = intents.switchModel(conversation: 1, agent: nil, current: .high, levels: threeLevels)
+        intents.pick(.medium, conversation: 1, agent: nil)
+        let back = intents.switchModel(conversation: 1, agent: nil, current: .medium, levels: fourLevels)
+        #expect(back.follow == nil)
+    }
+
+    @Test func conversationsKeepTheirOwnPicks() {
+        var intents = LevelIntents()
+        intents.pick(.high, conversation: 1, agent: nil)
+        let other = intents.switchModel(conversation: 2, agent: nil, current: .medium, levels: fourLevels)
+        #expect(other.follow == nil)
+    }
+}
