@@ -17,7 +17,7 @@ import {
 } from "../src/frames.ts";
 import { initiateIK, keyPairFromPrivate, respondIK } from "../src/noise.ts";
 import { encodeClientHello, encodeHostHello, SECURE_PROLOGUE, SecureSession, SIGNAL_PROLOGUE } from "../src/secure-channel.ts";
-import { docInfos, pluginInfos } from "../src/remote-durable.ts";
+import { docInfos, isUnknownDocument, pluginInfos } from "../src/remote-durable.ts";
 import { isRtcHello, RTC_DEFAULT_STUN, rtcAddressScope } from "../src/rtc.ts";
 import {
   ENDPOINT_SET_SCHEMA_VERSION,
@@ -317,6 +317,23 @@ function framesVector(): VectorFile {
     frame: wire(value === undefined ? { type: "plugins", plugins: [] } : { type: "plugins", plugins: [], docs: value }),
     expect: Array.isArray(value) ? docInfos(value) : null,
   }));
+  // `ended` frames: the host refusing a `doc:` stream as unknown is not fatal
+  // to its conversation; every other end still is.
+  const endedCases: readonly { name: string; stream: string; reason: unknown }[] = [
+    { name: "unknown-doc", stream: "doc:plugin.notes.board:7", reason: "Unknown document plugin.notes.board" },
+    { name: "unknown-builtin-doc", stream: "doc:pinomad.question:12", reason: "Unknown document pinomad.question" },
+    { name: "other-kind", stream: "doc:plugin.notes.board:7", reason: "Unknown document plugin.notes.other" },
+    { name: "doc-gone-conversation", stream: "doc:plugin.notes.board:7", reason: "Conversation 7 does not exist" },
+    { name: "conversation", stream: "conversation:7", reason: "Unknown document conversation" },
+    { name: "non-string-reason", stream: "doc:plugin.notes.board:7", reason: 7 },
+    { name: "no-id", stream: "doc:plugin.notes.board", reason: "Unknown document plugin.notes" },
+    { name: "empty-kind", stream: "doc::7", reason: "Unknown document " },
+  ];
+  const unknownDocumentCases = endedCases.map(({ name, stream, reason }) => ({
+    name,
+    frame: wire({ type: "ended", stream, reason }),
+    expect: isUnknownDocument(stream, reason),
+  }));
   return write("frames", {
     protocol: PROTOCOL,
     serverFrames,
@@ -328,6 +345,7 @@ function framesVector(): VectorFile {
     rtcOfferArgs,
     pluginInfos: pluginInfoCases,
     docInfos: docInfoCases,
+    unknownDocument: unknownDocumentCases,
   });
 }
 

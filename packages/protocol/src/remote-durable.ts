@@ -2364,16 +2364,22 @@ class RemoteClient {
         this.#earlier.delete(frame.stream);
         this.#loadingEarlier.delete(frame.stream);
         this.#fresh.delete(frame.stream);
+        // A document the host no longer shares is absent, not a broken
+        // conversation: a reload can take back what its last frame announced
+        // before the subscribe arrives.
+        const absent = isUnknownDocument(frame.stream, frame.reason);
         const ended = new Error(`Stream ${frame.stream} ended: ${frame.reason}`);
         for (const waiter of this.#snapshotWaiters.get(frame.stream)?.splice(0) ?? []) {
-          if (waiter.endSatisfies) waiter.resolve();
+          if (waiter.endSatisfies || absent) waiter.resolve();
           else waiter.reject(ended);
         }
         // A sync barrier treats an ended selection as settled — never wait
-        // forever — and drops the slot whose data can no longer be shown.
-        if (this.#current !== undefined && this.#conversationStreams(this.#current).includes(frame.stream)) {
+        // forever — and drops the slot whose data can no longer be shown. An
+        // absent document leaves its slot; it shows nothing until a list or a
+        // reconnect offers it again.
+        if (!absent && this.#current !== undefined && this.#conversationStreams(this.#current).includes(frame.stream)) {
           this.#unshow();
-        } else if (this.#side !== undefined && this.#conversationStreams(this.#side).includes(frame.stream)) {
+        } else if (!absent && this.#side !== undefined && this.#conversationStreams(this.#side).includes(frame.stream)) {
           this.#side = undefined;
         }
         this.#refresh();
@@ -4044,6 +4050,18 @@ class RemoteClient {
     this.#rejectSnapshotWaiters(new DisconnectedError());
     this.#update({ connection: "closed" });
   }
+}
+
+/**
+ * Whether an `ended` frame is the host refusing a `doc:` stream as a document
+ * it does not share: the reason every host since 5.0 sends for it, naming the
+ * stream's own kind. Any other end of a `doc:` stream (its conversation is
+ * gone, a read failed) still closes the conversation it belongs to.
+ */
+export function isUnknownDocument(stream: string, reason: unknown): boolean {
+  if (!stream.startsWith("doc:")) return false;
+  const kind = stream.slice("doc:".length, stream.lastIndexOf(":"));
+  return kind !== "" && reason === `Unknown document ${kind}`;
 }
 
 /** A `plugins` frame's `docs`, keeping the entries with a kind; a malformed one is dropped, not fatal. */

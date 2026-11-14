@@ -204,3 +204,54 @@ describe("remote plugins", () => {
     remote.close();
   });
 });
+
+describe("an announced document the host refuses", () => {
+  const BOARD = "plugin.notes.board";
+  const TODO = "todo.list";
+
+  it("keeps the shown conversation when a document a plugins frame announced was unshared again before the subscribe", async () => {
+    const host = fakeHost(PROTOCOL.minor, [PANEL], [{ kind: TODO }]);
+    const remote = await connect(host);
+    await remote.controller.switchConversation(id(1));
+    // Announced, but a second reload took it back before the subscribe arrived: the host ends it as unknown.
+    host.push({ type: "plugins", plugins: [PANEL], docs: [{ kind: TODO }, { kind: BOARD }] });
+    await settle();
+    expect(host.sent).toContainEqual({ type: "subscribe", stream: `doc:${BOARD}:1` });
+    expect(remote.view.current().conversation).toBeDefined();
+    expect(remote.view.current().docs.map((doc) => doc.kind)).toEqual([TODO]);
+
+    // The conversation's other streams still reach the view.
+    host.push({ type: "snapshot", stream: `doc:${TODO}:1`, value: { items: ["later"] } });
+    await settle();
+    expect(remote.view.current().docs).toEqual([{ kind: TODO, value: { items: ["later"] } }]);
+    expect(remote.view.current().connection).toBe("connected");
+    remote.close();
+  });
+
+  it("opens a conversation whose hello-announced document the host no longer knows", async () => {
+    const host = fakeHost(PROTOCOL.minor, [PANEL], [{ kind: TODO }, { kind: BOARD }]);
+    host.shared.delete(BOARD);
+    const remote = await connect(host);
+    await remote.controller.switchConversation(id(1));
+    await settle();
+    expect(remote.view.current().conversation).toBeDefined();
+    expect(remote.view.current().docs.map((doc) => doc.kind)).toEqual([TODO]);
+    remote.close();
+  });
+
+  it("still closes the shown conversation when its own stream ends, or a document stream ends for another reason", async () => {
+    const host = fakeHost(PROTOCOL.minor, [PANEL], [{ kind: TODO }]);
+    const remote = await connect(host);
+    await remote.controller.switchConversation(id(1));
+    host.push({ type: "ended", stream: "conversation:1", reason: "Conversation 1 does not exist" });
+    await settle();
+    expect(remote.view.current().conversation).toBeUndefined();
+
+    await remote.controller.switchConversation(id(2));
+    expect(remote.view.current().conversation).toBeDefined();
+    host.push({ type: "ended", stream: `doc:${TODO}:2`, reason: "Conversation 2 does not exist" });
+    await settle();
+    expect(remote.view.current().conversation).toBeUndefined();
+    remote.close();
+  });
+});

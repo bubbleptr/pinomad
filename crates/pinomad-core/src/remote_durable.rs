@@ -22,7 +22,7 @@ use crate::frames::{
     ApnsPushToken, ClientFrame, HostFeature, HostRtc, ImageVariant, PROTOCOL, RtcMaxMessageSize,
     ServerFrame, UNAUTHORIZED_CLOSE_CODE, classify_server_frame, conversation_stream, doc_stream,
     encode_client_frame, host_streams, host_supports_call, host_supports_feature, minor_version,
-    parse_host_processes, parse_host_rtc, parse_rtc_max_message_size, plugin_infos, doc_infos,
+    parse_host_processes, parse_host_rtc, parse_rtc_max_message_size, plugin_infos, doc_infos, is_unknown_document,
 };
 use crate::json::{Json, JsonObject, num_key};
 use crate::organization::{checkout_of, home_of, organize};
@@ -3915,6 +3915,22 @@ impl RemoteDurable {
         let Some(units) = Self::stream_of(&stream) else {
             return Ok(());
         };
+        // A document the host no longer shares is absent, not a broken
+        // conversation: a reload can take back what its last frame announced
+        // before the subscribe arrives. Its waiters settle instead of failing
+        // and its slot stays shown.
+        if is_unknown_document(&U16String(units.clone()).to_string_lossy(), &reason) {
+            let first_ready = self
+                .first_view
+                .as_mut()
+                .is_some_and(|first| first.remaining.remove(&units) && first.remaining.is_empty());
+            self.drop_stream(&units);
+            self.note_reconnect_barrier_complete();
+            if first_ready {
+                self.finish_first_view();
+            }
+            return self.refresh();
+        }
         self.wanted.remove(&units);
         self.values.remove(&units);
         self.earlier.remove(&units);

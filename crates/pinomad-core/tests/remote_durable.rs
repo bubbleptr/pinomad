@@ -2527,6 +2527,63 @@ fn a_plugins_frame_without_a_document_list_keeps_the_hellos() {
     assert!(h.host.subscribes().contains(&format!("doc:{DOC_KIND}:2")));
 }
 
+fn ended(stream: &str, reason: &str) -> Json {
+    obj(&[
+        ("type", Json::from("ended")),
+        ("stream", Json::from(stream)),
+        ("reason", Json::from(reason)),
+    ])
+}
+
+#[test]
+fn an_announced_document_refused_as_unknown_leaves_the_conversation_shown() {
+    let mut h = setup();
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    // Announced, but a second reload took it back before the subscribe arrived.
+    h.host.held.insert(format!("doc:{BOARD}:1"));
+    h.deliver(obj(&[
+        ("type", Json::from("plugins")),
+        ("plugins", Json::array(vec![])),
+        ("docs", doc_list(&[DOC_KIND, BOARD])),
+    ]));
+    assert!(h.host.subscribes().contains(&format!("doc:{BOARD}:1")));
+    h.deliver(ended(&format!("doc:{BOARD}:1"), &format!("Unknown document {BOARD}")));
+    assert!(h.view_get("conversation").is_some());
+    assert_eq!(view_doc_kinds(&h, &["docs"]), vec![DOC_KIND.to_string()]);
+
+    // The conversation's other streams still reach the view.
+    h.snapshot(&format!("doc:{DOC_KIND}:1"), obj(&[("requests", Json::array(vec![Json::from("later")]))]));
+    assert_eq!(
+        h.dig(&["docs"]).and_then(|docs| docs.as_array().and_then(|docs| docs.first().cloned())).and_then(|doc| doc.get("value").cloned()),
+        Some(obj(&[("requests", Json::array(vec![Json::from("later")]))]))
+    );
+    assert_eq!(h.connection(), "connected");
+}
+
+#[test]
+fn a_switch_completes_when_a_hello_announced_document_is_refused_as_unknown() {
+    let mut h = setup();
+    h.host.held.insert(format!("doc:{DOC_KIND}:2"));
+    h.invoke(1, Call::SwitchConversation { id: 2 });
+    assert!(h.view_get("conversation").is_none());
+    h.deliver(ended(&format!("doc:{DOC_KIND}:2"), &format!("Unknown document {DOC_KIND}")));
+    assert!(matches!(h.ops.get(&1), Some(Ok(_))), "ops={:?}", h.ops);
+    assert!(h.view_get("conversation").is_some());
+}
+
+#[test]
+fn the_conversations_own_end_or_another_document_end_still_closes_it() {
+    let mut h = setup();
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    h.deliver(ended("conversation:1", "Conversation 1 does not exist"));
+    assert!(h.view_get("conversation").is_none());
+
+    h.invoke(2, Call::SwitchConversation { id: 2 });
+    assert!(h.view_get("conversation").is_some());
+    h.deliver(ended(&format!("doc:{DOC_KIND}:2"), "Conversation 2 does not exist"));
+    assert!(h.view_get("conversation").is_none());
+}
+
 // ─── connection semantics beyond the TS tests ─────────────────────────
 
 #[test]

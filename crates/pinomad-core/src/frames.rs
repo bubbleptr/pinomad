@@ -418,6 +418,23 @@ pub fn plugin_infos(value: Option<&Json>) -> Json {
     Json::array(entries.iter().filter(well_formed).cloned().collect())
 }
 
+/// `isUnknownDocument` — whether an `ended` frame is the host refusing a
+/// `doc:` stream as a document it does not share: the reason every host
+/// since 5.0 sends for it, naming the stream's own kind. Any other end of a
+/// `doc:` stream still closes the conversation it belongs to.
+pub fn is_unknown_document(stream: &str, reason: &Json) -> bool {
+    let Some(rest) = stream.strip_prefix("doc:") else {
+        return false;
+    };
+    let Some((kind, _)) = rest.rsplit_once(':') else {
+        return false;
+    };
+    !kind.is_empty()
+        && reason
+            .as_str()
+            .is_some_and(|reason| reason.to_string_lossy() == format!("Unknown document {kind}"))
+}
+
 /// A `plugins` frame's `docs` (5.36, `docInfos`): the entries with a
 /// non-empty string `kind` and no `presentation` or a string one, kept whole.
 /// A malformed entry is dropped, not fatal; anything but an array is `None`,

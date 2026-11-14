@@ -1581,5 +1581,47 @@
         }
       ]
     }
+  ],
+  "unknownDocument": [
+    {
+      "name": "unknown-doc",
+      "frame": "{\"type\":\"ended\",\"stream\":\"doc:plugin.notes.board:7\",\"reason\":\"Unknown document plugin.notes.board\"}",
+      "expect": true
+    },
+    {
+      "name": "unknown-builtin-doc",
+      "frame": "{\"type\":\"ended\",\"stream\":\"doc:pinomad.question:12\",\"reason\":\"Unknown document pinomad.question\"}",
+      "expect": true
+    },
+    {
+      "name": "other-kind",
+      "frame": "{\"type\":\"ended\",\"stream\":\"doc:plugin.notes.board:7\",\"reason\":\"Unknown document plugin.notes.other\"}",
+      "expect": false
+    },
+    {
+      "name": "doc-gone-conversation",
+      "frame": "{\"type\":\"ended\",\"stream\":\"doc:plugin.notes.board:7\",\"reason\":\"Conversation 7 does not exist\"}",
+      "expect": false
+    },
+    {
+      "name": "conversation",
+      "frame": "{\"type\":\"ended\",\"stream\":\"conversation:7\",\"reason\":\"Unknown document conversation\"}",
+      "expect": false
+    },
+    {
+      "name": "non-string-reason",
+      "frame": "{\"type\":\"ended\",\"stream\":\"doc:plugin.notes.board:7\",\"reason\":7}",
+      "expect": false
+    },
+    {
+      "name": "no-id",
+      "frame": "{\"type\":\"ended\",\"stream\":\"doc:plugin.notes.board\",\"reason\":\"Unknown document plugin.notes\"}",
+      "expect": false
+    },
+    {
+      "name": "empty-kind",
+      "frame": "{\"type\":\"ended\",\"stream\":\"doc::7\",\"reason\":\"Unknown document \"}",
+      "expect": false
+    }
   ]
 }
