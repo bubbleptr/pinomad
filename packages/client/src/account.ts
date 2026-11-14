@@ -330,6 +330,11 @@ export interface AccountHost {
    * servers older than #452.
    */
   readonly deviceReports?: boolean;
+  /**
+   * When the host joined the account, epoch ms; a host back after a removal
+   * joined anew (#531). Absent from servers older than it.
+   */
+  readonly joinedAt?: number;
 }
 
 /**
@@ -951,7 +956,8 @@ export function createAccountClient(options: {
           typeof entry.online !== "boolean" ||
           typeof entry.lastSeenAt !== "number" ||
           (entry.pairing !== "available" && entry.pairing !== "offline" && entry.pairing !== "host_too_old" && entry.pairing !== "key_mismatch") ||
-          (entry.deviceReports !== undefined && typeof entry.deviceReports !== "boolean")
+          (entry.deviceReports !== undefined && typeof entry.deviceReports !== "boolean") ||
+          (entry.joinedAt !== undefined && typeof entry.joinedAt !== "number")
         ) {
           return fail("invalid_response");
         }
@@ -963,6 +969,7 @@ export function createAccountClient(options: {
           lastSeenAt: entry.lastSeenAt,
           pairing: entry.pairing,
           ...(entry.deviceReports === undefined ? {} : { deviceReports: entry.deviceReports }),
+          ...(entry.joinedAt === undefined ? {} : { joinedAt: entry.joinedAt }),
         });
       }
       return ok(hosts);

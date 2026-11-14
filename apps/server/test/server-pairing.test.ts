@@ -179,7 +179,7 @@ describe("GET /api/hosts", () => {
     const hostId = relayHostId(keys.publicKey);
     const offline = await api(relay, { path: "/api/hosts", headers: bearer(session) });
     expect(offline.json).toEqual([
-      { hostId, name: "test-host", noisePublicKey: NOISE_KEY, online: false, lastSeenAt: 1, pairing: "offline", deviceReports: false },
+      { hostId, name: "test-host", noisePublicKey: NOISE_KEY, joinedAt: 1, online: false, lastSeenAt: 1, pairing: "offline", deviceReports: false },
     ]);
 
     await controlFor(relay, keys, { noisePublicKey: NOISE_KEY, features: ["pairing"] });

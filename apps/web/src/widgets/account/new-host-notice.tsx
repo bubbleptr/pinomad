@@ -6,7 +6,7 @@ import { useToast } from "../../shared/ui/toast.tsx";
 import { RemoveHostDialog } from "./remove-host.tsx";
 
 /**
- * "New host X joined your account", once per host on this device (#496). A
+ * "New host X joined your account", once per join on this device (#496, #531). A
  * host confirmed on any device pairs here on its own; this is where the user
  * learns that a machine they didn't add got in, and can take it off the
  * account right from the notice (#512). The first host list after a sign-in
@@ -25,7 +25,7 @@ export function NewHostNotices({ knownHosts = browserKnownHosts }: { knownHosts?
     if (state.status !== "signed-in" || state.hostsError !== undefined) return;
     const arrived = knownHosts.arrivals(
       { serverOrigin: state.serverOrigin, user: state.user },
-      state.hosts.map((match) => match.host.hostId),
+      state.hosts.map(({ host }) => ({ hostId: host.hostId, ...(host.joinedAt === undefined ? {} : { joinedAt: host.joinedAt }) })),
     );
     for (const hostId of arrived) {
       const name = state.hosts.find((match) => match.host.hostId === hostId)?.host.name ?? "A host";

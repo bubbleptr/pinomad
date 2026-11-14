@@ -97,15 +97,28 @@ describe("NewHostNotices", () => {
 
   it("announces a host that joined while this device was away", async () => {
     const knownHosts = createKnownHostsStore(localStorage);
-    knownHosts.arrivals({ serverOrigin: "https://pinomad.si", user: "kieran@example.com" }, [studio.host.hostId]);
+    knownHosts.arrivals({ serverOrigin: "https://pinomad.si", user: "kieran@example.com" }, [{ hostId: studio.host.hostId }]);
     renderNotices(liveAccount(signedIn({ hosts: [studio, omarchy] })), knownHosts);
     await nextFrames();
     expect(toasts(/New host omarchy joined your account/)).toHaveLength(1);
   });
 
+  it("announces a host again when it is back after a removal (#531)", async () => {
+    const knownHosts = createKnownHostsStore(localStorage);
+    const joinedAt = (each: AccountHostMatch, at: number): AccountHostMatch => ({ ...each, host: { ...each.host, joinedAt: at } });
+    knownHosts.arrivals({ serverOrigin: "https://pinomad.si", user: "kieran@example.com" }, [
+      { hostId: studio.host.hostId, joinedAt: 1 },
+      { hostId: omarchy.host.hostId, joinedAt: 1 },
+    ]);
+    renderNotices(liveAccount(signedIn({ hosts: [joinedAt(studio, 1), joinedAt(omarchy, 2)] })), knownHosts);
+    await nextFrames();
+    expect(toasts(/New host omarchy joined your account/)).toHaveLength(1);
+    expect(toasts(/New host studio joined your account/)).toHaveLength(0);
+  });
+
   it("goes straight to removing the new host, with the password again (#512)", async () => {
     const knownHosts = createKnownHostsStore(localStorage);
-    knownHosts.arrivals({ serverOrigin: "https://pinomad.si", user: "kieran@example.com" }, [studio.host.hostId]);
+    knownHosts.arrivals({ serverOrigin: "https://pinomad.si", user: "kieran@example.com" }, [{ hostId: studio.host.hostId }]);
     const account = liveAccount(signedIn({ hosts: [studio, omarchy] }));
     const removeHost = vi.fn(async () => ({ ok: true as const, value: undefined }));
     renderNotices({ ...account, removeHost }, knownHosts);

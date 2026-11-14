@@ -679,6 +679,7 @@ fn account_host_json(host: &AccountHost) -> Json {
         ("lastSeenAt", Some(num(host.last_seen_at))),
         ("pairing", Some(s(host.pairing.as_str()))),
         ("deviceReports", host.device_reports.map(Json::Bool)),
+        ("joinedAt", host.joined_at.map(num)),
     ])
 }
 

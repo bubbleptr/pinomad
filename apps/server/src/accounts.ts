@@ -2963,7 +2963,10 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
           db.prepare("DELETE FROM pending_revocations WHERE host_id = ?").run(hostId);
         }
         // Re-joining an already-bound hostId rebinds it (a new account gets it);
-        // the upsert is what makes a lost join response safe to retry.
+        // the upsert is what makes a lost join response safe to retry. A
+        // repeat join to the same account keeps its join time, which clients
+        // announce a host by (#531); a removal deletes the row, so a host back
+        // after one gets a new time.
         db.prepare(
           `INSERT INTO hosts (host_id, user_id, noise_public_key, name, joined_at, last_seen_at)
            VALUES (?, ?, ?, ?, ?, ?)
@@ -2971,7 +2974,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
              user_id = excluded.user_id,
              noise_public_key = excluded.noise_public_key,
              name = excluded.name,
-             joined_at = excluded.joined_at,
+             joined_at = CASE WHEN hosts.user_id = excluded.user_id THEN hosts.joined_at ELSE excluded.joined_at END,
              last_seen_at = excluded.last_seen_at`,
         ).run(hostId, row!.userId, noisePublicKey, hostName, at, at);
         db.prepare("DELETE FROM removed_hosts WHERE host_id = ?").run(hostId);

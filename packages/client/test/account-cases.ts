@@ -314,6 +314,9 @@ export const RESPONSE_CASES: ResponseCase[] = [
   { name: "join-ok", kind: "createJoinToken", status: 200, body: '{"token":"jt","expiresAt":9,"command":"pinomad join https://x jt"}' },
   { name: "join-missing-command", kind: "createJoinToken", status: 200, body: '{"token":"jt","expiresAt":9}' },
   { name: "hosts-ok", kind: "listHosts", status: 200, body: `[${HOST_ROW}]` },
+  // joinedAt is additive (#531): a number passes through, anything else is malformed.
+  { name: "hosts-joined-at", kind: "listHosts", status: 200, body: `[${HOST_ROW.slice(0, -1)},"joinedAt":1700000000000}]` },
+  { name: "hosts-joined-at-bad", kind: "listHosts", status: 200, body: `[${HOST_ROW.slice(0, -1)},"joinedAt":"yesterday"}]` },
   // deviceReports is additive (#452): a boolean passes through, anything else is malformed.
   { name: "hosts-device-reports", kind: "listHosts", status: 200, body: `[${HOST_ROW.slice(0, -1)},"deviceReports":false}]` },
   {

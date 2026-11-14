@@ -861,6 +861,20 @@
       "expect": "{\"ok\":true,\"value\":[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"sweuhmDvrtTWpl9mQIlokupKHwB1VVxInRMSouFnfCg\",\"online\":true,\"lastSeenAt\":7,\"pairing\":\"available\"}]}"
     },
     {
+      "name": "hosts-joined-at",
+      "kind": "listHosts",
+      "status": 200,
+      "body": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"sweuhmDvrtTWpl9mQIlokupKHwB1VVxInRMSouFnfCg\",\"online\":true,\"lastSeenAt\":7,\"pairing\":\"available\",\"joinedAt\":1700000000000}]",
+      "expect": "{\"ok\":true,\"value\":[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"sweuhmDvrtTWpl9mQIlokupKHwB1VVxInRMSouFnfCg\",\"online\":true,\"lastSeenAt\":7,\"pairing\":\"available\",\"joinedAt\":1700000000000}]}"
+    },
+    {
+      "name": "hosts-joined-at-bad",
+      "kind": "listHosts",
+      "status": 200,
+      "body": "[{\"hostId\":\"c7LYt2qptTZgAyvI9di-46OuTjs6f9Sa3oH3NHo0qmg\",\"name\":\"omarchy\",\"noisePublicKey\":\"sweuhmDvrtTWpl9mQIlokupKHwB1VVxInRMSouFnfCg\",\"online\":true,\"lastSeenAt\":7,\"pairing\":\"available\",\"joinedAt\":\"yesterday\"}]",
+      "expect": "{\"ok\":false,\"error\":{\"code\":\"invalid_response\"}}"
+    },
+    {
       "name": "hosts-device-reports",
       "kind": "listHosts",
       "status": 200,

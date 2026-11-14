@@ -399,6 +399,7 @@ pub fn account_host(json: &Json) -> AccountHost {
             Some(Json::Bool(reports)) => Some(*reports),
             _ => None,
         },
+        joined_at: num(json.get("joinedAt")),
     }
 }
 

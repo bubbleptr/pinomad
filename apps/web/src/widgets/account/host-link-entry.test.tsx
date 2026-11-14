@@ -128,7 +128,7 @@ describe("HostLinkEntry", () => {
     expect(await screen.findByText(/will appear in your hosts and connect on its own/)).toBeInTheDocument();
     expect(model_.watchForHost).toHaveBeenCalledWith(request().hostId);
     expect(onSettled).toHaveBeenCalledTimes(1);
-    expect(knownHosts.arrivals(account, [request().hostId])).toEqual([]);
+    expect(knownHosts.arrivals(account, [{ hostId: request().hostId }])).toEqual([]);
   });
 
   it("denies and says the host was turned away", async () => {

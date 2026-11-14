@@ -698,6 +698,10 @@ pub struct AccountHost {
     /// ask it to revoke a device (ADR-0037 §5). `None` from older servers.
     #[cfg_attr(feature = "ffi", uniffi(default = None))]
     pub device_reports: Option<bool>,
+    /// When the host joined the account, epoch ms; a host back after a
+    /// removal joined anew (#531). `None` from older servers.
+    #[cfg_attr(feature = "ffi", uniffi(default = None))]
+    pub joined_at: Option<f64>,
 }
 
 /// The answer to `POST /api/hosts/:hostId/pairing` — the vouched one-time
@@ -1113,6 +1117,10 @@ fn decode_value(kind: AccountOpKind, parsed: Option<&Json>) -> Result<AccountVal
                         None => None,
                         Some(Json::Bool(reports)) => Some(*reports),
                         Some(_) => return Err(AccountError::invalid()),
+                    },
+                    joined_at: match entry.get("joinedAt") {
+                        None => None,
+                        Some(value) => Some(value.as_number().ok_or_else(AccountError::invalid)?),
                     },
                 });
             }
