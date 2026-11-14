@@ -55,5 +55,5 @@ it("still reports a browser half without a default export function", async () =>
   const { registry, failed } = await load(info, bundle);
   expect(failed).toBe(true);
   expect(registry.panels).toEqual([]);
-  expect(String(errors.mock.calls[0]?.[1])).toContain("web.js has no default export function");
+  expect(String(errors.mock.calls[0]?.[1])).toContain("the browser half has no default export function");
 });
