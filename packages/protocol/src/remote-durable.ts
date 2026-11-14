@@ -1,5 +1,5 @@
 import { applyImmutable } from "@earendil-works/chord/delta";
-import type { JsonValue } from "@earendil-works/chord";
+import type { JsonValue } from "@earendil-works/chord/json";
 import type { ConversationId, ConversationView, JsonObject, TaskGraph } from "@earendil-works/pi-durable";
 import { MAX_ATTACHMENTS_PER_MESSAGE, type UserAttachment } from "./attachments.ts";
 import type { ImageVariant, OutgoingImage, ViewImage } from "./images.ts";

@@ -6,7 +6,7 @@
 import { spawn } from "node:child_process";
 import { opendir, realpath, stat } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@earendil-works/chord/context";
 import { AgentDoc, type Harness } from "@earendil-works/pi-durable";
 import type { FileListing, FileScope } from "@pinomad/protocol/organization.ts";
 import { checkoutAt, worktreeSettled } from "./checkout.ts";

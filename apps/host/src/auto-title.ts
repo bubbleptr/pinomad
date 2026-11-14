@@ -4,8 +4,7 @@
 // model call, the TitleDoc write). A title that exists — auto or manual — is
 // never regenerated, and every failure path is silent: titling is a nicety,
 // never worth a notice.
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { Context } from "@earendil-works/chord";
+import { BACKGROUND_CONTEXT, type Context } from "@earendil-works/chord/context";
 import type { Models } from "@earendil-works/pi-ai/models";
 import type { Context as ModelContext } from "@earendil-works/pi-ai";
 import type { ConversationId, Cursor, EntryRecord, Harness } from "@earendil-works/pi-durable";

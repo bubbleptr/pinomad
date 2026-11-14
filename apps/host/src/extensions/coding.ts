@@ -1,4 +1,4 @@
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@earendil-works/chord/context";
 import { type ToolExecutionApi, wrapTool } from "@earendil-works/pi-durable";
 import { createCodingTools, createWriteTool, type ReadToolOptions, type WriteToolInput } from "@earendil-works/pi-durable/tools";
 import { createPatch } from "diff";

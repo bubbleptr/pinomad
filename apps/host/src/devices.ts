@@ -4,7 +4,7 @@
 import { link, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@earendil-works/chord/context";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { defineDoc, type Harness } from "@earendil-works/pi-durable";
 import type { DeviceEntry, DeviceSource, HostDevices } from "@pinomad/protocol/devices.ts";

@@ -9,7 +9,7 @@
 // The child starts as a copy of the parent's agent — same cwd, so the same
 // checkout (ADR-0010 §5) — minus this extension (no recursion) and `exclude`.
 import { join } from "node:path";
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@earendil-works/chord/context";
 import { clampThinkingLevel, type ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { Models } from "@earendil-works/pi-ai/models";
 import {

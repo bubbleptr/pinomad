@@ -140,7 +140,7 @@ App 图标源文件是 `apps/desktop/build/icon.icon`（戴帽子的幽灵，全
 - 宿主必须用 Node 跑（`node apps/host/src/main.ts`，`bun run host` 就是这条命令）：依赖 `node:sqlite` 和 Node 原生 TS 类型剥离，不能用 Bun。
 - 一个数据目录（默认 `~/.pinomad`，`--data-dir` / `PINOMAD_DATA_DIR` 覆盖）同时只能有一个宿主进程；目录锁会拒绝第二个。
 - 服务端已登录的路由读请求体一律用 `authedJson`（`apps/server/src/api.ts`），之后只用它返回的 session，不用读请求体之前鉴权拿到的那个；`apps/server/test/api-reauth.test.ts` 会拦违规写法。新建的整数 id 表用 `AUTOINCREMENT`，要豁免就在 `apps/server/test/schema.test.ts` 的 `REUSABLE_IDS` 里写明理由。
-- `@earendil-works/*` 锁精确版本（当前 `1.5.0`，ADR-0002；`packages/protocol/test/earendil-pins.test.ts` 会拦 `^`/`~` 这类范围写法），升级要显式评审：用 `PINOMAD_UPDATE_CONTRACT=1` 重录契约快照（`apps/host/test/protocol-contract.test.ts`，基准在 `packages/protocol/test/fixtures/`），重新生成 Rust 对照向量，再看差异。
+- `@earendil-works/*` 锁精确版本（当前 `1.5.2`，ADR-0002；`packages/protocol/test/earendil-pins.test.ts` 会拦 `^`/`~` 这类范围写法），升级要显式评审：用 `PINOMAD_UPDATE_CONTRACT=1` 重录契约快照（`apps/host/test/protocol-contract.test.ts`，基准在 `packages/protocol/test/fixtures/`），重新生成 Rust 对照向量，再看差异。
 - 改了线上类型（帧、调用、门控、presentation）就升 `PROTOCOL` 并用 `PINOMAD_UPDATE_SURFACE=1` 重录协议快照（`packages/protocol/test/fixtures/protocol-surface.json`）。
 - 服务命令（`bun run service -- …`，ADR-0009）操作真实的服务管理器；测试里绝不要 `install` 真正的服务，开发用前台的 `bun run host` / `bun run start`。
 
