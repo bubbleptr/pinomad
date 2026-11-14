@@ -157,7 +157,11 @@ struct ConversationSkeleton: View {
 struct ComposerSkeleton: View {
     var body: some View {
         Skeleton(label: "") {
-            Bone(height: 92, cornerRadius: 26)
+            HStack(spacing: ComposerBar.spacing) {
+                Bone(width: ComposerBar.controlSize, height: ComposerBar.controlSize)
+                Bone(width: ComposerBar.controlSize, height: ComposerBar.controlSize)
+                Bone(height: ComposerBar.controlSize)
+            }
         }
         .accessibilityHidden(true)
         .padding(.horizontal, 12)
