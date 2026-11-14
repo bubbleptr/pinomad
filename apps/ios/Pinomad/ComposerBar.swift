@@ -44,7 +44,8 @@ struct ComposerField<Top: View, Draft: View, Trailing: View>: View {
 }
 
 /// The round control that opens the model and agent picker. It shows the
-/// model's logo (its first letter when there is none) and an `@` badge
+/// model's logo (its first letter when there is none, a dashed circle
+/// before any model is picked) and an `@` badge
 /// while a named agent is set; the full pick is in its label and the
 /// picker.
 struct ModelButton: View {
@@ -59,7 +60,8 @@ struct ModelButton: View {
     var problem: String? = nil
     let action: () -> Void
 
-    @ScaledMetric(relativeTo: .body) private var logoSize: CGFloat = 22
+    /// Fixed like the circle around it.
+    private let logoSize: CGFloat = 22
 
     var body: some View {
         Button(action: action) {
@@ -70,6 +72,9 @@ struct ModelButton: View {
         }
         .buttonStyle(.press)
         .disabled(!enabled)
+        // The circle keeps its size; past this the logo and badge would
+        // spill out of it.
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .accessibilityLabel(problem.map { "Model: \($0)" }
             ?? "Model: \([agent.map { "@\($0)" }, label.isEmpty ? "Choose model" : label].compactMap { $0 }.joined(separator: " "))")
     }
@@ -83,9 +88,14 @@ struct ModelButton: View {
         } else if let logo, modelLogoAsset(logo) != nil {
             ModelLogo(model: logo, size: logoSize)
                 .foregroundStyle(.primary)
-        } else {
+        } else if logo != nil {
             Text(Self.monogram(label))
                 .font(.system(.headline, design: .rounded))
+                .foregroundStyle(.secondary)
+        } else {
+            // No model picked yet: the host default applies.
+            Image(.circleDashed)
+                .font(.system(size: 18, weight: .medium))
                 .foregroundStyle(.secondary)
         }
     }

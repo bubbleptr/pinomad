@@ -340,9 +340,9 @@ struct ConversationComposer: View {
             text: draft,
             selection: $selection,
             focused: $focused,
-            placeholder: conversation.busy ? "Add a follow-up…" : ComposerPlaceholder.text(
-                lead: "Ask", agents: !roles.isEmpty, files: mentionScope != nil,
-                commands: listsCommands, skills: skillScope != nil),
+            // The trigger hints would wrap the one-line field; the Add menu
+            // lists them instead.
+            placeholder: conversation.busy ? "Add a follow-up…" : "Ask",
             chips: model.chips(for: conversation.id).ranges,
             expandDeletion: { model.chips(for: conversation.id).deletion(expanding: $0) },
             enabled: connected && !editLocked,
