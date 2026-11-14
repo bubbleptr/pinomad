@@ -6,8 +6,10 @@ import { WebSocket } from "ws";
 import { describe, expect, it, vi } from "vitest";
 import type { ServerFrame } from "@pinomad/protocol/frames.ts";
 import { HOST_UPGRADING_ERROR, type HostUpgrade } from "@pinomad/protocol/upgrade.ts";
+import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { addInboxEvent, InboxDoc } from "../src/inbox.ts";
 import type { InstallResult } from "../src/upgrade/upgrader.ts";
-import { connectTo, LONG_ANSWER, startChat, startFauxHost, useCleanups } from "./support.ts";
+import { connectTo, LONG_ANSWER, startChat, startFauxHost, tempDir, useCleanups } from "./support.ts";
 
 const defer = useCleanups();
 
@@ -71,9 +73,12 @@ function heldInstall() {
 
 const RELEASE = { version: "0.14.0", publishedAt: Date.UTC(2026, 9, 1), protocolMajor: 5 };
 
-async function upgradableHost(options: { install?: (version: string) => Promise<InstallResult>; answers?: string[]; tokensPerSecond?: number } = {}) {
+async function upgradableHost(
+  options: { install?: (version: string) => Promise<InstallResult>; answers?: string[]; tokensPerSecond?: number; projects?: string[] } = {},
+) {
   const restart = vi.fn();
   const host = await startFauxHost(defer, {
+    ...(options.projects === undefined ? {} : { projects: options.projects }),
     answers: options.answers ?? ["hello"],
     ...(options.tokensPerSecond === undefined ? {} : { tokensPerSecond: options.tokensPerSecond }),
     upgrade: {
@@ -128,6 +133,28 @@ describe("gateway upgrades", () => {
     });
     expect(await raw.call("submit", { ...submit, requestId: "r-after" })).toMatchObject({ ok: true });
     expect(restart).not.toHaveBeenCalled();
+  });
+
+  it("holds Inbox events while installing and runs them after a failure", async () => {
+    const held = heldInstall();
+    const project = await tempDir();
+    defer(project.remove);
+    const { host } = await upgradableHost({ install: held.install, projects: [project.path] });
+    const raw = await rawClient(host);
+    await raw.upgrade((value) => value.available !== null);
+    await raw.call("startUpgrade", { when: "now" });
+    await raw.upgrade((value) => value.phase === "installing");
+
+    await addInboxEvent(host.harness, project.path, { id: "e1", source: "user", summary: "bug", trusted: true }, BACKGROUND_CONTEXT);
+    // Proving an absence needs a wait: long enough for an ungated worker to have created the conversation.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const tasks = async () => Object.values((await host.harness.snapshot(InboxDoc, BACKGROUND_CONTEXT))!.inboxes)[0]!.tasks;
+    expect((await tasks())[0]).toMatchObject({ closed: false, events: [{ handled: false }] });
+    expect((await tasks())[0]!.conversationId).toBeUndefined();
+
+    held.finish({ ok: false, message: "npm ERR! code E404" });
+    await vi.waitFor(async () => expect((await tasks())[0]).toMatchObject({ closed: true, events: [{ handled: true }] }), { timeout: 15_000 });
+    expect((await tasks())[0]!.failed).toBeUndefined();
   });
 
   it("waits for a running turn before installing", async () => {

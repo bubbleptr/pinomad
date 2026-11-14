@@ -40,9 +40,9 @@ export type InboxTask = {
   conversationId?: ConversationId;
   events: InboxEvent[];
   /**
-   * The newest batch: its request id, events and whether it opened the
+   * The batch in flight: its request id, events and whether it opened the
    * conversation, recorded before it is admitted so a restart admits the same
-   * draft again (a no-op) and waits on it.
+   * draft again (a no-op) and waits on it. Cleared once its run settles.
    */
   batch?: { requestId: string; eventIds: string[]; first: boolean; admitted: boolean };
   /** Done or skipped; a later event reopens it. */
@@ -118,7 +118,7 @@ export async function addInboxEvent(
       delete target.failed;
       return { task: target.id, duplicate: false };
     }
-    const task: InboxTask = { id: randomUUID().slice(0, 8), title: titleOf(input), createdAt: Date.now(), events: [event], closed: false };
+    const task: InboxTask = { id: randomUUID(), title: titleOf(input), createdAt: Date.now(), events: [event], closed: false };
     inbox.tasks.push(task);
     if (input.thread !== undefined) inbox.threads[input.thread] = task.id;
     return { task: task.id, duplicate: false };
@@ -150,16 +150,15 @@ export type CreateInboxConversation = (input: { project: string; text: string; r
 
 /**
  * What the worker takes next, among tasks not parked on a question: a batch
- * recorded but not finished (after a restart), else the task whose events
- * wait longest.
+ * not yet seen to settle (one left by a restart) before anything else, else
+ * the task whose events wait longest.
  */
 function nextTask(inbox: ProjectInbox, parked: ReadonlySet<string>): InboxTask | undefined {
+  const unfinished = inbox.tasks.find((task) => task.batch !== undefined && !parked.has(task.id));
+  if (unfinished !== undefined) return unfinished;
   let best: { task: InboxTask; at: number } | undefined;
   for (const task of inbox.tasks) {
     if (parked.has(task.id)) continue;
-    if (task.batch !== undefined && (!task.batch.admitted || !task.closed)) {
-      if (!task.batch.admitted || task.events.every((event) => event.handled)) return task;
-    }
     const pending = task.events.find((event) => !event.handled)?.receivedAt;
     if (pending === undefined) continue;
     if (best === undefined || pending < best.at) best = { task, at: pending };
@@ -176,6 +175,8 @@ export async function startInbox(options: {
   readonly createConversation: CreateInboxConversation;
   /** The installed extensions' `pinomad.question` documents: an unanswered request in one parks the task. */
   readonly questionDocs: readonly ConversationDocToken<QuestionState>[];
+  /** The host's upgrade gate: no batch starts while an upgrade installs, and its events stay pending. */
+  readonly upgrade?: { admit(): () => void; subscribe(listener: () => void): () => void };
   readonly context: Context;
 }): Promise<{ close(): void }> {
   const { harness, context } = options;
@@ -222,12 +223,21 @@ export async function startInbox(options: {
       if (inbox === undefined) return;
       const task = nextTask(inbox, new Set(waiting.keys()));
       if (task === undefined) return;
+      let release: () => void;
+      try {
+        release = options.upgrade?.admit() ?? (() => {});
+      } catch {
+        // Installing: the events wait, and the upgrade's next change pumps again.
+        return;
+      }
       try {
         await runBatch(project, task);
       } catch (error) {
         if (closed) return;
         // One task that cannot run must not hold up the ones behind it.
         await failTask(project, task.id, error instanceof Error ? error.message : String(error));
+      } finally {
+        release();
       }
     }
   }
@@ -235,13 +245,12 @@ export async function startInbox(options: {
   async function runBatch(project: string, task: InboxTask): Promise<void> {
     const find = async (tx: Parameters<Parameters<Harness["commit"]>[0]>[0]): Promise<InboxTask> =>
       (await tx.doc(InboxDoc)).inboxes[project]!.tasks.find((each) => each.id === task.id)!;
-    // An admitted batch of an open task is only waited on again; otherwise
-    // record a new batch of the unhandled events before admitting it.
-    const reattach = task.batch?.admitted === true && task.events.every((event) => event.handled);
-    // The batch's events come from the commit that records it: one appended
-    // after the snapshot this loop read is either in both or in neither.
+    // A recorded batch (admitted or not) is resumed as it is; otherwise record
+    // a new batch of the unhandled events before admitting it. Its events come
+    // from the commit that records it: one appended after the snapshot this
+    // loop read is either in both or in neither.
     const { batch, events } =
-      reattach || (task.batch !== undefined && !task.batch.admitted)
+      task.batch !== undefined
         ? { batch: task.batch!, events: task.events.filter((event) => task.batch!.eventIds.includes(event.id)) }
         : await harness.commit(async (tx) => {
             const current = await find(tx);
@@ -318,8 +327,10 @@ export async function startInbox(options: {
     if (closed) return;
     await harness.commit(async (tx) => {
       const current = (await tx.doc(InboxDoc)).inboxes[project]?.tasks.find((each) => each.id === taskId);
-      // A later event reopened it: the worker takes it again.
-      if (current !== undefined && current.events.every((event) => event.handled)) current.closed = true;
+      if (current === undefined) return;
+      // The batch settled; a later event that reopened the task makes a new one.
+      delete current.batch;
+      if (current.events.every((event) => event.handled)) current.closed = true;
     }, context);
   }
 
@@ -367,9 +378,14 @@ export async function startInbox(options: {
   }, context);
   const watch = await harness.watchDoc(InboxDoc, context);
   if (watch === undefined) throw new Error("Inbox document is not available");
+  let projects: readonly string[] = [];
   const onValue = (value: Readonly<{ inboxes: Readonly<Record<string, ProjectInbox>> }> | null): void => {
-    for (const project of Object.keys(value?.inboxes ?? {})) pump(project);
+    projects = Object.keys(value?.inboxes ?? {});
+    for (const project of projects) pump(project);
   };
+  const unsubscribe = options.upgrade?.subscribe(() => {
+    for (const project of projects) pump(project);
+  });
   onValue(watch.value);
   watch.start((call) => {
     if (call.kind === "value") onValue(call.value);
@@ -380,6 +396,7 @@ export async function startInbox(options: {
     close() {
       closed = true;
       watch.stop();
+      unsubscribe?.();
       for (const map of parked.values()) for (const stop of map.values()) stop();
     },
   };

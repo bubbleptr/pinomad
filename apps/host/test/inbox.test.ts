@@ -140,6 +140,34 @@ describe("Inbox", () => {
     expect(await userTexts(second, done[1]!.conversationId!)).toEqual([expect.stringContaining("bug two")]);
   });
 
+  it("finishes a run resumed after a restart before starting another task in a non-git project", async () => {
+    const project = await plainProject();
+    const dir = await tempDir();
+    defer(dir.remove);
+    const first = await startFauxHost(defer, { dataDir: dir.path, projects: [project], answers: [LONG_ANSWER], tokensPerSecond: 20 });
+    await addInboxEvent(first.harness, project, { ...event("a1", "bug A"), thread: "a" }, context);
+    await until(() => tasksOf(first, project), (tasks) => tasks[0]?.batch?.admitted === true);
+    // B waits longer than A's follow-up, which arrives while A runs.
+    await addInboxEvent(first.harness, project, event("b1", "bug B"), context);
+    await addInboxEvent(first.harness, project, { ...event("a2", "more on A"), thread: "a" }, context);
+    await first.close();
+
+    const second = await startFauxHost(defer, { dataDir: dir.path, projects: [project], answers: [LONG_ANSWER, "b done", "a2 done"], tokensPerSecond: 20 });
+    let overlapped = false;
+    const done = await until(
+      () => tasksOf(second, project),
+      (tasks) => {
+        const [a, b] = tasks;
+        // B started while A's first batch had not been seen to settle.
+        if (b?.conversationId !== undefined && a?.batch?.eventIds.includes("a1") === true) overlapped = true;
+        return tasks.length === 2 && tasks.every((task) => task.closed);
+      },
+      30_000,
+    );
+    expect(overlapped).toBe(false);
+    expect(await userTexts(second, done[0]!.conversationId!)).toHaveLength(2);
+  });
+
   it("takes the next task while one waits for an answer in a git project", async () => {
     const project = await gitProject();
     const host = await startFauxHost(defer, { projects: [project], extensions: [question], answers: [asks(), "second done", "first done"] });

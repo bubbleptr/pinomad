@@ -412,6 +412,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     const inbox = await startInbox({
       harness,
       context,
+      ...(upgrader === undefined ? {} : { upgrade: upgrader }),
       questionDocs: extensions
         .flatMap((extension) => extension.docs ?? [])
         .filter((doc) => doc.presentation === "pinomad.question")
