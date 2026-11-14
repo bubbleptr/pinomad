@@ -128,7 +128,7 @@ async function rawSocket(host: OpenedHost) {
     if (frame.type !== "hello") throw new Error("unreachable");
     return frame;
   };
-  return { next, call, subscribe, hello };
+  return { next, call, subscribe, hello, frames };
 }
 
 const toolResults = (view: DurableView): string[] =>
@@ -310,6 +310,47 @@ export default definePlugin((pinomad) => {
 
 const bump = () => fauxAssistantMessage(fauxToolCall("counter_bump", {}), { stopReason: "toolUse" });
 
+/** A server half whose definePlugin function is async and runs `body`; its promise is left on `globalThis`. */
+const asyncPlugin = (body: string): string =>
+  'import { definePlugin } from "@pinomad/plugin/v1";\n' +
+  `export default definePlugin((pinomad) => ((globalThis as { __pluginPromise?: Promise<void> }).__pluginPromise = (async () => { ${body} })()));\n`;
+
+/**
+ * Unhandled rejections in this process from now on. Once the plugin's promise
+ * has rejected (before the host reports the plugin failed), `settled()` rejects
+ * a sentinel and waits for Node to report it: Node reports unhandled
+ * rejections in the order they happened, so the plugin's would come first.
+ * Nothing here attaches a handler to the plugin's promise, which would hide it.
+ */
+function unhandledRejections() {
+  const seen: unknown[] = [];
+  const sentinel = new Error("sentinel");
+  let sentinelReported: (() => void) | undefined;
+  const record = (reason: unknown) => {
+    if (reason === sentinel) sentinelReported?.();
+    else seen.push(reason);
+  };
+  // Vitest's own listeners would count the sentinel as a test error; they are back when the test ends.
+  const others = process.listeners("unhandledRejection");
+  process.removeAllListeners("unhandledRejection");
+  process.on("unhandledRejection", record);
+  defer(() => {
+    process.off("unhandledRejection", record);
+    for (const listener of others) process.on("unhandledRejection", listener);
+  });
+  const test = globalThis as { __pluginPromise?: Promise<void> };
+  return {
+    seen,
+    settled: async () => {
+      expect(test.__pluginPromise).toBeDefined();
+      delete test.__pluginPromise;
+      const reported = new Promise<void>((resolve) => (sentinelReported = resolve));
+      void Promise.reject(sentinel);
+      await reported;
+    },
+  };
+}
+
 describe("plugin reload", () => {
   const test = globalThis as { __pluginEnter?: (version: string) => void; __pluginGate?: Promise<void> };
   afterEach(() => {
@@ -402,6 +443,80 @@ describe("plugin reload", () => {
     await client.controller.submit("again", "followUp");
     await lastText("two");
     expect(results()[1]).toContain("v2 counted 2");
+  });
+
+  it("skips a plugin whose definePlugin function is async without leaving its rejection unhandled", async () => {
+    const rejections = unhandledRejections();
+    const events = pluginEvents();
+    const dataDir = await dataDirWithPlugins({ rejects: { "server.ts": asyncPlugin('throw new Error("boom");') } });
+    const { hello } = await setup({ dataDir, plugins: events.options });
+    await rejections.settled();
+    expect((await hello()).plugins?.map((plugin) => plugin.name)).toEqual(["notes"]);
+    expect(events.log.join("\n")).toMatch(/rejects.*before it returns/);
+    expect(rejections.seen).toEqual([]);
+  });
+
+  it("keeps the loaded version when an edit makes definePlugin async, without leaving its rejection unhandled", async () => {
+    const rejections = unhandledRejections();
+    const { client, events, lastText, results, edit } = await counterHost([bump(), "one", bump(), "two"]);
+    await lastText("one");
+    // Registering after an await hits the closed API inside the plugin's own promise.
+    await edit(asyncPlugin('await null; pinomad.tool({ name: "late", description: "x", parameters: { type: "object" }, run: async () => ({ text: "" }) });'));
+    const failed = await events.next((outcome) => outcome.failed.length > 0);
+    expect(failed.failed[0]?.error).toMatch(/before it returns/);
+    await rejections.settled();
+    expect(rejections.seen).toEqual([]);
+    await client.controller.submit("again", "followUp");
+    await lastText("two");
+    expect(results()[1]).toContain("v1 counted 2");
+  });
+
+  it("stops an open doc: stream when a reload stops sharing its state, and keeps the streams of states still shared", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const notes = (secretOptions: string) => `
+import { definePlugin } from "@pinomad/plugin/v1";
+export default definePlugin((pinomad) => {
+  const count = pinomad.state("count", { version: 1, initial: () => ({ n: 0 }) });
+  const secret = pinomad.state("secret", { version: 1, ${secretOptions} initial: () => ({ text: "" }) });
+  pinomad.method("write", async (args, ctx) => {
+    await ctx.change(async (tx) => {
+      (await tx.get(count)).n += 1;
+      (await tx.get(secret)).text = String(args);
+    });
+    return null;
+  });
+});
+`;
+    await writePlugin(dir.path, "notes", { "server.ts": notes("") });
+    const events = pluginEvents();
+    const { conversationId, call, subscribe, next, frames } = await setup({ dataDir: dir.path, plugins: events.options });
+    const COUNT = `doc:plugin.notes.count:${conversationId}`;
+    const SECRET = `doc:plugin.notes.secret:${conversationId}`;
+    expect(await call("pluginCall", { conversationId, plugin: "notes", method: "write", args: "shared before" })).toEqual({ ok: true, value: null });
+    subscribe(COUNT);
+    subscribe(SECRET);
+    await next((frame) => frame.type === "snapshot" && frame.stream === COUNT);
+    await next((frame) => frame.type === "snapshot" && frame.stream === SECRET && JSON.stringify(frame.value).includes("shared before"));
+
+    const draft = join(dir.path, "server.ts.draft");
+    await writeFile(draft, notes("shared: false,"));
+    await rename(draft, join(dir.path, "plugins", "notes", "server.ts"));
+    await events.next((outcome) => outcome.changed.includes("notes"));
+    // Its last frame shows the document as absent; `ended` would make clients drop the conversation.
+    await next((frame) => frame.type === "snapshot" && frame.stream === SECRET && frame.value === null);
+
+    expect(await call("pluginCall", { conversationId, plugin: "notes", method: "write", args: "host only now" })).toEqual({ ok: true, value: null });
+    // The still-shared stream carries the write; the ended one carries nothing after it.
+    await next((frame) => frame.type === "ops" && frame.stream === COUNT && JSON.stringify(frame.ops).includes("2"));
+    const secret = frames.filter((frame) => "stream" in frame && frame.stream === SECRET);
+    expect(secret.at(-1)).toEqual({ type: "snapshot", stream: SECRET, value: null });
+    expect(JSON.stringify(secret)).not.toContain("host only now");
+    // Subscribing again is refused, as for any document the host does not share.
+    subscribe(SECRET);
+    expect(await next((frame) => frame.type === "ended" && frame.stream === SECRET)).toMatchObject({
+      reason: "Unknown document plugin.notes.secret",
+    });
   });
 
   it("refuses a reload that takes a built-in tool's name and keeps the plugin as it was", async () => {

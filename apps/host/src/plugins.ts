@@ -77,6 +77,8 @@ export interface PluginCatalog {
   bundle(name: string, hash: string): string;
   /** Throws for an unknown plugin or method. */
   method(plugin: string, method: string): PluginMethod;
+  /** `listener` runs after each reload that added, changed or removed a plugin; returns the unsubscribe. */
+  subscribe(listener: () => void): () => void;
 }
 
 export interface Plugins extends PluginCatalog {
@@ -136,6 +138,7 @@ export async function openPlugins(dir: string, options: PluginsOptions): Promise
   const core = defineFacet<Principal>((facetHost) => facetHost.serve(PluginExtensions, { compose }));
 
   const web = new Map<string, WebBundle>();
+  const listeners = new Set<() => void>();
   const retained = new Map<string, string>();
   /** Each plugin's last failed build signature: the same files failing again are neither rolled out nor logged. */
   const failedAs = new Map<string, string>();
@@ -263,6 +266,7 @@ export async function openPlugins(dir: string, options: PluginsOptions): Promise
     for (const name of outcome.added) log(`plugin ${name}: loaded`);
     for (const name of outcome.changed) log(`plugin ${name}: reloaded`);
     for (const name of outcome.removed) log(`plugin ${name}: removed`);
+    if (outcome.added.length + outcome.changed.length + outcome.removed.length > 0) for (const listener of listeners) listener();
     if (outcome.added.length + outcome.changed.length + outcome.removed.length + outcome.failed.length > 0) options.onReload?.(outcome);
   };
 
@@ -320,6 +324,10 @@ export async function openPlugins(dir: string, options: PluginsOptions): Promise
       const run = find(plugin).translated?.methods.get(method);
       if (run === undefined) throw new Error(`Unknown method ${method} on plugin ${plugin}`);
       return run;
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => void listeners.delete(listener);
     },
     close: async () => {
       closed = true;
@@ -411,6 +419,11 @@ function collect(plugin: unknown, reserved: ReadonlySet<string>): Registration {
   try {
     const result: unknown = (plugin as HostPlugin)(api);
     if (typeof (result as { then?: unknown } | undefined)?.then === "function") {
+      // Refused, but its failure (a throw, or registering after an await) is the plugin's to lose, not an
+      // unhandled rejection that takes the host down.
+      try {
+        (result as PromiseLike<unknown>).then(undefined, () => {});
+      } catch {}
       throw new Error("definePlugin's function must register everything before it returns, without awaiting");
     }
   } finally {
@@ -495,6 +508,10 @@ function translate(plugin: string, registration: Registration): Translated {
  * chord's browser build as the ES module the shell imports (ADR-0049): the
  * script is a CommonJS function; JSX's `react/jsx-runtime` is answered with the
  * React the shell hands the default export, and nothing else can be required.
+ * The script runs at the first call of the default export, once that React is
+ * known, so JSX at the top level of `web.tsx` works; a script without a default
+ * export function fails that call with the error the shell gives an ES module
+ * without one.
  */
 function webBundle(facet: BuiltFacet): WebBundle {
   if (facet.kind === "failed") throw new Error(facet.errors.join("\n"));
@@ -514,15 +531,24 @@ const runtime = {
   jsx: (type, props, key) => element(type, props, key, false),
   jsxs: (type, props, key) => element(type, props, key, true),
 };
-const module = { exports: {} };
-(
+let main;
+let evaluated = false;
+export default function (api) {
+  if (!evaluated) {
+    React = api.React;
+    const module = { exports: {} };
+    (
 ${facet.source}
-)((specifier) => {
-  if (specifier === "react/jsx-runtime") return runtime;
-  throw new Error(specifier + " is not available to a plugin's browser half");
-}, module, module.exports);
-const main = module.exports.default;
-export default typeof main === "function" ? (api) => { React = api.React; return main(api); } : main;
+    )((specifier) => {
+      if (specifier === "react/jsx-runtime") return runtime;
+      throw new Error(specifier + " is not available to a plugin's browser half");
+    }, module, module.exports);
+    main = module.exports.default;
+    evaluated = true;
+  }
+  if (typeof main !== "function") throw new Error("web.js has no default export function");
+  return main(api);
+}
 `;
   return { code, hash: createHash("sha256").update(code).digest("hex"), size: Buffer.byteLength(code) };
 }

@@ -445,6 +445,10 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   const broadcast = (level: Notice["level"], message: string): void => {
     for (const client of clients) client.send({ type: "notice", level, message });
   };
+  // A plugin reload can stop sharing a state: streams of it that are open already stop carrying it.
+  const detachPlugins = options.plugins?.subscribe(() => {
+    for (const client of clients) void client.endUnsharedDocs();
+  });
   let remote: RemoteListener | undefined;
   let relay: RelayLink | undefined;
   /** Close every live connection of a revoked device, business or signal (ADR-0033 §3). */
@@ -799,6 +803,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
     broadcast,
     async close() {
       await relay?.close();
+      detachPlugins?.();
       detachAutoTitle?.();
       detachSettingsWatch();
       await detachPush?.close();
@@ -2301,6 +2306,25 @@ class GatewayClient {
   /** Attached images with refs swapped back for their bytes, then checked like freshly sent ones. */
   #attached(images: readonly OutgoingImage[] | undefined): MessageImage[] | undefined {
     return this.#captureImages(images)();
+  }
+
+  /**
+   * Stops this connection's `doc:` streams whose document the host no longer
+   * shares (a plugin reload made it host-only or removed it). The last frame is
+   * a `null` snapshot, as for a document that does not exist, not `ended`:
+   * clients drop the whole shown conversation when one of its streams ends.
+   * A new subscription is refused as an unknown document.
+   */
+  async endUnsharedDocs(): Promise<void> {
+    const shared = new Set(this.#docs().map((doc) => doc.token.definition.kind));
+    for (const [stream, state] of [...this.#subscriptions]) {
+      if (!stream.startsWith("doc:")) continue;
+      if (shared.has(stream.slice("doc:".length, stream.lastIndexOf(":")))) continue;
+      // Out of the map first: the stream's own sends stop at once, before its watch does.
+      this.#subscriptions.delete(stream);
+      await state.subscription?.stop();
+      await this.send({ type: "snapshot", stream, value: null });
+    }
   }
 
   async #unsubscribe(stream: StreamName): Promise<void> {
