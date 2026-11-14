@@ -68,20 +68,20 @@ struct ConversationComposer: View {
 
     private var listsCommands: Bool { model.hostSupports("listCommands") }
 
-    /// The model sheet's Agent section: pickable on a 5.18+ host, read-only
+    /// The panel's Agent section: pickable on a 5.18+ host, read-only
     /// on an older one or a subagent, hidden when there is no agent to name.
-    private var agentSheet: ModelSheetAgent? {
+    private var agentChoice: ModelPanelAgent? {
         guard let agentPick else { return nil }
         if agentPick.canSwitch {
-            return .pick(rows: agentPick.rows, hint: nil, onSelect: { model.setAgent($0) })
+            return .pick(rows: agentPick.rows, onSelect: { model.setAgent($0) })
         }
         guard let name = agentPick.current else { return nil }
         return .fixed(name: name, description: roles.first { $0.name == name }?.description)
     }
 
-    /// The sheet also holds the Agent section: an empty model list alone
+    /// The panel also holds the Agent section: an empty model list alone
     /// must not keep it shut, or a named agent could not be cleared.
-    private var sheetHasContent: Bool {
+    private var panelHasContent: Bool {
         guard let agentPick else { return !(model.snapshot?.models.isEmpty ?? true) }
         return agentPick.sheetHasContent(models: model.snapshot?.models ?? [])
     }
@@ -229,8 +229,8 @@ struct ConversationComposer: View {
         }
         .onAppear {
             #if DEBUG
-            if model.devShowsModelSheet {
-                model.devShowsModelSheet = false
+            if model.devShowsModelPanel {
+                model.devShowsModelPanel = false
                 showModels = true
             }
             #endif
@@ -263,18 +263,6 @@ struct ConversationComposer: View {
             focused = true
         }
         .onDisappear { mentions.close() }
-        .sheet(isPresented: $showModels) {
-            ModelSheet(
-                model: model,
-                models: model.snapshot?.models ?? [],
-                selected: ModelPick(
-                    model: (model.snapshot?.conversation?.agent ?? conversation.agent).model,
-                    level: (model.snapshot?.conversation?.agent ?? conversation.agent).thinkingLevel ?? .off),
-                agent: agentSheet,
-                onModel: { model.setModel($0) },
-                onLevel: { model.setThinkingLevel($0) }
-            )
-        }
         .imageSources(model: model, key: conversation.id, accepts: acceptsImages,
                       showPhotos: $showPhotos, showCamera: $showCamera)
         .fileAttachmentImporter(model: model, key: conversation.id, isPresented: $showFiles)
@@ -287,10 +275,23 @@ struct ConversationComposer: View {
                 label: modelLabel(models: model.snapshot?.models ?? [], selected: modelPick),
                 logo: conversation.agent.model,
                 agent: agentPick?.current,
-                enabled: connected && sheetHasContent
+                enabled: connected && panelHasContent
             ) {
                 focused = false
                 showModels = true
+            }
+            .popover(isPresented: $showModels, arrowEdge: .bottom) {
+                let agent = model.snapshot?.conversation?.agent ?? conversation.agent
+                ModelPanel(
+                    model: model,
+                    models: model.snapshot?.models ?? [],
+                    selected: ModelPick(model: agent.model, level: agent.thinkingLevel ?? .off),
+                    agent: agentChoice,
+                    lock: ModelLock(current: agentPick?.current, roles: roles),
+                    onModel: { model.setModel($0) },
+                    onLevel: { model.setThinkingLevel($0) }
+                )
+                .presentationCompactAdaptation(.popover)
             }
             ComposerField(showsTop: hasFieldTop) {
                 fieldTop

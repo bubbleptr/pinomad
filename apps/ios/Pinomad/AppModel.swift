@@ -363,7 +363,7 @@ final class AppModel {
     var pendingAttachSend = false
     var pendingPromptFile: String?
     var openHostDetailAfterReady = false
-    var devShowsModelSheet = false
+    var devShowsModelPanel = false
     /// `PINOMAD_DEMO_SIGN_IN`: the signed-out page a demo opens on.
     var devSignInPage: String?
     /// `PINOMAD_DEMO_ACCOUNT`: the account page a demo opens on.

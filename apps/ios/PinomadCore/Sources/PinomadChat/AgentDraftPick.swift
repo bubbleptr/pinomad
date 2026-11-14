@@ -91,7 +91,7 @@ public struct AgentDraftPick: Equatable, Sendable {
                                  defaults: defaults, overrides: overrides)
     }
 
-    /// Whether the model sheet shows its Agent section. Roles on a host that
+    /// Whether the model panel shows its Agent section. Roles on a host that
     /// takes `createConversation`'s agent offer it; a pick that outlived its
     /// roles or a host downgrade keeps it too, with only "No Agent", so it
     /// can still be cleared.
@@ -99,7 +99,7 @@ public struct AgentDraftPick: Equatable, Sendable {
         agent != nil || (hostSupportsAgents && !roles.isEmpty)
     }
 
-    /// Whether the draft's model sheet has anything to pick: the sheet is
+    /// Whether the draft's model panel has anything to pick: the panel is
     /// also the only way to the agent, so an empty model list alone must
     /// not keep it shut.
     public func sheetHasContent(models: [ModelSummary], hostSupportsAgents: Bool, roles: [AgentRole]) -> Bool {
