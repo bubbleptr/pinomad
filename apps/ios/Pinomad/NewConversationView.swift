@@ -71,7 +71,7 @@ struct NewConversationView: View {
         return "Model and thinking level are your picks; the rest comes from @\(agent)."
     }
 
-    /// The capsule's short red label and the card's full reason when the
+    /// The model button's VoiceOver reason and the field's full reason when the
     /// named-agent create would be refused.
     private var problemText: (label: String, reason: String)? {
         guard let problem = resolution?.problem else { return nil }
@@ -188,77 +188,45 @@ struct NewConversationView: View {
     }
 
     private var card: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if filesPreparing {
-                Text("Uploading files…")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            } else if let status = fileTray.statusText {
-                Text(status)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            if !tray.isEmpty || !fileTray.isEmpty || filesPreparing || tray.error != nil
-                || fileTray.error != nil || imagesBlocked {
-                AttachmentStrip(
-                    tray: tray,
-                    files: fileTray,
-                    preparingFiles: filesBeingRead,
-                    note: imagesBlocked ? "\(currentModel?.name ?? "This model") doesn't accept images. Remove them or switch models to send." : fileTray.error ?? tray.error,
-                    // The create already took these; a change now would be
-                    // lost when the draft clears.
-                    removeImage: { if !model.creating { model.removeImage(conversation: key, at: $0) } },
-                    removeFile: { if !model.creating { model.removeFile(conversation: key, id: $0) } },
-                    retryFile: { if !model.creating { model.retryFile(conversation: key, id: $0) } },
-                    view: { model.viewing = $0 }
-                )
-            }
-            SkillComposerText(
-                text: draft,
-                selection: $selection,
-                focused: $focused,
-                // A draft has no `/` commands until it is a conversation.
-                placeholder: ComposerPlaceholder.text(
-                    lead: "Do anything with Pi", agents: !roles.isEmpty, files: mentionScope != nil,
-                    commands: false, skills: skillScope != nil),
-                chips: model.chips(for: key).ranges,
-                expandDeletion: { model.chips(for: key).deletion(expanding: $0) },
-                enabled: model.connected && !model.creating,
-                minLines: 3,
-                maxLines: 8
-            )
-            if let problemText {
-                Text(problemText.reason)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            HStack(spacing: 10) {
-                plusMenu
+        HStack(alignment: .bottom, spacing: ComposerBar.spacing) {
+            plusMenu
                 // Images added mid-create would miss the request and then be
                 // cleared with the draft — hold the menu like the text field.
                 .disabled(model.creating)
-                ModelCapsule(
-                    label: modelLabel(models: model.snapshot?.models ?? [], selected: pick),
-                    logo: pick.model,
-                    short: ModelCapsule.short(models: model.snapshot?.models ?? [], pick: pick),
-                    prefix: selectedAgent.map { "@\($0)" },
-                    // The sheet is the only way to the agent, so roles or a
-                    // stale pick open it even without models. Locked while
-                    // creating: the create already took the pick.
-                    enabled: model.connected && !model.creating
-                        && model.draftAgent.sheetHasContent(
-                            models: model.snapshot?.models ?? [],
-                            hostSupportsAgents: agentPickerAvailable, roles: roles),
-                    problem: problemText?.label
-                ) {
-                    focused = false
-                    showModels = true
-                }
-                // Let the capsule take its ideal width; the spacer gives up
-                // the room first so the agent and model both read.
-                .layoutPriority(1)
-                Spacer(minLength: 0)
+            ModelButton(
+                label: modelLabel(models: model.snapshot?.models ?? [], selected: pick),
+                logo: pick.model,
+                agent: selectedAgent,
+                // The sheet is the only way to the agent, so roles or a
+                // stale pick open it even without models. Locked while
+                // creating: the create already took the pick.
+                enabled: model.connected && !model.creating
+                    && model.draftAgent.sheetHasContent(
+                        models: model.snapshot?.models ?? [],
+                        hostSupportsAgents: agentPickerAvailable, roles: roles),
+                problem: problemText?.label
+            ) {
+                focused = false
+                showModels = true
+            }
+            ComposerField(showsTop: hasFieldTop) {
+                fieldTop
+            } text: {
+                SkillComposerText(
+                    text: draft,
+                    selection: $selection,
+                    focused: $focused,
+                    // A draft has no `/` commands until it is a conversation.
+                    placeholder: ComposerPlaceholder.text(
+                        lead: "Do anything with Pi", agents: !roles.isEmpty, files: mentionScope != nil,
+                        commands: false, skills: skillScope != nil),
+                    chips: model.chips(for: key).ranges,
+                    expandDeletion: { model.chips(for: key).deletion(expanding: $0) },
+                    enabled: model.connected && !model.creating,
+                    minLines: 3,
+                    maxLines: 8
+                )
+            } trailing: {
                 if model.creating {
                     ProgressView().frame(width: 34, height: 34)
                 } else {
@@ -272,13 +240,49 @@ struct NewConversationView: View {
                     .accessibilityLabel("Start conversation")
                 }
             }
-            .frame(minHeight: 34)
-            .sensoryFeedback(.impact(weight: .light), trigger: model.creating) { old, new in !old && new }
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 14)
-        .padding(.bottom, 10)
-        .glassEffect(.regular, in: .rect(cornerRadius: 26))
+        .sensoryFeedback(.impact(weight: .light), trigger: model.creating) { old, new in !old && new }
+    }
+
+    private var hasFieldTop: Bool {
+        filesPreparing || fileTray.statusText != nil || !tray.isEmpty || !fileTray.isEmpty
+            || tray.error != nil || fileTray.error != nil || imagesBlocked || problemText != nil
+    }
+
+    /// Upload status, staged attachments, and why the create would be
+    /// refused, above the draft's text.
+    @ViewBuilder
+    private var fieldTop: some View {
+        if filesPreparing {
+            Text("Uploading files…")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        } else if let status = fileTray.statusText {
+            Text(status)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        if !tray.isEmpty || !fileTray.isEmpty || filesPreparing || tray.error != nil
+            || fileTray.error != nil || imagesBlocked {
+            AttachmentStrip(
+                tray: tray,
+                files: fileTray,
+                preparingFiles: filesBeingRead,
+                note: imagesBlocked ? "\(currentModel?.name ?? "This model") doesn't accept images. Remove them or switch models to send." : fileTray.error ?? tray.error,
+                // The create already took these; a change now would be
+                // lost when the draft clears.
+                removeImage: { if !model.creating { model.removeImage(conversation: key, at: $0) } },
+                removeFile: { if !model.creating { model.removeFile(conversation: key, id: $0) } },
+                retryFile: { if !model.creating { model.retryFile(conversation: key, id: $0) } },
+                view: { model.viewing = $0 }
+            )
+        }
+        if let problemText {
+            Text(problemText.reason)
+                .font(.caption)
+                .foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private func refreshMentions() {

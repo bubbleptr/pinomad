@@ -9,7 +9,7 @@ import SwiftUI
 /// glass card holding the draft and its actions. Sits in the transcript's
 /// bottom safe-area bar, so the keyboard and the scroll inset follow it.
 struct ConversationComposer: View {
-    static let cardCornerRadius: CGFloat = 26
+    static let cardCornerRadius: CGFloat = ComposerBar.cornerRadius
     /// Space between the card and the bottom of the bar.
     static let bottomInset: CGFloat = 8
 
@@ -281,77 +281,86 @@ struct ConversationComposer: View {
     }
 
     private var card: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if filesPreparing {
-                Text("Uploading files…")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            } else if let status = fileTray.statusText {
-                Text(status)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+        HStack(alignment: .bottom, spacing: ComposerBar.spacing) {
+            plusMenu
+            ModelButton(
+                label: modelLabel(models: model.snapshot?.models ?? [], selected: modelPick),
+                logo: conversation.agent.model,
+                agent: agentPick?.current,
+                enabled: connected && sheetHasContent
+            ) {
+                focused = false
+                showModels = true
             }
-            if !tray.isEmpty || !fileTray.isEmpty || filesPreparing || tray.error != nil
-                || fileTray.error != nil || imagesBlocked || commandBlocked != nil {
-                AttachmentStrip(
-                    tray: tray,
-                    files: fileTray,
-                    preparingFiles: filesBeingRead,
-                    note: imagesBlocked
-                        ? "\(currentModel?.name ?? "This model") doesn't accept images. Remove them or switch models to send."
-                        : commandBlocked ?? fileTray.error ?? tray.error,
-                    removeImage: { model.removeImage(conversation: conversation.id, at: $0) },
-                    removeFile: { model.removeFile(conversation: conversation.id, id: $0) },
-                    retryFile: { model.retryFile(conversation: conversation.id, id: $0) },
-                    view: { model.viewing = $0 }
-                )
-            }
-            SkillComposerText(
-                text: draft,
-                selection: $selection,
-                focused: $focused,
-                placeholder: conversation.busy ? "Add a follow-up…" : ComposerPlaceholder.text(
-                    lead: "Ask", agents: !roles.isEmpty, files: mentionScope != nil,
-                    commands: listsCommands, skills: skillScope != nil),
-                chips: model.chips(for: conversation.id).ranges,
-                expandDeletion: { model.chips(for: conversation.id).deletion(expanding: $0) },
-                enabled: connected && !editLocked,
-                minLines: 1,
-                maxLines: 6
-            )
-            .onChange(of: focused) { _, isFocused in
-                guard isFocused else {
-                    mentions.close()
-                    return
-                }
-                refreshMentions()
-                // Let the keyboard's inset land first, then show the end.
-                Task {
-                    try? await Task.sleep(for: .milliseconds(350))
-                    model.transcriptPin += 1
-                }
-            }
-            HStack(spacing: 10) {
-                plusMenu
-                ModelCapsule(
-                    label: modelLabel(models: model.snapshot?.models ?? [], selected: modelPick),
-                    logo: conversation.agent.model,
-                    short: ModelCapsule.short(models: model.snapshot?.models ?? [], pick: modelPick),
-                    prefix: agentPick?.current.map { "@\($0)" },
-                    enabled: connected && sheetHasContent
-                ) {
-                    focused = false
-                    showModels = true
-                }
-                Spacer(minLength: 0)
+            ComposerField(showsTop: hasFieldTop) {
+                fieldTop
+            } text: {
+                draftText
+            } trailing: {
                 sendSlot
             }
-            .frame(minHeight: 34)
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 14)
-        .padding(.bottom, 10)
-        .glassEffect(.regular, in: .rect(cornerRadius: Self.cardCornerRadius))
+    }
+
+    private var hasFieldTop: Bool {
+        filesPreparing || fileTray.statusText != nil || !tray.isEmpty || !fileTray.isEmpty
+            || tray.error != nil || fileTray.error != nil || imagesBlocked || commandBlocked != nil
+    }
+
+    @ViewBuilder
+    private var fieldTop: some View {
+        if filesPreparing {
+            Text("Uploading files…")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        } else if let status = fileTray.statusText {
+            Text(status)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        if !tray.isEmpty || !fileTray.isEmpty || filesPreparing || tray.error != nil
+            || fileTray.error != nil || imagesBlocked || commandBlocked != nil {
+            AttachmentStrip(
+                tray: tray,
+                files: fileTray,
+                preparingFiles: filesBeingRead,
+                note: imagesBlocked
+                    ? "\(currentModel?.name ?? "This model") doesn't accept images. Remove them or switch models to send."
+                    : commandBlocked ?? fileTray.error ?? tray.error,
+                removeImage: { model.removeImage(conversation: conversation.id, at: $0) },
+                removeFile: { model.removeFile(conversation: conversation.id, id: $0) },
+                retryFile: { model.retryFile(conversation: conversation.id, id: $0) },
+                view: { model.viewing = $0 }
+            )
+        }
+    }
+
+    private var draftText: some View {
+        SkillComposerText(
+            text: draft,
+            selection: $selection,
+            focused: $focused,
+            // The trigger hints would wrap the one-line field; the Add menu
+            // lists them instead.
+            placeholder: conversation.busy ? "Add a follow-up…" : "Ask",
+            chips: model.chips(for: conversation.id).ranges,
+            expandDeletion: { model.chips(for: conversation.id).deletion(expanding: $0) },
+            enabled: connected && !editLocked,
+            minLines: 1,
+            maxLines: 6
+        )
+        .onChange(of: focused) { _, isFocused in
+            guard isFocused else {
+                mentions.close()
+                return
+            }
+            refreshMentions()
+            // Let the keyboard's inset land first, then show the end.
+            Task {
+                try? await Task.sleep(for: .milliseconds(350))
+                model.transcriptPin += 1
+            }
+        }
     }
 
     private var plusMenu: some View {
@@ -693,10 +702,10 @@ struct PlusMenu: View {
             }
         } label: {
             Image(.plus)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 34, height: 34)
-                .background(.fill.tertiary, in: .circle)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(.primary)
+                .frame(width: ComposerBar.controlSize, height: ComposerBar.controlSize)
+                .glassEffect(.regular.interactive(), in: .circle)
         }
         .menuStyle(.button)
         .buttonStyle(.press)
@@ -790,90 +799,6 @@ struct Thumbnail: View {
         }
         .frame(width: 56, height: 56)
         .clipShape(.rect(cornerRadius: 10))
-    }
-}
-
-struct ModelCapsule: View {
-    /// The model's full name and level: shown when the model has no logo,
-    /// and always what VoiceOver reads.
-    let label: String
-    /// The picked model, whose logo stands in for its brand.
-    let logo: ModelRef?
-    /// `label` without the brand the logo shows ("Opus 4.1 · High").
-    let short: String?
-    /// The named agent (`@name`) the pick comes from, shown first.
-    let prefix: String?
-    let enabled: Bool
-    /// Why the shown pick can't be sent — replaces the label in red.
-    let problem: String?
-    let action: () -> Void
-
-    @ScaledMetric(relativeTo: .subheadline) private var logoSize: CGFloat = 18
-
-    init(label: String, logo: ModelRef?, short: String? = nil, prefix: String? = nil, enabled: Bool,
-         problem: String? = nil, action: @escaping () -> Void) {
-        self.label = label
-        self.logo = logo
-        self.short = short
-        self.prefix = prefix
-        self.enabled = enabled
-        self.problem = problem
-        self.action = action
-    }
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 4) {
-                if let problem {
-                    Text(problem)
-                        .lineLimit(1)
-                        .foregroundStyle(.red)
-                } else {
-                    let logo = logo.flatMap { modelLogoAsset($0) == nil ? nil : $0 }
-                    if let logo {
-                        ModelLogo(model: logo, size: logoSize)
-                            .padding(.trailing, 2)
-                    }
-                    if let prefix {
-                        Text(prefix)
-                            .fontWeight(.medium)
-                            .lineLimit(1)
-                            // The model label truncates first.
-                            .layoutPriority(1)
-                    }
-                    if let logo, let short {
-                        Text(short).lineLimit(1)
-                    } else {
-                        Text(label.isEmpty ? "Choose model" : label).lineLimit(1)
-                    }
-                }
-                Image(.chevronDown)
-                    .font(.caption2.weight(.semibold))
-            }
-            // The run lines in the transcript use this type and logo size,
-            // so the model reads the same in both places.
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
-            .frame(height: 34)
-            .background(.fill.tertiary, in: .capsule)
-        }
-        .buttonStyle(.press)
-        .disabled(!enabled)
-        .accessibilityLabel(problem.map { "Model: \($0)" }
-            ?? "Model: \([prefix, label].compactMap { $0 }.joined(separator: " "))")
-    }
-
-    /// What the capsule reads beside a logo: the name as `modelLabel`
-    /// gives it, less the brand, with the level only for a listed model
-    /// that has levels to choose from.
-    static func short(models: [ModelSummary], pick: ModelPick) -> String? {
-        guard let ref = pick.model else { return nil }
-        let summary = models.first { sameModel(a: ModelRef(provider: $0.provider, modelId: $0.modelId), b: ref) }
-        let series = modelSeriesName(summary?.name ?? ref.modelId, model: ref)
-        guard let summary, summary.thinkingLevels.count > 1,
-              let level = thinkingLevelLabel(level: pick.level) else { return series }
-        return "\(series) · \(level)"
     }
 }
 

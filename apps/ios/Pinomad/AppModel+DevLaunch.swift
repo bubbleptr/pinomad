@@ -180,7 +180,7 @@ extension AppModel {
             return true
         }
         if let mode = env["PINOMAD_DEMO_MODELS"] {
-            // The model capsule and sheet with makers' logos; `sheet` opens
+            // The model button and sheet with makers' logos; `sheet` opens
             // the sheet over the conversation.
             phase = .home
             startModelsDemo(sheet: mode == "sheet")
@@ -936,8 +936,8 @@ extension AppModel {
 
     /// `PINOMAD_DEMO_MODELS`: models from many makers, some served by
     /// another provider (Claude on Copilot and Bedrock) and one with no
-    /// logo, so the capsule and the sheet's logos can be photographed
-    /// without a live host. The capsule shows GPT-5, a monochrome logo
+    /// logo, so the model button and the sheet's logos can be photographed
+    /// without a live host. The button shows GPT-5, a monochrome logo
     /// that takes the text's color; the sheet opens on Claude. The settled
     /// run was Claude's, so its trace keeps Claude's logo.
     private func startModelsDemo(sheet: Bool) {
