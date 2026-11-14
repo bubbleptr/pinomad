@@ -219,45 +219,54 @@ const summary = (overrides: Partial<ConversationSummary> = {}): ConversationSumm
 });
 
 async function openAgentMenu(): Promise<HTMLElement> {
-  await userEvent.setup().click(screen.getByTestId("agent-trigger"));
+  const user = userEvent.setup({ pointerEventsCheck: 0 });
+  await user.click(screen.getByTestId("model-trigger"));
+  const menu = await screen.findByRole("menu", { name: "Model and Thinking" });
+  await user.click(within(menu).getByRole("menuitem", { name: /^Agent/ }));
   return screen.findByRole("menu", { name: "Agent" });
+}
+
+/** The capsule menu's Agent row. */
+async function agentRow(): Promise<HTMLElement> {
+  await userEvent.setup().click(screen.getByTestId("model-trigger"));
+  return within(await screen.findByRole("menu", { name: "Model and Thinking" })).getByRole("menuitem", { name: /^Agent/ });
 }
 
 describe("ConversationComposer agent switching", () => {
   it("calls setAgent with the picked role and shows currentAgent over role", async () => {
     const { remote } = setup({ summary: summary({ role: "reviewer", currentAgent: "tester" }) });
-    expect(screen.getByTestId("agent-trigger")).toHaveTextContent("@tester");
+    expect(screen.getByTestId("model-trigger")).toHaveTextContent("@tester");
 
     const menu = await openAgentMenu();
-    await userEvent.setup().click(within(menu).getByRole("menuitemradio", { name: /^reviewer/ }));
+    await userEvent.setup({ pointerEventsCheck: 0 }).click(within(menu).getByRole("menuitemradio", { name: /^reviewer/ }));
     expect(remote.controller.setAgent).toHaveBeenCalledWith("reviewer");
   });
 
   it("calls setAgent(null) for No agent", async () => {
     const { remote } = setup({ summary: summary({ currentAgent: "tester" }) });
     const menu = await openAgentMenu();
-    await userEvent.setup().click(within(menu).getByRole("menuitemradio", { name: /^No agent/ }));
+    await userEvent.setup({ pointerEventsCheck: 0 }).click(within(menu).getByRole("menuitemradio", { name: /^No agent/ }));
     expect(remote.controller.setAgent).toHaveBeenLastCalledWith(null);
   });
 
   it("treats a present null currentAgent as no agent, not the creation role", async () => {
     setup({ summary: summary({ role: "reviewer", currentAgent: null }) });
-    expect(screen.getByTestId("agent-trigger")).not.toHaveTextContent("@");
+    expect(screen.getByTestId("model-trigger")).not.toHaveTextContent("@");
     const menu = await openAgentMenu();
     expect(within(menu).getByRole("menuitemradio", { name: /^No agent/ })).toHaveAttribute("aria-checked", "true");
   });
 
-  it("keeps a pre-5.18 host read-only", () => {
+  it("keeps a pre-5.18 host read-only", async () => {
     const { remote } = setup({ minor: 17, summary: summary({ role: "reviewer" }) });
-    expect(screen.getByTestId("agent-trigger")).toHaveTextContent("@reviewer");
-    expect(screen.getByTestId("agent-trigger")).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByTestId("model-trigger")).toHaveTextContent("@reviewer");
+    expect(await agentRow()).toHaveAttribute("aria-disabled", "true");
     expect(remote.controller.setAgent).not.toHaveBeenCalled();
   });
 
-  it("keeps a subagent read-only on a 5.18 host", () => {
+  it("keeps a subagent read-only on a 5.18 host", async () => {
     const { remote } = setup({ summary: summary({ kind: "subagent", role: "tester", currentAgent: "tester" }) });
-    expect(screen.getByTestId("agent-trigger")).toHaveTextContent("@tester");
-    expect(screen.getByTestId("agent-trigger")).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByTestId("model-trigger")).toHaveTextContent("@tester");
+    expect(await agentRow()).toHaveAttribute("aria-disabled", "true");
     expect(remote.controller.setAgent).not.toHaveBeenCalled();
   });
 

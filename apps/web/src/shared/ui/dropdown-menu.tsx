@@ -108,8 +108,8 @@ function DropdownMenuSubTrigger({ className, children, ...props }: MenuPrimitive
       className={cn(menuItemClassName, "data-popup-open:overlay-hover", className)}
       {...props}
     >
-      {children}
-      <ChevronRight aria-hidden="true" className="ms-auto size-3.5 text-muted-foreground" />
+      <span className="flex min-w-0 flex-1 items-center gap-[inherit]">{children}</span>
+      <ChevronRight aria-hidden="true" className="size-3.5 text-muted-foreground" />
     </MenuPrimitive.SubmenuTrigger>
   )
 }

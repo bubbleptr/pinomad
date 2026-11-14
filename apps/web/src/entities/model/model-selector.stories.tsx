@@ -70,13 +70,15 @@ export const Open: Story = { play: open };
 /** The Thinking capsule's popover: the selected model's levels, strongest first. */
 export const ThinkingOpen: Story = {
   args: { selected: { model: { provider: "anthropic", modelId: "claude-a-max" }, level: "high" } },
-  play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByTestId("thinking-trigger"));
+  play: async (context) => {
+    await open(context);
+    await userEvent.click(await within(document.body).findByRole("menuitem", { name: /^Thinking/ }));
   },
 };
 
-const openAgents = async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-  await userEvent.click(within(canvasElement).getByTestId("agent-trigger"));
+const openAgents = async (context: { canvasElement: HTMLElement }) => {
+  await open(context);
+  await userEvent.click(await within(document.body).findByRole("menuitem", { name: /^Agent/ }));
 };
 
 /** A draft on a host with named agents: the Agent menu comes first, just its icon while none is picked. */
