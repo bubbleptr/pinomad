@@ -2390,6 +2390,73 @@ fn view_host_exposes_the_announced_identity() {
     assert!(host_view.get("version").is_none());
 }
 
+// ─── plugin list (5.34 hello, 5.35 frame) ──────────────────────────────
+
+fn plugin(name: &str, hash: Option<&str>) -> Json {
+    match hash {
+        Some(hash) => obj(&[
+            ("name", Json::from(name)),
+            ("api", Json::from(1.0)),
+            ("web", obj(&[("hash", Json::from(hash.repeat(64))), ("size", Json::from(10.0))])),
+        ]),
+        None => obj(&[("name", Json::from(name)), ("api", Json::from(1.0))]),
+    }
+}
+
+fn plugins_frame(plugins: Json) -> Json {
+    obj(&[("type", Json::from("plugins")), ("plugins", plugins)])
+}
+
+#[test]
+fn view_host_follows_the_hello_plugins_and_each_plugins_frame() {
+    let host = ScriptedHost::new(
+        vec![obj(&[])],
+        vec![("plugins".to_string(), Json::array(vec![plugin("panel", Some("a"))]))],
+    );
+    let mut h = Harness::new(host);
+    assert_eq!(h.dig(&["host", "plugins"]), Some(Json::array(vec![plugin("panel", Some("a"))])));
+
+    let next = Json::array(vec![plugin("panel", Some("b")), plugin("tools", None)]);
+    h.deliver(plugins_frame(next.clone()));
+    assert_eq!(h.dig(&["host", "plugins"]), Some(next));
+    assert_eq!(h.dig(&["host", "protocol", "minor"]), Some(Json::from(PROTOCOL.minor)));
+
+    // Malformed entries drop out as in the hello; a list that is not one changes nothing.
+    h.deliver(plugins_frame(Json::array(vec![plugin("tools", None), Json::from(7.0), obj(&[("name", Json::from(""))])])));
+    assert_eq!(h.dig(&["host", "plugins"]), Some(Json::array(vec![plugin("tools", None)])));
+    h.deliver(plugins_frame(Json::from("none")));
+    assert_eq!(h.dig(&["host", "plugins"]), Some(Json::array(vec![plugin("tools", None)])));
+
+    h.deliver(plugins_frame(Json::array(vec![])));
+    assert_eq!(h.dig(&["host", "plugins"]), None);
+    assert_eq!(h.connection(), "connected");
+}
+
+#[test]
+fn a_5_34_host_announces_plugins_but_its_plugins_frame_is_not_believed() {
+    let host = ScriptedHost::new(
+        vec![obj(&[])],
+        vec![
+            ("protocol".to_string(), protocol_obj(34.0)),
+            ("plugins".to_string(), Json::array(vec![plugin("panel", Some("a"))])),
+        ],
+    );
+    let mut h = Harness::new(host);
+    h.deliver(plugins_frame(Json::array(vec![])));
+    assert_eq!(h.dig(&["host", "plugins"]), Some(Json::array(vec![plugin("panel", Some("a"))])));
+
+    // Before 5.34 the hello's list means nothing.
+    let host = ScriptedHost::new(
+        vec![obj(&[])],
+        vec![
+            ("protocol".to_string(), protocol_obj(33.0)),
+            ("plugins".to_string(), Json::array(vec![plugin("panel", Some("a"))])),
+        ],
+    );
+    let h = Harness::new(host);
+    assert_eq!(h.dig(&["host", "plugins"]), None);
+}
+
 // ─── connection semantics beyond the TS tests ─────────────────────────
 
 #[test]

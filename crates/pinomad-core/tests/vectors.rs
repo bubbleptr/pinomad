@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use pinomad_core::delta::{apply_immutable, op_from_json, DeltaError, Op};
 use pinomad_core::frames::{
     classify_server_frame, decode_server_frame, encode_client_frame, host_streams, host_supports_call,
-    host_supports_feature, parse_host_rtc, parse_rtc_offer_args, CallMethod, ClientFrame, HostFeature,
+    host_supports_feature, parse_host_rtc, parse_rtc_offer_args, plugin_infos, CallMethod, ClientFrame, HostFeature,
     ServerFrame, PROTOCOL,
 };
 use pinomad_core::endpoints::{parse_endpoint_set, parse_endpoint_set_text, ParsedEndpointSet};
@@ -44,6 +44,7 @@ fn variant(frame: &ServerFrame) -> &'static str {
         ServerFrame::Ended { .. } => "ended",
         ServerFrame::Result { .. } => "result",
         ServerFrame::Notice { .. } => "notice",
+        ServerFrame::Plugins { .. } => "plugins",
         ServerFrame::Ignored => "ignored",
     }
 }
@@ -132,6 +133,7 @@ fn feature_of(name: &str) -> HostFeature {
         "processes" => HostFeature::Processes,
         "subagentStop" => HostFeature::SubagentStop,
         "plugins" => HostFeature::Plugins,
+        "pluginReload" => HostFeature::PluginReload,
         other => panic!("unknown feature {other}"),
     }
 }
@@ -256,6 +258,18 @@ fn rtc_schema_matches_the_reference() {
         } else {
             assert!(parsed.is_err(), "{name}: accepted");
         }
+    }
+}
+
+/// `hello.plugins` and the `plugins` frame's list (ADR-0049, ADR-0050): the
+/// entries kept, unknown fields and all, exactly as the TS reference keeps them.
+#[test]
+fn plugin_lists_filter_like_the_reference() {
+    let file = load("rust-vectors/frames");
+    for case in field(&file, "pluginInfos").as_array().unwrap().iter() {
+        let name = as_text(field(case, "name"));
+        let hello = Json::parse(&as_text(field(case, "hello"))).unwrap();
+        assert_eq!(plugin_infos(hello.get("plugins")), field(case, "expect").clone(), "{name}");
     }
 }
 

@@ -47,6 +47,14 @@ describe("parseClientFrame", () => {
     expect(kinds({ type: "call", id: 1, method: "createConversation", args: { ...base, agent: 7 } })).toBe("malformed");
   });
 
+  it("accepts pluginBundle with or without a hash; rejects an empty or non-string one", () => {
+    const call = (args: unknown) => ({ type: "call", id: 1, method: "pluginBundle", args });
+    expect(kinds(call({ name: "panel" }))).toBe("frame");
+    expect(kinds(call({ name: "panel", hash: "a".repeat(64) }))).toBe("frame");
+    expect(kinds(call({ name: "panel", hash: "" }))).toBe("malformed");
+    expect(kinds(call({ name: "panel", hash: 7 }))).toBe("malformed");
+  });
+
   it("accepts listFiles with either scope kind; rejects malformed scopes and queries", () => {
     const call = (args: unknown): unknown => ({ type: "call", id: 1, method: "listFiles", args });
     expect(kinds(call({ scope: { kind: "conversation", conversationId: 7 }, query: "src/" }))).toBe("frame");

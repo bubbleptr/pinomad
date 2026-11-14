@@ -444,6 +444,27 @@ describe("RTC standby handoff", () => {
     }
   });
 
+  it("keeps a plugin list the host sent on the standby before the handoff replays its hello", async () => {
+    const world = new FakeRtcWorld();
+    const network = wsNetwork({ rtcWorld: world });
+    const remote = await ready(connectRemoteDurable(options(network, world)));
+    try {
+      await remote.controller.switchConversation(id(1));
+      await flush();
+      await vi.advanceTimersByTimeAsync(1_100);
+      await flush();
+      expect(remote.rtcDiagnostics().path).toBe("relay");
+      const panel = { name: "panel", api: 1, web: { hash: "a".repeat(64), size: 10 } };
+      world.dc.sendFrame({ type: "plugins", plugins: [panel] });
+      await vi.advanceTimersByTimeAsync(300);
+      await flush();
+      expect(remote.rtcDiagnostics().path).toBe("p2p");
+      expect(remote.view.current().host?.plugins).toEqual([panel]);
+    } finally {
+      remote.close();
+    }
+  });
+
   it("reports the selected pair's scopes, then freezes it into an ageing failure", async () => {
     const world = new FakeRtcWorld();
     const network = wsNetwork({ rtcWorld: world });

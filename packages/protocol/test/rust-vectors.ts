@@ -17,6 +17,7 @@ import {
 } from "../src/frames.ts";
 import { initiateIK, keyPairFromPrivate, respondIK } from "../src/noise.ts";
 import { encodeClientHello, encodeHostHello, SECURE_PROLOGUE, SecureSession, SIGNAL_PROLOGUE } from "../src/secure-channel.ts";
+import { pluginInfos } from "../src/remote-durable.ts";
 import { isRtcHello, RTC_DEFAULT_STUN, rtcAddressScope } from "../src/rtc.ts";
 import {
   ENDPOINT_SET_SCHEMA_VERSION,
@@ -72,6 +73,9 @@ function framesVector(): VectorFile {
     { name: "result-err", wire: wire({ type: "result", id: 5, ok: false, error: "nope" }), expect: "result" },
     { name: "result-absent-value", wire: wire({ type: "result", id: 6, ok: true }), expect: "result" },
     { name: "notice", wire: wire({ type: "notice", level: "error", message: "bad" }), expect: "notice" },
+    // 5.35: the plugin list after a reload (ADR-0050).
+    { name: "plugins", wire: wire({ type: "plugins", plugins: [{ name: "artifact", api: 1, web: { hash: "cd".repeat(32), size: 2048 } }] }), expect: "plugins" },
+    { name: "plugins-empty", wire: wire({ type: "plugins", plugins: [] }), expect: "plugins" },
     { name: "unknown-type", wire: wire({ type: "from-the-future", data: 1 }), expect: "ignored" },
     { name: "unknown-type-similar", wire: wire({ type: "snapshots" }), expect: "ignored" },
     { name: "missing-type", wire: wire({ stream: "index" }), expect: "ignored" },
@@ -254,6 +258,36 @@ function framesVector(): VectorFile {
     { name: "missing", args: {}, expect: "invalid" },
     { name: "non-string", args: { attempt: 1, sdp: "v=0" }, expect: "invalid" },
   ].map(({ name, args, expect, ...rest }) => ({ name, args: wire(args), expect, ...rest }));
+  // `hello.plugins` and the `plugins` frame's list (ADR-0049, ADR-0050): the
+  // entries both clients keep, a malformed one dropped rather than fatal.
+  const pluginLists: readonly { name: string; value: unknown }[] = [
+    { name: "absent", value: undefined },
+    { name: "not-array", value: { name: "x", api: 1 } },
+    { name: "empty", value: [] },
+    {
+      name: "mixed",
+      value: [
+        { name: "tools", api: 1 },
+        { name: "panel", api: 1, web: { hash: "ab".repeat(32), size: 10 } },
+        { name: "future", api: 2, ui: { slots: ["x"] } },
+        { name: "", api: 1 },
+        { name: "no-api" },
+        { name: "string-api", api: "1" },
+        { name: "null-web", api: 1, web: null },
+        { name: "short-hash", api: 1, web: { hash: "ab", size: 10 } },
+        { name: "upper-hash", api: 1, web: { hash: "AB".repeat(32), size: 10 } },
+        { name: "string-size", api: 1, web: { hash: "ab".repeat(32), size: "10" } },
+        null,
+        "panel",
+        7,
+      ],
+    },
+  ];
+  const pluginInfoCases = pluginLists.map(({ name, value }) => ({
+    name,
+    hello: wire(value === undefined ? {} : { plugins: value }),
+    expect: pluginInfos(value),
+  }));
   return write("frames", {
     protocol: PROTOCOL,
     serverFrames,
@@ -263,6 +297,7 @@ function framesVector(): VectorFile {
     versionGates,
     rtcHello,
     rtcOfferArgs,
+    pluginInfos: pluginInfoCases,
   });
 }
 

@@ -19,7 +19,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 34 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 35 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -285,6 +285,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
         HostFeature::Processes => 32,
         HostFeature::SubagentStop => 33,
         HostFeature::Plugins => 34,
+        HostFeature::PluginReload => 35,
     };
     host_minor >= since
 }
@@ -343,6 +344,9 @@ pub enum HostFeature {
     /// `hello.plugins` and the `pluginBundle` / `pluginCall` calls (34,
     /// ADR-0049). Plugin UI is web and desktop only; iOS ignores both.
     Plugins,
+    /// The `plugins` frame after a reload, and `pluginBundle`'s `hash` (35,
+    /// ADR-0050). The core keeps the list current; iOS shows no plugin UI.
+    PluginReload,
 }
 
 
@@ -377,6 +381,41 @@ pub fn parse_host_processes(hello: &Json) -> bool {
                 .get("limit")
                 .is_some_and(|limit| limit.as_number().is_some())
     })
+}
+
+/// `hello.plugins` or a `plugins` frame's list (`pluginInfos`): the
+/// well-formed entries, kept whole with any fields a newer host added. A
+/// malformed entry is dropped, not fatal; anything but an array is no list.
+pub fn plugin_infos(value: Option<&Json>) -> Json {
+    let Some(entries) = value.and_then(Json::as_array) else {
+        return Json::array(vec![]);
+    };
+    let hex64 = |hash: &Json| {
+        hash.as_str().is_some_and(|hash| {
+            let hash = hash.to_string_lossy();
+            hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        })
+    };
+    let well_formed = |entry: &&Json| {
+        // `typeof entry === "object"`: an array passes, and then has no name.
+        if !matches!(entry, Json::Object(_) | Json::Array(_)) {
+            return false;
+        }
+        if !entry.get("name").and_then(Json::as_str).is_some_and(|name| !name.is_empty()) {
+            return false;
+        }
+        if entry.get("api").and_then(Json::as_number).is_none() {
+            return false;
+        }
+        match entry.get("web") {
+            None => true,
+            Some(web @ (Json::Object(_) | Json::Array(_))) => {
+                web.get("hash").is_some_and(hex64) && web.get("size").and_then(Json::as_number).is_some()
+            }
+            Some(_) => false,
+        }
+    };
+    Json::array(entries.iter().filter(well_formed).cloned().collect())
 }
 
 /// Parse `hello.rtc`; a malformed block is a hello error, not a silently
@@ -567,6 +606,9 @@ pub enum ServerFrame {
     /// `error` — the reference reads `frame.value`/`frame.error` directly.
     Result { id: Json, ok: Json, value: Json, error: Json },
     Notice { level: Json, message: Json },
+    /// The plugin list after a reload (5.35, ADR-0050), replacing
+    /// `hello.plugins` whole; `plugins` is the raw field.
+    Plugins { plugins: Json },
     /// A type this build does not know, or a frame without a usable shape.
     Ignored,
 }
@@ -616,6 +658,9 @@ pub fn classify_server_frame(value: Json) -> ServerFrame {
         "notice" => ServerFrame::Notice {
             level: field(&value, "level").clone(),
             message: field(&value, "message").clone(),
+        },
+        "plugins" => ServerFrame::Plugins {
+            plugins: field(&value, "plugins").clone(),
         },
         _ => ServerFrame::Ignored,
     }
