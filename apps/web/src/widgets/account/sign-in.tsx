@@ -7,7 +7,8 @@ import { isSecureServerOrigin, type AccountError, type AccountResult, type AuthM
 import type { AccountModel } from "../../entities/account/account-model.ts";
 import { knownSignInProviders, SignInProviderMark } from "../../entities/provider/sign-in-provider.tsx";
 import { accountErrorMessage, fieldErrorMessage as fieldMessage, formErrorMessage } from "./account-error.ts";
-import { CODE_INPUT, MIN_PASSWORD_LENGTH, NEW_PASSWORD_INPUT, passwordLength } from "./code-input.ts";
+import { MIN_PASSWORD_LENGTH, NEW_PASSWORD_INPUT, passwordLength } from "./code-input.ts";
+import { CodeField } from "./code-field.tsx";
 import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 import { useToast } from "../../shared/ui/toast.tsx";
 
@@ -363,21 +364,16 @@ function CodeFlow({
   return (
     <div className="flex flex-col gap-3">
       <span className="text-sm/5">Enter the 6-digit code we sent to {sentTo}.</span>
-      <Field invalid={fieldMessage(error, "code") !== undefined}>
-        <FieldLabel>Code</FieldLabel>
-        <Input
-          value={code}
-          onChange={(event) => {
-            if (error?.code === "invalid_code") setErrorState(undefined);
-            setCode(event.target.value);
-          }}
-          {...CODE_INPUT}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") submit();
-          }}
-        />
-        <FieldError>{fieldMessage(error, "code")}</FieldError>
-      </Field>
+      <CodeField
+        label="Code"
+        value={code}
+        onValueChange={(value) => {
+          if (error?.code === "invalid_code") setErrorState(undefined);
+          setCode(value);
+        }}
+        onEnter={submit}
+        error={fieldMessage(error, "code")}
+      />
       <Field invalid={fieldMessage(error, "new-password") !== undefined}>
         <FieldLabel>New password</FieldLabel>
         <Input

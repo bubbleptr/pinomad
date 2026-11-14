@@ -64,6 +64,12 @@ Object.defineProperty(window, "ResizeObserver", {
   value: TestResizeObserver,
 });
 
+// jsdom has no layout, so no element is under any point. input-otp asks
+// after focus, looking for a password manager's badge over the field.
+if (typeof document.elementFromPoint !== "function") {
+  document.elementFromPoint = () => null;
+}
+
 class TestStorage implements Storage {
   private values = new Map<string, string>();
 

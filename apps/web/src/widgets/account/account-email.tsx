@@ -8,7 +8,7 @@ import type { AccountConfirmation, AccountError, EmailConfirmation } from "@pino
 import type { AccountModel } from "../../entities/account/account-model.ts";
 import { SettingsGroup } from "../../shared/ui/settings-group.tsx";
 import { fieldErrorMessage, formErrorMessage } from "./account-error.ts";
-import { CODE_INPUT } from "./code-input.ts";
+import { CodeField } from "./code-field.tsx";
 import { useConfirmIdentity } from "./confirm-identity.tsx";
 
 const byName = (confirmation: AccountConfirmation): EmailConfirmation =>
@@ -113,21 +113,16 @@ export function EmailForm({
   return (
     <div className="flex flex-col gap-2">
       <span className="text-sm/5">Enter the 6-digit code we sent to {sentTo}.</span>
-      <Field invalid={fieldErrorMessage(error, "code") !== undefined}>
-        <FieldLabel>Code</FieldLabel>
-        <Input
-          value={code}
-          onChange={(event) => {
-            setError(undefined);
-            setCode(event.target.value);
-          }}
-          {...CODE_INPUT}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") save();
-          }}
-        />
-        <FieldError>{fieldErrorMessage(error, "code")}</FieldError>
-      </Field>
+      <CodeField
+        label="Code"
+        value={code}
+        onValueChange={(value) => {
+          setError(undefined);
+          setCode(value);
+        }}
+        onEnter={save}
+        error={fieldErrorMessage(error, "code")}
+      />
       {/* Asked again when the server refused the grant, or it ran out here. */}
       {reconfirm || !identity.ready ? identity.field : null}
       <FormError>{formErrorMessage(error, ["code"])}</FormError>
