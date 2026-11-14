@@ -107,7 +107,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 35 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 36 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -469,6 +469,12 @@ export interface PluginInfo {
   readonly web?: { readonly hash: string; readonly size: number };
 }
 
+/** One `hello.docs` entry: a conversation document offered as `doc:<kind>:<conversationId>` streams. */
+export interface DocInfo {
+  readonly kind: string;
+  readonly presentation?: PresentationType;
+}
+
 /**
  * Minor version that introduced each call (ADR-0018 §2); calls dated 0 are
  * part of 5.0. This is the single exhaustive call table: a new `CallMethods`
@@ -601,7 +607,7 @@ export type ServerFrame =
       /** New-conversation defaults; absent means the host has none. */
       readonly defaults?: ConversationDefaults;
       /** The conversation documents offered as `doc:` streams, in host order. */
-      readonly docs: readonly { readonly kind: string; readonly presentation?: PresentationType }[];
+      readonly docs: readonly DocInfo[];
       /** How to render each tool's result `details` (ADR-0005); absent names never declare one. */
       readonly toolPresentations: Record<string, PresentationType>;
       /**
@@ -654,12 +660,18 @@ export type ServerFrame =
   | { readonly type: "ended"; readonly stream: StreamName; readonly reason: string }
   /**
    * The installed plugins changed (5.35, ADR-0050): a reload added, removed or
-   * rebuilt one, so what `hello.plugins` would say now differs from what this
-   * connection was last told. The whole list, shaped like `hello.plugins` and
-   * replacing it; an empty list means none are left. A reload that failed or
-   * kept every announcement the same sends nothing.
+   * rebuilt one, or started or stopped sharing one of its states, so what the
+   * hello would say now differs from what this connection was last told.
+   * `plugins` is the whole list, shaped like `hello.plugins` and replacing it;
+   * an empty list means none are left. A reload that failed or kept every
+   * announcement the same sends nothing.
+   *
+   * `docs` (5.36) is the whole `hello.docs` list as it now stands, built-in
+   * documents included. The client replaces its list, subscribes the
+   * conversations it shows to the documents that are new, and lets go of the
+   * ones that are gone. Absent (a 5.35 host) → the documents are as they were.
    */
-  | { readonly type: "plugins"; readonly plugins: readonly PluginInfo[] }
+  | { readonly type: "plugins"; readonly plugins: readonly PluginInfo[]; readonly docs?: readonly DocInfo[] }
   | { readonly type: "result"; readonly id: number; readonly ok: true; readonly value: unknown }
   | { readonly type: "result"; readonly id: number; readonly ok: false; readonly error: string }
   | { readonly type: "notice"; readonly level: Notice["level"]; readonly message: string };

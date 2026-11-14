@@ -16,6 +16,7 @@ import {
   loadPlugins,
   pluginSurface,
   type EvaluateModule,
+  type LoadedPlugin,
   type PluginRegistry,
   type PluginSurfaceId,
   type Registrar,
@@ -111,23 +112,33 @@ export function PluginHostProvider({
   const [registry, setRegistry] = useState(EMPTY_PLUGIN_REGISTRY);
   // Read through the key, so the effect runs when the bundles change and not on every view.
   const toLoad = useMemo(() => plugins ?? [], [key]);
-  /** The last finished load: a reconnect reloads only when it left a plugin out. */
-  const settled = useRef<{ readonly toLoad: readonly PluginInfo[]; readonly failed: boolean }>(undefined);
+  /**
+   * The last finished load: a reconnect reloads only when it left a plugin
+   * out, and a new list (a host reload) starts from its plugins.
+   */
+  const settled = useRef<{
+    readonly toLoad: readonly PluginInfo[];
+    readonly loaded: ReadonlyMap<string, LoadedPlugin>;
+    readonly failed: boolean;
+  }>(undefined);
   useEffect(() => {
     if (!connected) return;
     const last = settled.current;
     if (last?.toLoad === toLoad && !last.failed) return;
-    // A new bundle set replaces the old registrations; a retry keeps them meanwhile.
-    if (last?.toLoad !== toLoad) setRegistry(EMPTY_PLUGIN_REGISTRY);
+    // The registrations shown meanwhile stay until the load settles, so an open panel never blinks out.
     let live = true;
-    void loadPlugins(toLoad, {
-      bundle: (name, hash) => remote.plugins.bundle(name, hash),
-      evaluate,
-      api: (name, registrar) => webApi(name, registrar, remote, bridge),
-    }).then(({ registry: loaded, failed }) => {
+    void loadPlugins(
+      toLoad,
+      {
+        bundle: (name, hash) => remote.plugins.bundle(name, hash),
+        evaluate,
+        api: (name, registrar) => webApi(name, registrar, remote, bridge),
+      },
+      last?.loaded,
+    ).then(({ registry: next, loaded, failed }) => {
       if (!live) return;
-      settled.current = { toLoad, failed };
-      setRegistry(loaded);
+      settled.current = { toLoad, loaded, failed };
+      setRegistry(next);
     });
     return () => {
       live = false;

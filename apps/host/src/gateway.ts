@@ -51,6 +51,7 @@ import {
   type HostStreamValues,
   parseClientFrame,
   INVALID_FRAME_CLOSE_CODE,
+  type DocInfo,
   type PluginInfo,
   PROTOCOL,
   type ServerFrame,
@@ -1832,6 +1833,12 @@ type SubscriptionState = {
   readonly window?: TranscriptWindow;
   /** Raw entries `earlierEntries` sent on a ref subscription, so `image` answers their refs too. */
   earlier?: JsonValue[];
+  /**
+   * A `doc:` stream of a document this connection was told about that the
+   * host no longer shares: it showed `null` and stays open, reading nothing,
+   * until a reload shares the document again.
+   */
+  absent?: true;
 };
 type SendFrame = (frame: ServerFrame) => Promise<void>;
 
@@ -1971,6 +1978,16 @@ class GatewayClient {
   #helloPlugins: readonly PluginInfo[] = [];
   /** The plugin list this connection was told last, by its hello or a `plugins` frame. */
   #plugins: readonly PluginInfo[] = [];
+  /** The document list this connection was told last, by its hello or a `plugins` frame. */
+  #toldDocs: readonly DocInfo[] = [];
+  /**
+   * Every document kind this connection was told about. A client that
+   * predates the `plugins` frame's `docs` keeps subscribing to its hello's
+   * list, so one of these the host stopped sharing opens as absent rather
+   * than ending (which would close the client's conversation); a kind it
+   * was never told about is still refused.
+   */
+  readonly #toldKinds = new Set<string>();
   /** Every `name` + hash this connection was told about: what a `pluginBundle` with a hash may ask for. */
   readonly #toldBundles = new Set<string>();
   /** Reload follow-ups run one at a time, so lists go out in the order the reloads finished. */
@@ -2047,6 +2064,8 @@ class GatewayClient {
     const rtc = this.#hooks.rtcHello();
     this.#tellPlugins(options.plugins?.info ?? []);
     this.#helloPlugins = this.#plugins;
+    this.#toldDocs = this.#docInfos();
+    for (const doc of this.#toldDocs) this.#toldKinds.add(doc.kind);
     void this.send({
       type: "hello",
       protocol: PROTOCOL,
@@ -2054,10 +2073,7 @@ class GatewayClient {
       session: options.session,
       models: options.modelSummaries(),
       defaults: settingsDefaults(options.settings.value),
-      docs: this.#docs().map((doc) => ({
-        kind: doc.token.definition.kind,
-        ...(doc.presentation === undefined ? {} : { presentation: doc.presentation }),
-      })),
+      docs: this.#toldDocs,
       toolPresentations: options.toolPresentations ?? {},
       ...(this.#plugins.length === 0 ? {} : { plugins: this.#plugins }),
       // Re-probed per hello, not the listener's startup address (ADR-0032 §2).
@@ -2170,8 +2186,18 @@ class GatewayClient {
     }
     if (stream.startsWith("doc:")) {
       const at = stream.lastIndexOf(":");
-      return this.#openDoc(stream, stream.slice("doc:".length, at), Number(stream.slice(at + 1)) as ConversationId, send);
+      const kind = stream.slice("doc:".length, at);
+      const id = Number(stream.slice(at + 1)) as ConversationId;
+      if (this.#toldKinds.has(kind) && !this.#docs().some((doc) => doc.token.definition.kind === kind)) {
+        // Told about, no longer shared: absent, without reading it.
+        await this.#conversation(id);
+        if (state !== undefined) state.absent = true;
+        void send({ type: "snapshot", stream, value: null });
+        return { stop: async () => {} };
+      }
+      return this.#openDoc(stream, kind, id, send);
     }
+
     const conversation = await this.#conversation(Number(stream.slice("conversation:".length)) as ConversationId);
     return this.#forward(stream, await conversation.watch(context, await viewWindow(conversation, state?.window)), send, state);
   }
@@ -2318,21 +2344,31 @@ class GatewayClient {
   /**
    * After a reload that added, changed or removed a plugin: first the doc:
    * streams of states no longer shared stop, then the `plugins` frame goes
-   * out if the list differs from what this connection was told — so a client
-   * acting on the list finds those streams already settled.
+   * out if the plugin or document list differs from what this connection was
+   * told — so a client acting on the lists finds those streams already settled.
    */
   pluginsReloaded(): Promise<void> {
     const step = async (): Promise<void> => {
       await this.#endUnsharedDocs();
-      // Read now, not when the reload finished: a later reload may already have replaced it.
+      await this.#reopenSharedDocs();
+      // Read now, not when the reload finished: a later reload may already have replaced them.
       const info = this.#options.plugins?.info ?? [];
-      if (JSON.stringify(info) === JSON.stringify(this.#plugins)) return;
+      const docs = this.#docInfos();
+      if (JSON.stringify(info) === JSON.stringify(this.#plugins) && JSON.stringify(docs) === JSON.stringify(this.#toldDocs)) return;
       // Recorded before the frame goes out, so a pluginBundle answered after it can serve the new hashes.
       this.#tellPlugins(info);
-      await this.send({ type: "plugins", plugins: info });
+      this.#toldDocs = docs;
+      for (const doc of docs) this.#toldKinds.add(doc.kind);
+      await this.send({ type: "plugins", plugins: info, docs });
     };
-    // A failed step does not stall the ones after it; each reads the state afresh.
-    this.#pluginsReloads = this.#pluginsReloads.then(step, step);
+    // A failed step (a connection closing under it) is logged, never left
+    // unhandled — that would end the host — and does not stall the ones
+    // after it; each reads the state afresh.
+    const logged = (): Promise<void> =>
+      step().catch((error: unknown) => {
+        console.error(`plugin reload: could not update a connection: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    this.#pluginsReloads = this.#pluginsReloads.then(logged);
     return this.#pluginsReloads;
   }
 
@@ -2342,21 +2378,29 @@ class GatewayClient {
   }
 
   /**
-   * Stops this connection's `doc:` streams whose document the host no longer
-   * shares (a plugin reload made it host-only or removed it). The last frame is
-   * a `null` snapshot, as for a document that does not exist, not `ended`:
-   * clients drop the whole shown conversation when one of its streams ends.
-   * A new subscription is refused as an unknown document.
+   * Stops reading this connection's `doc:` streams whose document the host no
+   * longer shares (a plugin reload made it host-only or removed it). The last
+   * frame is a `null` snapshot, as for a document that does not exist, not
+   * `ended`: clients drop the whole shown conversation when one of its streams
+   * ends. The stream stays open as absent, like a new subscription to it.
    */
   async #endUnsharedDocs(): Promise<void> {
     const shared = new Set(this.#docs().map((doc) => doc.token.definition.kind));
     for (const [stream, state] of [...this.#subscriptions]) {
-      if (!stream.startsWith("doc:")) continue;
-      if (shared.has(stream.slice("doc:".length, stream.lastIndexOf(":")))) continue;
-      // Out of the map first: the stream's own sends stop at once, before its watch does.
-      this.#subscriptions.delete(stream);
+      if (!stream.startsWith("doc:") || state.absent === true) continue;
+      if (shared.has(GatewayClient.#kindOf(stream))) continue;
+      // Replaced in the map first: the stream's own sends stop at once, before its watch does.
+      this.#subscriptions.set(stream, { absent: true });
       await state.subscription?.stop();
       await this.send({ type: "snapshot", stream, value: null });
+    }
+  }
+
+  /** Streams left absent whose document a reload shares again read it afresh, from a snapshot. */
+  async #reopenSharedDocs(): Promise<void> {
+    const shared = new Set(this.#docs().map((doc) => doc.token.definition.kind));
+    for (const [stream, state] of [...this.#subscriptions]) {
+      if (state.absent === true && shared.has(GatewayClient.#kindOf(stream))) await this.#subscribe(stream, false, undefined, undefined);
     }
   }
 
@@ -3112,6 +3156,19 @@ class GatewayClient {
   /** The built-in extensions' docs, then the loaded plugins' shared states. */
   #docs(): readonly ExtensionDoc[] {
     return [...(this.#options.docs ?? []), ...(this.#options.plugins?.docs ?? [])];
+  }
+
+  /** A `doc:` stream's document kind. */
+  static #kindOf(stream: string): string {
+    return stream.slice("doc:".length, stream.lastIndexOf(":"));
+  }
+
+  /** `#docs()` as `hello.docs` and the `plugins` frame declare them. */
+  #docInfos(): DocInfo[] {
+    return this.#docs().map((doc) => ({
+      kind: doc.token.definition.kind,
+      ...(doc.presentation === undefined ? {} : { presentation: doc.presentation }),
+    }));
   }
 
   /** This host's `pinomad.question` docs, in the order the hello declares them. */

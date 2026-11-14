@@ -319,4 +319,69 @@ describe("gateway boundaries", () => {
     expect(client.socket.readyState).toBe(WebSocket.OPEN);
     expect(client.frames.filter((frame) => frame.type !== "hello" && !arrived(frame))).toEqual([]);
   });
+
+  it("logs a connection's failed plugin reload follow-up instead of leaving it unhandled, and runs the next one", async () => {
+    const seen: unknown[] = [];
+    const sentinel = new Error("sentinel");
+    let sentinelReported!: () => void;
+    const record = (reason: unknown) => (reason === sentinel ? sentinelReported() : seen.push(reason));
+    // Vitest's own listeners would count these as test errors; they are back when the test ends.
+    const others = process.listeners("unhandledRejection");
+    process.removeAllListeners("unhandledRejection");
+    process.on("unhandledRejection", record);
+    defer(() => {
+      process.off("unhandledRejection", record);
+      for (const listener of others) process.on("unhandledRejection", listener);
+    });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    defer(() => errors.mockRestore());
+
+    let reloaded!: () => void;
+    let broken = false;
+    let info: { name: string; api: number }[] = [];
+    const plugins = {
+      get info() {
+        return info;
+      },
+      get docs() {
+        if (broken) throw new Error("catalog read failed");
+        return [];
+      },
+      bundle: () => "",
+      method: () => {
+        throw new Error("no methods");
+      },
+      subscribe: (listener: () => void) => {
+        reloaded = listener;
+        return () => {};
+      },
+    };
+    const { host, gateway } = await fixture({ plugins });
+    const client = await socketTo(gateway.url, host.token);
+    while (!client.frames.some((frame) => frame.type === "hello")) await once(client.socket, "message");
+
+    /** Waits until Node has reported every rejection left unhandled so far: it reports them in order, the sentinel last. */
+    const reportedSoFar = async () => {
+      for (let round = 0; round < 2; round++) {
+        const reported = new Promise<void>((resolve) => (sentinelReported = resolve));
+        void Promise.reject(sentinel);
+        await reported;
+      }
+    };
+
+    // No later reload attaches a handler to this one's promise.
+    broken = true;
+    reloaded();
+    await reportedSoFar();
+    expect(seen).toEqual([]);
+    expect(errors.mock.calls.flat().map(String).join(" ")).toContain("catalog read failed");
+
+    // The next reload still reaches the connection.
+    broken = false;
+    info = [{ name: "later", api: 1 }];
+    reloaded();
+    while (!client.frames.some((frame) => frame.type === "plugins")) await once(client.socket, "message");
+    expect(client.frames.find((frame) => frame.type === "plugins")).toMatchObject({ plugins: [{ name: "later", api: 1 }] });
+    expect(client.socket.readyState).toBe(WebSocket.OPEN);
+  });
 });

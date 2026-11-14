@@ -11,9 +11,11 @@ Plugin UI is a web and desktop feature. On the iPhone a plugin's tools still wor
 
 Copy the plugin's directory into `plugins/` in the host's data directory: `~/.pinomad/plugins/<name>/`, or under `--data-dir` if you run the host with one. A symlink to a directory elsewhere works too.
 
-The running host notices the new directory and loads the plugin; there is no need to restart it. It also follows the plugin's files: after you edit one, the agent's next tool call runs the new code, and removing the directory removes the plugin's tools. A call that is already running finishes on the code it started with. Web and desktop apps that are open keep the plugin UI they loaded; reload the page or reconnect to see a changed panel or card.
+The running host notices the new directory and loads the plugin; there is no need to restart it. It also follows the plugin's files: after you edit one, the agent's next tool call runs the new code, and removing the directory removes the plugin's tools. A call that is already running finishes on the code it started with.
 
-A plugin that fails to build or load is skipped with a line in the host's log, and the host and the other plugins carry on. When an edit breaks a plugin that was loaded, the host logs why and keeps the version it had until a later edit builds again.
+Web and desktop apps that are open follow along without reconnecting. An edited panel or tool card is replaced where it is shown, a new plugin's panel appears with its state, and a removed plugin's panel and cards go away. Only the edited plugin's panel starts over; the others keep what they show. A state you make shared or host-only takes effect in the open app as well. On the iPhone the tools follow your edits the same way. An app older than the host may need the page reloaded to pick up a change.
+
+A plugin that fails to build or load is skipped with a line in the host's log, and the host and the other plugins carry on. When an edit breaks a plugin that was loaded, the host logs why and keeps the version it had until a later edit builds again; open apps keep showing that version too. If a new `web.tsx` builds but throws in the browser, the app logs the error in its console and keeps the version it had.
 
 **Installing a plugin means trusting it.** Its server half runs inside the host process with the host's permissions. Its UI runs in the same page as the web and desktop apps, so it can read what that page can, including the device's key for the host. Only install plugins whose code you trust.
 
@@ -77,7 +79,7 @@ Plugin state follows the conversation's history like the rest of the conversatio
 
 ### The browser half
 
-`web.tsx` default-exports a function that receives the browser API. The host builds it into one script; each client checks the script against the hash the host announced before running it. JSX renders with the app's React. Don't import `react`: take hooks and anything else from `pinomad.React`, so they are the app's own. CSS and image imports aren't supported yet; use inline styles and `data:` URLs.
+`web.tsx` default-exports a function that receives the browser API. The host builds it into one script; each client checks the script against the hash the host announced before running it. JSX renders with the app's React, and `import { useState } from "react"` gets that same React, so hooks from either `react` or `pinomad.React` are the app's own. Other React packages, such as `react-dom`, aren't available. CSS and image imports aren't supported yet; use inline styles and `data:` URLs.
 
 - `React`: the app's React.
 - `panel({ id, label, component })`: a page in the side panel. `label` names its button in the chat header.

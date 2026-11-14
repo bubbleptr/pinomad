@@ -1,9 +1,9 @@
 // Plugin API v1, browser half (ADR-0049, ADR-0050). A plugin's `web.tsx` (or
 // `web.js`) default-exports a function that receives a WebApi and registers
 // its panels and tool cards; the host builds it into one script. Import these
-// with `import type` only, and take React from the argument: JSX renders with
-// the shell's React, but an `import` of `react` is not available, and a
-// bundled copy would not share the shell's hooks.
+// with `import type` only. JSX and an `import` of `react` both get the shell's
+// React, the same one as the argument's `React`; no other React package is
+// available.
 import type { ComponentType } from "react";
 import type { JsonValue } from "./v1.ts";
 

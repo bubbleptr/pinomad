@@ -19,6 +19,7 @@ import {
   type CallMethods,
   type ClientFrame,
   conversationStream,
+  type DocInfo,
   docStream,
   HOST_STREAM_NAMES,
   type HostStreamName,
@@ -588,7 +589,7 @@ class RemoteClient {
   // fresh stream (after reconnect, before the host answers) has a stale value —
   // #acquire must wait for it, never serve the old one.
   readonly #fresh = new Set<StreamName>();
-  #docs: readonly { readonly kind: string; readonly presentation?: PresentationType }[] = [];
+  #docs: readonly DocInfo[] = [];
   #toolPresentations: Record<string, PresentationType> = {};
   readonly #snapshotWaiters = new Map<
     StreamName,
@@ -1532,9 +1533,11 @@ class RemoteClient {
       if (standby.pingId === undefined) this.#warmStandby(standby);
       return;
     }
-    // The handoff replays the cached hello, so a reload's list folds into it instead of being lost.
-    if (frame.type === "plugins" && standby.hello !== undefined && Array.isArray(frame.plugins)) {
-      standby.hello = { ...standby.hello, plugins: frame.plugins };
+    // The handoff replays the cached hello, so a reload's lists fold into it instead of being lost.
+    if (frame.type === "plugins") {
+      if (standby.hello === undefined) return;
+      if (Array.isArray(frame.plugins)) standby.hello = { ...standby.hello, plugins: frame.plugins };
+      if (Array.isArray(frame.docs)) standby.hello = { ...standby.hello, docs: docInfos(frame.docs) };
       return;
     }
     if (frame.type === "result" && standby.verify?.id === frame.id) {
@@ -2361,16 +2364,22 @@ class RemoteClient {
         this.#earlier.delete(frame.stream);
         this.#loadingEarlier.delete(frame.stream);
         this.#fresh.delete(frame.stream);
+        // A document the host no longer shares is absent, not a broken
+        // conversation: a reload can take back what its last frame announced
+        // before the subscribe arrives.
+        const absent = isUnknownDocument(frame.stream, frame.reason);
         const ended = new Error(`Stream ${frame.stream} ended: ${frame.reason}`);
         for (const waiter of this.#snapshotWaiters.get(frame.stream)?.splice(0) ?? []) {
-          if (waiter.endSatisfies) waiter.resolve();
+          if (waiter.endSatisfies || absent) waiter.resolve();
           else waiter.reject(ended);
         }
         // A sync barrier treats an ended selection as settled — never wait
-        // forever — and drops the slot whose data can no longer be shown.
-        if (this.#current !== undefined && this.#conversationStreams(this.#current).includes(frame.stream)) {
+        // forever — and drops the slot whose data can no longer be shown. An
+        // absent document leaves its slot; it shows nothing until a list or a
+        // reconnect offers it again.
+        if (!absent && this.#current !== undefined && this.#conversationStreams(this.#current).includes(frame.stream)) {
           this.#unshow();
-        } else if (this.#side !== undefined && this.#conversationStreams(this.#side).includes(frame.stream)) {
+        } else if (!absent && this.#side !== undefined && this.#conversationStreams(this.#side).includes(frame.stream)) {
           this.#side = undefined;
         }
         this.#refresh();
@@ -2402,9 +2411,12 @@ class RemoteClient {
         return;
       case "plugins":
         // Only a host that sends it knows it; a list that is not one is a newer shape, not an empty list.
-        if (!hostSupportsFeature(this.#hostMinor, "pluginReload") || !Array.isArray(frame.plugins)) return;
-        this.#hostPlugins = pluginInfos(frame.plugins);
-        this.#update({ host: this.#hostInfo() });
+        if (!hostSupportsFeature(this.#hostMinor, "pluginReload")) return;
+        if (Array.isArray(frame.docs)) this.#replaceDocs(docInfos(frame.docs));
+        if (Array.isArray(frame.plugins)) {
+          this.#hostPlugins = pluginInfos(frame.plugins);
+          this.#update({ host: this.#hostInfo() });
+        }
         return;
     }
   }
@@ -2433,6 +2445,33 @@ class RemoteClient {
       for (const stream of this.#conversationStreams(id)) streams.add(stream);
     }
     return [...streams];
+  }
+
+  /**
+   * A reload's document list (5.36): every conversation this client shows,
+   * shows beside, or is opening lets go of the streams of documents that are
+   * gone (the host already stopped them with a `null` snapshot) and subscribes
+   * to the new ones. Their snapshots are not awaited; `#docsOf` shows a
+   * document once its value arrives.
+   */
+  #replaceDocs(next: readonly DocInfo[]): void {
+    const kept = new Set(next.map((doc) => doc.kind));
+    const ids = new Set([this.#current, this.#side, ...this.#acquiring.keys()].filter((id) => id !== undefined));
+    for (const id of ids) {
+      for (const doc of this.#docs) {
+        const stream = docStream(doc.kind, id);
+        if (!kept.has(doc.kind) && this.#wanted.has(stream) && !this.#processWatchers.has(stream)) this.#releaseStream(stream);
+      }
+    }
+    this.#docs = next;
+    for (const id of ids) {
+      for (const stream of this.#conversationStreams(id)) {
+        if (this.#wanted.has(stream)) continue;
+        this.#wanted.add(stream);
+        if (this.#helloReceived) this.#subscribe(stream);
+      }
+    }
+    this.#refresh();
   }
 
   /** The streams that show one conversation: its view and its documents. */
@@ -4011,6 +4050,27 @@ class RemoteClient {
     this.#rejectSnapshotWaiters(new DisconnectedError());
     this.#update({ connection: "closed" });
   }
+}
+
+/**
+ * Whether an `ended` frame is the host refusing a `doc:` stream as a document
+ * it does not share: the reason every host since 5.0 sends for it, naming the
+ * stream's own kind. Any other end of a `doc:` stream (its conversation is
+ * gone, a read failed) still closes the conversation it belongs to.
+ */
+export function isUnknownDocument(stream: string, reason: unknown): boolean {
+  if (!stream.startsWith("doc:")) return false;
+  const kind = stream.slice("doc:".length, stream.lastIndexOf(":"));
+  return kind !== "" && reason === `Unknown document ${kind}`;
+}
+
+/** A `plugins` frame's `docs`, keeping the entries with a kind; a malformed one is dropped, not fatal. */
+export function docInfos(value: readonly unknown[]): readonly DocInfo[] {
+  return value.filter((entry): entry is DocInfo => {
+    if (entry === null || typeof entry !== "object") return false;
+    const { kind, presentation } = entry as Record<string, unknown>;
+    return typeof kind === "string" && kind !== "" && (presentation === undefined || typeof presentation === "string");
+  });
 }
 
 /** `hello.plugins` or a `plugins` frame's list, keeping only well-formed entries; a malformed one is dropped, not fatal. */

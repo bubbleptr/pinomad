@@ -572,7 +572,8 @@ function PluginSurface({ panel, barStart, barEnd }: { panel: PluginPanel; barSta
         <span className="min-w-0 flex-1 truncate text-sm">{panel.label}</span>
       </SurfaceBar>
       <Scrollable>
-        <PluginSlot key={panel.surface} plugin={panel.plugin}>
+        {/* Keyed by bundle too, so a panel that failed to render tries again once its plugin is reloaded. */}
+        <PluginSlot key={`${panel.surface}:${panel.hash}`} plugin={panel.plugin}>
           <Panel />
         </PluginSlot>
       </Scrollable>

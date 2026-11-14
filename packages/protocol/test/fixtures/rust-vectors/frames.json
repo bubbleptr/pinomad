@@ -1,12 +1,12 @@
 {
   "protocol": {
     "major": 5,
-    "minor": 35
+    "minor": 36
   },
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":35},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":36},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -16,22 +16,22 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":35},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":36},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
       "expect": "hello"
     },
     {
       "name": "hello-plugins",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":35},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"plugins\":[{\"name\":\"artifact\",\"api\":1,\"web\":{\"hash\":\"abababababababababababababababababababababababababababababababab\",\"size\":1024}}]}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":36},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"plugins\":[{\"name\":\"artifact\",\"api\":1,\"web\":{\"hash\":\"abababababababababababababababababababababababababababababababab\",\"size\":1024}}]}",
       "expect": "hello"
     },
     {
       "name": "signalHello",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":35},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":36},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
       "expect": "signalHello"
     },
     {
       "name": "signalHello-no-rtc",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":35}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":36}}",
       "expect": "signalHello"
     },
     {
@@ -85,6 +85,11 @@
     {
       "name": "plugins-empty",
       "wire": "{\"type\":\"plugins\",\"plugins\":[]}",
+      "expect": "plugins"
+    },
+    {
+      "name": "plugins-docs",
+      "wire": "{\"type\":\"plugins\",\"plugins\":[],\"docs\":[{\"kind\":\"plugin.artifact.current\"}]}",
       "expect": "plugins"
     },
     {
@@ -1541,6 +1546,82 @@
           }
         }
       ]
+    }
+  ],
+  "docInfos": [
+    {
+      "name": "absent",
+      "frame": "{\"type\":\"plugins\",\"plugins\":[]}",
+      "expect": null
+    },
+    {
+      "name": "not-array",
+      "frame": "{\"type\":\"plugins\",\"plugins\":[],\"docs\":{\"kind\":\"plugin.x.y\"}}",
+      "expect": null
+    },
+    {
+      "name": "empty",
+      "frame": "{\"type\":\"plugins\",\"plugins\":[],\"docs\":[]}",
+      "expect": []
+    },
+    {
+      "name": "mixed",
+      "frame": "{\"type\":\"plugins\",\"plugins\":[],\"docs\":[{\"kind\":\"pinomad.question\",\"presentation\":\"pinomad.question\"},{\"kind\":\"plugin.notes.board\"},{\"kind\":\"plugin.future.state\",\"scope\":\"conversation\"},{\"kind\":\"\"},{\"presentation\":\"x\"},{\"kind\":7},{\"kind\":\"plugin.bad.presentation\",\"presentation\":7},null,\"plugin.notes.board\",7]}",
+      "expect": [
+        {
+          "kind": "pinomad.question",
+          "presentation": "pinomad.question"
+        },
+        {
+          "kind": "plugin.notes.board"
+        },
+        {
+          "kind": "plugin.future.state",
+          "scope": "conversation"
+        }
+      ]
+    }
+  ],
+  "unknownDocument": [
+    {
+      "name": "unknown-doc",
+      "frame": "{\"type\":\"ended\",\"stream\":\"doc:plugin.notes.board:7\",\"reason\":\"Unknown document plugin.notes.board\"}",
+      "expect": true
+    },
+    {
+      "name": "unknown-builtin-doc",
+      "frame": "{\"type\":\"ended\",\"stream\":\"doc:pinomad.question:12\",\"reason\":\"Unknown document pinomad.question\"}",
+      "expect": true
+    },
+    {
+      "name": "other-kind",
+      "frame": "{\"type\":\"ended\",\"stream\":\"doc:plugin.notes.board:7\",\"reason\":\"Unknown document plugin.notes.other\"}",
+      "expect": false
+    },
+    {
+      "name": "doc-gone-conversation",
+      "frame": "{\"type\":\"ended\",\"stream\":\"doc:plugin.notes.board:7\",\"reason\":\"Conversation 7 does not exist\"}",
+      "expect": false
+    },
+    {
+      "name": "conversation",
+      "frame": "{\"type\":\"ended\",\"stream\":\"conversation:7\",\"reason\":\"Unknown document conversation\"}",
+      "expect": false
+    },
+    {
+      "name": "non-string-reason",
+      "frame": "{\"type\":\"ended\",\"stream\":\"doc:plugin.notes.board:7\",\"reason\":7}",
+      "expect": false
+    },
+    {
+      "name": "no-id",
+      "frame": "{\"type\":\"ended\",\"stream\":\"doc:plugin.notes.board\",\"reason\":\"Unknown document plugin.notes\"}",
+      "expect": false
+    },
+    {
+      "name": "empty-kind",
+      "frame": "{\"type\":\"ended\",\"stream\":\"doc::7\",\"reason\":\"Unknown document \"}",
+      "expect": false
     }
   ]
 }

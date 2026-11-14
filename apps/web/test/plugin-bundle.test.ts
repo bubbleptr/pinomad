@@ -49,11 +49,36 @@ it("renders JSX written at the top level of web.tsx with the shell's React", asy
   expect(renderToStaticMarkup(React.createElement(panel!.component))).toBe("<p>Nothing here yet</p>");
 });
 
+it("renders JSX that puts a key after a spread, which compiles to react's createElement", async () => {
+  const { info, bundle } = await hostWith({
+    spread:
+      'import type { WebApi } from "@pinomad/plugin/v1/web";\n' +
+      "const Row = (props: { title: string; id: string }) => <div {...props} key={props.id}>Spread first</div>;\n" +
+      'export default function (pinomad: WebApi) { pinomad.panel({ id: "p", label: "Spread", component: () => <Row title="t" id="a" /> }); }\n',
+  });
+  const { registry, failed } = await load(info, bundle);
+  expect(failed).toBe(false);
+  expect(renderToStaticMarkup(React.createElement(registry.panels[0]!.component))).toBe('<div title="t" id="a">Spread first</div>');
+});
+
+it("gives an import from react the shell's React, hooks included", async () => {
+  const { info, bundle } = await hostWith({
+    hooks:
+      'import { useState } from "react";\n' +
+      'import type { WebApi } from "@pinomad/plugin/v1/web";\n' +
+      "function Counter() { const [count] = useState(3); return <p>Count {count}</p>; }\n" +
+      'export default function (pinomad: WebApi) { pinomad.panel({ id: "p", label: "Hooks", component: Counter }); }\n',
+  });
+  const { registry, failed } = await load(info, bundle);
+  expect(failed).toBe(false);
+  expect(renderToStaticMarkup(React.createElement(registry.panels[0]!.component))).toBe("<p>Count 3</p>");
+});
+
 it("still reports a browser half without a default export function", async () => {
   const errors = vi.spyOn(console, "error").mockImplementation(() => {});
   const { info, bundle } = await hostWith({ nodefault: "export const unused = 1;\n" });
   const { registry, failed } = await load(info, bundle);
   expect(failed).toBe(true);
   expect(registry.panels).toEqual([]);
-  expect(String(errors.mock.calls[0]?.[1])).toContain("web.js has no default export function");
+  expect(String(errors.mock.calls[0]?.[1])).toContain("the browser half has no default export function");
 });

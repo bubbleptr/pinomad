@@ -22,7 +22,7 @@ use crate::frames::{
     ApnsPushToken, ClientFrame, HostFeature, HostRtc, ImageVariant, PROTOCOL, RtcMaxMessageSize,
     ServerFrame, UNAUTHORIZED_CLOSE_CODE, classify_server_frame, conversation_stream, doc_stream,
     encode_client_frame, host_streams, host_supports_call, host_supports_feature, minor_version,
-    parse_host_processes, parse_host_rtc, parse_rtc_max_message_size, plugin_infos,
+    parse_host_processes, parse_host_rtc, parse_rtc_max_message_size, plugin_infos, doc_infos, is_unknown_document,
 };
 use crate::json::{Json, JsonObject, num_key};
 use crate::organization::{checkout_of, home_of, organize};
@@ -2211,15 +2211,20 @@ impl RemoteDurable {
             }
             return;
         }
-        // The handoff replays the cached hello, so a reload's list folds into
+        // The handoff replays the cached hello, so a reload's lists fold into
         // it instead of being lost.
         if frame.get("type").and_then(Json::as_str).map(|s| s.to_string_lossy()).as_deref() == Some("plugins") {
             let Some(standby) = self.standby.as_mut().filter(|s| s.carrier.peer == peer) else {
                 return;
             };
-            if let (Some(Json::Object(hello)), Some(plugins @ Json::Array(_))) = (&standby.hello, frame.get("plugins")) {
+            if let Some(Json::Object(hello)) = &standby.hello {
                 let mut hello = hello.as_ref().clone();
-                hello.set(U16String::from_str("plugins"), plugins.clone());
+                if let Some(plugins @ Json::Array(_)) = frame.get("plugins") {
+                    hello.set(U16String::from_str("plugins"), plugins.clone());
+                }
+                if let Some(docs) = frame.get("docs").and_then(doc_infos) {
+                    hello.set(U16String::from_str("docs"), docs);
+                }
                 standby.hello = Some(Json::Object(Arc::new(hello)));
             }
             return;
@@ -3591,10 +3596,7 @@ impl RemoteDurable {
                 self.notice(level, message);
                 Ok(())
             }
-            ServerFrame::Plugins { plugins } => {
-                self.receive_plugins(plugins);
-                Ok(())
-            }
+            ServerFrame::Plugins { plugins, docs } => self.receive_plugins(plugins, docs),
             // A signal-only hello belongs to a connection this client never
             // opens; ignoring it keeps a future host frame forward-compatible.
             ServerFrame::SignalHello(_) => Ok(()),
@@ -3913,6 +3915,22 @@ impl RemoteDurable {
         let Some(units) = Self::stream_of(&stream) else {
             return Ok(());
         };
+        // A document the host no longer shares is absent, not a broken
+        // conversation: a reload can take back what its last frame announced
+        // before the subscribe arrives. Its waiters settle instead of failing
+        // and its slot stays shown.
+        if is_unknown_document(&U16String(units.clone()).to_string_lossy(), &reason) {
+            let first_ready = self
+                .first_view
+                .as_mut()
+                .is_some_and(|first| first.remaining.remove(&units) && first.remaining.is_empty());
+            self.drop_stream(&units);
+            self.note_reconnect_barrier_complete();
+            if first_ready {
+                self.finish_first_view();
+            }
+            return self.refresh();
+        }
         self.wanted.remove(&units);
         self.values.remove(&units);
         self.earlier.remove(&units);
@@ -5152,17 +5170,73 @@ impl RemoteDurable {
 
     // ─── View derivation ────────────────────────────────────────────────
 
-    /// `#hostInfo` — the announced protocol and packaged version.
     /// A `plugins` frame: only a host that sends it knows it, and a list
     /// that is not one is a newer shape, not an empty list.
-    fn receive_plugins(&mut self, plugins: Json) {
-        if !host_supports_feature(self.host_minor, HostFeature::PluginReload) || plugins.as_array().is_none() {
-            return;
+    fn receive_plugins(&mut self, plugins: Json, docs: Json) -> Result<(), String> {
+        if !host_supports_feature(self.host_minor, HostFeature::PluginReload) {
+            return Ok(());
         }
-        self.host_plugins = plugin_infos(Some(&plugins));
-        self.set_field("host", self.host_info());
+        if let Some(docs) = doc_infos(&docs) {
+            self.replace_docs(&docs)?;
+        }
+        if plugins.as_array().is_some() {
+            self.host_plugins = plugin_infos(Some(&plugins));
+            self.set_field("host", self.host_info());
+        }
+        Ok(())
     }
 
+    /// `#replaceDocs` — a reload's document list (5.36): every conversation
+    /// shown, shown beside, or being opened lets go of the streams of
+    /// documents that are gone (the host already stopped them with a `null`
+    /// snapshot) and subscribes to the new ones without waiting for them.
+    fn replace_docs(&mut self, docs: &Json) -> Result<(), String> {
+        let next: Vec<DocDecl> = docs
+            .as_array()
+            .map(|entries| entries.to_vec())
+            .unwrap_or_default()
+            .iter()
+            .map(|doc| DocDecl {
+                kind: doc.get("kind").cloned().unwrap_or(Json::Null),
+                presentation: doc.get("presentation").cloned(),
+            })
+            .collect();
+        let mut ids: Vec<u64> = [self.current, self.side].into_iter().flatten().collect();
+        for op in &self.active {
+            if let (Some(Wait::Snapshots(_)), Some(Step::ApplyShow { id, .. })) = (&op.waiting, op.steps.front()) {
+                ids.push(*id);
+            }
+        }
+        ids.sort_unstable();
+        ids.dedup();
+        let kept: HashSet<Vec<u16>> = next.iter().map(|doc| U16String::js_string(&doc.kind).0).collect();
+        let watched = self.process_watch.map(Self::process_stream);
+        let gone: Vec<Vec<u16>> = ids
+            .iter()
+            .flat_map(|&id| {
+                self.docs
+                    .iter()
+                    .map(|doc| U16String::js_string(&doc.kind))
+                    .filter(|kind| !kept.contains(&kind.0))
+                    .map(move |kind| doc_stream(&kind, id).0)
+            })
+            .filter(|stream| self.wanted.contains(stream) && watched.as_ref() != Some(stream))
+            .collect();
+        for stream in gone {
+            self.release_stream(stream);
+        }
+        self.docs = next;
+        for &id in &ids {
+            for stream in self.conversation_streams(id) {
+                if self.wanted.insert(stream.clone()) {
+                    self.subscribe_stream(stream);
+                }
+            }
+        }
+        self.refresh()
+    }
+
+    /// `#hostInfo` — the announced protocol and packaged version.
     fn host_info(&self) -> Json {
         let mut object = JsonObject::new();
         let mut protocol = JsonObject::new();
