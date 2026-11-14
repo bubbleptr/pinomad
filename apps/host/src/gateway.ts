@@ -3,8 +3,8 @@ import { createServer, type IncomingMessage, type Server as HttpServer } from "n
 import type { AddressInfo } from "node:net";
 import { homedir, networkInterfaces } from "node:os";
 import { join, sep } from "node:path";
-import type { Context, JsonValue } from "@earendil-works/chord";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import type { JsonValue } from "@earendil-works/chord/json";
+import { BACKGROUND_CONTEXT, type Context } from "@earendil-works/chord/context";
 import type { Op } from "@earendil-works/chord/delta";
 import { clampThinkingLevel, getSupportedThinkingLevels, type ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { Models } from "@earendil-works/pi-ai/models";

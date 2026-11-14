@@ -3,7 +3,7 @@
 // release lookup and the install.
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@earendil-works/chord/context";
 import type { Harness } from "@earendil-works/pi-durable";
 import { PROTOCOL } from "@pinomad/protocol/frames.ts";
 import type { HostSettings } from "@pinomad/protocol/settings.ts";

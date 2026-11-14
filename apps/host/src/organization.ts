@@ -3,7 +3,7 @@
 // code, not an extension: the document's semantics are part of the host protocol.
 import { mkdir, realpath, stat } from "node:fs/promises";
 import { basename, join, resolve, sep } from "node:path";
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@earendil-works/chord/context";
 import { clampThinkingLevel, type ModelThinkingLevel } from "@earendil-works/pi-ai";
 import type { Models } from "@earendil-works/pi-ai/models";
 import {

@@ -9,7 +9,7 @@
 // tool `details` and arguments, where an image-shaped object is data, not an
 // image the client may replace with a ref.
 import { createHash } from "node:crypto";
-import type { JsonValue } from "@earendil-works/chord";
+import type { JsonValue } from "@earendil-works/chord/json";
 import { applyImmutable, type Op, type Path } from "@earendil-works/chord/delta";
 import type { ImageMimeType, MessageImage } from "@pinomad/protocol/images.ts";
 

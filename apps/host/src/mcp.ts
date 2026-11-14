@@ -7,7 +7,7 @@
 // its tools; v1 does not reconnect.
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import type { JsonValue } from "@earendil-works/chord";
+import type { JsonValue } from "@earendil-works/chord/json";
 import { isAbsolute, resolve } from "node:path";
 import {
   type CallToolResult,

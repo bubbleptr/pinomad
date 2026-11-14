@@ -80,7 +80,7 @@ describe("openModelAuth", () => {
   it("lists every built-in provider with its methods, the stored credential, and ambient auth", async () => {
     vi.stubEnv("GEMINI_API_KEY", "from-env");
     const { modelAuth } = await fixture({ auth: ANTHROPIC_KEY });
-    expect(modelAuth.providers.value.providers.filter((p) => p.custom === undefined)).toHaveLength(42);
+    expect(modelAuth.providers.value.providers.filter((p) => p.custom === undefined)).toHaveLength(43);
     expect(providerOf(modelAuth, "anthropic")).toMatchObject({
       name: "Anthropic",
       oauth: { subscription: true },

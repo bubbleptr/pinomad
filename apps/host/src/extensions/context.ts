@@ -1,5 +1,5 @@
 import { dirname, join, sep } from "node:path";
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@earendil-works/chord/context";
 import { defineExtension, section, type ConversationId, type DocumentReader } from "@earendil-works/pi-durable";
 import { formatSkillsForPrompt, loadProjectContextFiles } from "@earendil-works/pi-coding-agent";
 import type { BuiltinExtension } from "../builtin-extension.ts";

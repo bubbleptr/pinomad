@@ -2,7 +2,7 @@
 // blocks by reference. The invariant under test is that a client applying the
 // rewritten ops to the rewritten snapshot ends with the rewrite of the real view.
 import { createHash } from "node:crypto";
-import type { JsonValue } from "@earendil-works/chord";
+import type { JsonValue } from "@earendil-works/chord/json";
 import { applyImmutable, type Op } from "@earendil-works/chord/delta";
 import { describe, expect, it } from "vitest";
 import { ImageRefs } from "../src/image-refs.ts";

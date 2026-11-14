@@ -4,7 +4,7 @@
 import { once } from "node:events";
 import { fauxAssistantMessage, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
 import type { ConversationView } from "@earendil-works/pi-durable";
-import type { JsonValue } from "@earendil-works/chord";
+import type { JsonValue } from "@earendil-works/chord/json";
 import { WebSocket } from "ws";
 import { describe, expect, it } from "vitest";
 import { isBusy, transcript } from "@pinomad/protocol/transcript.ts";

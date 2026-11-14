@@ -1,4 +1,4 @@
-import type { JsonValue } from "@earendil-works/chord";
+import type { JsonValue } from "@earendil-works/chord/json";
 import type { Op } from "@earendil-works/chord/delta";
 import type { ConversationId, EntryId, ModelRef } from "@earendil-works/pi-durable";
 import type { AgentRole, AgentRoles } from "./agents.ts";

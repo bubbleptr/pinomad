@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
-import type { Context } from "@earendil-works/chord";
+import type { Context } from "@earendil-works/chord/context";
 import { AgentDoc, type Harness } from "@earendil-works/pi-durable";
 import { loadSkills, type ResourceDiagnostic, type Skill } from "@earendil-works/pi-coding-agent";
 import type { SkillListing, SkillScope } from "@pinomad/protocol/organization.ts";

@@ -10,8 +10,7 @@
 // commit. A stop reason is remembered before any signal, so an exit after that
 // point is a stop and is never reported.
 import { randomUUID } from "node:crypto";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import type { Context } from "@earendil-works/chord";
+import { BACKGROUND_CONTEXT, type Context } from "@earendil-works/chord/context";
 import type { ConversationId, Harness, Tx } from "@earendil-works/pi-durable";
 import {
   isProcessActive,

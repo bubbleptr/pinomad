@@ -7,8 +7,7 @@
 // stream republishes the whole table to every client, and a leaked token is a
 // send capability.
 import { createHash } from "node:crypto";
-import type { Context } from "@earendil-works/chord";
-import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { BACKGROUND_CONTEXT, type Context } from "@earendil-works/chord/context";
 import { type ConversationId, defineDoc, type Harness } from "@earendil-works/pi-durable";
 import { diffRunNotices, type RunNotice, type StatusBaseline } from "@pinomad/client/run-notifications.ts";
 import { type HostIndex, organize } from "@pinomad/protocol/organization.ts";
