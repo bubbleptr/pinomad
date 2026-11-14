@@ -41,6 +41,13 @@ export function CodeField({ label, value, onValueChange, onEnter, error }: CodeF
         onKeyDown={(event) => {
           if (event.key === "Enter") onEnter?.();
         }}
+        // A refused code is retyped whole: select it all, after input-otp
+        // has put the caret on the last box.
+        onFocus={(event) => {
+          if (!invalid || value.length < CODE_LENGTH) return;
+          const input = event.currentTarget;
+          requestAnimationFrame(() => input.setSelectionRange(0, CODE_LENGTH));
+        }}
       >
         <InputOTPGroup>
           {Array.from({ length: CODE_LENGTH }, (_, index) => (

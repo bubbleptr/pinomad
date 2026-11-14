@@ -35,6 +35,20 @@ describe("CodeField", () => {
     expect(onEnter).toHaveBeenCalledOnce();
   });
 
+  /** A refused code is retyped whole, not edited in its last box. */
+  it("starts over when a refused code is typed again", async () => {
+    function Refused() {
+      const [code, setCode] = useState("123456");
+      return <CodeField label="Code" value={code} onValueChange={setCode} error="That code is wrong." />;
+    }
+    render(<Refused />);
+    const input = screen.getByLabelText("Code") as HTMLInputElement;
+    await userEvent.click(input);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    await userEvent.keyboard("987654");
+    expect(input.value).toBe("987654");
+  });
+
   it("names the error on the input", () => {
     render(<Harness error="That code is wrong." />);
     const input = screen.getByLabelText("Code");
