@@ -3,7 +3,7 @@
 - 状态：Accepted
 - 日期：2026-11-12
 - 修订：ADR-0004 §4（插件可以自带界面代码）、§5 和后果（开放的条件和先后顺序）；ADR-0005 中"插件状态只经展示类型呈现"的前提（展示类型留给内置扩展继续用）
-- 部分修订：[ADR-0050](0050-plugins-load-through-chord.md)（§4：宿主改用 chord 加载插件，插件仍只写 PiNomad 的 API；§6：目录换成 `package.json` + `server.ts` / `web.tsx`，宿主构建并在文件变化时重载；"没选的方案"里的"宿主构建浏览器侧代码"）；[ADR-0051](0051-inbox-mode.md)（§7：插件可以声明 Inbox 的事件源）
+- 部分修订：[ADR-0050](0050-plugins-load-through-chord.md)（§4：宿主改用 chord 加载插件，插件仍只写 PiNomad 的 API；§6：目录换成 `package.json` + `server.ts` / `web.tsx`，宿主构建并在文件变化时重载；"没选的方案"里的"宿主构建浏览器侧代码"）；[ADR-0051](0051-inbox-mode.md)（§7：插件可以声明 Inbox 的事件源）；[ADR-0052](0052-inbox-memory-outbox-credentials.md)（§8：宿主侧加 `secrets`）
 
 ## 背景
 
@@ -27,6 +27,7 @@ ADR-0004 写于第一个真实需求出现之前，那时假设插件只需要�
 7. **第一版的范围**：插件工具、按对话的状态（Durable 文档，`shared: false` 的状态只留在宿主）、界面可以调用的宿主方法、侧边面板和工具卡片。编排（钩子、创建对话、定时任务、插件命令）以后再做。
    - 由 ADR-0051 修订：插件可以声明 Inbox 的事件源，事件进项目的 Inbox，由 worker 开对话处理；定时由 Inbox 的计时器提供。
 8. **API 形状**（名字是提议）：宿主侧 `tool`、`state`、`method`；浏览器侧 `panel`、`toolCard`、`useState`、`useCall`、`openPanel`、`Sandbox`。API 对象作为参数传给插件的默认导出，插件只 import 类型。
+   - ADR-0052 修订：宿主侧加 `secrets`，插件读用户填的凭据，代 agent 调外部服务。
 9. **工具卡片拿到工具名、参数和输出文本，不拿 `details`**，所以客户端推导层的 Rust 镜像不用改。
 
 ## 后果

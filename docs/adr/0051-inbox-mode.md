@@ -4,6 +4,7 @@
 - 日期：2026-11-15
 - 修订：ADR-0011 §1（Inbox 的运行加 auto mode，不再一律直接执行）、ADR-0049 §7（插件可以做事件源）
 - 补充：ADR-0040 §1（Inbox 模式下 Tasks 页多出 Inbox 的设置）
+- 被补充：[ADR-0052](0052-inbox-memory-outbox-credentials.md)（§5：记忆和固定上下文；§9：`notify` 经发件箱投递）
 - 设计记录：[定稿文档](https://claude.ai/artifact/YHeeoeJCSssbuisqFGw3ys)、[界面画布](https://claude.ai/artifact/PdBwd7zfGqm333LJnzfHiC)
 
 ## 背景
@@ -46,6 +47,7 @@ PiNomad 已经有其中一半：对话就是能恢复的 worker，Durable 的 `p
 - 协议要加 Inbox 的快照和调用，升次版本号；`packages/client` 的状态推导和 Finished 推送规则要同步到 `crates/pinomad-core`。
 - Web 和桌面端先做，iOS 单独一个 PR。
 - 每项任务都从新对话开始，比长对话更依赖记忆：每个 Inbox 的笔记和整理留到之后。
+  - 由 [ADR-0052](0052-inbox-memory-outbox-credentials.md) 接上：记忆、整理、发件箱和凭据都在那里。
 
 ## 没选的方案
 
