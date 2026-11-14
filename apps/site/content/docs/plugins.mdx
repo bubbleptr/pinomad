@@ -79,7 +79,7 @@ Plugin state follows the conversation's history like the rest of the conversatio
 
 ### The browser half
 
-`web.tsx` default-exports a function that receives the browser API. The host builds it into one script; each client checks the script against the hash the host announced before running it. JSX renders with the app's React. Don't import `react`: take hooks and anything else from `pinomad.React`, so they are the app's own. CSS and image imports aren't supported yet; use inline styles and `data:` URLs.
+`web.tsx` default-exports a function that receives the browser API. The host builds it into one script; each client checks the script against the hash the host announced before running it. JSX renders with the app's React, and `import { useState } from "react"` gets that same React, so hooks from either `react` or `pinomad.React` are the app's own. Other React packages, such as `react-dom`, aren't available. CSS and image imports aren't supported yet; use inline styles and `data:` URLs.
 
 - `React`: the app's React.
 - `panel({ id, label, component })`: a page in the side panel. `label` names its button in the chat header.

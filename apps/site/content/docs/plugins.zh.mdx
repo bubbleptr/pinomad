@@ -79,7 +79,7 @@ export default definePlugin((pinomad) => {
 
 ### 浏览器侧
 
-`web.tsx` 默认导出一个函数，接收浏览器 API。宿主把它构建成一个脚本；客户端先核对脚本和宿主公布的哈希一致，再运行。JSX 用 App 的 React 渲染。不要 import `react`：hooks 和其他东西都从 `pinomad.React` 拿，这样用的才是 App 自己那份。暂时不支持 import CSS 和图片，用内联样式和 `data:` URL。
+`web.tsx` 默认导出一个函数，接收浏览器 API。宿主把它构建成一个脚本；客户端先核对脚本和宿主公布的哈希一致，再运行。JSX 用 App 的 React 渲染；`import { useState } from "react"` 拿到的也是这同一份 React，所以从 `react` 还是从 `pinomad.React` 取 hooks，用的都是 App 自己那份。`react-dom` 等其他 React 包不可用。暂时不支持 import CSS 和图片，用内联样式和 `data:` URL。
 
 - `React`：App 用的 React。
 - `panel({ id, label, component })`：侧边面板里的一页。`label` 是它在对话标题栏里那个按钮的名字。

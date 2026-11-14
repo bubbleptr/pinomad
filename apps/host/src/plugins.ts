@@ -43,8 +43,9 @@ const CORE = "@pinomad/core";
 const API = { name: "@pinomad/plugin", versions: ["v1"] };
 const KINDS = {
   server: { platform: "node", hostPackages: ["@pinomad/plugin/v1"] },
-  // JSX compiles to `react/jsx-runtime`, which the module wrapper answers with the shell's React.
-  web: { platform: "browser", hostPackages: ["@pinomad/plugin/v1", "@pinomad/plugin/v1/web", "react/jsx-runtime"] },
+  // JSX compiles to `react/jsx-runtime`, and to `react`'s createElement for a key after a spread; the
+  // module wrapper answers both with the shell's React, so a plugin never bundles a second copy.
+  web: { platform: "browser", hostPackages: ["@pinomad/plugin/v1", "@pinomad/plugin/v1/web", "react", "react/jsx-runtime"] },
 } as const;
 /** Superseded bundles kept for connections that were told about them. */
 const RETAINED_BUNDLES = 32;
@@ -506,8 +507,9 @@ function translate(plugin: string, registration: Registration): Translated {
 
 /**
  * chord's browser build as the ES module the shell imports (ADR-0049): the
- * script is a CommonJS function; JSX's `react/jsx-runtime` is answered with the
- * React the shell hands the default export, and nothing else can be required.
+ * script is a CommonJS function; `react` and JSX's `react/jsx-runtime` are
+ * answered with the React the shell hands the default export (so hooks
+ * imported from `react` are the shell's), and nothing else can be required.
  * The script runs at the first call of the default export, once that React is
  * known, so JSX at the top level of `web.tsx` works; a script without a default
  * export function fails that call with the error the shell gives an ES module
@@ -541,6 +543,7 @@ export default function (api) {
 ${facet.source}
     )((specifier) => {
       if (specifier === "react/jsx-runtime") return runtime;
+      if (specifier === "react") return React;
       throw new Error(specifier + " is not available to a plugin's browser half");
     }, module, module.exports);
     main = module.exports.default;
