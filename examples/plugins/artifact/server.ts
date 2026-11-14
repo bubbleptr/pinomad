@@ -1,8 +1,8 @@
 // Host half of the artifact example: a tool the model calls to write a page,
 // and a method the panel calls to read it back.
-import type { HostApi } from "@pinomad/plugin/v1";
+import { definePlugin } from "@pinomad/plugin/v1";
 
-export default (pinomad: HostApi): void => {
+export default definePlugin((pinomad) => {
   // The page can be large, so it stays on the host; the panel fetches it with `read`.
   const page = pinomad.state("page", { version: 1, shared: false, initial: () => ({ title: "", html: "" }) });
   // Synced to clients: tells the panel that there is a new page to fetch.
@@ -36,4 +36,4 @@ export default (pinomad: HostApi): void => {
   });
 
   pinomad.method("read", async (_args, ctx) => ctx.read(page));
-};
+});

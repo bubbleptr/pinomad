@@ -51,6 +51,7 @@ import {
   type HostStreamValues,
   parseClientFrame,
   INVALID_FRAME_CLOSE_CODE,
+  type PluginInfo,
   PROTOCOL,
   type ServerFrame,
   type StreamName,
@@ -77,7 +78,7 @@ import { startTerminals, type StartTerminalsOptions, type Terminals, type Termin
 import type { Processes } from "./processes.ts";
 import type { HostUpgrade, UpgradeWhen } from "@pinomad/protocol/upgrade.ts";
 import type { ExtensionDoc } from "./builtin-extension.ts";
-import type { Plugins } from "./plugins.ts";
+import type { PluginCatalog } from "./plugins.ts";
 import { branchOf, changesOf, checkoutAt, gitBase, worktreeExists, worktreeSettled } from "./checkout.ts";
 import { packagedVersion } from "./distribution.ts";
 import { listFolders } from "./folders.ts";
@@ -298,8 +299,8 @@ export interface GatewayOptions {
   readonly docs?: readonly ExtensionDoc[];
   /** Tool name → presentation of its result `details`, announced in the hello. */
   readonly toolPresentations?: Record<string, PresentationType>;
-  /** Loaded plugins (ADR-0049): `hello.plugins`, `pluginBundle`, `pluginCall`. Absent → none. */
-  readonly plugins?: Pick<Plugins, "info" | "bundle" | "method">;
+  /** Loaded plugins, read live (ADR-0049, ADR-0050): `hello.plugins`, their docs, `pluginBundle`, `pluginCall`. Absent → none. */
+  readonly plugins?: PluginCatalog;
   /** Built web client served over plain HTTP on both listeners; absent → 503. */
   readonly webRoot?: string;
   /** Name conversations after their first successful run; default on. */
@@ -1961,6 +1962,8 @@ class GatewayClient {
   /** The gateway-wide skills lister — concurrent clients' scope queries ride one scan. */
   readonly #skills: SkillLister;
   readonly #imageVariants: ImageVariants;
+  /** `hello.plugins` as this connection was told: `pluginBundle` serves those bundles even after a reload. */
+  #plugins: readonly PluginInfo[] = [];
   /** Streams backed by an in-memory value pushed whole to subscribers on change. */
   #providerCalls(): Omit<ModelAuth, "close"> {
     const modelAuth = this.#options.modelAuth;
@@ -2031,6 +2034,7 @@ class GatewayClient {
       closed: () => hooks.closed(this),
     });
     const rtc = this.#hooks.rtcHello();
+    this.#plugins = options.plugins?.info ?? [];
     void this.send({
       type: "hello",
       protocol: PROTOCOL,
@@ -2038,12 +2042,12 @@ class GatewayClient {
       session: options.session,
       models: options.modelSummaries(),
       defaults: settingsDefaults(options.settings.value),
-      docs: (options.docs ?? []).map((doc) => ({
+      docs: this.#docs().map((doc) => ({
         kind: doc.token.definition.kind,
         ...(doc.presentation === undefined ? {} : { presentation: doc.presentation }),
       })),
       toolPresentations: options.toolPresentations ?? {},
-      ...(options.plugins === undefined || options.plugins.info.length === 0 ? {} : { plugins: options.plugins.info }),
+      ...(this.#plugins.length === 0 ? {} : { plugins: this.#plugins }),
       // Re-probed per hello, not the listener's startup address (ADR-0032 §2).
       // A loopback-only host publishes an explicit empty set so clients clear
       // stale remote candidates without ever seeing 127.0.0.1.
@@ -2167,7 +2171,7 @@ class GatewayClient {
 
   /** A document that does not exist yet streams `null`, then its value from the commit that creates it. */
   async #openDoc(stream: StreamName, kind: string, id: ConversationId, send: SendFrame): Promise<Subscription> {
-    const doc = this.#options.docs?.find((candidate) => candidate.token.definition.kind === kind);
+    const doc = this.#docs().find((candidate) => candidate.token.definition.kind === kind);
     if (doc === undefined) throw new Error(`Unknown document ${kind}`);
     const token = doc.token;
     await this.#conversation(id);
@@ -2685,8 +2689,10 @@ class GatewayClient {
       }
       case "pluginBundle": {
         const { name } = args as CallMethods["pluginBundle"]["args"];
-        if (this.#options.plugins === undefined) throw new Error(`Unknown plugin ${name}`);
-        return { code: this.#options.plugins.bundle(name) };
+        const plugin = this.#plugins.find((candidate) => candidate.name === name);
+        if (this.#options.plugins === undefined || plugin === undefined) throw new Error(`Unknown plugin ${name}`);
+        if (plugin.web === undefined) throw new Error(`Plugin ${name} has no web bundle`);
+        return { code: this.#options.plugins.bundle(name, plugin.web.hash) };
       }
       case "pluginCall": {
         const input = args as CallMethods["pluginCall"]["args"];
@@ -3039,6 +3045,11 @@ class GatewayClient {
       (tx) => dismissPendingQuestions(tx, questionDocs, conversationId),
       context,
     );
+  }
+
+  /** The built-in extensions' docs, then the loaded plugins' shared states. */
+  #docs(): readonly ExtensionDoc[] {
+    return [...(this.#options.docs ?? []), ...(this.#options.plugins?.docs ?? [])];
   }
 
   /** This host's `pinomad.question` docs, in the order the hello declares them. */

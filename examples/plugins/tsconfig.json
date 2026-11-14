@@ -1,11 +1,15 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    // The host builds web.tsx with React's automatic JSX runtime.
+    "jsx": "react-jsx",
     // The example plugins sit outside the Bun workspaces, so point the type-only imports at the source.
     "paths": {
       "@pinomad/plugin/v1": ["../../packages/plugin/src/v1.ts"],
-      "@pinomad/plugin/v1/web": ["../../packages/plugin/src/v1-web.ts"]
+      "@pinomad/plugin/v1/web": ["../../packages/plugin/src/v1-web.ts"],
+      "react": ["../../packages/plugin/node_modules/@types/react/index.d.ts"],
+      "react/jsx-runtime": ["../../packages/plugin/node_modules/@types/react/jsx-runtime.d.ts"]
     }
   },
-  "include": ["*/host.ts"]
+  "include": ["*/server.ts", "*/web.tsx"]
 }

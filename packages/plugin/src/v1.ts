@@ -1,8 +1,8 @@
-// Plugin API v1, host half (ADR-0049). A plugin's `host.ts` default-exports a
-// function that receives a HostApi and registers its states, tools and
-// methods before returning. Import these with `import type` only: the host
-// runs `host.ts` with Node's type stripping, and there is nothing to import
-// at runtime.
+// Plugin API v1, server half (ADR-0049, ADR-0050). A plugin's `server.ts`
+// default-exports `definePlugin(fn)`; `fn` receives a HostApi and registers its
+// states, tools and methods before returning. This package only declares the
+// API: the host builds `server.ts` and hands it its own `definePlugin` when the
+// script runs, so a plugin bundles nothing from here.
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
@@ -58,5 +58,13 @@ export interface HostApi {
   method(name: string, run: (args: JsonValue, ctx: PluginContext) => Promise<JsonValue>): void;
 }
 
-/** The default export of a plugin's `host.ts`. */
+/** The function a plugin passes to `definePlugin`; it registers everything before it returns. */
 export type HostPlugin = (pinomad: HostApi) => void;
+
+/** What `definePlugin` returns; opaque to the plugin. */
+export interface ServerPlugin {
+  readonly setup: unknown;
+}
+
+/** The default export of a plugin's `server.ts`. Provided by the host at runtime. */
+export declare function definePlugin(plugin: HostPlugin): ServerPlugin;

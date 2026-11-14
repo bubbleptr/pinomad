@@ -9,44 +9,62 @@ Plugin UI is a web and desktop feature. On the iPhone a plugin's tools still wor
 
 ## Install a plugin
 
-1. Copy the plugin's directory into `plugins/` in the host's data directory: `~/.pinomad/plugins/<name>/`, or under `--data-dir` if you run the host with one. A symlink to a directory elsewhere works too.
-2. Restart the host: `pinomad service restart` if it runs as a service (it waits for running tasks to finish first), or stop and start it again if you run it in a terminal. The host loads plugins only when it starts, so restart it again after you change, add or remove one.
+Copy the plugin's directory into `plugins/` in the host's data directory: `~/.pinomad/plugins/<name>/`, or under `--data-dir` if you run the host with one. A symlink to a directory elsewhere works too.
 
-A plugin that fails to load is skipped with one line in the host's log, and the host and the other plugins carry on.
+The running host notices the new directory and loads the plugin; there is no need to restart it. It also follows the plugin's files: after you edit one, the agent's next tool call runs the new code, and removing the directory removes the plugin's tools. A call that is already running finishes on the code it started with. Web and desktop apps that are open keep the plugin UI they loaded; reload the page or reconnect to see a changed panel or card.
 
-**Installing a plugin means trusting it.** Its host half runs inside the host process with the host's permissions. Its UI runs in the same page as the web and desktop apps, so it can read what that page can, including the device's key for the host. Only install plugins whose code you trust.
+A plugin that fails to build or load is skipped with a line in the host's log, and the host and the other plugins carry on. When an edit breaks a plugin that was loaded, the host logs why and keeps the version it had until a later edit builds again.
+
+**Installing a plugin means trusting it.** Its server half runs inside the host process with the host's permissions. Its UI runs in the same page as the web and desktop apps, so it can read what that page can, including the device's key for the host. Only install plugins whose code you trust.
 
 There is no plugin store, npm install or per-project plugin yet.
 
 ## Write a plugin
 
-A plugin directory holds a manifest and up to two code files:
+A plugin directory holds a `package.json` and up to two code files:
 
 ```
 artifact/
-  plugin.json
-  host.ts     runs on the host: tools, state, methods
-  web.js      runs in the web and desktop apps: side panel, tool cards
+  package.json
+  server.ts   runs on the host: tools, state, methods
+  web.tsx     runs in the web and desktop apps: side panel, tool cards
 ```
 
-`plugin.json`:
+`package.json`:
 
 ```json
-{ "name": "artifact", "api": 1, "host": "host.ts", "web": "web.js" }
+{ "name": "artifact", "private": true, "type": "module" }
 ```
 
-- `name` must match the directory name: lowercase letters, digits and `-`, starting with a letter.
-- `api` is the plugin API version; it is `1`.
-- `host` and `web` are file names inside the directory. Either can be left out: a plugin with only tools has no `web`, a plugin with only UI has no `host`.
+- `name` is the plugin's name: lowercase letters, digits and `-`, starting with a letter. Keep the directory named the same.
+- `server` and `web` can each end in `.ts`, `.tsx`, `.js` or `.mjs`. Either can be left out: a plugin with only tools has no `web.tsx`, a plugin with only UI has no `server.ts`.
 
-The API's types are in the PiNomad repository, in [`packages/plugin/src/v1.ts`](https://github.com/bubbleptr/pinomad/blob/main/packages/plugin/src/v1.ts) (host) and [`v1-web.ts`](https://github.com/bubbleptr/pinomad/blob/main/packages/plugin/src/v1-web.ts) (browser). They aren't published as a package. Import them with `import type` only: the API object is passed to your plugin as an argument, so there's nothing to import at runtime.
+The host builds both files itself with esbuild, so write any TypeScript or JSX, and split your code into more files inside the directory if you like; imports between them are bundled in.
 
-### The host half
+The API's types are in the PiNomad repository, in [`packages/plugin/src/v1.ts`](https://github.com/bubbleptr/pinomad/blob/main/packages/plugin/src/v1.ts) (server) and [`v1-web.ts`](https://github.com/bubbleptr/pinomad/blob/main/packages/plugin/src/v1-web.ts) (browser). They aren't published as a package. A plugin imports from `@pinomad/plugin/v1` and `@pinomad/plugin/v1/web` only; the host supplies them when it runs the plugin.
 
-The host runs `host.ts` directly with Node's type stripping, so write TypeScript that only needs its types removed (no `enum` or `namespace`), or plain JavaScript. Its default export is a function that receives the host API and registers everything while the plugin loads:
+### Moving a plugin from plugin.json
+
+Plugins written before the host built them had a `plugin.json` and a `host.ts`. The host no longer reads `plugin.json` and logs a line for such a directory. To move one:
+
+1. Add a `package.json` as above, with the plugin's name.
+2. Rename `host.ts` to `server.ts`, import `definePlugin` and wrap the default export in it (see below).
+3. Delete `plugin.json`. A hand-written `web.js` keeps working as it is; rename it to `web.tsx` if you want to write JSX.
+
+### The server half
+
+`server.ts` default-exports `definePlugin(fn)`. `fn` receives the host API and registers everything before it returns, without awaiting:
+
+```ts
+import { definePlugin } from "@pinomad/plugin/v1";
+
+export default definePlugin((pinomad) => {
+  // pinomad.state(…), pinomad.tool(…), pinomad.method(…)
+});
+```
 
 - `state(name, { version, initial, shared })`: JSON state kept per conversation. `initial()` gives the value for a conversation that never wrote it. With `shared: false` the state stays on the host; otherwise (the default) clients receive it and the UI can read it with `useState`. Shared state is synced to every client showing the conversation, so keep large content host-only and fetch it through a method.
-- `tool({ name, description, parameters, run })`: a tool the model can call. `parameters` is a JSON Schema object. `run(args, ctx)` returns `{ text }`, which is what the model sees; if it throws, the model gets the error message as a failed result. Tool names use letters, digits and `_`, at most 64 characters, must not start with `mcp__`, and must not clash with another tool on the host; a plugin whose tool name is taken is skipped. A call cut off by a host restart isn't run again.
+- `tool({ name, description, parameters, run })`: a tool the model can call. `parameters` is a JSON Schema object. `run(args, ctx)` returns `{ text }`, which is what the model sees; if it throws, the model gets the error message as a failed result. Tool names use letters, digits and `_`, at most 64 characters, must not start with `mcp__`, and must not clash with another tool on the host. A plugin that takes a built-in tool's name is not loaded, or keeps its previous version when an edit adds the name; of two plugins with the same tool name, the one later in alphabetical order is skipped. A call cut off by a host restart isn't run again.
 - `method(name, run)`: a function your UI calls with `call` or `useCall`. `run(args, ctx)` takes and returns JSON; if it throws, the call fails with its message.
 
 `ctx` is the conversation the tool or method runs for:
@@ -59,7 +77,7 @@ Plugin state follows the conversation's history like the rest of the conversatio
 
 ### The browser half
 
-`web.js` is an ES module whose default export receives the browser API. You build it yourself; the host serves the file as is, and each client checks it against the hash the host announced before running it. Take React from the API instead of bundling your own copy, or hooks won't work.
+`web.tsx` default-exports a function that receives the browser API. The host builds it into one script; each client checks the script against the hash the host announced before running it. JSX renders with the app's React. Don't import `react`: take hooks and anything else from `pinomad.React`, so they are the app's own. CSS and image imports aren't supported yet; use inline styles and `data:` URLs.
 
 - `React`: the app's React.
 - `panel({ id, label, component })`: a page in the side panel. `label` names its button in the chat header.
@@ -80,14 +98,14 @@ What the sandbox promises: content in it can't reach anything of the client, not
 
 ## Example: artifact
 
-The repository has a complete plugin in [`examples/plugins/artifact`](https://github.com/bubbleptr/pinomad/tree/main/examples/plugins/artifact): the model writes a web page, its tool card shows the page's title with an **Open** button, and the **Artifact** panel shows the page in the sandbox. It isn't built in; copy the directory to `~/.pinomad/plugins/artifact/` and restart the host to try it.
+The repository has a complete plugin in [`examples/plugins/artifact`](https://github.com/bubbleptr/pinomad/tree/main/examples/plugins/artifact): the model writes a web page, its tool card shows the page's title with an **Open** button, and the **Artifact** panel shows the page in the sandbox. It isn't built in; copy the directory to `~/.pinomad/plugins/artifact/` to try it.
 
-The host half keeps the page on the host and shares only its title and a revision number:
+The server half keeps the page on the host and shares only its title and a revision number:
 
 ```ts
-import type { HostApi } from "@pinomad/plugin/v1";
+import { definePlugin } from "@pinomad/plugin/v1";
 
-export default (pinomad: HostApi): void => {
+export default definePlugin((pinomad) => {
   const page = pinomad.state("page", { version: 1, shared: false, initial: () => ({ title: "", html: "" }) });
   const current = pinomad.state("current", { version: 1, initial: () => ({ title: "", revision: 0 }) });
 
@@ -113,30 +131,35 @@ export default (pinomad: HostApi): void => {
   });
 
   pinomad.method("read", async (_args, ctx) => ctx.read(page));
-};
+});
 ```
 
-The browser half is a plain ES module that uses `React.createElement` instead of JSX, so it needs no build step. The panel reads the shared revision and fetches the page again whenever it changes:
+The browser half reads the shared revision and fetches the page again whenever it changes:
 
-```js
-export default function artifact(pinomad) {
-  const h = pinomad.React.createElement;
+```tsx
+import type { PluginToolCall, WebApi } from "@pinomad/plugin/v1/web";
 
+export default function artifact(pinomad: WebApi): void {
   function Panel() {
-    const current = pinomad.useState("current");
+    const current = pinomad.useState<{ title: string; revision: number }>("current");
     const revision = current === undefined ? 0 : current.revision;
-    const page = pinomad.useCall("read", revision > 0 ? null : undefined, [revision]);
-    if (revision === 0) return h("p", null, "No artifact yet. Ask the agent to make a page.");
-    if (page === undefined) return h("p", null, "Loading…");
-    return h("div", { style: { display: "flex", height: "100%" } }, h(pinomad.Sandbox, { title: page.title, html: page.html }));
+    const page = pinomad.useCall<{ title: string; html: string }>("read", revision > 0 ? null : undefined, [revision]);
+    if (revision === 0) return <p>No artifact yet. Ask the agent to make a page.</p>;
+    if (page === undefined) return <p>Loading…</p>;
+    return (
+      <div style={{ display: "flex", height: "100%" }}>
+        <pinomad.Sandbox title={page.title} html={page.html} />
+      </div>
+    );
   }
 
-  function Card({ tool }) {
-    return h(
-      "div",
-      null,
-      h("span", null, tool.args?.title ?? "Untitled page"),
-      h("button", { type: "button", onClick: () => pinomad.openPanel("page") }, "Open"),
+  function Card({ tool }: { tool: PluginToolCall }) {
+    const args = tool.args as { title?: string } | undefined;
+    return (
+      <div>
+        <span>{args?.title ?? "Untitled page"}</span>
+        <button type="button" onClick={() => pinomad.openPanel("page")}>Open</button>
+      </div>
     );
   }
 

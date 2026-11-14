@@ -118,6 +118,7 @@ export async function startFauxHost(
     terminals,
     processes,
     upgrade,
+    plugins,
   }: {
     /** Script of faux responses: plain strings become assistant text, messages and factories pass through. */
     answers?: readonly (string | FauxResponseStep)[];
@@ -181,6 +182,8 @@ export async function startFauxHost(
     processes?: OpenHostOptions["processes"];
     /** Upgrade seams (ADR-0043); absent → the host reports `blocked: "source"`. */
     upgrade?: OpenHostOptions["upgrade"];
+    /** Plugin reload seams: each reload's outcome, and the plugin log lines instead of stderr. */
+    plugins?: OpenHostOptions["plugins"];
   } = {},
 ): Promise<OpenedHost> {
   const dir = dataDir === undefined ? await tempDir() : { path: dataDir, remove: () => {} };
@@ -238,6 +241,7 @@ export async function startFauxHost(
     ...(images === undefined ? {} : { images }),
     ...(rtc === undefined ? {} : { rtc }),
     ...(upgrade === undefined ? {} : { upgrade }),
+    ...(plugins === undefined ? {} : { plugins }),
     ...(processes === undefined ? {} : { processes }),
     terminals: terminals ?? {
       shell: { file: "/bin/sh", args: [] },

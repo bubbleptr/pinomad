@@ -9,44 +9,62 @@ description: 给宿主加工具、侧边面板和工具卡片；装插件就是�
 
 ## 安装插件
 
-1. 把插件目录复制到宿主数据目录下的 `plugins/` 里：`~/.pinomad/plugins/<名字>/`；宿主带 `--data-dir` 启动的话，就放到那个目录下。也可以放一个指向别处目录的软链接。
-2. 重启宿主：作为服务运行的用 `pinomad service restart`（会先等进行中的任务结束），在终端里跑的就停掉再启动。宿主只在启动时加载插件，所以改了、加了或删了插件都要再重启一次。
+把插件目录复制到宿主数据目录下的 `plugins/` 里：`~/.pinomad/plugins/<名字>/`；宿主带 `--data-dir` 启动的话，就放到那个目录下。也可以放一个指向别处目录的软链接。
 
-加载失败的插件会被跳过，宿主日志里留一行原因，宿主和其他插件照常运行。
+运行中的宿主会发现新目录并加载插件，不用重启。之后它也盯着插件的文件：改了文件，agent 的下一次工具调用就跑新代码；删掉目录，插件的工具也随之消失。已经在跑的调用用它开始时的代码跑完。已经打开的 Web 和桌面端保留它们加载过的插件界面；面板或卡片改了，要刷新页面或重新连接才看得到。
 
-**装插件就是信任它。** 插件的宿主侧代码跑在宿主进程里，权限和宿主一样；界面代码和 Web、桌面端跑在同一个页面里，这个页面能读到的它都能读到，包括这台设备连宿主用的密钥。只装你信得过代码的插件。
+构建或加载失败的插件会被跳过，宿主日志里留一行原因，宿主和其他插件照常运行。已加载的插件被某次修改改坏时，宿主记下原因，继续用原来的版本，直到后面的修改又能构建通过。
+
+**装插件就是信任它。** 插件的服务端代码跑在宿主进程里，权限和宿主一样；界面代码和 Web、桌面端跑在同一个页面里，这个页面能读到的它都能读到，包括这台设备连宿主用的密钥。只装你信得过代码的插件。
 
 目前没有插件市场，也不支持从 npm 安装或按项目装插件。
 
 ## 写插件
 
-插件目录里是一份清单和最多两个代码文件：
+插件目录里是一个 `package.json` 和最多两个代码文件：
 
 ```
 artifact/
-  plugin.json
-  host.ts     跑在宿主上：工具、状态、方法
-  web.js      跑在 Web 和桌面端：侧边面板、工具卡片
+  package.json
+  server.ts   跑在宿主上：工具、状态、方法
+  web.tsx     跑在 Web 和桌面端：侧边面板、工具卡片
 ```
 
-`plugin.json`：
+`package.json`：
 
 ```json
-{ "name": "artifact", "api": 1, "host": "host.ts", "web": "web.js" }
+{ "name": "artifact", "private": true, "type": "module" }
 ```
 
-- `name` 必须和目录名相同：小写字母、数字和 `-`，以字母开头。
-- `api` 是插件 API 的版本，现在是 `1`。
-- `host` 和 `web` 是目录里的文件名，都可以省略：只有工具的插件不写 `web`，只有界面的插件不写 `host`。
+- `name` 是插件名：小写字母、数字和 `-`，以字母开头。目录也用同一个名字。
+- `server` 和 `web` 的扩展名可以是 `.ts`、`.tsx`、`.js` 或 `.mjs`。两个都可以省略：只有工具的插件没有 `web.tsx`，只有界面的插件没有 `server.ts`。
 
-API 的类型定义在 PiNomad 仓库里：宿主侧是 [`packages/plugin/src/v1.ts`](https://github.com/bubbleptr/pinomad/blob/main/packages/plugin/src/v1.ts)，浏览器侧是 [`v1-web.ts`](https://github.com/bubbleptr/pinomad/blob/main/packages/plugin/src/v1-web.ts)，没有发布成 npm 包。只用 `import type` 引入：API 对象是作为参数传给插件的，运行时没有东西要 import。
+两个文件都由宿主用 esbuild 构建，所以 TypeScript、JSX 随便写，也可以把代码拆到目录里的其他文件，互相 import 的部分会一起打包。
 
-### 宿主侧
+API 的类型定义在 PiNomad 仓库里：服务端是 [`packages/plugin/src/v1.ts`](https://github.com/bubbleptr/pinomad/blob/main/packages/plugin/src/v1.ts)，浏览器侧是 [`v1-web.ts`](https://github.com/bubbleptr/pinomad/blob/main/packages/plugin/src/v1-web.ts)，没有发布成 npm 包。插件只从 `@pinomad/plugin/v1` 和 `@pinomad/plugin/v1/web` 引入，运行插件时由宿主提供。
 
-宿主直接用 Node 的类型剥离运行 `host.ts`，所以 TypeScript 里只能用去掉类型就能跑的写法（不能用 `enum`、`namespace`），也可以直接写 JavaScript。它的默认导出是一个函数，接收宿主 API，在插件加载时把东西都注册好：
+### 从 plugin.json 迁移
+
+宿主自己构建之前写的插件带 `plugin.json` 和 `host.ts`。宿主不再读 `plugin.json`，遇到这样的目录会在日志里留一行。迁移步骤：
+
+1. 按上面的样子加一个 `package.json`，写上插件名。
+2. 把 `host.ts` 改名为 `server.ts`，引入 `definePlugin`，用它包住默认导出（见下文）。
+3. 删掉 `plugin.json`。手写的 `web.js` 原样能用；想写 JSX 就改名为 `web.tsx`。
+
+### 服务端
+
+`server.ts` 默认导出 `definePlugin(fn)`。`fn` 接收宿主 API，在返回之前把东西都注册好，中间不能 await：
+
+```ts
+import { definePlugin } from "@pinomad/plugin/v1";
+
+export default definePlugin((pinomad) => {
+  // pinomad.state(…)、pinomad.tool(…)、pinomad.method(…)
+});
+```
 
 - `state(name, { version, initial, shared })`：按对话保存的 JSON 状态。`initial()` 是对话还没写过时的值。`shared: false` 的状态只留在宿主上；默认会同步给客户端，界面用 `useState` 读。共享状态会同步到每个正在看这段对话的客户端，所以大块内容放在只留宿主的状态里，界面再通过方法去取。
-- `tool({ name, description, parameters, run })`：模型能调用的工具。`parameters` 是 JSON Schema 对象。`run(args, ctx)` 返回 `{ text }`，就是模型看到的结果；抛错的话模型收到一条失败结果，内容是错误信息。工具名只能用字母、数字和 `_`，最长 64 个字符，不能以 `mcp__` 开头，也不能和宿主上已有的工具重名；工具名被占用的插件整个跳过。宿主重启打断的调用不会重跑。
+- `tool({ name, description, parameters, run })`：模型能调用的工具。`parameters` 是 JSON Schema 对象。`run(args, ctx)` 返回 `{ text }`，就是模型看到的结果；抛错的话模型收到一条失败结果，内容是错误信息。工具名只能用字母、数字和 `_`，最长 64 个字符，不能以 `mcp__` 开头，也不能和宿主上已有的工具重名。占用内置工具名的插件不会加载，修改后才占用的则继续用原来的版本；两个插件的工具重名时，按字母顺序靠后的那个被跳过。宿主重启打断的调用不会重跑。
 - `method(name, run)`：给界面用 `call` 或 `useCall` 调的函数。`run(args, ctx)` 收发 JSON；抛错的话这次调用失败，带上错误信息。
 
 `ctx` 是这次工具调用或方法调用所属的对话：
@@ -59,7 +77,7 @@ API 的类型定义在 PiNomad 仓库里：宿主侧是 [`packages/plugin/src/v1
 
 ### 浏览器侧
 
-`web.js` 是一个 ES 模块，默认导出接收浏览器 API。这个文件由你自己构建，宿主原样提供；客户端先核对它和宿主公布的哈希一致，再运行。React 从 API 里拿，不要自己打包一份，否则 hooks 用不了。
+`web.tsx` 默认导出一个函数，接收浏览器 API。宿主把它构建成一个脚本；客户端先核对脚本和宿主公布的哈希一致，再运行。JSX 用 App 的 React 渲染。不要 import `react`：hooks 和其他东西都从 `pinomad.React` 拿，这样用的才是 App 自己那份。暂时不支持 import CSS 和图片，用内联样式和 `data:` URL。
 
 - `React`：App 用的 React。
 - `panel({ id, label, component })`：侧边面板里的一页。`label` 是它在对话标题栏里那个按钮的名字。
@@ -80,14 +98,14 @@ API 的类型定义在 PiNomad 仓库里：宿主侧是 [`packages/plugin/src/v1
 
 ## 示例：artifact
 
-仓库里的 [`examples/plugins/artifact`](https://github.com/bubbleptr/pinomad/tree/main/examples/plugins/artifact) 是一个完整的插件：模型写一个网页，它的工具卡片显示页面标题和 **Open** 按钮，**Artifact** 面板在沙箱里显示这个页面。它没有内置，想试的话把目录复制到 `~/.pinomad/plugins/artifact/`，再重启宿主。
+仓库里的 [`examples/plugins/artifact`](https://github.com/bubbleptr/pinomad/tree/main/examples/plugins/artifact) 是一个完整的插件：模型写一个网页，它的工具卡片显示页面标题和 **Open** 按钮，**Artifact** 面板在沙箱里显示这个页面。它没有内置，想试的话把目录复制到 `~/.pinomad/plugins/artifact/`。
 
-宿主侧把页面留在宿主上，只共享标题和一个版本号：
+服务端把页面留在宿主上，只共享标题和一个版本号：
 
 ```ts
-import type { HostApi } from "@pinomad/plugin/v1";
+import { definePlugin } from "@pinomad/plugin/v1";
 
-export default (pinomad: HostApi): void => {
+export default definePlugin((pinomad) => {
   const page = pinomad.state("page", { version: 1, shared: false, initial: () => ({ title: "", html: "" }) });
   const current = pinomad.state("current", { version: 1, initial: () => ({ title: "", revision: 0 }) });
 
@@ -113,30 +131,35 @@ export default (pinomad: HostApi): void => {
   });
 
   pinomad.method("read", async (_args, ctx) => ctx.read(page));
-};
+});
 ```
 
-浏览器侧是一个普通的 ES 模块，用 `React.createElement` 代替 JSX，所以不用构建。面板读共享的版本号，版本号一变就重新取页面：
+浏览器侧读共享的版本号，版本号一变就重新取页面：
 
-```js
-export default function artifact(pinomad) {
-  const h = pinomad.React.createElement;
+```tsx
+import type { PluginToolCall, WebApi } from "@pinomad/plugin/v1/web";
 
+export default function artifact(pinomad: WebApi): void {
   function Panel() {
-    const current = pinomad.useState("current");
+    const current = pinomad.useState<{ title: string; revision: number }>("current");
     const revision = current === undefined ? 0 : current.revision;
-    const page = pinomad.useCall("read", revision > 0 ? null : undefined, [revision]);
-    if (revision === 0) return h("p", null, "No artifact yet. Ask the agent to make a page.");
-    if (page === undefined) return h("p", null, "Loading…");
-    return h("div", { style: { display: "flex", height: "100%" } }, h(pinomad.Sandbox, { title: page.title, html: page.html }));
+    const page = pinomad.useCall<{ title: string; html: string }>("read", revision > 0 ? null : undefined, [revision]);
+    if (revision === 0) return <p>No artifact yet. Ask the agent to make a page.</p>;
+    if (page === undefined) return <p>Loading…</p>;
+    return (
+      <div style={{ display: "flex", height: "100%" }}>
+        <pinomad.Sandbox title={page.title} html={page.html} />
+      </div>
+    );
   }
 
-  function Card({ tool }) {
-    return h(
-      "div",
-      null,
-      h("span", null, tool.args?.title ?? "Untitled page"),
-      h("button", { type: "button", onClick: () => pinomad.openPanel("page") }, "Open"),
+  function Card({ tool }: { tool: PluginToolCall }) {
+    const args = tool.args as { title?: string } | undefined;
+    return (
+      <div>
+        <span>{args?.title ?? "Untitled page"}</span>
+        <button type="button" onClick={() => pinomad.openPanel("page")}>Open</button>
+      </div>
     );
   }
 
