@@ -512,11 +512,11 @@ export default definePlugin((pinomad) => {
     const secret = frames.filter((frame) => "stream" in frame && frame.stream === SECRET);
     expect(secret.at(-1)).toEqual({ type: "snapshot", stream: SECRET, value: null });
     expect(JSON.stringify(secret)).not.toContain("host only now");
-    // Subscribing again is refused, as for any document the host does not share.
+    // Subscribing again shows it absent again: this connection was told about it, so it is not refused.
+    const before = secret.length;
     subscribe(SECRET);
-    expect(await next((frame) => frame.type === "ended" && frame.stream === SECRET)).toMatchObject({
-      reason: "Unknown document plugin.notes.secret",
-    });
+    await next(() => frames.filter((frame) => "stream" in frame && frame.stream === SECRET).length > before);
+    expect(frames.filter((frame) => "stream" in frame && frame.stream === SECRET).slice(before)).toEqual([{ type: "snapshot", stream: SECRET, value: null }]);
   });
 
   it("refuses a reload that takes a built-in tool's name and keeps the plugin as it was", async () => {
@@ -688,6 +688,66 @@ describe("plugin list notice", () => {
     await rm(join(dir.path, "plugins", "added"), { recursive: true });
     const none = await next((frame) => frame.type === "plugins" && frame !== added && frame !== removed);
     expect(none).toMatchObject({ type: "plugins", plugins: [] });
+  });
+
+  /**
+   * A client that predates the documents in the `plugins` frame keeps the
+   * hello's list and subscribes every conversation it opens to all of it.
+   * These look at the wire as such a client would see it.
+   */
+  describe("a document this connection was told about but the host no longer shares", () => {
+    const counter = (options: string) =>
+      'import { definePlugin } from "@pinomad/plugin/v1";\n' +
+      `export default definePlugin((p) => { const count = p.state("count", { version: 1, ${options} initial: () => ({ n: 0 }) }); ` +
+      'p.method("bump", async (_args, ctx) => { await ctx.change(async (tx) => { (await tx.get(count)).n += 1; }); return null; }); });\n';
+    const COUNT = "plugin.notes.count";
+    const forStream = (frames: readonly ServerFrame[], stream: string) => frames.filter((frame) => "stream" in frame && frame.stream === stream);
+
+    async function told() {
+      const dir = await tempDir();
+      defer(dir.remove);
+      await writePlugin(dir.path, "notes", { "server.ts": counter("") });
+      const events = pluginEvents();
+      const opened = await setup({ dataDir: dir.path, plugins: events.options, answers: ["ok", "ok"] });
+      expect((await opened.hello()).docs.map((doc) => doc.kind)).toContain(COUNT);
+      const other = await startChat(opened.client, "another");
+      return { ...opened, dataDir: dir.path, other, stream: `doc:${COUNT}:${other}` };
+    }
+
+    it("opens another conversation's stream of it as absent after a reload unshares it, sends no later write, and goes live when shared again", async () => {
+      const { dataDir, other, stream, call, subscribe, next, frames } = await told();
+      await save(dataDir, "notes/server.ts", counter("shared: false,"));
+      await next((frame) => frame.type === "plugins");
+
+      subscribe(stream);
+      await next((frame) => frame.type === "snapshot" && frame.stream === stream);
+      expect(await call("pluginCall", { conversationId: other, plugin: "notes", method: "bump", args: null })).toEqual({ ok: true, value: null });
+
+      await save(dataDir, "notes/server.ts", counter(""));
+      const live = await next((frame) => frame.type === "snapshot" && frame.stream === stream && frame.value !== null);
+      // Before it was shared again the stream said only that the document is absent: the write while hidden never went out.
+      const seen = forStream(frames, stream);
+      expect(seen.slice(0, seen.indexOf(live))).toEqual([{ type: "snapshot", stream, value: null }]);
+      expect(live).toMatchObject({ value: { n: 1 } });
+      expect(seen.filter((frame) => frame.type === "ended")).toEqual([]);
+
+      expect(await call("pluginCall", { conversationId: other, plugin: "notes", method: "bump", args: null })).toEqual({ ok: true, value: null });
+      await next((frame) => frame.type === "ops" && frame.stream === stream);
+    });
+
+    it("opens it as absent after the plugin is removed, and still refuses a kind it was never told about", async () => {
+      const { dataDir, other, stream, subscribe, next, frames } = await told();
+      await rm(join(dataDir, "plugins", "notes"), { recursive: true });
+      await next((frame) => frame.type === "plugins");
+
+      subscribe(stream);
+      await next((frame) => frame.type === "snapshot" && frame.stream === stream);
+      expect(forStream(frames, stream)).toEqual([{ type: "snapshot", stream, value: null }]);
+
+      const unknown = `doc:plugin.other.secret:${other}`;
+      subscribe(unknown);
+      expect(await next((frame) => frame.type === "ended" && frame.stream === unknown)).toMatchObject({ reason: "Unknown document plugin.other.secret" });
+    });
   });
 
   it("sends the shared documents with the list, and a frame when a reload changed only which states are shared", async () => {
