@@ -13,7 +13,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0017](0017-client-forms-electron-and-expo.md) | 客户端形态：桌面端 Electron 只做 macOS、页面打包进 App；Linux 用 Web；移动端 Expo；`packages/protocol` 要能在 Hermes 上运行（§3、§4 由 0024 取代；§4 已于 2026-10-19 随 `apps/mobile` 删除失效；2026-11-04 补充：App 带宿主服务的启动器） |
 | [0024](0024-native-mobile-rust-core.md) | 移动端改成原生（iOS SwiftUI，以后安卓 Compose），客户端协议核心用 Rust 写一份两端共用；核心不做 I/O，流状态是保留 UTF-16 的完整 JSON；TS 是参照，三层测试对齐 |
 | [0004](0004-built-in-first-plugin-protocol-later.md) | 先内置后开放：内置功能按扩展边界写，满足三个条件才公开插件协议（§4、§5 由 0049 修订） |
-| [0049](0049-plugins-ship-ui.md) | 开放插件：插件装在数据目录 `plugins/` 下，可以带和 Web 外壳同页运行的界面代码，只经具名插槽（侧边面板、工具卡片）贡献界面；插件界面只在 Web 和桌面端，iOS 只有插件工具；按 PiNomad 自己的插件 API 写（修订 0004 §4、§5，0005 的前提；§4、§6 由 0050 修订） |
+| [0049](0049-plugins-ship-ui.md) | 开放插件：插件装在数据目录 `plugins/` 下，可以带和 Web 外壳同页运行的界面代码，只经具名插槽（侧边面板、工具卡片）贡献界面；插件界面只在 Web 和桌面端，iOS 只有插件工具；按 PiNomad 自己的插件 API 写（修订 0004 §4、§5，0005 的前提；§4、§6 由 0050 修订；§7 由 0051 修订） |
 | [0050](0050-plugins-load-through-chord.md) | 插件改由 chord 加载：目录是 `package.json` + `server.ts` / `web.tsx`，宿主用 esbuild 构建两半、监听文件并热重载，失败时保留上一个好版本；插件仍只写 PiNomad 的 API（服务端默认导出 `definePlugin(fn)`），线路不变（修订 0049 §4、§6） |
 
 ## 运行时与呈现
@@ -26,7 +26,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0026](0026-run-process-folds-out-of-transcript.md) | 运行过程在对话里收成一行：Web / 桌面按插话分段成灰色摘要行、原地展开，iOS 每次运行一颗胶囊加 sheet；todo 跟在最新一次运行后面；不加提示词凑插话和 todo |
 | [0034](0034-submission-delivery-and-recovery.md) | 提交的送达状态与断线恢复：只读 `submission` 查询、宿主在预处理前按 `requestId` 去重、`submit` 结果带 `entry`；重连后先查询再决定是否重发，是“断线不重放”的窄例外，“未确认”不等于失败 |
 | [0039](0039-fork-sidebar-conversations.md) | Web/桌面端把 Fork 作为左侧独立对话列在根对话之后，所有入口在主区打开；右侧只保留 Tasks。创建后的 focus 不被父对话抢回（修订 0007 §1/§2、0019 的 thread 呈现、0038 §2；§4 由 0040 修订） |
-| [0040](0040-side-panel-surfaces.md) | 侧面板是 Tasks、Changes、Terminal 三个固定 Surface 的容器，Tasks 跟着 root 家族、Changes 跟着实际执行检出走；页切换是聊天区头部的图标，面板通高、首行放当前 Surface 的状态和操作；终端归 root 对话所有（有自己 worktree 的旧 Fork 例外）、可开多个（修订 0039 §4；§6 由 0045 修订） |
+| [0040](0040-side-panel-surfaces.md) | 侧面板是 Tasks、Changes、Terminal 三个固定 Surface 的容器，Tasks 跟着 root 家族、Changes 跟着实际执行检出走；页切换是聊天区头部的图标，面板通高、首行放当前 Surface 的状态和操作；终端归 root 对话所有（有自己 worktree 的旧 Fork 例外）、可开多个（修订 0039 §4；§6 由 0045 修订；§1 由 0051 补充） |
 | [0041](0041-host-terminals.md) | 终端由宿主在内存里运行（`@lydell/node-pty` 懒加载，缺了宿主照常运行），断线不停、宿主停止或根对话归档时关掉；输出进每个终端一个有上限的缓冲，按位置回放，掉出缓冲就整个重发；不按设备限制（补充 0040 §5） |
 | [0045](0045-background-processes.md) | 后台进程由宿主在内存里用 pty 运行，不建 Durable task；工具是独立扩展，运行时是宿主服务；列表存 root 对话的 `pinomad.processes` 文档，在 Tasks 展示，宿主崩溃后记为 `lost`；只有进程自己退出才用 `steer` 回报模型（补充 0040 §1、0041；修订 0040 §6） |
 | [0046](0046-one-kind-of-subagent.md) | 子代理只有一种：都有名字，答完还能接着聊、能停，派出时用 `background` 选等不等它；后台的消息由归父对话所有的后台回报任务投递，父对话派的答完用 `steer` 唤醒，用户直接聊的只写一行通知、靠 `subagent_read` 按需拉；`checkout` 必填（共用或自己的 worktree）；状态记在派出者的 `pinomad.subagents`（修订 0038 §1、§3，0010 §5；§4 的用户通知和 §6 由 0047 修订） |
@@ -40,7 +40,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0006](0006-host-tools-and-context-sources.md) | 宿主默认提供编码工具、默认不审批，上下文只从项目和 `~/.agents` 读取 |
 | [0007](0007-projects-and-conversations.md) | 工作组织是"项目 → 对话"，不用 channel；归档代替删除（多宿主分组由 0035 补充，Fork 展示由 0039 修订） |
 | [0010](0010-worktree-execution-checkout.md) | Git 项目的对话默认在数据目录下的独立 worktree 里工作（fork 部分由 0019 修订；§5 子代理检出由 0046 修订） |
-| [0011](0011-ask-user-question-replaces-approval.md) | 不做审批闸门；agent 用阻塞式的结构化提问和用户对齐，取代 `pinomad.approval` |
+| [0011](0011-ask-user-question-replaces-approval.md) | 不做审批闸门；agent 用阻塞式的结构化提问和用户对齐，取代 `pinomad.approval`（§1 由 0051 修订：Inbox 的运行加 auto mode） |
 | [0012](0012-mcp-host-level-connections.md) | MCP 只读 `~/.agents/mcp.json`，宿主级连接所有对话共用，工具直接声明，状态经 `mcp` 流推给客户端 |
 | [0013](0013-codemode-and-tool-exposure.md) | codemode 是默认开启的通用工具；工具按 `direct` / `model-only` / `codemode` 暴露，和来源正交，MCP 默认 `codemode` |
 | [0019](0019-fork-shares-parent-checkout.md) | fork 共用父对话的检出，要隔离由 agent 自己用 git 开 worktree；只有一层，每条消息最多一个（界面呈现由 0039 修订） |
@@ -50,6 +50,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0029](0029-host-declared-slash-commands.md) | 斜杠命令由宿主声明（协议 5.17 `listCommands` / `runCommand`），客户端不写死命令表；只在消息开头识别 `/<已列出的名字>`；第一期只有内置 `/compact` |
 | [0030](0030-attach-files.md) | 输入框的 Attach files 把客户端本机文件分块上传到宿主 `attachments/`，发送时只传宿主生成的 id（5.19）；`used` 永久保留，清理与 submit 共用锁；模型看到转义后的 v1 `<attachments>` 块，客户端只在用户条目和排队输入里剥离 |
 | [0031](0031-host-owns-credentials-and-providers.md) | 凭据和自定义模型存在数据目录，宿主不再读 pi 的任何配置、不迁移；登录在客户端完成，宿主照 pi 的提示转发，进行中的登录经 `providers` 流推送（5.21） |
+| [0051](0051-inbox-mode.md) | Inbox 模式：每个项目一个 Inbox，事件（收件对话提交的任务、定时、插件、局域网 webhook）进 Inbox，一个 worker 依次取任务，每项任务一个对话，后续事件按 thread 回到原任务；Inbox 的运行由 auto mode 的分类器把关，编码模式不变（修订 0011 §1、0049 §7，补充 0040 §1） |
 
 ## 远程与运维
 
@@ -134,4 +135,6 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | 0004 §4：插件不能自带界面组件；§5：满足三个条件才公开插件协议 | 由 0049 修订：插件可以带和 Web 外壳同页运行的界面代码，只在 Web 和桌面端；因 artifact 的需求开放，不再等三个条件 |
 | 0005：插件状态通过展示类型呈现 | 由 0049 修订：插件可以自带界面，展示类型留给内置扩展 |
 | 0049 §4：插件不直接用 chord；§6：`plugin.json` 目录、启动时加载、浏览器侧由作者构建；没选的方案：宿主构建浏览器侧代码 | 由 0050 修订：宿主用 chord 加载和热重载插件，目录是 `package.json` + `server.ts` / `web.tsx`，两半都由宿主构建；插件仍只 import PiNomad 的 API |
+| 0011 §1：不做审批闸门，工具一律直接执行 | 由 0051 修订：Inbox 的运行由 auto mode 的分类器把关；编码模式仍直接执行 |
+| 0049 §7：编排（钩子、创建对话、定时任务）以后再做 | 由 0051 修订：插件可以声明 Inbox 的事件源；定时由 Inbox 的计时器提供 |
 | 其余"以后再做" | 统一收在 GitHub Issues，带 `later` 标签 |
