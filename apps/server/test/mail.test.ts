@@ -2,7 +2,8 @@
 // over a connection that quietly stayed plaintext.
 import { describe, expect, it, vi } from "vitest";
 
-const createTransport = vi.fn((_options: unknown) => ({ sendMail: vi.fn() }));
+const sendMail = vi.fn();
+const createTransport = vi.fn((_options: unknown) => ({ sendMail }));
 vi.mock("nodemailer", () => ({ createTransport }));
 
 const { loadMailer } = await import("../src/mail.ts");
@@ -17,6 +18,12 @@ describe("loadMailer", () => {
     const [options] = createTransport.mock.lastCall!;
     expect(options).toEqual(expect.objectContaining({ url: "smtps://user:pass@mail.example.com:465" }));
     expect((options as { requireTLS?: boolean }).requireTLS).not.toBe(true);
+  });
+
+  it("sends the text and HTML bodies together", async () => {
+    const mailer = loadMailer({ PINOMAD_SERVER_SMTP_URL: "smtps://mail.example.com", PINOMAD_SERVER_MAIL_FROM: "a@example.com" })!;
+    await mailer.send("b@example.com", "Subject", { text: "plain", html: "<p>rich</p>" });
+    expect(sendMail).toHaveBeenLastCalledWith({ from: "a@example.com", to: "b@example.com", subject: "Subject", text: "plain", html: "<p>rich</p>" });
   });
 
   it("is off without configuration and refuses half of one", () => {

@@ -21,6 +21,7 @@ import { promisify } from "node:util";
 import type { ApnsEnvironment } from "@pinomad/protocol/relay.ts";
 import { normalizeHostName } from "@pinomad/protocol/settings.ts";
 import { isDataDirInUse, lockDataDir } from "./lock.ts";
+import { type MailBody, type MailContent, renderMail } from "./mail-template.ts";
 import type { OAuthProvider, ProviderIdentity } from "./oauth.ts";
 
 const DB_FILE = "server.sqlite";
@@ -108,10 +109,11 @@ export function normalizeEmail(raw: string): string | undefined {
 
 /**
  * How the server sends mail (ADR-0044 §2): SMTP in production (mail.ts),
- * a capturing fake in tests. Plain text only.
+ * a capturing fake in tests. Every mail has a text and an HTML part
+ * (mail-template.ts).
  */
 export interface Mailer {
-  send(to: string, subject: string, text: string): Promise<void>;
+  send(to: string, subject: string, body: MailBody): Promise<void>;
 }
 
 // Push registrations (ADR-0036 §2, §5): the app refreshes its token on every
@@ -1549,10 +1551,10 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
    * Hands a mail to the mailer without waiting: whether a mail went out, and
    * how long sending took, must not show in the answer (ADR-0044 §2).
    */
-  const deliver = (purpose: string, to: string, subject: string, text: string): void => {
+  const deliver = (purpose: string, to: string, subject: string, content: MailContent): void => {
     // The purpose only: subjects and bodies carry codes, and so may the
     // error, which some transports build from the message.
-    mailer?.send(to, subject, text).catch(() => {
+    mailer?.send(to, subject, renderMail(content)).catch(() => {
       console.error(JSON.stringify({ event: "mail_failed", purpose }));
     });
   };
@@ -1952,8 +1954,10 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
       "new_sign_in_method",
       email,
       `A new sign-in method was added: ${name}`,
-      `${name} can now sign in to your PiNomad account, because it confirmed this email address.\n\n` +
-        `If this wasn't you, sign in, remove ${name} under Sign-in methods, and sign out everywhere.\n`,
+      {
+        lead: `${name} can now sign in to your PiNomad account, because it confirmed this email address.`,
+        note: `If this wasn't you, sign in, remove ${name} under Sign-in methods, and sign out everywhere.`,
+      },
     );
   };
 
@@ -2069,8 +2073,10 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
           "signup_existing",
           email,
           "Your PiNomad account",
-          "Someone asked to create a PiNomad account with this email, but you already have an account.\n\n" +
-            "Sign in, or reset your password if you forgot it. If this wasn't you, ignore this email.\n",
+          {
+            lead: "Someone asked to create a PiNomad account with this email, but you already have an account.",
+            note: "Sign in, or reset your password if you forgot it. If this wasn't you, ignore this email.",
+          },
         );
         return "sent";
       }
@@ -2079,7 +2085,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
         "signup",
         email,
         `${code} is your PiNomad sign-up code`,
-        `Your PiNomad sign-up code is ${code}. It expires in 10 minutes.\n\nIf you didn't ask for it, ignore this email.\n`,
+        { lead: "Your PiNomad sign-up code", code, note: "If you didn't ask for it, ignore this email." },
       );
       return "sent";
     },
@@ -2130,8 +2136,11 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
         "reset",
         email,
         `${code} is your PiNomad password reset code`,
-        `Your PiNomad password reset code is ${code}. It expires in 10 minutes.\n\n` +
-          "If you didn't ask to reset your password, ignore this email; your password stays as it is.\n",
+        {
+          lead: "Your PiNomad password reset code",
+          code,
+          note: "If you didn't ask to reset your password, ignore this email; your password stays as it is.",
+        },
       );
       return "sent";
     },
@@ -2179,8 +2188,7 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
         "add_email",
         email,
         `${code} is your PiNomad confirmation code`,
-        `Your code to use this email for your PiNomad account is ${code}. It expires in 10 minutes.\n\n` +
-          "If you didn't ask for it, ignore this email.\n",
+        { lead: "Your code to use this email for your PiNomad account", code, note: "If you didn't ask for it, ignore this email." },
       );
       return "sent";
     },
@@ -2227,9 +2235,12 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
           "email_changed",
           previous,
           "Your PiNomad email was changed",
-          `The email of your PiNomad account was changed to ${email}.\n\n` +
-            "If this wasn't you, someone else has your password and now controls the account's email. " +
-            "Contact your server's operator.\n",
+          {
+            lead: `The email of your PiNomad account was changed to ${email}.`,
+            note:
+              "If this wasn't you, someone else has your password and now controls the account's email. " +
+              "Contact your server's operator.",
+          },
         );
       }
       return { status: "ok", user: { accountId, username: email, email } };
@@ -2361,8 +2372,11 @@ export async function openAccounts(options: AccountsOptions): Promise<Accounts> 
         "reauth",
         email,
         `${code} is your PiNomad confirmation code`,
-        `Your code to confirm a change to your PiNomad account is ${code}. It expires in 10 minutes.\n\n` +
-          "If you didn't ask for it, someone else may be signed in to your account: sign out everywhere.\n",
+        {
+          lead: "Your code to confirm a change to your PiNomad account",
+          code,
+          note: "If you didn't ask for it, someone else may be signed in to your account: sign out everywhere.",
+        },
       );
       return "sent";
     },
