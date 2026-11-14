@@ -4,6 +4,7 @@
 - 日期：2026-11-03
 - 修订：ADR-0039 §4（"右侧只保留 Tasks"）
 - 部分修订：ADR-0045（§6 Tasks 图标的活动点把运行中的后台进程算进去）
+- 补充：[ADR-0051](0051-inbox-mode.md)（§1：Inbox 模式下 Tasks 页多出 Inbox 的处理规则、事件源和跟进）
 
 ## 背景
 
@@ -16,6 +17,7 @@ M11 把右侧面板改成能放多个页的容器。要定的是：有哪些页�
 ## 决策
 
 1. **侧面板是固定三个 Surface 的容器：Tasks、Changes、Terminal。** 不做注册表，加 Surface 时改代码。Tasks 的内容和行为照 ADR-0038、0039 不变；Changes 取代 Changes 对话框；Terminal 是新的。Overview 浮层保留，只放摘要，点摘要打开对应的 Surface。
+   - 由 ADR-0051 补充：Inbox 模式下 Tasks 页多出这个 Inbox 的处理规则、事件源和跟进；仍是三个 Surface。
 
 2. **Tasks 跟着主区对话的 root 家族走，Changes 跟着主区对话实际的执行检出走，Terminal 跟着终端的所有者走（第 5 条）。** 新数据里一个家族只有一个检出（ADR-0019：Fork 和子代理都用父对话的检出），所以三者在家族内都不变；但 ADR-0019 之前创建的 Fork 仍有自己的 worktree（ADR-0019 §4），打开它时 Changes 换成它的 diff，Terminal 换成它自己的一组终端（见第 5 条）。切到另一个家族时 Tasks 关掉详情（现有行为）。Changes 在主区对话每次变化时都重新取：宿主本来就按当前对话的工作目录算改动，代价很小。Terminal 在同一所有者的对话之间切换不重置。项目目录被多个家族共用时，Changes 保留"这是项目目录里未提交的改动，和其他对话共用"的说明。
 
