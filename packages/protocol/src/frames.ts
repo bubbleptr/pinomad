@@ -426,8 +426,8 @@ export interface CallMethods {
   /** Checks npm now; refused while `autoUpgrade` is `off`. */
   checkUpgrade: { args: Record<string, never>; result: null };
   /**
-   * A plugin's browser bundle (5.34, ADR-0049): the `web.js` behind
-   * `hello.plugins[].web`, whole. One result frame like `image`; the secure
+   * A plugin's browser bundle (5.34, ADR-0049): the script the host built from
+   * its `web.tsx`, behind `hello.plugins[].web`, whole. One result frame like `image`; the secure
    * channel splits it into records. An unknown name or one without a web
    * half is an `ok:false`.
    */
@@ -458,9 +458,9 @@ export type CallMethod = keyof CallMethods;
 /** One `hello.plugins` entry (ADR-0049). */
 export interface PluginInfo {
   readonly name: string;
-  /** The plugin API version its `plugin.json` targets. */
+  /** The plugin API version it is written against. */
   readonly api: number;
-  /** The browser half: sha-256 hex of the `web.js` bytes and their count. Absent → tools only. */
+  /** The browser half: sha-256 hex of the bundle's UTF-8 bytes and their count. Absent → tools only. */
   readonly web?: { readonly hash: string; readonly size: number };
 }
 

@@ -22,7 +22,7 @@ import lockfile from "proper-lockfile";
 import { readServerBinding } from "./server-config.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import type { BuiltinExtension } from "./builtin-extension.ts";
-import { loadPlugins } from "./plugins.ts";
+import { openPlugins, type PluginReload, type Plugins } from "./plugins.ts";
 import { startGateway, validatePublicUrl } from "./gateway.ts";
 import type { RtcOptions } from "./rtc.ts";
 import type { StartTerminalsOptions } from "./terminals.ts";
@@ -128,6 +128,8 @@ export interface OpenHostOptions {
    * source checkout and in tests, where the `upgrade` stream says `source`.
    */
   readonly upgrade?: HostUpgradeOptions & { readonly current: string };
+  /** Plugin seams for tests: each reload's outcome, and where plugin log lines go (stderr by default). */
+  readonly plugins?: { readonly onReload?: (outcome: PluginReload) => void; readonly log?: (line: string) => void };
 }
 
 export interface OpenedHost {
@@ -188,6 +190,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
   let agentRoles: AgentRoleStore | undefined;
   let attachments: AttachmentStore | undefined;
   let extensions: readonly BuiltinExtension[] = [];
+  let plugins: Plugins | undefined;
   let upgrader: Awaited<ReturnType<typeof startHostUpgrader>> | undefined;
   try {
     const models = withAnswerTiming(options.models);
@@ -224,12 +227,20 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
             ...(processes === undefined ? {} : { processes }),
           })
         : (options.extensions ?? []);
-    // Plugins load once, after the built-ins so their tool names are taken first (ADR-0049).
-    const plugins = await loadPlugins(join(options.dataDir, "plugins"), {
-      reservedTools: extensions.flatMap(({ extension }) => (extension.tools ?? []).map((tool) => tool.name)),
-    });
-    extensions = [...extensions, ...plugins.extensions];
     for (const { extension } of extensions) registry.install(extension);
+    // Plugins load after the built-ins, whose tool names they may not take, and
+    // reload as their files change (ADR-0049, ADR-0050). Plugins failing to start
+    // at all (no esbuild binary, say) leave the host running without them.
+    const pluginLog = options.plugins?.log ?? ((line: string) => console.error(line));
+    plugins = await openPlugins(join(options.dataDir, "plugins"), {
+      reservedTools: extensions.flatMap(({ extension }) => (extension.tools ?? []).map((tool) => tool.name)),
+      registry,
+      log: pluginLog,
+      ...(options.plugins?.onReload === undefined ? {} : { onReload: options.plugins.onReload }),
+    }).catch((error: unknown) => {
+      pluginLog(`plugins: not loaded: ${error instanceof Error ? error.message : String(error)}`);
+      return undefined;
+    });
     // Connections run in the background; the `mcp` extension (re)installs as tools arrive.
     // Namespace changes rebuild the extensions that opt in (codemode's section).
     mcp =
@@ -344,7 +355,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       ...(options.browserOrigins === undefined ? {} : { browserOrigins: options.browserOrigins }),
       docs: extensions.flatMap((extension) => extension.docs ?? []),
       toolPresentations: Object.assign({}, ...extensions.map((extension) => extension.tools ?? {})),
-      plugins,
+      ...(plugins === undefined ? {} : { plugins }),
       ...(mcp === undefined ? {} : { mcp: mcp.status }),
       ...(options.modelAuth === undefined ? {} : { modelAuth: options.modelAuth }),
       ...(options.webRoot === undefined ? {} : { webRoot: options.webRoot }),
@@ -435,6 +446,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
             await gateway.close();
             // Close writes no outcome: a running turn resumes at the next open.
             await opened.close(context);
+            await plugins?.close();
             // MCP servers go down with the host (stdio children get the spec shutdown).
             await mcp?.close();
             attachments?.close();
@@ -459,6 +471,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     for (const each of extensions) await each.close?.().catch(() => {});
     await mcp?.close().catch(() => {});
     await harness?.close(context).catch(() => {});
+    await plugins?.close().catch(() => {});
     await release().catch(() => {});
     throw error;
   }

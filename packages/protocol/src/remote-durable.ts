@@ -346,7 +346,7 @@ export interface RemoteTerminals {
 
 /** A plugin's browser half and its host methods (5.34, ADR-0049); the list is `view.host.plugins`. */
 export interface RemotePlugins {
-  /** The `web.js` source behind `hello.plugins[].web`; the caller checks its hash. */
+  /** The bundle source behind `hello.plugins[].web`; the caller checks its hash. */
   bundle(name: string): Promise<string>;
   /** One of the plugin's host methods, for one conversation. */
   call(conversationId: ConversationId, plugin: string, method: string, args: JsonValue): Promise<JsonValue>;

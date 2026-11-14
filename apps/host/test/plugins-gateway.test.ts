@@ -1,19 +1,20 @@
-// Plugins over the gateway (ADR-0049). A host loads `<dataDir>/plugins/*` at
-// startup; without that directory hello carries no `plugins` and both plugin
-// calls refuse the name.
+// Plugins over the gateway (ADR-0049, ADR-0050). A host loads `<dataDir>/plugins/*`
+// at startup and reloads a plugin when its files change; without plugins hello
+// carries no `plugins` and both plugin calls refuse the name.
 import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fauxAssistantMessage, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
 import { WebSocket } from "ws";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { ServerFrame } from "@pinomad/protocol/frames.ts";
 import { transcript } from "@pinomad/protocol/transcript.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { todo } from "../src/extensions/todo.ts";
 import type { OpenedHost } from "../src/host.ts";
+import type { PluginReload } from "../src/plugins.ts";
 import { connectTo, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
@@ -22,21 +23,70 @@ const ARTIFACT_EXAMPLE = fileURLToPath(new URL("../../../examples/plugins/artifa
 const BOARD = "plugin.notes.board";
 const WRITES = "plugin.notes.writes";
 
-/** A data dir holding the `notes` fixture plugin, plus any extra plugin files by relative path. */
-async function dataDirWithPlugins(extra: Record<string, string> = {}): Promise<string> {
+/** Write plugin `name` under `dataDir`: a package.json naming it, plus `files`. */
+async function writePlugin(dataDir: string, name: string, files: Record<string, string>): Promise<void> {
+  const dir = join(dataDir, "plugins", name);
+  await mkdir(dir, { recursive: true });
+  await writeFile(join(dir, "package.json"), JSON.stringify({ name }));
+  for (const [file, content] of Object.entries(files)) await writeFile(join(dir, file), content);
+}
+
+/** A data dir holding the `notes` fixture plugin, plus any extra plugins. */
+async function dataDirWithPlugins(extra: Record<string, Record<string, string>> = {}): Promise<string> {
   const dir = await tempDir();
   defer(dir.remove);
   await cp(FIXTURE, join(dir.path, "plugins", "notes"), { recursive: true });
-  for (const [path, content] of Object.entries(extra)) {
-    await mkdir(join(dir.path, "plugins", path, ".."), { recursive: true });
-    await writeFile(join(dir.path, "plugins", path), content);
-  }
+  for (const [name, files] of Object.entries(extra)) await writePlugin(dir.path, name, files);
   return dir.path;
 }
 
+/** A server half registering one tool named `tool`. */
+const oneTool = (tool: string): string =>
+  `import { definePlugin } from "@pinomad/plugin/v1";\n` +
+  `export default definePlugin((p) => { p.tool({ name: "${tool}", description: "x", parameters: { type: "object" }, run: async () => ({ text: "" }) }); });\n`;
+
 type HostOptions = NonNullable<Parameters<typeof startFauxHost>[1]>;
 
-async function setup(options: Pick<HostOptions, "dataDir" | "answers" | "extensions"> = {}) {
+/** Reload outcomes and plugin log lines as they arrive; `next` takes the first unconsumed outcome matching `test`. */
+function pluginEvents() {
+  const outcomes: PluginReload[] = [];
+  /** Every outcome, never consumed. */
+  const history: PluginReload[] = [];
+  const log: string[] = [];
+  const waiting = new Set<() => void>();
+  const wake = () => {
+    for (const check of [...waiting]) check();
+  };
+  return {
+    log,
+    history,
+    options: {
+      onReload: (outcome: PluginReload) => {
+        outcomes.push(outcome);
+        history.push(outcome);
+        wake();
+      },
+      log: (line: string) => {
+        log.push(line);
+        wake();
+      },
+    } satisfies HostOptions["plugins"],
+    next: (test: (outcome: PluginReload) => boolean): Promise<PluginReload> =>
+      new Promise((resolve) => {
+        const check = () => {
+          const index = outcomes.findIndex(test);
+          if (index === -1) return;
+          const [found] = outcomes.splice(0, index + 1).slice(-1);
+          waiting.delete(check);
+          resolve(found!);
+        };
+        waiting.add(check);
+        check();
+      }),
+  };
+}
+
+async function setup(options: Pick<HostOptions, "dataDir" | "answers" | "extensions" | "plugins"> = {}) {
   const host = await startFauxHost(defer, { ...options, answers: options.answers ?? ["ok"] });
   const client = await connectTo(defer, host);
   const conversationId = await startChat(client, "hi");
@@ -73,7 +123,12 @@ async function rawSocket(host: OpenedHost) {
     return frame.ok ? { ok: true, value: frame.value } : { ok: false, error: frame.error };
   };
   const subscribe = (stream: string) => socket.send(JSON.stringify({ type: "subscribe", stream }));
-  return { next, call, subscribe };
+  const hello = async () => {
+    const frame = await next((candidate) => candidate.type === "hello");
+    if (frame.type !== "hello") throw new Error("unreachable");
+    return frame;
+  };
+  return { next, call, subscribe, hello, frames };
 }
 
 const toolResults = (view: DurableView): string[] =>
@@ -81,10 +136,12 @@ const toolResults = (view: DurableView): string[] =>
 
 const board = (view: DurableView) => view.docs.find((doc) => doc.kind === BOARD)?.value as { notes: string[] } | null | undefined;
 
+const sha256 = (text: string): string => createHash("sha256").update(text).digest("hex");
+
 describe("gateway plugins", () => {
   it("leaves hello.plugins out when the host has no plugins", async () => {
-    const { next } = await setup();
-    expect(await next((frame) => frame.type === "hello")).not.toHaveProperty("plugins");
+    const { hello } = await setup();
+    expect(await hello()).not.toHaveProperty("plugins");
   });
 
   it("refuses both plugin calls for a plugin it does not have", async () => {
@@ -96,20 +153,18 @@ describe("gateway plugins", () => {
     });
   });
 
-  it("announces a loaded plugin, its bundle digest and only its shared state", async () => {
-    const { next } = await setup({ dataDir: await dataDirWithPlugins() });
-    const bytes = await readFile(join(FIXTURE, "web.js"));
-    const hello = await next((frame) => frame.type === "hello");
-    if (hello.type !== "hello") throw new Error("unreachable");
-    expect(hello.plugins).toEqual([
-      { name: "notes", api: 1, web: { hash: createHash("sha256").update(bytes).digest("hex"), size: bytes.length } },
-    ]);
-    const kinds = hello.docs.map((doc) => doc.kind);
+  it("announces a loaded plugin with the digest of the bundle it serves, and only its shared state", async () => {
+    const { hello, call } = await setup({ dataDir: await dataDirWithPlugins() });
+    const frame = await hello();
+    const bundle = await call("pluginBundle", { name: "notes" });
+    const code = (bundle.value as { code: string }).code;
+    expect(frame.plugins).toEqual([{ name: "notes", api: 1, web: { hash: sha256(code), size: Buffer.byteLength(code) } }]);
+    const kinds = frame.docs.map((doc) => doc.kind);
     expect(kinds).toContain(BOARD);
     expect(kinds).not.toContain(WRITES);
   });
 
-  it("runs a method that writes shared and host-only state, and serves the bundle", async () => {
+  it("runs a method that writes shared and host-only state", async () => {
     const { client, conversationId, call, next, subscribe } = await setup({ dataDir: await dataDirWithPlugins() });
 
     expect(await call("pluginCall", { conversationId, plugin: "notes", method: "add", args: "first" })).toEqual({
@@ -127,11 +182,6 @@ describe("gateway plugins", () => {
     subscribe(`doc:${WRITES}:${conversationId}`);
     expect(await next((frame) => frame.type === "ended" && frame.stream === `doc:${WRITES}:${conversationId}`)).toMatchObject({
       reason: `Unknown document ${WRITES}`,
-    });
-
-    expect(await call("pluginBundle", { name: "notes" })).toEqual({
-      ok: true,
-      value: { code: await readFile(join(FIXTURE, "web.js"), "utf8") },
     });
   });
 
@@ -182,15 +232,11 @@ describe("gateway plugins", () => {
   });
 
   it("skips a plugin whose tool name a built-in extension already uses", async () => {
-    const dataDir = await dataDirWithPlugins({
-      "shadow/plugin.json": JSON.stringify({ name: "shadow", api: 1, host: "host.ts" }),
-      "shadow/host.ts":
-        'export default (p) => { p.tool({ name: "todo_write", description: "x", parameters: { type: "object" }, run: async () => ({ text: "" }) }); };\n',
-    });
-    const { next } = await setup({ dataDir, extensions: [todo] });
-    const hello = await next((frame) => frame.type === "hello");
-    if (hello.type !== "hello") throw new Error("unreachable");
-    expect(hello.plugins?.map((plugin) => plugin.name)).toEqual(["notes"]);
+    const events = pluginEvents();
+    const dataDir = await dataDirWithPlugins({ shadow: { "server.ts": oneTool("todo_write") } });
+    const { hello } = await setup({ dataDir, extensions: [todo], plugins: events.options });
+    expect((await hello()).plugins?.map((plugin) => plugin.name)).toEqual(["notes"]);
+    expect(events.log.join("\n")).toMatch(/shadow.*todo_write/);
   });
 
   it("runs the artifact example: the tool replaces the page, the method returns it, and the page stays on the host", async () => {
@@ -199,37 +245,363 @@ describe("gateway plugins", () => {
     await cp(ARTIFACT_EXAMPLE, join(dataDir.path, "plugins", "artifact"), { recursive: true });
     const write = (title: string, html: string) =>
       fauxAssistantMessage(fauxToolCall("artifact_write", { title, html }), { stopReason: "toolUse" });
-    const { client, conversationId, next } = await setup({
+    const { client, conversationId, hello } = await setup({
       dataDir: dataDir.path,
       answers: [write("Draft", "<p>first</p>"), write("Clock", "<p>second</p>"), "done"],
     });
     await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "done");
 
     expect(await client.plugins.call(conversationId, "artifact", "read", null)).toEqual({ title: "Clock", html: "<p>second</p>" });
-    const hello = await next((frame) => frame.type === "hello");
-    if (hello.type !== "hello") throw new Error("unreachable");
-    expect(hello.plugins?.map((plugin) => plugin.name)).toEqual(["artifact"]);
+    expect((await hello()).plugins?.map((plugin) => plugin.name)).toEqual(["artifact"]);
     // Clients see that the page changed, never the page itself.
     const shared = (view: DurableView) => view.docs.filter((doc) => doc.kind.startsWith("plugin.artifact.") && doc.value != null);
     await waitForView(client.view, (view) => JSON.stringify(shared(view)).includes("Clock"));
     expect(JSON.stringify(shared(client.view.current()))).not.toContain("<p>");
   });
 
-  it("skips broken plugins and still loads the good one", async () => {
+  it("skips broken plugins, says how to move an old plugin.json directory, and still loads the good one", async () => {
+    const events = pluginEvents();
     const dataDir = await dataDirWithPlugins({
-      "throws/plugin.json": JSON.stringify({ name: "throws", api: 1, host: "host.ts" }),
-      "throws/host.ts": 'export default () => { throw new Error("boom"); };\n',
-      "misnamed/plugin.json": JSON.stringify({ name: "other", api: 1 }),
-      "escapes/plugin.json": JSON.stringify({ name: "escapes", api: 1, web: "../notes/web.js" }),
+      throws: { "server.ts": 'import { definePlugin } from "@pinomad/plugin/v1";\nexport default definePlugin(() => { throw new Error("boom"); });\n' },
+      bare: { "server.ts": "export default () => {};\n" },
       // Sorted after `notes`, so it is the one whose tool name collides.
-      "zz-clash/plugin.json": JSON.stringify({ name: "zz-clash", api: 1, host: "host.ts" }),
-      "zz-clash/host.ts":
-        'export default (p) => { p.tool({ name: "notes_add", description: "x", parameters: { type: "object" }, run: async () => ({ text: "" }) }); };\n',
+      "zz-clash": { "server.ts": oneTool("notes_add") },
     });
-    const { next, call } = await setup({ dataDir });
-    const hello = await next((frame) => frame.type === "hello");
-    if (hello.type !== "hello") throw new Error("unreachable");
-    expect(hello.plugins?.map((plugin) => plugin.name)).toEqual(["notes"]);
+    await mkdir(join(dataDir, "plugins", "legacy"));
+    await writeFile(join(dataDir, "plugins", "legacy", "plugin.json"), JSON.stringify({ name: "legacy", api: 1, host: "host.ts" }));
+    const { hello, call } = await setup({ dataDir, plugins: events.options });
+    expect((await hello()).plugins?.map((plugin) => plugin.name)).toEqual(["notes"]);
     expect(await call("pluginBundle", { name: "throws" })).toEqual({ ok: false, error: "Unknown plugin throws" });
+    const log = events.log.join("\n");
+    expect(log).toMatch(/throws.*boom/);
+    expect(log).toMatch(/bare.*default export/);
+    expect(log).toMatch(/zz-clash.*notes_add/);
+    expect(log).toMatch(/legacy.*plugin\.json.*package\.json/);
+  });
+});
+
+/** The counter plugin; `version` is baked into what its tool writes and returns. Gated through `globalThis`. */
+const counter = (version: string, extra = ""): string => `
+import { definePlugin } from "@pinomad/plugin/v1";
+const test = globalThis as { __pluginEnter?: (version: string) => void; __pluginGate?: Promise<void> };
+export default definePlugin((pinomad) => {
+  const count = pinomad.state("count", { version: 1, initial: () => ({ n: 0, by: [] as string[] }) });
+  pinomad.tool({
+    name: "counter_bump",
+    description: "Add one to the counter.",
+    parameters: { type: "object", properties: {} },
+    run: async (_args, ctx) => {
+      test.__pluginEnter?.("${version}");
+      await test.__pluginGate;
+      let n = 0;
+      await ctx.change(async (tx) => {
+        const doc = await tx.get(count);
+        doc.n += 1;
+        doc.by.push("${version}");
+        n = doc.n;
+      });
+      return { text: "${version} counted " + n };
+    },
+  });
+  pinomad.method("peek", async (_args, ctx) => ctx.read(count));
+  ${extra}
+});
+`;
+
+const bump = () => fauxAssistantMessage(fauxToolCall("counter_bump", {}), { stopReason: "toolUse" });
+
+/** A server half whose definePlugin function is async and runs `body`; its promise is left on `globalThis`. */
+const asyncPlugin = (body: string): string =>
+  'import { definePlugin } from "@pinomad/plugin/v1";\n' +
+  `export default definePlugin((pinomad) => ((globalThis as { __pluginPromise?: Promise<void> }).__pluginPromise = (async () => { ${body} })()));\n`;
+
+/**
+ * Unhandled rejections in this process from now on. Once the plugin's promise
+ * has rejected (before the host reports the plugin failed), `settled()` rejects
+ * a sentinel and waits for Node to report it: Node reports unhandled
+ * rejections in the order they happened, so the plugin's would come first.
+ * Nothing here attaches a handler to the plugin's promise, which would hide it.
+ */
+function unhandledRejections() {
+  const seen: unknown[] = [];
+  const sentinel = new Error("sentinel");
+  let sentinelReported: (() => void) | undefined;
+  const record = (reason: unknown) => {
+    if (reason === sentinel) sentinelReported?.();
+    else seen.push(reason);
+  };
+  // Vitest's own listeners would count the sentinel as a test error; they are back when the test ends.
+  const others = process.listeners("unhandledRejection");
+  process.removeAllListeners("unhandledRejection");
+  process.on("unhandledRejection", record);
+  defer(() => {
+    process.off("unhandledRejection", record);
+    for (const listener of others) process.on("unhandledRejection", listener);
+  });
+  const test = globalThis as { __pluginPromise?: Promise<void> };
+  return {
+    seen,
+    settled: async () => {
+      expect(test.__pluginPromise).toBeDefined();
+      delete test.__pluginPromise;
+      const reported = new Promise<void>((resolve) => (sentinelReported = resolve));
+      void Promise.reject(sentinel);
+      await reported;
+    },
+  };
+}
+
+describe("plugin reload", () => {
+  const test = globalThis as { __pluginEnter?: (version: string) => void; __pluginGate?: Promise<void> };
+  afterEach(() => {
+    delete test.__pluginEnter;
+    delete test.__pluginGate;
+  });
+
+  async function counterHost(answers: HostOptions["answers"], extra: Partial<HostOptions> = {}) {
+    const dir = await tempDir();
+    defer(dir.remove);
+    await writePlugin(dir.path, "counter", { "server.ts": counter("v1") });
+    const events = pluginEvents();
+    const opened = await setup({ dataDir: dir.path, answers, plugins: events.options, ...extra });
+    const lastText = (text: string) => waitForView(opened.client.view, (view) => transcript(view.conversation!).at(-1)?.text === text);
+    const results = () => toolResults(opened.client.view.current());
+    const file = join(dir.path, "plugins", "counter", "server.ts");
+    let saves = 0;
+    // An editor's save: the whole file replaced at once. A plain writeFile truncates and then writes, which on
+    // Linux arrives as two inotify events, and a build between them reads an empty file.
+    const edit = async (source: string) => {
+      const draft = join(dir.path, `server.ts.${++saves}`);
+      await writeFile(draft, source);
+      await rename(draft, file);
+    };
+    return { ...opened, dataDir: dir.path, events, lastText, results, file, edit };
+  }
+
+  it("runs the next tool call on the edited code, lets the running call finish on the old code, and keeps the plugin's state", async () => {
+    const { client, conversationId, call, events, lastText, results, edit } = await counterHost([bump(), "one", bump(), "two", bump(), "three"]);
+    await lastText("one");
+    expect(results()[0]).toContain("v1 counted 1");
+
+    let release!: () => void;
+    test.__pluginGate = new Promise<void>((resolve) => (release = resolve));
+    const entered = new Promise<string>((resolve) => (test.__pluginEnter = resolve));
+    await client.controller.submit("again", "followUp");
+    expect(await entered).toBe("v1");
+
+    await edit(counter("v2"));
+    expect((await events.next((outcome) => outcome.changed.includes("counter"))).failed).toEqual([]);
+    release();
+    await lastText("two");
+    expect(results()[1]).toContain("v1 counted 2");
+
+    await client.controller.submit("third", "followUp");
+    await lastText("three");
+    expect(results()[2]).toContain("v2 counted 3");
+    expect(await call("pluginCall", { conversationId, plugin: "counter", method: "peek", args: null })).toEqual({
+      ok: true,
+      value: { n: 3, by: ["v1", "v1", "v2"] },
+    });
+  });
+
+  it("keeps the last good version when an edit does not build, logs why, and recovers when it is fixed", async () => {
+    const { client, events, lastText, results, edit } = await counterHost([bump(), "one", bump(), "two", bump(), "three"]);
+    await lastText("one");
+
+    await edit(`${counter("v2")}\nexport const broken = (;\n`);
+    const failed = await events.next((outcome) => outcome.failed.length > 0);
+    const since = events.history.length;
+    expect(failed.failed.map((failure) => failure.plugin)).toEqual(["counter"]);
+    expect(events.log.join("\n")).toMatch(/counter[\s\S]*server\.ts/);
+    await client.controller.submit("again", "followUp");
+    await lastText("two");
+    expect(results()[1]).toContain("v1 counted 2");
+
+    await edit(counter("v3"));
+    await events.next((outcome) => outcome.changed.includes("counter"));
+    // Nothing was retried in a loop while the plugin stayed broken: the fix is the only reload since.
+    expect(events.history.slice(since)).toEqual([{ added: [], changed: ["counter"], removed: [], failed: [] }]);
+    await client.controller.submit("third", "followUp");
+    await lastText("three");
+    expect(results()[2]).toContain("v3 counted 3");
+  });
+
+  it("reports each state an edit written in two steps passes through once, and runs the finished file", async () => {
+    const { client, events, lastText, results, file } = await counterHost([bump(), "one", bump(), "two"]);
+    await lastText("one");
+
+    // The first half of a non-atomic save: the file is empty for a while, which is a plugin without definePlugin.
+    await writeFile(file, "");
+    const empty = await events.next((outcome) => outcome.failed.length > 0);
+    expect(empty.failed[0]?.error).toMatch(/default export/);
+    const since = events.history.length;
+    // The same empty file seen again is not reported again; the finished file reloads once.
+    await writeFile(file, "");
+    await writeFile(file, counter("v2"));
+    await events.next((outcome) => outcome.changed.includes("counter"));
+    expect(events.history.slice(since)).toEqual([{ added: [], changed: ["counter"], removed: [], failed: [] }]);
+    await client.controller.submit("again", "followUp");
+    await lastText("two");
+    expect(results()[1]).toContain("v2 counted 2");
+  });
+
+  it("skips a plugin whose definePlugin function is async without leaving its rejection unhandled", async () => {
+    const rejections = unhandledRejections();
+    const events = pluginEvents();
+    const dataDir = await dataDirWithPlugins({ rejects: { "server.ts": asyncPlugin('throw new Error("boom");') } });
+    const { hello } = await setup({ dataDir, plugins: events.options });
+    await rejections.settled();
+    expect((await hello()).plugins?.map((plugin) => plugin.name)).toEqual(["notes"]);
+    expect(events.log.join("\n")).toMatch(/rejects.*before it returns/);
+    expect(rejections.seen).toEqual([]);
+  });
+
+  it("keeps the loaded version when an edit makes definePlugin async, without leaving its rejection unhandled", async () => {
+    const rejections = unhandledRejections();
+    const { client, events, lastText, results, edit } = await counterHost([bump(), "one", bump(), "two"]);
+    await lastText("one");
+    // Registering after an await hits the closed API inside the plugin's own promise.
+    await edit(asyncPlugin('await null; pinomad.tool({ name: "late", description: "x", parameters: { type: "object" }, run: async () => ({ text: "" }) });'));
+    const failed = await events.next((outcome) => outcome.failed.length > 0);
+    expect(failed.failed[0]?.error).toMatch(/before it returns/);
+    await rejections.settled();
+    expect(rejections.seen).toEqual([]);
+    await client.controller.submit("again", "followUp");
+    await lastText("two");
+    expect(results()[1]).toContain("v1 counted 2");
+  });
+
+  it("stops an open doc: stream when a reload stops sharing its state, and keeps the streams of states still shared", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const notes = (secretOptions: string) => `
+import { definePlugin } from "@pinomad/plugin/v1";
+export default definePlugin((pinomad) => {
+  const count = pinomad.state("count", { version: 1, initial: () => ({ n: 0 }) });
+  const secret = pinomad.state("secret", { version: 1, ${secretOptions} initial: () => ({ text: "" }) });
+  pinomad.method("write", async (args, ctx) => {
+    await ctx.change(async (tx) => {
+      (await tx.get(count)).n += 1;
+      (await tx.get(secret)).text = String(args);
+    });
+    return null;
+  });
+});
+`;
+    await writePlugin(dir.path, "notes", { "server.ts": notes("") });
+    const events = pluginEvents();
+    const { conversationId, call, subscribe, next, frames } = await setup({ dataDir: dir.path, plugins: events.options });
+    const COUNT = `doc:plugin.notes.count:${conversationId}`;
+    const SECRET = `doc:plugin.notes.secret:${conversationId}`;
+    expect(await call("pluginCall", { conversationId, plugin: "notes", method: "write", args: "shared before" })).toEqual({ ok: true, value: null });
+    subscribe(COUNT);
+    subscribe(SECRET);
+    await next((frame) => frame.type === "snapshot" && frame.stream === COUNT);
+    await next((frame) => frame.type === "snapshot" && frame.stream === SECRET && JSON.stringify(frame.value).includes("shared before"));
+
+    const draft = join(dir.path, "server.ts.draft");
+    await writeFile(draft, notes("shared: false,"));
+    await rename(draft, join(dir.path, "plugins", "notes", "server.ts"));
+    await events.next((outcome) => outcome.changed.includes("notes"));
+    // Its last frame shows the document as absent; `ended` would make clients drop the conversation.
+    await next((frame) => frame.type === "snapshot" && frame.stream === SECRET && frame.value === null);
+
+    expect(await call("pluginCall", { conversationId, plugin: "notes", method: "write", args: "host only now" })).toEqual({ ok: true, value: null });
+    // The still-shared stream carries the write; the ended one carries nothing after it.
+    await next((frame) => frame.type === "ops" && frame.stream === COUNT && JSON.stringify(frame.ops).includes("2"));
+    const secret = frames.filter((frame) => "stream" in frame && frame.stream === SECRET);
+    expect(secret.at(-1)).toEqual({ type: "snapshot", stream: SECRET, value: null });
+    expect(JSON.stringify(secret)).not.toContain("host only now");
+    // Subscribing again is refused, as for any document the host does not share.
+    subscribe(SECRET);
+    expect(await next((frame) => frame.type === "ended" && frame.stream === SECRET)).toMatchObject({
+      reason: "Unknown document plugin.notes.secret",
+    });
+  });
+
+  it("refuses a reload that takes a built-in tool's name and keeps the plugin as it was", async () => {
+    const { client, events, lastText, results, edit, hello } = await counterHost([bump(), "one", bump(), "two"], {
+      extensions: [todo],
+    });
+    await lastText("one");
+    await edit(counter("v2", `pinomad.tool({ name: "todo_write", description: "x", parameters: { type: "object" }, run: async () => ({ text: "" }) });`));
+    const failed = await events.next((outcome) => outcome.failed.length > 0);
+    expect(failed.failed[0]?.error).toMatch(/todo_write/);
+    await client.controller.submit("again", "followUp");
+    await lastText("two");
+    expect(results()[1]).toContain("v1 counted 2");
+    expect((await hello()).plugins?.map((plugin) => plugin.name)).toEqual(["counter"]);
+  });
+
+  it("drops a removed plugin's tool and announcement, and picks up a plugin added while the host runs", async () => {
+    const { host, client, dataDir, events, lastText, results } = await counterHost([
+      bump(),
+      "one",
+      bump(),
+      "two",
+      fauxAssistantMessage(fauxToolCall("added_ping", {}), { stopReason: "toolUse" }),
+      "three",
+    ]);
+    await lastText("one");
+    await rm(join(dataDir, "plugins", "counter"), { recursive: true });
+    await events.next((outcome) => outcome.removed.includes("counter"));
+    await client.controller.submit("again", "followUp");
+    await lastText("two");
+    expect(results()[1]).toContain('"isError":true');
+    expect((await (await rawSocket(host)).hello()).plugins).toBeUndefined();
+
+    await writePlugin(dataDir, "added", {
+      "server.ts":
+        'import { definePlugin } from "@pinomad/plugin/v1";\n' +
+        'export default definePlugin((p) => { p.tool({ name: "added_ping", description: "x", parameters: { type: "object" }, run: async () => ({ text: "pong" }) }); });\n',
+    });
+    await events.next((outcome) => outcome.added.includes("added"));
+    await client.controller.submit("third", "followUp");
+    await lastText("three");
+    expect(results()[2]).toContain("pong");
+    expect((await (await rawSocket(host)).hello()).plugins?.map((plugin) => plugin.name)).toEqual(["added"]);
+  });
+
+  it("loads a plugin directory linked from elsewhere and reloads it when a file in the checkout changes", async () => {
+    const checkout = await tempDir();
+    defer(checkout.remove);
+    await writePlugin(checkout.path, "counter", { "server.ts": counter("v1") });
+    const dir = await tempDir();
+    defer(dir.remove);
+    await mkdir(join(dir.path, "plugins"));
+    await symlink(join(checkout.path, "plugins", "counter"), join(dir.path, "plugins", "counter"));
+    const events = pluginEvents();
+    const { client } = await setup({ dataDir: dir.path, answers: [bump(), "one", bump(), "two"], plugins: events.options });
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "one");
+    expect(toolResults(client.view.current())[0]).toContain("v1 counted 1");
+
+    await writePlugin(checkout.path, "counter", { "server.ts": counter("v2") });
+    await events.next((outcome) => outcome.changed.includes("counter"));
+    await client.controller.submit("again", "followUp");
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "two");
+    expect(toolResults(client.view.current())[1]).toContain("v2 counted 2");
+  });
+
+  it("announces a new bundle digest after the web half changes, while an open connection still gets the bundle it was told about", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const web = (label: string) => `export default function (pinomad) { pinomad.panel({ id: "p", label: "${label}", component: () => null }); }\n`;
+    await writePlugin(dir.path, "panel", { "web.js": web("One") });
+    const events = pluginEvents();
+    const { host, hello, call } = await setup({ dataDir: dir.path, plugins: events.options });
+    const before = (await hello()).plugins![0]!.web!;
+    const first = ((await call("pluginBundle", { name: "panel" })).value as { code: string }).code;
+    expect(sha256(first)).toBe(before.hash);
+
+    await writePlugin(dir.path, "panel", { "web.js": web("Two") });
+    await events.next((outcome) => outcome.changed.includes("panel"));
+    const later = await rawSocket(host);
+    const after = (await later.hello()).plugins![0]!.web!;
+    expect(after.hash).not.toBe(before.hash);
+    const second = ((await later.call("pluginBundle", { name: "panel" })).value as { code: string }).code;
+    expect(sha256(second)).toBe(after.hash);
+    expect(second).toContain("Two");
+    // The connection opened before the edit keeps getting what its hello announced.
+    expect(((await call("pluginBundle", { name: "panel" })).value as { code: string }).code).toBe(first);
   });
 });

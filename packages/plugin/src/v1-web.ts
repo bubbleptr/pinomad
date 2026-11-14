@@ -1,8 +1,9 @@
-// Plugin API v1, browser half (ADR-0049). A plugin's `web.js` is an ES module
-// whose default export receives a WebApi and registers its panels and tool
-// cards. Import these with `import type` only, and take React from the
-// argument: the shell evaluates `web.js` as a standalone module, so a bundled
-// copy of React would not share the shell's hooks.
+// Plugin API v1, browser half (ADR-0049, ADR-0050). A plugin's `web.tsx` (or
+// `web.js`) default-exports a function that receives a WebApi and registers
+// its panels and tool cards; the host builds it into one script. Import these
+// with `import type` only, and take React from the argument: JSX renders with
+// the shell's React, but an `import` of `react` is not available, and a
+// bundled copy would not share the shell's hooks.
 import type { ComponentType } from "react";
 import type { JsonValue } from "./v1.ts";
 
@@ -58,5 +59,5 @@ export interface WebApi {
   readonly Sandbox: ComponentType<SandboxProps>;
 }
 
-/** The default export of a plugin's `web.js`. */
+/** The default export of a plugin's `web.tsx`. */
 export type WebPlugin = (pinomad: WebApi) => void;

@@ -1,7 +1,7 @@
 // Test fixture plugin (ADR-0049): a shared note board and a host-only counter.
-import type { HostApi } from "@pinomad/plugin/v1";
+import { definePlugin } from "@pinomad/plugin/v1";
 
-export default (pinomad: HostApi): void => {
+export default definePlugin((pinomad) => {
   const board = pinomad.state("board", { version: 1, initial: () => ({ notes: [] as string[] }) });
   const writes = pinomad.state("writes", { version: 1, shared: false, initial: () => ({ count: 0 }) });
 
@@ -38,4 +38,4 @@ export default (pinomad: HostApi): void => {
   pinomad.method("fail", async () => {
     throw new Error("plugin method failed");
   });
-};
+});
