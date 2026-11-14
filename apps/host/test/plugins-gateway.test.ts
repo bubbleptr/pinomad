@@ -3,6 +3,7 @@
 // carries no `plugins` and both plugin calls refuse the name.
 import { createHash } from "node:crypto";
 import { once } from "node:events";
+import { watch } from "node:fs";
 import { cp, mkdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -86,8 +87,30 @@ function pluginEvents() {
   };
 }
 
+/**
+ * Resolves once the host's plugin watches report changes. On macOS `fs.watch` returns before its
+ * FSEvents stream runs, and a save made in between is never reported: under load, an edit right
+ * after `setup` then never reloads. libuv runs every watch of a process on one stream, rebuilt as
+ * watches are added, so a watch added after the host's that reports a change runs on a stream that
+ * has the host's directories too. Its probe is written beside `plugins/`, where no reload sees it,
+ * again each time a beat passes unreported (the probe's own watch has the same start).
+ */
+async function hostWatching(dataDir: string): Promise<void> {
+  const probe = watch(dataDir);
+  try {
+    for (let attempt = 0; ; attempt++) {
+      const reported = once(probe, "change").then(() => true);
+      await writeFile(join(dataDir, "watch-probe"), String(attempt));
+      if (await Promise.race([reported, new Promise<false>((resolve) => setTimeout(() => resolve(false), 100))])) return;
+    }
+  } finally {
+    probe.close();
+  }
+}
+
 async function setup(options: Pick<HostOptions, "dataDir" | "answers" | "extensions" | "plugins"> = {}) {
   const host = await startFauxHost(defer, { ...options, answers: options.answers ?? ["ok"] });
+  if (options.dataDir !== undefined) await hostWatching(options.dataDir);
   const client = await connectTo(defer, host);
   const conversationId = await startChat(client, "hi");
   return { host, client, conversationId, ...(await rawSocket(host)) };
