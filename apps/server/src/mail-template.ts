@@ -51,6 +51,8 @@ export function renderMail({ lead, code, note }: MailContent): MailBody {
         `<div class="code" style="margin:0 0 12px;padding:18px 0 18px 8px;border-radius:10px;background:#f4f4f5;color:#111113;` +
         `font-family:${MONO};font-size:32px;line-height:1.2;font-weight:600;letter-spacing:8px;text-align:center;">${escapeHtml(code)}</div>` +
         paragraph("muted", "#6e6e73", 14, "0 0 24px", EXPIRY);
+  // The hidden first line is what an inbox shows after the subject. A code
+  // mail's subject already carries the code, so its preview goes on to the note.
   const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -61,7 +63,7 @@ export function renderMail({ lead, code, note }: MailContent): MailBody {
 <style>${DARK}</style>
 </head>
 <body class="bg" style="margin:0;padding:0;background:#f4f4f5;">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(first)}</div>
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(code === undefined ? lead : note)}</div>
 <table role="presentation" class="bg" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f4f4f5;">
 <tr><td align="center" style="padding:32px 16px;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;">
