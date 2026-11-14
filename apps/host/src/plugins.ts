@@ -546,7 +546,7 @@ ${facet.source}
     main = module.exports.default;
     evaluated = true;
   }
-  if (typeof main !== "function") throw new Error("web.js has no default export function");
+  if (typeof main !== "function") throw new Error("the browser half has no default export function");
   return main(api);
 }
 `;
