@@ -5,7 +5,7 @@ import { useEffect, useReducer, useRef, useState, type ReactElement } from "reac
 import type { AccountConfirmation, AccountError, AccountResult } from "@pinomad/client/account.ts";
 import type { AccountModel } from "../../entities/account/account-model.ts";
 import { accountErrorField, accountErrorMessage } from "./account-error.ts";
-import { CODE_INPUT } from "./code-input.ts";
+import { CodeField } from "./code-field.tsx";
 import { Spinner } from "../../shared/ui/spinner.tsx";
 
 /** The second check a guarded action takes, ready to send (ADR-0044 §6). */
@@ -191,18 +191,7 @@ export function ConfirmIdentity({
     <div className="flex flex-col gap-2">
       <span className="text-xs/5 text-muted-foreground">We'll email a code to {email ?? "your account's email"}.</span>
       {sent ? (
-        <Field invalid={error !== undefined}>
-          <FieldLabel>Confirmation code</FieldLabel>
-          <Input
-            value={code}
-            onChange={(event) => onCode(event.target.value)}
-            {...CODE_INPUT}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") onEnter?.();
-            }}
-          />
-          <FieldError>{error}</FieldError>
-        </Field>
+        <CodeField label="Confirmation code" value={code} onValueChange={onCode} onEnter={onEnter} error={error} />
       ) : null}
       <FormError>{sendError === undefined ? undefined : accountErrorMessage(sendError)}</FormError>
       <div className="flex gap-2">
