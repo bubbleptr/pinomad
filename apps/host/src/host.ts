@@ -3,17 +3,19 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, join, sep } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { Models } from "@earendil-works/pi-ai/models";
-import { createRegistry, Harness, type HarnessSettings, type SessionEnd, type Storage } from "@earendil-works/pi-durable";
+import { type ConversationDocToken, createRegistry, Harness, type HarnessSettings, type SessionEnd, type Storage } from "@earendil-works/pi-durable";
+import type { JsonValue } from "@earendil-works/chord/json";
 import type { ImageProcessor } from "@earendil-works/pi-durable/tools";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
-import { addProject, ensureIndex, IndexDoc } from "./organization.ts";
+import { addProject, createConversation, ensureIndex, IndexDoc } from "./organization.ts";
+import { startInbox } from "./inbox.ts";
 import { checkoutAt, ensureWorktree, worktreeRoot } from "./checkout.ts";
 import { ensureDevices, loadHostKey, loadRelayKey, pairingOffers } from "./devices.ts";
 import type { RelayLinkState } from "./relay-link.ts";
 import { type McpBridge, startMcp } from "./mcp.ts";
 import type { ModelAuth } from "./model-auth.ts";
 import { type AgentRoleStore, openAgentRoles } from "./agent-roles.ts";
-import { type HostSettingsStore, openHostSettings, type SettingsFallback } from "./host-settings.ts";
+import { type HostSettingsStore, openHostSettings, type SettingsFallback, settingsDefaults } from "./host-settings.ts";
 import { constantValue } from "./host-value.ts";
 import type { PushTimers, PushTransport } from "./push.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
@@ -405,6 +407,27 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     for (const error of reports.splice(0)) report(error);
     // Recovered work from an interrupted turn continues now.
     harness.resume();
+    // Inbox workers (ADR-0051): each task's conversation is created like a user's, in the project.
+    const roles = agentRoles;
+    const inbox = await startInbox({
+      harness,
+      context,
+      questionDocs: extensions
+        .flatMap((extension) => extension.docs ?? [])
+        .filter((doc) => doc.presentation === "pinomad.question")
+        .map((doc) => doc.token as ConversationDocToken<{ requests: { resolution?: JsonValue }[] }>),
+      createConversation: ({ project, text, requestId }, ctx) =>
+        createConversation(
+          harness!,
+          options.dataDir,
+          { home: { kind: "project", path: project }, text, requestId },
+          settingsDefaults(hostSettings.value),
+          models,
+          options.modelSummaries,
+          roles?.value ?? { roles: [], problems: [] },
+          ctx,
+        ),
+    });
 
     const opened = harness;
     let closing: Promise<void> | undefined;
@@ -443,6 +466,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
         closing ??= (async () => {
           try {
             upgrader?.close();
+            inbox.close();
             await gateway.close();
             // Close writes no outcome: a running turn resumes at the next open.
             await opened.close(context);
