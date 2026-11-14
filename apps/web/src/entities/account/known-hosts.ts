@@ -8,7 +8,13 @@
 // localStorage; storage that fails just means no notices.
 import { normalizeServerOrigin } from "@pinomad/client/account.ts";
 
-export const KNOWN_HOSTS_KEY = "pinomad.knownAccountHosts";
+export const KNOWN_HOSTS_KEY = "pinomad.knownAccountHosts.v2";
+/**
+ * The set from before join times: bare hostIds. Read once to seed the new
+ * key, never written: a tab still running the old code keeps using it, and
+ * entries it can't read would make it announce every host again (#531).
+ */
+export const LEGACY_KNOWN_HOSTS_KEY = "pinomad.knownAccountHosts";
 
 export interface KnownHostsAccount {
   readonly serverOrigin: string;
@@ -43,7 +49,9 @@ const keyOf = (account: KnownHostsAccount): string =>
 const read = (storage: KnownHostsStorage): Record<string, string[]> | undefined => {
   let raw: string | null;
   try {
-    raw = storage.getItem(KNOWN_HOSTS_KEY);
+    // Until the first write, the old set's bare hostIds stand for each
+    // host's current join.
+    raw = storage.getItem(KNOWN_HOSTS_KEY) ?? storage.getItem(LEGACY_KNOWN_HOSTS_KEY);
   } catch {
     return undefined;
   }

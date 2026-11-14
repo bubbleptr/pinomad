@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { KNOWN_HOSTS_KEY, createKnownHostsStore } from "./known-hosts.ts";
+import { KNOWN_HOSTS_KEY, LEGACY_KNOWN_HOSTS_KEY, createKnownHostsStore } from "./known-hosts.ts";
 
 beforeEach(() => localStorage.clear());
 
@@ -84,7 +84,7 @@ describe("known account hosts", () => {
     });
 
     it("counts a host known before join times as announced for the join it has now", () => {
-      localStorage.setItem(KNOWN_HOSTS_KEY, JSON.stringify({ "https://pinomad.si\u0000kieran": ["h1"] }));
+      localStorage.setItem(LEGACY_KNOWN_HOSTS_KEY, JSON.stringify({ "https://pinomad.si\u0000kieran": ["h1"] }));
       const store = createKnownHostsStore(localStorage);
       expect(store.arrivals(kieran, [at("h1", 5)])).toEqual([]);
       expect(store.arrivals(kieran, [at("h1", 5)])).toEqual([]);
@@ -106,6 +106,19 @@ describe("known account hosts", () => {
       store.add(kieran, "h1");
       expect(store.arrivals(kieran, [at("h1", 1)])).toEqual([]);
       expect(store.arrivals(kieran, [at("h1", 2)])).toEqual(["h1"]);
+    });
+
+    it("keeps out of the way of a tab still running the code from before join times", () => {
+      const legacyKey = "https://pinomad.si\u0000kieran";
+      localStorage.setItem(LEGACY_KNOWN_HOSTS_KEY, JSON.stringify({ [legacyKey]: ["h1"] }));
+      const store = createKnownHostsStore(localStorage);
+      expect(store.arrivals(kieran, [at("h1", 1)])).toEqual([]);
+      // The old tab's set is left as it was, so it has nothing to announce...
+      expect(JSON.parse(localStorage.getItem(LEGACY_KNOWN_HOSTS_KEY)!)).toEqual({ [legacyKey]: ["h1"] });
+      // ...and what it writes later doesn't reach this one.
+      localStorage.setItem(LEGACY_KNOWN_HOSTS_KEY, JSON.stringify({ [legacyKey]: ["h1", "h2"] }));
+      expect(store.arrivals(kieran, [at("h1", 1)])).toEqual([]);
+      expect(store.arrivals(kieran, [at("h1", 1), at("h2", 1)])).toEqual(["h2"]);
     });
 
     it("stays quiet when the server stops sending join times", () => {
