@@ -3,7 +3,7 @@ import Testing
 @testable import PinomadCore
 
 /// The "new host joined your account" notice (#497): once per iPhone per
-/// host, never for what was already there when this iPhone first looked,
+/// join of a host (#531), never for what was already there when this iPhone first looked,
 /// and not lost before the reader has seen it.
 @Suite("Known account hosts")
 @MainActor
@@ -152,19 +152,20 @@ struct KnownAccountHostsTests {
         #expect(observe(known, joins: [("mbp", 2)]) == ["mbp"])
     }
 
-    /// What this iPhone knew before join times counts as announced for
-    /// the join each host has now, and the old record is left for an
-    /// older build to keep reading.
+    /// What this iPhone knew before join times carries over: its hosts
+    /// count as seen for the join each has now, a host it hadn't seen is
+    /// news, and a notice still waiting stays. The old record is left for
+    /// an older build to keep reading.
     @Test func aHostKnownBeforeJoinTimesIsSeenForItsCurrentJoin() throws {
         let defaults = defaults()
         let legacy = KnownAccountHosts(defaults: defaults, key: KnownAccountHosts.legacyDefaultsKey)
         _ = legacy.observe(serverOrigin: origin, username: "kieran", hosts: [row("mbp")])
+        _ = legacy.observe(serverOrigin: origin, username: "kieran", hosts: [row("mbp"), row("studio")])
         let before = defaults.string(forKey: KnownAccountHosts.legacyDefaultsKey)
 
         let known = KnownAccountHosts(defaults: defaults)
-        #expect(observe(known, joins: [("mbp", 5)]).isEmpty)
-        #expect(observe(known, joins: [("mbp", 5)]).isEmpty)
-        #expect(observe(known, joins: [("mbp", 6)]) == ["mbp"])
+        #expect(observe(known, joins: [("mbp", 5), ("studio", 5), ("pi", 5)]) == ["studio", "pi"])
+        #expect(observe(known, joins: [("mbp", 6)]) == ["studio", "pi", "mbp"])
         #expect(defaults.string(forKey: KnownAccountHosts.legacyDefaultsKey) == before)
     }
 
@@ -185,6 +186,13 @@ struct KnownAccountHostsTests {
         known.add(serverOrigin: origin, username: "kieran", hostId: "mbp")
         #expect(observe(known, joins: [("mbp", 1)]).isEmpty)
         #expect(observe(known, joins: [("mbp", 2)]) == ["mbp"])
+    }
+
+    /// A join time too big to key by is no join time, not a crash.
+    @Test func anOutOfRangeJoinTimeCountsAsNone() {
+        let known = KnownAccountHosts(defaults: defaults())
+        _ = observe(known, joins: [("mbp", 1)])
+        #expect(observe(known, joins: [("mbp", 1e300)]).isEmpty)
     }
 
     /// A server that stops sending join times doesn't make every host news.

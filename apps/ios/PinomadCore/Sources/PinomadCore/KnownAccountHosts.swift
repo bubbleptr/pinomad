@@ -65,17 +65,18 @@ public final class KnownAccountHosts {
         }
         var changed = false
         for host in hosts {
+            let joined = Self.joined(host)
             let current = Self.entry(host)
             if entry.known.contains(current) {
                 // A confirm of a join already seen is spent; left in place
                 // it would cover the next join.
-                if host.joinedAt != nil, let bare = entry.known.firstIndex(of: host.hostId) {
+                if joined != nil, let bare = entry.known.firstIndex(of: host.hostId) {
                     entry.known.remove(at: bare)
                     changed = true
                 }
                 continue
             }
-            let covered = host.joinedAt == nil
+            let covered = joined == nil
                 ? entry.known.contains { $0.hasPrefix(host.hostId + "@") }
                 : entry.known.contains(host.hostId)
             if !covered, !entry.pending.contains(where: { $0.hostId == host.hostId }) {
@@ -135,9 +136,15 @@ public final class KnownAccountHosts {
         write(all)
     }
 
+    /// A join time that can't be a whole number of ms counts as none,
+    /// rather than trapping on every list.
+    private static func joined(_ host: AccountHostRow) -> Int64? {
+        host.joinedAt.flatMap { Int64(exactly: $0.rounded()) }
+    }
+
     private static func entry(_ host: AccountHostRow) -> String {
-        guard let joinedAt = host.joinedAt else { return host.hostId }
-        return "\(host.hostId)@\(Int64(joinedAt))"
+        guard let joined = joined(host) else { return host.hostId }
+        return "\(host.hostId)@\(joined)"
     }
 
     private static func accountKey(serverOrigin: String, username: String) -> String {
