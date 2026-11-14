@@ -152,17 +152,8 @@ export function DraftHome({
   useSkillHighlight(inputRef, skillDraft.draft);
   const triggers = [...(atMentions ?? []), ...(skills.trigger === undefined ? [] : [skills.trigger])];
   const problem = resolution?.problem;
-  // An inherited side reads "from @name" — the side the user overrode drops it.
-  const sourceHint =
-    agent === undefined || resolution === undefined
-      ? undefined
-      : resolution.modelFrom !== "override" && resolution.levelFrom !== "override"
-        ? `from @${agent}`
-        : resolution.modelFrom !== "override"
-          ? `model from @${agent}`
-          : resolution.levelFrom !== "override"
-            ? `level from @${agent}`
-            : undefined;
+  // A side the agent pins is fixed to it; the other side stays the user's.
+  const locked = { model: resolution?.modelFrom === "agent", level: resolution?.levelFrom === "agent" };
   const imagesUnavailable =
     accepts || !connected ? undefined : `${model?.name ?? pick.model?.modelId ?? "This model"} can't see images`;
   const projectItems = [
@@ -308,8 +299,12 @@ export function DraftHome({
                   models={view.models}
                   selected={{ model: pick.model, level: pick.level }}
                   isDisabled={!connected}
-                  agent={showAgentPicker ? { kind: "pick", roles: agentRoles, value: agent, onChange: setAgent } : undefined}
-                  sourceHint={sourceHint}
+                  agent={
+                    showAgentPicker
+                      ? { kind: "pick", roles: agentRoles, problems: view.agents?.problems ?? [], value: agent, onChange: setAgent }
+                      : undefined
+                  }
+                  locked={locked}
                   {...(problem === undefined ? {} : { problem: problemText(problem) })}
                   onModelChange={setModel}
                   onLevelChange={setLevel}

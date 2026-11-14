@@ -476,7 +476,7 @@ it("replaces a draft pick the restarted host no longer offers", async () => {
     answers: ["old host answer", "new host answer"],
   });
   const page = await openPage(host, 1280, webOrigin);
-  const capsule = page.getByRole("button", { name: "Model and Thinking", exact: true });
+  const capsule = page.getByTestId("model-trigger");
   await expect.poll(() => capsule.textContent()).toContain("Faux Thinker");
 
   // Restart on the same port/dataDir (the fixture's reconnect mechanism) with
@@ -511,7 +511,7 @@ it("preserves an unsent follow-up and disables write controls while reconnecting
   await page.getByText("Host connection lost", { exact: true }).waitFor();
   // Follow-up is only offered while a run is busy — the capsule and the
   // + menu are the always-present write controls here.
-  expect(await page.getByRole("button", { name: "Model and Thinking", exact: true }).isDisabled()).toBe(true);
+  expect(await page.getByTestId("model-trigger").isDisabled()).toBe(true);
   expect(await page.getByRole("button", { name: "More actions", exact: true }).isDisabled()).toBe(true);
   expect(await page.getByRole("button", { name: "Fork", exact: true }).isDisabled()).toBe(true);
   expect(await composer.textContent()).toBe("keep this draft");
@@ -1510,18 +1510,17 @@ it("creates the draft with the picked model and thinking level", async () => {
   const page = await openPage(host, 1280, webOrigin);
 
   // The default is the host's first model; the capsule picks the reasoning one + a level.
-  const capsule = page.getByRole("button", { name: "Model and Thinking", exact: true });
-  await capsule.click();
-  await page.getByRole("button", { name: "Faux Thinker", exact: false }).click();
-  await page.getByRole("button", { name: "Medium", exact: true }).click();
-  await expect.poll(() => capsule.textContent()).toContain("Faux Thinker · Medium");
+  const capsule = page.getByTestId("model-trigger");
+  await (await openSubmenu(page, "Model")).getByRole("menuitemradio", { name: "Faux Thinker" }).click();
   await page.keyboard.press("Escape");
+  await (await openSubmenu(page, "Thinking")).getByRole("menuitemradio", { name: "Medium" }).click();
+  await expect.poll(() => capsule.textContent()).toContain("Faux Thinker · Medium");
   await prompt(page).fill("deep work");
   await prompt(page).press("Enter");
   await page.getByText("thinking answer", { exact: true }).waitFor();
 
   // The new conversation's composer shows the picked model, and the agent doc carries it.
-  const liveCapsule = page.getByRole("button", { name: "Model and Thinking", exact: true });
+  const liveCapsule = page.getByTestId("model-trigger");
   await expect.poll(() => liveCapsule.textContent()).toContain("Faux Thinker · Medium");
   await expect.poll(async () => {
     const conversationId = observer.view.current().organized.chats.find((node) => node.summary.title === "deep work")?.summary.id;
@@ -1548,20 +1547,15 @@ it("changes the model and thinking level from the composer capsule", async () =>
   await prompt(page).press("Enter");
   await page.getByText("done", { exact: true }).waitFor();
 
-  // The default model is non-reasoning: plain name, no Thinking section.
-  const capsule = page.getByRole("button", { name: "Model and Thinking", exact: true });
-  await expect.poll(() => capsule.textContent()).toContain("Faux Model");
-  await capsule.click();
-  // Non-reasoning model: no Thinking section (no level rows at all).
-  expect(await page.getByRole("group", { name: "Thinking" }).count()).toBe(0);
-  expect(await page.getByRole("button", { name: "Faux Thinker", exact: false }).textContent()).not.toContain("·");
+  // The default model is non-reasoning: plain name, no Thinking row.
+  const capsule = page.getByTestId("model-trigger");
+  await expect.poll(() => capsule.textContent()).toBe("Faux Model");
 
-  // Picking the reasoning model reveals its levels once the setModel call
-  // round-trips; picking one relabels the trigger.
-  await page.getByRole("button", { name: "Faux Thinker", exact: false }).click();
-  const thinking = page.getByRole("group", { name: "Thinking" });
-  await thinking.getByRole("button", { name: "High", exact: true }).click();
+  // Picking the reasoning model brings the Thinking row once the setModel
+  // call round-trips; picking a level there relabels the capsule.
+  await (await openSubmenu(page, "Model")).getByRole("menuitemradio", { name: "Faux Thinker" }).click();
   await page.keyboard.press("Escape");
+  await (await openSubmenu(page, "Thinking")).getByRole("menuitemradio", { name: "High" }).click();
   await expect.poll(() => capsule.textContent()).toContain("Faux Thinker · High");
   await expect.poll(async () => {
     const id = observer.view.current().organized.chats.find((node) => node.summary.title === "hello")?.summary.id;
@@ -1569,6 +1563,14 @@ it("changes the model and thinking level from the composer capsule", async () =>
     const agent = await host.harness.snapshot(AgentDoc, id, BACKGROUND_CONTEXT);
     return `${agent?.model?.provider}/${agent?.model?.modelId}:${agent?.thinkingLevel}`;
   }).toBe("faux/faux-thinker:high");
+
+  // A model without High drops the level; coming back restores the picked High.
+  await (await openSubmenu(page, "Model")).getByRole("menuitemradio", { name: "Faux Model" }).click();
+  await page.keyboard.press("Escape");
+  await expect.poll(() => capsule.textContent()).toBe("Faux Model");
+  await (await openSubmenu(page, "Model")).getByRole("menuitemradio", { name: "Faux Thinker" }).click();
+  await page.keyboard.press("Escape");
+  await expect.poll(() => capsule.textContent()).toBe("Faux Thinker · High");
 });
 
 it("organizes conversations under projects and chats", async () => {
@@ -3977,8 +3979,7 @@ it("lists named agents in a @ mention menu and inserts @name as plain text", asy
   await mkdir(join(dir.path, "agents"), { recursive: true });
   await writeFile(join(dir.path, "agents", "reviewer.md"), '---\ndescription: "Reviews code"\n---\n\nBe strict.\n');
   await writeFile(join(dir.path, "agents", "planner.md"), '---\ndescription: "Plans work"\n---\n\nPlan it.\n');
-  await page.getByTestId("model-thinking-trigger").click();
-  await page.getByRole("group", { name: "Agent" }).getByRole("button", { name: /^reviewer/ }).waitFor();
+  await (await openSubmenu(page, "Agent")).getByRole("menuitemradio", { name: /^reviewer/ }).waitFor();
   await dismissPopovers(page);
   const editable = page.getByRole("combobox", { name: "Prompt" });
   await editable.click();
@@ -4069,17 +4070,26 @@ it("shows the named agent a subagent ran as on its done card", async () => {
 });
 
 
-// An outside click closes whichever capsule popover is open; the beat lets
-// the close finish before the next trigger click opens another.
+// Escape closes whichever capsule menu is open (a modal menu blocks outside
+// clicks); the beat lets the close finish before the next trigger opens another.
 const dismissPopovers = async (page: Page): Promise<void> => {
-  await page.locator("h1").click();
-  await page.waitForTimeout(100);
+  // A submenu's Escape closes only itself; keep going until no menu is left.
+  for (let attempt = 0; attempt < 3 && (await page.getByRole("menu").count()) > 0; attempt += 1) {
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(100);
+  }
 };
 
-/** Picks a named agent (or /^No agent/) from the model popover's Agent section, then closes it. */
+/** Opens the capsule menu and the named row's submenu. */
+const openSubmenu = async (page: Page, row: "Agent" | "Model" | "Thinking"): Promise<Locator> => {
+  await page.getByTestId("model-trigger").click();
+  await page.getByRole("menu", { name: "Model and Thinking" }).getByRole("menuitem", { name: new RegExp(`^${row}`) }).click();
+  return page.getByRole("menu", { name: row });
+};
+
+/** Picks a named agent (or /^No agent/) from the Agent submenu, which closes the menu. */
 const pickAgent = async (page: Page, name: RegExp): Promise<void> => {
-  await page.getByTestId("model-thinking-trigger").click();
-  await page.getByRole("group", { name: "Agent" }).getByRole("button", { name }).click();
+  await (await openSubmenu(page, "Agent")).getByRole("menuitemradio", { name }).click();
   await dismissPopovers(page);
 };
 
@@ -4105,16 +4115,14 @@ it("creates the draft with a named agent, switches it, and shows @name on the co
   const page = await openPage(host, 1280, webOrigin);
 
   // The model popover lists the host's roles; picking one shows the inherited pick.
-  const capsule = page.getByTestId("model-thinking-trigger");
+  const capsule = page.getByTestId("model-trigger");
   if (shotDir !== undefined) {
-    await capsule.click();
-    await page.getByRole("group", { name: "Agent" }).waitFor();
+    await openSubmenu(page, "Agent");
     await shot(page, "draft-model-agent-section");
     await dismissPopovers(page);
   }
   await pickAgent(page, /^reviewer/);
   await expect.poll(() => capsule.textContent()).toContain("@reviewer · Faux Thinker · High");
-  await expect.poll(() => capsule.textContent()).toContain("from @reviewer");
 
   const composer = page.getByRole("combobox", { name: "Prompt" });
   await composer.fill("check this");
@@ -4134,12 +4142,11 @@ it("creates the draft with a named agent, switches it, and shows @name on the co
   await page.locator("h1").getByText("@reviewer", { exact: true }).waitFor();
   // …and on a 5.18 host the capsule offers the same Agent pick as a draft,
   // with the current role selected.
-  await expect.poll(() => capsule.textContent()).toContain("@reviewer ·");
-  await capsule.click();
-  const agentSection = page.getByRole("group", { name: "Agent" });
+  await expect.poll(() => page.getByTestId("model-trigger").textContent()).toContain("@reviewer");
+  const agentSection = await openSubmenu(page, "Agent");
   await agentSection.getByText("reviewer", { exact: true }).waitFor();
   await expect
-    .poll(() => agentSection.getByRole("listitem").filter({ hasText: "reviewer" }).getAttribute("aria-current"))
+    .poll(() => agentSection.getByRole("menuitemradio", { name: /^reviewer/ }).getAttribute("aria-checked"))
     .toBe("true");
   await shot(page, "conversation-model-agent-pick");
   await dismissPopovers(page);
@@ -4150,7 +4157,7 @@ it("creates the draft with a named agent, switches it, and shows @name on the co
   await expect.poll(() => page.locator("h1").getByText("@reviewer", { exact: true }).count()).toBe(0);
   // …and picking the role again re-applies its file.
   await pickAgent(page, /^reviewer/);
-  await expect.poll(() => capsule.textContent()).toContain("@reviewer ·");
+  await expect.poll(() => page.getByTestId("model-trigger").textContent()).toContain("@reviewer");
   await page.locator("h1").getByText("@reviewer", { exact: true }).waitFor();
   if (shotDir !== undefined) {
     await page.getByRole("button", { name: "More actions", exact: true }).click();
@@ -4167,16 +4174,13 @@ it("creates the draft with a named agent, switches it, and shows @name on the co
   await page.locator("h1").getByText("@reviewer", { exact: true }).waitFor();
 });
 
-it("sends only the overridden side once an agent draft's pick is changed", async () => {
+it("locks the side an agent pins and sends only the side the user changed", async () => {
   const webOrigin = await startWeb(defer);
   const dir = await tempDir();
   defer(dir.remove);
   await mkdir(join(dir.path, "agents"), { recursive: true });
-  await writeFile(
-    join(dir.path, "agents", "reviewer.md"),
-    '---\ndescription: "Reviews code"\nmodel: "faux/thinker-a"\nthinkingLevel: "high"\n---\n\nBe strict.\n',
-  );
-  await writeFile(join(dir.path, "agents", "planner.md"), '---\ndescription: "Plans work"\n---\n\nPlan it.\n');
+  // reviewer pins the model only; the level stays the user's.
+  await writeFile(join(dir.path, "agents", "reviewer.md"), '---\ndescription: "Reviews code"\nmodel: "faux/thinker-a"\n---\n\nBe strict.\n');
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
     dataDir: dir.path,
@@ -4191,17 +4195,17 @@ it("sends only the overridden side once an agent draft's pick is changed", async
   const page = await openPage(host, 1280, webOrigin);
 
   await pickAgent(page, /^reviewer/);
+  const capsule = page.getByTestId("model-trigger");
+  await expect.poll(() => capsule.textContent()).toContain("Thinker A");
+  await expect.poll(() => page.getByTestId("model-trigger").textContent()).toContain("@reviewer");
 
-  // Overriding the model keeps the level inherited — the hint narrows to it.
-  const capsule = page.getByTestId("model-thinking-trigger");
+  // The pinned model is shown but can't be changed…
   await capsule.click();
-  // Opening still lands in the search box, though the Agent section comes first.
-  await expect
-    .poll(() => page.getByRole("textbox", { name: "Search models" }).evaluate((el) => el === document.activeElement))
-    .toBe(true);
-  await page.getByRole("button", { name: "Thinker B", exact: false }).click();
+  const modelRow = page.getByRole("menu", { name: "Model and Thinking" }).getByRole("menuitem", { name: /^Model/ });
+  expect(await modelRow.getAttribute("aria-disabled")).toBe("true");
   await dismissPopovers(page);
-  await expect.poll(() => capsule.textContent()).toContain("level from @reviewer");
+  // …while the level, which reviewer doesn't pin, can.
+  await (await openSubmenu(page, "Thinking")).getByRole("menuitemradio", { name: "Low" }).click();
 
   const composer = page.getByRole("combobox", { name: "Prompt" });
   await composer.fill("work");
@@ -4212,7 +4216,7 @@ it("sends only the overridden side once an agent draft's pick is changed", async
     if (id === undefined) return undefined;
     const agent = await host.harness.snapshot(AgentDoc, id, BACKGROUND_CONTEXT);
     return `${agent?.model?.provider}/${agent?.model?.modelId}:${agent?.thinkingLevel}`;
-  }).toBe("faux/thinker-b:high");
+  }).toBe("faux/thinker-a:low");
 });
 
 it("resets to inheritance on a new agent and back to the remembered pick on clear", async () => {
@@ -4220,10 +4224,7 @@ it("resets to inheritance on a new agent and back to the remembered pick on clea
   const dir = await tempDir();
   defer(dir.remove);
   await mkdir(join(dir.path, "agents"), { recursive: true });
-  await writeFile(
-    join(dir.path, "agents", "reviewer.md"),
-    '---\ndescription: "Reviews code"\nmodel: "faux/thinker-a"\nthinkingLevel: "high"\n---\n\nBe strict.\n',
-  );
+  await writeFile(join(dir.path, "agents", "reviewer.md"), '---\ndescription: "Reviews code"\nmodel: "faux/thinker-a"\n---\n\nBe strict.\n');
   await writeFile(join(dir.path, "agents", "planner.md"), '---\ndescription: "Plans work"\n---\n\nPlan it.\n');
   const host = await startFauxHost(defer, {
     browserOrigins: [webOrigin],
@@ -4235,40 +4236,28 @@ it("resets to inheritance on a new agent and back to the remembered pick on clea
     ],
   });
   const page = await openPage(host, 1280, webOrigin);
-  const capsule = page.getByTestId("model-thinking-trigger");
+  const capsule = page.getByTestId("model-trigger");
 
-  await pickAgent(page, /^reviewer/);
-  await capsule.click();
-  await page.getByRole("button", { name: "Thinker B", exact: false }).click();
-  await dismissPopovers(page);
-  await expect.poll(() => capsule.textContent()).toContain("Thinker B");
-
-  // Switching agents drops the override — planner pins nothing, so the
-  // capsule falls back to the host default and reads "from @planner" again.
+  // planner pins nothing: the host default, "with @planner", and the model stays pickable.
   await pickAgent(page, /^planner/);
   await expect.poll(() => capsule.textContent()).toContain("Faux Model");
-  await expect.poll(() => capsule.textContent()).toContain("from @planner");
-
-  // Clearing the agent returns to the remembered draft pick, not the agent's.
-  await pickAgent(page, /^No agent/);
-  await expect.poll(() => capsule.textContent()).not.toContain("@planner");
-  await expect.poll(() => capsule.textContent()).toContain("Faux Model");
-  await expect.poll(() => capsule.textContent()).not.toContain("from @");
-
-  // Overrides made while an agent was picked never touched the remembered pick.
-  await capsule.click();
-  await page.getByRole("button", { name: "Thinker B", exact: false }).click();
+  await expect.poll(() => page.getByTestId("model-trigger").textContent()).toContain("@planner");
+  await (await openSubmenu(page, "Model")).getByRole("menuitemradio", { name: "Thinker B" }).click();
   await dismissPopovers(page);
   await expect.poll(() => capsule.textContent()).toContain("Thinker B");
+
+  // Switching agents drops the override: reviewer's pin shows.
   await pickAgent(page, /^reviewer/);
-  await capsule.click();
-  await page.getByRole("button", { name: "Thinker A", exact: false }).click();
-  await dismissPopovers(page);
+  await expect.poll(() => capsule.textContent()).toContain("Thinker A");
+  await expect.poll(() => page.getByTestId("model-trigger").textContent()).toContain("@reviewer");
+
+  // Clearing the agent returns to the remembered draft pick; the override under planner never touched it.
   await pickAgent(page, /^No agent/);
-  await expect.poll(() => capsule.textContent()).toContain("Thinker B");
+  await expect.poll(() => capsule.textContent()).toContain("Faux Model");
+  await expect.poll(() => page.getByTestId("model-trigger").textContent()).not.toContain("@");
 });
 
-it("blocks the draft send while the agent's model is unavailable and unblocks on an override", async () => {
+it("lists an agent whose pinned model the host doesn't offer, without letting the draft pick it", async () => {
   const webOrigin = await startWeb(defer);
   const dir = await tempDir();
   defer(dir.remove);
@@ -4281,29 +4270,14 @@ it("blocks the draft send while the agent's model is unavailable and unblocks on
     browserOrigins: [webOrigin],
     dataDir: dir.path,
     fauxModels: [{ id: "faux-1", name: "Faux Model" }],
-    answers: ["done"],
   });
-  const observer = await connectTo(defer, host);
   const page = await openPage(host, 1280, webOrigin);
 
-  await pickAgent(page, /^broken/);
-  const capsule = page.getByTestId("model-thinking-trigger");
-  await expect.poll(() => capsule.textContent()).toContain("gone/claude-z unavailable");
-
-  const composer = page.getByRole("combobox", { name: "Prompt" });
-  await composer.fill("still a draft");
-  await composer.press("Enter");
-  // The send is blocked: nothing is created and the draft stays put.
-  await expect.poll(async () => observer.view.current().organized.chats.length, { timeout: 3000 }).toBe(0);
-  await expect.poll(() => composer.textContent()).toBe("still a draft");
-
-  // Overriding the model with an available one clears the problem.
-  await capsule.click();
-  await page.getByRole("button", { name: "Faux Model", exact: false }).click();
+  const row = (await openSubmenu(page, "Agent")).getByRole("menuitemradio", { name: /^broken/ });
+  await row.getByText("gone/claude-z isn't available").waitFor();
+  expect(await row.getAttribute("aria-disabled")).toBe("true");
   await dismissPopovers(page);
-  await expect.poll(() => capsule.textContent()).not.toContain("unavailable");
-  await composer.press("Enter");
-  await page.getByText("done", { exact: true }).waitFor();
+  await expect.poll(() => page.getByTestId("model-trigger").textContent()).not.toContain("@broken");
 });
 
 it("completes agents and files in the draft's @ menu, inserting @./path", async () => {

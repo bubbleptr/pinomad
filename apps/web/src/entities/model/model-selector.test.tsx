@@ -2,11 +2,13 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { AgentRole } from "@pinomad/protocol/agents.ts";
-import type { ModelSummary } from "@pinomad/protocol/view.ts";
+import type { ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";
 import { ModelSelector, type ModelSelectorAgent } from "./model-selector.tsx";
 
 const models: readonly ModelSummary[] = [
   { provider: "anthropic", modelId: "claude-a", name: "Claude A", contextWindow: 200_000, thinkingLevels: ["off", "high"] },
+  { provider: "openai", modelId: "gpt-b", name: "GPT B", contextWindow: 400_000, thinkingLevels: ["off", "low", "medium"] },
+  { provider: "local", modelId: "llama-c", name: "Llama C", contextWindow: 128_000, thinkingLevels: ["off"] },
 ];
 
 const roles: readonly AgentRole[] = [
@@ -32,40 +34,95 @@ function setup(agent: AgentInput) {
   return { onAgentChange, rerender: view.rerender };
 }
 
-async function open(): Promise<HTMLElement> {
-  const user = userEvent.setup();
-  await user.click(screen.getByTestId("model-thinking-trigger"));
-  return screen.getByTestId("model-thinking-popover");
+/** Opens the capsule's menu, then the named row's submenu; returns that submenu. */
+async function openSub(row: "Agent" | "Model" | "Thinking"): Promise<HTMLElement> {
+  // A submenu takes no pointer events while its row's hover intent is pending.
+  const user = userEvent.setup({ pointerEventsCheck: 0 });
+  await user.click(screen.getByTestId("model-trigger"));
+  const menu = await screen.findByRole("menu", { name: "Model and Thinking" });
+  await user.click(within(menu).getByRole("menuitem", { name: new RegExp(`^${row}`) }));
+  return screen.findByRole("menu", { name: row });
 }
 
-describe("ModelSelector agent section", () => {
-  it("offers the same Agent heading for a pick and reports a role or none", async () => {
-    const { onAgentChange } = setup({ kind: "pick", roles, value: undefined });
-    const popover = await open();
-    expect(within(popover).getByText("Agent · sets the system prompt")).toBeInTheDocument();
+const click = (element: HTMLElement) => userEvent.setup({ pointerEventsCheck: 0 }).click(element);
 
-    const user = userEvent.setup();
-    await user.click(within(popover).getByRole("button", { name: /planner/ }));
+describe("ModelSelector", () => {
+  function renderPick(model: string, level: ThinkingLevel) {
+    const onModelChange = vi.fn();
+    const onLevelChange = vi.fn();
+    render(
+      <ModelSelector
+        models={models}
+        selected={{ model: models.find((each) => each.modelId === model)!, level }}
+        onModelChange={onModelChange}
+        onLevelChange={onLevelChange}
+      />,
+    );
+    return { onModelChange, onLevelChange };
+  }
+
+  it("labels the capsule with the model and level, and lists every model in one submenu", async () => {
+    const { onModelChange } = renderPick("claude-a", "high");
+    expect(screen.getByTestId("model-trigger")).toHaveTextContent("Claude A · High");
+    const sub = await openSub("Model");
+    expect(within(sub).getAllByRole("menuitemradio").map((item) => item.textContent)).toEqual(["Claude A", "GPT B", "Llama C"]);
+    // One separator between each provider's models.
+    expect(within(sub).getAllByRole("separator")).toHaveLength(2);
+    await click(within(sub).getByRole("menuitemradio", { name: "GPT B" }));
+    expect(onModelChange).toHaveBeenCalledWith({ provider: "openai", modelId: "gpt-b" });
+  });
+
+  it("picks the level from the Thinking submenu, strongest first, only the model's levels", async () => {
+    const { onLevelChange } = renderPick("gpt-b", "low");
+    const sub = await openSub("Thinking");
+    expect(within(sub).getAllByRole("menuitemradio").map((item) => item.textContent)).toEqual(["Medium", "Low", "Off"]);
+    await click(within(sub).getByRole("menuitemradio", { name: "Medium" }));
+    expect(onLevelChange).toHaveBeenCalledWith("medium");
+  });
+
+  it("has no Thinking row for a model that can't reason", async () => {
+    renderPick("llama-c", "off");
+    expect(screen.getByTestId("model-trigger")).toHaveTextContent(/^Llama C$/);
+    await userEvent.setup().click(screen.getByTestId("model-trigger"));
+    const menu = await screen.findByRole("menu", { name: "Model and Thinking" });
+    expect(within(menu).queryByRole("menuitem", { name: /^Thinking/ })).toBeNull();
+  });
+});
+
+describe("ModelSelector agent row", () => {
+  it("picks a role or none", async () => {
+    const { onAgentChange } = setup({ kind: "pick", roles, value: undefined });
+    await click(within(await openSub("Agent")).getByRole("menuitemradio", { name: /^planner/ }));
     expect(onAgentChange).toHaveBeenCalledWith("planner");
-    await user.click(within(popover).getByRole("button", { name: /No agent/ }));
+    await click(within(await openSub("Agent")).getByRole("menuitemradio", { name: /^No agent/ }));
     expect(onAgentChange).toHaveBeenLastCalledWith(undefined);
   });
 
-  it("keeps a current agent that is no longer offered selected, unavailable and not clickable", async () => {
+  it("lists a role whose pinned model isn't offered, and a broken file, without letting them be picked", async () => {
+    setup({
+      kind: "pick",
+      roles: [...roles, { name: "gone", description: "Pinned elsewhere", model: "nowhere/model-z", prompt: "" }],
+      problems: [{ file: "drafty.md", reason: "description is required" }],
+      value: undefined,
+    });
+    const sub = await openSub("Agent");
+    const gone = within(sub).getByRole("menuitemradio", { name: /^gone/ });
+    expect(gone).toHaveAttribute("aria-disabled", "true");
+    expect(gone).toHaveTextContent("nowhere/model-z isn't available");
+    expect(within(sub).getByRole("menuitemradio", { name: /^drafty\.md/ })).toHaveTextContent("description is required");
+  });
+
+  it("keeps a current agent that is no longer offered checked and unavailable", async () => {
     setup({ kind: "pick", roles, value: "deleted" });
-    const popover = await open();
-    const row = within(popover).getByText("deleted").closest("li")!;
-    expect(row).toHaveAttribute("aria-current", "true");
+    expect(screen.getByTestId("model-trigger")).toHaveTextContent("@deleted · Claude A");
+    const row = within(await openSub("Agent")).getByRole("menuitemradio", { name: /^deleted/ });
+    expect(row).toHaveAttribute("aria-checked", "true");
     expect(row).toHaveAttribute("aria-disabled", "true");
     expect(row).toHaveTextContent("No longer available");
-    expect(within(row).queryByRole("button")).toBeNull();
   });
 
   it("drops the unavailable row once another agent is selected", async () => {
     const { rerender } = setup({ kind: "pick", roles, value: "deleted" });
-    expect(within(await open()).getByText("deleted")).toBeInTheDocument();
-
-    // The pick is controlled by its caller: re-render with the next value.
     rerender(
       <ModelSelector
         models={models}
@@ -75,14 +132,46 @@ describe("ModelSelector agent section", () => {
         onLevelChange={vi.fn()}
       />,
     );
-    expect(screen.queryByText("deleted")).toBeNull();
+    expect(within(await openSub("Agent")).queryByRole("menuitemradio", { name: /^deleted/ })).toBeNull();
   });
 
-  it("shows a fixed agent read-only", async () => {
+  it("shows a fixed agent as a row that doesn't open", async () => {
     setup({ kind: "fixed", name: "reviewer", description: roles[0]!.description });
-    const popover = await open();
-    expect(within(popover).getByText("Agent · fixed at creation")).toBeInTheDocument();
-    expect(within(popover).queryByRole("button", { name: /No agent/ })).toBeNull();
-    expect(within(popover).getByText("reviewer")).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByTestId("model-trigger"));
+    const row = within(await screen.findByRole("menu", { name: "Model and Thinking" })).getByRole("menuitem", { name: /^Agent/ });
+    expect(row).toHaveTextContent("@reviewer");
+    expect(row).toHaveTextContent("Fixed at creation");
+    expect(row).toHaveAttribute("aria-disabled", "true");
+  });
+});
+
+describe("ModelSelector agent locks", () => {
+  async function openLocked(locked: { model: boolean; level: boolean }): Promise<HTMLElement> {
+    render(
+      <ModelSelector
+        models={models}
+        selected={{ model: { provider: "openai", modelId: "gpt-b" }, level: "low" }}
+        agent={{ kind: "pick", roles, value: "reviewer", onChange: vi.fn() }}
+        locked={locked}
+        onModelChange={vi.fn()}
+        onLevelChange={vi.fn()}
+      />,
+    );
+    await userEvent.setup().click(screen.getByTestId("model-trigger"));
+    return screen.findByRole("menu", { name: "Model and Thinking" });
+  }
+
+  it("disables the row the agent pins, says why, and leaves the other one", async () => {
+    const menu = await openLocked({ model: true, level: false });
+    const model = within(menu).getByRole("menuitem", { name: /^Model/ });
+    expect(model).toHaveAttribute("aria-disabled", "true");
+    expect(model).toHaveTextContent("Set by @reviewer");
+    expect(within(menu).getByRole("menuitem", { name: /^Thinking/ })).not.toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("disables a pinned level", async () => {
+    const menu = await openLocked({ model: false, level: true });
+    expect(within(menu).getByRole("menuitem", { name: /^Model/ })).not.toHaveAttribute("aria-disabled", "true");
+    expect(within(menu).getByRole("menuitem", { name: /^Thinking/ })).toHaveAttribute("aria-disabled", "true");
   });
 });

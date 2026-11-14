@@ -1,32 +1,43 @@
 // Simplified port of Pace's ModelSelectorControl
 // (entities/model/model-selector/model-selector-control.tsx, PiGUI commit
-// 15b9084): same capsule trigger and popover layout — a searchable model
-// list and the selected model's thinking levels — without the hover flyout,
-// fast mode, image badge or Settings management. The named agent (ADR-0023)
-// is part of the same pick (issue #254): a role is a model-level preset —
-// model, thinking level and system prompt — so it lives in this popover too.
-import { useRef, useState, type ReactNode } from "react";
+// 15b9084): one capsule whose menu has a row each for the agent, the model
+// and the thinking level, each opening its choices one level down on hover —
+// without fast mode, the image badge or Settings management. The named agent
+// (ADR-0023) is part of the same pick (issue #254): a role is a model-level
+// preset — model, thinking level and system prompt.
+import { Fragment, type ReactNode } from "react";
+import { cn } from "cn";
 import { Button } from "../../shared/ui/button.tsx";
-import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "../../shared/ui/item.tsx";
-import { Popover, PopoverContent, PopoverTrigger } from "../../shared/ui/popover.tsx";
-import { Field, FieldLabel } from "../../shared/ui/field.tsx";
-import { Input } from "../../shared/ui/input.tsx";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "../../shared/ui/dropdown-menu.tsx";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../../shared/ui/tooltip.tsx";
 import type { ModelRef } from "@earendil-works/pi-durable";
-import type { AgentRole } from "@pinomad/protocol/agents.ts";
+import type { AgentRole, AgentRoleProblem } from "@pinomad/protocol/agents.ts";
 import type { ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";
-import { filterModels, modelLabel, sameModel, thinkingLevelLabels } from "@pinomad/client/model.ts";
-import { Check, ChevronDown } from "@/shared/ui/icons";
+import { sameModel, thinkingLevelLabels } from "@pinomad/client/model.ts";
+import { Bot, Brain, ChevronDown } from "@/shared/ui/icons";
 import { ModelLogo } from "./model-logo.tsx";
 
 /**
- * The popover's Agent section: a draft or a 5.18 conversation picks one of
- * the host's roles (or none); before 5.18 a conversation shows the role it
- * was created with, read-only (ADR-0023).
+ * The Agent row: a draft or a 5.18 conversation picks one of the host's
+ * roles (or none); before 5.18 a conversation shows the role it was created
+ * with, read-only (ADR-0023).
  */
 export type ModelSelectorAgent =
   | {
       readonly kind: "pick";
       readonly roles: readonly AgentRole[];
+      /** Role files the host couldn't read: listed, not pickable. */
+      readonly problems?: readonly AgentRoleProblem[];
       /** The picked role's name, undefined for "No agent". */
       readonly value?: string;
       readonly onChange: (agent: string | undefined) => void;
@@ -34,18 +45,17 @@ export type ModelSelectorAgent =
   | { readonly kind: "fixed"; readonly name: string; readonly description?: string };
 
 /**
- * The composer model/thinking capsule: a ghost button showing
- * `<model logo> <model name> · <Thinking label>` (just the name when the
- * model can't reason), prefixed with `@name` when a named agent is set,
- * opening a popover with the Agent section, a searchable model list and the
- * selected model's thinking levels.
+ * The composer capsule: `<logo> [@agent · ]<model>[ · <level>]`, opening a
+ * menu with an Agent, a Model and (for a model that can reason) a Thinking
+ * row. Each row shows its current value and opens its choices beside it on
+ * hover. A side the agent pins is shown but its row is disabled.
  */
 export function ModelSelector({
   models,
   selected,
   isDisabled = false,
   agent,
-  sourceHint,
+  locked = { model: false, level: false },
   problem,
   onModelChange,
   onLevelChange,
@@ -53,197 +63,277 @@ export function ModelSelector({
   models: readonly ModelSummary[];
   selected: { model?: ModelRef; level: ThinkingLevel };
   isDisabled?: boolean;
-  /** Undefined hides the Agent section (nothing to show: no pick, and no fixed creation agent). */
+  /** Undefined hides the Agent row (nothing to show: no pick, and no fixed creation agent). */
   agent?: ModelSelectorAgent;
-  /** Small muted suffix, e.g. which side of the pick is inherited from a named agent. */
-  sourceHint?: string;
+  /** The sides the current agent pins: shown, but not pickable. */
+  locked?: { readonly model: boolean; readonly level: boolean };
   /** Why the shown pick can't be sent — rendered in red instead of the label. */
   problem?: { readonly label: string; readonly title: string };
   onModelChange: (model: ModelRef) => void;
   onLevelChange: (level: ThinkingLevel) => void;
 }) {
-  const [query, setQuery] = useState("");
-  const searchRef = useRef<HTMLInputElement>(null);
   const selectedSummary = models.find((each) => sameModel(each, selected.model));
   const levels = selectedSummary?.thinkingLevels ?? ["off"];
-  const filtered = filterModels(models, query);
+  const reasons = levels.length > 1;
   const agentName = agent === undefined ? undefined : agent.kind === "pick" ? agent.value : agent.name;
-  // A role file can be deleted or broken while a conversation still names it:
-  // keep showing that name as the selected, unavailable row until the user
-  // picks something else.
-  const missingAgent =
-    agent?.kind === "pick" && agent.value !== undefined && !agent.roles.some((role) => role.name === agent.value)
-      ? agent.value
-      : undefined;
+  const modelName = selectedSummary?.name ?? selected.model?.modelId ?? "No model";
+  const lockNote = agentName === undefined ? undefined : `Set by @${agentName}`;
+  const label = [agentName === undefined ? undefined : `@${agentName}`, modelName, reasons ? thinkingLevelLabels[selected.level] : undefined]
+    .filter((part) => part !== undefined)
+    .join(" · ");
+
+  const trigger = (
+    <DropdownMenuTrigger
+      render={
+        <Button
+          className="min-w-0 max-w-[19rem] flex-nowrap gap-1.5 px-2 text-muted-foreground"
+          data-testid="model-trigger"
+          disabled={isDisabled || models.length === 0}
+          focusableWhenDisabled
+          aria-label="Model and Thinking"
+          size="md"
+          variant="ghost"
+        />
+      }
+    >
+      {problem === undefined && selected.model !== undefined ? <ModelLogo model={selected.model} size={14} /> : null}
+      {problem === undefined ? <span className="truncate">{label}</span> : <span className="truncate text-destructive">{problem.label}</span>}
+      {/* The Select trigger's glyph, so it matches the draft tray's pickers. */}
+      <ChevronDown aria-hidden="true" strokeWidth={2} className="size-4" />
+    </DropdownMenuTrigger>
+  );
 
   return (
-    <Popover>
-      <PopoverTrigger
-        render={
-          <Button
-            className="min-w-0 max-w-[19rem] flex-nowrap gap-1.5 px-2 text-muted-foreground"
-            data-testid="model-thinking-trigger"
-            disabled={isDisabled || models.length === 0}
-            aria-label="Model and Thinking"
-            size="md"
-            variant="ghost"
-            {...(problem === undefined ? {} : { tooltip: problem.title })}
-          />
-        }
-      >
-        <span className="flex min-w-0 items-center gap-1.5">
-          {problem === undefined && selected.model !== undefined ? <ModelLogo model={selected.model} size={14} /> : null}
-          {problem === undefined ? (
-            <span className="truncate">
-              {agentName === undefined ? "" : `@${agentName} · `}
-              {modelLabel(models, selected)}
-            </span>
-          ) : (
-            <span className="truncate text-destructive">{problem.label}</span>
-          )}
-          {sourceHint === undefined || problem !== undefined ? null : (
-            <span className="shrink-0 truncate text-xs text-muted-foreground">{sourceHint}</span>
-          )}
-          {/* The Select trigger's glyph, so it matches the draft tray's pickers. */}
-          <ChevronDown aria-hidden="true" strokeWidth={2} className="size-4" />
-        </span>
-      </PopoverTrigger>
-      <PopoverContent
-        aria-label="Model and Thinking"
-        side="top"
-        align="start"
-        className="w-[236px]"
-        // Opening lands in the search box, as before the Agent section took
-        // the top: the first tabbable element would be "No agent" instead.
-        initialFocus={searchRef}
-      >
-        <div
-          className="flex w-full flex-col gap-1 p-1"
-          data-testid="model-thinking-popover"
-          // The popover is portal-mounted but React events still bubble to
-          // the ChatComposer, whose click-to-focus would steal focus from the
-          // search input. Keep pointer events inside the popover.
-          onClick={(event: React.MouseEvent) => event.stopPropagation()}
-          onMouseDown={(event: React.MouseEvent) => event.stopPropagation()}
-          onPointerDown={(event: React.PointerEvent) => event.stopPropagation()}
-        >
-          {agent === undefined ? null : (
-            // Same visible heading + role="group" as the Thinking section.
-            <div aria-label="Agent" role="group">
-              <p className="px-2 pt-1 text-xs text-muted-foreground">
-                {agent.kind === "pick" ? "Agent · sets the system prompt" : "Agent · fixed at creation"}
-              </p>
-              {agent.kind === "pick" ? (
-                <ItemGroup className="max-h-48 overflow-y-auto">
-                  {missingAgent === undefined ? null : (
-                    <PickRow title={missingAgent} description="No longer available" selected disabled />
-                  )}
-                  <PickRow
-                    title="No agent"
-                    description="Default system prompt"
-                    selected={agent.value === undefined}
-                    disabled={isDisabled}
-                    onPick={() => agent.onChange(undefined)}
-                  />
-                  {agent.roles.map((role) => (
-                    <PickRow
-                      key={role.name}
-                      title={role.name}
-                      description={role.description}
-                      selected={agent.value === role.name}
-                      disabled={isDisabled}
-                      onPick={() => agent.onChange(role.name)}
-                    />
-                  ))}
-                </ItemGroup>
-              ) : (
-                <ItemGroup>
-                  <PickRow title={agent.name} description={agent.description} selected />
-                </ItemGroup>
-              )}
-            </div>
-          )}
-          <Field>
-            <FieldLabel className="sr-only">Search models</FieldLabel>
-            <Input
-              className="h-7"
-              placeholder="Search models"
-              ref={searchRef}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
+    <DropdownMenu>
+      {problem === undefined ? (
+        trigger
+      ) : (
+        <Tooltip>
+          <TooltipTrigger render={trigger} />
+          <TooltipContent>{problem.title}</TooltipContent>
+        </Tooltip>
+      )}
+      <DropdownMenuContent aria-label="Model and Thinking" side="top" className="w-60">
+        {agent === undefined ? null : (
+          <DropdownMenuSub>
+            <Row
+              icon={<Bot aria-hidden="true" />}
+              label="Agent"
+              value={agentName === undefined ? "None" : `@${agentName}`}
+              disabled={isDisabled || agent.kind === "fixed"}
+              {...(agent.kind === "fixed" ? { note: "Fixed at creation" } : {})}
             />
-          </Field>
-          <ItemGroup aria-label="Model" className="max-h-72 overflow-y-auto">
-            {filtered.map((model) => (
-              <PickRow
-                key={`${model.provider}/${model.modelId}`}
-                media={<ModelLogo model={model} reserve />}
-                title={model.name}
-                description={model.provider}
-                selected={sameModel(model, selected.model)}
-                disabled={isDisabled}
-                onPick={() => onModelChange({ provider: model.provider, modelId: model.modelId })}
-              />
-            ))}
-          </ItemGroup>
-          {levels.length > 1 ? (
-            // A visible heading plus a role="group" wrapper, like the Agent section.
-            <div aria-label="Thinking" role="group">
-              <p className="px-2 pt-1 text-xs text-muted-foreground">Thinking</p>
-              <ItemGroup>
-                {levels.map((level) => (
-                  <PickRow
-                    key={level}
-                    title={thinkingLevelLabels[level]}
-                    // The level list shows its pick by the check alone.
-                    check={level === selected.level}
-                    disabled={isDisabled}
-                    onPick={() => onLevelChange(level)}
-                  />
+            {agent.kind === "pick" ? <AgentChoices agent={agent} models={models} isDisabled={isDisabled} /> : null}
+          </DropdownMenuSub>
+        )}
+        <DropdownMenuSub>
+          <Row
+            icon={selected.model === undefined ? <Bot aria-hidden="true" /> : <ModelLogo model={selected.model} reserve />}
+            label="Model"
+            value={modelName}
+            disabled={isDisabled || locked.model}
+            {...(locked.model && lockNote !== undefined ? { note: lockNote } : {})}
+          />
+          <DropdownMenuSubContent aria-label="Model" className="w-56">
+            <DropdownMenuRadioGroup
+              value={selected.model === undefined ? null : modelKey(selected.model)}
+              onValueChange={(key: string) => {
+                const model = models.find((each) => modelKey(each) === key);
+                if (model !== undefined) onModelChange({ provider: model.provider, modelId: model.modelId });
+              }}
+            >
+              {groupByProvider(models).map((group, index) => (
+                <Fragment key={group.provider}>
+                  {index === 0 ? null : <DropdownMenuSeparator />}
+                  {group.models.map((model) => (
+                    <DropdownMenuRadioItem key={modelKey(model)} value={modelKey(model)} disabled={isDisabled}>
+                      <ModelLogo model={model} reserve />
+                      <span className="truncate">{model.name}</span>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </Fragment>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        {problem !== undefined || !reasons ? null : (
+          <DropdownMenuSub>
+            <Row
+              icon={<Brain aria-hidden="true" />}
+              label="Thinking"
+              value={thinkingLevelLabels[selected.level]}
+              disabled={isDisabled || locked.level}
+              {...(locked.level && lockNote !== undefined ? { note: lockNote } : {})}
+            />
+            <DropdownMenuSubContent aria-label="Thinking" className="w-44">
+              <DropdownMenuRadioGroup value={selected.level} onValueChange={(level: ThinkingLevel) => onLevelChange(level)}>
+                {[...levels].reverse().map((level) => (
+                  <DropdownMenuRadioItem key={level} value={level} disabled={isDisabled}>
+                    <LevelMeter levels={levels} level={level} className="text-muted-foreground" />
+                    {thinkingLevelLabels[level]}
+                  </DropdownMenuRadioItem>
                 ))}
-              </ItemGroup>
-            </div>
-          ) : null}
-        </div>
-      </PopoverContent>
-    </Popover>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
 /**
- * One choice in the popover. A selected row is tinted and marked
- * aria-current with a trailing check (`check` alone shows only the mark); a
- * row without `onPick` is read-only and has no button.
+ * A first-level row: icon, label, the current value on the right. Locked or
+ * fixed rows say why under the label and don't open.
  */
-function PickRow({
-  title,
-  description,
-  media,
-  selected = false,
-  check = selected,
-  disabled = false,
-  onPick,
+function Row({ icon, label, value, note, disabled }: { icon: ReactNode; label: string; value: string; note?: string; disabled: boolean }) {
+  return (
+    <DropdownMenuSubTrigger disabled={disabled} label={label} className="gap-2">
+      <span className="flex size-4 items-center justify-center text-muted-foreground">{icon}</span>
+      <span className="flex min-w-0 flex-col">
+        <span>{label}</span>
+        {note === undefined ? null : <span className="truncate text-xs text-muted-foreground">{note}</span>}
+      </span>
+      <span className="ms-auto min-w-0 truncate ps-2 text-xs text-muted-foreground">{value}</span>
+    </DropdownMenuSubTrigger>
+  );
+}
+
+const modelKey = (model: ModelRef): string => `${model.provider}/${model.modelId}`;
+
+function groupByProvider(models: readonly ModelSummary[]): { provider: string; models: ModelSummary[] }[] {
+  const groups = new Map<string, ModelSummary[]>();
+  for (const model of models) groups.set(model.provider, [...(groups.get(model.provider) ?? []), model]);
+  return [...groups].map(([provider, list]) => ({ provider, models: list }));
+}
+
+const NO_AGENT = "";
+
+/**
+ * The agent choices: No agent, then each role with what it pins (or its
+ * description). A role whose pinned model the host doesn't offer, a role file
+ * the host couldn't read, and a current agent that's gone are listed but not
+ * pickable.
+ */
+function AgentChoices({
+  agent,
+  models,
+  isDisabled,
 }: {
+  agent: Extract<ModelSelectorAgent, { kind: "pick" }>;
+  models: readonly ModelSummary[];
+  isDisabled: boolean;
+}) {
+  const missing = agent.value !== undefined && !agent.roles.some((role) => role.name === agent.value) ? agent.value : undefined;
+  const problems = agent.problems ?? [];
+  return (
+    <DropdownMenuSubContent aria-label="Agent" className="max-h-[min(440px,var(--available-height))] w-64">
+      <DropdownMenuRadioGroup
+        value={agent.value ?? NO_AGENT}
+        onValueChange={(value: string) => agent.onChange(value === NO_AGENT ? undefined : value)}
+      >
+        {missing === undefined ? null : (
+          <AgentItem value={missing} title={missing} detail="No longer available" tone="destructive" disabled media={<Bot aria-hidden="true" />} />
+        )}
+        <AgentItem
+          value={NO_AGENT}
+          title="No agent"
+          detail="Default system prompt"
+          disabled={isDisabled}
+          media={<Bot aria-hidden="true" className="text-muted-foreground" />}
+        />
+        {agent.roles.map((role) => {
+          const pinned = role.model === undefined ? undefined : models.find((model) => modelKey(model) === role.model);
+          const unavailable = role.model !== undefined && pinned === undefined;
+          return (
+            <AgentItem
+              key={role.name}
+              value={role.name}
+              title={role.name}
+              detail={unavailable ? `${role.model} isn't available` : (pinnedLabel(pinned, role.thinkingLevel) ?? role.description)}
+              hint={role.description}
+              {...(unavailable ? { tone: "destructive" as const } : {})}
+              disabled={isDisabled || unavailable}
+              media={pinned === undefined ? <Bot aria-hidden="true" className="text-muted-foreground" /> : <ModelLogo model={pinned} reserve />}
+            />
+          );
+        })}
+      </DropdownMenuRadioGroup>
+      {problems.length === 0 ? null : (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuRadioGroup value={null}>
+            {problems.map((broken) => (
+              <AgentItem
+                key={broken.file}
+                value={`file:${broken.file}`}
+                title={broken.file}
+                detail={broken.reason}
+                tone="destructive"
+                disabled
+                media={<Bot aria-hidden="true" className="text-muted-foreground" />}
+              />
+            ))}
+          </DropdownMenuRadioGroup>
+        </>
+      )}
+    </DropdownMenuSubContent>
+  );
+}
+
+/** One agent: name over a one-line detail, the whole description as its tooltip. */
+function AgentItem({
+  value,
+  title,
+  detail,
+  hint,
+  tone,
+  disabled = false,
+  media,
+}: {
+  value: string;
   title: string;
-  description?: string | undefined;
-  media?: ReactNode;
-  selected?: boolean;
-  check?: boolean;
+  detail: string;
+  hint?: string;
+  tone?: "destructive";
   disabled?: boolean;
-  onPick?: () => void;
+  media: ReactNode;
 }) {
   return (
-    <Item size="sm" render={<li />} aria-current={selected || undefined} aria-disabled={disabled || undefined}>
-      {media === undefined ? null : <ItemMedia>{media}</ItemMedia>}
-      <ItemContent render={onPick === undefined ? undefined : <button type="button" disabled={disabled} onClick={onPick} />}>
-        <ItemTitle>{title}</ItemTitle>
-        {description === undefined ? null : <ItemDescription>{description}</ItemDescription>}
-      </ItemContent>
-      {check ? (
-        <ItemActions>
-          <Check aria-hidden="true" className="size-4 shrink-0 text-foreground" />
-        </ItemActions>
-      ) : null}
-    </Item>
+    <DropdownMenuRadioItem value={value} disabled={disabled} title={hint} label={title}>
+      <span className="flex size-4 items-center justify-center self-start pt-1">{media}</span>
+      <span className="flex min-w-0 flex-col">
+        <span className="truncate">{title}</span>
+        <span className={cn("truncate text-xs", tone === "destructive" ? "text-destructive" : "text-muted-foreground")}>{detail}</span>
+      </span>
+    </DropdownMenuRadioItem>
+  );
+}
+
+/** "Claude Opus 5.5 · High" for what a role pins, undefined when it pins neither. */
+function pinnedLabel(model: ModelSummary | undefined, level: ThinkingLevel | undefined): string | undefined {
+  const parts = [model?.name, level === undefined ? undefined : thinkingLevelLabels[level]].filter((part) => part !== undefined);
+  return parts.length === 0 ? undefined : parts.join(" · ");
+}
+
+/**
+ * Signal-strength bars for a level among the model's levels: one bar per
+ * level above Off (at least three, so a one-level model still reads as a
+ * meter); Off lights none, the strongest lights all.
+ */
+function LevelMeter({ levels, level, className }: { levels: readonly ThinkingLevel[]; level: ThinkingLevel; className?: string }) {
+  const steps: readonly ThinkingLevel[] = levels.filter((each) => each !== "off");
+  const bars = Math.max(steps.length, 3);
+  const lit = steps.length === 0 ? 0 : Math.round(((steps.indexOf(level) + 1) / steps.length) * bars);
+  return (
+    <span aria-hidden="true" className={cn("inline-flex h-3.5 shrink-0 items-end gap-px", className)}>
+      {Array.from({ length: bars }, (_, index) => (
+        <span
+          key={index}
+          className={cn("w-[2.5px] rounded-full bg-current", index < lit ? undefined : "opacity-20")}
+          style={{ height: `${35 + (65 * index) / (bars - 1)}%` }}
+        />
+      ))}
+    </span>
   );
 }

@@ -7,10 +7,8 @@ import {
 } from "../composer/composer-context.tsx";
 import type { ComposerSlot } from "../composer/composer-store.ts";
 import {
-  clampLevel,
   reconcileDraftPick,
   resolveAgentDraft,
-  summaryOf,
   type AgentDraftResolution,
 } from "@pinomad/client/model.ts";
 
@@ -54,8 +52,10 @@ export interface DraftModelPick {
 
 /**
  * The draft's model+level pick: restored from localStorage, falling back to
- * the host defaults, and persisted on every change. Changing the model
- * re-clamps the level to that model's supported levels.
+ * the host defaults, and persisted on every change. The remembered level is
+ * the one the user picked; the returned pick clamps it to the model's levels,
+ * so a model that lacks it shows the nearest level below, and switching back
+ * to one that has it restores it.
  *
  * The returned pick is reconciled against `view.models` at render time, not
  * synced into state: after a reconnect whose hello lists different models, a
@@ -86,9 +86,7 @@ export function useDraftModelPick(view: DurableView, hostKey?: string, slot?: Co
           (view.models[0] === undefined
             ? undefined
             : { provider: view.models[0].provider, modelId: view.models[0].modelId });
-    const levels = summaryOf(view.models, model)?.thinkingLevels ?? ["off"];
-    const want = (stored?.thinkingLevel ?? view.defaults.thinkingLevel ?? "off") as ThinkingLevel;
-    return { model, level: clampLevel(levels, want) };
+    return { model, level: (stored?.thinkingLevel ?? view.defaults.thinkingLevel ?? "off") as ThinkingLevel };
   });
   const local = useLocalComposerSlot();
   const active = slot ?? local;
@@ -104,7 +102,6 @@ export function useDraftModelPick(view: DurableView, hostKey?: string, slot?: Co
     agent === undefined ? undefined : resolveAgentDraft(agent, view.agents, view.models, view.defaults, overrides);
   const reconciled = reconcileDraftPick(view.models, view.defaults, remembered);
   const pick: DraftModelPick = resolution ?? reconciled;
-  const level = pick.level;
 
   return {
     pick,
@@ -115,9 +112,9 @@ export function useDraftModelPick(view: DurableView, hostKey?: string, slot?: Co
         active.setOverrides({ ...overrides, model: next });
         return;
       }
-      const nextLevel = clampLevel(summaryOf(view.models, next)?.thinkingLevels ?? ["off"], level);
-      setRemembered({ model: next, level: nextLevel });
-      remember(next, nextLevel);
+      // The level stays the user's pick; the shown one is clamped per model.
+      setRemembered({ model: next, level: remembered.level });
+      remember(next, remembered.level);
     },
     setLevel: (next) => {
       if (agent !== undefined) {

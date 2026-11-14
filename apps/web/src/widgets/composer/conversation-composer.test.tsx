@@ -218,66 +218,64 @@ const summary = (overrides: Partial<ConversationSummary> = {}): ConversationSumm
   ...overrides,
 });
 
-async function openAgentPopover(): Promise<HTMLElement> {
-  await userEvent.setup().click(screen.getByTestId("model-thinking-trigger"));
-  return screen.getByTestId("model-thinking-popover");
+async function openAgentMenu(): Promise<HTMLElement> {
+  const user = userEvent.setup({ pointerEventsCheck: 0 });
+  await user.click(screen.getByTestId("model-trigger"));
+  const menu = await screen.findByRole("menu", { name: "Model and Thinking" });
+  await user.click(within(menu).getByRole("menuitem", { name: /^Agent/ }));
+  return screen.findByRole("menu", { name: "Agent" });
+}
+
+/** The capsule menu's Agent row. */
+async function agentRow(): Promise<HTMLElement> {
+  await userEvent.setup().click(screen.getByTestId("model-trigger"));
+  return within(await screen.findByRole("menu", { name: "Model and Thinking" })).getByRole("menuitem", { name: /^Agent/ });
 }
 
 describe("ConversationComposer agent switching", () => {
   it("calls setAgent with the picked role and shows currentAgent over role", async () => {
     const { remote } = setup({ summary: summary({ role: "reviewer", currentAgent: "tester" }) });
-    expect(screen.getByTestId("model-thinking-trigger")).toHaveTextContent("@tester");
+    expect(screen.getByTestId("model-trigger")).toHaveTextContent("@tester");
 
-    const popover = await openAgentPopover();
-    await userEvent.setup().click(within(popover).getByRole("button", { name: /reviewer/ }));
+    const menu = await openAgentMenu();
+    await userEvent.setup({ pointerEventsCheck: 0 }).click(within(menu).getByRole("menuitemradio", { name: /^reviewer/ }));
     expect(remote.controller.setAgent).toHaveBeenCalledWith("reviewer");
   });
 
   it("calls setAgent(null) for No agent", async () => {
     const { remote } = setup({ summary: summary({ currentAgent: "tester" }) });
-    const popover = await openAgentPopover();
-    await userEvent.setup().click(within(popover).getByRole("button", { name: /No agent/ }));
+    const menu = await openAgentMenu();
+    await userEvent.setup({ pointerEventsCheck: 0 }).click(within(menu).getByRole("menuitemradio", { name: /^No agent/ }));
     expect(remote.controller.setAgent).toHaveBeenLastCalledWith(null);
   });
 
   it("treats a present null currentAgent as no agent, not the creation role", async () => {
     setup({ summary: summary({ role: "reviewer", currentAgent: null }) });
-    expect(screen.getByTestId("model-thinking-trigger")).not.toHaveTextContent("@");
-
-    const popover = await openAgentPopover();
-    expect(within(popover).getByText("Agent · sets the system prompt")).toBeInTheDocument();
-    const noAgent = within(popover).getByRole("button", { name: /No agent/ }).closest("li")!;
-    expect(noAgent).toHaveAttribute("aria-current", "true");
+    expect(screen.getByTestId("model-trigger")).not.toHaveTextContent("@");
+    const menu = await openAgentMenu();
+    expect(within(menu).getByRole("menuitemradio", { name: /^No agent/ })).toHaveAttribute("aria-checked", "true");
   });
 
   it("keeps a pre-5.18 host read-only", async () => {
     const { remote } = setup({ minor: 17, summary: summary({ role: "reviewer" }) });
-    expect(screen.getByTestId("model-thinking-trigger")).toHaveTextContent("@reviewer");
-
-    const popover = await openAgentPopover();
-    expect(within(popover).getByText("Agent · fixed at creation")).toBeInTheDocument();
-    expect(within(popover).queryByRole("button", { name: /No agent/ })).toBeNull();
+    expect(screen.getByTestId("model-trigger")).toHaveTextContent("@reviewer");
+    expect(await agentRow()).toHaveAttribute("aria-disabled", "true");
     expect(remote.controller.setAgent).not.toHaveBeenCalled();
   });
 
   it("keeps a subagent read-only on a 5.18 host", async () => {
     const { remote } = setup({ summary: summary({ kind: "subagent", role: "tester", currentAgent: "tester" }) });
-    expect(screen.getByTestId("model-thinking-trigger")).toHaveTextContent("@tester");
-
-    const popover = await openAgentPopover();
-    expect(within(popover).getByText("Agent · fixed at creation")).toBeInTheDocument();
-    expect(within(popover).queryByRole("button", { name: /No agent/ })).toBeNull();
+    expect(screen.getByTestId("model-trigger")).toHaveTextContent("@tester");
+    expect(await agentRow()).toHaveAttribute("aria-disabled", "true");
     expect(remote.controller.setAgent).not.toHaveBeenCalled();
   });
 
-  it("keeps a current agent the host no longer lists selected and unavailable", async () => {
+  it("keeps a current agent the host no longer lists checked and unavailable", async () => {
     setup({ summary: summary({ currentAgent: "deleted" }) });
-    const popover = await openAgentPopover();
-    const row = within(popover).getByText("deleted").closest("li")!;
-    expect(row).toHaveAttribute("aria-current", "true");
+    const row = within(await openAgentMenu()).getByRole("menuitemradio", { name: /^deleted/ });
+    expect(row).toHaveAttribute("aria-checked", "true");
     expect(row).toHaveAttribute("aria-disabled", "true");
     expect(row).toHaveTextContent("No longer available");
-    expect(within(row).queryByRole("button")).toBeNull();
   });
 });
 
