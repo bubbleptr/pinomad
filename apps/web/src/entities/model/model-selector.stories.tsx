@@ -76,6 +76,20 @@ export const ThinkingOpen: Story = {
   },
 };
 
+/** Two providers serve a model by the same name: those rows say whose they are. */
+export const SharedNames: Story = {
+  args: {
+    models: [
+      ...models,
+      { provider: "github-copilot", modelId: "gpt-b", name: "GPT B", contextWindow: 128_000, thinkingLevels: ["off", "low"] },
+    ],
+  },
+  play: async (context) => {
+    await open(context);
+    await userEvent.click(await within(document.body).findByRole("menuitem", { name: /^Model/ }));
+  },
+};
+
 const openAgents = async (context: { canvasElement: HTMLElement }) => {
   await open(context);
   await userEvent.click(await within(document.body).findByRole("menuitem", { name: /^Agent/ }));
