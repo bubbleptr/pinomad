@@ -19,7 +19,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 35 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 36 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -418,6 +418,25 @@ pub fn plugin_infos(value: Option<&Json>) -> Json {
     Json::array(entries.iter().filter(well_formed).cloned().collect())
 }
 
+/// A `plugins` frame's `docs` (5.36, `docInfos`): the entries with a
+/// non-empty string `kind` and no `presentation` or a string one, kept whole.
+/// A malformed entry is dropped, not fatal; anything but an array is `None`,
+/// which leaves the client's list as it was.
+pub fn doc_infos(value: &Json) -> Option<Json> {
+    let entries = value.as_array()?;
+    let well_formed = |entry: &&Json| {
+        // `typeof entry === "object"`: an array passes, and then has no kind.
+        if !matches!(entry, Json::Object(_) | Json::Array(_)) {
+            return false;
+        }
+        if !entry.get("kind").and_then(Json::as_str).is_some_and(|kind| !kind.is_empty()) {
+            return false;
+        }
+        matches!(entry.get("presentation"), None | Some(Json::String(_)))
+    };
+    Some(Json::array(entries.iter().filter(well_formed).cloned().collect()))
+}
+
 /// Parse `hello.rtc`; a malformed block is a hello error, not a silently
 /// disabled feature. Absent or null is `None` (an older host or no module).
 pub fn parse_host_rtc(hello: &Json) -> Result<Option<HostRtc>, String> {
@@ -607,8 +626,9 @@ pub enum ServerFrame {
     Result { id: Json, ok: Json, value: Json, error: Json },
     Notice { level: Json, message: Json },
     /// The plugin list after a reload (5.35, ADR-0050), replacing
-    /// `hello.plugins` whole; `plugins` is the raw field.
-    Plugins { plugins: Json },
+    /// `hello.plugins` whole, and (5.36) the document list replacing
+    /// `hello.docs`; both are the raw fields, `docs` null when absent.
+    Plugins { plugins: Json, docs: Json },
     /// A type this build does not know, or a frame without a usable shape.
     Ignored,
 }
@@ -661,6 +681,7 @@ pub fn classify_server_frame(value: Json) -> ServerFrame {
         },
         "plugins" => ServerFrame::Plugins {
             plugins: field(&value, "plugins").clone(),
+            docs: field(&value, "docs").clone(),
         },
         _ => ServerFrame::Ignored,
     }

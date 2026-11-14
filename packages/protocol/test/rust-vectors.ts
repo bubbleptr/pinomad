@@ -17,7 +17,7 @@ import {
 } from "../src/frames.ts";
 import { initiateIK, keyPairFromPrivate, respondIK } from "../src/noise.ts";
 import { encodeClientHello, encodeHostHello, SECURE_PROLOGUE, SecureSession, SIGNAL_PROLOGUE } from "../src/secure-channel.ts";
-import { pluginInfos } from "../src/remote-durable.ts";
+import { docInfos, pluginInfos } from "../src/remote-durable.ts";
 import { isRtcHello, RTC_DEFAULT_STUN, rtcAddressScope } from "../src/rtc.ts";
 import {
   ENDPOINT_SET_SCHEMA_VERSION,
@@ -76,6 +76,8 @@ function framesVector(): VectorFile {
     // 5.35: the plugin list after a reload (ADR-0050).
     { name: "plugins", wire: wire({ type: "plugins", plugins: [{ name: "artifact", api: 1, web: { hash: "cd".repeat(32), size: 2048 } }] }), expect: "plugins" },
     { name: "plugins-empty", wire: wire({ type: "plugins", plugins: [] }), expect: "plugins" },
+    // 5.36: with the shared documents as they now stand.
+    { name: "plugins-docs", wire: wire({ type: "plugins", plugins: [], docs: [{ kind: "plugin.artifact.current" }] }), expect: "plugins" },
     { name: "unknown-type", wire: wire({ type: "from-the-future", data: 1 }), expect: "ignored" },
     { name: "unknown-type-similar", wire: wire({ type: "snapshots" }), expect: "ignored" },
     { name: "missing-type", wire: wire({ stream: "index" }), expect: "ignored" },
@@ -288,6 +290,33 @@ function framesVector(): VectorFile {
     hello: wire(value === undefined ? {} : { plugins: value }),
     expect: pluginInfos(value),
   }));
+  // A `plugins` frame's `docs` (5.36): the entries both clients keep; a value
+  // that is not a list leaves the client's list alone (`expect: null`).
+  const docLists: readonly { name: string; value: unknown }[] = [
+    { name: "absent", value: undefined },
+    { name: "not-array", value: { kind: "plugin.x.y" } },
+    { name: "empty", value: [] },
+    {
+      name: "mixed",
+      value: [
+        { kind: "pinomad.question", presentation: "pinomad.question" },
+        { kind: "plugin.notes.board" },
+        { kind: "plugin.future.state", scope: "conversation" },
+        { kind: "" },
+        { presentation: "x" },
+        { kind: 7 },
+        { kind: "plugin.bad.presentation", presentation: 7 },
+        null,
+        "plugin.notes.board",
+        7,
+      ],
+    },
+  ];
+  const docInfoCases = docLists.map(({ name, value }) => ({
+    name,
+    frame: wire(value === undefined ? { type: "plugins", plugins: [] } : { type: "plugins", plugins: [], docs: value }),
+    expect: Array.isArray(value) ? docInfos(value) : null,
+  }));
   return write("frames", {
     protocol: PROTOCOL,
     serverFrames,
@@ -298,6 +327,7 @@ function framesVector(): VectorFile {
     rtcHello,
     rtcOfferArgs,
     pluginInfos: pluginInfoCases,
+    docInfos: docInfoCases,
   });
 }
 

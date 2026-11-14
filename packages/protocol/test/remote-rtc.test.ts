@@ -444,7 +444,7 @@ describe("RTC standby handoff", () => {
     }
   });
 
-  it("keeps a plugin list the host sent on the standby before the handoff replays its hello", async () => {
+  it("keeps the plugin and document lists the host sent on the standby before the handoff replays its hello", async () => {
     const world = new FakeRtcWorld();
     const network = wsNetwork({ rtcWorld: world });
     const remote = await ready(connectRemoteDurable(options(network, world)));
@@ -455,11 +455,14 @@ describe("RTC standby handoff", () => {
       await flush();
       expect(remote.rtcDiagnostics().path).toBe("relay");
       const panel = { name: "panel", api: 1, web: { hash: "a".repeat(64), size: 10 } };
-      world.dc.sendFrame({ type: "plugins", plugins: [panel] });
+      world.dc.sendFrame({ type: "plugins", plugins: [panel], docs: [{ kind: "plugin.panel.board" }] });
       await vi.advanceTimersByTimeAsync(300);
       await flush();
       expect(remote.rtcDiagnostics().path).toBe("p2p");
       expect(remote.view.current().host?.plugins).toEqual([panel]);
+      // The replayed hello declares the state, so the shown conversation follows it over the new carrier.
+      expect(world.dc.calls).toContainEqual({ type: "subscribe", stream: "doc:plugin.panel.board:1" });
+      expect(remote.view.current().docs.map((doc) => doc.kind)).toEqual(["plugin.panel.board"]);
     } finally {
       remote.close();
     }

@@ -1,6 +1,7 @@
 // The client side of plugin reloads (5.35, ADR-0050): a `plugins` frame
-// replaces `view.host.plugins`, and `bundle` names the hash it wants from a
-// host that knows the field.
+// replaces `view.host.plugins` and (5.36) the shared documents the hello
+// declared, and `bundle` names the hash it wants from a host that knows the field.
+import type { ConversationId } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
 import { PROTOCOL, type ClientFrame, type PluginInfo } from "../src/frames.ts";
 import { connectRemoteDurable, type RemoteDurable } from "../src/remote-durable.ts";
@@ -22,10 +23,17 @@ const SNAPSHOTS: Record<string, unknown> = {
   upgrade: { blocked: null, checks: [] },
 };
 
-/** A host announcing `plugins` at `minor`, answering every subscribe with a snapshot and every call with `null`. */
-function fakeHost(minor: number, plugins: readonly PluginInfo[]) {
+type DocDecl = { readonly kind: string };
+
+/**
+ * A host announcing `plugins` and `docs` at `minor`, answering every call with
+ * `{ code: "x" }` and every subscribe with a snapshot — except a `doc:` stream
+ * whose kind is not in `shared`, which it ends as an unknown document.
+ */
+function fakeHost(minor: number, plugins: readonly PluginInfo[], docs: readonly DocDecl[] = []) {
   let active: FrameHandlers | undefined;
   const sent: ClientFrame[] = [];
+  const shared = new Set(docs.map((doc) => doc.kind));
   const transport: FrameTransport = {
     label: "fake",
     open(handlers): FrameConnection {
@@ -35,7 +43,7 @@ function fakeHost(minor: number, plugins: readonly PluginInfo[]) {
         protocol: { major: PROTOCOL.major, minor },
         session: { id: "fake", directory: "" },
         models: [],
-        docs: [],
+        docs,
         toolPresentations: {},
         plugins,
       };
@@ -44,7 +52,13 @@ function fakeHost(minor: number, plugins: readonly PluginInfo[]) {
         send(data) {
           const frame = JSON.parse(data) as ClientFrame;
           sent.push(frame);
-          if (frame.type === "subscribe") {
+          if (frame.type === "subscribe" && frame.stream.startsWith("doc:")) {
+            const kind = frame.stream.slice("doc:".length, frame.stream.lastIndexOf(":"));
+            const reply = shared.has(kind)
+              ? { type: "snapshot", stream: frame.stream, value: { of: frame.stream } }
+              : { type: "ended", stream: frame.stream, reason: `Unknown document ${kind}` };
+            queueMicrotask(() => handlers.message(JSON.stringify(reply)));
+          } else if (frame.type === "subscribe") {
             queueMicrotask(() => handlers.message(JSON.stringify({ type: "snapshot", stream: frame.stream, value: SNAPSHOTS[frame.stream] ?? null })));
           } else if (frame.type === "call") {
             queueMicrotask(() => handlers.message(JSON.stringify({ type: "result", id: frame.id, ok: true, value: { code: "x" } })));
@@ -56,11 +70,21 @@ function fakeHost(minor: number, plugins: readonly PluginInfo[]) {
       };
     },
   };
-  return { transport, sent, push: (frame: unknown) => active!.message(JSON.stringify(frame)) };
+  return { transport, sent, shared, push: (frame: unknown) => active!.message(JSON.stringify(frame)) };
 }
+
+const id = (value: number): ConversationId => value as ConversationId;
 
 const connect = (host: ReturnType<typeof fakeHost>): Promise<RemoteDurable> =>
   connectRemoteDurable({ transport: host.transport, reconnectDelayMs: { min: 20, max: 20 } });
+
+const subscribed = (sent: readonly ClientFrame[], type: "subscribe" | "unsubscribe") =>
+  sent.flatMap((frame) => (frame.type === type && frame.stream.startsWith("doc:") ? [frame.stream] : []));
+
+/** Settles the fake host's queued replies and the view's microtask notification. */
+const settle = async () => {
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+};
 
 const bundleArgs = (sent: readonly ClientFrame[]) =>
   sent.flatMap((frame) => (frame.type === "call" && frame.method === "pluginBundle" ? [frame.args] : []));
@@ -119,5 +143,64 @@ describe("remote plugins", () => {
     older.push({ type: "plugins", plugins: [] });
     expect(old.view.current().host?.plugins).toEqual([PANEL]);
     old.close();
+  });
+
+  it("follows the shown and side conversations onto a state a reload starts sharing, and off one it stops sharing", async () => {
+    const BOARD = "plugin.notes.board";
+    const host = fakeHost(PROTOCOL.minor, [PANEL]);
+    const remote = await connect(host);
+    await remote.controller.switchConversation(id(1));
+    await remote.controller.showSide(id(2));
+    expect(subscribed(host.sent, "subscribe")).toEqual([]);
+
+    host.shared.add(BOARD);
+    host.push({ type: "plugins", plugins: [PANEL], docs: [{ kind: BOARD }] });
+    await settle();
+    expect(subscribed(host.sent, "subscribe")).toEqual([`doc:${BOARD}:1`, `doc:${BOARD}:2`]);
+    expect(remote.view.current().docs).toEqual([{ kind: BOARD, value: { of: `doc:${BOARD}:1` } }]);
+    expect(remote.view.current().side?.docs).toEqual([{ kind: BOARD, value: { of: `doc:${BOARD}:2` } }]);
+
+    // The host stops the streams first (a null snapshot), then sends the list without the state.
+    host.shared.delete(BOARD);
+    host.push({ type: "snapshot", stream: `doc:${BOARD}:1`, value: null });
+    host.push({ type: "snapshot", stream: `doc:${BOARD}:2`, value: null });
+    host.push({ type: "plugins", plugins: [PANEL], docs: [] });
+    await settle();
+    expect(remote.view.current().docs).toEqual([]);
+    expect(remote.view.current().side?.docs).toEqual([]);
+    // Released, so leaving the conversations later sends nothing more for it.
+    expect(subscribed(host.sent, "unsubscribe")).toEqual([`doc:${BOARD}:1`, `doc:${BOARD}:2`]);
+    remote.close();
+  });
+
+  it("opens another conversation without the state a reload stopped sharing", async () => {
+    const BOARD = "plugin.notes.board";
+    const host = fakeHost(PROTOCOL.minor, [PANEL], [{ kind: BOARD }]);
+    const remote = await connect(host);
+    await remote.controller.switchConversation(id(1));
+    host.shared.delete(BOARD);
+    host.push({ type: "snapshot", stream: `doc:${BOARD}:1`, value: null });
+    host.push({ type: "plugins", plugins: [], docs: [] });
+    await settle();
+
+    await remote.controller.switchConversation(id(2));
+    expect(remote.view.current().conversation).toBeDefined();
+    expect(subscribed(host.sent, "subscribe")).toEqual([`doc:${BOARD}:1`]);
+    remote.close();
+  });
+
+  it("keeps the hello's documents for a frame without a list of them, as a 5.35 host sends", async () => {
+    const BOARD = "plugin.notes.board";
+    const host = fakeHost(PROTOCOL.minor, [PANEL], [{ kind: BOARD }]);
+    const remote = await connect(host);
+    await remote.controller.switchConversation(id(1));
+    host.push({ type: "plugins", plugins: [] });
+    host.push({ type: "plugins", plugins: [], docs: "none" });
+    await settle();
+    expect(remote.view.current().host).not.toHaveProperty("plugins");
+    expect(remote.view.current().docs).toEqual([{ kind: BOARD, value: { of: `doc:${BOARD}:1` } }]);
+    await remote.controller.switchConversation(id(2));
+    expect(subscribed(host.sent, "subscribe")).toEqual([`doc:${BOARD}:1`, `doc:${BOARD}:2`]);
+    remote.close();
   });
 });

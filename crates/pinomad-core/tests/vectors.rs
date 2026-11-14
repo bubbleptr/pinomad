@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use pinomad_core::delta::{apply_immutable, op_from_json, DeltaError, Op};
 use pinomad_core::frames::{
     classify_server_frame, decode_server_frame, encode_client_frame, host_streams, host_supports_call,
-    host_supports_feature, parse_host_rtc, parse_rtc_offer_args, plugin_infos, CallMethod, ClientFrame, HostFeature,
+    host_supports_feature, parse_host_rtc, parse_rtc_offer_args, plugin_infos, doc_infos, CallMethod, ClientFrame, HostFeature,
     ServerFrame, PROTOCOL,
 };
 use pinomad_core::endpoints::{parse_endpoint_set, parse_endpoint_set_text, ParsedEndpointSet};
@@ -270,6 +270,20 @@ fn plugin_lists_filter_like_the_reference() {
         let name = as_text(field(case, "name"));
         let hello = Json::parse(&as_text(field(case, "hello"))).unwrap();
         assert_eq!(plugin_infos(hello.get("plugins")), field(case, "expect").clone(), "{name}");
+    }
+}
+
+/// A `plugins` frame's `docs` (5.36): the entries kept, or `null` for a value
+/// that leaves the list alone, exactly as the TS reference decides.
+#[test]
+fn document_lists_filter_like_the_reference() {
+    let file = load("rust-vectors/frames");
+    for case in field(&file, "docInfos").as_array().unwrap().iter() {
+        let name = as_text(field(case, "name"));
+        let ServerFrame::Plugins { docs, .. } = decode_server_frame(&as_text(field(case, "frame"))).unwrap() else {
+            panic!("{name}: not a plugins frame");
+        };
+        assert_eq!(doc_infos(&docs).unwrap_or(Json::Null), field(case, "expect").clone(), "{name}");
     }
 }
 

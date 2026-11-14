@@ -705,6 +705,7 @@ fn a_plugin_list_sent_on_the_standby_survives_the_handoff() {
     let mut events = h.host.send_frame(obj(&[
         ("type", Json::from("plugins")),
         ("plugins", Json::array(vec![panel.clone()])),
+        ("docs", Json::array(vec![obj(&[("kind", Json::from("plugin.panel.board"))])])),
     ]));
     events.extend(h.host.release_held());
     for event in events {
@@ -721,6 +722,19 @@ fn a_plugin_list_sent_on_the_standby_survives_the_handoff() {
         view.to_json()
     );
     assert_eq!(view.get("host").and_then(|host| host.get("plugins")).cloned(), Some(Json::array(vec![panel])));
+    // The replayed hello declares the state, so a conversation shown now follows it.
+    h.feed(Event::Invoke {
+        op: 2,
+        call: pinomad_core::remote_durable::Call::SwitchConversation { id: 1 },
+    });
+    h.advance(10);
+    let view = Json::parse(&h.remote.view_json().unwrap()).unwrap();
+    let kinds: Vec<String> = view
+        .get("docs")
+        .and_then(Json::as_array)
+        .map(|docs| docs.iter().filter_map(|doc| doc.get("kind").and_then(Json::as_str).map(|k| k.to_string_lossy())).collect())
+        .unwrap_or_default();
+    assert_eq!(kinds, vec!["plugin.panel.board".to_string()], "view={}", view.to_json());
 }
 
 #[test]

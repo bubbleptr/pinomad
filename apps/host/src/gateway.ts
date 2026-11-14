@@ -51,6 +51,7 @@ import {
   type HostStreamValues,
   parseClientFrame,
   INVALID_FRAME_CLOSE_CODE,
+  type DocInfo,
   type PluginInfo,
   PROTOCOL,
   type ServerFrame,
@@ -1971,6 +1972,8 @@ class GatewayClient {
   #helloPlugins: readonly PluginInfo[] = [];
   /** The plugin list this connection was told last, by its hello or a `plugins` frame. */
   #plugins: readonly PluginInfo[] = [];
+  /** The document list this connection was told last, by its hello or a `plugins` frame. */
+  #toldDocs: readonly DocInfo[] = [];
   /** Every `name` + hash this connection was told about: what a `pluginBundle` with a hash may ask for. */
   readonly #toldBundles = new Set<string>();
   /** Reload follow-ups run one at a time, so lists go out in the order the reloads finished. */
@@ -2047,6 +2050,7 @@ class GatewayClient {
     const rtc = this.#hooks.rtcHello();
     this.#tellPlugins(options.plugins?.info ?? []);
     this.#helloPlugins = this.#plugins;
+    this.#toldDocs = this.#docInfos();
     void this.send({
       type: "hello",
       protocol: PROTOCOL,
@@ -2054,10 +2058,7 @@ class GatewayClient {
       session: options.session,
       models: options.modelSummaries(),
       defaults: settingsDefaults(options.settings.value),
-      docs: this.#docs().map((doc) => ({
-        kind: doc.token.definition.kind,
-        ...(doc.presentation === undefined ? {} : { presentation: doc.presentation }),
-      })),
+      docs: this.#toldDocs,
       toolPresentations: options.toolPresentations ?? {},
       ...(this.#plugins.length === 0 ? {} : { plugins: this.#plugins }),
       // Re-probed per hello, not the listener's startup address (ADR-0032 §2).
@@ -2318,18 +2319,20 @@ class GatewayClient {
   /**
    * After a reload that added, changed or removed a plugin: first the doc:
    * streams of states no longer shared stop, then the `plugins` frame goes
-   * out if the list differs from what this connection was told — so a client
-   * acting on the list finds those streams already settled.
+   * out if the plugin or document list differs from what this connection was
+   * told — so a client acting on the lists finds those streams already settled.
    */
   pluginsReloaded(): Promise<void> {
     const step = async (): Promise<void> => {
       await this.#endUnsharedDocs();
-      // Read now, not when the reload finished: a later reload may already have replaced it.
+      // Read now, not when the reload finished: a later reload may already have replaced them.
       const info = this.#options.plugins?.info ?? [];
-      if (JSON.stringify(info) === JSON.stringify(this.#plugins)) return;
+      const docs = this.#docInfos();
+      if (JSON.stringify(info) === JSON.stringify(this.#plugins) && JSON.stringify(docs) === JSON.stringify(this.#toldDocs)) return;
       // Recorded before the frame goes out, so a pluginBundle answered after it can serve the new hashes.
       this.#tellPlugins(info);
-      await this.send({ type: "plugins", plugins: info });
+      this.#toldDocs = docs;
+      await this.send({ type: "plugins", plugins: info, docs });
     };
     // A failed step does not stall the ones after it; each reads the state afresh.
     this.#pluginsReloads = this.#pluginsReloads.then(step, step);
@@ -3112,6 +3115,14 @@ class GatewayClient {
   /** The built-in extensions' docs, then the loaded plugins' shared states. */
   #docs(): readonly ExtensionDoc[] {
     return [...(this.#options.docs ?? []), ...(this.#options.plugins?.docs ?? [])];
+  }
+
+  /** `#docs()` as `hello.docs` and the `plugins` frame declare them. */
+  #docInfos(): DocInfo[] {
+    return this.#docs().map((doc) => ({
+      kind: doc.token.definition.kind,
+      ...(doc.presentation === undefined ? {} : { presentation: doc.presentation }),
+    }));
   }
 
   /** This host's `pinomad.question` docs, in the order the hello declares them. */

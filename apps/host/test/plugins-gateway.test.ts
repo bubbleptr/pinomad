@@ -687,7 +687,35 @@ describe("plugin list notice", () => {
 
     await rm(join(dir.path, "plugins", "added"), { recursive: true });
     const none = await next((frame) => frame.type === "plugins" && frame !== added && frame !== removed);
-    expect(none).toEqual({ type: "plugins", plugins: [] });
+    expect(none).toMatchObject({ type: "plugins", plugins: [] });
+  });
+
+  it("sends the shared documents with the list, and a frame when a reload changed only which states are shared", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const notes = (secretOptions: string) =>
+      'import { definePlugin } from "@pinomad/plugin/v1";\n' +
+      'export default definePlugin((p) => { p.state("count", { version: 1, initial: () => ({ n: 0 }) }); ' +
+      `p.state("secret", { version: 1, ${secretOptions} initial: () => ({ text: "" }) }); });\n`;
+    await writePlugin(dir.path, "notes", { "server.ts": notes("shared: false,") });
+    const events = pluginEvents();
+    const { hello, next, frames } = await setup({ dataDir: dir.path, plugins: events.options, extensions: [todo] });
+    const told = await hello();
+    const kinds = (docs: readonly { kind: string }[]) => docs.map((doc) => doc.kind);
+    expect(kinds(told.docs)).toContain("plugin.notes.count");
+    expect(kinds(told.docs)).not.toContain("plugin.notes.secret");
+
+    await save(dir.path, "notes/server.ts", notes(""));
+    const shared = await next((frame) => frame.type === "plugins");
+    if (shared.type !== "plugins") throw new Error("unreachable");
+    expect(shared.plugins).toEqual(told.plugins);
+    // The whole list as a hello would now declare it, built-in documents and their presentations included.
+    expect(shared.docs).toEqual([...told.docs, { kind: "plugin.notes.secret" }]);
+
+    await save(dir.path, "notes/server.ts", notes("shared: false,"));
+    const hidden = await next((frame) => frame.type === "plugins" && frame !== shared);
+    expect(hidden).toEqual({ type: "plugins", plugins: told.plugins, docs: told.docs });
+    expect(pluginsFrames(frames)).toHaveLength(2);
   });
 
   it("sends nothing for a reload that failed or left the list as it was", async () => {

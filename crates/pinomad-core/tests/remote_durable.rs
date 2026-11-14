@@ -2457,6 +2457,76 @@ fn a_5_34_host_announces_plugins_but_its_plugins_frame_is_not_believed() {
     assert_eq!(h.dig(&["host", "plugins"]), None);
 }
 
+// ─── shared documents after a reload (5.36 frame) ─────────────────────
+
+const BOARD: &str = "plugin.notes.board";
+
+fn doc_list(kinds: &[&str]) -> Json {
+    Json::array(kinds.iter().map(|kind| obj(&[("kind", Json::from(*kind))])).collect())
+}
+
+fn view_doc_kinds(h: &Harness, path: &[&str]) -> Vec<String> {
+    h.dig(path)
+        .and_then(|docs| docs.as_array().map(|docs| docs.to_vec()))
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|doc| doc.get("kind").and_then(Json::as_str).map(|kind| kind.to_string_lossy()))
+        .collect()
+}
+
+#[test]
+fn a_plugins_frame_moves_the_shown_conversations_onto_the_new_document_list() {
+    let mut h = setup();
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    h.invoke(2, Call::ShowSide { id: Some(2) });
+    assert!(!h.host.subscribes().iter().any(|stream| stream.contains(BOARD)));
+
+    h.deliver(obj(&[
+        ("type", Json::from("plugins")),
+        ("plugins", Json::array(vec![])),
+        ("docs", doc_list(&[DOC_KIND, BOARD])),
+    ]));
+    let board: Vec<String> = h.host.subscribes().into_iter().filter(|stream| stream.contains(BOARD)).collect();
+    assert_eq!(board, vec![format!("doc:{BOARD}:1"), format!("doc:{BOARD}:2")]);
+    assert_eq!(view_doc_kinds(&h, &["docs"]), vec![DOC_KIND.to_string(), BOARD.to_string()]);
+    assert_eq!(view_doc_kinds(&h, &["side", "docs"]), vec![DOC_KIND.to_string(), BOARD.to_string()]);
+
+    // The host stops the streams first (a null snapshot), then sends the list without the state.
+    h.snapshot(&format!("doc:{BOARD}:1"), Json::Null);
+    h.snapshot(&format!("doc:{BOARD}:2"), Json::Null);
+    h.deliver(obj(&[
+        ("type", Json::from("plugins")),
+        ("plugins", Json::array(vec![])),
+        ("docs", doc_list(&[DOC_KIND])),
+    ]));
+    assert_eq!(view_doc_kinds(&h, &["docs"]), vec![DOC_KIND.to_string()]);
+    assert_eq!(view_doc_kinds(&h, &["side", "docs"]), vec![DOC_KIND.to_string()]);
+    let released: Vec<String> = h.host.unsubscribes().into_iter().filter(|stream| stream.contains(BOARD)).collect();
+    assert_eq!(released, vec![format!("doc:{BOARD}:1"), format!("doc:{BOARD}:2")]);
+
+    // Another conversation opens without asking for the state the host no longer shares.
+    h.invoke(3, Call::SwitchConversation { id: 3 });
+    assert!(h.host.subscribes().contains(&format!("doc:{DOC_KIND}:3")));
+    assert!(!h.host.subscribes().contains(&format!("doc:{BOARD}:3")));
+    assert_eq!(h.connection(), "connected");
+}
+
+#[test]
+fn a_plugins_frame_without_a_document_list_keeps_the_hellos() {
+    let mut h = setup();
+    h.invoke(1, Call::SwitchConversation { id: 1 });
+    // A 5.35 host sends no `docs`; a value that is not a list is a newer shape.
+    h.deliver(plugins_frame(Json::array(vec![])));
+    h.deliver(obj(&[
+        ("type", Json::from("plugins")),
+        ("plugins", Json::array(vec![])),
+        ("docs", Json::from("none")),
+    ]));
+    assert_eq!(view_doc_kinds(&h, &["docs"]), vec![DOC_KIND.to_string()]);
+    h.invoke(2, Call::SwitchConversation { id: 2 });
+    assert!(h.host.subscribes().contains(&format!("doc:{DOC_KIND}:2")));
+}
+
 // ─── connection semantics beyond the TS tests ─────────────────────────
 
 #[test]
