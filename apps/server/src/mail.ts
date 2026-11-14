@@ -18,8 +18,8 @@ export function loadMailer(env: NodeJS.ProcessEnv = process.env): Mailer | undef
   // strips the offer would read the codes: make the upgrade mandatory.
   const transport = createTransport({ url, ...(url.startsWith("smtp:") ? { requireTLS: true } : {}) });
   return {
-    async send(to, subject, text) {
-      await transport.sendMail({ from, to, subject, text });
+    async send(to, subject, { text, html }) {
+      await transport.sendMail({ from, to, subject, text, html });
     },
   };
 }

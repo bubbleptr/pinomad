@@ -24,6 +24,7 @@ export interface SentMail {
   readonly to: string;
   readonly subject: string;
   readonly text: string;
+  readonly html: string;
 }
 
 /** A mailer that keeps what it was asked to send; `codeFor` digs the 6-digit code out of the last mail to an address. */
@@ -31,8 +32,8 @@ export function fakeMailer(): Mailer & { readonly sent: SentMail[]; codeFor(to: 
   const sent: SentMail[] = [];
   return {
     sent,
-    send(to, subject, text) {
-      sent.push({ to, subject, text });
+    send(to, subject, { text, html }) {
+      sent.push({ to, subject, text, html });
       return Promise.resolve();
     },
     codeFor(to) {

@@ -496,7 +496,7 @@ describe("credentials around mailed codes", () => {
     try {
       const sent: string[] = [];
       const failing: Mailer = {
-        send(_to, subject, text) {
+        send(_to, subject, { text }) {
           sent.push(subject, text);
           return Promise.reject(new Error(`rejected: ${subject}`));
         },
