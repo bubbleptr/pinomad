@@ -949,6 +949,8 @@ extension AppModel {
         let levels: [ThinkingLevel] = [.off, .low, .medium, .high]
         let entries: [(provider: String, modelId: String, name: String, reasons: Bool)] = [
             ("github-copilot", "claude-sonnet-4.5", "Claude Sonnet 4.5", true),
+            // The same name from its maker: the panel names both providers.
+            ("anthropic", "claude-sonnet-4-5", "Claude Sonnet 4.5", true),
             ("amazon-bedrock", "us.anthropic.claude-opus-4-1-20250805-v1:0", "Claude Opus 4.1", true),
             ("openai", "gpt-5", "GPT-5", true),
             ("github-copilot", "o4-mini", "o4-mini", true),
@@ -966,7 +968,7 @@ extension AppModel {
             ModelSummary(provider: $0.provider, modelId: $0.modelId, name: $0.name,
                          contextWindow: 200_000, thinkingLevels: $0.reasons ? levels : [], images: true)
         }
-        let picked = entries[sheet ? 0 : 2]
+        let picked = entries[sheet ? 0 : 3]
         let current = ModelRef(provider: picked.provider, modelId: picked.modelId)
         let summary = ConversationSummary(
             id: 1, kind: .conversation, parent: nil, forkedAt: nil,

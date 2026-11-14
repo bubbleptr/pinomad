@@ -80,7 +80,9 @@ struct ModelPanel: View {
                     ForEach(rows) { row in
                         Chip(title: Self.title(row), selected: row.selected, warning: !row.available,
                              enabled: enabled && row.available) {
-                            if !row.selected { onSelect(row.name) }
+                            // The current agent too: picking it again
+                            // re-reads its definition (ADR-0023 §7).
+                            onSelect(row.name)
                         }
                         .id(row.id)
                         .accessibilityHint(row.available ? (row.detail ?? "") : (row.detail ?? "Unavailable"))
@@ -145,16 +147,35 @@ struct ModelPanel: View {
         sameModel(a: ModelRef(provider: summary.provider, modelId: summary.modelId), b: selected.model)
     }
 
+    /// Names more than one provider serves: their rows say whose they are.
+    private var sharedNames: Set<String> {
+        var seen = Set<String>(), shared = Set<String>()
+        for summary in models {
+            let name = summary.name ?? summary.modelId
+            if !seen.insert(name).inserted { shared.insert(name) }
+        }
+        return shared
+    }
+
     private func modelRow(_ summary: ModelSummary) -> some View {
         let ref = ModelRef(provider: summary.provider, modelId: summary.modelId)
         let checked = isSelected(summary)
+        let name = summary.name ?? summary.modelId
         return Button {
             pick(summary)
         } label: {
             HStack(spacing: 10) {
                 ModelLogo(model: ref, size: 20, reserve: true)
-                Text(summary.name ?? summary.modelId)
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(name)
+                        .lineLimit(1)
+                    if sharedNames.contains(name) {
+                        Text(summary.provider)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
                 Spacer(minLength: 0)
                 if checked {
                     Image(.check).font(.body.weight(.semibold))
