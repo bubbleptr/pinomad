@@ -27,11 +27,11 @@ private let roles = [
     @Test func currentAgentFollowsTheHostVersion() {
         let value = summary(role: "reviewer", currentAgent: "planner")
 
-        let old = ConversationAgent(summary: value, isSubagent: false, hostMinor: 17, roles: roles)
+        let old = ConversationAgent(summary: value, isSubagent: false, hostMinor: 17, roles: roles, models: [])
         #expect(old.current == "reviewer")
         #expect(!old.canSwitch)
 
-        let current = ConversationAgent(summary: value, isSubagent: false, hostMinor: 18, roles: roles)
+        let current = ConversationAgent(summary: value, isSubagent: false, hostMinor: 18, roles: roles, models: [])
         #expect(current.current == "planner")
         #expect(current.canSwitch)
     }
@@ -40,7 +40,7 @@ private let roles = [
     /// should fall back to the creation-time role.
     @Test func a518HostWithoutAnAgentDoesNotFallBackToRole() {
         let value = summary(role: "reviewer", currentAgent: nil)
-        let agent = ConversationAgent(summary: value, isSubagent: false, hostMinor: 18, roles: roles)
+        let agent = ConversationAgent(summary: value, isSubagent: false, hostMinor: 18, roles: roles, models: [])
 
         #expect(agent.current == nil)
         #expect(agent.rows.first?.name == nil)
@@ -52,7 +52,7 @@ private let roles = [
     /// `currentAgent`.
     @Test func aSubagentKeepsItsRoleAndCannotSwitch() {
         let value = summary(role: "reviewer", currentAgent: nil, kind: .subagent)
-        let agent = ConversationAgent(summary: value, isSubagent: true, hostMinor: 18, roles: roles)
+        let agent = ConversationAgent(summary: value, isSubagent: true, hostMinor: 18, roles: roles, models: [])
 
         #expect(agent.current == "reviewer")
         #expect(!agent.canSwitch)
@@ -63,7 +63,7 @@ private let roles = [
     /// checked, but the row is not selectable.
     @Test func aMissingRoleStaysSelectedButUnavailable() {
         let value = summary(currentAgent: "gone", kind: .conversation)
-        let agent = ConversationAgent(summary: value, isSubagent: false, hostMinor: 18, roles: roles)
+        let agent = ConversationAgent(summary: value, isSubagent: false, hostMinor: 18, roles: roles, models: [])
 
         let missing = agent.rows.filter { $0.name == "gone" }
         #expect(missing.count == 1)
@@ -74,11 +74,11 @@ private let roles = [
     /// Switching to a role the host does offer drops the unavailable row.
     @Test func switchingAwayDropsTheMissingRole() {
         let before = ConversationAgent(summary: summary(currentAgent: "gone"),
-                                       isSubagent: false, hostMinor: 18, roles: roles)
+                                       isSubagent: false, hostMinor: 18, roles: roles, models: [])
         #expect(before.rows.contains { $0.name == "gone" })
 
         let after = ConversationAgent(summary: summary(currentAgent: "planner"),
-                                      isSubagent: false, hostMinor: 18, roles: roles)
+                                      isSubagent: false, hostMinor: 18, roles: roles, models: [])
         #expect(!after.rows.contains { $0.name == "gone" })
         #expect(after.rows.first { $0.name == "planner" }?.selected == true)
     }
@@ -87,17 +87,17 @@ private let roles = [
     /// model list alone must not keep it shut on a 5.18+ host.
     @Test func aSwitchableAgentKeepsTheSheetOpenWithoutModels() {
         let current = ConversationAgent(summary: summary(currentAgent: "reviewer"),
-                                        isSubagent: false, hostMinor: 18, roles: roles)
+                                        isSubagent: false, hostMinor: 18, roles: roles, models: [])
         #expect(current.sheetHasContent(models: []))
 
         let old = ConversationAgent(summary: summary(role: "reviewer"),
-                                    isSubagent: false, hostMinor: 17, roles: roles)
+                                    isSubagent: false, hostMinor: 17, roles: roles, models: [])
         #expect(!old.sheetHasContent(models: []))
     }
 
     /// "No agent" is the row with a nil name; selecting it sends nil.
     @Test func noAgentIsTheNilRow() {
-        let rows = AgentPickRow.rows(selected: "reviewer", roles: roles)
+        let rows = AgentPickRow.rows(selected: "reviewer", roles: roles, models: [])
         let none = rows.first
 
         #expect(none?.name == nil)
@@ -105,7 +105,7 @@ private let roles = [
         #expect(rows.first { $0.name == "reviewer" }?.selected == true)
 
         let cleared = ConversationAgent(summary: summary(currentAgent: nil),
-                                        isSubagent: false, hostMinor: 18, roles: roles)
+                                        isSubagent: false, hostMinor: 18, roles: roles, models: [])
         #expect(cleared.rows.first?.name == nil)
         #expect(cleared.rows.first?.selected == true)
     }

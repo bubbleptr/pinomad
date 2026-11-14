@@ -116,7 +116,7 @@ private func emptyOverrides() -> AgentDraftOverride {
     }
 }
 
-/// The model sheet is the only way to pick or clear a draft's agent, so it
+/// The model panel is the only way to pick or clear a draft's agent, so it
 /// must open whenever there is something to choose there — models or the
 /// Agent section — even with an empty model list.
 @Suite struct AgentDraftSheetTests {

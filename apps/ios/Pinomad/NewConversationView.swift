@@ -41,7 +41,7 @@ struct NewConversationView: View {
     /// Whether this host knows `createConversation`'s agent arg.
     private var agentPickerAvailable: Bool { model.hostSupports(.agentConversations) }
 
-    /// The model sheet's Agent section stays while a pick survives a
+    /// The panel's Agent section stays while a pick survives a
     /// now-empty snapshot so the reader can clear it (the web's rule); an
     /// empty roles list alone hides it. A pick that outlived a host
     /// downgrade keeps the section with only "No Agent" — otherwise there is
@@ -50,25 +50,13 @@ struct NewConversationView: View {
         model.draftAgent.offersAgents(hostSupportsAgents: agentPickerAvailable, roles: roles)
     }
 
-    private var agentChoice: ModelSheetAgent? {
+    private var agentChoice: ModelPanelAgent? {
         guard showAgentPicker else { return nil }
         return .pick(
             rows: AgentPickRow.rows(selected: selectedAgent,
-                                    roles: agentPickerAvailable ? roles : []),
-            hint: sourceHint,
+                                    roles: agentPickerAvailable ? roles : [],
+                                    models: model.snapshot?.models ?? []),
             onSelect: { model.setDraftAgent($0) })
-    }
-
-    /// Which sides still come from the picked role; an overridden side is
-    /// the reader's own.
-    private var sourceHint: String? {
-        guard let agent = selectedAgent, let resolution else { return nil }
-        let modelInherited = resolution.modelFrom != .override
-        let levelInherited = resolution.levelFrom != .override
-        if modelInherited && levelInherited { return "Model and thinking level come from @\(agent)." }
-        if modelInherited { return "Model comes from @\(agent); the thinking level is your pick." }
-        if levelInherited { return "Thinking level comes from @\(agent); the model is your pick." }
-        return "Model and thinking level are your picks; the rest comes from @\(agent)."
     }
 
     /// The model button's VoiceOver reason and the field's full reason when the
@@ -171,17 +159,6 @@ struct NewConversationView: View {
             if isFocused { refreshMentions() } else { mentions.close() }
         }
         .onDisappear { mentions.close() }
-        .sheet(isPresented: $showModels) {
-            ModelSheet(
-                model: model,
-                models: model.snapshot?.models ?? [],
-                selected: pick,
-                agent: agentChoice,
-                locked: model.creating,
-                onModel: { model.setDraftModel($0) },
-                onLevel: { model.setDraftLevel($0) }
-            )
-        }
         .imageSources(model: model, key: key, accepts: acceptsImages,
                       showPhotos: $showPhotos, showCamera: $showCamera)
         .fileAttachmentImporter(model: model, key: key, isPresented: $showFiles)
@@ -197,7 +174,7 @@ struct NewConversationView: View {
                 label: modelLabel(models: model.snapshot?.models ?? [], selected: pick),
                 logo: pick.model,
                 agent: selectedAgent,
-                // The sheet is the only way to the agent, so roles or a
+                // The panel is the only way to the agent, so roles or a
                 // stale pick open it even without models. Locked while
                 // creating: the create already took the pick.
                 enabled: model.connected && !model.creating
@@ -208,6 +185,19 @@ struct NewConversationView: View {
             ) {
                 focused = false
                 showModels = true
+            }
+            .popover(isPresented: $showModels, arrowEdge: .bottom) {
+                ModelPanel(
+                    model: model,
+                    models: model.snapshot?.models ?? [],
+                    selected: pick,
+                    agent: agentChoice,
+                    lock: ModelLock(draftAgent: selectedAgent, resolution: resolution),
+                    locked: model.creating,
+                    onModel: { model.setDraftModel($0) },
+                    onLevel: { model.setDraftLevel($0) }
+                )
+                .presentationCompactAdaptation(.popover)
             }
             ComposerField(showsTop: hasFieldTop) {
                 fieldTop

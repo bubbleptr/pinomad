@@ -172,7 +172,7 @@ extension AppModel {
             return true
         }
         if let mode = env["PINOMAD_DEMO_AGENT"] {
-            // The conversation model sheet's pickable Agent section on a
+            // The conversation model panel's pickable Agent section on a
             // 5.18 host: `missing` keeps a since-removed agent selected,
             // `none` starts without one.
             phase = .home
@@ -180,8 +180,8 @@ extension AppModel {
             return true
         }
         if let mode = env["PINOMAD_DEMO_MODELS"] {
-            // The model button and sheet with makers' logos; `sheet` opens
-            // the sheet over the conversation.
+            // The model button and panel with makers' logos; `sheet` opens
+            // the panel over the conversation.
             phase = .home
             startModelsDemo(sheet: mode == "sheet")
             return true
@@ -879,9 +879,10 @@ extension AppModel {
         replyStreams.sync(chat: chat)
     }
 
-    /// `PINOMAD_DEMO_AGENT`: a 5.18 host with two roles and a top-level
-    /// conversation, so the model sheet's Agent picker can be photographed
-    /// without a live host. `missing` selects a role the host no longer
+    /// `PINOMAD_DEMO_AGENT`: a 5.18 host with three roles (one pinning a
+    /// model the host doesn't offer) and a top-level conversation, so the
+    /// model panel's Agent picker and locks can be photographed without a
+    /// live host. `missing` selects a role the host no longer
     /// offers; `none` has no current agent.
     private func startAgentDemo(_ mode: String) {
         navPath = [demoConversationRoute(1)]
@@ -900,6 +901,8 @@ extension AppModel {
                       model: "openai/gpt-5", thinkingLevel: .high, prompt: "Review."),
             AgentRole(name: "planner", description: "Plans the work before coding",
                       model: "anthropic/sonnet", thinkingLevel: .medium, prompt: "Plan."),
+            AgentRole(name: "writer", description: "Writes the docs",
+                      model: "google/gemini-3", thinkingLevel: nil, prompt: "Write."),
         ]
         let current: String? = switch mode {
         case "missing": "removed"
@@ -931,14 +934,14 @@ extension AppModel {
             agents: AgentRoles(roles: roles, problems: []), conversation: conversation
         ))
         replyStreams.sync(chat: chat)
-        devShowsModelSheet = true
+        devShowsModelPanel = true
     }
 
     /// `PINOMAD_DEMO_MODELS`: models from many makers, some served by
     /// another provider (Claude on Copilot and Bedrock) and one with no
-    /// logo, so the model button and the sheet's logos can be photographed
+    /// logo, so the model button and the panel's logos can be photographed
     /// without a live host. The button shows GPT-5, a monochrome logo
-    /// that takes the text's color; the sheet opens on Claude. The settled
+    /// that takes the text's color; the panel opens on Claude. The settled
     /// run was Claude's, so its trace keeps Claude's logo.
     private func startModelsDemo(sheet: Bool) {
         navPath = [demoConversationRoute(1)]
@@ -1001,7 +1004,7 @@ extension AppModel {
             agents: nil, conversation: conversation
         ))
         replyStreams.sync(chat: chat)
-        devShowsModelSheet = sheet
+        devShowsModelPanel = sheet
     }
 
     /// Grows a live run by one step every two seconds (commands, a thinking

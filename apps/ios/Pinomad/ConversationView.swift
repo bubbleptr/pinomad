@@ -63,7 +63,8 @@ struct ConversationView: View {
         let agentPick = node.map {
             ConversationAgent(summary: $0.summary, isSubagent: isSubagent,
                               hostMinor: model.hostMinor,
-                              roles: model.snapshot?.agents?.roles ?? [])
+                              roles: model.snapshot?.agents?.roles ?? [],
+                              models: model.snapshot?.models ?? [])
         }
         let subtitle = self.subtitle(agent: agentPick?.current)
         // Card facts only, so a summary's churn (updatedAt/status/activity)
