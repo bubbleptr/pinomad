@@ -19,6 +19,7 @@ enum ModelPanelAgent {
 /// callbacks set the local pick). Sides the agent pins are shown but locked.
 struct ModelPanel: View {
     static let width: CGFloat = 340
+    static let maxHeight: CGFloat = 560
 
     let model: AppModel
     let models: [ModelSummary]
@@ -32,6 +33,7 @@ struct ModelPanel: View {
     let onLevel: (ThinkingLevel) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .body) private var rowHeight: CGFloat = 44
 
     /// Offline changes "succeed" into a notice only — don't offer them.
@@ -41,20 +43,28 @@ struct ModelPanel: View {
         summaryOf(models: models, model: selected.model)?.thinkingLevels ?? []
     }
 
+    /// The panel's own height, so a large text size scrolls instead of
+    /// clipping inside the popover.
+    @State private var contentHeight: CGFloat = 0
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            if let agent {
-                agentSection(agent)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                if let agent {
+                    agentSection(agent)
+                }
+                if !models.isEmpty {
+                    modelSection
+                }
+                if levels.count > 1 {
+                    levelSection
+                }
             }
-            if !models.isEmpty {
-                modelSection
-            }
-            if levels.count > 1 {
-                levelSection
-            }
+            .padding(.vertical, 18)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
         }
-        .padding(.vertical, 18)
-        .frame(width: Self.width, alignment: .leading)
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(width: Self.width, height: min(max(contentHeight, 1), Self.maxHeight), alignment: .top)
         .tint(.primary)
         .hostsToasts(model)
     }
@@ -66,12 +76,13 @@ struct ModelPanel: View {
         switch agent {
         case let .pick(rows, onSelect):
             section("Agent") {
-                ChipRow {
+                ChipRow(selected: rows.first(where: \.selected)?.id) {
                     ForEach(rows) { row in
                         Chip(title: Self.title(row), selected: row.selected, warning: !row.available,
                              enabled: enabled && row.available) {
                             if !row.selected { onSelect(row.name) }
                         }
+                        .id(row.id)
                         .accessibilityHint(row.available ? (row.detail ?? "") : (row.detail ?? "Unavailable"))
                     }
                 }
@@ -172,13 +183,14 @@ struct ModelPanel: View {
     private var levelSection: some View {
         let current = clampLevel(levels: levels, want: selected.level)
         return section("Thinking", lockedBy: lock.level ? lock.agent : nil) {
-            ChipRow {
+            ChipRow(selected: "\(current)") {
                 ForEach(levels, id: \.self) { level in
                     Chip(title: thinkingLevelLabel(level: level) ?? "\(level)", selected: level == current,
                          enabled: enabled && !lock.level) {
                         if level != current { onLevel(level) }
                         dismiss()
                     }
+                    .id("\(level)")
                 }
             }
         }
@@ -189,12 +201,18 @@ struct ModelPanel: View {
     private func section<Content: View>(_ title: String, lockedBy agent: String? = nil,
                                         @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 4) {
+            // Side by side until the text is too large to share a line.
+            let layout = dynamicTypeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
+                : AnyLayout(HStackLayout(spacing: 4))
+            layout {
                 Text(title).fontWeight(.semibold)
-                Spacer(minLength: 8)
+                if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 8) }
                 if let agent {
-                    Image(.lock).accessibilityHidden(true)
-                    Text("Set by @\(agent)")
+                    HStack(spacing: 4) {
+                        Image(.lock).accessibilityHidden(true)
+                        Text("Set by @\(agent)")
+                    }
                 }
             }
             .font(.footnote)
@@ -215,17 +233,24 @@ struct ModelPanel: View {
     }
 }
 
-/// A row of chips that scrolls sideways when it outgrows the panel.
+/// A row of chips that scrolls sideways when it outgrows the panel,
+/// opening on the selected chip (tagged with `.id(selected)`).
 private struct ChipRow<Content: View>: View {
+    var selected: String? = nil
     @ViewBuilder let content: Content
 
     var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 8) { content }
-                .padding(.horizontal, 18)
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) { content }
+                    .padding(.horizontal, 18)
+            }
+            .scrollIndicators(.hidden)
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+            .onAppear {
+                if let selected { proxy.scrollTo(selected, anchor: .center) }
+            }
         }
-        .scrollIndicators(.hidden)
-        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
     }
 }
 
