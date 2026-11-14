@@ -8,6 +8,7 @@ import type { QuestionState } from "@pinomad/protocol/presentation.ts";
 import { question } from "../src/extensions/question.ts";
 import type { OpenedHost } from "../src/host.ts";
 import { addInboxEvent, InboxDoc, type InboxTask } from "../src/inbox.ts";
+import { IndexDoc } from "../src/organization.ts";
 import { LONG_ANSWER, startFauxHost, tempDir, useCleanups } from "./support.ts";
 
 const context = BACKGROUND_CONTEXT;
@@ -161,10 +162,56 @@ describe("Inbox", () => {
       async () => ((await host.harness.snapshot(QuestionDoc, id, context))?.requests.length ?? 0),
       (count) => count === 1,
     );
-    await new Promise((resolve) => setTimeout(resolve, 300));
     expect((await tasksOf(host, project))[1]!.conversationId).toBeUndefined();
     await answerPending(host, id);
     const done = await until(() => tasksOf(host, project), (tasks) => tasks.every((task) => task.closed));
+    // The second task's conversation was only created after the answer.
+    const answeredAt = (await host.harness.snapshot(QuestionDoc, id, context))!.requests[0]!.resolution!.at;
+    const index = await host.harness.snapshot(IndexDoc, context);
+    const secondCreated = index!.conversations.find((entry) => entry.id === done[1]!.conversationId)!.createdAt;
+    expect(secondCreated).toBeGreaterThanOrEqual(answeredAt);
+  });
+
+  it("closes a stopped task and goes on to the next", async () => {
+    const project = await plainProject();
+    const host = await startFauxHost(defer, { projects: [project], answers: [LONG_ANSWER, "second done"], tokensPerSecond: 20 });
+    await addInboxEvent(host.harness, project, event("e1", "long one"), context);
+    await addInboxEvent(host.harness, project, event("e2", "next one"), context);
+    const started = await until(() => tasksOf(host, project), (tasks) => tasks[0]?.conversationId !== undefined);
+    await (await host.harness.conversation(started[0]!.conversationId!, context))!.abort(context);
+    const done = await until(() => tasksOf(host, project), (tasks) => tasks.every((task) => task.closed));
     expect(done[1]!.conversationId).toBeDefined();
+  });
+
+  it("admits a batch recorded before a crash exactly once", async () => {
+    const project = await plainProject();
+    const host = await startFauxHost(defer, { projects: [project], answers: ["done"] });
+    const key = Object.keys((await host.harness.snapshot(InboxDoc, context))?.inboxes ?? {})[0];
+    expect(key).toBeUndefined();
+    // As a crash between recording the batch and admitting it leaves it.
+    await host.harness.commit(async (tx) => {
+      const index = await tx.doc(IndexDoc);
+      const path = index.projects[0]!.path;
+      (await tx.doc(InboxDoc)).inboxes[path] = {
+        threads: {},
+        tasks: [
+          {
+            id: "t1",
+            title: "seeded",
+            createdAt: Date.now(),
+            closed: false,
+            events: [{ id: "e1", source: "user", summary: "seeded bug", trusted: true, receivedAt: Date.now(), handled: false }],
+            batch: { requestId: "inbox:t1:e1", eventIds: ["e1"], first: true, admitted: false },
+          },
+        ],
+      };
+    }, context);
+    const [task] = await until(() => tasksOf(host, project), (tasks) => tasks[0]?.closed === true);
+    expect(await userTexts(host, task!.conversationId!)).toEqual([expect.stringContaining("seeded bug")]);
+  });
+
+  it("refuses an event for a project the host does not know", async () => {
+    const host = await startFauxHost(defer);
+    await expect(addInboxEvent(host.harness, await plainProject(), event("e1", "bug"), context)).rejects.toThrow(/Unknown project/);
   });
 });

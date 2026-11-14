@@ -14,6 +14,7 @@ import type { Context } from "@earendil-works/chord/context";
 import type { JsonValue } from "@earendil-works/chord/json";
 import { type ConversationDocToken, type ConversationId, defineDoc, type Harness } from "@earendil-works/pi-durable";
 import { gitBase } from "./checkout.ts";
+import { IndexDoc } from "./organization.ts";
 
 export type InboxEventSource = "user" | "schedule" | "followUp" | "webhook" | `plugin:${string}`;
 
@@ -46,6 +47,8 @@ export type InboxTask = {
   batch?: { requestId: string; eventIds: string[]; first: boolean; admitted: boolean };
   /** Done or skipped; a later event reopens it. */
   closed: boolean;
+  /** Why the worker gave up on its last batch, when it did; it moved on to the next task. */
+  failed?: string;
 };
 
 export type ProjectInbox = {
@@ -91,6 +94,7 @@ export async function addInboxEvent(
 ): Promise<{ task: string; duplicate: boolean }> {
   const key = await projectKey(project);
   return await harness.commit(async (tx) => {
+    if (!(await tx.doc(IndexDoc)).projects.some((each) => each.path === key)) throw new Error(`Unknown project: ${project}`);
     const doc = await tx.doc(InboxDoc);
     if (doc.inboxes[key] === undefined) doc.inboxes[key] = { tasks: [], threads: {} };
     const inbox = doc.inboxes[key]!;
@@ -111,22 +115,13 @@ export async function addInboxEvent(
     if (target !== undefined) {
       target.events.push(event);
       target.closed = false;
+      delete target.failed;
       return { task: target.id, duplicate: false };
     }
     const task: InboxTask = { id: randomUUID().slice(0, 8), title: titleOf(input), createdAt: Date.now(), events: [event], closed: false };
     inbox.tasks.push(task);
     if (input.thread !== undefined) inbox.threads[input.thread] = task.id;
     return { task: task.id, duplicate: false };
-  }, context);
-}
-
-/** Register `thread` to `task`, so its later events go there (`inbox_follow`). */
-export async function followThread(harness: Harness, project: string, task: string, thread: string, context: Context): Promise<void> {
-  const key = await projectKey(project);
-  await harness.commit(async (tx) => {
-    const inbox = (await tx.doc(InboxDoc)).inboxes[key];
-    if (inbox === undefined || !inbox.tasks.some((each) => each.id === task)) throw new Error(`Unknown Inbox task ${task}`);
-    inbox.threads[thread] = task;
   }, context);
 }
 
@@ -227,7 +222,13 @@ export async function startInbox(options: {
       if (inbox === undefined) return;
       const task = nextTask(inbox, new Set(waiting.keys()));
       if (task === undefined) return;
-      await runBatch(project, task);
+      try {
+        await runBatch(project, task);
+      } catch (error) {
+        if (closed) return;
+        // One task that cannot run must not hold up the ones behind it.
+        await failTask(project, task.id, error instanceof Error ? error.message : String(error));
+      }
     }
   }
 
@@ -237,35 +238,31 @@ export async function startInbox(options: {
     // An admitted batch of an open task is only waited on again; otherwise
     // record a new batch of the unhandled events before admitting it.
     const reattach = task.batch?.admitted === true && task.events.every((event) => event.handled);
-    const batch = reattach
-      ? task.batch!
-      : (task.batch !== undefined && !task.batch.admitted
-          ? task.batch
-          : await harness.commit(async (tx) => {
-              const current = await find(tx);
-              const eventIds = current.events.filter((event) => !event.handled).map((event) => event.id);
-              current.batch = {
-                requestId: `inbox:${current.id}:${eventIds.at(-1)}`,
-                eventIds,
-                first: current.conversationId === undefined,
-                admitted: false,
-              };
-              return { ...current.batch, eventIds: [...eventIds] };
-            }, context));
-    const blocks = eventBlocks(task.events.filter((event) => batch.eventIds.includes(event.id)));
+    // The batch's events come from the commit that records it: one appended
+    // after the snapshot this loop read is either in both or in neither.
+    const { batch, events } =
+      reattach || (task.batch !== undefined && !task.batch.admitted)
+        ? { batch: task.batch!, events: task.events.filter((event) => task.batch!.eventIds.includes(event.id)) }
+        : await harness.commit(async (tx) => {
+            const current = await find(tx);
+            const pending = current.events.filter((event) => !event.handled);
+            const eventIds = pending.map((event) => event.id);
+            current.batch = {
+              requestId: `inbox:${current.id}:${eventIds.at(-1)}`,
+              eventIds,
+              first: current.conversationId === undefined,
+              admitted: false,
+            };
+            return { batch: { ...current.batch, eventIds: [...eventIds] }, events: pending.map((event) => ({ ...event })) };
+          }, context);
+    const blocks = eventBlocks(events);
     const text = batch.first ? `${FIRST_MESSAGE_PREFACE}\n\n${blocks}` : blocks;
     let conversationId = task.conversationId;
     if (conversationId === undefined) {
       conversationId = await options.createConversation({ project, text, requestId: batch.requestId }, context);
       const created = conversationId;
       await harness.commit(async (tx) => {
-        const inbox = (await tx.doc(InboxDoc)).inboxes[project]!;
-        const current = inbox.tasks.find((each) => each.id === task.id)!;
-        current.conversationId = created;
-        // The thread of the event that opened the task is registered with it (ADR-0051 §4).
-        for (const event of current.events) {
-          if (event.thread !== undefined && batch.eventIds.includes(event.id)) inbox.threads[event.thread] ??= current.id;
-        }
+        (await find(tx)).conversationId = created;
       }, context);
     }
     const conversation = await harness.conversation(conversationId, context);
@@ -304,6 +301,19 @@ export async function startInbox(options: {
       });
   }
 
+  /** Give up on a task's batch: its events count as handled and the task closes with the reason. */
+  async function failTask(project: string, taskId: string, reason: string): Promise<void> {
+    console.error(`Inbox task ${taskId} in ${project} failed: ${reason}`);
+    await harness.commit(async (tx) => {
+      const current = (await tx.doc(InboxDoc)).inboxes[project]?.tasks.find((each) => each.id === taskId);
+      if (current === undefined) return;
+      for (const event of current.events) event.handled = true;
+      delete current.batch;
+      current.closed = true;
+      current.failed = reason;
+    }, context);
+  }
+
   async function closeTask(project: string, taskId: string): Promise<void> {
     if (closed) return;
     await harness.commit(async (tx) => {
@@ -316,6 +326,7 @@ export async function startInbox(options: {
   /** Resolves once the conversation holds an unanswered question in any question document. */
   async function questionWatch(conversationId: ConversationId): Promise<{ pending: Promise<"asked">; stop(): void }> {
     const stops: (() => void)[] = [];
+    let stopped = false;
     const open = (value: Readonly<QuestionState> | null): boolean =>
       value?.requests.some((request) => request.resolution === undefined) === true;
     const pending = new Promise<"asked">((resolve) => {
@@ -325,8 +336,14 @@ export async function startInbox(options: {
           await harness.commit(async (tx) => {
             await tx.doc(token, conversationId);
           }, context);
+          if (stopped) return;
           const watch = await harness.watchDoc(token, conversationId, context);
           if (watch === undefined) continue;
+          // Stopped while this watch was being opened: the run settled first.
+          if (stopped) {
+            watch.stop();
+            return;
+          }
           stops.push(() => watch.stop());
           if (open(watch.value)) resolve("asked");
           watch.start((call) => {
@@ -336,7 +353,13 @@ export async function startInbox(options: {
         }
       })();
     });
-    return { pending, stop: () => stops.forEach((stop) => stop()) };
+    return {
+      pending,
+      stop: () => {
+        stopped = true;
+        stops.forEach((stop) => stop());
+      },
+    };
   }
 
   await harness.commit(async (tx) => {
