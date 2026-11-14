@@ -2334,8 +2334,14 @@ class GatewayClient {
       this.#toldDocs = docs;
       await this.send({ type: "plugins", plugins: info, docs });
     };
-    // A failed step does not stall the ones after it; each reads the state afresh.
-    this.#pluginsReloads = this.#pluginsReloads.then(step, step);
+    // A failed step (a connection closing under it) is logged, never left
+    // unhandled — that would end the host — and does not stall the ones
+    // after it; each reads the state afresh.
+    const logged = (): Promise<void> =>
+      step().catch((error: unknown) => {
+        console.error(`plugin reload: could not update a connection: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    this.#pluginsReloads = this.#pluginsReloads.then(logged);
     return this.#pluginsReloads;
   }
 
