@@ -80,6 +80,31 @@ describe("ModelSelector", () => {
     expect(onLevelChange).toHaveBeenCalledWith("medium");
   });
 
+  it("names the provider only on models whose name another provider also serves", async () => {
+    const shared: readonly ModelSummary[] = [
+      ...models,
+      { provider: "github-copilot", modelId: "gpt-b", name: "GPT B", contextWindow: 128_000, thinkingLevels: ["off"] },
+    ];
+    const onModelChange = vi.fn();
+    render(
+      <ModelSelector
+        models={shared}
+        selected={{ model: { provider: "anthropic", modelId: "claude-a" }, level: "off" }}
+        onModelChange={onModelChange}
+        onLevelChange={vi.fn()}
+      />,
+    );
+    const sub = await openSub("Model");
+    expect(within(sub).getAllByRole("menuitemradio").map((item) => item.textContent)).toEqual([
+      "Claude A",
+      "GPT Bopenai",
+      "Llama C",
+      "GPT Bgithub-copilot",
+    ]);
+    await click(within(sub).getByRole("menuitemradio", { name: "GPT B github-copilot" }));
+    expect(onModelChange).toHaveBeenCalledWith({ provider: "github-copilot", modelId: "gpt-b" });
+  });
+
   it("has no Thinking row for a model that can't reason", async () => {
     renderPick("llama-c", "off");
     expect(screen.getByTestId("model-trigger")).toHaveTextContent(/^Llama C$/);

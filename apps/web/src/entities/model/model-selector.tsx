@@ -73,6 +73,7 @@ export function ModelSelector({
   onLevelChange: (level: ThinkingLevel) => void;
 }) {
   const selectedSummary = models.find((each) => sameModel(each, selected.model));
+  const shared = sharedNames(models);
   const levels = selectedSummary?.thinkingLevels ?? ["off"];
   const reasons = levels.length > 1;
   const agentName = agent === undefined ? undefined : agent.kind === "pick" ? agent.value : agent.name;
@@ -145,12 +146,30 @@ export function ModelSelector({
               {groupByProvider(models).map((group, index) => (
                 <Fragment key={group.provider}>
                   {index === 0 ? null : <DropdownMenuSeparator />}
-                  {group.models.map((model) => (
-                    <DropdownMenuRadioItem key={modelKey(model)} value={modelKey(model)} disabled={isDisabled}>
-                      <ModelLogo model={model} reserve />
-                      <span className="truncate">{model.name}</span>
-                    </DropdownMenuRadioItem>
-                  ))}
+                  {group.models.map((model) =>
+                    shared.has(model.name) ? (
+                      <DropdownMenuRadioItem
+                        key={modelKey(model)}
+                        value={modelKey(model)}
+                        disabled={isDisabled}
+                        label={model.name}
+                        aria-label={`${model.name} ${model.provider}`}
+                      >
+                        <span className="flex size-4 items-center justify-center self-start pt-1">
+                          <ModelLogo model={model} reserve />
+                        </span>
+                        <span className="flex min-w-0 flex-col">
+                          <span className="truncate">{model.name}</span>
+                          <span className="truncate text-xs text-muted-foreground">{model.provider}</span>
+                        </span>
+                      </DropdownMenuRadioItem>
+                    ) : (
+                      <DropdownMenuRadioItem key={modelKey(model)} value={modelKey(model)} disabled={isDisabled}>
+                        <ModelLogo model={model} reserve />
+                        <span className="truncate">{model.name}</span>
+                      </DropdownMenuRadioItem>
+                    ),
+                  )}
                 </Fragment>
               ))}
             </DropdownMenuRadioGroup>
@@ -200,6 +219,17 @@ function Row({ icon, label, value, note, disabled }: { icon: ReactNode; label: s
 }
 
 const modelKey = (model: ModelRef): string => `${model.provider}/${model.modelId}`;
+
+/** Names more than one provider serves: their rows also say whose they are. */
+function sharedNames(models: readonly ModelSummary[]): ReadonlySet<string> {
+  const seen = new Set<string>();
+  const shared = new Set<string>();
+  for (const model of models) {
+    if (seen.has(model.name)) shared.add(model.name);
+    seen.add(model.name);
+  }
+  return shared;
+}
 
 function groupByProvider(models: readonly ModelSummary[]): { provider: string; models: ModelSummary[] }[] {
   const groups = new Map<string, ModelSummary[]>();
