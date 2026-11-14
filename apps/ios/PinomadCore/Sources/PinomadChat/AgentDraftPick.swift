@@ -49,17 +49,16 @@ public struct AgentDraftPick: Equatable, Sendable {
     }
 
     /// Change the model. With an agent this only records an override — the
-    /// remembered pick is deliberately left alone. Without one it behaves
-    /// like the plain draft pick always did: clamp the level to the model.
+    /// remembered pick is deliberately left alone. Without one the level
+    /// stays the reader's pick: `pick` clamps it to each model's levels, so
+    /// switching back to a model that has it restores it.
     public mutating func setModel(_ model: ModelRef, models: [ModelSummary], defaults: Defaults?) {
         if agent != nil {
             overrides = AgentDraftOverride(model: model, level: overrides.level)
             return
         }
-        let levels = summaryOf(models: models, model: model)?.thinkingLevels ?? [.off]
-        let current = pick(agents: nil, models: models, defaults: defaults)
-        remembered = ModelPick(model: model,
-                               level: clampLevel(levels: levels, want: current.level))
+        let level = remembered?.level ?? pick(agents: nil, models: models, defaults: defaults).level
+        remembered = ModelPick(model: model, level: level)
     }
 
     /// Change the level; with an agent it is an override only.

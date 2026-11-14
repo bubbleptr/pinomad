@@ -173,8 +173,37 @@ extension AppModel {
         run(.compact(instructions: nil))
     }
 
-    func setModel(_ model: ModelRef) {
-        run(.setModel(model: model))
+    /// Switch the shown conversation's model, keeping the level the reader
+    /// picked there under its current agent: the host clamps the current
+    /// level on its own, so only a different target needs a second call. That
+    /// call carries no conversation, so it is dropped if another one is shown
+    /// by then, or if a newer pick or agent change made it stale.
+    func switchModel(_ model: ModelRef, conversation id: UInt64, agent: String?, current: ThinkingLevel) {
+        guard let runtime = focusedRuntime, let session else { return }
+        let levels = summaryOf(models: runtime.snapshot?.models ?? [], model: model)?.thinkingLevels ?? []
+        let (follow, revision) = runtime.levelIntents.switchModel(
+            conversation: id, agent: agent, current: current, levels: levels)
+        Task { [weak runtime] in
+            guard (try? await session.invoke(.setModel(model: model))) != nil, let follow, let runtime,
+                  runtime.levelIntents.isCurrent(revision, conversation: id),
+                  runtime.snapshot?.conversation?.id == id else { return }
+            _ = try? await session.invoke(.setThinkingLevel(level: follow))
+        }
+    }
+
+    /// The reader's level for the shown conversation, kept for later model
+    /// switches. Re-picking the shown (clamped) level only updates the pick.
+    func pickThinkingLevel(_ level: ThinkingLevel, conversation id: UInt64, agent: String?,
+                           current: ThinkingLevel) {
+        focusedRuntime?.levelIntents.pick(level, conversation: id, agent: agent)
+        if level != current { setThinkingLevel(level) }
+    }
+
+    /// A named agent sets its own level, so the reader's pick goes with
+    /// the old one.
+    func switchAgent(_ agent: String?, conversation id: UInt64) {
+        focusedRuntime?.levelIntents.forget(conversation: id)
+        setAgent(agent)
     }
 
     /// Switch the shown conversation's named agent, or clear it. Like
