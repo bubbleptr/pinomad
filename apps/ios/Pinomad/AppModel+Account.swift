@@ -840,7 +840,8 @@ extension AppModel {
                 status: .rejected,
                 action: .rePair,
                 storedHostKey: row.storedHostKey,
-                deviceReports: row.deviceReports)
+                deviceReports: row.deviceReports,
+                joinedAt: row.joinedAt)
         }
     }
 
@@ -867,7 +868,8 @@ extension AppModel {
                 status: .unpaired,
                 action: .pair,
                 storedHostKey: nil,
-                deviceReports: row.deviceReports)
+                deviceReports: row.deviceReports,
+                joinedAt: row.joinedAt)
         }
     }
 

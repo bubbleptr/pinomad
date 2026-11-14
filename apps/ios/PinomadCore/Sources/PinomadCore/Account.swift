@@ -819,6 +819,9 @@ public struct AccountHostRow: Identifiable, Equatable, Sendable {
     /// False when the server can't ask this host to revoke a device
     /// (ADR-0037 §5); nil from servers older than #452.
     public let deviceReports: Bool?
+    /// When the host joined the account, in ms; a join after a removal
+    /// gets a new one (#531). Nil from servers older than that.
+    public let joinedAt: Double?
 
     public init(
         hostId: String,
@@ -828,7 +831,8 @@ public struct AccountHostRow: Identifiable, Equatable, Sendable {
         status: AccountHostRowStatus,
         action: AccountHostAction,
         storedHostKey: String?,
-        deviceReports: Bool? = nil
+        deviceReports: Bool? = nil,
+        joinedAt: Double? = nil
     ) {
         self.hostId = hostId
         self.name = name
@@ -838,6 +842,7 @@ public struct AccountHostRow: Identifiable, Equatable, Sendable {
         self.action = action
         self.storedHostKey = storedHostKey
         self.deviceReports = deviceReports
+        self.joinedAt = joinedAt
     }
 
     public var id: String { hostId }
@@ -965,7 +970,8 @@ public enum AccountHosts {
                 status: status,
                 action: action,
                 storedHostKey: storedKey,
-                deviceReports: match.host.deviceReports)
+                deviceReports: match.host.deviceReports,
+                joinedAt: match.host.joinedAt)
         }
 
         return AccountReconciliation(

@@ -17,14 +17,23 @@ struct KnownAccountHostsTests {
         return defaults
     }
 
-    private func row(_ id: String) -> AccountHostRow {
+    private func row(_ id: String, joinedAt: Double? = nil) -> AccountHostRow {
         AccountHostRow(
             hostId: id, name: id, online: true, pairing: .available,
-            status: .unpaired, action: .pair, storedHostKey: nil)
+            status: .unpaired, action: .pair, storedHostKey: nil, joinedAt: joinedAt)
     }
 
     private func observe(_ known: KnownAccountHosts, _ ids: [String], user: String = "kieran") -> [String] {
-        known.observe(serverOrigin: origin, username: user, hosts: ids.map(row)).map(\.hostId)
+        known.observe(serverOrigin: origin, username: user, hosts: ids.map { row($0) }).map(\.hostId)
+    }
+
+    private func observe(_ known: KnownAccountHosts, joins: [(String, Double)]) -> [String] {
+        known.observe(serverOrigin: origin, username: "kieran", hosts: joins.map { row($0.0, joinedAt: $0.1) })
+            .map(\.hostId)
+    }
+
+    private func dismiss(_ known: KnownAccountHosts, _ ids: [String]) {
+        known.dismiss(serverOrigin: origin, username: "kieran", hostIds: ids)
     }
 
     /// The first list this iPhone sees is the baseline: hosts that were
@@ -128,5 +137,60 @@ struct KnownAccountHostsTests {
         known.add(serverOrigin: origin, username: "kieran", hostId: "studio")
         #expect(observe(known, ["mbp"]).isEmpty)
         #expect(observe(known, ["mbp", "studio"]).isEmpty)
+    }
+
+    // MARK: - Join times (#531)
+
+    /// A host removed and joined again is news again: a phished host that
+    /// was taken off and talked back in must not come back quietly.
+    @Test func aHostIsAnnouncedAgainWhenItJoinsAgain() {
+        let known = KnownAccountHosts(defaults: defaults())
+        _ = observe(known, joins: [])
+        #expect(observe(known, joins: [("mbp", 1)]) == ["mbp"])
+        dismiss(known, ["mbp"])
+        #expect(observe(known, joins: [("mbp", 1)]).isEmpty)
+        #expect(observe(known, joins: [("mbp", 2)]) == ["mbp"])
+    }
+
+    /// What this iPhone knew before join times counts as announced for
+    /// the join each host has now, and the old record is left for an
+    /// older build to keep reading.
+    @Test func aHostKnownBeforeJoinTimesIsSeenForItsCurrentJoin() throws {
+        let defaults = defaults()
+        let legacy = KnownAccountHosts(defaults: defaults, key: KnownAccountHosts.legacyDefaultsKey)
+        _ = legacy.observe(serverOrigin: origin, username: "kieran", hosts: [row("mbp")])
+        let before = defaults.string(forKey: KnownAccountHosts.legacyDefaultsKey)
+
+        let known = KnownAccountHosts(defaults: defaults)
+        #expect(observe(known, joins: [("mbp", 5)]).isEmpty)
+        #expect(observe(known, joins: [("mbp", 5)]).isEmpty)
+        #expect(observe(known, joins: [("mbp", 6)]) == ["mbp"])
+        #expect(defaults.string(forKey: KnownAccountHosts.legacyDefaultsKey) == before)
+    }
+
+    /// Confirming a host's new join here covers that join, and only it.
+    @Test func aConfirmHereCoversOneJoin() {
+        let known = KnownAccountHosts(defaults: defaults())
+        _ = observe(known, joins: [("mbp", 1)])
+        known.add(serverOrigin: origin, username: "kieran", hostId: "mbp")
+        #expect(observe(known, joins: [("mbp", 2)]).isEmpty)
+        #expect(observe(known, joins: [("mbp", 3)]) == ["mbp"])
+    }
+
+    /// A confirm of a host already listed is spent by the next list, so
+    /// it can't hide the host's next join.
+    @Test func aConfirmOfAListedHostDoesntHideItsNextJoin() {
+        let known = KnownAccountHosts(defaults: defaults())
+        _ = observe(known, joins: [("mbp", 1)])
+        known.add(serverOrigin: origin, username: "kieran", hostId: "mbp")
+        #expect(observe(known, joins: [("mbp", 1)]).isEmpty)
+        #expect(observe(known, joins: [("mbp", 2)]) == ["mbp"])
+    }
+
+    /// A server that stops sending join times doesn't make every host news.
+    @Test func noJoinTimesStaysQuiet() {
+        let known = KnownAccountHosts(defaults: defaults())
+        _ = observe(known, joins: [("mbp", 1)])
+        #expect(observe(known, ["mbp"]).isEmpty)
     }
 }
