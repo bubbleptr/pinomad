@@ -73,7 +73,7 @@ export interface PluginCatalog {
   readonly info: readonly PluginInfo[];
   /** The loaded plugins' shared states, offered as `doc:` streams. */
   readonly docs: readonly ExtensionDoc[];
-  /** Plugin `name`'s bundle that was announced with `hash`; throws once it is no longer kept. */
+  /** The bundle a connection was told about with `hash`; throws once it is no longer kept. */
   bundle(name: string, hash: string): string;
   /** Throws for an unknown plugin or method. */
   method(plugin: string, method: string): PluginMethod;
@@ -139,8 +139,7 @@ export async function openPlugins(dir: string, options: PluginsOptions): Promise
 
   const web = new Map<string, WebBundle>();
   const listeners = new Set<() => void>();
-  /** Bundles by hash, oldest first: the current ones and up to RETAINED_BUNDLES superseded ones. */
-  const retained = new Map<string, { readonly name: string; readonly code: string }>();
+  const retained = new Map<string, string>();
   /** Each plugin's last failed build signature: the same files failing again are neither rolled out nor logged. */
   const failedAs = new Map<string, string>();
   const problemsLogged = new Set<string>();
@@ -149,7 +148,7 @@ export async function openPlugins(dir: string, options: PluginsOptions): Promise
   const keepWeb = (name: string, bundle: WebBundle): void => {
     web.set(name, bundle);
     retained.delete(bundle.hash);
-    retained.set(bundle.hash, { name, code: bundle.code });
+    retained.set(bundle.hash, bundle.code);
     const current = new Set([...web.values()].map((each) => each.hash));
     for (const hash of retained.keys()) {
       if (retained.size <= RETAINED_BUNDLES) break;
@@ -317,9 +316,9 @@ export async function openPlugins(dir: string, options: PluginsOptions): Promise
       return announced().flatMap(({ translated }) => translated?.docs ?? []);
     },
     bundle: (name, hash) => {
-      const kept = retained.get(hash);
-      if (kept?.name !== name) throw new Error(`Plugin ${name} changed since this connection opened; reconnect to load it`);
-      return kept.code;
+      const code = retained.get(hash);
+      if (code === undefined) throw new Error(`Plugin ${name} changed since this connection opened; reconnect to load it`);
+      return code;
     },
     method: (plugin, method) => {
       const run = find(plugin).translated?.methods.get(method);

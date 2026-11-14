@@ -664,7 +664,11 @@ describe("plugin list notice", () => {
     subscribe(COUNT);
     await next((frame) => frame.type === "snapshot" && frame.stream === COUNT && frame.value !== null);
 
-    await writePlugin(dir.path, "added", { "web.js": web("Added") });
+    // Staged outside plugins/ and moved in whole, so no build sees it half-written.
+    const staged = await tempDir();
+    defer(staged.remove);
+    await writePlugin(staged.path, "added", { "web.js": web("Added") });
+    await rename(join(staged.path, "plugins", "added"), join(dir.path, "plugins", "added"));
     const added = await next((frame) => frame.type === "plugins");
     if (added.type !== "plugins") throw new Error("unreachable");
     expect(added.plugins.map((plugin) => plugin.name).sort()).toEqual(["added", "notes"]);
