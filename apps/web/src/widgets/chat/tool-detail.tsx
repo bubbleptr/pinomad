@@ -30,7 +30,8 @@ function parsedArgs(argsText: string | undefined): JsonValue | undefined {
 function pluginDetail(tool: ToolItem, card: PluginToolCard): ReactNode {
   const Card = card.component;
   return (
-    <PluginSlot plugin={card.plugin}>
+    // Keyed by bundle, so a card that failed to render tries again once its plugin is reloaded.
+    <PluginSlot key={card.hash} plugin={card.plugin}>
       <Card tool={{ name: tool.toolName ?? "", args: parsedArgs(tool.argsText), output: tool.output, state: tool.state }} />
     </PluginSlot>
   );

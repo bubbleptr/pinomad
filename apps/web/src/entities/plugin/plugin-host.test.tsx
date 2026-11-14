@@ -296,6 +296,145 @@ describe("plugin loading after a reload", () => {
       ["panel", after.web!.hash],
     ]);
   });
+
+  /** The side panel showing `surface`, over a remote the test drives. */
+  function ShownPanel({ remote, surface }: { remote: RemoteDurable; surface: PanelSurface }) {
+    const registry = usePluginWorkbench(PARSER_ID, () => {});
+    return (
+      <PluginScope conversationId={PARSER_ID} docs={[]}>
+        <SidePanel
+          view={remote.view.current()}
+          remote={remote}
+          shownId={PARSER_ID}
+          narrow={false}
+          open
+          surface={surface}
+          pluginPanels={registry.panels}
+          busy={false}
+          liveActivity={false}
+          onOpenChange={() => {}}
+          onSelectSurface={() => {}}
+          openInPanel={() => {}}
+          onOpenInMain={() => {}}
+        />
+      </PluginScope>
+    );
+  }
+
+  /** Each module by its exact source; `codeOf(name)` is the first version. */
+  const bySource =
+    (modules: Record<string, WebPlugin>): EvaluateModule =>
+    async (source) => {
+      const plugin = modules[source];
+      if (plugin === undefined) throw new Error("unknown module");
+      return { default: plugin };
+    };
+
+  it("keeps the open panel of a plugin the reload left alone mounted, and never blanks the panels in between", async () => {
+    const counter: WebPlugin = (pinomad) => {
+      const { createElement, useState } = pinomad.React;
+      const Counter = () => {
+        const [clicks, setClicks] = useState(0);
+        return createElement("button", { type: "button", onClick: () => setClicks(clicks + 1) }, `Clicked ${clicks}`);
+      };
+      pinomad.panel({ id: "p", label: "Counter", component: Counter });
+    };
+    const labelled = (label: string): WebPlugin => (pinomad) => pinomad.panel({ id: "p", label, component: () => null });
+    const edited = "// other, edited ✓";
+    const { remote, bundle, setPlugins } = liveRemote([info("keeper"), info("other")], "connected");
+    bundle.mockImplementation(async (name, hash) => (hash === info("other", edited).web!.hash ? edited : codeOf(name)));
+    const seen: string[][] = [];
+    render(
+      <PluginHostProvider
+        remote={remote}
+        evaluate={bySource({ [codeOf("keeper")]: counter, [codeOf("other")]: labelled("Other"), [edited]: labelled("Other, edited"), [codeOf("added")]: () => {} })}
+      >
+        <RegistryProbe onRegistry={(next) => seen.push(next.panels.map((panel) => panel.label))} />
+        <ShownPanel remote={remote} surface="plugin:keeper:p" />
+      </PluginHostProvider>,
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Clicked 0" }));
+    expect(screen.getByRole("button", { name: "Clicked 1" })).toBeVisible();
+    const loaded = seen.length;
+
+    setPlugins([info("keeper"), info("other", edited), info("added")]);
+    await waitFor(() => expect(seen.at(-1)).toEqual(["Counter", "Other, edited"]));
+    expect(screen.getByRole("button", { name: "Clicked 1" })).toBeVisible();
+    expect(seen.slice(loaded).filter((labels) => labels.length < 2)).toEqual([]);
+    // Only the changed and the new bundle were fetched again.
+    expect(bundle.mock.calls.slice(2).map(([name]) => name).sort()).toEqual(["added", "other"]);
+  });
+
+  it("keeps a plugin's loaded version when its new bundle does not load in the browser", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const edited = "// kept, throws ✓";
+    const { remote, bundle, setPlugins } = liveRemote([info("kept")], "connected");
+    bundle.mockImplementation(async (name, hash) => (hash === info("kept", edited).web!.hash ? edited : codeOf(name)));
+    const throwing: WebPlugin = () => {
+      throw new Error("setup failed");
+    };
+    let registry = EMPTY_PLUGIN_REGISTRY;
+    render(
+      <PluginHostProvider
+        remote={remote}
+        evaluate={bySource({ [codeOf("kept")]: (pinomad) => pinomad.panel({ id: "p", label: "Original", component: () => null }), [edited]: throwing })}
+      >
+        <RegistryProbe onRegistry={(next) => (registry = next)} />
+      </PluginHostProvider>,
+    );
+    await waitFor(() => expect(registry.panels.map((entry) => entry.label)).toEqual(["Original"]));
+
+    setPlugins([info("kept", edited)]);
+    await waitFor(() => expect(errors).toHaveBeenCalledWith("Plugin kept was not loaded:", expect.any(Error)));
+    await act(async () => {});
+    expect(registry.panels.map((entry) => entry.label)).toEqual(["Original"]);
+  });
+
+  it("drops a removed plugin's panel and tool card", async () => {
+    const { remote, setPlugins } = liveRemote([info("notes")], "connected");
+    let registry = EMPTY_PLUGIN_REGISTRY;
+    render(
+      <PluginHostProvider remote={remote} evaluate={evaluator({ notes })}>
+        <RegistryProbe onRegistry={(next) => (registry = next)} />
+        <ShownPanel remote={remote} surface="plugin:notes:board" />
+      </PluginHostProvider>,
+    );
+    expect(await screen.findByText("No board yet")).toBeVisible();
+    expect([...registry.toolCards.keys()]).toEqual(["notes_add"]);
+
+    setPlugins([]);
+    await waitFor(() => expect(registry.panels).toEqual([]));
+    expect(registry.toolCards.size).toBe(0);
+    expect(screen.queryByText("No board yet")).toBeNull();
+  });
+
+  it("shows a fixed version of a panel that had failed to render", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const fixed = "// crashy, fixed ✓";
+    const { remote, bundle, setPlugins } = liveRemote([info("crashy")], "connected");
+    bundle.mockImplementation(async (name, hash) => (hash === info("crashy", fixed).web!.hash ? fixed : codeOf(name)));
+    const panel =
+      (component: () => React.ReactNode): WebPlugin =>
+      (pinomad) =>
+        pinomad.panel({ id: "p", label: "Broken", component });
+    render(
+      <PluginHostProvider
+        remote={remote}
+        evaluate={bySource({
+          [codeOf("crashy")]: panel(() => {
+            throw new Error("render failed");
+          }),
+          [fixed]: panel(() => "Fixed now"),
+        })}
+      >
+        <ShownPanel remote={remote} surface="plugin:crashy:p" />
+      </PluginHostProvider>,
+    );
+    expect(await screen.findByText("The crashy plugin could not show this.")).toBeVisible();
+
+    setPlugins([info("crashy", fixed)]);
+    expect(await screen.findByText("Fixed now")).toBeVisible();
+  });
 });
 
 describe("plugin calls after the workbench goes", () => {

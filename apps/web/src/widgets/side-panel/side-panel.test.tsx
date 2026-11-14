@@ -405,7 +405,7 @@ describe("SidePanel close", () => {
 
 describe("SidePanel while drafting", () => {
   it("offers only plugin surfaces in the phone dialog's switch", () => {
-    const notes = { plugin: "notes", surface: "plugin:notes:board", label: "Board", component: () => <p>board</p> } as const;
+    const notes = { plugin: "notes", hash: "a".repeat(64), surface: "plugin:notes:board", label: "Board", component: () => <p>board</p> } as const;
     render(
       <SidePanel
         view={fakeView()}
