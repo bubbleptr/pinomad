@@ -60,7 +60,7 @@ cd apps/site && bun run build && bun run preview
 
 从别的机器搬过来的步骤见[远程访问](https://pinomad.si/zh/docs/remote-access/)的"搬到另一台机器"，换域名见"更换服务端域名"。
 
-托管实例凭邀请码注册（#449）：管理员在账号面板的 Invites 里生成邀请码，没有邀请码的访客点落地页上的 "Open the web app" 只能看到登录页。
+托管实例开放注册（ADR-0044）：`PINOMAD_SERVER_REGISTRATION=open`，发信走 Resend 的 SMTP，Google、GitHub、Apple 快捷登录的变量和其他密钥一起放在服务端的环境文件里（变量说明见[远程访问](https://pinomad.si/zh/docs/remote-access/)的"注册、发信和快捷登录"）。访客点落地页上的 "Open the web app" 看到的是登录和注册页。
 
 ### 发版与升级
 
