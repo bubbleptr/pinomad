@@ -256,7 +256,7 @@ export async function openPlugins(dir: string, options: PluginsOptions): Promise
       removed: [...before.keys()].filter((name) => !after.has(name)),
       failed: [...failed].map(([plugin, error]) => ({ plugin, error })),
     };
-    for (const name of names) if (!failed.has(name)) failedAs.delete(name);
+    for (const name of [...names, ...built.removed]) if (!failed.has(name)) failedAs.delete(name);
     for (const [plugin, error] of failed) {
       logFailure(plugin, error, signatureOf(built.facets.map((facet) => ({ built: facet })), plugin), "kept the loaded version");
     }

@@ -3,7 +3,7 @@
 // carries no `plugins` and both plugin calls refuse the name.
 import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { cp, mkdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fauxAssistantMessage, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
@@ -417,6 +417,26 @@ describe("plugin reload", () => {
     await lastText("three");
     expect(results()[2]).toContain("pong");
     expect((await (await rawSocket(host)).hello()).plugins?.map((plugin) => plugin.name)).toEqual(["added"]);
+  });
+
+  it("loads a plugin directory linked from elsewhere and reloads it when a file in the checkout changes", async () => {
+    const checkout = await tempDir();
+    defer(checkout.remove);
+    await writePlugin(checkout.path, "counter", { "server.ts": counter("v1") });
+    const dir = await tempDir();
+    defer(dir.remove);
+    await mkdir(join(dir.path, "plugins"));
+    await symlink(join(checkout.path, "plugins", "counter"), join(dir.path, "plugins", "counter"));
+    const events = pluginEvents();
+    const { client } = await setup({ dataDir: dir.path, answers: [bump(), "one", bump(), "two"], plugins: events.options });
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "one");
+    expect(toolResults(client.view.current())[0]).toContain("v1 counted 1");
+
+    await writePlugin(checkout.path, "counter", { "server.ts": counter("v2") });
+    await events.next((outcome) => outcome.changed.includes("counter"));
+    await client.controller.submit("again", "followUp");
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "two");
+    expect(toolResults(client.view.current())[1]).toContain("v2 counted 2");
   });
 
   it("announces a new bundle digest after the web half changes, while an open connection still gets the bundle it was told about", async () => {
