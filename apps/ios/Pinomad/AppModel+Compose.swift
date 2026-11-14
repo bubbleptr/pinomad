@@ -173,8 +173,33 @@ extension AppModel {
         run(.compact(instructions: nil))
     }
 
-    func setModel(_ model: ModelRef) {
-        run(.setModel(model: model))
+    /// Switch the shown conversation's model, keeping the level the reader
+    /// picked there: the host clamps the current level on its own, so only
+    /// a different target needs a second call, sent after the switch.
+    func switchModel(_ model: ModelRef, conversation id: UInt64, current: ThinkingLevel) {
+        let intent = focusedRuntime?.levelIntents[id] ?? current
+        focusedRuntime?.levelIntents[id] = intent
+        let levels = summaryOf(models: snapshot?.models ?? [], model: model)?.thinkingLevels ?? []
+        let follow = LevelIntent.afterSwitch(levels: levels, intent: intent, current: current)
+        guard let session else { return }
+        Task {
+            guard (try? await session.invoke(.setModel(model: model))) != nil, let follow else { return }
+            _ = try? await session.invoke(.setThinkingLevel(level: follow))
+        }
+    }
+
+    /// The reader's level for the shown conversation, kept for later
+    /// model switches.
+    func pickThinkingLevel(_ level: ThinkingLevel, conversation id: UInt64) {
+        focusedRuntime?.levelIntents[id] = level
+        setThinkingLevel(level)
+    }
+
+    /// A named agent sets its own level, so the reader's pick goes with
+    /// the old one.
+    func switchAgent(_ agent: String?, conversation id: UInt64) {
+        focusedRuntime?.levelIntents[id] = nil
+        setAgent(agent)
     }
 
     /// Switch the shown conversation's named agent, or clear it. Like

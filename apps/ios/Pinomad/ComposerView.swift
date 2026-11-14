@@ -73,7 +73,8 @@ struct ConversationComposer: View {
     private var agentChoice: ModelPanelAgent? {
         guard let agentPick else { return nil }
         if agentPick.canSwitch {
-            return .pick(rows: agentPick.rows, onSelect: { model.setAgent($0) })
+            return .pick(rows: agentPick.rows,
+                         onSelect: { model.switchAgent($0, conversation: conversation.id) })
         }
         guard let name = agentPick.current else { return nil }
         return .fixed(name: name, description: roles.first { $0.name == name }?.description)
@@ -288,8 +289,11 @@ struct ConversationComposer: View {
                     selected: ModelPick(model: agent.model, level: agent.thinkingLevel ?? .off),
                     agent: agentChoice,
                     lock: ModelLock(current: agentPick?.current, roles: roles),
-                    onModel: { model.setModel($0) },
-                    onLevel: { model.setThinkingLevel($0) }
+                    onModel: {
+                        model.switchModel($0, conversation: conversation.id,
+                                          current: agent.thinkingLevel ?? .off)
+                    },
+                    onLevel: { model.pickThinkingLevel($0, conversation: conversation.id) }
                 )
                 .presentationCompactAdaptation(.popover)
             }

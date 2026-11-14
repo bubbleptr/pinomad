@@ -92,6 +92,17 @@ private func emptyOverrides() -> AgentDraftOverride {
         #expect(state.pick(agents: agents, models: models, defaults: defaults) == ModelPick(model: sonnet, level: .medium))
     }
 
+    /// The remembered level is the reader's pick, not the clamped one: a
+    /// model without it shows the nearest level below, and switching back to
+    /// one that has it restores it (as on web).
+    @Test func theLevelSurvivesAModelWithoutIt() {
+        var state = AgentDraftPick(remembered: ModelPick(model: gpt, level: .high))
+        state.setModel(sonnet, models: models, defaults: defaults)
+        #expect(state.pick(agents: agents, models: models, defaults: defaults) == ModelPick(model: sonnet, level: .medium))
+        state.setModel(gpt, models: models, defaults: defaults)
+        #expect(state.pick(agents: agents, models: models, defaults: defaults) == ModelPick(model: gpt, level: .high))
+    }
+
     /// Another host has other models and agents — nothing carries over.
     @Test func resetDropsTheRememberedPickForAnotherHost() {
         var state = AgentDraftPick(remembered: ModelPick(model: gpt, level: .low),
