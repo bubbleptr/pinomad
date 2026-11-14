@@ -23,9 +23,19 @@ public struct PendingAccountHost: Codable, Hashable, Identifiable, Sendable {
 /// dismisses its notice, and both are persisted together: the notice can
 /// wait for a sheet to close, and iOS may end the app meanwhile. Persisted
 /// as one JSON object in defaults, account key → entry.
+///
+/// A host is known per join (#531): `hostId@joinedAt`, so a host removed
+/// from the account and joined again is news again. A bare `hostId` comes
+/// from a build before join times, or from a confirm on this iPhone; it
+/// covers the host's next join once.
 @MainActor
 public final class KnownAccountHosts {
-    public static let defaultsKey = "pinomad.knownAccountHosts"
+    /// Versioned because a bare `hostId` means something else here than
+    /// to a build before #531, which would read a new record as having
+    /// seen every host and flip it back on downgrade. The old key is read
+    /// once to seed this one and never written.
+    public static let defaultsKey = "pinomad.knownAccountHosts.v2"
+    public static let legacyDefaultsKey = "pinomad.knownAccountHosts"
 
     private struct Entry: Codable {
         var known: [String]
@@ -40,24 +50,43 @@ public final class KnownAccountHosts {
         self.key = key
     }
 
-    /// Adds the hosts in `hosts` this iPhone hasn't seen to the pending
+    /// Adds the joins in `hosts` this iPhone hasn't seen to the pending
     /// notices and returns every notice still pending for the account.
-    /// Nothing leaves the known set: a list can predate a host confirmed
-    /// here a moment ago, and dropping that host would announce it next
-    /// round.
+    /// Hosts missing from the list keep what is known about them: a list
+    /// can predate a host confirmed here a moment ago, and dropping that
+    /// host would announce it next round.
     public func observe(serverOrigin: String, username: String, hosts: [AccountHostRow]) -> [PendingAccountHost] {
         var all = read()
         let account = Self.accountKey(serverOrigin: serverOrigin, username: username)
         guard var entry = all[account] else {
-            all[account] = Entry(known: hosts.map(\.hostId), pending: [])
+            all[account] = Entry(known: hosts.map(Self.entry), pending: [])
             write(all)
             return []
         }
-        let seen = Set(entry.known)
-        let joined = hosts.filter { !seen.contains($0.hostId) }
-        if !joined.isEmpty {
-            entry.known += joined.map(\.hostId)
-            entry.pending += joined.map { PendingAccountHost(hostId: $0.hostId, name: $0.name) }
+        var changed = false
+        for host in hosts {
+            let joined = Self.joined(host)
+            let current = Self.entry(host)
+            if entry.known.contains(current) {
+                // A confirm of a join already seen is spent; left in place
+                // it would cover the next join.
+                if joined != nil, let bare = entry.known.firstIndex(of: host.hostId) {
+                    entry.known.remove(at: bare)
+                    changed = true
+                }
+                continue
+            }
+            let covered = joined == nil
+                ? entry.known.contains { $0.hasPrefix(host.hostId + "@") }
+                : entry.known.contains(host.hostId)
+            if !covered, !entry.pending.contains(where: { $0.hostId == host.hostId }) {
+                entry.pending.append(PendingAccountHost(hostId: host.hostId, name: host.name))
+            }
+            entry.known.removeAll { $0 == host.hostId || $0.hasPrefix(host.hostId + "@") }
+            entry.known.append(current)
+            changed = true
+        }
+        if changed {
             all[account] = entry
             write(all)
         }
@@ -107,12 +136,25 @@ public final class KnownAccountHosts {
         write(all)
     }
 
+    /// A join time that can't be a whole number of ms counts as none,
+    /// rather than trapping on every list.
+    private static func joined(_ host: AccountHostRow) -> Int64? {
+        host.joinedAt.flatMap { Int64(exactly: $0.rounded()) }
+    }
+
+    private static func entry(_ host: AccountHostRow) -> String {
+        guard let joined = joined(host) else { return host.hostId }
+        return "\(host.hostId)@\(joined)"
+    }
+
     private static func accountKey(serverOrigin: String, username: String) -> String {
         normalizeServerOrigin(origin: serverOrigin) + " " + username
     }
 
     private func read() -> [String: Entry] {
-        guard let raw = defaults.string(forKey: key),
+        let stored = defaults.string(forKey: key)
+            ?? (key == Self.defaultsKey ? defaults.string(forKey: Self.legacyDefaultsKey) : nil)
+        guard let raw = stored,
               let data = raw.data(using: .utf8),
               let decoded = try? JSONDecoder().decode([String: Entry].self, from: data)
         else { return [:] }

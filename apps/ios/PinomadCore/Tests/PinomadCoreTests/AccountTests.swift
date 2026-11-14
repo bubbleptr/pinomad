@@ -66,6 +66,19 @@ struct AccountTests {
         #expect(!result.changed)
     }
 
+    /// The row carries the host's join time: the new-host notice keys on
+    /// it to tell a rejoin from the join it already announced (#531).
+    @Test func rowCarriesTheJoinTime() {
+        var host = accountHost("host1", key: "key1", pairing: .available)
+        host.joinedAt = 42
+        let result = AccountHosts.reconcile(
+            serverOrigin: "https://relay.example.com",
+            hosts: [host],
+            stored: StoredHosts(hosts: [], activeHostKey: nil),
+            rejectedHostKeys: [])
+        #expect(result.rows[0].joinedAt == 42)
+    }
+
     /// A pairing saved before account links existed adopts the link, once.
     @Test func preAccountPairingAdoptsTheLink() {
         let stored = StoredHosts(hosts: [record("key1")], activeHostKey: "key1")
