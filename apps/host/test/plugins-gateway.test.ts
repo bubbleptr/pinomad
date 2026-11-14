@@ -3,7 +3,7 @@
 // carries no `plugins` and both plugin calls refuse the name.
 import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { cp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fauxAssistantMessage, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
@@ -325,7 +325,16 @@ describe("plugin reload", () => {
     const opened = await setup({ dataDir: dir.path, answers, plugins: events.options, ...extra });
     const lastText = (text: string) => waitForView(opened.client.view, (view) => transcript(view.conversation!).at(-1)?.text === text);
     const results = () => toolResults(opened.client.view.current());
-    return { ...opened, dataDir: dir.path, events, lastText, results, edit: (source: string) => writePlugin(dir.path, "counter", { "server.ts": source }) };
+    const file = join(dir.path, "plugins", "counter", "server.ts");
+    let saves = 0;
+    // An editor's save: the whole file replaced at once. A plain writeFile truncates and then writes, which on
+    // Linux arrives as two inotify events, and a build between them reads an empty file.
+    const edit = async (source: string) => {
+      const draft = join(dir.path, `server.ts.${++saves}`);
+      await writeFile(draft, source);
+      await rename(draft, file);
+    };
+    return { ...opened, dataDir: dir.path, events, lastText, results, file, edit };
   }
 
   it("runs the next tool call on the edited code, lets the running call finish on the old code, and keeps the plugin's state", async () => {
@@ -370,10 +379,29 @@ describe("plugin reload", () => {
     await edit(counter("v3"));
     await events.next((outcome) => outcome.changed.includes("counter"));
     // Nothing was retried in a loop while the plugin stayed broken: the fix is the only reload since.
-    expect(events.history.slice(since)).toHaveLength(1);
+    expect(events.history.slice(since)).toEqual([{ added: [], changed: ["counter"], removed: [], failed: [] }]);
     await client.controller.submit("third", "followUp");
     await lastText("three");
     expect(results()[2]).toContain("v3 counted 3");
+  });
+
+  it("reports each state an edit written in two steps passes through once, and runs the finished file", async () => {
+    const { client, events, lastText, results, file } = await counterHost([bump(), "one", bump(), "two"]);
+    await lastText("one");
+
+    // The first half of a non-atomic save: the file is empty for a while, which is a plugin without definePlugin.
+    await writeFile(file, "");
+    const empty = await events.next((outcome) => outcome.failed.length > 0);
+    expect(empty.failed[0]?.error).toMatch(/default export/);
+    const since = events.history.length;
+    // The same empty file seen again is not reported again; the finished file reloads once.
+    await writeFile(file, "");
+    await writeFile(file, counter("v2"));
+    await events.next((outcome) => outcome.changed.includes("counter"));
+    expect(events.history.slice(since)).toEqual([{ added: [], changed: ["counter"], removed: [], failed: [] }]);
+    await client.controller.submit("again", "followUp");
+    await lastText("two");
+    expect(results()[1]).toContain("v2 counted 2");
   });
 
   it("refuses a reload that takes a built-in tool's name and keeps the plugin as it was", async () => {
