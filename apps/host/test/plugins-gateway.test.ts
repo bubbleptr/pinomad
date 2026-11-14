@@ -605,3 +605,109 @@ export default definePlugin((pinomad) => {
     expect(((await call("pluginBundle", { name: "panel" })).value as { code: string }).code).toBe(first);
   });
 });
+
+describe("plugin list notice", () => {
+  const web = (label: string) => `export default function (pinomad) { pinomad.panel({ id: "p", label: "${label}", component: () => null }); }\n`;
+  /** A plugin with a shared state and a method, so a removal also stops a doc: stream. */
+  const shared =
+    'import { definePlugin } from "@pinomad/plugin/v1";\n' +
+    'export default definePlugin((p) => { const count = p.state("count", { version: 1, initial: () => ({ n: 0 }) }); ' +
+    'p.method("bump", async (_args, ctx) => { await ctx.change(async (tx) => { (await tx.get(count)).n += 1; }); return null; }); });\n';
+
+  /** An editor's save: written elsewhere, then renamed over the file, so a build never reads it half-written. */
+  async function save(dataDir: string, file: string, source: string): Promise<void> {
+    const draft = join(dataDir, `draft-${Math.random().toString(36).slice(2)}`);
+    await writeFile(draft, source);
+    await rename(draft, join(dataDir, "plugins", file));
+  }
+
+  const pluginsFrames = (frames: readonly ServerFrame[]) => frames.filter((frame) => frame.type === "plugins");
+  const code = (result: { ok: boolean; value?: unknown }) => (result.value as { code: string }).code;
+
+  it("tells a connected client the new list when a web half changes, and serves the bundle it names by hash", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    await writePlugin(dir.path, "panel", { "web.js": web("One") });
+    const events = pluginEvents();
+    const { hello, call, next } = await setup({ dataDir: dir.path, plugins: events.options });
+    const before = (await hello()).plugins![0]!.web!;
+    const first = code(await call("pluginBundle", { name: "panel" }));
+
+    await save(dir.path, "panel/web.js", web("Two"));
+    const notice = await next((frame) => frame.type === "plugins");
+    if (notice.type !== "plugins") throw new Error("unreachable");
+    const after = notice.plugins[0]!.web!;
+    expect(notice.plugins.map((plugin) => plugin.name)).toEqual(["panel"]);
+    expect(after.hash).not.toBe(before.hash);
+
+    const second = code(await call("pluginBundle", { name: "panel", hash: after.hash }));
+    expect(sha256(second)).toBe(after.hash);
+    expect(Buffer.byteLength(second)).toBe(after.size);
+    expect(second).toContain("Two");
+    // The hello's bundle is still kept, by hash or (for a client that predates the notice) by name alone.
+    expect(code(await call("pluginBundle", { name: "panel", hash: before.hash }))).toBe(first);
+    expect(code(await call("pluginBundle", { name: "panel" }))).toBe(first);
+    // Only hashes this connection was told about, under the name it was told.
+    expect(await call("pluginBundle", { name: "panel", hash: "0".repeat(64) })).toMatchObject({ ok: false });
+    expect(await call("pluginBundle", { name: "other", hash: after.hash })).toMatchObject({ ok: false });
+  });
+
+  it("sends the whole list when a plugin is added or removed, after the removed plugin's doc: streams stop", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    await writePlugin(dir.path, "notes", { "server.ts": shared });
+    const events = pluginEvents();
+    const { conversationId, hello, call, subscribe, next, frames } = await setup({ dataDir: dir.path, plugins: events.options });
+    expect((await hello()).plugins).toEqual([{ name: "notes", api: 1 }]);
+    const COUNT = `doc:plugin.notes.count:${conversationId}`;
+    expect(await call("pluginCall", { conversationId, plugin: "notes", method: "bump", args: null })).toEqual({ ok: true, value: null });
+    subscribe(COUNT);
+    await next((frame) => frame.type === "snapshot" && frame.stream === COUNT && frame.value !== null);
+
+    // Staged outside plugins/ and moved in whole, so no build sees it half-written.
+    const staged = await tempDir();
+    defer(staged.remove);
+    await writePlugin(staged.path, "added", { "web.js": web("Added") });
+    await rename(join(staged.path, "plugins", "added"), join(dir.path, "plugins", "added"));
+    const added = await next((frame) => frame.type === "plugins");
+    if (added.type !== "plugins") throw new Error("unreachable");
+    expect(added.plugins.map((plugin) => plugin.name).sort()).toEqual(["added", "notes"]);
+    expect(code(await call("pluginBundle", { name: "added", hash: added.plugins.find((plugin) => plugin.name === "added")!.web!.hash }))).toContain(
+      "Added",
+    );
+
+    await rm(join(dir.path, "plugins", "notes"), { recursive: true });
+    const removed = await next((frame) => frame.type === "plugins" && frame !== added);
+    if (removed.type !== "plugins") throw new Error("unreachable");
+    expect(removed.plugins.map((plugin) => plugin.name)).toEqual(["added"]);
+    // The stream's last frame comes first: a client acting on the list sees the state already gone.
+    const ended = frames.findIndex((frame) => frame.type === "snapshot" && frame.stream === COUNT && frame.value === null);
+    expect(ended).toBeGreaterThan(-1);
+    expect(ended).toBeLessThan(frames.indexOf(removed));
+
+    await rm(join(dir.path, "plugins", "added"), { recursive: true });
+    const none = await next((frame) => frame.type === "plugins" && frame !== added && frame !== removed);
+    expect(none).toEqual({ type: "plugins", plugins: [] });
+  });
+
+  it("sends nothing for a reload that failed or left the list as it was", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    await writePlugin(dir.path, "counter", { "server.ts": counter("v1"), "web.js": web("One") });
+    const events = pluginEvents();
+    const { next, frames } = await setup({ dataDir: dir.path, plugins: events.options });
+
+    await save(dir.path, "counter/server.ts", `${counter("v2")}\nexport const broken = (;\n`);
+    await events.next((outcome) => outcome.failed.some((failure) => failure.plugin === "counter"));
+    // Server code only: a reload, but the announced name, API and bundle are unchanged.
+    await save(dir.path, "counter/server.ts", counter("v3"));
+    await events.next((outcome) => outcome.changed.includes("counter"));
+    await save(dir.path, "counter/web.js", web("Two"));
+    const notice = await next((frame) => frame.type === "plugins");
+    // Frames arrive in order: had either earlier reload sent a list, it would be this one, without the new bundle.
+    expect(pluginsFrames(frames)).toEqual([notice]);
+    if (notice.type !== "plugins") throw new Error("unreachable");
+    expect(notice.plugins[0]!.web!.size).toBeGreaterThan(0);
+    expect(events.history.filter((outcome) => outcome.changed.includes("counter"))).toHaveLength(2);
+  });
+});

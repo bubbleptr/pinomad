@@ -344,10 +344,17 @@ export interface RemoteTerminals {
   close(terminalId: TerminalId): Promise<void>;
 }
 
-/** A plugin's browser half and its host methods (5.34, ADR-0049); the list is `view.host.plugins`. */
+/**
+ * A plugin's browser half and its host methods (5.34, ADR-0049); the list is
+ * `view.host.plugins`, which a host's `plugins` frame replaces after a reload (5.35).
+ */
 export interface RemotePlugins {
-  /** The bundle source behind `hello.plugins[].web`; the caller checks its hash. */
-  bundle(name: string): Promise<string>;
+  /**
+   * The bundle source behind a `view.host.plugins[].web`; the caller checks its
+   * hash. Pass that `hash` so a list that changed since the hello gets its own
+   * bundle; a 5.34 host ignores it and serves the one its hello announced.
+   */
+  bundle(name: string, hash?: string): Promise<string>;
   /** One of the plugin's host methods, for one conversation. */
   call(conversationId: ConversationId, plugin: string, method: string, args: JsonValue): Promise<JsonValue>;
 }
@@ -1525,6 +1532,11 @@ class RemoteClient {
       if (standby.pingId === undefined) this.#warmStandby(standby);
       return;
     }
+    // The handoff replays the cached hello, so a reload's list folds into it instead of being lost.
+    if (frame.type === "plugins" && standby.hello !== undefined && Array.isArray(frame.plugins)) {
+      standby.hello = { ...standby.hello, plugins: frame.plugins };
+      return;
+    }
     if (frame.type === "result" && standby.verify?.id === frame.id) {
       const verify = standby.verify;
       standby.verify = undefined;
@@ -2388,6 +2400,12 @@ class RemoteClient {
       case "notice":
         this.#notice(frame.level, frame.message);
         return;
+      case "plugins":
+        // Only a host that sends it knows it; a list that is not one is a newer shape, not an empty list.
+        if (!hostSupportsFeature(this.#hostMinor, "pluginReload") || !Array.isArray(frame.plugins)) return;
+        this.#hostPlugins = pluginInfos(frame.plugins);
+        this.#update({ host: this.#hostInfo() });
+        return;
     }
   }
 
@@ -2804,9 +2822,10 @@ class RemoteClient {
       }
     };
     return {
-      bundle: async (name) => {
+      bundle: async (name, hash) => {
         supported();
-        return (await this.#call("pluginBundle", { name })).code;
+        const named = hash !== undefined && hostSupportsFeature(this.#hostMinor, "pluginReload");
+        return (await this.#call("pluginBundle", named ? { name, hash } : { name })).code;
       },
       call: async (conversationId, plugin, method, args) => {
         supported();
@@ -3994,8 +4013,8 @@ class RemoteClient {
   }
 }
 
-/** `hello.plugins`, keeping only well-formed entries; a malformed one is dropped, not fatal. */
-function pluginInfos(value: unknown): readonly PluginInfo[] {
+/** `hello.plugins` or a `plugins` frame's list, keeping only well-formed entries; a malformed one is dropped, not fatal. */
+export function pluginInfos(value: unknown): readonly PluginInfo[] {
   if (!Array.isArray(value)) return [];
   return value.filter((entry): entry is PluginInfo => {
     if (entry === null || typeof entry !== "object") return false;

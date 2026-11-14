@@ -224,12 +224,15 @@ function liveRemote(plugins: readonly PluginInfo[], connection: DurableView["con
     },
     plugins: { bundle, call },
   } as RemoteDurable;
-  const setConnection = (next: DurableView["connection"]) =>
+  const set = (patch: Partial<DurableView>) =>
     act(() => {
-      view = { ...view, connection: next };
+      view = { ...view, ...patch };
       for (const listener of listeners) listener();
     });
-  return { remote, bundle, call, setConnection };
+  const setConnection = (next: DurableView["connection"]) => set({ connection: next });
+  /** A host `plugins` frame after a reload. */
+  const setPlugins = (next: readonly PluginInfo[]) => set({ host: { ...view.host!, plugins: next } });
+  return { remote, bundle, call, setConnection, setPlugins };
 }
 
 function RegistryProbe({ onRegistry }: { onRegistry: (registry: PluginRegistry) => void }) {
@@ -266,6 +269,32 @@ describe("plugin loading across reconnects", () => {
     setConnection("connected");
     await waitFor(() => expect(registry.panels.map((entry) => entry.plugin)).toEqual(["flaky", "steady"]));
     expect(bundle.mock.calls.map(([name]) => name).sort()).toEqual(["flaky", "flaky", "steady"]);
+  });
+});
+
+describe("plugin loading after a reload", () => {
+  it("fetches a changed plugin's bundle by the hash the new list announces", async () => {
+    const before = info("panel");
+    const code = "// panel, edited ✓";
+    const after = info("panel", code);
+    const { remote, bundle, setPlugins } = liveRemote([before], "connected");
+    bundle.mockImplementation(async (name, hash) => (hash === after.web!.hash ? code : codeOf(name)));
+    const panel = (label: string): WebPlugin => (pinomad) => pinomad.panel({ id: "p", label, component: () => null });
+    const evaluate: EvaluateModule = async (source) => ({ default: panel(source === code ? "Edited" : "Original") });
+    let registry = EMPTY_PLUGIN_REGISTRY;
+    render(
+      <PluginHostProvider remote={remote} evaluate={evaluate}>
+        <RegistryProbe onRegistry={(next) => (registry = next)} />
+      </PluginHostProvider>,
+    );
+    await waitFor(() => expect(registry.panels.map((entry) => entry.label)).toEqual(["Original"]));
+
+    setPlugins([after]);
+    await waitFor(() => expect(registry.panels.map((entry) => entry.label)).toEqual(["Edited"]));
+    expect(bundle.mock.calls).toEqual([
+      ["panel", before.web!.hash],
+      ["panel", after.web!.hash],
+    ]);
   });
 });
 

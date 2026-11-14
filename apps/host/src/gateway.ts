@@ -445,9 +445,9 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   const broadcast = (level: Notice["level"], message: string): void => {
     for (const client of clients) client.send({ type: "notice", level, message });
   };
-  // A plugin reload can stop sharing a state: streams of it that are open already stop carrying it.
+  // A plugin reload can stop sharing a state, and changes what hello.plugins would say: each open connection hears both.
   const detachPlugins = options.plugins?.subscribe(() => {
-    for (const client of clients) void client.endUnsharedDocs();
+    for (const client of clients) void client.pluginsReloaded();
   });
   let remote: RemoteListener | undefined;
   let relay: RelayLink | undefined;
@@ -1967,8 +1967,14 @@ class GatewayClient {
   /** The gateway-wide skills lister — concurrent clients' scope queries ride one scan. */
   readonly #skills: SkillLister;
   readonly #imageVariants: ImageVariants;
-  /** `hello.plugins` as this connection was told: `pluginBundle` serves those bundles even after a reload. */
+  /** `hello.plugins` as this connection was told: a `pluginBundle` without a hash serves those bundles even after a reload. */
+  #helloPlugins: readonly PluginInfo[] = [];
+  /** The plugin list this connection was told last, by its hello or a `plugins` frame. */
   #plugins: readonly PluginInfo[] = [];
+  /** Every `name` + hash this connection was told about: what a `pluginBundle` with a hash may ask for. */
+  readonly #toldBundles = new Set<string>();
+  /** Reload follow-ups run one at a time, so lists go out in the order the reloads finished. */
+  #pluginsReloads: Promise<void> = Promise.resolve();
   /** Streams backed by an in-memory value pushed whole to subscribers on change. */
   #providerCalls(): Omit<ModelAuth, "close"> {
     const modelAuth = this.#options.modelAuth;
@@ -2039,7 +2045,8 @@ class GatewayClient {
       closed: () => hooks.closed(this),
     });
     const rtc = this.#hooks.rtcHello();
-    this.#plugins = options.plugins?.info ?? [];
+    this.#tellPlugins(options.plugins?.info ?? []);
+    this.#helloPlugins = this.#plugins;
     void this.send({
       type: "hello",
       protocol: PROTOCOL,
@@ -2309,13 +2316,39 @@ class GatewayClient {
   }
 
   /**
+   * After a reload that added, changed or removed a plugin: first the doc:
+   * streams of states no longer shared stop, then the `plugins` frame goes
+   * out if the list differs from what this connection was told — so a client
+   * acting on the list finds those streams already settled.
+   */
+  pluginsReloaded(): Promise<void> {
+    const step = async (): Promise<void> => {
+      await this.#endUnsharedDocs();
+      // Read now, not when the reload finished: a later reload may already have replaced it.
+      const info = this.#options.plugins?.info ?? [];
+      if (JSON.stringify(info) === JSON.stringify(this.#plugins)) return;
+      // Recorded before the frame goes out, so a pluginBundle answered after it can serve the new hashes.
+      this.#tellPlugins(info);
+      await this.send({ type: "plugins", plugins: info });
+    };
+    // A failed step does not stall the ones after it; each reads the state afresh.
+    this.#pluginsReloads = this.#pluginsReloads.then(step, step);
+    return this.#pluginsReloads;
+  }
+
+  #tellPlugins(info: readonly PluginInfo[]): void {
+    this.#plugins = info;
+    for (const plugin of info) if (plugin.web !== undefined) this.#toldBundles.add(`${plugin.name}\u0000${plugin.web.hash}`);
+  }
+
+  /**
    * Stops this connection's `doc:` streams whose document the host no longer
    * shares (a plugin reload made it host-only or removed it). The last frame is
    * a `null` snapshot, as for a document that does not exist, not `ended`:
    * clients drop the whole shown conversation when one of its streams ends.
    * A new subscription is refused as an unknown document.
    */
-  async endUnsharedDocs(): Promise<void> {
+  async #endUnsharedDocs(): Promise<void> {
     const shared = new Set(this.#docs().map((doc) => doc.token.definition.kind));
     for (const [stream, state] of [...this.#subscriptions]) {
       if (!stream.startsWith("doc:")) continue;
@@ -2712,9 +2745,14 @@ class GatewayClient {
         return derived;
       }
       case "pluginBundle": {
-        const { name } = args as CallMethods["pluginBundle"]["args"];
-        const plugin = this.#plugins.find((candidate) => candidate.name === name);
-        if (this.#options.plugins === undefined || plugin === undefined) throw new Error(`Unknown plugin ${name}`);
+        const { name, hash } = args as CallMethods["pluginBundle"]["args"];
+        if (this.#options.plugins === undefined) throw new Error(`Unknown plugin ${name}`);
+        if (hash !== undefined) {
+          if (!this.#toldBundles.has(`${name}\u0000${hash}`)) throw new Error(`Plugin ${name} has no bundle ${hash}`);
+          return { code: this.#options.plugins.bundle(name, hash) };
+        }
+        const plugin = this.#helloPlugins.find((candidate) => candidate.name === name);
+        if (plugin === undefined) throw new Error(`Unknown plugin ${name}`);
         if (plugin.web === undefined) throw new Error(`Plugin ${name} has no web bundle`);
         return { code: this.#options.plugins.bundle(name, plugin.web.hash) };
       }

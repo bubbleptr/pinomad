@@ -690,6 +690,40 @@ fn auto_upgrade_waits_for_idle_and_hands_queued_submit_to_p2p() {
 }
 
 #[test]
+fn a_plugin_list_sent_on_the_standby_survives_the_handoff() {
+    let mut h = Harness::new(candidates(), ConnectionMode::Auto);
+    // Hold the warm ping, so the frame lands on a standby that has its hello but is not installed.
+    h.host.hold_from = Some(1);
+    h.advance(1_100);
+    assert_eq!(h.peers.len(), 1);
+    let peer = h.peers[0];
+    let panel = obj(&[
+        ("name", Json::from("panel")),
+        ("api", Json::from(1.0)),
+        ("web", obj(&[("hash", Json::from("a".repeat(64))), ("size", Json::from(10.0))])),
+    ]);
+    let mut events = h.host.send_frame(obj(&[
+        ("type", Json::from("plugins")),
+        ("plugins", Json::array(vec![panel.clone()])),
+    ]));
+    events.extend(h.host.release_held());
+    for event in events {
+        if let Event::RtcData { bytes, .. } = event {
+            h.feed(Event::RtcData { peer, bytes });
+        }
+    }
+    h.advance(300);
+    let view = Json::parse(&h.remote.view_json().unwrap()).unwrap();
+    assert_eq!(
+        h.remote.rtc_diagnostics().get("path").and_then(Json::as_str).map(|s| s.to_string_lossy()).as_deref(),
+        Some("p2p"),
+        "view={}",
+        view.to_json()
+    );
+    assert_eq!(view.get("host").and_then(|host| host.get("plugins")).cloned(), Some(Json::array(vec![panel])));
+}
+
+#[test]
 fn liveness_timeout_falls_back_and_quietly_retries_after_60s() {
     let mut h = Harness::new(candidates(), ConnectionMode::Auto);
     h.advance(1_500);

@@ -21,13 +21,14 @@ ADR-0049 第一版的插件由宿主在启动时读一次：`plugin.json` 指向
 4. **浏览器侧由宿主构建**。chord 产出 CommonJS 包装的脚本，宿主把它包成 ES 模块（JSX 的 `react/jsx-runtime` 由外壳的 React 应答），线路上仍是 `pluginBundle` 送出的一段文本，客户端加载方式不变。暂不支持 CSS 和资源文件的 import。
 5. **插件扩展经 chord 注册表组合、镜像进宿主的 Durable 注册表**。宿主自己的 `createRegistry()` 保留（MCP 和 codemode 在运行时往里装），chord 组合出的插件扩展经 `registryReader` 同步进去。插件不能替换内置工具：占用内置工具名的插件在求值时失败，加载时被跳过、重载时保留旧版本；两个插件重名时按名字靠后的整个跳过。MCP 工具都以 `mcp__` 开头，插件不能用这个前缀，所以两者不会撞名。
 6. **线路不变**：hello 里的插件列表、`pluginBundle`、`pluginCall` 和协议版本都不改。共享状态仍是 Durable 文档 `plugin.<name>.<state>`，已有数据目录里的插件状态照常可读可写。
+   - 后续（5.35）：重载让插件列表变了时，宿主给每个已连接的客户端发一个 `plugins` 帧，内容是和 `hello.plugins` 同形状的完整列表，客户端整体替换；构建失败或者公布的内容没变的重载不发。同一次重载里，先给不再共享的 `doc:` 流发 `null` 快照，再发列表。`pluginBundle` 多了可选的 `hash`，取这条连接被告知过、宿主还留着的那份；不带 `hash` 仍取 hello 公布的那份，没升级的客户端照旧能用。
 
 ## 后果
 
 - 宿主依赖 esbuild（精确版本，跟 chord 的 peer 一致），npm 包按平台装一份约 10 MB 的二进制。esbuild 的 `postinstall` 被 npm 拦下时也能用，只是安装时多一条警告。
 - chord 的插件运行时会关掉整个进程的 V8 编译缓存。
 - 插件的服务端代码不再由 Node 的类型剥离运行，TypeScript 写法不受限制；浏览器侧也可以写 TypeScript 和 JSX。
-- hello 只在连接建立时发一次：重载之后，已经连着的 Web 和桌面端要重连才拿到新界面；已连着的客户端在重连前仍取得到它的 hello 公布过的那份代码。客户端侧的重载通知另做。
+- hello 只在连接建立时发一次，重载后的插件列表由 5.35 的 `plugins` 帧补上（见第 6 条）。hello 的 `docs` 不跟着更新：重载新增的共享状态，客户端要重连才订阅得到。已连着的客户端在重连前仍取得到它被告知过的那些代码（宿主按 hash 留最近 32 份旧的）。
 - 插件目录在宿主启动时就要存在，chord 才能监听它；宿主会自动创建。
 - `package.json` 里的 `dependencies` 按 chord 的规则打包进脚本，但宿主不替插件跑 `npm install`。
 

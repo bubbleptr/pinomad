@@ -1,12 +1,12 @@
 {
   "protocol": {
     "major": 5,
-    "minor": 34
+    "minor": 35
   },
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":34},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":35},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -16,22 +16,22 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":34},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":35},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
       "expect": "hello"
     },
     {
       "name": "hello-plugins",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":34},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"plugins\":[{\"name\":\"artifact\",\"api\":1,\"web\":{\"hash\":\"abababababababababababababababababababababababababababababababab\",\"size\":1024}}]}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":35},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"plugins\":[{\"name\":\"artifact\",\"api\":1,\"web\":{\"hash\":\"abababababababababababababababababababababababababababababababab\",\"size\":1024}}]}",
       "expect": "hello"
     },
     {
       "name": "signalHello",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":34},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":35},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
       "expect": "signalHello"
     },
     {
       "name": "signalHello-no-rtc",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":34}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":35}}",
       "expect": "signalHello"
     },
     {
@@ -76,6 +76,16 @@
       "name": "notice",
       "wire": "{\"type\":\"notice\",\"level\":\"error\",\"message\":\"bad\"}",
       "expect": "notice"
+    },
+    {
+      "name": "plugins",
+      "wire": "{\"type\":\"plugins\",\"plugins\":[{\"name\":\"artifact\",\"api\":1,\"web\":{\"hash\":\"cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd\",\"size\":2048}}]}",
+      "expect": "plugins"
+    },
+    {
+      "name": "plugins-empty",
+      "wire": "{\"type\":\"plugins\",\"plugins\":[]}",
+      "expect": "plugins"
     },
     {
       "name": "unknown-type",
@@ -571,6 +581,10 @@
       {
         "name": "liveBranch",
         "since": 11
+      },
+      {
+        "name": "pluginReload",
+        "since": 35
       },
       {
         "name": "plugins",
@@ -1312,6 +1326,18 @@
       "expect": false
     },
     {
+      "name": "pluginReload@35",
+      "minor": 35,
+      "feature": "pluginReload",
+      "expect": true
+    },
+    {
+      "name": "pluginReload@34",
+      "minor": 34,
+      "feature": "pluginReload",
+      "expect": false
+    },
+    {
       "name": "plugins@34",
       "minor": 34,
       "feature": "plugins",
@@ -1471,6 +1497,50 @@
       "name": "non-string",
       "args": "{\"attempt\":1,\"sdp\":\"v=0\"}",
       "expect": "invalid"
+    }
+  ],
+  "pluginInfos": [
+    {
+      "name": "absent",
+      "hello": "{}",
+      "expect": []
+    },
+    {
+      "name": "not-array",
+      "hello": "{\"plugins\":{\"name\":\"x\",\"api\":1}}",
+      "expect": []
+    },
+    {
+      "name": "empty",
+      "hello": "{\"plugins\":[]}",
+      "expect": []
+    },
+    {
+      "name": "mixed",
+      "hello": "{\"plugins\":[{\"name\":\"tools\",\"api\":1},{\"name\":\"panel\",\"api\":1,\"web\":{\"hash\":\"abababababababababababababababababababababababababababababababab\",\"size\":10}},{\"name\":\"future\",\"api\":2,\"ui\":{\"slots\":[\"x\"]}},{\"name\":\"\",\"api\":1},{\"name\":\"no-api\"},{\"name\":\"string-api\",\"api\":\"1\"},{\"name\":\"null-web\",\"api\":1,\"web\":null},{\"name\":\"short-hash\",\"api\":1,\"web\":{\"hash\":\"ab\",\"size\":10}},{\"name\":\"upper-hash\",\"api\":1,\"web\":{\"hash\":\"ABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABABAB\",\"size\":10}},{\"name\":\"string-size\",\"api\":1,\"web\":{\"hash\":\"abababababababababababababababababababababababababababababababab\",\"size\":\"10\"}},null,\"panel\",7]}",
+      "expect": [
+        {
+          "name": "tools",
+          "api": 1
+        },
+        {
+          "name": "panel",
+          "api": 1,
+          "web": {
+            "hash": "abababababababababababababababababababababababababababababababab",
+            "size": 10
+          }
+        },
+        {
+          "name": "future",
+          "api": 2,
+          "ui": {
+            "slots": [
+              "x"
+            ]
+          }
+        }
+      ]
     }
   ]
 }

@@ -46,7 +46,7 @@ const KINDS = {
   // JSX compiles to `react/jsx-runtime`, which the module wrapper answers with the shell's React.
   web: { platform: "browser", hostPackages: ["@pinomad/plugin/v1", "@pinomad/plugin/v1/web", "react/jsx-runtime"] },
 } as const;
-/** Superseded bundles kept for connections whose hello announced them. */
+/** Superseded bundles kept for connections that were told about them. */
 const RETAINED_BUNDLES = 32;
 
 type Principal = { readonly kind: "host" };
@@ -73,7 +73,7 @@ export interface PluginCatalog {
   readonly info: readonly PluginInfo[];
   /** The loaded plugins' shared states, offered as `doc:` streams. */
   readonly docs: readonly ExtensionDoc[];
-  /** The bundle a hello announced with `hash`; throws once it is no longer kept. */
+  /** The bundle a connection was told about with `hash`; throws once it is no longer kept. */
   bundle(name: string, hash: string): string;
   /** Throws for an unknown plugin or method. */
   method(plugin: string, method: string): PluginMethod;

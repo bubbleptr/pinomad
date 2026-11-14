@@ -121,7 +121,7 @@ export function PluginHostProvider({
     if (last?.toLoad !== toLoad) setRegistry(EMPTY_PLUGIN_REGISTRY);
     let live = true;
     void loadPlugins(toLoad, {
-      bundle: (name) => remote.plugins.bundle(name),
+      bundle: (name, hash) => remote.plugins.bundle(name, hash),
       evaluate,
       api: (name, registrar) => webApi(name, registrar, remote, bridge),
     }).then(({ registry: loaded, failed }) => {

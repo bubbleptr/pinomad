@@ -107,7 +107,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 34 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 35 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -430,8 +430,13 @@ export interface CallMethods {
    * its `web.tsx`, behind `hello.plugins[].web`, whole. One result frame like `image`; the secure
    * channel splits it into records. An unknown name or one without a web
    * half is an `ok:false`.
+   *
+   * `hash` (5.35) names the bundle: one this connection was told about, in
+   * its hello or a `plugins` frame, that the host still keeps. Without it the
+   * host serves the bundle the hello announced, which is all a client that
+   * predates the `plugins` frame knows of; a 5.34 host ignores the field.
    */
-  pluginBundle: { args: { name: string }; result: { code: string } };
+  pluginBundle: { args: { name: string; hash?: string }; result: { code: string } };
   /** A plugin's host method, called from its UI for one conversation (5.34, ADR-0049). */
   pluginCall: {
     args: { conversationId: ConversationId; plugin: string; method: string; args: JsonValue };
@@ -575,6 +580,8 @@ export const FEATURE_SINCE = {
   subagentStop: 33,
   /** `hello.plugins` and the `pluginBundle` / `pluginCall` calls (34, ADR-0049). */
   plugins: 34,
+  /** The `plugins` frame after a reload, and `pluginBundle`'s `hash` (35, ADR-0050). */
+  pluginReload: 35,
 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
@@ -645,6 +652,14 @@ export type ServerFrame =
     }
   /** The stream will send nothing more, for example an unknown conversation. */
   | { readonly type: "ended"; readonly stream: StreamName; readonly reason: string }
+  /**
+   * The installed plugins changed (5.35, ADR-0050): a reload added, removed or
+   * rebuilt one, so what `hello.plugins` would say now differs from what this
+   * connection was last told. The whole list, shaped like `hello.plugins` and
+   * replacing it; an empty list means none are left. A reload that failed or
+   * kept every announcement the same sends nothing.
+   */
+  | { readonly type: "plugins"; readonly plugins: readonly PluginInfo[] }
   | { readonly type: "result"; readonly id: number; readonly ok: true; readonly value: unknown }
   | { readonly type: "result"; readonly id: number; readonly ok: false; readonly error: string }
   | { readonly type: "notice"; readonly level: Notice["level"]; readonly message: string };
@@ -875,7 +890,7 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
     case "earlierEntries":
       return conversationId() && positive(args.before) && positive(args.limit);
     case "pluginBundle":
-      return nonempty(args.name);
+      return nonempty(args.name) && (args.hash === undefined || nonempty(args.hash));
     case "pluginCall":
       // `args` is the plugin's own JSON; `null` is a value, only a missing key is malformed.
       return conversationId() && nonempty(args.plugin) && nonempty(args.method) && args.args !== undefined;

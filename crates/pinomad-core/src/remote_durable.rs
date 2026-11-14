@@ -22,7 +22,7 @@ use crate::frames::{
     ApnsPushToken, ClientFrame, HostFeature, HostRtc, ImageVariant, PROTOCOL, RtcMaxMessageSize,
     ServerFrame, UNAUTHORIZED_CLOSE_CODE, classify_server_frame, conversation_stream, doc_stream,
     encode_client_frame, host_streams, host_supports_call, host_supports_feature, minor_version,
-    parse_host_processes, parse_host_rtc, parse_rtc_max_message_size,
+    parse_host_processes, parse_host_rtc, parse_rtc_max_message_size, plugin_infos,
 };
 use crate::json::{Json, JsonObject, num_key};
 use crate::organization::{checkout_of, home_of, organize};
@@ -1117,6 +1117,9 @@ pub struct RemoteDurable {
     process_watch: Option<u64>,
     /// `hello.processes` on the current connection: the host's pty loaded.
     host_processes: bool,
+    /// `view.host.plugins` (5.34): the hello's list, replaced by each
+    /// `plugins` frame (5.35). iOS shows no plugin UI; the core keeps it current.
+    host_plugins: Json,
     /// Ops whose snapshot waiters a stream release settled. Driving them
     /// here would re-enter the current op's step, so the event loop flushes
     /// the list after the mutation finishes.
@@ -1270,6 +1273,7 @@ impl RemoteDurable {
             docs: Vec::new(),
             process_watch: None,
             host_processes: false,
+            host_plugins: Json::array(vec![]),
             settled_waiters: Vec::new(),
             pending_calls: HashMap::new(),
             next_call: 1,
@@ -2204,6 +2208,19 @@ impl RemoteDurable {
                 if let Err(error) = self.rtc_send_text(peer, call) {
                     self.fail_standby(peer, &error);
                 }
+            }
+            return;
+        }
+        // The handoff replays the cached hello, so a reload's list folds into
+        // it instead of being lost.
+        if frame.get("type").and_then(Json::as_str).map(|s| s.to_string_lossy()).as_deref() == Some("plugins") {
+            let Some(standby) = self.standby.as_mut().filter(|s| s.carrier.peer == peer) else {
+                return;
+            };
+            if let (Some(Json::Object(hello)), Some(plugins @ Json::Array(_))) = (&standby.hello, frame.get("plugins")) {
+                let mut hello = hello.as_ref().clone();
+                hello.set(U16String::from_str("plugins"), plugins.clone());
+                standby.hello = Some(Json::Object(Arc::new(hello)));
             }
             return;
         }
@@ -3574,6 +3591,10 @@ impl RemoteDurable {
                 self.notice(level, message);
                 Ok(())
             }
+            ServerFrame::Plugins { plugins } => {
+                self.receive_plugins(plugins);
+                Ok(())
+            }
             // A signal-only hello belongs to a connection this client never
             // opens; ignoring it keeps a future host frame forward-compatible.
             ServerFrame::SignalHello(_) => Ok(()),
@@ -3676,6 +3697,11 @@ impl RemoteDurable {
         };
         self.host_minor = host_minor;
         self.host_processes = parse_host_processes(&frame);
+        self.host_plugins = if host_supports_feature(host_minor, HostFeature::Plugins) {
+            plugin_infos(frame.get("plugins"))
+        } else {
+            Json::array(vec![])
+        };
         self.host_rtc = parse_host_rtc(&frame)?;
         if self.host_rtc.as_ref().is_some_and(|rtc| rtc.signal_only) && !self.signal_only_hint {
             self.signal_only_hint = true;
@@ -5127,6 +5153,16 @@ impl RemoteDurable {
     // ─── View derivation ────────────────────────────────────────────────
 
     /// `#hostInfo` — the announced protocol and packaged version.
+    /// A `plugins` frame: only a host that sends it knows it, and a list
+    /// that is not one is a newer shape, not an empty list.
+    fn receive_plugins(&mut self, plugins: Json) {
+        if !host_supports_feature(self.host_minor, HostFeature::PluginReload) || plugins.as_array().is_none() {
+            return;
+        }
+        self.host_plugins = plugin_infos(Some(&plugins));
+        self.set_field("host", self.host_info());
+    }
+
     fn host_info(&self) -> Json {
         let mut object = JsonObject::new();
         let mut protocol = JsonObject::new();
@@ -5135,6 +5171,9 @@ impl RemoteDurable {
         set(&mut object, "protocol", Json::Object(Arc::new(protocol)));
         if let Some(version) = &self.host_version {
             set(&mut object, "version", version.clone());
+        }
+        if self.host_plugins.as_array().is_some_and(|plugins| !plugins.is_empty()) {
+            set(&mut object, "plugins", self.host_plugins.clone());
         }
         Json::Object(Arc::new(object))
     }

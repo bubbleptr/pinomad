@@ -63,13 +63,13 @@ function verified(code: string, hash: string): string {
 
 function defaultExport(
   plugin: PluginInfo & { readonly web: NonNullable<PluginInfo["web"]> },
-  bundle: (name: string) => Promise<string>,
+  bundle: LoadOptions["bundle"],
   evaluate: EvaluateModule,
 ): Promise<unknown> {
   const { hash } = plugin.web;
   let loaded = evaluated.get(hash);
   if (loaded === undefined) {
-    loaded = bundle(plugin.name).then((code) => evaluate(verified(code, hash))).then((module) => module.default);
+    loaded = bundle(plugin.name, hash).then((code) => evaluate(verified(code, hash))).then((module) => module.default);
     evaluated.set(hash, loaded);
     // A failure may be the connection's; let the next load try again.
     loaded.catch(() => evaluated.delete(hash));
@@ -105,7 +105,8 @@ async function register(
 }
 
 export interface LoadOptions {
-  readonly bundle: (name: string) => Promise<string>;
+  /** Plugin `name`'s bundle announced with `hash`. */
+  readonly bundle: (name: string, hash: string) => Promise<string>;
   readonly evaluate: EvaluateModule;
   /** The WebApi handed to `name`'s default export; its `panel` / `toolCard` must forward to `registrar`. */
   readonly api: (name: string, registrar: Registrar) => WebApi;
