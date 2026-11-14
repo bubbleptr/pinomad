@@ -2513,7 +2513,7 @@ fn a_plugins_frame_moves_the_shown_conversations_onto_the_new_document_list() {
 
 #[test]
 fn a_plugins_frame_without_a_document_list_keeps_the_hellos() {
-    let mut h = setup();
+    let mut h = Harness::new(ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(35.0))]));
     h.invoke(1, Call::SwitchConversation { id: 1 });
     // A 5.35 host sends no `docs`; a value that is not a list is a newer shape.
     h.deliver(plugins_frame(Json::array(vec![])));

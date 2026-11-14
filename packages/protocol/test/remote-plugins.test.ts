@@ -191,7 +191,7 @@ describe("remote plugins", () => {
 
   it("keeps the hello's documents for a frame without a list of them, as a 5.35 host sends", async () => {
     const BOARD = "plugin.notes.board";
-    const host = fakeHost(PROTOCOL.minor, [PANEL], [{ kind: BOARD }]);
+    const host = fakeHost(35, [PANEL], [{ kind: BOARD }]);
     const remote = await connect(host);
     await remote.controller.switchConversation(id(1));
     host.push({ type: "plugins", plugins: [] });

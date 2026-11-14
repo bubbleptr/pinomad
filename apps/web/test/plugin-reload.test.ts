@@ -1,8 +1,9 @@
 // Plugin hot reload in a real browser (ADR-0050): the host rebuilds a plugin
 // when its files change and tells the open page, which swaps the plugin's
 // panels and tool cards and follows a newly shared state, all on the one
-// connection it opened.
-import { cp, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+// connection it opened. A deleted plugin goes, and an edit that does not
+// build leaves the page as it was.
+import { cp, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
@@ -138,6 +139,69 @@ it("shows a plugin added while the page is open, with its shared state", async (
   // The board reaches the panel only through the doc: stream the page subscribed to after the reload.
   await panel.getByText("1 on the board ✓").waitFor();
   expect(await panel.getByRole("list", { name: "Notes" }).getByRole("listitem").allTextContents()).toEqual(["Note from the panel"]);
+  expect(sockets).toEqual(connected);
+  expect(errors).toEqual([]);
+});
+
+it("takes a deleted plugin's open panel away and leaves the conversation as it was", async () => {
+  const dataDir = await tempDir();
+  defer(dataDir.remove);
+  await cp(NOTES_PLUGIN, join(dataDir.path, "plugins", "notes"), { recursive: true });
+  const project = await projectDir();
+  const webOrigin = await startWeb(defer);
+  const host = await startFauxHost(defer, { browserOrigins: [webOrigin], dataDir: dataDir.path, projects: [project.path], answers: ["Board ready."] });
+  const { page, sockets, errors } = await openPage(host, webOrigin);
+  await startConversation(page, project.name, "hello");
+  await page.getByText("Board ready.").waitFor();
+  await page.getByRole("button", { name: "Notes", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  await panel.getByRole("button", { name: "Add note" }).click();
+  await panel.getByText("1 on the board ✓").waitFor();
+
+  const connected = { ...sockets };
+  await rm(join(dataDir.path, "plugins", "notes"), { recursive: true });
+  await page.getByRole("button", { name: "Notes", exact: true }).waitFor({ state: "detached" });
+  expect(await panel.getByText("1 on the board ✓").count()).toBe(0);
+  await page.getByText("Board ready.").waitFor();
+  expect(sockets).toEqual(connected);
+  expect(errors).toEqual([]);
+});
+
+it("keeps the open panel when an edit does not build, and takes the next edit that does", async () => {
+  const dataDir = await tempDir();
+  defer(dataDir.remove);
+  await cp(ARTIFACT_EXAMPLE, join(dataDir.path, "plugins", "artifact"), { recursive: true });
+  const project = await projectDir();
+  const webOrigin = await startWeb(defer);
+  let buildFailed!: () => void;
+  const failed = new Promise<void>((resolve) => (buildFailed = resolve));
+  const host = await startFauxHost(defer, {
+    browserOrigins: [webOrigin],
+    dataDir: dataDir.path,
+    projects: [project.path],
+    answers: ["Nothing to draw."],
+    plugins: {
+      onReload: (outcome) => {
+        if (outcome.failed.some((failure) => failure.plugin === "artifact")) buildFailed();
+      },
+    },
+  });
+  const { page, sockets, errors } = await openPage(host, webOrigin);
+  await startConversation(page, project.name, "hello");
+  await page.getByText("Nothing to draw.").waitFor();
+  await page.getByRole("button", { name: "Artifact", exact: true }).click();
+  const panel = page.getByRole("complementary", { name: "Side panel" });
+  const empty = "No artifact yet. Ask the agent to make a page.";
+  await panel.getByText(empty).waitFor();
+
+  const connected = { ...sockets };
+  const source = await readFile(join(dataDir.path, "plugins", "artifact", "web.tsx"), "utf8");
+  await save(dataDir.path, "artifact/web.tsx", `${source}\nexport const broken = (;\n`);
+  await failed;
+  expect(await panel.getByText(empty).count()).toBe(1);
+
+  await save(dataDir.path, "artifact/web.tsx", edited(source, [[empty, "Still nothing here ✓"]]));
+  await panel.getByText("Still nothing here ✓").waitFor();
   expect(sockets).toEqual(connected);
   expect(errors).toEqual([]);
 });
