@@ -97,6 +97,20 @@ extension AppModel {
         Task { _ = try? await session.invoke(.setInboxQuietHours(hours: hours)) }
     }
 
+    /// The model a project's new intake conversation starts on; nil follows
+    /// the default model.
+    func setInboxIntakeModel(_ hostKey: String, _ model: ModelRef?) {
+        guard let session = runtimes[hostKey]?.session else { return }
+        Task { _ = try? await session.invoke(.setInboxIntakeModel(model: model)) }
+    }
+
+    /// The model new Inbox tasks and the memory tidy-up start on; nil follows
+    /// the default model.
+    func setInboxWorkerModel(_ hostKey: String, _ model: ModelRef?) {
+        guard let session = runtimes[hostKey]?.session else { return }
+        Task { _ = try? await session.invoke(.setInboxWorkerModel(model: model)) }
+    }
+
     /// Where a project's row leads: its intake once it exists, else the draft
     /// whose send opens it.
     func intakeRoute(_ hostKey: String, _ inbox: ProjectInbox) -> Route {
