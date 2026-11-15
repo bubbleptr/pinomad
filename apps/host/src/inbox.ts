@@ -476,7 +476,9 @@ async function fireDueTimers(harness: Harness, now: number, context: Context): P
     for (const timer of timers.timers) {
       if (timer.done || timer.due > now) continue;
       if (!projects.has(timer.project)) {
-        timer.done = true;
+        // A removed project's tidy-up waits for it to come back; other timers end with it.
+        if (timer.kind === "tidy" && timer.every !== undefined) timer.due = nextDue(timer.due, timer.every, now);
+        else timer.done = true;
         continue;
       }
       // An agent wrote a follow-up's note: it is only as trusted as what its task read.
