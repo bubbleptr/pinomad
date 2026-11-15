@@ -56,6 +56,8 @@ export const CREDENTIAL_PATHS: readonly string[] = [
   ".config/chromium",
   ".mozilla",
   ".local/share/keyrings",
+  // The default host data dir, also when this host runs on another one.
+  ".pinomad",
   ".pi",
   ".claude",
   ".codex",
