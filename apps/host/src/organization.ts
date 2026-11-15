@@ -17,6 +17,7 @@ import {
   type Harness,
   type ModelRef,
   type ToolRegistration,
+  type Tx,
   configure,
 } from "@earendil-works/pi-durable";
 import type { Home, HostIndex, Project, WorktreeCheckout } from "@pinomad/protocol/organization.ts";
@@ -134,6 +135,8 @@ export async function createConversation(
      * Inbox task's tools); `only` replaces the offered set (an Inbox intake).
      */
     readonly modelTools?: { readonly add: readonly ToolRegistration[] } | { readonly only: readonly ToolRegistration[] };
+    /** Runs inside the creating commit, before the first message is admitted: a caller's record of the new id. */
+    readonly onInit?: (tx: Tx, id: ConversationId) => Promise<void>;
   },
   defaults: ConversationDefaults,
   models: Models,
@@ -258,6 +261,7 @@ export async function createConversation(
             // id exists only inside this commit, so the cwd is set on the agent doc here.
             (await tx.doc(AgentDoc, id)).cwd = join(dataDir, "chats", String(id));
           }
+          await input.onInit?.(tx, id);
         },
       },
       context,

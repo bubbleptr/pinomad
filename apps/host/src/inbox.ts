@@ -51,6 +51,8 @@ export type InboxTask = {
   closed: boolean;
   /** Why the worker gave up on its last batch, when it did; it moved on to the next task. */
   failed?: string;
+  /** Its run stopped on a question to the user; cleared once the run settles. */
+  waiting?: boolean;
 };
 
 export type ProjectInbox = {
@@ -395,7 +397,16 @@ const intakeSection = {
     const inbox = Object.values(doc?.inboxes ?? {}).find((each) => each.intake === input.conversationId);
     if (inbox === undefined) return undefined;
     const tasks = inbox.tasks.slice(-TASK_LIST_LIMIT).map((task) => {
-      const state = task.failed !== undefined ? "failed" : task.closed ? "done" : task.events.some((event) => !event.handled) ? "pending" : "in progress";
+      const state =
+        task.failed !== undefined
+          ? "failed"
+          : task.closed
+            ? "done"
+            : task.waiting === true
+              ? "waiting for the user"
+              : task.events.some((event) => !event.handled)
+                ? "pending"
+                : "in progress";
       return `- ${task.id} [${state}] ${escape(task.title)}`;
     });
     return [
@@ -468,7 +479,14 @@ const FIRST_MESSAGE_PREFACE =
 type QuestionState = { requests: { resolution?: JsonValue }[] };
 
 export type CreateInboxConversation = (
-  input: { project: string; text: string; requestId: string; kind: "task" | "intake" },
+  input: {
+    project: string;
+    text: string;
+    requestId: string;
+    kind: "task" | "intake";
+    /** Runs in the creating commit, before the first message is admitted. */
+    onInit?: (tx: Tx, id: ConversationId) => Promise<void>;
+  },
   context: Context,
 ) => Promise<ConversationId>;
 
@@ -631,6 +649,10 @@ export async function startInbox(options: {
     // Parked: the task leaves the queue until its run settles.
     const waiting = parkedIn(project);
     waiting.set(task.id, asked.stop);
+    await harness.commit(async (tx) => {
+      const current = (await tx.doc(InboxDoc)).inboxes[project]?.tasks.find((each) => each.id === task.id);
+      if (current !== undefined) current.waiting = true;
+    }, context);
     void settledRun
       .then(async () => {
         asked.stop();
@@ -663,6 +685,7 @@ export async function startInbox(options: {
       if (current === undefined) return;
       // The batch settled; a later event that reopened the task makes a new one.
       delete current.batch;
+      delete current.waiting;
       if (current.events.every((event) => event.handled)) current.closed = true;
     }, context);
   }
@@ -782,11 +805,20 @@ export async function startInbox(options: {
         await conversation.submit({ type: "input", content: text, whenBusy: "followUp", requestId }, ctx);
         return intake;
       }
-      const created = await options.createConversation({ project: key, text, requestId, kind: "intake" }, ctx);
-      await harness.commit(async (tx) => {
-        (await tx.doc(InboxDoc)).inboxes[key]!.intake = created;
-      }, ctx);
-      return created;
+      // Recorded in the creating commit: the first run already renders as the
+      // intake, and no crash can leave an intake the Inbox does not know.
+      return await options.createConversation(
+        {
+          project: key,
+          text,
+          requestId,
+          kind: "intake",
+          onInit: async (tx, id) => {
+            (await tx.doc(InboxDoc)).inboxes[key]!.intake = id;
+          },
+        },
+        ctx,
+      );
     });
     opening.set(key, turn);
     return await turn;

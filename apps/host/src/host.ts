@@ -424,7 +424,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
         .flatMap((extension) => extension.docs ?? [])
         .filter((doc) => doc.presentation === "pinomad.question")
         .map((doc) => doc.token as ConversationDocToken<{ requests: { resolution?: JsonValue }[] }>),
-      createConversation: ({ project, text, requestId, kind }, ctx) =>
+      createConversation: ({ project, text, requestId, kind, onInit }, ctx) =>
         createConversation(
           harness!,
           options.dataDir,
@@ -432,6 +432,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
             home: { kind: "project", path: project },
             text,
             requestId,
+            ...(onInit === undefined ? {} : { onInit }),
             // An intake only reads, asks and submits (ADR-0051 §6); it works in the project itself.
             ...(kind === "intake"
               ? { checkout: "project" as const, modelTools: { only: intakeTools } }

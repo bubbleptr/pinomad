@@ -445,4 +445,33 @@ describe("intake conversation", () => {
     await until(() => tasksOf(host, project), (tasks) => tasks[0]?.closed === true);
     expect(await tasksOf(host, project)).toHaveLength(1);
   });
+  it("is the intake already when its first run starts", async () => {
+    const project = await plainProject();
+    let seen: ConversationId | undefined | "unread" = "unread";
+    let host: OpenedHost | undefined;
+    host = await startFauxHost(defer, {
+      projects: [project],
+      answers: [
+        async () => {
+          seen = await intakeOf(host!);
+          return fauxAssistantMessage("hello");
+        },
+      ],
+    });
+    const intake = await host.inbox.sendToIntake(project, "hi", "r1", context);
+    await until(async () => seen, (value) => value !== "unread");
+    expect(seen).toBe(intake);
+  });
+
+  it("lists a task stopped on a question as waiting for the user", async () => {
+    const project = await gitProject();
+    const host = await startFauxHost(defer, { projects: [project], extensions: [question], answers: ["noted", asks(), "done"] });
+    const intake = await host.inbox.sendToIntake(project, "hi", "r1", context);
+    await addInboxEvent(host.harness, project, event("e1", "layout bug"), context);
+    const [task] = await until(() => tasksOf(host, project), (tasks) => tasks[0]?.waiting === true);
+    expect(await intakePrompt(host, intake)).toContain(`${task!.id} [waiting for the user]`);
+    await answerPending(host, task!.conversationId!);
+    await until(() => tasksOf(host, project), (tasks) => tasks[0]?.closed === true);
+    expect((await tasksOf(host, project))[0]!.waiting).toBeUndefined();
+  });
 });
