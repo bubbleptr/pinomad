@@ -36,16 +36,18 @@ struct TaskQuestionCards: View {
     let openTask: (InboxTask) -> Void
 
     @Environment(\.questionPageMaxHeight) private var maxPageHeight
+    @State private var contentHeight: CGFloat = 0
 
     var body: some View {
         // Several tasks asking at once scroll inside the stack rather than
-        // push the conversation off screen; room for one whole card.
-        ViewThatFits(in: .vertical) {
-            cards
-            ScrollView { cards }
-                .scrollIndicators(.visible)
+        // push the conversation off screen: as tall as the cards, at most
+        // room for one whole card.
+        ScrollView {
+            cards.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
         }
-        .frame(maxHeight: maxPageHeight + 160)
+        .scrollBounceBehavior(.basedOnSize)
+        .scrollClipDisabled()
+        .frame(height: min(contentHeight, maxPageHeight + 160))
     }
 
     private var cards: some View {
