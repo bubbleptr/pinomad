@@ -149,11 +149,21 @@ try {
   await prompt.press("Enter");
   await page.getByText("hello from host B").waitFor({ timeout: 30_000 });
 
-  // The menu fades in on open; wait for the entry animation so screenshots
+  const openHostsMenu = async (): Promise<void> => {
+    await page.getByRole("button", { name: /^Account menu:/ }).click();
+    await page.getByRole("menuitem", { name: "Hosts", exact: true }).click();
+  };
+  // Escape dismisses one layer at a time: first the hosts, then their account menu.
+  const closeHostsMenu = async (): Promise<void> => {
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Escape");
+  };
+
+  // The menus fade in on open; wait for both entry animations so screenshots
   // don't catch a mid-fade menu that reads as disabled items.
-  const settleMenu = (): Promise<void> =>
+  const settleMenu = (name: "Account" | "Hosts"): Promise<void> =>
     page
-      .getByRole("menu")
+      .getByRole("menu", { name, exact: true })
       .evaluate(async (el) => {
         await Promise.all(
           document
@@ -166,6 +176,9 @@ try {
         );
       })
       .then(() => undefined);
+  const settleHostsMenu = async (): Promise<void> => {
+    await Promise.all([settleMenu("Account"), settleMenu("Hosts")]);
+  };
 
   // Both hosts run concurrently, each with its own sidebar group; opening A's
   // conversation only moves focus. The marker survives only if the renderer
@@ -173,12 +186,12 @@ try {
   await page.evaluate(() => {
     (window as unknown as { __pinomadE2ENoReload?: string }).__pinomadE2ENoReload = "kept";
   });
-  await page.getByRole("button", { name: "Hosts", exact: true }).click();
+  await openHostsMenu();
   await page.getByRole("menuitem", { name: `${labelA} (connected)`, exact: true }).waitFor();
   await page.getByRole("menuitem", { name: `${labelB} (connected)`, exact: true }).waitFor();
-  await settleMenu();
+  await settleHostsMenu();
   await page.screenshot({ path: "/tmp/pinomad-desktop-host-switcher.png" });
-  await page.keyboard.press("Escape");
+  await closeHostsMenu();
   const groupA = page.getByRole("group", { name: labelA, exact: true });
   const groupB = page.getByRole("group", { name: labelB, exact: true });
   await groupA.getByRole("button", { name: "hello from electron", exact: true }).click();
@@ -207,14 +220,14 @@ try {
   // view and reports the lost connection; the menu distinguishes the two.
   await hostB.close();
   await page.getByText("Host connection lost", { exact: true }).waitFor({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Hosts", exact: true }).click();
+  await openHostsMenu();
   await page.getByRole("menuitem", { name: `${labelA} (connected)`, exact: true }).waitFor();
   await page
     .getByRole("menuitem", { name: new RegExp(`^${labelB} \\((offline|disconnected)\\)$`) })
     .waitFor({ timeout: 30_000 });
-  await settleMenu();
+  await settleHostsMenu();
   await page.screenshot({ path: "/tmp/pinomad-desktop-host-switcher-offline.png" });
-  await page.keyboard.press("Escape");
+  await closeHostsMenu();
   await groupA.getByRole("button", { name: "hello from electron", exact: true }).click();
   await prompt.waitFor({ timeout: 30_000 });
   await page.getByText("hello from the desktop", { exact: true }).waitFor({ timeout: 30_000 });
