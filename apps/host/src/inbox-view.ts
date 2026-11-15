@@ -31,6 +31,7 @@ import { IndexDoc } from "./organization.ts";
 /** The gateway's view of the Inboxes: the stream's value and its calls. */
 export interface InboxService extends HostValue<HostInbox> {
   sendToIntake(project: string, text: string, requestId: string, context: Context): Promise<ConversationId>;
+  prepareIntake(conversationId: ConversationId, context: Context): Promise<void>;
   setRules(project: string, rules: string): Promise<void>;
   cancelFollowUp(timerId: string, context: Context): Promise<void>;
   skipTask(project: string, taskId: string, context: Context): Promise<void>;
@@ -125,7 +126,7 @@ export function hostInbox(
 export async function openInboxService(options: {
   readonly dataDir: string;
   readonly context: Context;
-  readonly intake: () => Pick<InboxHandle, "sendToIntake"> | undefined;
+  readonly intake: () => Pick<InboxHandle, "sendToIntake" | "prepareIntake"> | undefined;
   /** The source calls' dependencies; `harness` is the host's. */
   readonly sources: SourceDeps;
 }): Promise<InboxService & { close(): void }> {
@@ -221,6 +222,8 @@ export async function openInboxService(options: {
       if (intake === undefined) throw new Error("The Inbox is still starting");
       return await intake.sendToIntake(project, text, requestId, ctx);
     },
+    // Before the workers start there is no intake to prepare: a message then reads the checkout as it is.
+    prepareIntake: async (conversationId, ctx) => await options.intake()?.prepareIntake(conversationId, ctx),
     setRules: async (project, text) => {
       if (Buffer.byteLength(text, "utf8") > INBOX_RULES_MAX_BYTES) {
         throw new Error(`The rules are too long: at most ${INBOX_RULES_MAX_BYTES / 1024} KB`);

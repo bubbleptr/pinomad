@@ -592,6 +592,41 @@ describe("Inbox base branch", () => {
     expect(checkout?.base).toBe(moved);
   });
 
+  it("moves the intake to the base branch's tip for a message sent the ordinary way, as clients send all but the first", async () => {
+    const { project } = await onFeatureBranch();
+    const host = await startFauxHost(defer, { projects: [project], answers: ["noted", "again"] });
+    const intake = await host.inbox.sendToIntake(project, "hi", "r1", context);
+    const cwd = (await cwdOf(host, intake))!;
+    await until(() => headOf(cwd).catch(() => undefined), (head) => head !== undefined);
+    await git(project, "switch", "-q", "main");
+    await git(project, "commit", "-q", "--allow-empty", "-m", "main moved");
+    const moved = await headOf(project);
+    await git(project, "switch", "-q", "feature");
+    const client = await connectTo(defer, host);
+    await client.controller.submit("and now?", "followUp", { target: intake });
+    await until(() => userTexts(host, intake), (texts) => texts.length === 2);
+    expect(await headOf(cwd)).toBe(moved);
+  });
+
+  it("resets the intake's files even when its record already names the new base", async () => {
+    const { project } = await onFeatureBranch();
+    const host = await startFauxHost(defer, { projects: [project], answers: ["noted", "again"] });
+    const intake = await host.inbox.sendToIntake(project, "hi", "r1", context);
+    const cwd = (await cwdOf(host, intake))!;
+    await until(() => headOf(cwd).catch(() => undefined), (head) => head !== undefined);
+    await git(project, "switch", "-q", "main");
+    await git(project, "commit", "-q", "--allow-empty", "-m", "main moved");
+    const moved = await headOf(project);
+    await git(project, "switch", "-q", "feature");
+    // As a reset that failed after the record moved leaves it.
+    await host.harness.commit(async (tx) => {
+      const record = (await tx.doc(IndexDoc)).checkouts!.find((each) => each.conversationId === intake)!;
+      record.base = moved;
+    }, context);
+    await host.inbox.sendToIntake(project, "and now?", "r2", context);
+    expect(await headOf(cwd)).toBe(moved);
+  });
+
   it("moves an intake opened in the project directory into its own checkout, and its next run reads there", async () => {
     const { project } = await onFeatureBranch();
     // Only on main: the project directory, on the feature branch, lacks it.

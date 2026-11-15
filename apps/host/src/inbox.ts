@@ -637,6 +637,8 @@ export interface InboxHandle {
    * the first message. A repeated request id is admitted once.
    */
   sendToIntake(project: string, text: string, requestId: string, context: Context): Promise<ConversationId>;
+  /** Put an intake's checkout at the base branch before a message reaches it through an ordinary `submit`; any other conversation is left alone. */
+  prepareIntake(conversationId: ConversationId, context: Context): Promise<void>;
   close(): void;
 }
 
@@ -993,6 +995,18 @@ export async function startInbox(options: {
     return Promise.resolve();
   });
 
+  /**
+   * Before a message reaches an intake, whichever call sends it: put its
+   * checkout at the base branch as it is now (#846). Not an intake: nothing.
+   */
+  async function prepareIntake(conversationId: ConversationId, ctx: Context): Promise<void> {
+    const doc = await harness.snapshot(InboxDoc, ctx);
+    const project = Object.entries(doc?.inboxes ?? {}).find(([, inbox]) => inbox.intake === conversationId)?.[0];
+    if (project === undefined) return;
+    const base = await baseCommit(project, ctx);
+    if (base !== undefined) await options.pinIntake(conversationId, project, base, ctx);
+  }
+
   /** One intake opening at a time per project: two first messages must not open two. */
   const opening = new Map<string, Promise<unknown>>();
   async function sendToIntake(project: string, text: string, requestId: string, ctx: Context): Promise<ConversationId> {
@@ -1005,15 +1019,14 @@ export async function startInbox(options: {
         if (inboxes[key] === undefined) inboxes[key] = { tasks: [], threads: {} };
         return inboxes[key]!.intake;
       }, ctx);
-      const base = await baseCommit(key, ctx);
       if (intake !== undefined) {
         const conversation = await harness.conversation(intake, ctx);
         if (conversation === undefined) throw new Error(`The intake conversation ${intake} is gone`);
-        // Each message reads the base branch as it is now.
-        if (base !== undefined) await options.pinIntake(intake, key, base, ctx);
+        await prepareIntake(intake, ctx);
         await conversation.submit({ type: "input", content: text, whenBusy: "followUp", requestId }, ctx);
         return intake;
       }
+      const base = await baseCommit(key, ctx);
       // Recorded in the creating commit: the first run already renders as the
       // intake, and no crash can leave an intake the Inbox does not know.
       return await options.createConversation(
@@ -1036,6 +1049,7 @@ export async function startInbox(options: {
 
   return {
     sendToIntake,
+    prepareIntake,
     close() {
       closed = true;
       clearTimeout(alarm);

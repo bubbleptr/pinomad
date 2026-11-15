@@ -2570,6 +2570,8 @@ class GatewayClient {
             }
             const resolved = images();
             const conversation = await this.#conversation(input.conversationId);
+            // An intake reads the Inbox's base branch as it is now (#846).
+            await this.#options.inbox?.prepareIntake(conversation.id, context);
             // Mark attachments used before the message write (issue #321); the
             // store's lock is the same one cleanup sweeps under, so a used file
             // can never be deleted between these two steps.

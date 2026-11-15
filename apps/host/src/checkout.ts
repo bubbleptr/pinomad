@@ -214,6 +214,14 @@ export async function branchCommit(repo: string, name: string): Promise<string> 
   );
 }
 
+/** The commit a checkout's HEAD is at, or undefined when it cannot be read. */
+export async function worktreeHead(record: WorktreeCheckout): Promise<string | undefined> {
+  return await git(record.path, ["rev-parse", "--verify", "HEAD"]).then(
+    ({ stdout }) => stdout.trim(),
+    () => undefined,
+  );
+}
+
 /**
  * Move a checkout's branch and files to `commit`, dropping anything in it.
  * Only for checkouts nobody edits: the intake reads and never writes (#846).

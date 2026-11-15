@@ -25,7 +25,7 @@ import type { Home, HostIndex, Project, WorktreeCheckout } from "@pinomad/protoc
 import type { AgentRole, AgentRoles } from "@pinomad/protocol/agents.ts";
 import type { MessageImage } from "@pinomad/protocol/images.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
-import { branchSuffix, checkoutAt, ensureWorktree, gitBase, type RepoBase, removeWorktree, resetWorktree, worktreeBranch, worktreePath } from "./checkout.ts";
+import { branchSuffix, checkoutAt, ensureWorktree, gitBase, type RepoBase, removeWorktree, resetWorktree, worktreeBranch, worktreeHead, worktreePath } from "./checkout.ts";
 import { messageContent } from "./message-content.ts";
 import { RoleDoc } from "./role-doc.ts";
 
@@ -320,20 +320,20 @@ export async function pinCheckout(
   const repo = await gitBase(project);
   if (repo === undefined) return;
   const found = (await harness.snapshot(IndexDoc, context))?.checkouts?.find((each) => each.conversationId === id);
-  // Already there: a recreated worktree starts at its record's base, which is this commit.
-  if (found?.base === commit) {
-    await ensureWorktree(found);
-    return;
-  }
-  const record = await harness.commit(async (tx) => {
-    const doc = await tx.doc(IndexDoc);
-    const existing = doc.checkouts?.find((each) => each.conversationId === id);
-    if (existing === undefined) return { ...(await addCheckout(tx, dataDir, id, { ...repo, base: commit }, branchSuffix())) };
-    existing.base = commit;
-    return { ...existing };
-  }, context);
+  // The record moves first; the files follow below. A reset that failed after
+  // it leaves the two apart, so the worktree's own HEAD decides, not the record.
+  const record =
+    found?.base === commit
+      ? found
+      : await harness.commit(async (tx) => {
+          const doc = await tx.doc(IndexDoc);
+          const existing = doc.checkouts?.find((each) => each.conversationId === id);
+          if (existing === undefined) return { ...(await addCheckout(tx, dataDir, id, { ...repo, base: commit }, branchSuffix())) };
+          existing.base = commit;
+          return { ...existing };
+        }, context);
   await ensureWorktree(record);
-  await resetWorktree(record, commit);
+  if ((await worktreeHead(record)) !== commit) await resetWorktree(record, commit);
 }
 
 /**
