@@ -16,7 +16,8 @@ import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 import type { PushToken } from "@pinomad/protocol/frames.ts";
 import { DevicesDoc, RevocationsDoc } from "./devices.ts";
 import type { HostValue } from "./host-value.ts";
-import { inboxTaskOf, InboxDoc, OutboxDoc, type OutboxMessage } from "./inbox.ts";
+import { inboxTaskOf, InboxDoc, OutboxDoc, type OutboxMessage, type OutboxPush as PushRecord } from "./inbox.ts";
+import { DEFAULT_POLICY, type DeliveryPolicy, failedDelivery, plan } from "./outbox-policy.ts";
 import { IndexDoc } from "./organization.ts";
 import { TitleDoc } from "./title-doc.ts";
 
@@ -168,8 +169,8 @@ const MAX_INFLIGHT = 8;
 const MAX_PENDING = 128;
 /** What a `notify` push says; the agent's text stays on the host (ADR-0025 §8). */
 export const NOTIFY_BODY = "Update for you";
-/** An outbox message older than this when a sender first sees it is marked sent without a push. */
-const NOTIFY_STALE_MS = 60 * 60_000;
+/** A digest's title: it speaks for several tasks, so no one conversation's title fits. */
+const DIGEST_TITLE = "PiNomad Inbox";
 
 /**
  * The send seam the relay link implements and tests fake: one notification to
@@ -210,6 +211,10 @@ export interface PushSenderOptions {
   readonly timers?: PushTimers;
   /** Outbox bounds — the constants above; tests pass small ones. */
   readonly limits?: { readonly maxPending?: number; readonly maxInflight?: number };
+  /** The pacing of `notify` pushes (ADR-0052 §4), read on each look; DEFAULT_POLICY when absent. */
+  readonly outboxPolicy?: () => DeliveryPolicy;
+  /** The time the pacing reads; tests pair it with their manual timers. */
+  readonly now?: () => number;
 }
 
 /** The sender handle: close() detaches, stats() exposes the outbox counts (queued ⊆ pending). */
@@ -218,8 +223,17 @@ export interface PushSender {
   stats(): { pending: number; queued: number };
 }
 
-/** A run notice, or a `notify` message's push: the latter has no status to go stale against. */
-type Notice = { readonly id: ConversationId; readonly body: RunNotice["body"] | typeof NOTIFY_BODY };
+/**
+ * A run notice, or a `notify` push: the latter has no status to go stale
+ * against. A digest of several carries its own fixed title.
+ */
+type Notice = {
+  readonly id: ConversationId;
+  readonly body: string;
+  /** Not `title`: a RunNotice's `title` is the summary's display name, which may be the first message. */
+  readonly fixedTitle?: string;
+  readonly notify?: true;
+};
 
 type SendItem = {
   readonly token: string;
@@ -233,8 +247,12 @@ type SendItem = {
   timer?: unknown;
   /** True while waiting for an in-flight slot — avoids double-queueing. */
   queued: boolean;
-  /** The outbox message this push delivers: marked sent once its last push settles. */
+  /** The outbox push this delivers: its messages are settled once its last item settles. */
   readonly outbox?: string;
+  /** APNs accepted it. */
+  accepted?: boolean;
+  /** Retried until it gave up: the push may go out again later. */
+  gaveUp?: boolean;
 };
 
 /** What a log knows a token by: only the last few characters ever reach it. */
@@ -294,7 +312,7 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
 
   /** The transition the notice reported must still be the latest for a send to go out. */
   const fresh = (item: SendItem): boolean =>
-    item.notice.body === NOTIFY_BODY ||
+    item.notice.notify === true ||
     (baseline?.has(item.notice.id) === true && generation.get(item.notice.id) === item.generation);
 
   const registrations = async (): Promise<readonly PushRegistration[]> => {
@@ -317,9 +335,10 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
    * takes the fallback at once.
    */
   const titleFor = async (notice: Notice): Promise<string> => {
+    if (notice.fixedTitle !== undefined) return notice.fixedTitle;
     const named = await namedTitle(notice.id);
     if (named !== undefined) return named;
-    if ((notice.body !== "Finished" && notice.body !== NOTIFY_BODY) || disposed) return FALLBACK_TITLE;
+    if ((notice.body !== "Finished" && notice.notify !== true) || disposed) return FALLBACK_TITLE;
     return await new Promise<string>((resolve) => {
       const waiters = titleWaiters.get(notice.id) ?? new Set<(title: string) => void>();
       titleWaiters.set(notice.id, waiters);
@@ -348,11 +367,15 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
     if (queuedAt >= 0) readyQueue.splice(queuedAt, 1);
     // A sender closing mid-send leaves the message unsent: the next start pushes it.
     if (item.outbox !== undefined && !disposed) {
-      const left = (outboxLeft.get(item.outbox) ?? 1) - 1;
-      if (left > 0) outboxLeft.set(item.outbox, left);
-      else {
-        outboxLeft.delete(item.outbox);
-        markSent(item.outbox);
+      const push = outboxPushes.get(item.outbox);
+      if (push !== undefined) {
+        push.left -= 1;
+        if (item.accepted === true) push.accepted = true;
+        if (item.gaveUp === true) push.gaveUp = true;
+        if (push.left <= 0) {
+          outboxPushes.delete(item.outbox);
+          void settlePush(item.outbox, push);
+        }
       }
     }
   };
@@ -370,6 +393,7 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
   const scheduleRetry = (item: SendItem, retryAfterMs?: number): void => {
     if (item.attempts + 1 >= MAX_ATTEMPTS) {
       console.error(`push: send to ${tokenHint(item.token)} gave up`);
+      item.gaveUp = true;
       drop(item);
       return;
     }
@@ -428,6 +452,7 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
       if (disposed || !pending.has(item)) return drop(item);
       switch (verdict.result) {
         case "accepted":
+          item.accepted = true;
           drop(item);
           return;
         case "unregistered":
@@ -465,13 +490,15 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
     return inboxes !== undefined && current !== undefined && inboxTaskOf(inboxes.inboxes, current, id) !== undefined;
   };
 
-  /** Pushes created for `notice`; an outbox message's are counted in `outboxLeft` before any can settle. */
+  /** Pushes created for `notice`; an outbox push's are counted before any can settle. */
   const enqueue = async (notice: Notice, outbox?: string): Promise<number> => {
     let created = 0;
     if (disposed) return created;
     const itemGeneration = generation.get(notice.id) ?? 0;
     try {
       if (notice.body === "Finished" && (await inboxRun(notice.id))) return created;
+      // A run notice keeps only what a push may carry: its id and body.
+      if (notice.notify !== true) notice = { id: notice.id, body: notice.body };
       // One request per (environment, token) — the registration's identity,
       // the same key unregistration and eviction match on.
       const entries = await registrations();
@@ -494,7 +521,7 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
           queued: false,
           ...(outbox === undefined ? {} : { outbox }),
         };
-        if (outbox !== undefined) outboxLeft.set(outbox, (outboxLeft.get(outbox) ?? 0) + 1);
+        if (outbox !== undefined) outboxPushes.get(outbox)!.left += 1;
         created += 1;
         pending.add(item);
         void attempt(item);
@@ -506,30 +533,95 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
   };
 
   /**
-   * `notify` messages: each unsent one is pushed and marked sent once every
-   * push for it settled (delivered, given up or dropped). A host stopped
-   * before that pushes it again on start.
+   * `notify` messages, paced by the policy (ADR-0052 §4): what is ready goes
+   * out as one push, or a digest of several. Their messages are marked sent
+   * once every push item settled, or scheduled again when none reached a
+   * device; a host stopped before that sends them again on start.
    */
+  const now = options.now ?? Date.now;
+  const policy = options.outboxPolicy ?? (() => DEFAULT_POLICY);
   const taken = new Set<string>();
-  const outboxLeft = new Map<string, number>();
-  const markSent = (id: string): void => {
-    void harness
+  type OutboxPush = { readonly ids: readonly string[]; left: number; accepted: boolean; gaveUp: boolean };
+  const outboxPushes = new Map<string, OutboxPush>();
+  let latest: { readonly messages: readonly Readonly<OutboxMessage>[]; readonly pushes: readonly Readonly<PushRecord>[] } = { messages: [], pushes: [] };
+  let wake: unknown;
+
+  const writeOutbox = (change: (message: OutboxMessage) => void, ids: ReadonlySet<string>): Promise<void> =>
+    harness
       .commit(async (tx) => {
-        for (const message of (await tx.doc(OutboxDoc)).messages) if (message.id === id) message.sent = true;
+        for (const message of (await tx.doc(OutboxDoc)).messages) if (ids.has(message.id)) change(message);
       }, context)
       .catch((error: unknown) => {
-        if (!disposed) console.error(`push: could not mark a notify message sent: ${error instanceof Error ? error.message : String(error)}`);
+        if (!disposed) console.error(`push: could not update notify messages: ${error instanceof Error ? error.message : String(error)}`);
       });
-  };
-  const deliver = async (messages: readonly Readonly<OutboxMessage>[]): Promise<void> => {
-    for (const message of messages) {
-      if (disposed) return;
-      if (message.sent || taken.has(message.id)) continue;
-      taken.add(message.id);
-      const created = Date.now() - message.at < NOTIFY_STALE_MS ? await enqueue({ id: message.conversationId, body: NOTIFY_BODY }, message.id) : 0;
-      // No device to push to, or too old to be news: nothing will settle it.
-      if (created === 0 && !disposed) markSent(message.id);
+
+  async function settlePush(pushId: string, push: OutboxPush): Promise<void> {
+    const ids = new Set(push.ids);
+    const at = now();
+    if (push.gaveUp && !push.accepted) {
+      await writeOutbox((message) => {
+        const next = failedDelivery(message, at);
+        message.attempts = next.attempts;
+        if ("giveUp" in next) {
+          message.sent = true;
+          message.failed = true;
+          delete message.retryAt;
+        } else message.retryAt = next.retryAt;
+      }, ids);
+    } else {
+      await writeOutbox((message) => {
+        message.sent = true;
+        message.sentAt = at;
+        message.pushId = pushId;
+        delete message.retryAt;
+      }, ids);
     }
+    for (const id of push.ids) taken.delete(id);
+  }
+
+  const deliver = async (outbox: typeof latest): Promise<void> => {
+    if (disposed) return;
+    const decision = plan(
+      outbox.messages.filter((message) => !taken.has(message.id)),
+      outbox.pushes,
+      now(),
+      policy(),
+    );
+    if (wake !== undefined) timers.clearTimeout(wake);
+    wake = undefined;
+    if (decision.wakeAt !== undefined) {
+      wake = timers.setTimeout(() => onOutbox(latest), Math.max(decision.wakeAt - now(), 0));
+    }
+    if (decision.drop.length > 0) await writeOutbox((message) => void (message.sent = true), new Set(decision.drop));
+    if (decision.send.length === 0) return;
+    const group = decision.send;
+    for (const message of group) taken.add(message.id);
+    const pushId = `push:${group[0]!.id}`;
+    outboxPushes.set(pushId, { ids: group.map((message) => message.id), left: 0, accepted: false, gaveUp: false });
+    const last = group.at(-1)!;
+    const notice: Notice =
+      group.length === 1
+        ? { id: last.conversationId, body: NOTIFY_BODY, notify: true }
+        : { id: last.conversationId, body: `${group.length} updates for you`, fixedTitle: DIGEST_TITLE, notify: true };
+    const created = await enqueue(notice, pushId);
+    if (created === 0) {
+      // No device to push to: done with these messages, and nothing went out to count.
+      outboxPushes.delete(pushId);
+      await writeOutbox((message) => void (message.sent = true), new Set(group.map((message) => message.id)));
+      for (const message of group) taken.delete(message.id);
+      return;
+    }
+    // Counted the moment it goes out, not when its slowest device settles: the cap
+    // holds while one device still retries, and outlives the trimmed message history.
+    const at = now();
+    await harness
+      .commit(async (tx) => {
+        const doc = await tx.doc(OutboxDoc);
+        doc.pushes = [...(doc.pushes ?? []).filter((push) => at - push.at < 60 * 60_000), { id: pushId, at }];
+      }, context)
+      .catch((error: unknown) => {
+        if (!disposed) console.error(`push: could not record a notify push: ${error instanceof Error ? error.message : String(error)}`);
+      });
   };
   let delivering = Promise.resolve();
   // A watch needs the document to exist; the first notify would otherwise go unseen.
@@ -537,13 +629,14 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
     await tx.doc(OutboxDoc);
   }, context);
   const outboxWatch = await harness.watchDoc(OutboxDoc, context);
-  const onOutbox = (value: Readonly<{ messages: readonly Readonly<OutboxMessage>[] }> | null): void => {
+  function onOutbox(outbox: typeof latest): void {
+    latest = outbox;
     delivering = delivering
-      .then(() => deliver(value?.messages ?? []))
+      .then(() => deliver(outbox))
       .catch((error: unknown) => {
         if (!disposed) console.error(`push: could not deliver notify messages: ${error instanceof Error ? error.message : String(error)}`);
       });
-  };
+  }
 
   const unsubscribeConversations = conversations.subscribe(() => update());
   const commits = harness.observeCommits({
@@ -570,9 +663,9 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
   });
   update();
   if (outboxWatch === undefined) throw new Error("Outbox document is not available");
-  onOutbox(outboxWatch.value);
+  onOutbox({ messages: outboxWatch.value?.messages ?? [], pushes: outboxWatch.value?.pushes ?? [] });
   outboxWatch.start(async (call) => {
-    if (call.kind === "value") onOutbox(call.value);
+    if (call.kind === "value") onOutbox({ messages: call.value?.messages ?? [], pushes: call.value?.pushes ?? [] });
   });
 
   return {
@@ -582,6 +675,7 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
       unsubscribeConversations();
       commits.detach();
       await indexWatch?.stop();
+      if (wake !== undefined) timers.clearTimeout(wake);
       await outboxWatch.stop();
       await delivering;
       for (const item of pending) drop(item);

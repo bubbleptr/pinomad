@@ -109,6 +109,7 @@ import { TitleDoc } from "./title-doc.ts";
 import { admitDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
 import { markRemoved, normalizeOrigin, readServerBinding, readServerConfig, REMOVAL_NOTICE_FILE } from "./server-config.ts";
 import { attachPushSender, revokeDevice, setPushToken, type PushTimers, type PushTransport } from "./push.ts";
+import type { DeliveryPolicy } from "./outbox-policy.ts";
 import { toolTarget } from "@pinomad/protocol/tool-target.ts";
 import { type RelayLink, relayWsBase, startRelayLink } from "./relay-link.ts";
 import { serveWebClient } from "./web-client.ts";
@@ -316,6 +317,8 @@ export interface GatewayOptions {
     readonly hostKey: string;
     readonly transport?: PushTransport;
     readonly timers?: PushTimers;
+    readonly outboxPolicy?: () => DeliveryPolicy;
+    readonly now?: () => number;
   };
   /** Set to accept secure-channel clients, on LAN and/or via a relay. */
   readonly secure?: SecureGatewayOptions;
@@ -785,6 +788,8 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
               : { transport: { send: (request) => relay.sendPush(request) } }
             : { transport: options.push.transport }),
           ...(options.push.timers === undefined ? {} : { timers: options.push.timers }),
+          ...(options.push.outboxPolicy === undefined ? {} : { outboxPolicy: options.push.outboxPolicy }),
+          ...(options.push.now === undefined ? {} : { now: options.push.now }),
         });
   const remoteInfo =
     remote === undefined

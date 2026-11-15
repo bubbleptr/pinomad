@@ -234,14 +234,26 @@ export type OutboxMessage = {
   /** Stays on the host: the push carries only a fixed line (ADR-0025 §8). */
   text: string;
   at: number;
+  /** Delivered, dropped as stale, or given up on: the deliverer is done with it. */
   sent: boolean;
+  /** When its push went out, and the push it went out in (a digest carries several messages). */
+  sentAt?: number;
+  pushId?: string;
+  /** Deliveries that reached no device so far, and when to try again. */
+  attempts?: number;
+  retryAt?: number;
+  /** Given up after the last attempt. */
+  failed?: boolean;
 };
 
-export const OutboxDoc = defineDoc<{ messages: OutboxMessage[] }>({
+/** A push the deliverer sent to at least one device, kept for an hour: what the hourly cap counts. */
+export type OutboxPush = { id: string; at: number };
+
+export const OutboxDoc = defineDoc<{ messages: OutboxMessage[]; pushes?: OutboxPush[] }>({
   kind: "pinomad.outbox",
   version: 1,
   scope: "session",
-  initial: () => ({ messages: [] }),
+  initial: () => ({ messages: [], pushes: [] }),
   checkpointWhen: () => false,
 });
 
