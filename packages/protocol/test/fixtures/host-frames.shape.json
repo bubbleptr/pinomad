@@ -423,6 +423,12 @@
       },
       "ops": []
     },
+    "inbox": {
+      "value": {
+        "inboxes": []
+      },
+      "ops": []
+    },
     "index": {
       "value": {
         "conversations": [
@@ -479,6 +485,7 @@
         "defaultThinkingLevel": "null",
         "followUpMode": "string",
         "hostName": "string",
+        "inboxQuietHours": "null",
         "rtcStun": [
           "string"
         ],

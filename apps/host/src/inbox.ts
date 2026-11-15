@@ -50,6 +50,8 @@ export type InboxTask = {
   batch?: { requestId: string; eventIds: string[]; first: boolean; admitted: boolean };
   /** Done or skipped; a later event reopens it. */
   closed: boolean;
+  /** Closed by the user without running it (`skipInboxTask`); a later event reopens it. */
+  skipped?: true;
   /** Why the worker gave up on its last batch, when it did; it moved on to the next task. */
   failed?: string;
   /** Its run stopped on a question to the user; cleared once the run settles. */
@@ -88,7 +90,7 @@ export type InboxEventInput = {
   readonly trusted: boolean;
 };
 
-const projectKey = async (path: string): Promise<string> => await realpath(resolve(path)).catch(() => resolve(path));
+export const projectKey = async (path: string): Promise<string> => await realpath(resolve(path)).catch(() => resolve(path));
 
 const titleOf = (input: InboxEventInput): string =>
   (input.title ?? input.summary.split("\n", 1)[0] ?? "").trim().slice(0, 120) || "Untitled task";
@@ -115,6 +117,7 @@ function recordEvent(inboxes: Record<string, ProjectInbox>, key: string, input: 
     target.events.push(event);
     target.closed = false;
     delete target.failed;
+    delete target.skipped;
     return { task: target.id, duplicate: false };
   }
   const task: InboxTask = {
@@ -206,6 +209,35 @@ export async function addTimer(
       done: false,
     });
     return id;
+  }, context);
+}
+
+/**
+ * Close a task without running it (the Tasks page's Skip): its pending
+ * events count as handled. Refused while the worker has a batch of it out:
+ * that run is the user's to stop or answer. A later event reopens it.
+ */
+export async function skipInboxTask(harness: Harness, project: string, taskId: string, context: Context): Promise<void> {
+  const key = await projectKey(project);
+  await harness.commit(async (tx) => {
+    const task = (await tx.doc(InboxDoc)).inboxes[key]?.tasks.find((each) => each.id === taskId);
+    if (task === undefined) throw new Error(`No task ${taskId} in this Inbox`);
+    if (task.batch !== undefined) throw new Error("The task is running; stop or answer it instead");
+    if (task.skipped === true) return;
+    if (task.closed) throw new Error("The task is already closed");
+    for (const event of task.events) event.handled = true;
+    task.closed = true;
+    task.skipped = true;
+  }, context);
+}
+
+/** Drop a follow-up or schedule that has not fired. The daily tidy-up stays. */
+export async function cancelFollowUp(harness: Harness, timerId: string, context: Context): Promise<void> {
+  await harness.commit(async (tx) => {
+    const timer = (await tx.doc(TimerDoc)).timers.find((each) => each.id === timerId && !each.done);
+    if (timer === undefined) throw new Error(`No follow-up ${timerId}`);
+    if (timer.kind === "tidy") throw new Error("The daily memory tidy-up cannot be cancelled");
+    timer.done = true;
   }, context);
 }
 
@@ -651,12 +683,14 @@ export async function startInbox(options: {
     // a new batch of the unhandled events before admitting it. Its events come
     // from the commit that records it: one appended after the snapshot this
     // loop read is either in both or in neither.
-    const { batch, events } =
+    const recorded =
       task.batch !== undefined
         ? { batch: task.batch!, events: task.events.filter((event) => task.batch!.eventIds.includes(event.id)) }
         : await harness.commit(async (tx) => {
             const current = await find(tx);
             const pending = current.events.filter((event) => !event.handled);
+            // Skipped since the snapshot this loop read: nothing left to send.
+            if (pending.length === 0) return undefined;
             const eventIds = pending.map((event) => event.id);
             current.batch = {
               requestId: `inbox:${current.id}:${eventIds.at(-1)}`,
@@ -666,6 +700,8 @@ export async function startInbox(options: {
             };
             return { batch: { ...current.batch, eventIds: [...eventIds] }, events: pending.map((event) => ({ ...event })) };
           }, context);
+    if (recorded === undefined) return;
+    const { batch, events } = recorded;
     // Fixed order (ADR-0052 §2): the preface, the rules and indexes (the same
     // bytes for every task while unchanged), then this task's own parts.
     const dir = memoryDir(options.dataDir, project);

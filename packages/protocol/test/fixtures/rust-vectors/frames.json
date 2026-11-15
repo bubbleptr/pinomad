@@ -1,12 +1,12 @@
 {
   "protocol": {
     "major": 5,
-    "minor": 37
+    "minor": 38
   },
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":37},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":38},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -16,22 +16,22 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":37},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":38},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
       "expect": "hello"
     },
     {
       "name": "hello-plugins",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":37},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"plugins\":[{\"name\":\"artifact\",\"api\":1,\"web\":{\"hash\":\"abababababababababababababababababababababababababababababababab\",\"size\":1024}}]}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":38},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"plugins\":[{\"name\":\"artifact\",\"api\":1,\"web\":{\"hash\":\"abababababababababababababababababababababababababababababababab\",\"size\":1024}}]}",
       "expect": "hello"
     },
     {
       "name": "signalHello",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":37},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":38},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
       "expect": "signalHello"
     },
     {
       "name": "signalHello-no-rtc",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":37}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":38}}",
       "expect": "signalHello"
     },
     {
@@ -312,6 +312,10 @@
         "since": 21
       },
       {
+        "name": "cancelFollowUp",
+        "since": 38
+      },
+      {
         "name": "cancelLogin",
         "since": 21
       },
@@ -448,8 +452,16 @@
         "since": 21
       },
       {
+        "name": "sendToIntake",
+        "since": 38
+      },
+      {
         "name": "setAgent",
         "since": 18
+      },
+      {
+        "name": "setInboxRules",
+        "since": 38
       },
       {
         "name": "setModel",
@@ -466,6 +478,10 @@
       {
         "name": "setThinkingLevel",
         "since": 0
+      },
+      {
+        "name": "skipInboxTask",
+        "since": 38
       },
       {
         "name": "startUpgrade",
@@ -520,6 +536,10 @@
       {
         "name": "devices",
         "since": 0
+      },
+      {
+        "name": "inbox",
+        "since": 38
       },
       {
         "name": "index",
@@ -586,6 +606,10 @@
       {
         "name": "imageVariants",
         "since": 20
+      },
+      {
+        "name": "inboxQuietHours",
+        "since": 38
       },
       {
         "name": "liveBranch",
@@ -700,6 +724,18 @@
       "name": "beginLogin@20",
       "minor": 20,
       "call": "beginLogin",
+      "expect": false
+    },
+    {
+      "name": "cancelFollowUp@38",
+      "minor": 38,
+      "call": "cancelFollowUp",
+      "expect": true
+    },
+    {
+      "name": "cancelFollowUp@37",
+      "minor": 37,
+      "call": "cancelFollowUp",
       "expect": false
     },
     {
@@ -1069,6 +1105,18 @@
       "expect": false
     },
     {
+      "name": "sendToIntake@38",
+      "minor": 38,
+      "call": "sendToIntake",
+      "expect": true
+    },
+    {
+      "name": "sendToIntake@37",
+      "minor": 37,
+      "call": "sendToIntake",
+      "expect": false
+    },
+    {
       "name": "setAgent@18",
       "minor": 18,
       "call": "setAgent",
@@ -1078,6 +1126,18 @@
       "name": "setAgent@17",
       "minor": 17,
       "call": "setAgent",
+      "expect": false
+    },
+    {
+      "name": "setInboxRules@38",
+      "minor": 38,
+      "call": "setInboxRules",
+      "expect": true
+    },
+    {
+      "name": "setInboxRules@37",
+      "minor": 37,
+      "call": "setInboxRules",
       "expect": false
     },
     {
@@ -1115,6 +1175,18 @@
       "minor": 0,
       "call": "setThinkingLevel",
       "expect": true
+    },
+    {
+      "name": "skipInboxTask@38",
+      "minor": 38,
+      "call": "skipInboxTask",
+      "expect": true
+    },
+    {
+      "name": "skipInboxTask@37",
+      "minor": 37,
+      "call": "skipInboxTask",
+      "expect": false
     },
     {
       "name": "startUpgrade@30",
@@ -1336,6 +1408,18 @@
       "name": "imageVariants@19",
       "minor": 19,
       "feature": "imageVariants",
+      "expect": false
+    },
+    {
+      "name": "inboxQuietHours@38",
+      "minor": 38,
+      "feature": "inboxQuietHours",
+      "expect": true
+    },
+    {
+      "name": "inboxQuietHours@37",
+      "minor": 37,
+      "feature": "inboxQuietHours",
       "expect": false
     },
     {

@@ -647,6 +647,7 @@ export function fakeView(overrides: Partial<DurableView> = {}): DurableView {
       problems: [{ file: "Broken.md", reason: "name must be lowercase kebab-case" }],
     },
     upgrade: null,
+    inbox: null,
     host: { version: "0.9.0", protocol: PROTOCOL },
     ...overrides,
   };
@@ -727,6 +728,10 @@ export function fakeRemote(
     startUpgrade: fn(async () => {}),
     cancelUpgrade: fn(async () => {}),
     checkUpgrade: fn(async () => {}),
+    sendToIntake: fn(async () => 1 as ConversationId),
+    setInboxRules: fn(async () => {}),
+    cancelFollowUp: fn(async () => {}),
+    skipInboxTask: fn(async () => {}),
     createAgent: fn(async () => {}),
     updateAgent: fn(async () => {}),
     deleteAgent: fn(async () => {}),

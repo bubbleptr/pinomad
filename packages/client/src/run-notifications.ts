@@ -32,11 +32,14 @@ const everySummary = (organized: Organized): ConversationSummary[] => {
  * without notifying — at connect time half the sidebar may be mid-run or
  * waiting and none of it is news. A conversation missing from `previous`
  * counts as having been idle; one gone from `organized` drops out of the
- * baseline and counts as changed.
+ * baseline and counts as changed. `inboxRuns` are Inbox tasks' conversations:
+ * their runs end quietly unless the agent notified (ADR-0051 §9), so they get
+ * no Finished, though a question or a failure is still news.
  */
 export function diffRunNotices(
   previous: StatusBaseline | undefined,
   organized: Organized,
+  inboxRuns: ReadonlySet<ConversationId> = new Set(),
 ): { notices: RunNotice[]; changed: ConversationId[]; baseline: StatusBaseline } {
   const notices: RunNotice[] = [];
   const changed: ConversationId[] = [];
@@ -54,7 +57,8 @@ export function diffRunNotices(
       continue;
     }
     const runEnded = before === "running" || before === "needs-answer";
-    if (runEnded && (summary.status === undefined || summary.status === "failed") && summary.kind !== "subagent") {
+    const quiet = summary.status === undefined && inboxRuns.has(summary.id);
+    if (runEnded && (summary.status === undefined || summary.status === "failed") && summary.kind !== "subagent" && !quiet) {
       // Subagents run back-to-back under their owner — a finished task isn't
       // worth interrupting for the way a waiting question is.
       notices.push({ id: summary.id, title: displayName(summary), body: summary.status === "failed" ? "Failed" : "Finished" });

@@ -4,7 +4,7 @@
 // task's progress (`tasks/<id>.md` + `INDEX.md`). The agent reaches them only
 // through the memory tools, which cannot leave the directory.
 import { createHash } from "node:crypto";
-import { appendFile, lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { appendFile, lstat, mkdir, readdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
 import type { Context } from "@earendil-works/chord/context";
 import { type ConversationId, defineExtension, defineTool, type Extension, type ToolExecutionApi } from "@earendil-works/pi-durable";
@@ -72,6 +72,19 @@ async function writable(dir: string, path: string): Promise<string> {
     throw new OutsideMemory("instructions.md is the user's; you can read it but not change it.");
   }
   return real;
+}
+
+/** The user's rules for the Inbox, `""` when unset. */
+export async function readRules(dir: string): Promise<string> {
+  return (await readOrUndefined(join(dir, INSTRUCTIONS))) ?? "";
+}
+
+/** Replace the user's rules; `""` leaves an empty file. Renamed into place, so a link there is replaced, not followed. */
+export async function writeRules(dir: string, rules: string): Promise<void> {
+  await mkdir(dir, { recursive: true });
+  const tmp = join(dir, `.${INSTRUCTIONS}.${process.pid}.tmp`);
+  await writeFile(tmp, rules);
+  await rename(tmp, join(dir, INSTRUCTIONS));
 }
 
 const escape = (text: string): string => text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");

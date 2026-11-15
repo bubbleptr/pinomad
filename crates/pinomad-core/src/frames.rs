@@ -19,7 +19,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 37 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 38 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -56,6 +56,7 @@ pub const HOST_STREAMS: &[(&str, u32)] = &[
     ("agents", 6),
     ("providers", 21),
     ("upgrade", 30),
+    ("inbox", 38),
 ];
 
 /// The host streams a host of the given minor version knows, in declaration
@@ -133,6 +134,10 @@ pub enum CallMethod {
     PluginBundle,
     PluginCall,
     SetPluginSecret,
+    SendToIntake,
+    SetInboxRules,
+    CancelFollowUp,
+    SkipInboxTask,
 }
 
 impl CallMethod {
@@ -196,6 +201,10 @@ impl CallMethod {
             "pluginBundle" => Self::PluginBundle,
             "pluginCall" => Self::PluginCall,
             "setPluginSecret" => Self::SetPluginSecret,
+            "sendToIntake" => Self::SendToIntake,
+            "setInboxRules" => Self::SetInboxRules,
+            "cancelFollowUp" => Self::CancelFollowUp,
+            "skipInboxTask" => Self::SkipInboxTask,
             _ => return None,
         })
     }
@@ -251,6 +260,7 @@ impl CallMethod {
             Self::StartUpgrade | Self::CancelUpgrade | Self::CheckUpgrade => 30,
             Self::PluginBundle | Self::PluginCall => 34,
             Self::SetPluginSecret => 37,
+            Self::SendToIntake | Self::SetInboxRules | Self::CancelFollowUp | Self::SkipInboxTask => 38,
         }
     }
 }
@@ -290,6 +300,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
         HostFeature::Plugins => 34,
         HostFeature::PluginReload => 35,
         HostFeature::PluginSecrets => 37,
+        HostFeature::InboxQuietHours => 38,
     };
     host_minor >= since
 }
@@ -354,6 +365,9 @@ pub enum HostFeature {
     /// `hello.plugins[].secrets` and the `setPluginSecret` call (37,
     /// ADR-0052 §6): write-only plugin credentials, entered on the Tasks page.
     PluginSecrets,
+    /// `updateSettings`'s `inboxQuietHours` key next to the `inbox` stream
+    /// (38, ADR-0052 §4) — an older host 4400s the key.
+    InboxQuietHours,
 }
 
 

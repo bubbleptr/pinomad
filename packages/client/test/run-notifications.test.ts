@@ -23,6 +23,24 @@ const organized = (...chats: ConversationNode[]): Organized => ({ chats, project
 const baseline = (entries: readonly [number, ConversationSummary["status"]][]): StatusBaseline =>
   new Map(entries.map(([n, status]) => [id(n), status]));
 
+describe("diffRunNotices for Inbox runs", () => {
+  it("skips Finished for an Inbox task's conversation but still says Failed and asks", () => {
+    const inbox = new Set([id(1)]);
+    expect(diffRunNotices(baseline([[1, "running"]]), organized(node()), inbox).notices).toEqual([]);
+    expect(diffRunNotices(baseline([[1, "running"]]), organized(node({ status: "failed" })), inbox).notices).toEqual([
+      { id: id(1), title: "Build it", body: "Failed" },
+    ]);
+    expect(diffRunNotices(baseline([[1, "running"]]), organized(node({ status: "needs-answer" })), inbox).notices).toEqual([
+      { id: id(1), title: "Build it", body: "Waiting for your answer" },
+    ]);
+  });
+
+  it("still reports the run as changed, so its stale notification retires", () => {
+    const { changed } = diffRunNotices(baseline([[1, "running"]]), organized(node()), new Set([id(1)]));
+    expect(changed).toEqual([id(1)]);
+  });
+});
+
 describe("diffRunNotices", () => {
   it("the first snapshot only seeds the baseline", () => {
     const { notices, baseline: next } = diffRunNotices(undefined, organized(node({ status: "needs-answer" })));

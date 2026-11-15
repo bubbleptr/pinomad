@@ -316,6 +316,45 @@ describe("parseClientFrame", () => {
     expect(kinds(call("x"))).toBe("malformed");
   });
 
+  it("introduces the inbox stream, its calls and the quiet-hours setting at minor 38", () => {
+    expect(hostStreams(37)).not.toContain("inbox");
+    expect(hostStreams(38)).toContain("inbox");
+    for (const method of ["sendToIntake", "setInboxRules", "cancelFollowUp", "skipInboxTask"] as const) {
+      expect(hostSupportsCall(37, method)).toBe(false);
+      expect(hostSupportsCall(38, method)).toBe(true);
+    }
+    expect(hostSupportsFeature(37, "inboxQuietHours")).toBe(false);
+    expect(hostSupportsFeature(38, "inboxQuietHours")).toBe(true);
+  });
+
+  it("accepts the Inbox calls; rejects missing or empty names", () => {
+    const call = (method: string, args: unknown) => kinds({ type: "call", id: 1, method, args });
+    expect(call("sendToIntake", { project: "/p", text: "two bugs", requestId: "r1" })).toBe("frame");
+    expect(call("sendToIntake", { project: "/p", text: "", requestId: "r1" })).toBe("malformed");
+    expect(call("sendToIntake", { project: "/p", text: "x" })).toBe("malformed");
+    // The size cap is the host's answer, not a malformed frame; "" clears the rules.
+    expect(call("setInboxRules", { project: "/p", rules: "" })).toBe("frame");
+    expect(call("setInboxRules", { project: "/p", rules: "x".repeat(100_000) })).toBe("frame");
+    expect(call("setInboxRules", { project: "", rules: "x" })).toBe("malformed");
+    expect(call("setInboxRules", { project: "/p", rules: null })).toBe("malformed");
+    expect(call("cancelFollowUp", { timerId: "wake:1" })).toBe("frame");
+    expect(call("cancelFollowUp", { timerId: "" })).toBe("malformed");
+    expect(call("skipInboxTask", { project: "/p", taskId: "t1" })).toBe("frame");
+    expect(call("skipInboxTask", { project: "/p" })).toBe("malformed");
+  });
+
+  it("accepts inboxQuietHours as minutes of the day or null", () => {
+    const call = (inboxQuietHours: unknown): unknown => ({ type: "call", id: 1, method: "updateSettings", args: { patch: { inboxQuietHours } } });
+    expect(kinds(call({ start: 22 * 60, end: 7 * 60 }))).toBe("frame");
+    expect(kinds(call({ start: 0, end: 1439 }))).toBe("frame");
+    expect(kinds(call(null))).toBe("frame");
+    expect(kinds(call({ start: 0, end: 1440 }))).toBe("malformed");
+    expect(kinds(call({ start: -1, end: 60 }))).toBe("malformed");
+    expect(kinds(call({ start: 1.5, end: 60 }))).toBe("malformed");
+    expect(kinds(call({ start: 60 }))).toBe("malformed");
+    expect(kinds(call("22:00-07:00"))).toBe("malformed");
+  });
+
   it("rejects a call without a valid id", () => {
     expect(kinds({ type: "call", method: "abort", args: { conversationId: 1 } })).toBe("malformed");
     expect(kinds({ type: "call", id: "1", method: "abort", args: { conversationId: 1 } })).toBe("malformed");

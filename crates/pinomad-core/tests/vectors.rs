@@ -135,6 +135,7 @@ fn feature_of(name: &str) -> HostFeature {
         "plugins" => HostFeature::Plugins,
         "pluginReload" => HostFeature::PluginReload,
         "pluginSecrets" => HostFeature::PluginSecrets,
+        "inboxQuietHours" => HostFeature::InboxQuietHours,
         other => panic!("unknown feature {other}"),
     }
 }
@@ -462,8 +463,11 @@ fn recorded_host_frames_parse_and_apply() {
     }
     // The recorded conversation's final state is fully formed JSON — spot
     // check the shape the client relies on.
+    // Its id depends on what the host created first, so find it by kind.
     let conversation = streams
-        .get("conversation:4")
+        .iter()
+        .find(|(name, _)| name.starts_with("conversation:"))
+        .map(|(_, value)| value)
         .expect("conversation stream applied");
     assert!(conversation.is_object());
     let entries = conversation.get("entries").and_then(Json::as_array);

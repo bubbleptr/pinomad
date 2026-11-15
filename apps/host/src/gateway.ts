@@ -109,7 +109,8 @@ import { TitleDoc } from "./title-doc.ts";
 import { admitDevice, DevicesDoc, type PairingOffers } from "./devices.ts";
 import { markRemoved, normalizeOrigin, readServerBinding, readServerConfig, REMOVAL_NOTICE_FILE } from "./server-config.ts";
 import { attachPushSender, revokeDevice, setPushToken, type PushTimers, type PushTransport } from "./push.ts";
-import type { DeliveryPolicy } from "./outbox-policy.ts";
+import { DEFAULT_POLICY, type DeliveryPolicy } from "./outbox-policy.ts";
+import type { InboxService } from "./inbox-view.ts";
 import { toolTarget } from "@pinomad/protocol/tool-target.ts";
 import { type RelayLink, relayWsBase, startRelayLink } from "./relay-link.ts";
 import { serveWebClient } from "./web-client.ts";
@@ -339,6 +340,8 @@ export interface GatewayOptions {
    * tests) → the `upgrade` stream reports `blocked: "source"` and the calls fail.
    */
   readonly upgrade?: UpgradeService;
+  /** The project Inboxes (ADR-0051): the `inbox` stream and its calls. Absent → an empty stream and the calls fail. */
+  readonly inbox?: InboxService;
 }
 
 /** The gateway's view of the host upgrader (`HostUpgrader`). */
@@ -355,7 +358,7 @@ export interface UpgradeService extends HostValue<HostUpgrade> {
 }
 
 /** Calls refused with `HOST_UPGRADING_ERROR` while an upgrade installs (ADR-0043 §3). */
-const AGENT_WORK_CALLS: ReadonlySet<CallMethod> = new Set(["submit", "createConversation", "runCommand", "compact", "answer"]);
+const AGENT_WORK_CALLS: ReadonlySet<CallMethod> = new Set(["submit", "createConversation", "runCommand", "compact", "answer", "sendToIntake"]);
 
 const NO_UPGRADES: HostValue<HostUpgrade> = constantValue<HostUpgrade>({
   current: packagedVersion ?? null,
@@ -788,7 +791,12 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
               : { transport: { send: (request) => relay.sendPush(request) } }
             : { transport: options.push.transport }),
           ...(options.push.timers === undefined ? {} : { timers: options.push.timers }),
-          ...(options.push.outboxPolicy === undefined ? {} : { outboxPolicy: options.push.outboxPolicy }),
+          // The user's quiet hours (ADR-0052 §4) over the pacing, read on each look.
+          outboxPolicy: () => {
+            const base = options.push!.outboxPolicy?.() ?? DEFAULT_POLICY;
+            const quiet = options.settings.value.inboxQuietHours;
+            return quiet === undefined || quiet === null ? base : { ...base, quietHours: quiet };
+          },
           ...(options.push.now === undefined ? {} : { now: options.push.now }),
         });
   const remoteInfo =
@@ -2004,6 +2012,12 @@ class GatewayClient {
     return modelAuth;
   }
 
+  #inbox(): InboxService {
+    const inbox = this.#options.inbox;
+    if (inbox === undefined) throw new Error("The Inbox is not available on this host");
+    return inbox;
+  }
+
   #upgrades(): UpgradeService {
     const upgrade = this.#options.upgrade;
     if (upgrade === undefined) throw new Error("This host can't upgrade itself (source)");
@@ -2031,6 +2045,7 @@ class GatewayClient {
       settings: options.settings,
       agents: options.agents ?? constantValue<AgentRoles>({ roles: [], problems: [] }),
       upgrade: options.upgrade ?? NO_UPGRADES,
+      inbox: options.inbox ?? constantValue({ inboxes: [] }),
     };
     this.#hooks = hooks;
     this.devicePublicKey = hooks.devicePublicKey;
@@ -2727,6 +2742,23 @@ class GatewayClient {
       }
       case "updateSettings": {
         await this.#options.settings.update((args as CallMethods["updateSettings"]["args"]).patch);
+        return null;
+      }
+      case "sendToIntake": {
+        const { project, text, requestId } = args as CallMethods["sendToIntake"]["args"];
+        return { conversationId: await this.#inbox().sendToIntake(project, text, requestId, context) };
+      }
+      case "setInboxRules": {
+        const { project, rules } = args as CallMethods["setInboxRules"]["args"];
+        await this.#inbox().setRules(project, rules);
+        return null;
+      }
+      case "cancelFollowUp":
+        await this.#inbox().cancelFollowUp((args as CallMethods["cancelFollowUp"]["args"]).timerId, context);
+        return null;
+      case "skipInboxTask": {
+        const { project, taskId } = args as CallMethods["skipInboxTask"]["args"];
+        await this.#inbox().skipTask(project, taskId, context);
         return null;
       }
       case "startUpgrade":

@@ -8,6 +8,23 @@ use crate::ffi::types::*;
 use crate::json::Json;
 use crate::skill_mentions::MentionRange;
 
+/// What an Inbox task reads as (ADR-0051 §2); `status` is its conversation
+/// summary's status (`running`, `needs-answer`, `failed`), when it has one.
+#[uniffi::export]
+pub fn inbox_task_state(task: crate::inbox::InboxTask, status: Option<String>) -> crate::inbox::InboxTaskState {
+    crate::inbox::inbox_task_state(&task, status.as_deref())
+}
+
+/// The sidebar's four groups in order; `statuses` maps a conversation id to
+/// its summary's status.
+#[uniffi::export]
+pub fn group_inbox_tasks(
+    tasks: Vec<crate::inbox::InboxTask>,
+    statuses: std::collections::HashMap<u64, String>,
+) -> Vec<crate::inbox::InboxGroup> {
+    crate::inbox::group_inbox_tasks(&tasks, &|id| statuses.get(&id).cloned())
+}
+
 #[uniffi::export]
 pub fn relative_time(at: f64, now: f64) -> String {
     crate::family::relative_time(at, now)

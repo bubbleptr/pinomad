@@ -6,6 +6,7 @@ use crate::chat::{agent_of, queue_items, status_text};
 use crate::cot_view::ChatEntry;
 use crate::ffi::providers::{providers_of, HostProviders};
 use crate::ffi::upgrade::{auto_upgrade_of, upgrade_of, AutoUpgradeMode, HostUpgradeState};
+use crate::inbox::{inboxes_of, ProjectInbox, QuietHours};
 use crate::ffi::types::*;
 use crate::json::{Json, JsonObject};
 use crate::u16str::U16String;
@@ -71,6 +72,11 @@ pub struct ClientSnapshot {
     /// The host's MCP servers (the `mcp` stream) — `None` until it lands.
     #[uniffi(default = None)]
     pub mcp: Option<McpStatus>,
+    /// Every registered project's Inbox (ADR-0051), in the index's order —
+    /// `None` before the `inbox` stream's snapshot or when the host predates
+    /// it (5.38). Task states come from `inbox_task_state` / `group_inbox_tasks`.
+    #[uniffi(default = None)]
+    pub inbox: Option<Vec<ProjectInbox>>,
 }
 
 /// The part of `HostSettings` (settings.ts) the settings page edits.
@@ -95,6 +101,10 @@ pub struct HostSettingsState {
     /// ones a "Use pi's default" can clear.
     #[uniffi(default = [])]
     pub custom: Vec<String>,
+    /// When the Inbox's `notify` pushes wait (ADR-0052 §4); `None` for none
+    /// or on a host older than 5.38.
+    #[uniffi(default = None)]
+    pub inbox_quiet_hours: Option<QuietHours>,
 }
 
 /// `QueueMode` (settings.ts): queued messages go one per turn, or all at
@@ -378,6 +388,7 @@ fn settings_of(view: &Json) -> Option<HostSettingsState> {
         steering_mode: mode("steeringMode"),
         follow_up_mode: mode("followUpMode"),
         custom,
+        inbox_quiet_hours: QuietHours::of(settings.get("inboxQuietHours")),
     })
 }
 
@@ -566,5 +577,6 @@ pub(crate) fn build(remote: &RemoteDurable) -> Option<ClientSnapshot> {
         upgrade: upgrade_of(&view),
         processes: remote.processes_view(),
         mcp: mcp_of(&view),
+        inbox: view.get("inbox").and_then(inboxes_of),
     })
 }

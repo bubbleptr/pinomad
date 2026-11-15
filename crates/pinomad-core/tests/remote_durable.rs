@@ -3862,6 +3862,38 @@ fn upgrade_calls_and_auto_upgrade_need_a_5_30_host() {
     assert_eq!(h.host.method("updateSettings").len(), 1);
 }
 
+/// ADR-0051: the Inbox calls need a 5.38 host, as does the `inboxQuietHours`
+/// settings key, refused locally on an older one (it would 4400 there).
+#[test]
+fn inbox_calls_and_quiet_hours_need_a_5_38_host() {
+    let old = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(37.0))]);
+    let mut h = Harness::new(old);
+    h.invoke(1, Call::SendToIntake { project: "/p".into(), text: "hi".into(), request_id: "r1".into() });
+    h.invoke(2, Call::SkipInboxTask { project: "/p".into(), task_id: "t".into() });
+    let too_old = "The host is too old for this (needs protocol 5.38); run `pinomad upgrade` on the host".to_string();
+    assert_eq!(h.ops.get(&1), Some(&Err(too_old.clone())));
+    assert_eq!(h.ops.get(&2), Some(&Err(too_old)));
+    let quiet = obj(&[("start", Json::from(1320.0)), ("end", Json::from(420.0))]);
+    h.invoke(3, Call::UpdateSettings { patch: obj(&[("inboxQuietHours", quiet.clone())]) });
+    assert!(h.host.method("updateSettings").is_empty());
+
+    let mut h = setup();
+    h.invoke(1, Call::SendToIntake { project: "/p".into(), text: "two bugs".into(), request_id: "r1".into() });
+    h.invoke(2, Call::SetInboxRules { project: "/p".into(), rules: "be brief".into() });
+    h.invoke(3, Call::CancelFollowUp { timer_id: "wake:1".into() });
+    h.invoke(4, Call::SkipInboxTask { project: "/p".into(), task_id: "t".into() });
+    h.invoke(5, Call::UpdateSettings { patch: obj(&[("inboxQuietHours", quiet)]) });
+    let args = |method: &str| h.host.method(method)[0].get("args").cloned();
+    assert_eq!(
+        args("sendToIntake"),
+        Some(obj(&[("project", Json::from("/p")), ("text", Json::from("two bugs")), ("requestId", Json::from("r1"))]))
+    );
+    assert_eq!(args("setInboxRules"), Some(obj(&[("project", Json::from("/p")), ("rules", Json::from("be brief"))])));
+    assert_eq!(args("cancelFollowUp"), Some(obj(&[("timerId", Json::from("wake:1"))])));
+    assert_eq!(args("skipInboxTask"), Some(obj(&[("project", Json::from("/p")), ("taskId", Json::from("t"))])));
+    assert_eq!(h.host.method("updateSettings").len(), 1);
+}
+
 // ─── background processes (5.32, ADR-0045) ────────────────────────────
 
 fn process_doc() -> Json {

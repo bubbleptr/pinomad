@@ -17,6 +17,7 @@ pub mod family;
 pub mod folder_path;
 pub mod frames;
 pub mod images;
+pub mod inbox;
 pub mod json;
 pub mod model;
 pub mod noise;

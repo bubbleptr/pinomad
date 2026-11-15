@@ -46,6 +46,7 @@ describe("openHostSettings", () => {
       rtcStun: RTC_DEFAULT_STUN,
       hostName: normalizeHostName(hostname()),
       autoUpgrade: "notify",
+      inboxQuietHours: null,
       custom: [],
     });
     await expect(readFile(path, "utf8")).rejects.toThrow();
@@ -154,6 +155,20 @@ describe("openHostSettings", () => {
     expect(settings.value.acceptAccountDevices).toBe(true);
     expect(settings.value.custom).toEqual([]);
     expect(seen).toEqual([false, true]);
+  });
+
+  it("has no Inbox quiet hours by default, publishes a change of either end, and resets to none (5.38)", async () => {
+    const path = await settingsPath();
+    const settings = await openHostSettings({ path, fallback, models });
+    const seen: unknown[] = [];
+    settings.subscribe((value) => seen.push(value.inboxQuietHours));
+    expect(settings.value.inboxQuietHours).toBeNull();
+
+    await settings.update({ inboxQuietHours: { start: 22 * 60, end: 7 * 60 } });
+    await settings.update({ inboxQuietHours: { start: 22 * 60, end: 8 * 60 } });
+    expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ inboxQuietHours: { start: 1320, end: 480 } });
+    await settings.update({ inboxQuietHours: null });
+    expect(seen).toEqual([{ start: 1320, end: 420 }, { start: 1320, end: 480 }, null]);
   });
 
   it("advertises the default STUN list, persists an override, and resets to the default", async () => {

@@ -346,6 +346,18 @@ pub enum Call {
     /// `checkUpgrade` — ask the host to check npm now; rejected while the
     /// host's `autoUpgrade` is `off` (5.30). Direct.
     CheckUpgrade,
+    /// `sendToIntake` (5.38, ADR-0051 §6): hand the user's message to the
+    /// project's intake conversation, opening it on the first message. The
+    /// result is the host's `{ conversationId }`. Request-class, like the
+    /// other Inbox calls below: the caller shows the host's error.
+    SendToIntake { project: String, text: String, request_id: String },
+    /// `setInboxRules` — replace the Inbox's rules; `""` clears them (5.38).
+    SetInboxRules { project: String, rules: String },
+    /// `cancelFollowUp` — drop a follow-up or schedule; the host refuses
+    /// the daily tidy-up (5.38).
+    CancelFollowUp { timer_id: String },
+    /// `skipInboxTask` — close a task without running it (5.38).
+    SkipInboxTask { project: String, task_id: String },
     /// `beginLogin` — start a login (5.21, ADR-0031); its prompts and
     /// outcome arrive in the `providers` stream's `logins`. Request-class,
     /// like the provider calls below: the caller shows the host's error.
@@ -4456,6 +4468,38 @@ impl RemoteDurable {
                 }
                 steps.push_back(Step::Call { method: "checkUpgrade", args: obj(&[]) });
             }
+            Call::SendToIntake { project, text, request_id } => {
+                if !host_supports_call(self.host_minor, "sendToIntake") {
+                    return Err(too_old("5.38"));
+                }
+                let args = obj(&[
+                    ("project", Json::from(project.clone())),
+                    ("text", Json::from(text.clone())),
+                    ("requestId", Json::from(request_id.clone())),
+                ]);
+                steps.push_back(Step::Call { method: "sendToIntake", args });
+            }
+            Call::SetInboxRules { project, rules } => {
+                if !host_supports_call(self.host_minor, "setInboxRules") {
+                    return Err(too_old("5.38"));
+                }
+                let args = obj(&[("project", Json::from(project.clone())), ("rules", Json::from(rules.clone()))]);
+                steps.push_back(Step::Call { method: "setInboxRules", args });
+            }
+            Call::CancelFollowUp { timer_id } => {
+                if !host_supports_call(self.host_minor, "cancelFollowUp") {
+                    return Err(too_old("5.38"));
+                }
+                let args = obj(&[("timerId", Json::from(timer_id.clone()))]);
+                steps.push_back(Step::Call { method: "cancelFollowUp", args });
+            }
+            Call::SkipInboxTask { project, task_id } => {
+                if !host_supports_call(self.host_minor, "skipInboxTask") {
+                    return Err(too_old("5.38"));
+                }
+                let args = obj(&[("project", Json::from(project.clone())), ("taskId", Json::from(task_id.clone()))]);
+                steps.push_back(Step::Call { method: "skipInboxTask", args });
+            }
             Call::BeginLogin { provider_id, method } => {
                 if !host_supports_call(self.host_minor, "beginLogin") {
                     return Err(too_old("5.21"));
@@ -4539,6 +4583,12 @@ impl RemoteDurable {
                     && !host_supports_feature(self.host_minor, HostFeature::AutoUpgrade)
                 {
                     return Err(too_old("5.30"));
+                }
+                // And inboxQuietHours on a pre-5.38 host (ADR-0052 §4).
+                if patch.get("inboxQuietHours").is_some()
+                    && !host_supports_feature(self.host_minor, HostFeature::InboxQuietHours)
+                {
+                    return Err(too_old("5.38"));
                 }
                 let args = obj(&[("patch", patch.clone())]);
                 steps.push_back(Step::Call { method: "updateSettings", args });
@@ -6192,6 +6242,7 @@ impl RemoteDurable {
         let settings = self.values.get(&key("settings")).cloned().unwrap_or(Json::Null);
         let agents = self.values.get(&key("agents")).cloned().unwrap_or(Json::Null);
         let upgrade = self.values.get(&key("upgrade")).cloned().unwrap_or(Json::Null);
+        let inbox = self.values.get(&key("inbox")).cloned().unwrap_or(Json::Null);
         let defaults = self.effective_defaults();
         self.set_or_clear("conversation", conversation);
         self.set_field("models", models);
@@ -6208,6 +6259,7 @@ impl RemoteDurable {
         self.set_field("settings", settings);
         self.set_field("agents", agents);
         self.set_field("upgrade", upgrade);
+        self.set_field("inbox", inbox);
         self.set_field("defaults", defaults);
         self.set_field("submissions", self.submissions_json());
         Ok(())
@@ -6250,6 +6302,7 @@ impl RemoteDurable {
         set(&mut state, "settings", Json::Null);
         set(&mut state, "agents", Json::Null);
         set(&mut state, "upgrade", Json::Null);
+        set(&mut state, "inbox", Json::Null);
         set(&mut state, "host", self.host_info());
         self.state = Some(state);
         if let Err(error) = self.refresh() {
@@ -6373,7 +6426,11 @@ fn op_kind(call: &Call) -> OpKind {
         | Call::CancelLogin { .. }
         | Call::SaveCustomProvider { .. }
         | Call::RemoveCustomProvider { .. }
-        | Call::StopProcess { .. } => OpKind::Request,
+        | Call::StopProcess { .. }
+        | Call::SendToIntake { .. }
+        | Call::SetInboxRules { .. }
+        | Call::CancelFollowUp { .. }
+        | Call::SkipInboxTask { .. } => OpKind::Request,
         Call::Abort { .. } => OpKind::Unqueued,
         Call::ListFiles { .. }
         | Call::ListSkills { .. }
