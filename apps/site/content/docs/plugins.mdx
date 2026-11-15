@@ -126,7 +126,7 @@ What the sandbox promises: content in it can't reach anything of the client, not
 
 ## Example: GitHub
 
-[`examples/plugins/github`](https://github.com/bubbleptr/pinomad/tree/main/examples/plugins/github) gives the agent `github_open_pr`, `github_comment` and `git_push`, which add the `github_token` secret in the host process. `git_push` pushes the conversation checkout's `HEAD` to a branch, with the token in a header only that `git` process sees, scoped to the GitHub server. The `GITHUB_API_URL` and `GITHUB_SERVER_URL` variables in the host's environment point it at GitHub Enterprise. Copy the directory to `~/.pinomad/plugins/github/` and set `github_token` to try it.
+[`examples/plugins/github`](https://github.com/bubbleptr/pinomad/tree/main/examples/plugins/github) gives the agent `github_open_pr`, `github_comment` and `git_push`, which add the `github_token` secret in the host process. `git_push` pushes the conversation checkout's `HEAD` to a branch. The `git` that holds the token runs in a scratch repository the host makes, so hooks and config the agent writes into its checkout never run with it, and the token goes only to the GitHub server, in a header only that process sees. The `GITHUB_API_URL` and `GITHUB_SERVER_URL` variables in the host's environment point it at GitHub Enterprise. Copy the directory to `~/.pinomad/plugins/github/` and set `github_token` to try it.
 
 ## Example: artifact
 

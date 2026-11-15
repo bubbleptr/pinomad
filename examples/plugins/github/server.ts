@@ -4,12 +4,41 @@
 // it at GitHub Enterprise (or a test server); the agent cannot pick the host
 // the token is sent to.
 import { execFile } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { definePlugin, type JsonObject, type PluginContext } from "@pinomad/plugin/v1";
 
-const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+/** "owner/name"; `.` and `..` are no names. */
+const REPO = /^(?!\.\.?\/)[A-Za-z0-9_.-]+\/(?!\.\.?$)[A-Za-z0-9_.-]+$/;
 
 const apiBase = (): string => (process.env.GITHUB_API_URL ?? "https://api.github.com").replace(/\/+$/, "");
 const serverBase = (): string => (process.env.GITHUB_SERVER_URL ?? "https://github.com").replace(/\/+$/, "");
+
+/** The host's PATH, HOME, locale and proxy settings; none of its other variables, such as git's tracing ones, which print headers. */
+function plainEnv(): Record<string, string> {
+  const env: Record<string, string> = { PATH: process.env.PATH ?? "/usr/bin:/bin", GIT_TERMINAL_PROMPT: "0" };
+  for (const key of ["HOME", "LANG", "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy"]) {
+    const value = process.env[key];
+    if (value !== undefined) env[key] = value;
+  }
+  return env;
+}
+
+/** `plainEnv` reading no config but the repository's own: none from HOME, XDG or the system. */
+function isolatedEnv(home: string): Record<string, string> {
+  return { ...plainEnv(), HOME: home, XDG_CONFIG_HOME: home, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null" };
+}
+
+/** Runs git; resolves with what it printed, rejects with that as the message. */
+function git(args: readonly string[], cwd: string, env: Record<string, string>): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    execFile("git", args, { cwd, env, timeout: 120_000 }, (error, stdout, stderr) => {
+      if (error === null) resolve({ stdout, stderr });
+      else reject(new Error(`${stdout}${stderr}`.trim() || error.message));
+    });
+  });
+}
 
 function repoOf(args: JsonObject): string {
   const repo = args.repo;
@@ -124,32 +153,36 @@ export default definePlugin((pinomad) => {
       if (ctx.cwd === undefined) throw new Error("This conversation has no working directory to push from");
       const value = await token(ctx);
       const basic = Buffer.from(`x-access-token:${value}`).toString("base64");
-      const server = serverBase();
-      // The header goes in the child's own environment, not its arguments (`ps` shows those), and is scoped to
-      // the GitHub server, so it is never sent to another host. Only what git needs is passed on: none of the
-      // host's tracing variables, which would print the header.
-      const env: Record<string, string> = {
-        PATH: process.env.PATH ?? "/usr/bin:/bin",
-        HOME: process.env.HOME ?? "",
-        GIT_TERMINAL_PROMPT: "0",
-        GIT_CONFIG_COUNT: "1",
-        GIT_CONFIG_KEY_0: `http.${server}/.extraHeader`,
-        GIT_CONFIG_VALUE_0: `Authorization: Basic ${basic}`,
-      };
       const scrub = (output: string): string => output.replaceAll(value, "[redacted]").replaceAll(basic, "[redacted]");
-      const output = await new Promise<string>((resolve, reject) => {
-        execFile(
-          "git",
-          ["push", `${server}/${repo}.git`, `HEAD:refs/heads/${branch}`],
-          { cwd: ctx.cwd, env, timeout: 120_000 },
-          (error, stdout, stderr) => {
-            const printed = scrub(`${stdout}${stderr}`).trim();
-            if (error === null) resolve(printed);
-            else reject(new Error(`git push failed${printed === "" ? `: ${scrub(error.message)}` : `:\n${printed}`}`));
-          },
-        );
-      });
-      return { text: `Pushed HEAD to ${repo} ${branch}.${output === "" ? "" : `\n${output}`}` };
+      const server = serverBase();
+
+      // Without the token: what to push, read from the agent's checkout.
+      const commit = (await git(["rev-parse", "--verify", "HEAD^{commit}"], ctx.cwd, plainEnv())).stdout.trim();
+      const objects = (await git(["rev-parse", "--path-format=absolute", "--git-path", "objects"], ctx.cwd, plainEnv())).stdout.trim();
+
+      // With the token: a repository the host made, borrowing the checkout's objects. The agent writes the
+      // checkout's hooks and config, so a git holding the token never runs there; it reads no global or
+      // system config either, which the agent's shell could also write.
+      const scratch = await mkdtemp(join(tmpdir(), "pinomad-push-"));
+      try {
+        await git(["init", "-q", "--bare", "--template=", scratch], scratch, isolatedEnv(scratch));
+        await writeFile(join(scratch, "objects", "info", "alternates"), `${objects}\n`);
+        // The header goes in the child's environment, not its arguments (`ps` shows those), scoped to the
+        // GitHub server so it is never sent to another host.
+        const env = {
+          ...isolatedEnv(scratch),
+          GIT_CONFIG_COUNT: "1",
+          GIT_CONFIG_KEY_0: `http.${server}/.extraHeader`,
+          GIT_CONFIG_VALUE_0: `Authorization: Basic ${basic}`,
+        };
+        const output = await git(["push", `${server}/${repo}.git`, `${commit}:refs/heads/${branch}`], scratch, env).catch((error: unknown) => {
+          throw new Error(`git push failed:\n${scrub(error instanceof Error ? error.message : String(error))}`);
+        });
+        const printed = scrub(`${output.stdout}${output.stderr}`).trim();
+        return { text: `Pushed HEAD to ${repo} ${branch}.${printed === "" ? "" : `\n${printed}`}` };
+      } finally {
+        await rm(scratch, { recursive: true, force: true });
+      }
     },
   });
 });

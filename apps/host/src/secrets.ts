@@ -53,7 +53,13 @@ export async function openSecretStore(path: string): Promise<SecretStore> {
 }
 
 function parse(text: string, path: string): Values {
-  const value: unknown = JSON.parse(text);
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    // Not the parser's message: it quotes the text around the error, which holds secrets.
+    throw new Error(`${path} is not valid JSON`);
+  }
   const record = (each: unknown): each is Record<string, unknown> => typeof each === "object" && each !== null && !Array.isArray(each);
   if (!record(value) || !Object.values(value).every((plugin) => record(plugin) && Object.values(plugin).every((each) => typeof each === "string"))) {
     throw new Error(`${path} is not a map of plugin names to secret values`);

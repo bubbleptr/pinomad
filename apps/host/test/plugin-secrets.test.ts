@@ -203,6 +203,40 @@ describe("plugin secrets", () => {
     }
   });
 
+  it("pushes without running the checkout's hooks or config with the token", async () => {
+    const remotes = await tempDir();
+    defer(remotes.remove);
+    const bare = join(remotes.path, "octo", "demo.git");
+    await run("git", ["init", "-q", "--bare", bare]);
+    // file:// so the push succeeds without a server; the header is still handed to git.
+    useGitHubAt(`file://${remotes.path}`);
+    const dataDir = await tempDir();
+    defer(dataDir.remove);
+    await cp(GITHUB_EXAMPLE, join(dataDir.path, "plugins", "github"), { recursive: true });
+    const project = await gitProject();
+    // What an agent could write into its own checkout to catch whatever runs there.
+    const dump = join(remotes.path, "hook-env");
+    await writeFile(join(project, ".git", "hooks", "pre-push"), `#!/bin/sh\nenv > "${dump}"\n`, { mode: 0o755 });
+    const host = await startFauxHost(defer, {
+      dataDir: dataDir.path,
+      projects: [project],
+      answers: [call("git_push", { repo: "octo/demo", branch: "feature" }), "done"],
+    });
+    const socket = await rawSocket(host);
+    expect(await socket.call("setPluginSecret", { plugin: "github", name: "github_token", value: TOKEN })).toEqual({ ok: true, value: null });
+
+    const client = await connectTo(defer, host);
+    await startConversation(client, { kind: "project", path: project }, "push");
+    await waitForView(client.view, (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "done");
+
+    const results = client.view.current().conversation!.entries.filter((entry) => entry.kind === "pi.tool-result").map((entry) => JSON.stringify(entry.model));
+    expect(results[0]).toContain("Pushed HEAD to octo/demo feature");
+    const head = (await run("git", ["-C", project, "rev-parse", "HEAD"])).stdout.trim();
+    expect((await run("git", ["--git-dir", bare, "rev-parse", "refs/heads/feature"])).stdout.trim()).toBe(head);
+    // The git holding the token never ran the checkout's hook.
+    await expect(stat(dump)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("keeps a plugin's secret out of what its tools return", async () => {
     const dataDir = await tempDir();
     defer(dataDir.remove);

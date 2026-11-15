@@ -126,7 +126,7 @@ pinomad.tool({
 
 ## 示例：GitHub
 
-[`examples/plugins/github`](https://github.com/bubbleptr/pinomad/tree/main/examples/plugins/github) 给 agent 加了 `github_open_pr`、`github_comment` 和 `git_push`，在宿主进程里带上 `github_token` 凭据。`git_push` 把对话检出的 `HEAD` 推到一个分支，token 放在只有那个 `git` 进程看得到的请求头里，并且只发给 GitHub 服务器。宿主环境里的 `GITHUB_API_URL` 和 `GITHUB_SERVER_URL` 可以把它指向 GitHub Enterprise。把目录复制到 `~/.pinomad/plugins/github/`，填好 `github_token` 就能试。
+[`examples/plugins/github`](https://github.com/bubbleptr/pinomad/tree/main/examples/plugins/github) 给 agent 加了 `github_open_pr`、`github_comment` 和 `git_push`，在宿主进程里带上 `github_token` 凭据。`git_push` 把对话检出的 `HEAD` 推到一个分支。带着 token 的 `git` 在宿主新建的临时仓库里跑，agent 写进检出里的钩子和配置碰不到它；token 放在只有这个进程看得到的请求头里，只发给 GitHub 服务器。宿主环境里的 `GITHUB_API_URL` 和 `GITHUB_SERVER_URL` 可以把它指向 GitHub Enterprise。把目录复制到 `~/.pinomad/plugins/github/`，填好 `github_token` 就能试。
 
 ## 示例：artifact
 
