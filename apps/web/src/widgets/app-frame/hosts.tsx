@@ -1,6 +1,6 @@
 import { Button } from "../../shared/ui/button.tsx";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "../../shared/ui/collapsible.tsx";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
+import { DropdownMenuItem } from "../../shared/ui/dropdown-menu.tsx";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/shared/ui/alert-dialog";
 import { FormError } from "../../shared/ui/field.tsx";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
@@ -23,7 +23,7 @@ import {
 } from "../../entities/host/host-runtimes.ts";
 import { useHosts } from "../../entities/host/host-store.ts";
 import { unansweredUnpair, unpairHost } from "../../entities/host/unpair.ts";
-import { ArrowLeft, ChevronRight, Computer } from "../../shared/ui/icons.tsx";
+import { ArrowLeft, ChevronRight } from "../../shared/ui/icons.tsx";
 import { AccountDialog } from "../account/account-dialog.tsx";
 import {
   ACCOUNT_HOST_ISSUE,
@@ -217,37 +217,28 @@ export function HostStatusDot({ connected }: { connected: boolean }) {
 }
 
 /**
- * The sidebar's hosts button: each paired host's name and connection status —
- * the only place the sidebar shows it (#213). Picking a host brings its group
- * into view; focus stays where it is (#427).
+ * Each paired host's name and connection status in the sidebar's account menu
+ * (#213). Picking a host brings its group into view; focus stays put (#427).
  */
-export function HostsMenu({ onLocate }: { onLocate?: (hostKey: string) => void }) {
+export function HostsMenuItems({ onLocate }: { onLocate?: (hostKey: string) => void }) {
   const paired = usePairedHosts();
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger render={<IconButton icon={<Computer aria-hidden="true" />} label="Hosts" tooltip="Hosts" size="sm" />} />
-      {/* As wide as the longest "name status" line; no fixed width to pad out. */}
-      <DropdownMenuContent side="top" align="end">
-        {paired.hosts.map((host) => (
-          <DropdownMenuItem
-            key={host.hostKey}
-            {...(onLocate === undefined ? {} : { onClick: () => onLocate(host.hostKey) })}
-          >
-            <HostStatusDot connected={paired.isConnected(host)} />
-            <span>
-              {paired.label(host)}
-              {/* Seen after the name; the hidden copy keeps the accessible
-                  name "<host> (<status>)" without reading it twice. */}
-              <span aria-hidden="true" className="ms-2 text-muted-foreground">
-                {hostStatusText(paired.info(host))}
-              </span>
-              <span className="sr-only">{`(${hostStatusText(paired.info(host)).toLowerCase()})`}</span>
-            </span>
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+  return paired.hosts.map((host) => (
+    <DropdownMenuItem
+      key={host.hostKey}
+      {...(onLocate === undefined ? {} : { onClick: () => onLocate(host.hostKey) })}
+    >
+      <HostStatusDot connected={paired.isConnected(host)} />
+      <span>
+        {paired.label(host)}
+        {/* Seen after the name; the hidden copy keeps the accessible
+            name "<host> (<status>)" without reading it twice. */}
+        <span aria-hidden="true" className="ms-2 text-muted-foreground">
+          {hostStatusText(paired.info(host))}
+        </span>
+        <span className="sr-only">{`(${hostStatusText(paired.info(host)).toLowerCase()})`}</span>
+      </span>
+    </DropdownMenuItem>
+  ));
 }
 
 /**

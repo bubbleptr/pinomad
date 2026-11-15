@@ -1,6 +1,17 @@
 import { cn } from "cn";
 import { Button } from "../../shared/ui/button.tsx";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "../../shared/ui/dropdown-menu.tsx";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
 import { SideNavItem, SideNavSection } from "../../shared/ui/side-nav.tsx";
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
@@ -10,12 +21,12 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import { familyStatus, threadsOf, type FamilyStatus } from "@pinomad/client/family.ts";
 import { useAppUpdate } from "../../entities/app-update/use-app-update.ts";
-import { ArchiveArrowDown, ChatBubble, ChevronRight, FolderAdd, FolderClosed, FolderOpenState, MoreHorizontal, Pencil, Plus, Settings, Trash2, UserCircle } from "../../shared/ui/icons.tsx";
+import { ArchiveArrowDown, ChatBubble, ChevronDown, ChevronRight, Computer, FolderAdd, FolderClosed, FolderOpenState, MoreHorizontal, Pencil, Plus, Settings, Trash2, UserCircle } from "../../shared/ui/icons.tsx";
 import { DisclosureButton, DisclosureChevron } from "../../shared/ui/disclosure-button.tsx";
 import { AnimatedNewChat, AnimatedSidebar } from "../../shared/ui/animated-icons.tsx";
 import { AddProjectDialog, RemoveProjectDialog } from "./project-dialogs.tsx";
 import { RenameConversationDialog } from "./rename-dialog.tsx";
-import { HostsMenu } from "./hosts.tsx";
+import { HostsMenuItems } from "./hosts.tsx";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { clientDeviceName } from "../../address.ts";
 import { StatusDot } from "../../shared/ui/status-dot.tsx";
@@ -77,10 +88,9 @@ export function SidebarHeaderBand({
 }
 
 /**
- * The user bar at the foot of the sidebar: who is signed in on the left; the
- * hosts list and Settings on the right. Dialogs are hoisted into AppFrame —
- * inside the phone drawer they would unmount with the drawer this click
- * just closed.
+ * The user bar at the foot of the sidebar: the account menu on the left and
+ * Settings on the right. Dialogs are hoisted into AppFrame — inside the phone
+ * drawer they would unmount with the drawer this click just closed.
  */
 export function SidebarFooter({
   onOpenSettings,
@@ -98,14 +108,18 @@ export function SidebarFooter({
   return (
     <div className="flex items-center gap-1">
       <div className="min-w-0 flex-1">
-        <UserChip
+        <UserMenu
           onOpenAccount={() => {
             onSelect?.();
             onOpenAccount();
           }}
+          onOpenSettings={() => {
+            onSelect?.();
+            onOpenSettings();
+          }}
+          {...(onLocateHost === undefined ? {} : { onLocateHost })}
         />
       </div>
-      <HostsMenu {...(onLocateHost === undefined ? {} : { onLocate: onLocateHost })} />
       <span className="relative inline-flex">
         <IconButton
           icon={<Settings aria-hidden="true" />}
@@ -131,16 +145,25 @@ export function SidebarFooter({
 }
 
 /**
- * The account this client is signed in to (ADR-0022). Where the page can't
- * reach an account API at all, the device's own name stands in — the one it
- * pairs under.
+ * The account this client is signed in to (ADR-0022), with this device's hosts
+ * and Settings in its menu. Without an account API, the device's pairing name
+ * stands in and the account row is read-only.
  */
-function UserChip({ onOpenAccount }: { onOpenAccount: () => void }) {
+function UserMenu({
+  onOpenAccount,
+  onOpenSettings,
+  onLocateHost,
+}: {
+  onOpenAccount: () => void;
+  onOpenSettings: () => void;
+  onLocateHost?: (hostKey: string) => void;
+}) {
   const account = useAccountModel();
-  const status = account.state.status;
+  const state = account.state;
+  const trigger = useRef<HTMLButtonElement>(null);
   const [deviceName, setDeviceName] = useState<string>();
   useEffect(() => {
-    if (status !== "unavailable") return;
+    if (state.status !== "unavailable") return;
     let live = true;
     void clientDeviceName().then((name) => {
       if (live) setDeviceName(name);
@@ -148,27 +171,86 @@ function UserChip({ onOpenAccount }: { onOpenAccount: () => void }) {
     return () => {
       live = false;
     };
-  }, [status]);
-  if (account.state.status === "signed-in") {
-    const { user } = account.state;
-    return (
-      <Button
-        variant="ghost"
-        size="sm"
-        className="max-w-full"
-        onClick={onOpenAccount}
-      >
-        <Avatar size="xs" aria-label={user}>
-          <AvatarFallback>{initials(user)}</AvatarFallback>
-        </Avatar>
-        <span className="truncate">{user}</span>
-      </Button>
-    );
-  }
-  if (status === "signed-out") {
-    return <Button variant="ghost" size="sm" onClick={onOpenAccount}><UserCircle aria-hidden="true" />Sign in</Button>;
-  }
-  return <span className="block truncate px-2 text-sm text-muted-foreground">{deviceName}</span>;
+  }, [state.status]);
+
+  const title = state.status === "signed-in" ? state.user : state.status === "signed-out" ? "Sign in" : deviceName;
+  const email = state.status === "signed-in" && state.email !== state.user ? state.email : undefined;
+  const openFromMenu = (open: () => void): void => {
+    // Settings remembers this still-mounted trigger, not the menu item that is
+    // about to unmount, so closing can return focus here.
+    trigger.current?.focus();
+    open();
+  };
+  const summary = (
+    <>
+      <Avatar size="sm" aria-label={title ?? "This device"}>
+        <AvatarFallback>
+          {state.status === "signed-in" ? initials(state.user) : <UserCircle aria-hidden="true" className="size-6" />}
+        </AvatarFallback>
+      </Avatar>
+      <span className="flex min-w-0 flex-col text-left">
+        <span className="truncate text-sm/5 font-semibold">{title}</span>
+        {email === undefined ? null : <span className="truncate text-xs/5 text-muted-foreground">{email}</span>}
+      </span>
+    </>
+  );
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            ref={trigger}
+            variant="ghost"
+            size="sm"
+            aria-label={`Account menu: ${title ?? "this device"}`}
+            className="w-full max-w-full justify-start"
+          >
+            {state.status === "signed-in" ? (
+              <Avatar size="xs" aria-label={state.user}>
+                <AvatarFallback>{initials(state.user)}</AvatarFallback>
+              </Avatar>
+            ) : (
+              <UserCircle aria-hidden="true" />
+            )}
+            <span className="min-w-0 flex-1 truncate text-left">{title}</span>
+            <ChevronDown aria-hidden="true" className="size-3.5 text-muted-foreground" />
+          </Button>
+        }
+      />
+      <DropdownMenuContent aria-label="Account" side="top" align="start" className="w-64">
+        {state.status === "signed-in" || state.status === "signed-out" ? (
+          <DropdownMenuItem
+            aria-label={state.status === "signed-in" ? `Account: ${state.user}` : "Sign in"}
+            className="min-h-14 gap-3 px-2 py-2"
+            onClick={() => openFromMenu(onOpenAccount)}
+          >
+            {summary}
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuGroup>
+            <DropdownMenuLabel className="flex min-h-14 items-center gap-3 px-2 py-2 text-sm/5 text-foreground">
+              {summary}
+            </DropdownMenuLabel>
+          </DropdownMenuGroup>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger label="Hosts">
+            <Computer aria-hidden="true" />
+            Hosts
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent aria-label="Hosts">
+            <HostsMenuItems {...(onLocateHost === undefined ? {} : { onLocate: onLocateHost })} />
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuItem onClick={() => openFromMenu(onOpenSettings)}>
+          <Settings aria-hidden="true" />
+          Settings
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 // Codex-style section header (Pace's SidebarSectionHeader): the title is the
