@@ -270,22 +270,24 @@ export async function ensureBaseBranch(
   return { repo: repo.repo, branch };
 }
 
-/** Pick `project`'s base branch, or go back to the repository's default with `null`. */
+/**
+ * Pick `project`'s base branch, or go back to the repository's default with
+ * `null`. The branch is found and checked before anything is stored, so a
+ * refusal leaves the old choice in place.
+ */
 export async function setBaseBranch(harness: Harness, project: string, branch: string | null, context: Context): Promise<void> {
   const repo = await gitBase(project);
   if (repo === undefined) throw new Error("This project is not a Git repository");
-  if (branch !== null) await branchCommit(repo.repo, branch);
-  const used = await harness.commit(async (tx) => {
+  const next = branch ?? (await defaultBranch(repo.repo));
+  if (next === undefined) throw new Error(`No branch to use as the Inbox's base in ${repo.repo}`);
+  await branchCommit(repo.repo, next);
+  await harness.commit(async (tx) => {
     const inboxes = (await tx.doc(InboxDoc)).inboxes;
-    // Back to the default on an Inbox never used: nothing stored, nothing to drop.
-    if (branch === null && inboxes[project] === undefined) return false;
+    // Back to the default on an Inbox never used: it stores nothing, and an entry would start its tidy-up.
+    if (branch === null && inboxes[project] === undefined) return;
     if (inboxes[project] === undefined) inboxes[project] = { tasks: [], threads: {} };
-    if (branch === null) delete inboxes[project]!.baseBranch;
-    else inboxes[project]!.baseBranch = branch;
-    return true;
+    inboxes[project]!.baseBranch = next;
   }, context);
-  // Back to the default: find it now, so the Inbox shows which one it is.
-  if (branch === null && used) await ensureBaseBranch(harness, project, context);
 }
 
 /**

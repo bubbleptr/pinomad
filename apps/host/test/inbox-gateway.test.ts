@@ -169,6 +169,18 @@ describe("the Inbox's base branch (5.41, #846)", () => {
     await until((inbox) => inbox.baseBranch === "trunk");
   });
 
+  it("keeps the chosen branch when going back to the default finds none", async () => {
+    const { key, client, until } = await inboxHost({ git: true });
+    await until((inbox) => inbox.baseBranch !== undefined);
+    await client.controller.setInboxBaseBranch(key, "release");
+    await until((inbox) => inbox.baseBranch === "release");
+    // No origin/HEAD, main or master, and a detached HEAD: there is no default to go back to.
+    await exec("git", ["checkout", "-q", "--detach"], { cwd: key });
+    await exec("git", ["branch", "-q", "-D", "trunk"], { cwd: key });
+    await expect(client.controller.setInboxBaseBranch(key, null)).rejects.toThrow(/No branch/);
+    expect((await until(() => true)).baseBranch).toBe("release");
+  });
+
   it("has none for a project that is not a Git repository, and refuses to set one", async () => {
     const { key, client, until } = await inboxHost();
     expect((await until(() => true)).baseBranch).toBeUndefined();

@@ -197,6 +197,31 @@ describe("useRunNotifications", () => {
     expect(TestNotification.instances).toHaveLength(before);
   });
 
+  it("opens a closed task's own conversation for a question asked after it closed (#846)", () => {
+    const inbox: HostInbox = {
+      inboxes: [
+        {
+          project: "/p",
+          intake: id(9),
+          tasks: [{ id: "t1", title: "Layout", createdAt: 0, conversationId: id(1), events: [], closed: true }],
+          threads: {},
+          rules: "",
+          followUps: [],
+        },
+      ],
+    };
+    const withInbox = (organized: Organized): DurableView => ({ organized, connection: "connected", inbox }) as DurableView;
+    const open = vi.fn();
+    vi.spyOn(window, "focus").mockImplementation(() => {});
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const { rerender } = renderHook(({ view }) => useRunNotifications(view, hostA, undefined, open), {
+      initialProps: { view: withInbox(organized(node({ status: "running" }))) },
+    });
+    rerender({ view: withInbox(organized(node({ status: "needs-answer" }))) });
+    TestNotification.instances[0]!.onclick!();
+    expect(open).toHaveBeenCalledWith({ hostKey: hostA, conversationId: id(1) });
+  });
+
   it("keeps the baseline while disconnected and reports the missed finish on reconnect", () => {
     vi.spyOn(document, "hasFocus").mockReturnValue(false);
     const { rerender } = renderHook(

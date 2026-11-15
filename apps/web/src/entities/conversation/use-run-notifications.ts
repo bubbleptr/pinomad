@@ -45,10 +45,11 @@ export function useRunNotifications(
     if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
     const source = hostKey ?? "local";
     for (const notice of notices) {
-      // An Inbox task's question is answered in its intake (#846), once the intake exists.
-      const intake =
-        notice.body === "Waiting for your answer" ? inboxOfConversation(view.inbox, notice.id) : undefined;
-      const target = intake?.task !== undefined && intake.inbox.intake !== undefined ? intake.inbox.intake : notice.id;
+      // An open Inbox task's question is answered in its intake (#846), once the
+      // intake exists; a closed task's questions do not show there.
+      const owner = notice.body === "Waiting for your answer" ? inboxOfConversation(view.inbox, notice.id) : undefined;
+      const target =
+        owner?.task !== undefined && !owner.task.closed && owner.inbox.intake !== undefined ? owner.inbox.intake : notice.id;
       // The window is in front and the conversation that shows this is on screen.
       if (
         document.visibilityState === "visible"

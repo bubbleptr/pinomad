@@ -2,7 +2,8 @@ import { composeStories } from "@storybook/react-vite";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fakeRemote, PINOMAD, withInbox } from "../../test/story-fixtures.tsx";
+import { fakeRemote, PINOMAD, PINOMAD_INBOX, WEBSITE_INBOX, withInbox } from "../../test/story-fixtures.tsx";
+import { InboxSections } from "./inbox-sections.tsx";
 import * as stories from "./side-panel.stories.tsx";
 
 const { InboxTasks } = composeStories(stories);
@@ -66,6 +67,19 @@ describe("the Inbox's base branch on the Tasks page (#846)", () => {
     await user.clear(within(section).getByRole("textbox", { name: "Base branch" }));
     await user.click(within(section).getByRole("button", { name: "Save" }));
     expect(remote.controller.setInboxBaseBranch).toHaveBeenLastCalledWith(PINOMAD.path, null);
+  });
+
+  it("drops a draft when the panel moves to another project, so Save cannot change that one", async () => {
+    const remote = fakeRemote(withInbox());
+    const user = userEvent.setup();
+    const props = { remote, connected: true, plugins: [], externalSources: true };
+    const { rerender } = render(<InboxSections inbox={PINOMAD_INBOX} {...props} />);
+    await user.click(within(screen.getByRole("region", { name: "Base branch" })).getByRole("button", { name: "Change" }));
+    await user.type(screen.getByRole("textbox", { name: "Base branch" }), "-next");
+    rerender(<InboxSections inbox={{ ...WEBSITE_INBOX, baseBranch: "trunk" }} {...props} />);
+    const section = screen.getByRole("region", { name: "Base branch" });
+    expect(within(section).queryByRole("textbox")).toBeNull();
+    expect(within(section).getByText("trunk")).toBeInTheDocument();
   });
 
   it("keeps the draft and says why when the branch does not exist", async () => {

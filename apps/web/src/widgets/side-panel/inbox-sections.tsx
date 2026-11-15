@@ -34,8 +34,8 @@ export function InboxSections({
   return (
     <div className="flex flex-col">
       <RulesSection inbox={inbox} remote={remote} connected={connected} />
-      {/* Only a Git project has one, and only a 5.40 host says which. */}
-      {inbox.baseBranch === undefined ? null : <BaseBranchSection inbox={inbox} baseBranch={inbox.baseBranch} remote={remote} connected={connected} />}
+      {/* Only a Git project has one, and only a 5.40 host says which. Keyed: a draft belongs to its project. */}
+      {inbox.baseBranch === undefined ? null : <BaseBranchSection key={inbox.project} inbox={inbox} baseBranch={inbox.baseBranch} remote={remote} connected={connected} />}
       <SourcesSection inbox={inbox} remote={remote} connected={connected} plugins={plugins} externalSources={externalSources} />
       <FollowUpsSection inbox={inbox} remote={remote} connected={connected} />
     </div>
