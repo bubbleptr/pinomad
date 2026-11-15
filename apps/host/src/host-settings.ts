@@ -46,6 +46,17 @@ export function settingsDefaults(settings: HostSettings): ConversationDefaults {
   };
 }
 
+/**
+ * An Inbox conversation's defaults: the intake starts on `inboxIntakeModel`, a
+ * task or the tidy-up on `inboxWorkerModel`, each falling back to the host
+ * default. The thinking level clamps to whichever model wins.
+ */
+export function inboxDefaults(settings: HostSettings, kind: "intake" | "task" | "tidy"): ConversationDefaults {
+  const defaults = settingsDefaults(settings);
+  const model = kind === "intake" ? settings.inboxIntakeModel : settings.inboxWorkerModel;
+  return model === undefined || model === null ? defaults : { ...defaults, model };
+}
+
 const isModelRef = (value: unknown): value is ModelRef =>
   typeof value === "object"
   && value !== null
@@ -65,6 +76,8 @@ const fileValueError = (
 ): Invalidity | undefined => {
   switch (key) {
     case "defaultModel":
+    case "inboxIntakeModel":
+    case "inboxWorkerModel":
       if (!isModelRef(value)) return "malformed";
       return models.some((each) => each.provider === value.provider && each.modelId === value.modelId)
         ? undefined
@@ -100,6 +113,8 @@ const sameSettings = (a: HostSettings, b: HostSettings): boolean =>
   && a.acceptAccountDevices === b.acceptAccountDevices
   && a.defaultThinkingLevel === b.defaultThinkingLevel
   && sameModel(a.defaultModel, b.defaultModel)
+  && sameModel(a.inboxIntakeModel ?? null, b.inboxIntakeModel ?? null)
+  && sameModel(a.inboxWorkerModel ?? null, b.inboxWorkerModel ?? null)
   && (a.rtcStun === undefined || b.rtcStun === undefined
     ? a.rtcStun === b.rtcStun
     : sameList(a.rtcStun, b.rtcStun, (x, y) => x === y))
@@ -175,6 +190,9 @@ export async function openHostSettings(options: {
       hostName: normalizeHostName((fileValues.hostName as string | undefined) ?? hostname()),
       autoUpgrade: (fileValues.autoUpgrade as AutoUpgradeMode | undefined) ?? "notify",
       inboxQuietHours: (fileValues.inboxQuietHours as QuietHours | undefined) ?? null,
+      // `null` follows defaultModel; an unavailable one is dropped above, like defaultModel.
+      inboxIntakeModel: (fileValues.inboxIntakeModel as ModelRef | undefined) ?? null,
+      inboxWorkerModel: (fileValues.inboxWorkerModel as ModelRef | undefined) ?? null,
       custom,
     };
   };
@@ -186,14 +204,15 @@ export async function openHostSettings(options: {
   let tail = Promise.resolve();
 
   const write = async (patch: HostSettingsPatch): Promise<void> => {
-    // A persisted default must be a model this host can actually run.
-    const model = patch.defaultModel;
-    if (
-      model !== undefined
-      && model !== null
-      && !options.models.value.some((each) => each.provider === model.provider && each.modelId === model.modelId)
-    ) {
-      throw new Error(`Unknown model: ${model.provider}/${model.modelId}`);
+    // A persisted model must be one this host can actually run.
+    for (const model of [patch.defaultModel, patch.inboxIntakeModel, patch.inboxWorkerModel]) {
+      if (
+        model !== undefined
+        && model !== null
+        && !options.models.value.some((each) => each.provider === model.provider && each.modelId === model.modelId)
+      ) {
+        throw new Error(`Unknown model: ${model.provider}/${model.modelId}`);
+      }
     }
     // A name that cleans to nothing has nothing to show — `null` is the way
     // to clear an override; everything else stores its cleaned form.

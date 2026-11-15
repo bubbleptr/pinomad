@@ -486,7 +486,9 @@
         "defaultThinkingLevel": "null",
         "followUpMode": "string",
         "hostName": "string",
+        "inboxIntakeModel": "null",
         "inboxQuietHours": "null",
+        "inboxWorkerModel": "null",
         "rtcStun": [
           "string"
         ],

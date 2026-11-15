@@ -357,6 +357,39 @@ describe("Inbox timers", () => {
   });
 });
 
+describe("Inbox models", () => {
+  const fauxModels = [
+    { id: "faux-1", name: "Faux One" },
+    { id: "faux-2", name: "Faux Two" },
+    { id: "faux-3", name: "Faux Three" },
+  ];
+  const ref = (modelId: string) => ({ provider: "faux", modelId });
+  const modelOf = async (host: OpenedHost, id: ConversationId) =>
+    (await (await host.harness.conversation(id, context))!.agent(context)).model;
+
+  it("starts the intake on the intake model and tasks on the worker model", async () => {
+    const project = await plainProject();
+    const host = await startFauxHost(defer, { projects: [project], fauxModels, answers: ["noted", "fixed"] });
+    await host.settings.update({ defaultModel: ref("faux-1"), inboxIntakeModel: ref("faux-2"), inboxWorkerModel: ref("faux-3") });
+    const intake = await host.inbox.sendToIntake(project, "login is broken", "r1", context);
+    await addInboxEvent(host.harness, project, event("e1", "bug one"), context);
+    const [task] = await until(() => tasksOf(host, project), (tasks) => tasks[0]?.conversationId !== undefined);
+    expect(await modelOf(host, intake)).toEqual(ref("faux-2"));
+    expect(await modelOf(host, task!.conversationId!)).toEqual(ref("faux-3"));
+  });
+
+  it("falls back to the default model when neither is set", async () => {
+    const project = await plainProject();
+    const host = await startFauxHost(defer, { projects: [project], fauxModels, answers: ["noted", "fixed"] });
+    await host.settings.update({ defaultModel: ref("faux-2") });
+    const intake = await host.inbox.sendToIntake(project, "login is broken", "r1", context);
+    await addInboxEvent(host.harness, project, event("e1", "bug one"), context);
+    const [task] = await until(() => tasksOf(host, project), (tasks) => tasks[0]?.conversationId !== undefined);
+    expect(await modelOf(host, intake)).toEqual(ref("faux-2"));
+    expect(await modelOf(host, task!.conversationId!)).toEqual(ref("faux-2"));
+  });
+});
+
 describe("inbox_follow", () => {
   const follow = (thread: string) => fauxAssistantMessage(fauxToolCall("inbox_follow", { thread }), { stopReason: "toolUse" });
 

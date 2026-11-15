@@ -5,20 +5,7 @@ import { Link } from "../../shared/ui/link.tsx";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "../../shared/ui/item.tsx";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../shared/ui/dropdown-menu.tsx";
 import { SegmentedControl, SegmentedControlItem } from "../../shared/ui/segmented-control.tsx";
-import {
-  Combobox,
-  ComboboxCollection,
-  ComboboxContent,
-  ComboboxEmpty,
-  ComboboxGroup,
-  ComboboxInput,
-  ComboboxItem,
-  ComboboxLabel,
-  ComboboxList,
-  ComboboxTrigger,
-  ComboboxValue,
-} from "../../shared/ui/combobox.tsx";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue, selectTriggerClassName } from "../../shared/ui/select.tsx";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "../../shared/ui/select.tsx";
 import { SideNav, SideNavItem, SideNavSection } from "../../shared/ui/side-nav.tsx";
 import { Field, FieldError, FieldLabel, FormError } from "../../shared/ui/field.tsx";
 import { Input } from "../../shared/ui/input.tsx";
@@ -30,11 +17,11 @@ import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { cleanHostName, type HostSettings, type QueueMode } from "@pinomad/protocol/settings.ts";
 import type { ModelRef } from "@earendil-works/pi-durable";
-import type { DurableView, ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";
+import type { DurableView, ThinkingLevel } from "@pinomad/protocol/view.ts";
 import { familyUpdatedAt, relativeTime } from "@pinomad/client/family.ts";
 import { sameModel, summaryOf, thinkingLevelLabels } from "@pinomad/client/model.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
-import { ModelLogo } from "../../entities/model/model-logo.tsx";
+import { ModelCombobox } from "../../entities/model/model-combobox.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { ArchiveRestore, ArrowLeft, Bot, Cancel, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, MoreHorizontal, Search, SlidersHorizontal, Sparkles, UserCircle } from "../../shared/ui/icons.tsx";
 import { GROUP_ROWS, SettingsGroup, SettingsRow } from "../../shared/ui/settings-group.tsx";
@@ -44,7 +31,7 @@ import { AppearanceSection } from "./appearance-section.tsx";
 import type { FrameMachine } from "./app-frame.tsx";
 import { DevicesSection } from "./devices-section.tsx";
 import { HostUpgradeSection } from "./host-upgrade-section.tsx";
-import { InboxQuietHours } from "./inbox-quiet-hours.tsx";
+import { InboxSettings } from "./inbox-settings.tsx";
 import { HostStatusDot, HostsSection } from "./hosts.tsx";
 import { LocalHostSection } from "./local-host-section.tsx";
 import { ProvidersSection } from "./providers-section.tsx";
@@ -581,7 +568,7 @@ function sectionBody(
         body: (
           <div className="flex flex-col gap-6">
             <ChatsSection view={view} remote={remote} connected={connected} />
-            <InboxQuietHours view={view} remote={remote} />
+            <InboxSettings view={view} remote={remote} />
             <ArchivedSection view={view} remote={remote} connected={connected} />
           </div>
         ),
@@ -615,52 +602,20 @@ function ModelsSection({ view, remote, connected }: { view: DurableView; remote:
     );
   }
   const model = view.models.find((each) => sameModel(each, settings.defaultModel ?? undefined));
-  const modelGroups = [...new Set(view.models.map((each) => each.provider))].map((provider) => ({
-    provider,
-    items: view.models.filter((each) => each.provider === provider),
-  }));
   const levels = model?.thinkingLevels ?? [];
   const customized = settings.custom.includes("defaultModel") || settings.custom.includes("defaultThinkingLevel");
   return (
     <SettingsGroup>
       <div className={GROUP_ROWS}>
         <SettingsRow label="Default model">
-          <Combobox
-            items={modelGroups}
-            value={model ?? null}
-            itemToStringLabel={(each: ModelSummary) => each.name}
-            isItemEqualToValue={(a: ModelSummary, b: ModelSummary) => sameModel(a, b)}
-            disabled={!connected || view.models.length === 0}
-            onValueChange={(picked: ModelSummary | null) => {
-              if (picked !== null) {
-                void remote.controller.updateSettings({ defaultModel: { provider: picked.provider, modelId: picked.modelId } });
-              }
-            }}
-          >
-            <ComboboxTrigger aria-label="Default model" data-size="sm" data-variant="outline" className={selectTriggerClassName}>
-              {model === undefined ? null : <ModelLogo model={model} size={14} />}
-              <ComboboxValue placeholder="Pi's default" />
-            </ComboboxTrigger>
-            <ComboboxContent className="min-w-64">
-              <ComboboxInput aria-label="Search models" placeholder="Search models" showTrigger={false} />
-              <ComboboxEmpty>No models match</ComboboxEmpty>
-              <ComboboxList>
-                {(group: { provider: string; items: ModelSummary[] }) => (
-                  <ComboboxGroup key={group.provider} items={group.items}>
-                    <ComboboxLabel>{group.provider}</ComboboxLabel>
-                    <ComboboxCollection>
-                      {(each: ModelSummary) => (
-                        <ComboboxItem key={`${each.provider}/${each.modelId}`} value={each}>
-                          <ModelLogo model={each} size={14} reserve />
-                          {each.name}
-                        </ComboboxItem>
-                      )}
-                    </ComboboxCollection>
-                  </ComboboxGroup>
-                )}
-              </ComboboxList>
-            </ComboboxContent>
-          </Combobox>
+          <ModelCombobox
+            label="Default model"
+            models={view.models}
+            value={settings.defaultModel}
+            placeholder="Pi's default"
+            disabled={!connected}
+            onChange={(picked) => void remote.controller.updateSettings({ defaultModel: picked })}
+          />
         </SettingsRow>
         {/* A model that can't reason has nothing to pick here. */}
         {levels.length > 1 ? (

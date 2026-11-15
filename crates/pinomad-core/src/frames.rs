@@ -19,7 +19,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 39 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 40 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -311,6 +311,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
         HostFeature::PluginSecrets => 37,
         HostFeature::InboxQuietHours => 38,
         HostFeature::InboxSources => 39,
+        HostFeature::InboxModels => 40,
     };
     host_minor >= since
 }
@@ -381,6 +382,9 @@ pub enum HostFeature {
     /// `inbox[].sources`, `inbox.externalSources`, `hello.plugins[].sources`
     /// and the source calls (39, ADR-0051 §10).
     InboxSources,
+    /// `updateSettings`'s `inboxIntakeModel` and `inboxWorkerModel` keys
+    /// (40) — an older host 4400s them.
+    InboxModels,
 }
 
 

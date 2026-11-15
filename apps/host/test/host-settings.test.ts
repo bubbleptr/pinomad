@@ -47,6 +47,8 @@ describe("openHostSettings", () => {
       hostName: normalizeHostName(hostname()),
       autoUpgrade: "notify",
       inboxQuietHours: null,
+      inboxIntakeModel: null,
+      inboxWorkerModel: null,
       custom: [],
     });
     await expect(readFile(path, "utf8")).rejects.toThrow();
@@ -169,6 +171,24 @@ describe("openHostSettings", () => {
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual({ inboxQuietHours: { start: 1320, end: 480 } });
     await settings.update({ inboxQuietHours: null });
     expect(seen).toEqual([{ start: 1320, end: 420 }, { start: 1320, end: 480 }, null]);
+  });
+
+  it("publishes the Inbox models, rejects ones the host cannot run, and drops one that becomes unavailable (5.40)", async () => {
+    const path = await settingsPath();
+    const live = new Published<readonly ModelSummary[]>(CATALOG, () => false);
+    const settings = await openHostSettings({ path, fallback, models: live });
+    expect(settings.value.inboxIntakeModel).toBeNull();
+    expect(settings.value.inboxWorkerModel).toBeNull();
+    const seen: unknown[] = [];
+    settings.subscribe((value) => seen.push([value.inboxIntakeModel, value.inboxWorkerModel]));
+
+    const pi = { provider: "pi", modelId: "pi-1" };
+    await settings.update({ inboxWorkerModel: pi });
+    await settings.update({ inboxIntakeModel: pi });
+    await expect(settings.update({ inboxWorkerModel: { provider: "nope", modelId: "x" } })).rejects.toThrow("Unknown model: nope/x");
+    expect(settings.value.custom).toEqual(["inboxIntakeModel", "inboxWorkerModel"]);
+    live.set([]);
+    expect(seen).toEqual([[null, pi], [pi, pi], [null, null]]);
   });
 
   it("advertises the default STUN list, persists an override, and resets to the default", async () => {

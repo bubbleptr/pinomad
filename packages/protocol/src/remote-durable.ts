@@ -3968,6 +3968,14 @@ class RemoteClient {
               "The host is too old for this (needs protocol 5.38); run `pinomad upgrade` on the host",
             );
           }
+          if (
+            (patch.inboxIntakeModel !== undefined || patch.inboxWorkerModel !== undefined)
+            && !hostSupportsFeature(this.#hostMinor, "inboxModels")
+          ) {
+            throw new Error(
+              "The host is too old for this (needs protocol 5.40); run `pinomad upgrade` on the host",
+            );
+          }
           return this.#call("updateSettings", { patch });
         }),
       // Unqueued: a wait or an install must not hold the command queue.
