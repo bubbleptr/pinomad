@@ -13,7 +13,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0017](0017-client-forms-electron-and-expo.md) | 客户端形态：桌面端 Electron 只做 macOS、页面打包进 App；Linux 用 Web；移动端 Expo；`packages/protocol` 要能在 Hermes 上运行（§3、§4 由 0024 取代；§4 已于 2026-10-19 随 `apps/mobile` 删除失效；2026-11-04 补充：App 带宿主服务的启动器） |
 | [0024](0024-native-mobile-rust-core.md) | 移动端改成原生（iOS SwiftUI，以后安卓 Compose），客户端协议核心用 Rust 写一份两端共用；核心不做 I/O，流状态是保留 UTF-16 的完整 JSON；TS 是参照，三层测试对齐 |
 | [0004](0004-built-in-first-plugin-protocol-later.md) | 先内置后开放：内置功能按扩展边界写，满足三个条件才公开插件协议（§4、§5 由 0049 修订） |
-| [0049](0049-plugins-ship-ui.md) | 开放插件：插件装在数据目录 `plugins/` 下，可以带和 Web 外壳同页运行的界面代码，只经具名插槽（侧边面板、工具卡片）贡献界面；插件界面只在 Web 和桌面端，iOS 只有插件工具；按 PiNomad 自己的插件 API 写（修订 0004 §4、§5，0005 的前提；§4、§6 由 0050 修订；§7 由 0051 修订） |
+| [0049](0049-plugins-ship-ui.md) | 开放插件：插件装在数据目录 `plugins/` 下，可以带和 Web 外壳同页运行的界面代码，只经具名插槽（侧边面板、工具卡片）贡献界面；插件界面只在 Web 和桌面端，iOS 只有插件工具；按 PiNomad 自己的插件 API 写（修订 0004 §4、§5，0005 的前提；§4、§6 由 0050 修订；§7 由 0051 修订；§8 由 0052 修订） |
 | [0050](0050-plugins-load-through-chord.md) | 插件改由 chord 加载：目录是 `package.json` + `server.ts` / `web.tsx`，宿主用 esbuild 构建两半、监听文件并热重载，失败时保留上一个好版本；插件仍只写 PiNomad 的 API（服务端默认导出 `definePlugin(fn)`），线路不变（修订 0049 §4、§6） |
 
 ## 运行时与呈现
@@ -50,7 +50,8 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0029](0029-host-declared-slash-commands.md) | 斜杠命令由宿主声明（协议 5.17 `listCommands` / `runCommand`），客户端不写死命令表；只在消息开头识别 `/<已列出的名字>`；第一期只有内置 `/compact` |
 | [0030](0030-attach-files.md) | 输入框的 Attach files 把客户端本机文件分块上传到宿主 `attachments/`，发送时只传宿主生成的 id（5.19）；`used` 永久保留，清理与 submit 共用锁；模型看到转义后的 v1 `<attachments>` 块，客户端只在用户条目和排队输入里剥离 |
 | [0031](0031-host-owns-credentials-and-providers.md) | 凭据和自定义模型存在数据目录，宿主不再读 pi 的任何配置、不迁移；登录在客户端完成，宿主照 pi 的提示转发，进行中的登录经 `providers` 流推送（5.21） |
-| [0051](0051-inbox-mode.md) | Inbox 模式：每个项目一个 Inbox，事件（收件对话提交的任务、定时、插件、局域网 webhook）进 Inbox，一个 worker 依次取任务，每项任务一个对话，后续事件按 thread 回到原任务；Inbox 的运行由 auto mode 的分类器把关，编码模式不变（修订 0011 §1、0049 §7，补充 0040 §1） |
+| [0051](0051-inbox-mode.md) | Inbox 模式：每个项目一个 Inbox，事件（收件对话提交的任务、定时、插件、局域网 webhook）进 Inbox，一个 worker 依次取任务，每项任务一个对话，后续事件按 thread 回到原任务；Inbox 的运行由 auto mode 的分类器把关，编码模式不变（修订 0011 §1、0049 §7，补充 0040 §1；§5、§9 由 0052 补充） |
+| [0052](0052-inbox-memory-outbox-credentials.md) | Inbox 的记忆、发件箱和凭据：记忆按项目存在宿主数据目录（规则、笔记、任务进度、已发消息），固定上下文前缀稳定，每天整理一次；`notify` 经发件箱和投递器发出，默认少发；凭据只在 agent 环境之外，由插件工具代发，Inbox 的运行进沙箱读不到用户凭据（补充 0051 §5、§9，修订 0049 §8） |
 
 ## 远程与运维
 
@@ -137,4 +138,5 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | 0049 §4：插件不直接用 chord；§6：`plugin.json` 目录、启动时加载、浏览器侧由作者构建；没选的方案：宿主构建浏览器侧代码 | 由 0050 修订：宿主用 chord 加载和热重载插件，目录是 `package.json` + `server.ts` / `web.tsx`，两半都由宿主构建；插件仍只 import PiNomad 的 API |
 | 0011 §1：不做审批闸门，工具一律直接执行 | 由 0051 修订：Inbox 的运行由 auto mode 的分类器把关；编码模式仍直接执行 |
 | 0049 §7：编排（钩子、创建对话、定时任务）以后再做 | 由 0051 修订：插件可以声明 Inbox 的事件源；定时由 Inbox 的计时器提供 |
+| 0049 §8：插件 API 的宿主侧是 `tool`、`state`、`method` | 由 0052 修订：加 `secrets`，插件在宿主进程里读用户填的凭据，agent 读不到 |
 | 其余"以后再做" | 统一收在 GitHub Issues，带 `later` 标签 |
