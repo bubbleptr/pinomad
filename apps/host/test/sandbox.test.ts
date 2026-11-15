@@ -62,6 +62,9 @@ async function gitWorktree(dataDir?: string): Promise<{ repo: string; worktree: 
   const repo = await temp();
   const git = (...args: string[]) => exec("git", args, { cwd: repo });
   await git("init", "-q", "-b", "main");
+  // The run's fresh HOME gets the user's identity copied in; CI has no global one.
+  await git("config", "user.name", "t");
+  await git("config", "user.email", "t@t");
   await rm(join(repo, ".git", "hooks"), { recursive: true, force: true });
   await mkdir(join(repo, "pkg"));
   await writeFile(join(repo, "root.txt"), "root");
