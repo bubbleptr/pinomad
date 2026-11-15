@@ -197,6 +197,8 @@ describe("auto mode rules", () => {
         "file:///home/u/.zshrc",
         ".git/hooks/pre-commit",
         ".GIT/hooks/pre-commit",
+        // Another directory on a case-sensitive file system.
+        "/home/u/code/App/src/a.ts",
         "src/../../x.ts",
         "~/.ssh/config",
       ]) {

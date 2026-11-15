@@ -231,18 +231,19 @@ const OUTSIDE_ASK_BASH: readonly RegExp[] = [
  * A file tool writing inside the run's project, outside `.git` (hooks run
  * code). The path is taken as pi's file tools take it (Unicode spaces made
  * plain, a leading `@` dropped, `~` expanded; a `file:` URL is left to the
- * classifier). Lexical like `credentialPath`: case ignored, symlinks not followed.
+ * classifier). Lexical like `credentialPath`: symlinks not followed.
  * No cwd (the hook's "/") is no project.
  */
 function editsProject(tool: string, args: JsonObject, where: RunPaths): boolean {
   if ((tool !== "edit" && tool !== "write") || typeof args.path !== "string") return false;
   const path = args.path.replace(/[\u00a0\u2000-\u200a\u202f\u205f\u3000]/g, " ").replace(/^@/, "");
   if (/^file:/i.test(path)) return false;
-  const cwd = resolve(where.cwd).toLowerCase();
+  const cwd = resolve(where.cwd);
   if (cwd === sep) return false;
-  const target = resolve(where.cwd, path.replace(/^~(?=\/|$)/, where.home)).toLowerCase();
+  // Containment keeps case (on Linux `App` is not `app`); the `.git` match ignores it (on macOS `.GIT` is `.git`).
+  const target = resolve(where.cwd, path.replace(/^~(?=\/|$)/, where.home));
   if (target === cwd || !under(target, cwd)) return false;
-  return !target.slice(cwd.length).split(sep).includes(".git") && !credentialPath(target, where, false);
+  return !target.slice(cwd.length).toLowerCase().split(sep).includes(".git") && !credentialPath(target, where, false);
 }
 
 /** The rule table's answer, or undefined when the classifier must judge. */
