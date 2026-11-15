@@ -291,4 +291,16 @@ private func cot(_ tools: [ToolItem]) -> CotView {
         #expect(Inbox.replacingTop(["home", "draft", "other"], ifTop: "draft", with: "chat") == nil)
         #expect(Inbox.replacingTop([String](), ifTop: "draft", with: "chat") == nil)
     }
+
+    /// dureview: the intake opened from another device while a message was
+    /// half typed — the text moves into that conversation's composer.
+    @Test func unsentIntakeTextCarriesIntoTheConversationDraft() {
+        #expect(Inbox.carryingDraft("Login loops", into: nil) == "Login loops")
+        #expect(Inbox.carryingDraft("Login loops", into: "  ") == "Login loops")
+        // Nothing typed: the conversation's own draft stays as it is.
+        #expect(Inbox.carryingDraft(" \n", into: "Earlier note") == nil)
+        #expect(Inbox.carryingDraft("", into: nil) == nil)
+        // Both: neither is lost.
+        #expect(Inbox.carryingDraft("Login loops", into: "Earlier note") == "Earlier note\n\nLogin loops")
+    }
 }
