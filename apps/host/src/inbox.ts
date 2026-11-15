@@ -245,6 +245,47 @@ export async function addTimer(
 }
 
 /**
+ * `project`'s base branch (#846), found once and stored so switching
+ * branches in the project directory moves nothing; undefined for a non-git
+ * project. A stored branch is returned as it is: one that is gone fails
+ * whoever needs its commit, never a quiet fallback.
+ */
+export async function ensureBaseBranch(
+  harness: Harness,
+  project: string,
+  context: Context,
+): Promise<{ repo: string; branch: string } | undefined> {
+  const repo = await gitBase(project);
+  if (repo === undefined) return undefined;
+  const stored = (await harness.snapshot(InboxDoc, context))?.inboxes[project]?.baseBranch;
+  if (stored !== undefined) return { repo: repo.repo, branch: stored };
+  const found = await defaultBranch(repo.repo);
+  if (found === undefined) throw new Error(`No branch to use as the Inbox's base in ${repo.repo}`);
+  const branch = await harness.commit(async (tx) => {
+    const inboxes = (await tx.doc(InboxDoc)).inboxes;
+    if (inboxes[project] === undefined) inboxes[project] = { tasks: [], threads: {} };
+    // Another caller may have stored one meanwhile: the first stays.
+    return (inboxes[project]!.baseBranch ??= found);
+  }, context);
+  return { repo: repo.repo, branch };
+}
+
+/** Pick `project`'s base branch, or go back to the repository's default with `null`. */
+export async function setBaseBranch(harness: Harness, project: string, branch: string | null, context: Context): Promise<void> {
+  const repo = await gitBase(project);
+  if (repo === undefined) throw new Error("This project is not a Git repository");
+  if (branch !== null) await branchCommit(repo.repo, branch);
+  await harness.commit(async (tx) => {
+    const inboxes = (await tx.doc(InboxDoc)).inboxes;
+    if (inboxes[project] === undefined) inboxes[project] = { tasks: [], threads: {} };
+    if (branch === null) delete inboxes[project]!.baseBranch;
+    else inboxes[project]!.baseBranch = branch;
+  }, context);
+  // Back to the default: find it now, so the Inbox shows which one it is.
+  if (branch === null) await ensureBaseBranch(harness, project, context);
+}
+
+/**
  * Close a task without running it (the Tasks page's Skip): its pending
  * events count as handled. Refused while the worker has a batch of it out:
  * that run is the user's to stop or answer. A later event reopens it.
@@ -691,26 +732,10 @@ export async function startInbox(options: {
     return map;
   };
 
-  /**
-   * The commit `project`'s base branch points at now, or undefined for a
-   * non-git project. The branch is found once and stored (#846); a stored
-   * branch that is gone is an error, never a quiet fallback.
-   */
+  /** The commit `project`'s base branch points at now, or undefined for a non-git project. */
   async function baseCommit(project: string, ctx: Context): Promise<string | undefined> {
-    const repo = await gitBase(project);
-    if (repo === undefined) return undefined;
-    let branch = (await harness.snapshot(InboxDoc, ctx))?.inboxes[project]?.baseBranch;
-    if (branch === undefined) {
-      const found = await defaultBranch(repo.repo);
-      if (found === undefined) throw new Error(`No branch to use as the Inbox's base in ${repo.repo}`);
-      branch = await harness.commit(async (tx) => {
-        const inboxes = (await tx.doc(InboxDoc)).inboxes;
-        if (inboxes[project] === undefined) inboxes[project] = { tasks: [], threads: {} };
-        // Another caller may have stored one meanwhile: the first stays.
-        return (inboxes[project]!.baseBranch ??= found);
-      }, ctx);
-    }
-    return await branchCommit(repo.repo, branch);
+    const base = await ensureBaseBranch(harness, project, ctx);
+    return base === undefined ? undefined : await branchCommit(base.repo, base.branch);
   }
 
   const pump = (project: string): void => {

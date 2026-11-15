@@ -2769,6 +2769,11 @@ class GatewayClient {
         await this.#inbox().setRules(project, rules);
         return null;
       }
+      case "setInboxBaseBranch": {
+        const { project, branch } = args as CallMethods["setInboxBaseBranch"]["args"];
+        await this.#inbox().setBaseBranch(project, branch, context);
+        return null;
+      }
       case "cancelFollowUp":
         await this.#inbox().cancelFollowUp((args as CallMethods["cancelFollowUp"]["args"]).timerId, context);
         return null;

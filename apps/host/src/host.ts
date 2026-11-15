@@ -401,7 +401,16 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
           });
     // The `inbox` stream starts with the gateway; its intake calls wait for the workers below.
     let inboxWorkers: InboxHandle | undefined;
-    inboxView = await openInboxService({ dataDir: options.dataDir, context, intake: () => inboxWorkers, sources: sourceDeps });
+    inboxView = await openInboxService({
+      dataDir: options.dataDir,
+      context,
+      intake: () => inboxWorkers,
+      sources: sourceDeps,
+      questionDocs: extensions
+        .flatMap((extension) => extension.docs ?? [])
+        .filter((doc) => doc.presentation === "pinomad.question")
+        .map((doc) => doc.token as ConversationDocToken<QuestionState>),
+    });
     const webhookDeps = { ...sourceDeps, context };
     const gateway = await startGateway({
       harness,

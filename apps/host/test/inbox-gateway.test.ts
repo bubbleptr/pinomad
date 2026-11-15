@@ -1,16 +1,21 @@
 // The Inbox over the gateway (5.38, ADR-0051 §2, §6, §11): the `inbox` host
 // stream and the calls the Tasks page and the intake use, through a real client.
+import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { promisify } from "node:util";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
+import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import { describe, expect, it } from "vitest";
 import { INBOX_RULES_MAX_BYTES, type HostInbox, type ProjectInbox } from "@pinomad/protocol/inbox.ts";
+import { question } from "../src/extensions/question.ts";
 import { addInboxEvent, addTimer, InboxDoc, TimerDoc } from "../src/inbox.ts";
 import { memoryDir } from "../src/inbox-memory.ts";
 import { IndexDoc } from "../src/organization.ts";
 import { connectTo, LONG_ANSWER, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const context = BACKGROUND_CONTEXT;
+const exec = promisify(execFile);
 const defer = useCleanups();
 
 async function project(): Promise<string> {
@@ -28,11 +33,17 @@ const event = (id: string, summary: string, thread?: string) => ({
 });
 
 /** A host with one project, a client on it, and the project's key as the host stores it. */
-async function inboxHost(options: { answers?: string[]; tokensPerSecond?: number } = {}) {
+async function inboxHost(options: Omit<Parameters<typeof startFauxHost>[1], "dataDir" | "projects"> & { git?: boolean } = {}) {
+  const { git, ...hostOptions } = options;
   const path = await project();
+  if (git === true) {
+    await exec("git", ["init", "-q", "-b", "trunk"], { cwd: path });
+    await exec("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init"], { cwd: path });
+    await exec("git", ["branch", "release"], { cwd: path });
+  }
   const dataDir = await tempDir();
   defer(dataDir.remove);
-  const host = await startFauxHost(defer, { dataDir: dataDir.path, projects: [path], ...options });
+  const host = await startFauxHost(defer, { dataDir: dataDir.path, projects: [path], ...hostOptions });
   const key = (await host.harness.snapshot(IndexDoc, context))!.projects[0]!.path;
   const client = await connectTo(defer, host);
   const inboxOf = (view: { inbox: HostInbox | null }): ProjectInbox | undefined => view.inbox?.inboxes.find((each) => each.project === key);
@@ -143,3 +154,40 @@ describe("skipInboxTask", () => {
 
 const inboxTask = (doc: { inboxes: Record<string, { tasks: { id: string; conversationId?: number }[] }> } | undefined, key: string, id: string) =>
   doc?.inboxes[key]?.tasks.find((task) => task.id === id);
+
+describe("the Inbox's base branch (5.41, #846)", () => {
+  it("shows a git project's default branch, and setInboxBaseBranch picks another or goes back", async () => {
+    const { key, client, until } = await inboxHost({ git: true });
+    expect((await until((inbox) => inbox.baseBranch !== undefined)).baseBranch).toBe("trunk");
+    await client.controller.setInboxBaseBranch(key, "release");
+    await until((inbox) => inbox.baseBranch === "release");
+    await expect(client.controller.setInboxBaseBranch(key, "nope")).rejects.toThrow(/"nope" does not exist/);
+    await client.controller.setInboxBaseBranch(key, null);
+    await until((inbox) => inbox.baseBranch === "trunk");
+  });
+
+  it("has none for a project that is not a Git repository, and refuses to set one", async () => {
+    const { key, client, until } = await inboxHost();
+    expect((await until(() => true)).baseBranch).toBeUndefined();
+    await expect(client.controller.setInboxBaseBranch(key, "main")).rejects.toThrow(/not a Git repository/);
+  });
+});
+
+describe("a task's questions in the stream (5.41, #846)", () => {
+  it("carries the questions a task waits on, and drops them once answered there", async () => {
+    const asks = fauxAssistantMessage(
+      fauxToolCall("ask_user_question", { questions: [{ header: "Scope", question: "Desktop too?", options: [{ label: "Yes" }, { label: "No" }] }] }),
+      { stopReason: "toolUse" },
+    );
+    const { host, key, client, until } = await inboxHost({ git: true, extensions: [question], answers: [asks, "done"] });
+    await addInboxEvent(host.harness, key, event("e1", "layout bug"), context);
+    const waiting = await until((inbox) => (inbox.tasks[0]?.questions?.length ?? 0) > 0);
+    const [task] = waiting.tasks;
+    const [pending] = task!.questions!;
+    expect(pending!.request.questions[0]!.question).toBe("Desktop too?");
+    await client.controller.answer(pending!.kind, pending!.request.id, [{ selected: ["Yes"] }], task!.conversationId);
+    const answered = await until((inbox) => inbox.tasks[0]?.questions === undefined);
+    expect(answered.tasks[0]!.questions).toBeUndefined();
+    await until((inbox) => inbox.tasks[0]?.closed === true);
+  });
+});
