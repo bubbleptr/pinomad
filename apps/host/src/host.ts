@@ -8,7 +8,8 @@ import type { JsonValue } from "@earendil-works/chord/json";
 import type { ImageProcessor } from "@earendil-works/pi-durable/tools";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { addProject, createConversation, ensureIndex, IndexDoc } from "./organization.ts";
-import { INBOX_TASK_TOOLS, inboxExtension, type InboxHandle, INTAKE_TOOLS, startInbox } from "./inbox.ts";
+import { INBOX_TASK_TOOLS, inboxExtension, type InboxHandle, INTAKE_TOOLS, memoryOwner, startInbox } from "./inbox.ts";
+import { createMemoryExtension } from "./inbox-memory.ts";
 import { checkoutAt, ensureWorktree, worktreeRoot } from "./checkout.ts";
 import { ensureDevices, loadHostKey, loadRelayKey, pairingOffers } from "./devices.ts";
 import type { RelayLinkState } from "./relay-link.ts";
@@ -234,12 +235,14 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     for (const { extension } of extensions) registry.install(extension);
     // The Inbox's tools are deferred: only a task's conversation is offered them up front.
     registry.install(inboxExtension);
+    const memoryExtension = createMemoryExtension(memoryOwner(options.dataDir));
+    registry.install(memoryExtension);
     // Plugins load after the built-ins, whose tool names they may not take, and
     // reload as their files change (ADR-0049, ADR-0050). Plugins failing to start
     // at all (no esbuild binary, say) leave the host running without them.
     const pluginLog = options.plugins?.log ?? ((line: string) => console.error(line));
     plugins = await openPlugins(join(options.dataDir, "plugins"), {
-      reservedTools: [...extensions, { extension: inboxExtension }].flatMap(({ extension }) => (extension.tools ?? []).map((tool) => tool.name)),
+      reservedTools: [...extensions, { extension: inboxExtension }, { extension: memoryExtension }].flatMap(({ extension }) => (extension.tools ?? []).map((tool) => tool.name)),
       registry,
       log: pluginLog,
       ...(options.plugins?.onReload === undefined ? {} : { onReload: options.plugins.onReload }),
@@ -414,11 +417,12 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     // Inbox workers (ADR-0051): each task's conversation is created like a user's, in the project.
     const roles = agentRoles;
     const builtinTools = [...extensions.flatMap(({ extension }) => extension.tools ?? []), ...inboxExtension.tools!];
-    const inboxTaskTools = inboxExtension.tools!.filter((tool) => INBOX_TASK_TOOLS.includes(tool.name));
+    const inboxTaskTools = [...inboxExtension.tools!, ...memoryExtension.tools!].filter((tool) => INBOX_TASK_TOOLS.includes(tool.name));
     const intakeTools = builtinTools.filter((tool) => INTAKE_TOOLS.includes(tool.name));
     const inbox = await startInbox({
       harness,
       context,
+      dataDir: options.dataDir,
       ...(upgrader === undefined ? {} : { upgrade: upgrader }),
       questionDocs: extensions
         .flatMap((extension) => extension.docs ?? [])
