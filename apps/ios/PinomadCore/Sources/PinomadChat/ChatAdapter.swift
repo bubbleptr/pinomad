@@ -170,7 +170,7 @@ public enum ChatAdapter {
             if let model { line += " · \(model)" }
             output = output.map { $0 + "\n\n" + line } ?? line
         case .inboxSubmit, nil:
-            // An intake's filed-task card is #809's; until then the call shows as text.
+            // An intake's filed task gets a card under the run; the trace shows the call's own output.
             break
         }
         return output

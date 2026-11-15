@@ -8,8 +8,10 @@ arrow-big-up-dash
 arrow-right
 arrow-up
 ban
+bell
 bell-check
 bot
+box
 camera
 check
 check-check
@@ -36,6 +38,7 @@ folder
 folder-git-2
 folder-plus
 git-branch
+globe
 grip-vertical
 image
 images

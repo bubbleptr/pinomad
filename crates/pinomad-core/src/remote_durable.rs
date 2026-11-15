@@ -1140,7 +1140,8 @@ pub struct RemoteDurable {
     /// `hello.processes` on the current connection: the host's pty loaded.
     host_processes: bool,
     /// `view.host.plugins` (5.34): the hello's list, replaced by each
-    /// `plugins` frame (5.35). iOS shows no plugin UI; the core keeps it current.
+    /// `plugins` frame (5.35). iOS reads only their Inbox event sources (the
+    /// snapshot's `plugins`).
     host_plugins: Json,
     /// Ops whose snapshot waiters a stream release settled. Driving them
     /// here would re-enter the current op's step, so the event loop flushes

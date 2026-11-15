@@ -130,6 +130,11 @@ final class AppModel {
     var navPath: [Route] = [] {
         didSet { followVisiblePage(navPath.last) }
     }
+    /// What the home page lists: coding conversations or the Inbox
+    /// (ADR-0051 §1). Remembered across launches.
+    var homeMode: HomeMode = HomeMode(rawValue: UserDefaults.standard.string(forKey: HomeMode.defaultsKey) ?? "") ?? .coding {
+        didSet { UserDefaults.standard.set(homeMode.rawValue, forKey: HomeMode.defaultsKey) }
+    }
     /// Live answer streams, one set per host. Reading through the focused
     /// runtime means a non-focused host's snapshot can never feed them.
     var replyStreams: ReplyStreams { focusedRuntime?.replyStreams ?? emptyReplyStreams }
@@ -1050,6 +1055,10 @@ final class AppModel {
             self.syncPushToken(for: runtime)
             self.syncServerPushToken()
             self.advancePushTarget()
+            #if DEBUG
+            // PINOMAD_OPEN / PINOMAD_OPEN_INBOX, dropped from the ready path in #463.
+            self.consumeDevOpenRequest()
+            #endif
         }
         runtime.onSnapshot = { [weak self] runtime, snapshot in
             guard let self else { return }

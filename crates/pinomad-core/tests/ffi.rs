@@ -15,7 +15,9 @@ use pinomad_core::ffi::{
     ReorderOutcome, SteerOutcome, StoredHost, SubmissionDraft, SubmissionStatus, SubmitMode, ThinkingLevel,
     WithdrawOutcome, AutoUpgradeMode, AvailableUpgrade, UpgradeBlocker, UpgradeFailure, UpgradePhase,
 };
-use pinomad_core::inbox::{InboxSchedule, InboxSource, InboxSourceSpec, InboxTaskState, InboxWebhookAccess, QuietHours};
+use pinomad_core::inbox::{
+    InboxSchedule, InboxSource, InboxSourceSpec, InboxTaskState, InboxWebhookAccess, PluginInfo, PluginSourceInfo, QuietHours,
+};
 use pinomad_core::json::{Json, JsonObject};
 use pinomad_core::remote_durable::UpgradeWhen;
 use pinomad_core::remote_durable::RemoteDurableOptions;
@@ -3139,6 +3141,54 @@ fn snapshot_decodes_inbox_sources() {
             },
         ]
     );
+}
+
+/// The add-source form's plugin list: `hello.plugins` with each plugin's
+/// declared sources, typed; a source without a name is dropped and a plugin
+/// without sources still lists.
+#[test]
+fn snapshot_decodes_the_hello_plugins_and_their_sources() {
+    let mut host = ScriptedHost::new();
+    let plugins = Json::parse(
+        r#"[{"name":"github","api":1,"sources":[
+            {"name":"issues","description":"New issues","filter":"owner/repo, then label:bug"},
+            {"name":"pr-comments","description":"PR comments","followedOnly":true},
+            {"description":"no name"}]},
+          {"name":"panel","api":1,"web":{"hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":10}}]"#,
+    )
+    .unwrap();
+    host.hello_extras = vec![("plugins".to_string(), plugins)];
+    let h = Harness::boot(host, "req-1");
+    assert_eq!(
+        h.client.snapshot().unwrap().plugins,
+        vec![
+            PluginInfo {
+                name: "github".into(),
+                api: 1.0,
+                sources: vec![
+                    PluginSourceInfo {
+                        name: "issues".into(),
+                        description: "New issues".into(),
+                        filter: Some("owner/repo, then label:bug".into()),
+                        followed_only: false,
+                    },
+                    PluginSourceInfo {
+                        name: "pr-comments".into(),
+                        description: "PR comments".into(),
+                        filter: None,
+                        followed_only: true,
+                    },
+                ],
+            },
+            PluginInfo { name: "panel".into(), api: 1.0, sources: vec![] },
+        ]
+    );
+}
+
+#[test]
+fn snapshot_has_no_plugins_when_the_hello_lists_none() {
+    let h = Harness::boot(ScriptedHost::new(), "req-1");
+    assert!(h.client.snapshot().unwrap().plugins.is_empty());
 }
 
 #[test]

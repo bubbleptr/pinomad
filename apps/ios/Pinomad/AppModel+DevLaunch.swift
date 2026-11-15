@@ -398,10 +398,30 @@ extension AppModel {
 
     /// Route `-openConversation` / `PINOMAD_OPEN` after the first ready.
     func consumeDevOpenRequest() {
-        guard let id = pendingOpen else { return }
-        pendingOpen = nil
-        navPath = [demoConversationRoute(id)]
+        if let id = pendingOpen {
+            pendingOpen = nil
+            navPath = [demoConversationRoute(id)]
+        }
+        // `PINOMAD_OPEN_INBOX=settings:<project path>` opens that Inbox's
+        // settings (`PINOMAD_INBOX_SHEET=add[:plugin|:webhook]` then opens
+        // the add form); `task:<task id>:<project path>` a queued task's page.
+        if let request = ProcessInfo.processInfo.environment["PINOMAD_OPEN_INBOX"], !Self.devInboxOpened,
+           let hostKey = currentHostKey {
+            Self.devInboxOpened = true
+            homeMode = .inbox
+            let parts = request.split(separator: ":", maxSplits: 2).map(String.init)
+            switch parts.first {
+            case "settings" where parts.count >= 2:
+                navPath = [.inboxSettings(hostKey: hostKey, project: parts[1...].joined(separator: ":"))]
+            case "task" where parts.count == 3:
+                navPath = [.inboxTask(hostKey: hostKey, project: parts[2], task: parts[1])]
+            default:
+                break
+            }
+        }
     }
+
+    @MainActor private static var devInboxOpened = false
 
     /// Retries the injected pairing link while the phase is a failure —
     /// only armed by PINOMAD_AUTOPAIR, so manual pairing stays manual.

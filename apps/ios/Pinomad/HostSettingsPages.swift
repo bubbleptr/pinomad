@@ -373,6 +373,9 @@ struct HostChatsView: View {
             } else {
                 tooOld("settings")
             }
+            if let settings = snapshot.settings, model.hostSupports(.inboxQuietHours) {
+                quietHoursSection(settings.inboxQuietHours)
+            }
             archivedSection(snapshot.organized.archived)
         }
     }
@@ -392,6 +395,33 @@ struct HostChatsView: View {
             }
         }
         .pickerStyle(.menu)
+        .disabled(!model.connected)
+    }
+
+    /// When the Inbox's `notify` pushes wait (ADR-0052 §4): one window for
+    /// the whole host, in the host's local time. Questions are not held.
+    @ViewBuilder
+    private func quietHoursSection(_ quiet: QuietHours?) -> some View {
+        Section {
+            Toggle("Quiet hours", isOn: Binding(
+                get: { quiet != nil },
+                set: { model.setInboxQuietHours(hostKey, $0 ? QuietHoursText.fresh : nil) }
+            ))
+            if let quiet {
+                DatePicker("From", selection: Binding(
+                    get: { HourMinute.date(quiet.start) },
+                    set: { model.setInboxQuietHours(hostKey, QuietHours(start: HourMinute.minutes($0), end: quiet.end)) }
+                ), displayedComponents: .hourAndMinute)
+                DatePicker("To", selection: Binding(
+                    get: { HourMinute.date(quiet.end) },
+                    set: { model.setInboxQuietHours(hostKey, QuietHours(start: quiet.start, end: HourMinute.minutes($0))) }
+                ), displayedComponents: .hourAndMinute)
+            }
+        } header: {
+            Text("Inbox")
+        } footer: {
+            Text("Inbox updates wait until the window ends. Times are the host's local time.")
+        }
         .disabled(!model.connected)
     }
 

@@ -48,13 +48,19 @@ extension AppModel {
     /// and the cross-machine lists (#429).
     var machineRoots: [MachineRoot] {
         machines.flatMap { host -> [MachineRoot] in
-            guard !isRejected(host.hostKey),
-                  let organized = runtimes[host.hostKey]?.snapshot?.organized
+            guard !isRejected(host.hostKey), let organized = codingOrganized(host.hostKey)
             else { return [] }
             return allRoots(organized).map {
                 MachineRoot(hostKey: host.hostKey, node: $0.node, project: $0.project)
             }
         }
+    }
+
+    /// A machine's tree as the coding lists show it: without the Inbox's
+    /// intake and task conversations (ADR-0051 §2).
+    func codingOrganized(_ hostKey: String) -> Organized? {
+        guard let snapshot = runtimes[hostKey]?.snapshot else { return nil }
+        return Inbox.codingView(snapshot.organized, inboxes: snapshot.inbox)
     }
 
     /// One host's connection state for the per-host rows (issue #428 §8).

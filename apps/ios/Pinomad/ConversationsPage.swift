@@ -97,7 +97,7 @@ struct ConversationsPage: View {
     }
 
     private var organized: Organized? {
-        hostKey.flatMap { model.isRejected($0) ? nil : model.runtimes[$0]?.snapshot?.organized }
+        hostKey.flatMap { model.isRejected($0) ? nil : model.codingOrganized($0) }
     }
 
     private var rows: [MachineRoot] {
