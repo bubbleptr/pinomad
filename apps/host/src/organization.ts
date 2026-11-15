@@ -15,6 +15,7 @@ import {
   defineDoc,
   type DocumentReader,
   type Harness,
+  type InputEntry,
   type ModelRef,
   type ToolRegistration,
   type Tx,
@@ -135,6 +136,8 @@ export async function createConversation(
      * Inbox task's tools); `only` replaces the offered set (an Inbox intake).
      */
     readonly modelTools?: { readonly add: readonly ToolRegistration[] } | { readonly only: readonly ToolRegistration[] };
+    /** The entry the first message is placed as, instead of a plain `pi.user` one (an Inbox batch). */
+    readonly entry?: InputEntry;
     /** Runs inside the creating commit, before the first message is admitted: a caller's record of the new id. */
     readonly onInit?: (tx: Tx, id: ConversationId) => Promise<void>;
   },
@@ -158,7 +161,7 @@ export async function createConversation(
     const existing = await harness.conversation(prior.id, context);
     if (existing !== undefined) {
       await existing.submit(
-        { type: "input", content: messageContent(input.text, input.images, input.attachmentText), whenBusy: "followUp", requestId: input.requestId },
+        { type: "input", content: messageContent(input.text, input.images, input.attachmentText), ...(input.entry === undefined ? {} : { entry: input.entry }), whenBusy: "followUp", requestId: input.requestId },
         context,
       );
     }
@@ -268,7 +271,7 @@ export async function createConversation(
     );
     if (home.kind === "chat") await mkdir(join(dataDir, "chats", String(conversation.id)), { recursive: true });
     await conversation.submit(
-      { type: "input", content: messageContent(input.text, input.images, input.attachmentText), whenBusy: "followUp", requestId: input.requestId },
+      { type: "input", content: messageContent(input.text, input.images, input.attachmentText), ...(input.entry === undefined ? {} : { entry: input.entry }), whenBusy: "followUp", requestId: input.requestId },
       context,
     );
     return conversation.id;
@@ -280,7 +283,7 @@ export async function createConversation(
     const existing = await harness.conversation(error.conversationId, context);
     if (existing !== undefined) {
       await existing.submit(
-        { type: "input", content: messageContent(input.text, input.images, input.attachmentText), whenBusy: "followUp", requestId: input.requestId },
+        { type: "input", content: messageContent(input.text, input.images, input.attachmentText), ...(input.entry === undefined ? {} : { entry: input.entry }), whenBusy: "followUp", requestId: input.requestId },
         context,
       );
     }

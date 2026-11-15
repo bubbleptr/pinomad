@@ -80,6 +80,12 @@ fn pinomad_json(detail: &PinomadToolDetail) -> Json {
             ("endedAt", ended_at.map(num)),
             ("branch", branch.as_deref().map(s)),
         ]),
+        PinomadToolDetail::InboxSubmit { task, title, merged } => obj(&[
+            ("kind", Some(s("inboxSubmit"))),
+            ("task", Some(s(task))),
+            ("title", Some(s(title))),
+            ("merged", Some(Json::Bool(*merged))),
+        ]),
     }
 }
 
@@ -179,6 +185,13 @@ pub fn chat_entry_json(entry: &ChatEntry) -> Json {
             ("forkEntryId", fork_entry_id.as_deref().map(s)),
             ("failure", failure.as_deref().map(s)),
             ("endedAt", ended_at.map(num)),
+        ]),
+        ChatEntry::InboxBatch { id, task, event_ids, timestamp } => obj(&[
+            ("kind", Some(s("inboxBatch"))),
+            ("id", Some(s(id))),
+            ("task", Some(s(task))),
+            ("eventIds", Some(Json::array(event_ids.iter().map(|event| s(event)).collect()))),
+            ("timestamp", timestamp.map(num)),
         ]),
         ChatEntry::Compaction { id } => obj(&[("kind", Some(s("compaction"))), ("id", Some(s(id)))]),
         ChatEntry::Reset { id } => obj(&[("kind", Some(s("reset"))), ("id", Some(s(id)))]),

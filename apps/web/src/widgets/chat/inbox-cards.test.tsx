@@ -3,7 +3,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import type { InboxTranscript } from "../../entities/inbox/inbox-transcript.tsx";
-import { PINOMAD, TASK } from "../../test/story-fixtures.tsx";
+import { INTAKE_ID, PINOMAD, TASK } from "../../test/story-fixtures.tsx";
 import { InboxTaskCards } from "./inbox-cards.tsx";
 import * as stories from "./inbox-cards.stories.tsx";
 
@@ -48,6 +48,14 @@ describe("a task's conversation", () => {
     expect(card).toHaveTextContent("More often on Safari.");
     expect(card).toHaveTextContent(/Received .*Started /);
     // The preface and rules the model reads stay out of the transcript.
+    expect(screen.queryByText(/This is a task from the project's Inbox/)).toBeNull();
+  });
+
+  it("marks a batch whose events the Inbox no longer lists, without the model's text", () => {
+    // Shown outside its task, the Inbox has none of the batch's events.
+    render(<TaskEvents conversationId={INTAKE_ID} />);
+    expect(screen.queryByRole("region", { name: "Inbox events" })).toBeNull();
+    expect(screen.getByText("Inbox events")).toBeInTheDocument();
     expect(screen.queryByText(/This is a task from the project's Inbox/)).toBeNull();
   });
 });

@@ -113,6 +113,14 @@ pub enum PinomadToolDetail {
         /// `checkout: "worktree"` (ADR-0046 §5).
         branch: Option<String>,
     },
+    /// An `inbox_submit` call the host accepted: the task it filed or added
+    /// to (ADR-0051 §6).
+    InboxSubmit {
+        task: String,
+        title: String,
+        /// Added to an existing task rather than a new one.
+        merged: bool,
+    },
 }
 
 /// One tool call in a transcript, as data. Optional fields mirror the

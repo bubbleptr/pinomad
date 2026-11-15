@@ -10,6 +10,7 @@ import type { OpenedHost } from "../src/host.ts";
 import { addInboxEvent, InboxDoc, type InboxTask, OutboxDoc, TimerDoc } from "../src/inbox.ts";
 import { ENDING_A_RUN, memoryDir, memoryPreamble } from "../src/inbox-memory.ts";
 import { IndexDoc } from "../src/organization.ts";
+import { INBOX_BATCH_ENTRY } from "@pinomad/protocol/inbox.ts";
 import { startFauxHost, tempDir, useCleanups } from "./support.ts";
 
 const context = BACKGROUND_CONTEXT;
@@ -43,7 +44,7 @@ const call = (name: string, args: Parameters<typeof fauxToolCall>[1]) =>
 async function firstUserText(host: OpenedHost, id: ConversationId): Promise<string> {
   const conversation = await host.harness.conversation(id, context);
   const page = await conversation!.entries({ order: "ascending" }, 100, undefined, context);
-  const entry = page.items.find((each) => each.kind === "pi.user") as { model?: { content?: unknown }[] } | undefined;
+  const entry = page.items.find((each) => each.kind === INBOX_BATCH_ENTRY) as { model?: { content?: unknown }[] } | undefined;
   const content = entry?.model?.[0]?.content;
   return typeof content === "string" ? content : JSON.stringify(content);
 }

@@ -5,6 +5,7 @@ import type { ConversationView, EntryRecord } from "@earendil-works/pi-durable";
 import type { PresentationType } from "@pinomad/protocol/presentation.ts";
 import type { LogicalSubmission } from "@pinomad/protocol/view.ts";
 import { attachmentBlock } from "@pinomad/protocol/attachments.ts";
+import { INBOX_BATCH_ENTRY } from "@pinomad/protocol/inbox.ts";
 import { deriveChat, type ChatEntry, type CotView } from "../src/cot-view.ts";
 import { attached } from "./attachment-blocks-cases.ts";
 import { block } from "./skill-blocks-cases.ts";
@@ -13,6 +14,9 @@ let nextId = 1;
 export const entry = (kind: string, message?: unknown): EntryRecord =>
   ({ id: nextId++, conversationId: 0, kind, ...(message === undefined ? {} : { model: [message] }) }) as unknown as EntryRecord;
 export const user = (content: string | unknown[], timestamp = 0) => entry("pi.user", { role: "user", content, timestamp });
+/** The worker's message handing a task its events (INBOX_BATCH_ENTRY), with `data` as given. */
+export const inboxBatch = (data: unknown, content: string, timestamp = 0): EntryRecord =>
+  ({ ...entry(INBOX_BATCH_ENTRY, { role: "user", content, timestamp }), data }) as unknown as EntryRecord;
 export const assistant = (content: unknown[], stopReason = "stop", timestamp = 0, extra: object = {}) =>
   entry("pi.assistant", { role: "assistant", content, stopReason, timestamp, ...extra });
 export const result = (callId: string, name: string, output: string, isError = false, details?: unknown, timestamp = 0) =>
@@ -658,6 +662,49 @@ export const DERIVE_CHAT_CASES: DeriveChatCase[] = [
     busy: false,
     submissions: [local()],
   },
+  {
+    // Each filed task's id from the tool's details; a refused call has none.
+    name: "inbox-submit",
+    view: view([
+      user("two bugs"),
+      assistant(
+        [
+          call("c1", "inbox_submit", { title: "Export", detail: "garbled" }),
+          call("c2", "inbox_submit", { title: "More", detail: "also CSV", mergeInto: "t1" }),
+          call("c3", "inbox_submit", { title: { text: "bad" }, detail: "x" }),
+        ],
+        "toolUse",
+      ),
+      result("c1", "inbox_submit", "Created task t2: Export.", false, { task: "t2", title: "Export", merged: false }),
+      result("c2", "inbox_submit", "Added to task t1.", false, { task: "t1", title: "More", merged: true }),
+      result("c3", "inbox_submit", "Validation failed", true),
+      assistant([text("Filed.")]),
+    ]),
+    busy: false,
+  },
+  {
+    // Details of that shape from another tool are not a filed task.
+    name: "inbox-submit-other-tool",
+    view: view([
+      user("go"),
+      assistant([call("c1", "lookup", {})], "toolUse"),
+      result("c1", "lookup", "ok", false, { task: "t2", title: "Export", merged: false }),
+    ]),
+    busy: false,
+  },
+  {
+    // Each batch opens its own turn; a batch whose data is not a batch reads as the message it holds.
+    name: "inbox-batches",
+    view: view([
+      inboxBatch({ task: "t1", eventIds: ["e1"] }, "<event>one</event>", 100),
+      assistant([text("fixed")]),
+      inboxBatch({ task: "t1", eventIds: ["e2", "e3"] }, "<event>two</event>", 200),
+      assistant([text("looked")]),
+      inboxBatch({ task: 7, eventIds: "e4" }, "malformed", 300),
+      assistant([text("odd")]),
+    ]),
+    busy: false,
+  },
 ];
 
 /** Cases also exercised through `retryOf` — by name into DERIVE_CHAT_CASES. */
@@ -688,6 +735,8 @@ export const RETRY_CASES: DeriveChatCase[] = [
     view: view([user([text("look"), image("aGk=", "image/png"), imageRef("5f2a", "image/jpeg")]), failed()]),
     busy: false,
   },
+  // A failed run after an Inbox batch offers no retry: resending its text would lose the batch.
+  { name: "retry-inbox-batch", view: view([inboxBatch({ task: "t1", eventIds: ["e1"] }, "<event>one</event>", 100), failed()]), busy: false },
 ];
 
 export interface SplitCase {

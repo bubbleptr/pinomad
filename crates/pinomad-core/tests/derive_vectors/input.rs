@@ -49,6 +49,11 @@ fn pinomad(json: &Json) -> Option<PinomadToolDetail> {
             ended_at: num(json.get("endedAt")),
             branch: text(json.get("branch")),
         }),
+        Some("inboxSubmit") => Some(PinomadToolDetail::InboxSubmit {
+            task: text(json.get("task")).unwrap_or_default(),
+            title: text(json.get("title")).unwrap_or_default(),
+            merged: matches!(json.get("merged"), Some(Json::Bool(true))),
+        }),
         _ => None,
     }
 }

@@ -23,6 +23,26 @@ export interface InboxEvent {
 }
 
 /**
+ * The entry kind of the worker's message that hands a task a batch of its
+ * events. Its model message is the user message the model reads; its `data`
+ * is an `InboxBatch`, so clients show the events from the Inbox stream
+ * instead of that text.
+ */
+export const INBOX_BATCH_ENTRY = "pinomad.inbox-batch";
+
+/** An `INBOX_BATCH_ENTRY` entry's data. */
+export interface InboxBatch {
+  readonly task: string;
+  /** In delivery order. */
+  readonly eventIds: readonly string[];
+}
+
+/** Whether an entry of this kind holds a user message that starts a turn: one the user typed or an Inbox batch. */
+export function isUserMessageEntry(kind: string): boolean {
+  return kind === "pi.user" || kind === INBOX_BATCH_ENTRY;
+}
+
+/**
  * One task: an ordinary conversation once the worker first takes it. Its
  * state is derived, not stored (ADR-0051 §2): `inboxTaskState` in
  * `@pinomad/client/inbox.ts`.

@@ -169,7 +169,8 @@ public enum ChatAdapter {
             var line = "Subagent — conversation #\(conversationId)"
             if let model { line += " · \(model)" }
             output = output.map { $0 + "\n\n" + line } ?? line
-        case nil:
+        case .inboxSubmit, nil:
+            // An intake's filed-task card is #809's; until then the call shows as text.
             break
         }
         return output
@@ -181,7 +182,8 @@ extension ChatEntry {
     /// the transcript's `ForEach`.
     public var entryId: String {
         switch self {
-        case let .user(id, _, _, _, _, _), let .run(id, _, _, _, _, _), let .compaction(id), let .reset(id):
+        case let .user(id, _, _, _, _, _), let .run(id, _, _, _, _, _), let .inboxBatch(id, _, _, _),
+             let .compaction(id), let .reset(id):
             id
         }
     }

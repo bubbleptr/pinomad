@@ -17,9 +17,9 @@ import {
   withAccount,
   withHosts,
   withInbox,
-  inboxTaskConversation,
   RUNNING_TASK_ID,
 } from "../../test/story-fixtures.tsx";
+import { inboxTaskConversation } from "../../test/inbox-fixtures.ts";
 import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
 import { ComposerSkeleton, ConversationSkeleton } from "../chat/conversation-skeleton.tsx";
 import { ConversationComposer } from "../composer/conversation-composer.tsx";

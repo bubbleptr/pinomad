@@ -10,7 +10,8 @@ import type { ConversationNode } from "@pinomad/protocol/organization.ts";
 import type { DurableView, ConversationSummary, ModelSummary } from "@pinomad/protocol/view.ts";
 import { cleanTitle } from "../src/auto-title.ts";
 import { createSubagent } from "../src/extensions/subagent.ts";
-import { connectTo, startChat, startFauxHost, useCleanups, waitForView } from "./support.ts";
+import { addInboxEvent } from "../src/inbox.ts";
+import { connectTo, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const defer = useCleanups();
 const context = BACKGROUND_CONTEXT;
@@ -72,6 +73,23 @@ describe("auto-title", () => {
     await waitForView(client.view, (view) => summaryOf(view, id)?.title === "Captured title");
     expect(titlePrompt).toContain("look at the notes");
     expect(titlePrompt).not.toContain("<attachments");
+  });
+
+  it("titles an Inbox task from the events its worker batch carried", async () => {
+    let titlePrompt = "";
+    const capture: FauxResponseFactory = (request) => {
+      titlePrompt = JSON.stringify(request.messages);
+      return fauxAssistantMessage("Fix the export");
+    };
+    const project = await tempDir();
+    defer(project.remove);
+    const host = await startFauxHost(defer, { autoTitle: true, projects: [project.path], answers: ["fixed", capture] });
+    const client = await connectTo(defer, host);
+    await addInboxEvent(host.harness, project.path, { id: "e1", source: "user", summary: "export garbles text", trusted: true }, context);
+    await waitForView(client.view, (view) => view.inbox?.inboxes[0]?.tasks[0]?.closed === true);
+    const id = client.view.current().inbox!.inboxes[0]!.tasks[0]!.conversationId!;
+    await waitForView(client.view, (view) => summaryOf(view, id)?.title === "Fix the export");
+    expect(titlePrompt).toContain("export garbles text");
   });
 
   it("titles a conversation after its first successful run, and never again", async () => {

@@ -12,13 +12,13 @@ import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Context } from "@earendil-works/chord/context";
 import type { JsonValue } from "@earendil-works/chord/json";
-import { type ConversationDocToken, type ConversationId, defineDoc, defineExtension, defineTool, type Harness, type Tx } from "@earendil-works/pi-durable";
+import { type ConversationDocToken, type ConversationId, defineDoc, type InputEntry, defineExtension, defineTool, type Harness, type Tx } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import { gitBase } from "./checkout.ts";
 import { memoryDir, memoryPreamble, type MemoryOwner, taskMemory } from "./inbox-memory.ts";
 import { IndexDoc } from "./organization.ts";
 import { nextFire } from "./schedule.ts";
-import type { InboxSchedule } from "@pinomad/protocol/inbox.ts";
+import { INBOX_BATCH_ENTRY, type InboxBatch, type InboxSchedule } from "@pinomad/protocol/inbox.ts";
 import type { HostIndex } from "@pinomad/protocol/organization.ts";
 
 export type InboxEventSource = "user" | "schedule" | "followUp" | "webhook" | `plugin:${string}`;
@@ -615,6 +615,8 @@ export type CreateInboxConversation = (
     text: string;
     requestId: string;
     kind: "task" | "intake" | "tidy";
+    /** The entry the first message is placed as, instead of a plain `pi.user` one. */
+    entry?: InputEntry;
     /** Runs in the creating commit, before the first message is admitted. */
     onInit?: (tx: Tx, id: ConversationId) => Promise<void>;
   },
@@ -764,10 +766,13 @@ export async function startInbox(options: {
       task.kind === "tidy"
         ? [TIDY_PREFACE, await memoryPreamble(dir), eventBlocks(events)].join("\n\n")
         : [FIRST_MESSAGE_PREFACE, await memoryPreamble(dir), await taskMemory(dir, task.id, sent), eventBlocks(events)].join("\n\n");
+    // Clients show the events themselves in place of this text (InboxBatch).
+    const data = { task: task.id, eventIds: [...batch.eventIds] } satisfies InboxBatch;
+    const entry: InputEntry = { kind: INBOX_BATCH_ENTRY, data };
     let conversationId = task.conversationId;
     if (conversationId === undefined) {
       conversationId = await options.createConversation(
-        { project, text, requestId: batch.requestId, kind: task.kind === "tidy" ? "tidy" : "task" },
+        { project, text, requestId: batch.requestId, kind: task.kind === "tidy" ? "tidy" : "task", entry },
         context,
       );
       const created = conversationId;
@@ -778,7 +783,7 @@ export async function startInbox(options: {
     const conversation = await harness.conversation(conversationId, context);
     if (conversation === undefined) throw new Error(`Inbox task ${task.id} lost its conversation ${conversationId}`);
     // The same request id as any earlier admission: this finds it instead of admitting twice.
-    const submission = await conversation.submit({ type: "input", content: text, whenBusy: "followUp", requestId: batch.requestId }, context);
+    const submission = await conversation.submit({ type: "input", content: text, entry, whenBusy: "followUp", requestId: batch.requestId }, context);
     if (!batch.admitted) {
       await harness.commit(async (tx) => {
         const current = await find(tx);

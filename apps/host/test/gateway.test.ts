@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { fauxAssistantMessage, fauxToolCall, type FauxResponseFactory } from "@earendil-works/pi-ai/providers/faux";
 import type { ServerFrame } from "@pinomad/protocol/frames.ts";
+import { INBOX_BATCH_ENTRY } from "@pinomad/protocol/inbox.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { streamingText, transcript } from "@pinomad/protocol/transcript.ts";
 import type { Models } from "@earendil-works/pi-ai/models";
@@ -283,6 +284,30 @@ describe("gateway", () => {
       .find((node) => node.summary.id === forkId)!.summary;
     expect(fork.kind).toBe("fork");
     expect(fork.updatedAt).toBeUndefined();
+  });
+
+  it("counts an Inbox batch as the conversation's newest message, live and after a restart", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const first = await startFauxHost(defer, { dataDir: dir.path, answers: ["done"] });
+    const client = await connectTo(defer, first);
+    const id = await startChat(client, "go");
+    await waitForView(client.view, (view) => transcript(view.conversation!).at(-1)?.text === "done");
+    const at = Date.now() + 60_000;
+    await first.harness.commit(async (tx) => {
+      await tx.appendEntry(id, {
+        kind: INBOX_BATCH_ENTRY,
+        data: { task: "t", eventIds: ["e"] },
+        model: [{ role: "user", content: "<event>…</event>", timestamp: at }],
+      });
+    }, BACKGROUND_CONTEXT);
+    const summaryOf = (view: ReturnType<RemoteDurable["view"]["current"]>) => view.organized.chats.find((node) => node.summary.id === id)?.summary;
+    await waitForView(client.view, (view) => summaryOf(view)?.updatedAt === at);
+    await first.close();
+
+    const second = await startFauxHost(defer, { dataDir: dir.path });
+    const again = await connectTo(defer, second);
+    await waitForView(again.view, (view) => summaryOf(view)?.updatedAt === at);
   });
 
   it("admits a submit's requestId once: a resent call returns the same submission and writes nothing", async () => {

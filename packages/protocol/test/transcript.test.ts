@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationView, EntryId, EntryRecord } from "@earendil-works/pi-durable";
-import { addEarlier, withEarlier } from "../src/transcript.ts";
+import { INBOX_BATCH_ENTRY } from "../src/inbox.ts";
+import { addEarlier, transcript, withEarlier } from "../src/transcript.ts";
 
 const entry = (id: number): EntryRecord => ({ id: id as EntryId, kind: "pi.user" }) as EntryRecord;
 const view = (ids: number[], before?: number): ConversationView =>
@@ -31,5 +32,22 @@ describe("earlier transcript pages", () => {
   it("leaves a view with nothing loaded as it is", () => {
     const window = view([20, 21], 18);
     expect(withEarlier(window, undefined)).toBe(window);
+  });
+});
+
+describe("transcript lines", () => {
+  it("reads an Inbox batch as the user message the model got", () => {
+    const shown = {
+      conversation: { id: 1 },
+      entries: [
+        { id: 1, kind: INBOX_BATCH_ENTRY, data: { task: "t", eventIds: ["e"] }, model: [{ role: "user", content: "<event>…</event>" }] },
+        { id: 2, kind: "pi.assistant", model: [{ role: "assistant", content: [{ type: "text", text: "on it" }], stopReason: "stop" }] },
+      ],
+      docs: {},
+    } as unknown as ConversationView;
+    expect(transcript(shown)).toEqual([
+      { role: "user", text: "<event>…</event>" },
+      { role: "assistant", text: "on it", stopReason: "stop" },
+    ]);
   });
 });

@@ -4,6 +4,7 @@ import type { ConversationId, ConversationView, EntryDraft, EntryRecord } from "
 import { WebSocket } from "ws";
 import { describe, expect, it } from "vitest";
 import type { ServerFrame } from "@pinomad/protocol/frames.ts";
+import { INBOX_BATCH_ENTRY } from "@pinomad/protocol/inbox.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
 import { connectTo, startChat, startFauxHost, useCleanups, waitForView } from "./support.ts";
 
@@ -132,6 +133,24 @@ describe("long transcript", () => {
     expect(page.entries).toHaveLength(31);
     expect(page.entries[0]!.kind).toBe("pi.user");
     expect(page.entries.at(-1)!.id).toBe(ids.at(-32));
+    expect(page.before).toBe(ids.at(-63));
+  });
+
+  it("starts a window and a page at an Inbox batch, which opens a turn as a user message does", async () => {
+    const host = await startFauxHost(defer);
+    const batch = (turn: number): EntryDraft => ({ ...user(`b${turn}`), kind: INBOX_BATCH_ENTRY, data: { task: "t", eventIds: [`e${turn}`] } });
+    const drafts = Array.from({ length: 4 }, (_, turn) => [batch(turn), ...Array.from({ length: 30 }, (_, index) => assistant(`a${turn}-${index}`))]).flat();
+    const { id, ids } = await longChat(host, drafts);
+
+    const client = await raw(host);
+    client.send({ type: "subscribe", stream: `conversation:${id}`, window: { limit: 10 } });
+    const view = await client.snapshot(`conversation:${id}`);
+    expect(view.entries).toHaveLength(31);
+    expect(view.entries[0]!.kind).toBe(INBOX_BATCH_ENTRY);
+
+    const page = (await client.call("earlierEntries", { conversationId: id, before: view.before, limit: 10 })).value as Page;
+    expect(page.entries).toHaveLength(31);
+    expect(page.entries[0]!.kind).toBe(INBOX_BATCH_ENTRY);
     expect(page.before).toBe(ids.at(-63));
   });
 

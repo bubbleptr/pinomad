@@ -1,4 +1,5 @@
 import type { ConversationView, EntryId, EntryRecord } from "@earendil-works/pi-durable";
+import { isUserMessageEntry } from "./inbox.ts";
 
 /** A conversation subscribe's window (5.28): what the first snapshot holds. */
 export interface TranscriptWindow {
@@ -71,10 +72,10 @@ function textOf(message: MessageLike): string {
 }
 
 function lineOf(entry: EntryRecord): TranscriptLine | undefined {
-  if (entry.kind !== "pi.user" && entry.kind !== "pi.assistant") return undefined;
+  if (!isUserMessageEntry(entry.kind) && entry.kind !== "pi.assistant") return undefined;
   const message = entry.model?.[0] as MessageLike | undefined;
   if (message === undefined) return undefined;
-  if (entry.kind === "pi.user") return { role: "user", text: textOf(message) };
+  if (entry.kind !== "pi.assistant") return { role: "user", text: textOf(message) };
   return { role: "assistant", text: textOf(message), stopReason: message.stopReason ?? "stop" };
 }
 
