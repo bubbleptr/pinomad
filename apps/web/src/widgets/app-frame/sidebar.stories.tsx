@@ -20,6 +20,11 @@ import {
   withDesktopUpdates,
   withForks,
   withHosts,
+  withInbox,
+  INTAKE_ID,
+  PINOMAD,
+  RUNNING_TASK_ID,
+  TASK,
 } from "../../test/story-fixtures.tsx";
 import { SidebarContent, SidebarFooter, SidebarHeaderBand } from "./sidebar.tsx";
 
@@ -126,6 +131,45 @@ export const LegacyNestedForks: Story = {
 /** The second root-level fork still follows the first one's legacy descendant. */
 export const SecondForkSelected: Story = {
   args: { machines: forkMachines(), shownId: SECOND_FORK_ID },
+};
+
+const inboxMachines = () => fakeMachines({ home: withInbox() });
+
+/** Coding mode leaves the Inbox's intake and task conversations out (ADR-0051 §2). */
+export const CodingWithInbox: Story = {
+  args: { machines: inboxMachines(), onModeChange: fn() },
+};
+
+/** Inbox mode (ADR-0051 §1): a row per project, its tasks grouped under it; a task's conversation is in main. */
+export const InboxMode: Story = {
+  args: { machines: inboxMachines(), mode: "inbox", shownId: RUNNING_TASK_ID, onModeChange: fn(), onInboxTarget: fn() },
+};
+
+/** The project name opens its intake, which is then the selected row. */
+export const InboxIntakeShown: Story = {
+  args: { machines: inboxMachines(), mode: "inbox", shownId: INTAKE_ID, onModeChange: fn(), onInboxTarget: fn() },
+};
+
+/** A queued task has no conversation yet: main shows its Inbox screen, and the row stays selected. */
+export const InboxQueuedTaskShown: Story = {
+  args: {
+    machines: inboxMachines(),
+    mode: "inbox",
+    shownId: undefined,
+    inboxTarget: { project: PINOMAD.path, task: TASK.queued },
+    onModeChange: fn(),
+    onInboxTarget: fn(),
+  },
+};
+
+/** A host older than the Inbox (protocol 5.38) says so in its group. */
+export const InboxOldHost: Story = {
+  args: {
+    machines: fakeMachines({ devbox: devboxView({ host: { version: "0.8.0", protocol: { major: 5, minor: 37 } } }) }),
+    mode: "inbox",
+    onModeChange: fn(),
+    onInboxTarget: fn(),
+  },
 };
 
 /** Subagents get no rows (ADR-0047 §1): the root stays selected while one of its subagents is shown in main. */

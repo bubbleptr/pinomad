@@ -27,11 +27,19 @@ import {
   type SidebarMachine,
 } from "./sidebar.tsx";
 import { useSettingsScreen, type SettingsRequest } from "./settings-page.tsx";
+import type { SidebarMode } from "./inbox-sidebar.tsx";
+import type { InboxTarget } from "../../entities/composer/composer-store.ts";
+import { inboxConversationIds } from "../../entities/inbox/inbox.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { AccountDialog } from "../account/account-dialog.tsx";
 import { Toaster, useToast } from "../../shared/ui/toast.tsx";
 
 const SIDEBAR_OPEN_KEY = "pinomad.sidebar.open";
+
+const SIDEBAR_MODE_KEY = "pinomad.sidebar.mode";
+
+const readSidebarMode = (): SidebarMode =>
+  typeof window !== "undefined" && window.localStorage.getItem(SIDEBAR_MODE_KEY) === "inbox" ? "inbox" : "coding";
 
 const readSidebarOpen = (): boolean =>
   typeof window === "undefined" || window.localStorage.getItem(SIDEBAR_OPEN_KEY) !== "false";
@@ -77,6 +85,8 @@ export function AppFrame({
   onOpen,
   onNewChat,
   onShowMachine,
+  inboxTarget,
+  onInboxTarget,
   narrow,
   children,
 }: {
@@ -92,10 +102,18 @@ export function AppFrame({
   /** The global New chat picks a machine by itself instead of following focus. */
   onNewChat?: () => void;
   onShowMachine?: (key: string) => void;
+  /** The focused machine's Inbox screen shown in place of a conversation (ADR-0051 §6). */
+  inboxTarget?: InboxTarget | undefined;
+  onInboxTarget?: (key: string, target: InboxTarget) => void;
   narrow: boolean;
   children: ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(readSidebarOpen);
+  const [mode, setMode] = useState(readSidebarMode);
+  const changeMode = useCallback((next: SidebarMode): void => {
+    window.localStorage.setItem(SIDEBAR_MODE_KEY, next);
+    setMode(next);
+  }, []);
   const [navOpen, setNavOpen] = useState(false);
   // Open Settings, on a given section or the default one.
   const [settingsAt, setSettingsAt] = useState<SettingsRequest>();
@@ -115,6 +133,13 @@ export function AppFrame({
   };
   const [locate, setLocate] = useState<SidebarLocate>();
   const focused = machines.find((machine) => machine.key === focusKey);
+  // An Inbox conversation or screen in main (a reload, a notification) brings
+  // the sidebar to Inbox mode, where its row is; the coding sidebar hides it.
+  const showsInbox =
+    inboxTarget !== undefined || (shownId !== undefined && inboxConversationIds(focused?.view?.inbox ?? null).has(shownId));
+  useEffect(() => {
+    if (showsInbox) changeMode("inbox");
+  }, [changeMode, showsInbox, shownId]);
   // Under the desktop shell on macOS, the traffic lights own the top-left
   // corner: whichever band sits there reserves the inset and drags the window.
   const chrome = hostWindowChrome();
@@ -152,6 +177,10 @@ export function AppFrame({
       draftingChat={draftingChat}
       shownId={shownId}
       {...(locate === undefined ? {} : { locate })}
+      mode={mode}
+      onModeChange={changeMode}
+      inboxTarget={inboxTarget}
+      {...(onInboxTarget === undefined ? {} : { onInboxTarget })}
       onDraft={onDraft}
       {...(onNewChat === undefined ? {} : { onNewChat })}
       onOpen={onOpen}
@@ -293,6 +322,7 @@ export function FrameHeader({
   narrow,
   title,
   agent,
+  subtitle,
   parentSummary,
   onBackToParent,
   showOverview,
@@ -304,6 +334,8 @@ export function FrameHeader({
   title: string;
   /** The agent the shown conversation runs as; for a subagent, its call-given role. */
   agent?: string;
+  /** A quieter note after the title: an Inbox task's project, or what an intake is. */
+  subtitle?: string | undefined;
   parentSummary: ConversationSummary | undefined;
   onBackToParent: (id: ConversationId) => void;
   showOverview: boolean;
@@ -344,6 +376,7 @@ export function FrameHeader({
           <span className="flex items-center gap-1.5">
             <span className="truncate">{title}</span>
             {agent === undefined ? null : <span className="shrink-0 text-muted-foreground">@{agent}</span>}
+            {subtitle === undefined ? null : <span className="min-w-0 truncate text-xs text-muted-foreground">{subtitle}</span>}
           </span>
         ) : (
           <span className="flex items-center gap-1">

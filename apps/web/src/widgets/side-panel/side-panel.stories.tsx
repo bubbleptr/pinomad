@@ -13,6 +13,10 @@ import {
   TERMINALS,
   withSubagents,
   withSummary,
+  withInbox,
+  PINOMAD_INBOX,
+  RUNNING_TASK_ID,
+  WEBSITE_INBOX,
 } from "../../test/story-fixtures.tsx";
 import { SidePanel } from "./side-panel.tsx";
 
@@ -50,6 +54,17 @@ type Story = StoryObj<typeof meta>;
 
 /** The family's subagents, grouped by their owner. */
 export const Tasks: Story = {};
+
+const inboxView = withInbox();
+/** An Inbox task in main: Tasks leads with that Inbox's rules and follow-ups (ADR-0051 §11); the daily tidy-up can't be cancelled. */
+export const InboxTasks: Story = {
+  args: { view: inboxView, remote: fakeRemote(inboxView), shownId: RUNNING_TASK_ID, inbox: PINOMAD_INBOX },
+};
+
+/** An Inbox with no rules and nothing scheduled. */
+export const InboxTasksEmpty: Story = {
+  args: { view: inboxView, remote: fakeRemote(inboxView), shownId: undefined, drafting: true, inboxScreen: true, inbox: WEBSITE_INBOX },
+};
 
 const mixed = withSubagents(view, MIXED_SUBAGENTS);
 /** At work, failed and finished subagents beside processes: each row says its state in words. */

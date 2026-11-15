@@ -29,6 +29,10 @@ import { fillToolDetails } from "./tool-detail.tsx";
 import { usePluginRegistry } from "../../entities/plugin/plugin-host.tsx";
 import { HOST_UPGRADING_ERROR } from "@pinomad/protocol/upgrade.ts";
 import { Badge } from "../../shared/ui/badge.tsx";
+import type { InboxEvent } from "@pinomad/protocol/inbox.ts";
+import { deliveredEventIds } from "../../entities/inbox/host-text.ts";
+import { useInboxTranscript, type InboxTranscript } from "../../entities/inbox/inbox-transcript.tsx";
+import { InboxEventCard, InboxTaskCards, inboxSubmitsOf } from "./inbox-cards.tsx";
 
 /** The conversation's todo list and when any run last wrote it (`lastTodoWriteMs`). */
 type RunTodo = { state: TodoState; updatedAtMs?: number };
@@ -81,8 +85,11 @@ export function ChatEntryView({
   /** Local start of today, shared by the transcript's midnight clock. */
   today?: number;
 }) {
+  const inbox = useInboxTranscript();
   switch (entry.kind) {
-    case "user":
+    case "user": {
+      const events = deliveredEvents(entry, inbox);
+      if (events !== undefined) return <InboxEventCard events={events} startedAt={entry.timestamp} today={today} />;
       return (
         <UserEntry
           entry={entry}
@@ -93,6 +100,7 @@ export function ChatEntryView({
           today={today}
         />
       );
+    }
     case "run":
       return (
         <RunEntry
@@ -115,6 +123,19 @@ export function ChatEntryView({
     case "reset":
       return <ChatSystemMessage variant="divider">New context</ChatSystemMessage>;
   }
+}
+
+/**
+ * The task's events a worker message delivered, when it is one: it reads as
+ * an event card instead of the preface, rules and blocks the model gets.
+ */
+function deliveredEvents(entry: Extract<ChatEntry, { kind: "user" }>, inbox: InboxTranscript | undefined): InboxEvent[] | undefined {
+  if (inbox === undefined || inbox.events.size === 0 || entry.local !== undefined) return undefined;
+  const events = deliveredEventIds(entry.text).flatMap((id) => {
+    const event = inbox.events.get(id);
+    return event === undefined ? [] : [event];
+  });
+  return events.length === 0 ? undefined : events;
 }
 
 function UserEntry({
@@ -280,6 +301,13 @@ function RunEntry({
   const pluginCards = usePluginRegistry().toolCards;
   const cot = useMemo(() => fillToolDetails(cotWithoutSubagents, pluginCards), [cotWithoutSubagents, pluginCards]);
   const answer = cot.answer;
+  // An intake's filed tasks get cards after the answer that introduces them;
+  // the calls stay in the folded trace too.
+  const inbox = useInboxTranscript();
+  const filed = useMemo(
+    () => (inbox === undefined ? [] : inboxSubmitsOf(entry.cot.steps.flatMap((step) => (step.kind === "tools" ? step.tools : [])))),
+    [entry.cot.steps, inbox],
+  );
   // A forked message's chip opens that fork in main rather than the dialog.
   const forks = entry.forkEntryId === undefined ? [] : (forksAt?.(entry.forkEntryId) ?? []);
   // A settled run's metadata rides in its actions row: the end time first,
@@ -312,6 +340,7 @@ function RunEntry({
             )}
           </ChatMessage.Content>
         )}
+        {inbox === undefined ? null : <InboxTaskCards tools={filed} inbox={inbox} />}
         {entry.failure === undefined ? null : <ChatRunFailure error={entry.failure} onRetry={onRetry} />}
         {!showActions ? null : (
           <ChatMessageActions>

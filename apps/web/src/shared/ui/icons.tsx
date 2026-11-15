@@ -26,6 +26,8 @@ import {
   CheckmarkCircle02Icon,
   ChevronRightIcon,
   CircleIcon,
+  Clock01Icon,
+  CodeIcon,
   CommandIcon,
   CommandLineIcon,
   ComputerIcon,
@@ -48,6 +50,7 @@ import {
   Globe02Icon,
   HammerIcon,
   ImageIcon as HugeImageIcon,
+  InboxIcon,
   InformationCircleIcon,
   KeyRoundIcon,
   LaptopIcon,
@@ -56,6 +59,7 @@ import {
   LinkSquare02Icon,
   Loading03Icon,
   MoreHorizontalIcon,
+  Notification01Icon,
   PaintBoardIcon,
   PencilEdit01Icon,
   PuzzleIcon,
@@ -122,6 +126,10 @@ export const Check = iconComponent(Tick02Icon);
 export const CheckCircle = iconComponent(CheckmarkCircle02Icon);
 export const CheckDouble = iconComponent(TickDouble02Icon);
 export const Circle = iconComponent(CircleIcon);
+export const Clock = iconComponent(Clock01Icon);
+export const Code = iconComponent(CodeIcon);
+export const Inbox = iconComponent(InboxIcon);
+export const Bell = iconComponent(Notification01Icon);
 export const Command = iconComponent(CommandIcon);
 export const CommandLine = iconComponent(CommandLineIcon);
 export const Computer = iconComponent(ComputerIcon);

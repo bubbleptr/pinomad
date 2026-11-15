@@ -29,6 +29,11 @@ import { useConversationOpening, type Opening } from "./entities/conversation/us
 import { AppFrame, FrameHeader } from "./widgets/app-frame/app-frame.tsx";
 import { HostFrame } from "./widgets/app-frame/host-frame.tsx";
 import { DraftHome } from "./widgets/draft-home/draft-home.tsx";
+import { InboxScreen } from "./widgets/inbox/inbox-screen.tsx";
+import { InboxTranscriptProvider } from "./entities/inbox/inbox-transcript.tsx";
+import { inboxOfConversation } from "./entities/inbox/inbox.ts";
+import type { InboxTarget } from "./entities/composer/composer-store.ts";
+import type { InboxTask } from "@pinomad/protocol/inbox.ts";
 import { ConversationComposer } from "./widgets/composer/conversation-composer.tsx";
 import { takeBackForConversation, type PendingTakeBack } from "./widgets/composer/take-back.ts";
 import { ConversationTranscript } from "./widgets/chat/conversation-transcript.tsx";
@@ -930,7 +935,10 @@ export function Workbench({
   // The draft home lives on the host's new-draft slot: it survives this
   // workbench being unmounted by a focus switch.
   const newDraftSlot = useComposerSlot();
-  const draft = useComposerSlotState(newDraftSlot).home;
+  const draftSlotState = useComposerSlotState(newDraftSlot);
+  const draft = draftSlotState.home;
+  // An Inbox screen with no conversation of its own takes the draft's place (ADR-0051 §6).
+  const inboxTarget = drafting ? draftSlotState.inbox : undefined;
   // Token clients learn drafting from the snapshot; the stored-host root reads
   // it from focus instead.
   useEffect(() => {
@@ -1083,7 +1091,12 @@ export function Workbench({
   const plugins = usePluginWorkbench(pluginConversationId, openSurface);
   // A draft has no conversation for the built-in surfaces: the panel stays
   // open underneath and comes back once the conversation exists.
-  const panelShown = panelOpen && (!drafting || shownSurface(panelSurface, plugins.panels).startsWith("plugin:"));
+  // An Inbox screen keeps Tasks, which holds that Inbox's rules and follow-ups.
+  const panelShown =
+    panelOpen &&
+    (!drafting ||
+      shownSurface(panelSurface, plugins.panels).startsWith("plugin:") ||
+      (inboxTarget !== undefined && shownSurface(panelSurface, plugins.panels) === "tasks"));
   const selectSurface = (surface: PanelSurface): void => {
     if (panelShown && surface === shownSurface(panelSurface, plugins.panels)) setPanelOpen(false);
     else openSurface(surface);
@@ -1241,6 +1254,37 @@ export function Workbench({
     newDraftSlot.setHome(home);
     if (framed) setLocalDrafting(true);
   };
+  const showInboxTarget = (target: InboxTarget): void => {
+    cancelOpening();
+    newDraftSlot.setInbox(target);
+    if (hostKey !== undefined) focusDraft(hostKey);
+    if (framed) setLocalDrafting(true);
+  };
+  // The Inbox the main column belongs to: the shown target's, or the shown conversation's.
+  const shownInbox =
+    inboxTarget !== undefined
+      ? { inbox: view.inbox?.inboxes.find((each) => each.project === inboxTarget.project), task: undefined }
+      : inboxOfConversation(view.inbox, shownId);
+  const targetTask =
+    inboxTarget?.task === undefined ? undefined : shownInbox?.inbox?.tasks.find((task) => task.id === inboxTarget.task);
+  // The intake opened (this send or another client's) or the worker took the
+  // task: the target's own conversation replaces the screen.
+  const targetConversation =
+    inboxTarget === undefined ? undefined : inboxTarget.task === undefined ? shownInbox?.inbox?.intake : targetTask?.conversationId;
+  useEffect(() => {
+    if (targetConversation === undefined) return;
+    newDraftSlot.setInbox(undefined);
+    openConversation(targetConversation);
+  }, [targetConversation]);
+  const inboxProjectName = shownInbox?.inbox === undefined ? undefined : projectName(view.organized, shownInbox.inbox.project);
+  const openInboxTask = useCallback(
+    (project: string, task: InboxTask): void => {
+      if (task.conversationId !== undefined) openConversation(task.conversationId);
+      else showInboxTarget({ project, task: task.id });
+    },
+    // showInboxTarget only closes over stable setters and this host's slot.
+    [openConversation, newDraftSlot, hostKey, framed],
+  );
   const [forkTarget, setForkTarget] = useState<string>();
   // A successful connect clears the reload-once marker so the next host
   // upgrade may auto-reload again.
@@ -1260,7 +1304,18 @@ export function Workbench({
       <div className="pigui-pane flex min-h-0 min-w-[20rem] flex-1 flex-col">
       <FrameHeader
         narrow={narrow}
-        title={drafting ? draftLabel : conversationName(shownSummary)}
+        title={
+          // An Inbox task reads by its task's title, not its conversation's
+          // first message (the worker's preface); an intake by its project.
+          shownInbox?.inbox !== undefined
+            ? ((targetTask ?? shownInbox.task)?.title ?? inboxProjectName ?? "")
+            : drafting
+              ? draftLabel
+              : conversationName(shownSummary)
+        }
+        {...(shownInbox?.inbox === undefined
+          ? {}
+          : { subtitle: (targetTask ?? shownInbox.task) === undefined ? "Intake · reads only, changes no code" : inboxProjectName })}
         {...(headerAgent === undefined ? {} : { agent: headerAgent })}
         parentSummary={parentSummary}
         onBackToParent={openConversation}
@@ -1275,6 +1330,7 @@ export function Workbench({
             liveActivity={liveActivity}
             pluginPanels={plugins.panels}
             drafting={drafting}
+            inboxScreen={inboxTarget !== undefined}
             onSelect={selectSurface}
           />
         }
@@ -1282,7 +1338,9 @@ export function Workbench({
       {notice}
       <ConnectionBanner view={view} wsUrl={wsUrl} hostKey={hostKey} />
         <div className="@container relative flex min-h-0 min-w-0 flex-1 flex-col">
-        {shownId === undefined ? (
+        {shownId === undefined && inboxTarget !== undefined ? (
+          <InboxScreen view={view} remote={remote} target={inboxTarget} onOpened={openConversation} />
+        ) : shownId === undefined ? (
           <DraftHome
             view={view}
             remote={remote}
@@ -1321,6 +1379,7 @@ export function Workbench({
             connected={view.connection === "connected"}
           />
         ) : (
+          <InboxTranscriptProvider inbox={view.inbox} organized={view.organized} conversationId={shownId} onOpenTask={openInboxTask}>
           <ChatLayout
             // Keyed by the shown id, so the skeleton and the content that
             // replaces it share one layout and dock.
@@ -1455,6 +1514,7 @@ export function Workbench({
               />
             )}
           </ChatLayout>
+          </InboxTranscriptProvider>
         )}
           {overviewOpen && conversation !== undefined ? (
             <OverviewCard
@@ -1482,6 +1542,8 @@ export function Workbench({
           surface={panelSurface}
           pluginPanels={plugins.panels}
           drafting={drafting}
+          inboxScreen={inboxTarget !== undefined}
+          inbox={shownInbox?.inbox}
           busy={busy}
           liveActivity={liveActivity}
           onOpenChange={setPanelOpen}
@@ -1504,6 +1566,8 @@ export function Workbench({
           surface={panelSurface}
           pluginPanels={plugins.panels}
           drafting={drafting}
+          inboxScreen={inboxTarget !== undefined}
+          inbox={shownInbox?.inbox}
           busy={busy}
           liveActivity={liveActivity}
           onOpenChange={setPanelOpen}
@@ -1550,6 +1614,8 @@ export function Workbench({
             onDraft={(_key, home) => startDraft(home)}
             onOpen={(_key, id) => openConversation(id)}
             onNewChat={() => startDraft({ kind: "chat" })}
+            inboxTarget={inboxTarget}
+            onInboxTarget={(_key, target) => showInboxTarget(target)}
             narrow={narrow}
           >
             {body}
