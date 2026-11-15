@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { networkInterfaces } from "node:os";
 import { basename, join, sep } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { Models } from "@earendil-works/pi-ai/models";
@@ -10,7 +11,9 @@ import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { addProject, createConversation, ensureIndex, familyRoot, IndexDoc } from "./organization.ts";
 import { INBOX_TASK_TOOLS, InboxDoc, inboxExtension, type InboxHandle, inboxTaskOf, INTAKE_TOOLS, memoryOwner, startInbox } from "./inbox.ts";
 import { createMemoryExtension } from "./inbox-memory.ts";
-import { inboxSandboxPolicy, openSandboxedEnv, type SandboxedExecutionEnv } from "./sandbox.ts";
+import { inboxSandboxPolicy, openSandboxedEnv, type SandboxedExecutionEnv, sandboxAvailable } from "./sandbox.ts";
+import { handleWebhook, type SourceDeps, startSourceRunner } from "./inbox-sources.ts";
+import { openSecretStore } from "./secrets.ts";
 import { type Classify, classifierModel, createAutoMode, modelClassifier } from "./auto-mode.ts";
 import type { QuestionState } from "@pinomad/protocol/presentation.ts";
 import { openInboxService } from "./inbox-view.ts";
@@ -31,7 +34,7 @@ import { readServerBinding } from "./server-config.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
 import type { BuiltinExtension } from "./builtin-extension.ts";
 import { openPlugins, type PluginReload, type Plugins } from "./plugins.ts";
-import { startGateway, validatePublicUrl } from "./gateway.ts";
+import { pickLanAddress, startGateway, validatePublicUrl } from "./gateway.ts";
 import type { RtcOptions } from "./rtc.ts";
 import type { StartTerminalsOptions } from "./terminals.ts";
 import { AttachmentStore } from "./attachments.ts";
@@ -146,6 +149,11 @@ export interface OpenHostOptions {
   readonly upgrade?: HostUpgradeOptions & { readonly current: string };
   /** Plugin seams for tests: each reload's outcome, and where plugin log lines go (stderr by default). */
   readonly plugins?: { readonly onReload?: (outcome: PluginReload) => void; readonly log?: (line: string) => void };
+  /**
+   * Whether Inbox runs get an OS sandbox, which plugin and webhook sources
+   * need (ADR-0052 §7). Absent probes for Seatbelt or bubblewrap; tests pin it.
+   */
+  readonly inboxSandbox?: () => Promise<boolean>;
 }
 
 export interface OpenedHost {
@@ -211,6 +219,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
   let plugins: Plugins | undefined;
   let upgrader: Awaited<ReturnType<typeof startHostUpgrader>> | undefined;
   let inboxView: Awaited<ReturnType<typeof openInboxService>> | undefined;
+  let sourceRunner: { close(): void } | undefined;
   try {
     const models = withAnswerTiming(options.models);
     const token = await hostToken(options.dataDir);
@@ -277,10 +286,12 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     // reload as their files change (ADR-0049, ADR-0050). Plugins failing to start
     // at all (no esbuild binary, say) leave the host running without them.
     const pluginLog = options.plugins?.log ?? ((line: string) => console.error(line));
+    // One credential store for plugin secrets and webhook secrets: two copies of the file would overwrite each other.
+    const secrets = await openSecretStore(join(options.dataDir, "secrets.json"));
     plugins = await openPlugins(join(options.dataDir, "plugins"), {
       reservedTools: [...extensions, { extension: inboxExtension }, { extension: memoryExtension }].flatMap(({ extension }) => (extension.tools ?? []).map((tool) => tool.name)),
       registry,
-      secretsFile: join(options.dataDir, "secrets.json"),
+      secrets,
       log: pluginLog,
       ...(options.plugins?.onReload === undefined ? {} : { onReload: options.plugins.onReload }),
     }).catch((error: unknown) => {
@@ -401,6 +412,14 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     await ensureIndex(harness, context);
     await ensureDevices(harness, context);
     for (const path of options.projects ?? []) await addProject(harness, path, context);
+    let webhookBase: (() => string) | undefined;
+    const sourceDeps: SourceDeps = {
+      harness,
+      secrets,
+      plugins: () => plugins,
+      sandboxAvailable: options.inboxSandbox ?? sandboxAvailable,
+      webhookBase: () => webhookBase?.(),
+    };
     // The host identity exists on every start (ADR-0020 §3): the loopback
     // listener's /secure path also speaks the Noise channel, so a same-machine
     // paired device never needs the token. The key file is created on first run.
@@ -426,10 +445,12 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
           });
     // The `inbox` stream starts with the gateway; its intake calls wait for the workers below.
     let inboxWorkers: InboxHandle | undefined;
-    inboxView = await openInboxService({ harness, dataDir: options.dataDir, context, intake: () => inboxWorkers });
+    inboxView = await openInboxService({ dataDir: options.dataDir, context, intake: () => inboxWorkers, sources: sourceDeps });
+    const webhookDeps = { ...sourceDeps, context };
     const gateway = await startGateway({
       harness,
       inbox: inboxView,
+      webhook: (request, response) => handleWebhook(webhookDeps, request, response),
       models,
       modelSummaries: options.modelSummaries,
       ...(options.images === undefined ? {} : { images: options.images }),
@@ -493,6 +514,13 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       },
     });
     report = (error) => gateway.broadcast("warning", error instanceof Error ? error.message : String(error));
+    // A webhook's URL names the LAN listener at the address a pairing invite would (not a public URL,
+    // whose proxy the endpoint refuses), else this machine's loopback port.
+    const loopbackPort = new URL(gateway.url).port;
+    const remotePort = gateway.remote === undefined ? undefined : new URL(gateway.remote.url).port;
+    webhookBase = () =>
+      remotePort === undefined ? `http://127.0.0.1:${loopbackPort}` : `http://${pickLanAddress(networkInterfaces()) ?? "127.0.0.1"}:${remotePort}`;
+    sourceRunner = await startSourceRunner({ ...sourceDeps, context });
     for (const error of reports.splice(0)) report(error);
     // Recovered work from an interrupted turn continues now.
     harness.resume();
@@ -573,6 +601,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
         closing ??= (async () => {
           try {
             upgrader?.close();
+            sourceRunner?.close();
             inbox.close();
             inboxView?.close();
             await gateway.close();
@@ -596,6 +625,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     };
   } catch (error) {
     upgrader?.close();
+    sourceRunner?.close();
     inboxView?.close();
     if (processes !== undefined) await processes.close(context).catch(() => {});
     options.modelAuth?.close();

@@ -49,6 +49,8 @@ pub(crate) enum ResultKind {
     LoginStarted,
     EndpointModels,
     IntakeSent,
+    InboxSourceAdded,
+    InboxWebhook,
 }
 
 /// State behind the single lock: the machine plus the op→result-shape map
@@ -258,6 +260,33 @@ impl PinomadClient {
                             None => FfiCommand::OperationFailed {
                                 op,
                                 error: "malformed sendToIntake result: conversationId".to_string(),
+                                carrier_lost: false,
+                            },
+                        },
+                        Some(ResultKind::InboxSourceAdded) => {
+                            let source_id = value.as_ref().and_then(|v| v.get("sourceId")).and_then(crate::json::Json::as_str).map(|s| s.to_string_lossy());
+                            let webhook = value.as_ref().and_then(|v| v.get("webhook"));
+                            match (source_id, webhook.map(crate::inbox::InboxWebhookAccess::of)) {
+                                (Some(source_id), None) => FfiCommand::OperationSucceeded {
+                                    op,
+                                    value: CallResult::InboxSourceAdded { source_id, webhook: None },
+                                },
+                                (Some(source_id), Some(Some(access))) => FfiCommand::OperationSucceeded {
+                                    op,
+                                    value: CallResult::InboxSourceAdded { source_id, webhook: Some(access) },
+                                },
+                                _ => FfiCommand::OperationFailed {
+                                    op,
+                                    error: "malformed addInboxSource result".to_string(),
+                                    carrier_lost: false,
+                                },
+                            }
+                        }
+                        Some(ResultKind::InboxWebhook) => match value.as_ref().and_then(crate::inbox::InboxWebhookAccess::of) {
+                            Some(access) => FfiCommand::OperationSucceeded { op, value: CallResult::InboxWebhook { access } },
+                            None => FfiCommand::OperationFailed {
+                                op,
+                                error: "malformed resetInboxWebhookSecret result".to_string(),
                                 carrier_lost: false,
                             },
                         },

@@ -6,7 +6,7 @@ use crate::chat::{agent_of, queue_items, status_text};
 use crate::cot_view::ChatEntry;
 use crate::ffi::providers::{providers_of, HostProviders};
 use crate::ffi::upgrade::{auto_upgrade_of, upgrade_of, AutoUpgradeMode, HostUpgradeState};
-use crate::inbox::{inboxes_of, ProjectInbox, QuietHours};
+use crate::inbox::{external_sources_of, inboxes_of, ProjectInbox, QuietHours};
 use crate::ffi::types::*;
 use crate::json::{Json, JsonObject};
 use crate::u16str::U16String;
@@ -77,6 +77,11 @@ pub struct ClientSnapshot {
     /// it (5.38). Task states come from `inbox_task_state` / `group_inbox_tasks`.
     #[uniffi(default = None)]
     pub inbox: Option<Vec<ProjectInbox>>,
+    /// Whether the host takes plugin and webhook sources (5.39): only with
+    /// an OS sandbox for Inbox runs. `None` before the `inbox` snapshot or on
+    /// an older host; the add-source dialog offers only schedules then.
+    #[uniffi(default = None)]
+    pub inbox_external_sources: Option<bool>,
 }
 
 /// The part of `HostSettings` (settings.ts) the settings page edits.
@@ -578,5 +583,6 @@ pub(crate) fn build(remote: &RemoteDurable) -> Option<ClientSnapshot> {
         processes: remote.processes_view(),
         mcp: mcp_of(&view),
         inbox: view.get("inbox").and_then(inboxes_of),
+        inbox_external_sources: view.get("inbox").and_then(external_sources_of),
     })
 }

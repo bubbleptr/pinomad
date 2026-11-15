@@ -1,0 +1,84 @@
+---
+title: Inbox event sources
+description: Schedules, plugin sources and LAN webhooks that put events into a project's Inbox.
+---
+
+A project's Inbox takes work from you through its intake conversation, and from event sources: a schedule, a plugin's source (such as new GitHub issues), or a webhook on your local network. Each event opens a task, or goes back to the task that follows its thread, and the Inbox's worker takes tasks one at a time.
+
+Add a source on the project's Tasks page in Inbox mode. A source can be turned off and on again, or removed; tasks it already opened stay.
+
+## Restricted or all tools
+
+When you add a source you choose how far its tasks are trusted:
+
+- **Restricted tools**: the content comes from someone else. Auto mode judges the run more strictly: reading is fine, and installing packages or reaching the network waits for you.
+- **All tools**: like a task you submitted yourself.
+
+Plugin and webhook sources start as restricted; a schedule runs your own note, so it counts as yours.
+
+Plugin and webhook sources need the Inbox's sandbox, which keeps a run's commands away from your credentials: Seatbelt on macOS, bubblewrap (`bwrap`) on Linux. A host without one only offers schedules.
+
+## Schedules
+
+A schedule writes your note into the Inbox each time it fires, as a new task named after the source. It fires:
+
+- every day at a time,
+- on weekdays (Monday to Friday) at a time,
+- once a week on a day at a time,
+- or on a cron expression: five fields (minute, hour, day of month, month, day of week) of numbers, `*`, ranges, lists and steps, such as `0 9 * * 1-5`.
+
+Times are wall-clock times in the time zone you pick, so 09:00 stays 09:00 across daylight saving changes. A time the spring-forward skips fires when the clocks jump; one the fall-back repeats fires once. If the host was off when a schedule was due, it fires once when the host is back, not once for every time it missed.
+
+## Plugin sources
+
+A plugin can offer event sources; pick the plugin, the kind of event and a filter in its own syntax. The plugin polls its service from the host, with a token it keeps out of the agent's reach (see [Plugins](/docs/plugins/)). If a poll fails, the source shows why and the next poll tries again.
+
+The [GitHub example plugin](https://github.com/bubbleptr/pinomad/tree/main/examples/plugins/github) has three:
+
+| Event | Filter | What arrives |
+| --- | --- | --- |
+| New issues | `acme/web label:bug` | Each new open issue with all the labels, as its own task. Later events on the issue go to that task. |
+| Comments on pull requests | `acme/web` | Comments on a PR, only for a task that follows it (the agent follows a PR it opened with `inbox_follow`). |
+| CI results | `acme/web` | Finished workflow runs on a PR, only for a task that follows it. |
+
+Each starts from the moment you add it; existing issues and comments don't flood in.
+
+## Webhooks
+
+A webhook takes events from scripts and services on your network, such as a NAS, a home server or a CI runner, with a signed `POST`. When you add one, you get its URL and secret once; copy them then. Reset the secret if you lose it, and the old one stops working at once.
+
+Other machines can reach the webhook only when the host listens on your network (remote access on, see [Without an account](/docs/without-account/)); otherwise only scripts on the host itself can use it. The URL names the host's LAN address; from another machine on your tailnet, put the host's MagicDNS name in its place.
+
+The host answers webhooks only on its own addresses for your LAN and tailnet, and only from senders there: private (RFC 1918) addresses, Tailscale's `100.64.0.0/10` and unique-local IPv6, and the machine itself. A request through a reverse proxy is refused. PiNomad's server never forwards webhooks: it would see their content, and it only ever carries encrypted traffic. To react to a public service such as GitHub, use a plugin source, which polls it.
+
+### Sending an event
+
+`POST` JSON to the URL:
+
+```json
+{ "id": "backup-2026-11-15", "summary": "Nightly backup failed on nas\nhttp://nas.local/logs/backup", "thread": "nas:backup" }
+```
+
+- `id`: unique for this source, at most 200 characters. Sending the same id again changes nothing, so retrying is safe.
+- `summary`: what happened and where to look, at most 4,000 characters. Give pointers, not whole logs: the agent fetches details itself.
+- `thread` (optional): events with the same thread go to the same task.
+- `title` (optional): the new task's title; by default the summary's first line.
+
+With three headers:
+
+- `X-Pinomad-Source`: the source id from the add dialog.
+- `X-Pinomad-Timestamp`: the current Unix time in seconds. More than five minutes off the host's clock is refused.
+- `X-Pinomad-Signature`: `sha256=` and the hex HMAC-SHA256 of `<timestamp>.<body>`, keyed with the secret.
+
+From a shell:
+
+```sh
+body='{"id":"backup-2026-11-15","summary":"Nightly backup failed on nas"}'
+ts=$(date +%s)
+sig=$(printf '%s.%s' "$ts" "$body" | openssl dgst -sha256 -hmac "$SECRET" -hex | sed 's/^.* //')
+curl -X POST "$URL" -H 'content-type: application/json' \
+  -H "x-pinomad-source: $SOURCE" -H "x-pinomad-timestamp: $ts" -H "x-pinomad-signature: sha256=$sig" \
+  --data "$body"
+```
+
+The host answers `200` with `{"accepted":true,"duplicate":false}` (`true` when the id was already there), `401` for an unknown or turned-off source, a wrong signature or a stale timestamp, `403` from outside your LAN and tailnet, `413` for a body over 64 KB, and `400` for a body that isn't the JSON above.

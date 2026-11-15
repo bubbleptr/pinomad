@@ -17,6 +17,8 @@ import { Type } from "typebox";
 import { gitBase } from "./checkout.ts";
 import { memoryDir, memoryPreamble, type MemoryOwner, taskMemory } from "./inbox-memory.ts";
 import { IndexDoc } from "./organization.ts";
+import { nextFire } from "./schedule.ts";
+import type { InboxSchedule } from "@pinomad/protocol/inbox.ts";
 import type { HostIndex } from "@pinomad/protocol/organization.ts";
 
 export type InboxEventSource = "user" | "schedule" | "followUp" | "webhook" | `plugin:${string}`;
@@ -134,6 +136,21 @@ function recordEvent(inboxes: Record<string, ProjectInbox>, key: string, input: 
 }
 
 /**
+ * Put a source's event into one Inbox inside a commit, as `recordEvent` does;
+ * a `followedOnly` event whose thread no task follows is dropped (undefined).
+ */
+export function recordSourceEvent(
+  inboxes: Record<string, ProjectInbox>,
+  key: string,
+  input: InboxEventInput,
+  followedOnly: boolean,
+): { task: string; duplicate: boolean } | undefined {
+  // Own keys only: a thread named `constructor` is followed by no task.
+  if (followedOnly && (input.thread === undefined || !Object.hasOwn(inboxes[key]?.threads ?? {}, input.thread))) return undefined;
+  return recordEvent(inboxes, key, input);
+}
+
+/**
  * Put an event into `project`'s Inbox: to the task named by `task` or by its
  * thread, else into a new task. A repeated event id changes nothing.
  */
@@ -172,6 +189,15 @@ export type InboxTimer = {
   done: boolean;
   /** The Inbox's daily memory tidy-up: its events open tidy-up tasks. */
   kind?: "tidy";
+  /**
+   * A schedule source's timer (`source:<id>`, ADR-0051 §10): it fires on
+   * `schedule`'s calendar instead of `every`, each time as a new task named
+   * `title`. The source turns it off (`done`) and on.
+   */
+  source?: string;
+  schedule?: InboxSchedule;
+  title?: string;
+  trusted?: boolean;
 };
 
 export const TimerDoc = defineDoc<{ timers: InboxTimer[] }>({
@@ -236,6 +262,7 @@ export async function cancelFollowUp(harness: Harness, timerId: string, context:
   await harness.commit(async (tx) => {
     const timer = (await tx.doc(TimerDoc)).timers.find((each) => each.id === timerId && !each.done);
     if (timer === undefined) throw new Error(`No follow-up ${timerId}`);
+    if (timer.source !== undefined) throw new Error("This is a schedule source's timer: turn the source off or remove it instead");
     if (timer.kind === "tidy") throw new Error("The daily memory tidy-up cannot be cancelled");
     timer.done = true;
   }, context);
@@ -508,9 +535,22 @@ async function fireDueTimers(harness: Harness, now: number, context: Context): P
     for (const timer of timers.timers) {
       if (timer.done || timer.due > now) continue;
       if (!projects.has(timer.project)) {
-        // A removed project's tidy-up waits for it to come back; other timers end with it.
-        if (timer.kind === "tidy" && timer.every !== undefined) timer.due = nextDue(timer.due, timer.every, now);
+        // A removed project's tidy-up and schedule sources wait for it to come back; other timers end with it.
+        if (timer.schedule !== undefined) moveOn(timer, now);
+        else if (timer.kind === "tidy" && timer.every !== undefined) timer.due = nextDue(timer.due, timer.every, now);
         else timer.done = true;
+        continue;
+      }
+      if (timer.schedule !== undefined) {
+        // A schedule source: a new task each time (no thread), in the user's words.
+        recordEvent(inboxes, timer.project, {
+          id: `timer:${timer.id}:${timer.due}`,
+          source: "schedule",
+          ...(timer.title === undefined ? {} : { title: timer.title }),
+          summary: timer.note,
+          trusted: timer.trusted ?? true,
+        });
+        moveOn(timer, now);
         continue;
       }
       // An agent wrote a follow-up's note: it is only as trusted as what its task read.
@@ -528,6 +568,16 @@ async function fireDueTimers(harness: Harness, now: number, context: Context): P
       else timer.due = nextDue(timer.due, timer.every, now);
     }
   }, context);
+}
+
+/** A schedule source's next fire after `now`; one that cannot be read any more (a zone the runtime dropped) stops. */
+function moveOn(timer: InboxTimer, now: number): void {
+  try {
+    timer.due = nextFire(timer.schedule!, now);
+  } catch (error) {
+    console.error(`Inbox schedule ${timer.id} stopped: ${error instanceof Error ? error.message : String(error)}`);
+    timer.done = true;
+  }
 }
 
 const escape = (text: string): string => text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");

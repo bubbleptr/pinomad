@@ -3894,6 +3894,24 @@ fn inbox_calls_and_quiet_hours_need_a_5_38_host() {
     assert_eq!(h.host.method("updateSettings").len(), 1);
 }
 
+/// ADR-0051 §10: the source calls need a 5.39 host.
+#[test]
+fn inbox_source_calls_need_a_5_39_host() {
+    let old = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(38.0))]);
+    let mut h = Harness::new(old);
+    h.invoke(1, Call::AddInboxSource { project: "/p".into(), name: "x".into(), trusted: false, spec: obj(&[("kind", Json::from("webhook"))]) });
+    h.invoke(2, Call::RemoveInboxSource { source_id: "s".into() });
+    let too_old = "The host is too old for this (needs protocol 5.39); run `pinomad upgrade` on the host".to_string();
+    assert_eq!(h.ops.get(&1), Some(&Err(too_old.clone())));
+    assert_eq!(h.ops.get(&2), Some(&Err(too_old)));
+    assert!(h.host.method("addInboxSource").is_empty());
+
+    let mut h = setup();
+    h.invoke(1, Call::SetInboxSourceEnabled { source_id: "s".into(), enabled: true });
+    let args = |method: &str| h.host.method(method)[0].get("args").cloned();
+    assert_eq!(args("setInboxSourceEnabled"), Some(obj(&[("sourceId", Json::from("s")), ("enabled", Json::Bool(true))])));
+}
+
 // ─── background processes (5.32, ADR-0045) ────────────────────────────
 
 fn process_doc() -> Json {

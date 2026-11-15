@@ -15,7 +15,7 @@ use pinomad_core::ffi::{
     ReorderOutcome, SteerOutcome, StoredHost, SubmissionDraft, SubmissionStatus, SubmitMode, ThinkingLevel,
     WithdrawOutcome, AutoUpgradeMode, AvailableUpgrade, UpgradeBlocker, UpgradeFailure, UpgradePhase,
 };
-use pinomad_core::inbox::{InboxTaskState, QuietHours};
+use pinomad_core::inbox::{InboxSchedule, InboxSource, InboxSourceSpec, InboxTaskState, InboxWebhookAccess, QuietHours};
 use pinomad_core::json::{Json, JsonObject};
 use pinomad_core::remote_durable::UpgradeWhen;
 use pinomad_core::remote_durable::RemoteDurableOptions;
@@ -3079,6 +3079,118 @@ fn snapshot_decodes_the_inbox_stream_and_quiet_hours() {
     assert_eq!(pinomad_core::ffi::inbox_task_state(task.clone(), None), InboxTaskState::Waiting);
     assert_eq!(project.follow_ups[0].kind.as_deref(), Some("tidy"));
     assert_eq!(project.follow_ups[0].every, Some(86_400_000.0));
+}
+
+/// ADR-0051 §10: an Inbox's sources and whether the host takes outside
+/// ones, typed; a source of a kind this build does not know is dropped.
+#[test]
+fn snapshot_decodes_inbox_sources() {
+    let mut host = ScriptedHost::new();
+    let inbox = Json::parse(
+        r#"{"externalSources":false,"inboxes":[{"project":"/p","rules":"","threads":{},"tasks":[],"followUps":[],"sources":[
+        {"id":"s1","name":"Daily check","enabled":true,"trusted":true,"createdAt":1,"next":500,
+         "spec":{"kind":"schedule","note":"Look","schedule":{"kind":"weekly","day":3,"time":"08:00","timeZone":"Asia/Shanghai"}}},
+        {"id":"s2","name":"Bugs","enabled":false,"trusted":false,"createdAt":2,"problem":"Plugin github is not loaded",
+         "spec":{"kind":"plugin","plugin":"github","source":"issues","filter":"acme/web label:bug"}},
+        {"id":"s3","name":"Alerts","enabled":true,"trusted":false,"createdAt":3,"spec":{"kind":"webhook"}},
+        {"id":"s4","name":"Mail","enabled":true,"trusted":false,"createdAt":4,"spec":{"kind":"email"}}]}]}"#,
+    )
+    .unwrap();
+    host.snapshots.insert("inbox".to_string(), inbox);
+    let h = Harness::boot(host, "req-1");
+    let snapshot = h.client.snapshot().unwrap();
+    assert_eq!(snapshot.inbox_external_sources, Some(false));
+    let sources = &snapshot.inbox.unwrap()[0].sources;
+    assert_eq!(
+        sources,
+        &vec![
+            InboxSource {
+                id: "s1".into(),
+                name: "Daily check".into(),
+                spec: InboxSourceSpec::Schedule {
+                    schedule: InboxSchedule::Weekly { day: 3, time: "08:00".into(), time_zone: "Asia/Shanghai".into() },
+                    note: "Look".into(),
+                },
+                enabled: true,
+                trusted: true,
+                created_at: 1.0,
+                next: Some(500.0),
+                problem: None,
+            },
+            InboxSource {
+                id: "s2".into(),
+                name: "Bugs".into(),
+                spec: InboxSourceSpec::Plugin { plugin: "github".into(), source: "issues".into(), filter: "acme/web label:bug".into() },
+                enabled: false,
+                trusted: false,
+                created_at: 2.0,
+                next: None,
+                problem: Some("Plugin github is not loaded".into()),
+            },
+            InboxSource {
+                id: "s3".into(),
+                name: "Alerts".into(),
+                spec: InboxSourceSpec::Webhook,
+                enabled: true,
+                trusted: false,
+                created_at: 3.0,
+                next: None,
+                problem: None,
+            },
+        ]
+    );
+}
+
+#[test]
+fn inbox_source_calls_encode_the_reference_frames_and_resolve_their_results() {
+    let mut host = ScriptedHost::new();
+    let access = obj(&[
+        ("url", Json::from("http://192.168.1.2:7432/inbox/web-0123456789/events")),
+        ("source", Json::from("s1")),
+        ("secret", Json::from("sek")),
+    ]);
+    host.call_results.insert("addInboxSource".to_string(), obj(&[("sourceId", Json::from("s1")), ("webhook", access.clone())]));
+    host.call_results.insert("resetInboxWebhookSecret".to_string(), access);
+    let mut h = Harness::boot(host, "req-1");
+    h.invoke(1, FfiCall::AddInboxSource { project: "/p".into(), name: "Alerts".into(), trusted: false, spec: InboxSourceSpec::Webhook });
+    h.invoke(
+        2,
+        FfiCall::AddInboxSource {
+            project: "/p".into(),
+            name: "Check".into(),
+            trusted: true,
+            spec: InboxSourceSpec::Schedule {
+                schedule: InboxSchedule::Cron { expression: "0 9 * * 1-5".into(), time_zone: "UTC".into() },
+                note: "Look".into(),
+            },
+        },
+    );
+    h.invoke(3, FfiCall::SetInboxSourceEnabled { source_id: "s1".into(), enabled: false });
+    h.invoke(4, FfiCall::RemoveInboxSource { source_id: "s1".into() });
+    h.invoke(5, FfiCall::ResetInboxWebhookSecret { source_id: "s1".into() });
+    let webhook = obj(&[("kind", Json::from("webhook"))]);
+    let schedule = obj(&[
+        ("kind", Json::from("schedule")),
+        ("schedule", obj(&[("kind", Json::from("cron")), ("expression", Json::from("0 9 * * 1-5")), ("timeZone", Json::from("UTC"))])),
+        ("note", Json::from("Look")),
+    ]);
+    assert_eq!(
+        call_args(&h, "addInboxSource"),
+        vec![
+            obj(&[("project", Json::from("/p")), ("name", Json::from("Alerts")), ("trusted", Json::Bool(false)), ("spec", webhook)]),
+            obj(&[("project", Json::from("/p")), ("name", Json::from("Check")), ("trusted", Json::Bool(true)), ("spec", schedule)]),
+        ]
+    );
+    assert_eq!(call_args(&h, "setInboxSourceEnabled"), vec![obj(&[("sourceId", Json::from("s1")), ("enabled", Json::Bool(false))])]);
+    assert_eq!(call_args(&h, "removeInboxSource"), vec![obj(&[("sourceId", Json::from("s1"))])]);
+    assert_eq!(call_args(&h, "resetInboxWebhookSecret"), vec![obj(&[("sourceId", Json::from("s1"))])]);
+    let expected = InboxWebhookAccess {
+        url: "http://192.168.1.2:7432/inbox/web-0123456789/events".into(),
+        source: "s1".into(),
+        secret: "sek".into(),
+    };
+    assert_eq!(h.ops.get(&1), Some(&Ok(CallResult::InboxSourceAdded { source_id: "s1".into(), webhook: Some(expected.clone()) })));
+    assert_eq!(h.ops.get(&5), Some(&Ok(CallResult::InboxWebhook { access: expected })));
 }
 
 #[test]

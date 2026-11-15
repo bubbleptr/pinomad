@@ -205,6 +205,11 @@ pub enum CallResult {
     EndpointModels { models: Vec<String> },
     /// `sendToIntake` — the project's intake conversation.
     IntakeSent { conversation_id: u64 },
+    /// `addInboxSource` — the new source's id, and a webhook's URL and
+    /// secret, which the host shows nowhere else.
+    InboxSourceAdded { source_id: String, webhook: Option<crate::inbox::InboxWebhookAccess> },
+    /// `resetInboxWebhookSecret` — the webhook's URL and its new secret.
+    InboxWebhook { access: crate::inbox::InboxWebhookAccess },
     /// `takeBackSubmission` — the send's original content when it was taken
     /// back, or `None` when the host already admitted it.
     TakeBackSubmission { draft: Option<SubmissionDraft> },

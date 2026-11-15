@@ -11,7 +11,7 @@ use crate::ffi::providers::{ApiKeyChange, CustomProviderApi, CustomProviderInput
 use crate::ffi::ResultKind;
 use crate::json::{Json, JsonObject};
 use crate::ffi::upgrade::AutoUpgradeMode;
-use crate::inbox::QuietHours;
+use crate::inbox::{InboxSourceSpec, QuietHours};
 use crate::ffi::snapshot::QueueDelivery;
 use crate::remote_durable::{Call, UpgradeWhen};
 use crate::u16str::U16String;
@@ -336,6 +336,18 @@ pub enum FfiCall {
     CancelFollowUp { timer_id: String },
     /// Close a task without running it; rejects while its run is out.
     SkipInboxTask { project: String, task_id: String },
+    /// Add an event source to a project's Inbox, enabled (ADR-0051 §10);
+    /// resolves `CallResult::InboxSourceAdded`, whose `webhook` carries the
+    /// webhook's URL and secret this once. Rejects plugin and webhook sources
+    /// on a host without a sandbox (`snapshot().inbox_external_sources`).
+    /// Needs a 5.39 host, like the source calls below.
+    AddInboxSource { project: String, name: String, trusted: bool, spec: InboxSourceSpec },
+    /// Turn a source off or back on.
+    SetInboxSourceEnabled { source_id: String, enabled: bool },
+    /// Delete a source; the tasks it opened stay.
+    RemoveInboxSource { source_id: String },
+    /// A new secret for a webhook source; resolves `CallResult::InboxWebhook`.
+    ResetInboxWebhookSecret { source_id: String },
     /// The model new conversations start with; `None` goes back to pi's.
     SetDefaultModel { model: Option<ModelRef> },
     /// The thinking level new conversations start with; `None` goes back
@@ -451,6 +463,8 @@ impl FfiCall {
             FfiCall::BeginLogin { .. } => Some(ResultKind::LoginStarted),
             FfiCall::ListEndpointModels { .. } => Some(ResultKind::EndpointModels),
             FfiCall::SendToIntake { .. } => Some(ResultKind::IntakeSent),
+            FfiCall::AddInboxSource { .. } => Some(ResultKind::InboxSourceAdded),
+            FfiCall::ResetInboxWebhookSecret { .. } => Some(ResultKind::InboxWebhook),
             _ => None,
         }
     }
@@ -557,6 +571,10 @@ impl FfiCall {
             FfiCall::SetInboxRules { project, rules } => Call::SetInboxRules { project, rules },
             FfiCall::CancelFollowUp { timer_id } => Call::CancelFollowUp { timer_id },
             FfiCall::SkipInboxTask { project, task_id } => Call::SkipInboxTask { project, task_id },
+            FfiCall::AddInboxSource { project, name, trusted, spec } => Call::AddInboxSource { project, name, trusted, spec: spec.to_json() },
+            FfiCall::SetInboxSourceEnabled { source_id, enabled } => Call::SetInboxSourceEnabled { source_id, enabled },
+            FfiCall::RemoveInboxSource { source_id } => Call::RemoveInboxSource { source_id },
+            FfiCall::ResetInboxWebhookSecret { source_id } => Call::ResetInboxWebhookSecret { source_id },
             FfiCall::SetDefaultModel { model } => Call::UpdateSettings {
                 patch: settings_patch("defaultModel", model.map(|m| m.to_json()).unwrap_or(Json::Null)),
             },

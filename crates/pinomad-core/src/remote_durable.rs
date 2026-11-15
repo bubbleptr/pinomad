@@ -358,6 +358,16 @@ pub enum Call {
     CancelFollowUp { timer_id: String },
     /// `skipInboxTask` — close a task without running it (5.38).
     SkipInboxTask { project: String, task_id: String },
+    /// `addInboxSource` (5.39, ADR-0051 §10): `spec` is the wire's
+    /// `InboxSourceSpec` object as is. The result is the host's `{ sourceId,
+    /// webhook? }`; a webhook's secret is shown nowhere else.
+    AddInboxSource { project: String, name: String, trusted: bool, spec: Json },
+    /// `setInboxSourceEnabled` — turn a source off or back on (5.39).
+    SetInboxSourceEnabled { source_id: String, enabled: bool },
+    /// `removeInboxSource` — delete a source and its secret (5.39).
+    RemoveInboxSource { source_id: String },
+    /// `resetInboxWebhookSecret` — a new secret for a webhook source (5.39).
+    ResetInboxWebhookSecret { source_id: String },
     /// `beginLogin` — start a login (5.21, ADR-0031); its prompts and
     /// outcome arrive in the `providers` stream's `logins`. Request-class,
     /// like the provider calls below: the caller shows the host's error.
@@ -4500,6 +4510,39 @@ impl RemoteDurable {
                 let args = obj(&[("project", Json::from(project.clone())), ("taskId", Json::from(task_id.clone()))]);
                 steps.push_back(Step::Call { method: "skipInboxTask", args });
             }
+            Call::AddInboxSource { project, name, trusted, spec } => {
+                if !host_supports_call(self.host_minor, "addInboxSource") {
+                    return Err(too_old("5.39"));
+                }
+                let args = obj(&[
+                    ("project", Json::from(project.clone())),
+                    ("name", Json::from(name.clone())),
+                    ("trusted", Json::Bool(*trusted)),
+                    ("spec", spec.clone()),
+                ]);
+                steps.push_back(Step::Call { method: "addInboxSource", args });
+            }
+            Call::SetInboxSourceEnabled { source_id, enabled } => {
+                if !host_supports_call(self.host_minor, "setInboxSourceEnabled") {
+                    return Err(too_old("5.39"));
+                }
+                let args = obj(&[("sourceId", Json::from(source_id.clone())), ("enabled", Json::Bool(*enabled))]);
+                steps.push_back(Step::Call { method: "setInboxSourceEnabled", args });
+            }
+            Call::RemoveInboxSource { source_id } => {
+                if !host_supports_call(self.host_minor, "removeInboxSource") {
+                    return Err(too_old("5.39"));
+                }
+                let args = obj(&[("sourceId", Json::from(source_id.clone()))]);
+                steps.push_back(Step::Call { method: "removeInboxSource", args });
+            }
+            Call::ResetInboxWebhookSecret { source_id } => {
+                if !host_supports_call(self.host_minor, "resetInboxWebhookSecret") {
+                    return Err(too_old("5.39"));
+                }
+                let args = obj(&[("sourceId", Json::from(source_id.clone()))]);
+                steps.push_back(Step::Call { method: "resetInboxWebhookSecret", args });
+            }
             Call::BeginLogin { provider_id, method } => {
                 if !host_supports_call(self.host_minor, "beginLogin") {
                     return Err(too_old("5.21"));
@@ -6430,7 +6473,11 @@ fn op_kind(call: &Call) -> OpKind {
         | Call::SendToIntake { .. }
         | Call::SetInboxRules { .. }
         | Call::CancelFollowUp { .. }
-        | Call::SkipInboxTask { .. } => OpKind::Request,
+        | Call::SkipInboxTask { .. }
+        | Call::AddInboxSource { .. }
+        | Call::SetInboxSourceEnabled { .. }
+        | Call::RemoveInboxSource { .. }
+        | Call::ResetInboxWebhookSecret { .. } => OpKind::Request,
         Call::Abort { .. } => OpKind::Unqueued,
         Call::ListFiles { .. }
         | Call::ListSkills { .. }

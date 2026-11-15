@@ -1,0 +1,84 @@
+---
+title: Inbox 事件源
+description: 往项目的 Inbox 里送事件的定时、插件事件源和局域网 webhook。
+---
+
+项目的 Inbox 既经收件对话接你交代的事，也接事件源送来的事件：定时、插件事件源（比如 GitHub 上新开的 issue），或者局域网里的 webhook。每个事件开出一项任务，或者回到跟着它 thread 的那项任务；Inbox 的 worker 一次取一项。
+
+在 Inbox 模式下项目的 Tasks 页添加事件源。事件源可以关掉再打开，也可以删掉；它已经开出的任务都留着。
+
+## 受限工具还是全部工具
+
+添加事件源时要选它进来的任务有多可信：
+
+- **受限工具**：内容是别人写的。auto mode 判得更严：读没问题，装依赖、联网之类的要先问你。
+- **全部工具**：和你自己提交的任务一样。
+
+插件事件源和 webhook 默认是受限工具；定时跑的是你自己写的说明，算你的。
+
+插件事件源和 webhook 都要求有 Inbox 的沙箱，它让运行里的命令碰不到你的凭据：macOS 上是 Seatbelt，Linux 上是 bubblewrap（`bwrap`）。没有沙箱的宿主只能加定时。
+
+## 定时
+
+定时每次到点就把你写的说明放进 Inbox，开一项以事件源命名的新任务。可以选：
+
+- 每天的某个时间，
+- 工作日（周一到周五）的某个时间，
+- 每周某天的某个时间，
+- 或者一条 cron 表达式：五个字段（分、时、日、月、星期），可以写数字、`*`、范围、列表和步长，比如 `0 9 * * 1-5`。
+
+时间按你选的时区算墙上时间，夏令时切换前后 09:00 都是 09:00。春季拨快时跳过的时间点在拨快那一刻触发；秋季拨慢时重复的时间点只触发一次。宿主关着的时候错过的定时，开机后只补一次，不会每错过一次补一次。
+
+## 插件事件源
+
+插件可以提供事件源：选插件、事件类型，再按它的语法填筛选条件。插件在宿主上轮询它的服务，用的 token 不经过 agent（见[插件](/zh/docs/plugins/)）。轮询失败时，事件源上显示原因，下次轮询再试。
+
+[GitHub 示例插件](https://github.com/bubbleptr/pinomad/tree/main/examples/plugins/github) 带了三个：
+
+| 事件 | 筛选 | 进来的是什么 |
+| --- | --- | --- |
+| 新 issue | `acme/web label:bug` | 带齐这些 label 的新开 issue，每个一项任务；这个 issue 之后的事件都回到这项任务。 |
+| PR 评论 | `acme/web` | PR 上的评论，只送给跟着这个 PR 的任务（agent 开了 PR 后用 `inbox_follow` 跟上）。 |
+| CI 结果 | `acme/web` | PR 上跑完的 workflow，只送给跟着这个 PR 的任务。 |
+
+三个都从添加那一刻开始，已有的 issue 和评论不会一下子涌进来。
+
+## Webhook
+
+Webhook 接你网络里的脚本和服务发来的事件，比如 NAS、家里的服务器或者 CI runner，用签名的 `POST`。添加时会给你它的 URL 和密钥，只显示这一次，当场复制下来。弄丢了就重置密钥，旧的立刻失效。
+
+只有宿主在你的网络上监听时（打开了远程访问，见[不用账号](/zh/docs/without-account/)），别的机器才连得上 webhook；否则只有宿主本机上的脚本能用。URL 里是宿主的局域网地址；从 tailnet 里的另一台机器发，把它换成宿主的 MagicDNS 名字。
+
+宿主只在自己的局域网和 tailnet 地址上接 webhook，也只接这些网络里发来的请求：私有地址（RFC 1918）、Tailscale 的 `100.64.0.0/10` 和 IPv6 唯一本地地址，以及本机。经反向代理转来的请求会被拒。PiNomad 的服务端不转发 webhook：转发就会看到内容，而它只转加密的流量。要对 GitHub 这类公网服务的事件做反应，用插件事件源去轮询。
+
+### 发送事件
+
+向 URL `POST` 一段 JSON：
+
+```json
+{ "id": "backup-2026-11-15", "summary": "Nightly backup failed on nas\nhttp://nas.local/logs/backup", "thread": "nas:backup" }
+```
+
+- `id`：在这个事件源里唯一，最多 200 个字符。同一个 id 再发一次不会有变化，所以重试是安全的。
+- `summary`：发生了什么、去哪看，最多 4,000 个字符。给指针，别贴整份日志：细节 agent 会自己去取。
+- `thread`（可选）：thread 相同的事件进同一项任务。
+- `title`（可选）：新任务的标题，默认取摘要的第一行。
+
+带三个请求头：
+
+- `X-Pinomad-Source`：添加时给的事件源 id。
+- `X-Pinomad-Timestamp`：当前的 Unix 时间（秒）。和宿主的时钟差五分钟以上会被拒。
+- `X-Pinomad-Signature`：`sha256=` 加上用密钥对 `<timestamp>.<body>` 算出的 HMAC-SHA256（十六进制）。
+
+在 shell 里：
+
+```sh
+body='{"id":"backup-2026-11-15","summary":"Nightly backup failed on nas"}'
+ts=$(date +%s)
+sig=$(printf '%s.%s' "$ts" "$body" | openssl dgst -sha256 -hmac "$SECRET" -hex | sed 's/^.* //')
+curl -X POST "$URL" -H 'content-type: application/json' \
+  -H "x-pinomad-source: $SOURCE" -H "x-pinomad-timestamp: $ts" -H "x-pinomad-signature: sha256=$sig" \
+  --data "$body"
+```
+
+宿主的回应：成功是 `200` 和 `{"accepted":true,"duplicate":false}`（这个 id 已经有了时是 `true`）；事件源不存在或已关闭、签名不对、时间戳过期都是 `401`；局域网和 tailnet 之外发来的是 `403`；请求体超过 64 KB 是 `413`；不是上面这种 JSON 是 `400`。

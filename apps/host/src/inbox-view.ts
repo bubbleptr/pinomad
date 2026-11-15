@@ -1,18 +1,31 @@
 // The `inbox` host stream and the calls behind the Tasks page and the intake
 // (5.38, ADR-0051 §2, §6, §11): every registered project's Inbox as clients
-// see it, from the Inbox and timer documents and each project's rules file.
+// see it, from the Inbox, timer and source documents and each project's rules
+// file. Event sources and their calls arrived in 5.39 (ADR-0051 §10).
 import type { Context } from "@earendil-works/chord/context";
 import type { ConversationId, Harness } from "@earendil-works/pi-durable";
 import {
   INBOX_RULES_MAX_BYTES,
   type HostInbox,
+  type InboxSource as WireSource,
+  type InboxSourceSpec,
   type InboxTask as WireTask,
+  type InboxWebhookAccess,
   type ProjectInbox as WireInbox,
 } from "@pinomad/protocol/inbox.ts";
 import type { HostIndex } from "@pinomad/protocol/organization.ts";
 import { Published, type HostValue } from "./host-value.ts";
 import { cancelFollowUp, type InboxHandle, InboxDoc, type InboxTask, type InboxTimer, type ProjectInbox, projectKey, skipInboxTask, TimerDoc } from "./inbox.ts";
 import { memoryDir, readRules, writeRules } from "./inbox-memory.ts";
+import {
+  addInboxSource,
+  type InboxSourceRecord,
+  removeInboxSource,
+  resetInboxWebhookSecret,
+  setInboxSourceEnabled,
+  type SourceDeps,
+  SourcesDoc,
+} from "./inbox-sources.ts";
 import { IndexDoc } from "./organization.ts";
 
 /** The gateway's view of the Inboxes: the stream's value and its calls. */
@@ -21,6 +34,13 @@ export interface InboxService extends HostValue<HostInbox> {
   setRules(project: string, rules: string): Promise<void>;
   cancelFollowUp(timerId: string, context: Context): Promise<void>;
   skipTask(project: string, taskId: string, context: Context): Promise<void>;
+  addSource(
+    input: { project: string; name: string; trusted: boolean; spec: InboxSourceSpec },
+    context: Context,
+  ): Promise<{ sourceId: string; webhook?: InboxWebhookAccess }>;
+  setSourceEnabled(sourceId: string, enabled: boolean, context: Context): Promise<void>;
+  removeSource(sourceId: string, context: Context): Promise<void>;
+  resetWebhookSecret(sourceId: string, context: Context): Promise<InboxWebhookAccess>;
 }
 
 const wireTask = (task: Readonly<InboxTask>): WireTask => ({
@@ -55,14 +75,31 @@ const wireFollowUp = (timer: Readonly<InboxTimer>) => ({
   ...(timer.kind === undefined ? {} : { kind: timer.kind }),
 });
 
+const wireSource = (source: Readonly<InboxSourceRecord>, timers: readonly Readonly<InboxTimer>[]): WireSource => {
+  const timer = source.spec.kind === "schedule" ? timers.find((each) => each.source === source.id && !each.done) : undefined;
+  return {
+    id: source.id,
+    name: source.name,
+    spec: source.spec,
+    enabled: source.enabled,
+    trusted: source.trusted,
+    createdAt: source.createdAt,
+    ...(timer === undefined ? {} : { next: timer.due }),
+    ...(source.problem === undefined ? {} : { problem: source.problem }),
+  };
+};
+
 /** The stream's value: one entry per registered project, in the index's order. */
 export function hostInbox(
   index: Readonly<HostIndex> | null,
   inboxes: Readonly<Record<string, Readonly<ProjectInbox>>>,
   timers: readonly Readonly<InboxTimer>[],
   rules: ReadonlyMap<string, string>,
+  sources: readonly Readonly<InboxSourceRecord>[],
+  externalSources: boolean,
 ): HostInbox {
   return {
+    externalSources,
     inboxes: (index?.projects ?? []).map(({ path }): WireInbox => {
       const inbox = inboxes[path];
       return {
@@ -72,9 +109,10 @@ export function hostInbox(
         threads: { ...inbox?.threads },
         rules: rules.get(path) ?? "",
         followUps: timers
-          .filter((timer) => !timer.done && timer.project === path)
+          .filter((timer) => !timer.done && timer.project === path && timer.source === undefined)
           .sort((a, b) => a.due - b.due)
           .map(wireFollowUp),
+        sources: sources.filter((source) => source.project === path).map((source) => wireSource(source, timers)),
       };
     }),
   };
@@ -85,24 +123,34 @@ export function hostInbox(
  * Inbox workers, which start after the gateway: until then it is refused.
  */
 export async function openInboxService(options: {
-  readonly harness: Harness;
   readonly dataDir: string;
   readonly context: Context;
   readonly intake: () => Pick<InboxHandle, "sendToIntake"> | undefined;
+  /** The source calls' dependencies; `harness` is the host's. */
+  readonly sources: SourceDeps;
 }): Promise<InboxService & { close(): void }> {
-  const { harness, dataDir, context } = options;
+  const { dataDir, context } = options;
+  const { harness } = options.sources;
   await harness.commit(async (tx) => {
     await tx.doc(InboxDoc);
     await tx.doc(TimerDoc);
+    await tx.doc(SourcesDoc);
   }, context);
   const indexWatch = await harness.watchDoc(IndexDoc, context);
   const inboxWatch = await harness.watchDoc(InboxDoc, context);
   const timerWatch = await harness.watchDoc(TimerDoc, context);
-  if (indexWatch === undefined || inboxWatch === undefined || timerWatch === undefined) throw new Error("Inbox documents are not available");
+  const sourceWatch = await harness.watchDoc(SourcesDoc, context);
+  if (indexWatch === undefined || inboxWatch === undefined || timerWatch === undefined || sourceWatch === undefined) {
+    throw new Error("Inbox documents are not available");
+  }
 
   let index = indexWatch.value;
   let inboxes = inboxWatch.value?.inboxes ?? {};
   let timers = timerWatch.value?.timers ?? [];
+  let sources = sourceWatch.value?.sources ?? [];
+  // Probed once: a sandbox does not come or go while the host runs.
+  const externalSources = await options.sources.sandboxAvailable();
+  const value = (): HostInbox => hostInbox(index, inboxes, timers, rules, sources, externalSources);
   /** Each project's rules, read once and then kept by `setRules`. */
   const rules = new Map<string, string>();
   const readFor = async (path: string): Promise<void> => {
@@ -115,7 +163,7 @@ export async function openInboxService(options: {
     }
   };
   for (const project of index?.projects ?? []) await readFor(project.path);
-  const published = new Published<HostInbox>(hostInbox(index, inboxes, timers, rules), (a, b) => JSON.stringify(a) === JSON.stringify(b));
+  const published = new Published<HostInbox>(value(), (a, b) => JSON.stringify(a) === JSON.stringify(b));
 
   // Serialized: reading a new project's rules is async, and an older pass must not publish over a newer one.
   let tail = Promise.resolve();
@@ -123,7 +171,7 @@ export async function openInboxService(options: {
     tail = tail
       .then(async () => {
         for (const project of index?.projects ?? []) await readFor(project.path);
-        published.set(hostInbox(index, inboxes, timers, rules));
+        published.set(value());
       })
       .catch((error: unknown) => console.error("Inbox stream could not refresh:", error));
   };
@@ -144,6 +192,13 @@ export async function openInboxService(options: {
   timerWatch.start((call) => {
     if (call.kind === "value") {
       timers = call.value?.timers ?? [];
+      refresh();
+    }
+    return Promise.resolve();
+  });
+  sourceWatch.start((call) => {
+    if (call.kind === "value") {
+      sources = call.value?.sources ?? [];
       refresh();
     }
     return Promise.resolve();
@@ -185,10 +240,15 @@ export async function openInboxService(options: {
     },
     cancelFollowUp: (timerId, ctx) => cancelFollowUp(harness, timerId, ctx),
     skipTask: (project, taskId, ctx) => skipInboxTask(harness, project, taskId, ctx),
+    addSource: (input, ctx) => addInboxSource(options.sources, input, ctx),
+    setSourceEnabled: (sourceId, enabled, ctx) => setInboxSourceEnabled(options.sources, sourceId, enabled, ctx),
+    removeSource: (sourceId, ctx) => removeInboxSource(options.sources, sourceId, ctx),
+    resetWebhookSecret: (sourceId, ctx) => resetInboxWebhookSecret(options.sources, sourceId, ctx),
     close() {
       indexWatch.stop();
       inboxWatch.stop();
       timerWatch.stop();
+      sourceWatch.stop();
     },
   };
 }

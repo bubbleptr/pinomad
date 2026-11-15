@@ -354,6 +354,7 @@ describe("gateway boundaries", () => {
       setSecret: async () => {
         throw new Error("no secrets");
       },
+      source: () => undefined,
       subscribe: (listener: () => void) => {
         reloaded = listener;
         return () => {};

@@ -120,6 +120,7 @@ export async function startFauxHost(
     processes,
     upgrade,
     plugins,
+    inboxSandbox,
   }: {
     /** Script of faux responses: plain strings become assistant text, messages and factories pass through. */
     answers?: readonly (string | FauxResponseStep)[];
@@ -190,6 +191,8 @@ export async function startFauxHost(
     upgrade?: OpenHostOptions["upgrade"];
     /** Plugin reload seams: each reload's outcome, and the plugin log lines instead of stderr. */
     plugins?: OpenHostOptions["plugins"];
+    /** Whether Inbox runs get an OS sandbox; absent probes the machine (plugin and webhook sources need one). */
+    inboxSandbox?: OpenHostOptions["inboxSandbox"];
   } = {},
 ): Promise<OpenedHost> {
   const dir = dataDir === undefined ? await tempDir() : { path: dataDir, remove: () => {} };
@@ -249,6 +252,7 @@ export async function startFauxHost(
     ...(rtc === undefined ? {} : { rtc }),
     ...(upgrade === undefined ? {} : { upgrade }),
     ...(plugins === undefined ? {} : { plugins }),
+    ...(inboxSandbox === undefined ? {} : { inboxSandbox }),
     ...(processes === undefined ? {} : { processes }),
     terminals: terminals ?? {
       shell: { file: "/bin/sh", args: [] },
