@@ -191,6 +191,7 @@ export async function addTimer(
 }
 
 const MAX_ALARM_MS = 60_000;
+const RETRY_ALARM_MS = 5_000;
 
 const wakeMeAt = defineTool({
   name: "wake_me_at",
@@ -204,14 +205,14 @@ const wakeMeAt = defineTool({
     in_minutes: Type.Optional(Type.Number({ exclusiveMinimum: 0, description: "Or how many minutes from now to wake" })),
     note: Type.String({ description: "What to check when you wake, a line for your future self" }),
   }),
-  // Safe: the timer id is the call id, so a rerun finds the timer it added.
+  // Safe: the timer id is the tool task's id, so a rerun finds the timer it added.
+  // A time already past (a rerun after the host was down, say) wakes right away.
   replay: "safe",
   execute: async (args, api, context) => {
     const now = Date.now();
     if ((args.at === undefined) === (args.in_minutes === undefined)) throw new Error("Give exactly one of at and in_minutes");
     const due = args.at === undefined ? now + args.in_minutes! * 60_000 : Date.parse(args.at);
     if (Number.isNaN(due)) throw new Error(`Not a time: ${args.at}`);
-    if (due <= now) throw new Error(`${args.at} is not in the future; it is now ${new Date(now).toISOString()}`);
     await api.commit(async (tx) => {
       const inboxes = (await tx.doc(InboxDoc)).inboxes;
       // The task's first run starts before the worker records the conversation
@@ -222,11 +223,13 @@ const wakeMeAt = defineTool({
         .find(({ task }) => task.conversationId === api.conversationId || (requestId !== undefined && task.batch?.requestId === requestId));
       if (owner === undefined) throw new Error("wake_me_at only works in an Inbox task's conversation");
       const timers = (await tx.doc(TimerDoc)).timers;
-      const id = `wake:${api.callId}`;
+      // The tool task's id: a provider's call id (`call_0`) can repeat across conversations.
+      const id = `wake:${api.taskId}`;
       if (timers.some((timer) => timer.id === id)) return;
       timers.push({ id, project: owner.project, due, note: args.note, task: owner.task.id, done: false });
     }, context);
-    return { output: [{ type: "text", text: `Will wake this task at ${new Date(due).toISOString()} (it is now ${new Date(now).toISOString()}).` }] };
+    const when = due <= now ? "right away: that time has passed" : `at ${new Date(due).toISOString()}`;
+    return { output: [{ type: "text", text: `Will wake this task ${when} (it is now ${new Date(now).toISOString()}).` }] };
   },
 });
 
@@ -534,11 +537,9 @@ export async function startInbox(options: {
   // the timers change and capped so a clock change is noticed within a minute.
   let alarm: ReturnType<typeof setTimeout> | undefined;
   let firing = Promise.resolve();
-  const arm = (timers: readonly Readonly<InboxTimer>[]): void => {
+  const alarmIn = (delayMs: number): void => {
     clearTimeout(alarm);
     if (closed) return;
-    const due = Math.min(...timers.filter((timer) => !timer.done).map((timer) => timer.due));
-    if (!Number.isFinite(due)) return;
     alarm = setTimeout(() => {
       firing = firing
         .then(async () => {
@@ -547,9 +548,20 @@ export async function startInbox(options: {
           arm((await harness.snapshot(TimerDoc, context))?.timers ?? []);
         })
         .catch((error: unknown) => {
-          if (!closed) console.error("Inbox timers failed to fire:", error);
+          if (closed) return;
+          console.error("Inbox timers failed to fire; retrying:", error);
+          // A failed commit changed nothing a watch would see: try again later.
+          alarmIn(RETRY_ALARM_MS);
         });
-    }, Math.min(Math.max(due - Date.now(), 0), MAX_ALARM_MS));
+    }, delayMs);
+  };
+  const arm = (timers: readonly Readonly<InboxTimer>[]): void => {
+    const due = Math.min(...timers.filter((timer) => !timer.done).map((timer) => timer.due));
+    if (!Number.isFinite(due)) {
+      clearTimeout(alarm);
+      return;
+    }
+    alarmIn(Math.min(Math.max(due - Date.now(), 0), MAX_ALARM_MS));
   };
   const timerWatch = await harness.watchDoc(TimerDoc, context);
   if (timerWatch === undefined) throw new Error("Inbox timer document is not available");

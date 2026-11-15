@@ -298,6 +298,31 @@ describe("Inbox timers", () => {
     expect(task!.events[1]).toMatchObject({ source: "followUp", trusted: false });
   });
 
+  it("keeps one timer per wake_me_at call even when two tasks' calls share a provider call id", async () => {
+    const project = await gitProject();
+    const wake = (note: string) =>
+      fauxAssistantMessage(fauxToolCall("wake_me_at", { in_minutes: 60, note }, { id: "call_0" }), { stopReason: "toolUse" });
+    const host = await startFauxHost(defer, { projects: [project], answers: [wake("first"), "ok", wake("second"), "ok"] });
+    await addInboxEvent(host.harness, project, event("e1", "one"), context);
+    await addInboxEvent(host.harness, project, event("e2", "two"), context);
+    const tasks = await until(() => tasksOf(host, project), (tasks) => tasks.length === 2 && tasks.every((task) => task.closed));
+    const timers = await timersOf(host);
+    expect(timers.map((timer) => [timer.task, timer.note])).toEqual([
+      [tasks[0]!.id, "first"],
+      [tasks[1]!.id, "second"],
+    ]);
+  });
+
+  it("wakes right away for a wake_me_at time that has already passed", async () => {
+    const project = await plainProject();
+    const at = new Date(Date.now() - 60_000).toISOString();
+    const wake = fauxAssistantMessage(fauxToolCall("wake_me_at", { at, note: "late check" }), { stopReason: "toolUse" });
+    const host = await startFauxHost(defer, { projects: [project], answers: [wake, "later", "checked"] });
+    await addInboxEvent(host.harness, project, event("e1", "bug"), context);
+    const [task] = await until(() => tasksOf(host, project), (tasks) => tasks[0]?.events.length === 2 && tasks[0]!.closed);
+    expect(task!.events[1]).toMatchObject({ source: "followUp", summary: "late check" });
+  });
+
   it("offers wake_me_at to an Inbox task's conversation and not to an ordinary one", async () => {
     const project = await plainProject();
     const host = await startFauxHost(defer, { projects: [project], answers: ["done", "hi"] });
