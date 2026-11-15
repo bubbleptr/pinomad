@@ -19,7 +19,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 36 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 37 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -132,6 +132,7 @@ pub enum CallMethod {
     CheckUpgrade,
     PluginBundle,
     PluginCall,
+    SetPluginSecret,
 }
 
 impl CallMethod {
@@ -194,6 +195,7 @@ impl CallMethod {
             "checkUpgrade" => Self::CheckUpgrade,
             "pluginBundle" => Self::PluginBundle,
             "pluginCall" => Self::PluginCall,
+            "setPluginSecret" => Self::SetPluginSecret,
             _ => return None,
         })
     }
@@ -248,6 +250,7 @@ impl CallMethod {
             Self::ReorderQueued => 29,
             Self::StartUpgrade | Self::CancelUpgrade | Self::CheckUpgrade => 30,
             Self::PluginBundle | Self::PluginCall => 34,
+            Self::SetPluginSecret => 37,
         }
     }
 }
@@ -286,6 +289,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
         HostFeature::SubagentStop => 33,
         HostFeature::Plugins => 34,
         HostFeature::PluginReload => 35,
+        HostFeature::PluginSecrets => 37,
     };
     host_minor >= since
 }
@@ -347,6 +351,9 @@ pub enum HostFeature {
     /// The `plugins` frame after a reload, and `pluginBundle`'s `hash` (35,
     /// ADR-0050). The core keeps the list current; iOS shows no plugin UI.
     PluginReload,
+    /// `hello.plugins[].secrets` and the `setPluginSecret` call (37,
+    /// ADR-0052 §6): write-only plugin credentials, entered on the Tasks page.
+    PluginSecrets,
 }
 
 

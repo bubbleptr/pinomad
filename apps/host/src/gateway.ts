@@ -2807,6 +2807,12 @@ class GatewayClient {
         await this.#conversation(input.conversationId);
         return await run(input.args, this.#options.harness, input.conversationId, context);
       }
+      case "setPluginSecret": {
+        const { plugin, name, value } = args as CallMethods["setPluginSecret"]["args"];
+        if (this.#options.plugins === undefined) throw new Error(`Unknown plugin ${plugin}`);
+        await this.#options.plugins.setSecret(plugin, name, value);
+        return null;
+      }
       case "beginAttachment": {
         const input = args as CallMethods["beginAttachment"]["args"];
         const store = this.#attachmentStore();

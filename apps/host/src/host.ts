@@ -239,6 +239,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     plugins = await openPlugins(join(options.dataDir, "plugins"), {
       reservedTools: [...extensions, { extension: inboxExtension }].flatMap(({ extension }) => (extension.tools ?? []).map((tool) => tool.name)),
       registry,
+      secretsFile: join(options.dataDir, "secrets.json"),
       log: pluginLog,
       ...(options.plugins?.onReload === undefined ? {} : { onReload: options.plugins.onReload }),
     }).catch((error: unknown) => {

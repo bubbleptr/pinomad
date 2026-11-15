@@ -26,6 +26,16 @@ export interface StateOptions<T extends JsonObject> {
   readonly initial: () => T;
 }
 
+/** A handle returned by `secret()`; pass it to `ctx.secret`. */
+export interface PluginSecret {
+  readonly name: string;
+}
+
+export interface SecretOptions {
+  /** Tells the user what to enter, e.g. "A GitHub token with repo access". */
+  readonly description: string;
+}
+
 export interface PluginTx {
   /** A draft of the state for this conversation; mutate it in place. */
   get<T>(state: PluginState<T>): Promise<T>;
@@ -33,6 +43,15 @@ export interface PluginTx {
 
 export interface PluginContext {
   readonly conversationId: ConversationId;
+  /** The conversation's working directory, inside a tool; undefined in a method or a conversation without one. */
+  readonly cwd: string | undefined;
+  /**
+   * A secret's value as the user set it, read now; undefined while unset. The host
+   * replaces every set secret of this plugin with `[redacted]` in what a tool
+   * returns or throws, but a value the plugin derives (encodes, splits) is the
+   * plugin's to keep out of its results.
+   */
+  secret(secret: PluginSecret): Promise<string | undefined>;
   /** The committed value for this conversation. */
   read<T>(state: PluginState<T>): Promise<T>;
   /** One commit: every draft `fn` mutates is stored together, or none is. */
@@ -52,6 +71,12 @@ export interface ToolDefinition {
 export interface HostApi {
   /** Per-conversation JSON state. */
   state<T extends JsonObject>(name: string, options: StateOptions<T>): PluginState<T>;
+  /**
+   * A credential the user enters in a client, stored by the host outside the
+   * agent's reach (ADR-0052 §6). Clients can set it and see whether it is set,
+   * never read it back. Name: [A-Za-z0-9_-].
+   */
+  secret(name: string, options: SecretOptions): PluginSecret;
   /** A tool the model can call. */
   tool(definition: ToolDefinition): void;
   /** Callable from the plugin's UI through the `pluginCall` wire call. */

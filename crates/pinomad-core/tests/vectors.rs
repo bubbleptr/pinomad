@@ -134,6 +134,7 @@ fn feature_of(name: &str) -> HostFeature {
         "subagentStop" => HostFeature::SubagentStop,
         "plugins" => HostFeature::Plugins,
         "pluginReload" => HostFeature::PluginReload,
+        "pluginSecrets" => HostFeature::PluginSecrets,
         other => panic!("unknown feature {other}"),
     }
 }
