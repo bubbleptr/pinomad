@@ -36,6 +36,7 @@ PiNomad 已经有其中一半：对话就是能恢复的 worker，Durable 的 `p
    - 实现时改（#803）：worker 不是 Durable 任务，不会因为睡着的任务挡住空闲判断，空闲判断不用改。计时器存在会话级的 `pinomad.inbox-timers` 文档里，宿主按最早的到点时间定一个闹钟（最长一分钟复查一次）；到点时在同一次提交里写 Inbox 事件（事件 id 带到点时间，重启后不重复）并把跟进标为完成、把定时推到下一次，宕机期间错过的几次只补一次。
 
 9. **新增 `notify` 工具；Inbox 的运行不推默认的 Finished。** 一次运行有三种结局：通知用户、安静结束、停下来提问。提问照旧推"Waiting for your answer"。
+   - 实现时补（#803）：推送只带固定的 "Update for you"，`notify` 写的正文留在宿主，记在会话级的 `pinomad.outbox` 文档里，推送照 ADR-0025 §8 只带标题和固定文字。Failed 照旧推。Web 和桌面端的系统通知要等协议里有 Inbox 的快照（#806）才能区分，在那之前仍会显示 Finished。
 
 10. **事件源挂在 Inbox 上：定时、插件、局域网 webhook（修订 ADR-0049 §7）。** 插件可以声明事件源，由宿主轮询或由插件推送。第一期不做公网入口：webhook 只开在局域网和 tailnet 上的 `POST`（HMAC 签名）。经服务端转发 webhook 会让服务端看到明文，和"服务端只转密文"（ADR-0008、0022）冲突。GitHub 这类外部服务靠插件轮询。
 

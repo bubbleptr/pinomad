@@ -16,6 +16,7 @@ import { DevicesDoc } from "../src/devices.ts";
 import { question } from "../src/extensions/question.ts";
 import type { OpenedHost } from "../src/host.ts";
 import type { HostValue } from "../src/host-value.ts";
+import { addInboxEvent, InboxDoc, OutboxDoc } from "../src/inbox.ts";
 import { IndexDoc } from "../src/organization.ts";
 import { attachPushSender, PushDoc, pushTokenProblem, type PushTransport } from "../src/push.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
@@ -688,5 +689,138 @@ describe("push sender outbox", () => {
     await waitUntil(() => sender.stats().queued === 4);
     expect(sender.stats().pending).toBe(4);
     expect(sent).toHaveLength(1); // only the held send ever left
+  });
+});
+
+describe("Inbox pushes", () => {
+  const inboxTasks = async (host: OpenedHost) =>
+    Object.values((await host.harness.snapshot(InboxDoc, context))?.inboxes ?? {}).flatMap((inbox) => inbox.tasks);
+  const notifyStep = (message: string) =>
+    fauxAssistantMessage(fauxToolCall("notify", { message }), { stopReason: "toolUse" });
+
+  async function inboxHost(answers: FauxOptions["answers"], dataDir?: string) {
+    const project = await tempDir();
+    defer(project.remove);
+    const apns = fakeTransport();
+    const pushed = await pushHost({ apns, projects: [project.path], answers, ...(dataDir === undefined ? {} : { dataDir }) });
+    const { client } = await pairDevice(defer, pushed.host, "phone");
+    await client.controller.setPushToken(TOKEN_A);
+    return { ...pushed, project: project.path };
+  }
+
+  it("does not push Finished for an Inbox run, but still does for a coding conversation", async () => {
+    const { host, apns, timers, project } = await inboxHost(["fixed it", "hello back"]);
+    await addInboxEvent(host.harness, project, { id: "e1", source: "user", summary: "fix the bug", trusted: true }, context);
+    await waitUntil(async () => (await inboxTasks(host))[0]?.closed === true);
+    const chat = await startChat(await connectTo(defer, host), "hello");
+    // Finished waits for a title: let every title wait elapse.
+    await waitUntil(() => timers.pending > 0);
+    timers.advance(15_000);
+    await apns.waitForCalls(1);
+    await settle();
+    expect(apns.calls.map((call) => [call.notification.conversationId, call.notification.body])).toEqual([[chat, "Finished"]]);
+  });
+
+  it("pushes notify with a fixed body, keeping the agent's text on the host", async () => {
+    const { host, apns, timers, project } = await inboxHost([notifyStep("PR #12 is ready: the flaky test was a race"), "told them"]);
+    await addInboxEvent(host.harness, project, { id: "e1", source: "user", summary: "fix the flaky test", trusted: true }, context);
+    await waitUntil(async () => (await inboxTasks(host))[0]?.closed === true);
+    const [task] = await inboxTasks(host);
+    await waitUntil(() => timers.pending > 0);
+    timers.advance(15_000);
+    await apns.waitForCalls(1);
+    await settle();
+    expect(apns.calls).toHaveLength(1);
+    expect(apns.calls[0]!.notification).toMatchObject({ body: "Update for you", conversationId: task!.conversationId });
+    expect(JSON.stringify(apns.calls[0])).not.toContain("flaky");
+    const outbox = await host.harness.snapshot(OutboxDoc, context);
+    expect(outbox?.messages).toEqual([
+      expect.objectContaining({ task: task!.id, conversationId: task!.conversationId, text: "PR #12 is ready: the flaky test was a race", sent: true }),
+    ]);
+  });
+
+  it("pushes a notify recorded while no sender was running, once one starts", async () => {
+    const dataDir = await joinedDir();
+    // A host without a push sender: the device registers, the message waits in the outbox.
+    const first = await startFauxHost(defer, { dataDir, remote: { port: 0 }, answers: ["idle"] });
+    const { client } = await pairDevice(defer, first, "phone");
+    await client.controller.setPushToken(TOKEN_A);
+    const watcher = await connectTo(defer, first);
+    const id = await startChat(watcher, "hello");
+    // Settled before the restart: an interrupted run would push Failed on the next start.
+    await waitForView(watcher.view, (view) => view.organized.chats[0]?.summary.status === undefined);
+    await first.harness.commit(async (tx) => {
+      (await tx.doc(OutboxDoc)).messages.push({ id: "notify:x", project: "/p", task: "t", conversationId: id, text: "left over", at: Date.now(), sent: false });
+    }, context);
+    await first.close();
+
+    const apns = fakeTransport();
+    const { host, timers } = await pushHost({ apns, dataDir, answers: [] });
+    await waitUntil(() => timers.pending > 0);
+    timers.advance(15_000);
+    await apns.waitForCalls(1);
+    expect(apns.calls[0]!.notification).toMatchObject({ body: "Update for you", conversationId: id });
+    await waitUntil(async () => (await host.harness.snapshot(OutboxDoc, context))?.messages[0]?.sent === true);
+  });
+  it("titles a notify with the task's auto-title", async () => {
+    const project = await tempDir();
+    defer(project.remove);
+    const apns = fakeTransport();
+    const { host } = await pushHost({
+      apns,
+      projects: [project.path],
+      autoTitle: true,
+      answers: [notifyStep("the race is fixed"), "told them", "Flaky test race"],
+    });
+    const { client } = await pairDevice(defer, host, "phone");
+    await client.controller.setPushToken(TOKEN_A);
+    await addInboxEvent(host.harness, project.path, { id: "e1", source: "user", summary: "fix the flaky test", trusted: true }, context);
+    await apns.waitForCalls(1);
+    expect(apns.calls[0]!.notification).toMatchObject({ title: "Flaky test race", body: "Update for you" });
+  });
+
+  it("still pushes Failed for an Inbox run", async () => {
+    const { host, apns, project } = await inboxHost([fauxAssistantMessage("boom", { stopReason: "error", errorMessage: "provider down" })]);
+    await addInboxEvent(host.harness, project, { id: "e1", source: "user", summary: "fix the bug", trusted: true }, context);
+    await apns.waitForCalls(1);
+    expect(apns.calls[0]!.notification.body).toBe("Failed");
+  });
+
+  it("marks an outbox message too old to be news as sent without pushing it", async () => {
+    const dataDir = await joinedDir();
+    const first = await startFauxHost(defer, { dataDir, remote: { port: 0 }, answers: ["idle"] });
+    const { client } = await pairDevice(defer, first, "phone");
+    await client.controller.setPushToken(TOKEN_A);
+    const watcher = await connectTo(defer, first);
+    const id = await startChat(watcher, "hello");
+    // Settled before the restart: an interrupted run would push Failed on the next start.
+    await waitForView(watcher.view, (view) => view.organized.chats[0]?.summary.status === undefined);
+    await first.harness.commit(async (tx) => {
+      (await tx.doc(OutboxDoc)).messages.push({ id: "notify:old", project: "/p", task: "t", conversationId: id, text: "stale", at: Date.now() - 2 * 60 * 60_000, sent: false });
+    }, context);
+    await first.close();
+
+    const apns = fakeTransport();
+    const { host } = await pushHost({ apns, dataDir, answers: [] });
+    await waitUntil(async () => (await host.harness.snapshot(OutboxDoc, context))?.messages[0]?.sent === true);
+    await settle();
+    expect(apns.calls.map((call) => call.notification.body)).toEqual([]);
+  });
+  it("pushes a notify again after a restart that cut off its send", async () => {
+    const dataDir = await joinedDir();
+    const first = await inboxHost([notifyStep("the PR is ready"), "told them"], dataDir);
+    await addInboxEvent(first.host.harness, first.project, { id: "e1", source: "user", summary: "fix it", trusted: true }, context);
+    // No auto-title: the push waits for a title when the host stops.
+    await waitUntil(() => first.timers.pending > 0);
+    expect(first.apns.calls).toHaveLength(0);
+    await first.host.close();
+
+    const apns = fakeTransport();
+    const { host, timers } = await pushHost({ apns, dataDir, answers: [] });
+    await waitUntil(() => timers.pending > 0);
+    timers.advance(15_000);
+    await apns.waitForCalls(1);
+    expect(apns.calls[0]!.notification.body).toBe("Update for you");
+    await waitUntil(async () => (await host.harness.snapshot(OutboxDoc, context))?.messages[0]?.sent === true);
   });
 });
