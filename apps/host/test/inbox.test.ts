@@ -323,15 +323,41 @@ describe("Inbox timers", () => {
     expect(task!.events[1]).toMatchObject({ source: "followUp", summary: "late check" });
   });
 
-  it("offers wake_me_at to an Inbox task's conversation and not to an ordinary one", async () => {
+  it("offers the Inbox tools to an Inbox task's conversation and not to an ordinary one", async () => {
     const project = await plainProject();
     const host = await startFauxHost(defer, { projects: [project], answers: ["done", "hi"] });
     await addInboxEvent(host.harness, project, event("e1", "bug"), context);
     const [task] = await until(() => tasksOf(host, project), (tasks) => tasks[0]?.closed === true);
     const offered = async (id: ConversationId) =>
       (await (await host.harness.conversation(id, context))!.agent(context)).tools.map((tool) => tool.name);
-    expect(await offered(task!.conversationId!)).toContain("wake_me_at");
+    expect(await offered(task!.conversationId!)).toEqual(expect.arrayContaining(["wake_me_at", "notify", "inbox_follow"]));
     const chat = await startChat(await connectTo(defer, host), "hello");
-    expect(await offered(chat)).not.toContain("wake_me_at");
+    const ordinary = await offered(chat);
+    for (const name of ["wake_me_at", "notify", "inbox_follow"]) expect(ordinary).not.toContain(name);
+  });
+});
+
+describe("inbox_follow", () => {
+  const follow = (thread: string) => fauxAssistantMessage(fauxToolCall("inbox_follow", { thread }), { stopReason: "toolUse" });
+
+  it("routes a later event on a thread the task followed back to that task", async () => {
+    const project = await plainProject();
+    const host = await startFauxHost(defer, { projects: [project], answers: [follow("github:acme/web#77"), "opened the PR", "CI fixed"] });
+    await addInboxEvent(host.harness, project, event("e1", "fix the login bug"), context);
+    await until(() => tasksOf(host, project), (tasks) => tasks[0]?.closed === true);
+    await addInboxEvent(host.harness, project, { ...event("pr-77-ci", "CI failed on the PR"), thread: "github:acme/web#77", trusted: false }, context);
+    const tasks = await until(() => tasksOf(host, project), (tasks) => tasks[0]?.events.length === 2 && tasks[0]!.closed);
+    expect(tasks).toHaveLength(1);
+  });
+
+  it("will not take over a thread another task follows", async () => {
+    const project = await gitProject();
+    const host = await startFauxHost(defer, { projects: [project], answers: ["on it", follow("github:acme/web#1"), "tried"] });
+    await addInboxEvent(host.harness, project, { ...event("issue-1", "issue 1 opened"), thread: "github:acme/web#1" }, context);
+    await addInboxEvent(host.harness, project, event("e2", "something else"), context);
+    const tasks = await until(() => tasksOf(host, project), (tasks) => tasks.length === 2 && tasks.every((task) => task.closed));
+    const doc = await host.harness.snapshot(InboxDoc, context);
+    const threads = Object.values(doc!.inboxes)[0]!.threads;
+    expect(threads["github:acme/web#1"]).toBe(tasks[0]!.id);
   });
 });

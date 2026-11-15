@@ -16,6 +16,7 @@ import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 import type { PushToken } from "@pinomad/protocol/frames.ts";
 import { DevicesDoc, RevocationsDoc } from "./devices.ts";
 import type { HostValue } from "./host-value.ts";
+import { inboxTaskOf, InboxDoc, OutboxDoc, type OutboxMessage } from "./inbox.ts";
 import { IndexDoc } from "./organization.ts";
 import { TitleDoc } from "./title-doc.ts";
 
@@ -165,6 +166,10 @@ const RETRY_BASE_MS = 5_000;
 const MAX_INFLIGHT = 8;
 /** Bounded in-memory outbox; nothing is persisted. */
 const MAX_PENDING = 128;
+/** What a `notify` push says; the agent's text stays on the host (ADR-0025 §8). */
+export const NOTIFY_BODY = "Update for you";
+/** An outbox message older than this when a sender first sees it is marked sent without a push. */
+const NOTIFY_STALE_MS = 60 * 60_000;
 
 /**
  * The send seam the relay link implements and tests fake: one notification to
@@ -213,10 +218,13 @@ export interface PushSender {
   stats(): { pending: number; queued: number };
 }
 
+/** A run notice, or a `notify` message's push: the latter has no status to go stale against. */
+type Notice = { readonly id: ConversationId; readonly body: RunNotice["body"] | typeof NOTIFY_BODY };
+
 type SendItem = {
   readonly token: string;
   readonly environment: ApnsEnvironment;
-  readonly notice: RunNotice;
+  readonly notice: Notice;
   /** The baseline generation the notice came from; any later status change makes the item stale. */
   readonly generation: number;
   /** Resolved on the first attempt; "Finished" items may wait for the auto-title. */
@@ -284,7 +292,8 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
 
   /** The transition the notice reported must still be the latest for a send to go out. */
   const fresh = (item: SendItem): boolean =>
-    baseline?.has(item.notice.id) === true && generation.get(item.notice.id) === item.generation;
+    item.notice.body === NOTIFY_BODY ||
+    (baseline?.has(item.notice.id) === true && generation.get(item.notice.id) === item.generation);
 
   const registrations = async (): Promise<readonly PushRegistration[]> => {
     const doc = await harness.snapshot(PushDoc, context);
@@ -305,10 +314,10 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
    * leave the host. "Finished" waits for the auto-title write; everything else
    * takes the fallback at once.
    */
-  const titleFor = async (notice: RunNotice): Promise<string> => {
+  const titleFor = async (notice: Notice): Promise<string> => {
     const named = await namedTitle(notice.id);
     if (named !== undefined) return named;
-    if (notice.body !== "Finished" || disposed) return FALLBACK_TITLE;
+    if ((notice.body !== "Finished" && notice.body !== NOTIFY_BODY) || disposed) return FALLBACK_TITLE;
     return await new Promise<string>((resolve) => {
       const waiters = titleWaiters.get(notice.id) ?? new Set<(title: string) => void>();
       titleWaiters.set(notice.id, waiters);
@@ -439,10 +448,17 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
     }
   };
 
-  const enqueue = async (notice: RunNotice): Promise<void> => {
+  /** An Inbox run ends quietly unless it called `notify` (ADR-0051 §9). */
+  const inboxRun = async (id: ConversationId): Promise<boolean> => {
+    const [inboxes, current] = await Promise.all([harness.snapshot(InboxDoc, context), harness.snapshot(IndexDoc, context)]);
+    return inboxes !== undefined && current !== undefined && inboxTaskOf(inboxes.inboxes, current, id) !== undefined;
+  };
+
+  const enqueue = async (notice: Notice): Promise<void> => {
     if (disposed) return;
     const itemGeneration = generation.get(notice.id) ?? 0;
     try {
+      if (notice.body === "Finished" && (await inboxRun(notice.id))) return;
       // One request per (environment, token) — the registration's identity,
       // the same key unregistration and eviction match on.
       const entries = await registrations();
@@ -463,6 +479,39 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
     } catch (error) {
       console.error(`push: could not read registrations: ${error instanceof Error ? error.message : String(error)}`);
     }
+  };
+
+  /**
+   * `notify` messages: each unsent one is pushed once and marked sent. The
+   * push itself retries in memory like any other; a host stopped before the
+   * mark pushes it again on start.
+   */
+  const taken = new Set<string>();
+  const deliver = async (messages: readonly Readonly<OutboxMessage>[]): Promise<void> => {
+    const fresh = messages.filter((message) => !message.sent && !taken.has(message.id));
+    if (fresh.length === 0 || disposed) return;
+    for (const message of fresh) taken.add(message.id);
+    const now = Date.now();
+    for (const message of fresh) {
+      if (now - message.at < NOTIFY_STALE_MS) await enqueue({ id: message.conversationId, body: NOTIFY_BODY });
+    }
+    const ids = new Set(fresh.map((message) => message.id));
+    await harness.commit(async (tx) => {
+      for (const message of (await tx.doc(OutboxDoc)).messages) if (ids.has(message.id)) message.sent = true;
+    }, context);
+  };
+  let delivering = Promise.resolve();
+  // A watch needs the document to exist; the first notify would otherwise go unseen.
+  await harness.commit(async (tx) => {
+    await tx.doc(OutboxDoc);
+  }, context);
+  const outboxWatch = await harness.watchDoc(OutboxDoc, context);
+  const onOutbox = (value: Readonly<{ messages: readonly Readonly<OutboxMessage>[] }> | null): void => {
+    delivering = delivering
+      .then(() => deliver(value?.messages ?? []))
+      .catch((error: unknown) => {
+        if (!disposed) console.error(`push: could not deliver notify messages: ${error instanceof Error ? error.message : String(error)}`);
+      });
   };
 
   const unsubscribeConversations = conversations.subscribe(() => update());
@@ -489,6 +538,11 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
     update();
   });
   update();
+  if (outboxWatch === undefined) throw new Error("Outbox document is not available");
+  onOutbox(outboxWatch.value);
+  outboxWatch.start(async (call) => {
+    if (call.kind === "value") onOutbox(call.value);
+  });
 
   return {
     stats: () => ({ pending: pending.size, queued: readyQueue.length }),
@@ -497,6 +551,8 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
       unsubscribeConversations();
       commits.detach();
       await indexWatch?.stop();
+      await outboxWatch.stop();
+      await delivering;
       for (const item of pending) drop(item);
       pending.clear();
       readyQueue.length = 0;

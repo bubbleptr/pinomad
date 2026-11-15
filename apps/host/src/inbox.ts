@@ -16,6 +16,7 @@ import { type ConversationDocToken, type ConversationId, defineDoc, defineExtens
 import { Type } from "typebox";
 import { gitBase } from "./checkout.ts";
 import { IndexDoc } from "./organization.ts";
+import type { HostIndex } from "@pinomad/protocol/organization.ts";
 
 export type InboxEventSource = "user" | "schedule" | "followUp" | "webhook" | `plugin:${string}`;
 
@@ -190,6 +191,121 @@ export async function addTimer(
   }, context);
 }
 
+type Tx = Parameters<Parameters<Harness["commit"]>[0]>[0];
+
+/**
+ * The Inbox task a conversation belongs to. A task's first run starts before
+ * the worker records the conversation id, so the conversation's own request
+ * id (its first batch's) finds it until then; the batch is cleared only after
+ * the id is recorded.
+ */
+export function inboxTaskOf(
+  inboxes: Readonly<Record<string, Readonly<ProjectInbox>>>,
+  index: Readonly<HostIndex>,
+  conversationId: ConversationId,
+): { project: string; task: Readonly<InboxTask> } | undefined {
+  const requestId = index.conversations.find((entry) => entry.id === conversationId)?.requestId;
+  for (const [project, inbox] of Object.entries(inboxes)) {
+    const task = inbox.tasks.find(
+      (each) => each.conversationId === conversationId || (requestId !== undefined && each.batch?.requestId === requestId),
+    );
+    if (task !== undefined) return { project, task };
+  }
+  return undefined;
+}
+
+/** The calling conversation's Inbox task, writable, or an error naming the tool. */
+async function ownerIn(tx: Tx, conversationId: ConversationId, tool: string): Promise<{ project: string; task: InboxTask }> {
+  const inboxes = (await tx.doc(InboxDoc)).inboxes;
+  const found = inboxTaskOf(inboxes, await tx.doc(IndexDoc), conversationId);
+  if (found === undefined) throw new Error(`${tool} only works in an Inbox task's conversation`);
+  return { project: found.project, task: inboxes[found.project]!.tasks.find((task) => task.id === found.task.id)! };
+}
+
+/** A message `notify` left for the user; the push sender delivers it (ADR-0051 §9). */
+export type OutboxMessage = {
+  id: string;
+  project: string;
+  task: string;
+  conversationId: ConversationId;
+  /** Stays on the host: the push carries only a fixed line (ADR-0025 §8). */
+  text: string;
+  at: number;
+  sent: boolean;
+};
+
+export const OutboxDoc = defineDoc<{ messages: OutboxMessage[] }>({
+  kind: "pinomad.outbox",
+  version: 1,
+  scope: "session",
+  initial: () => ({ messages: [] }),
+  checkpointWhen: () => false,
+});
+
+/** Sent messages kept for later reading; unsent ones are never dropped. */
+const OUTBOX_KEEP_SENT = 50;
+export const NOTIFY_MAX_CHARS = 1_000;
+
+const notify = defineTool({
+  name: "notify",
+  callers: ["model"],
+  deferred: true,
+  description:
+    "Tell the user something they need to know or decide about this Inbox task. Their phone gets a notification that this task has an update; they read your message here. Only notify when it matters; otherwise finish quietly. To get an answer before going on, use ask_user_question instead. Only works in an Inbox task.",
+  parameters: Type.Object({
+    message: Type.String({ minLength: 1, maxLength: NOTIFY_MAX_CHARS, description: "What the user needs to know, in a sentence or two" }),
+  }),
+  // Safe: keyed by the tool task's id, so a rerun finds the message it left.
+  replay: "safe",
+  execute: async (args, api, context) => {
+    await api.commit(async (tx) => {
+      const owner = await ownerIn(tx, api.conversationId, "notify");
+      const outbox = await tx.doc(OutboxDoc);
+      const id = `notify:${api.taskId}`;
+      if (outbox.messages.some((message) => message.id === id)) return;
+      outbox.messages.push({
+        id,
+        project: owner.project,
+        task: owner.task.id,
+        conversationId: api.conversationId,
+        text: args.message,
+        at: Date.now(),
+        sent: false,
+      });
+      const sent = outbox.messages.filter((message) => message.sent);
+      if (sent.length > OUTBOX_KEEP_SENT) {
+        const drop = new Set(sent.slice(0, sent.length - OUTBOX_KEEP_SENT));
+        outbox.messages = outbox.messages.filter((message) => !drop.has(message));
+      }
+    }, context);
+    return { output: [{ type: "text", text: "The user was notified." }] };
+  },
+});
+
+const inboxFollow = defineTool({
+  name: "inbox_follow",
+  callers: ["model"],
+  deferred: true,
+  description:
+    "Follow a thread for this Inbox task, such as a PR you opened: its later events (comments, CI results) come back to this task instead of opening a new one. Use the event source's thread form, such as github:owner/repo#123. Only works in an Inbox task.",
+  parameters: Type.Object({
+    thread: Type.String({ minLength: 1, maxLength: 200, description: "The thread to follow, such as github:acme/web#412" }),
+  }),
+  replay: "safe",
+  execute: async (args, api, context) => {
+    const text = await api.commit(async (tx) => {
+      const owner = await ownerIn(tx, api.conversationId, "inbox_follow");
+      const threads = (await tx.doc(InboxDoc)).inboxes[owner.project]!.threads;
+      const current = threads[args.thread];
+      // Taking over another task's thread would send that task's events here.
+      if (current !== undefined && current !== owner.task.id) return `${args.thread} already belongs to another task; not followed.`;
+      threads[args.thread] = owner.task.id;
+      return `Following ${args.thread}: its events come back to this task.`;
+    }, context);
+    return { output: [{ type: "text", text }] };
+  },
+});
+
 const MAX_ALARM_MS = 60_000;
 const RETRY_ALARM_MS = 5_000;
 
@@ -214,14 +330,7 @@ const wakeMeAt = defineTool({
     const due = args.at === undefined ? now + args.in_minutes! * 60_000 : Date.parse(args.at);
     if (Number.isNaN(due)) throw new Error(`Not a time: ${args.at}`);
     await api.commit(async (tx) => {
-      const inboxes = (await tx.doc(InboxDoc)).inboxes;
-      // The task's first run starts before the worker records the conversation
-      // id; the conversation's request id is that first batch's.
-      const requestId = (await tx.doc(IndexDoc)).conversations.find((entry) => entry.id === api.conversationId)?.requestId;
-      const owner = Object.entries(inboxes)
-        .flatMap(([project, inbox]) => inbox.tasks.map((task) => ({ project, task })))
-        .find(({ task }) => task.conversationId === api.conversationId || (requestId !== undefined && task.batch?.requestId === requestId));
-      if (owner === undefined) throw new Error("wake_me_at only works in an Inbox task's conversation");
+      const owner = await ownerIn(tx, api.conversationId, "wake_me_at");
       const timers = (await tx.doc(TimerDoc)).timers;
       // The tool task's id: a provider's call id (`call_0`) can repeat across conversations.
       const id = `wake:${api.taskId}`;
@@ -234,7 +343,7 @@ const wakeMeAt = defineTool({
 });
 
 /** The Inbox's tools; the host installs it, and only Inbox task conversations are offered them. */
-export const inboxExtension = defineExtension({ name: "inbox", tools: [wakeMeAt] });
+export const inboxExtension = defineExtension({ name: "inbox", tools: [wakeMeAt, notify, inboxFollow] });
 
 /** Fire every timer due by `now`: one commit writes its event and marks it done or moves it on. */
 async function fireDueTimers(harness: Harness, now: number, context: Context): Promise<void> {
