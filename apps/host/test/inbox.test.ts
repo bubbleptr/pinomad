@@ -1,8 +1,10 @@
 import { execFile } from "node:child_process";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { fauxAssistantMessage, type FauxResponseStep, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
-import type { ConversationDocToken, ConversationId } from "@earendil-works/pi-durable";
+import { AgentDoc, type ConversationDocToken, type ConversationId } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
 import type { QuestionState } from "@pinomad/protocol/presentation.ts";
 import { coding } from "../src/extensions/coding.ts";
@@ -10,7 +12,7 @@ import { question } from "../src/extensions/question.ts";
 import type { OpenedHost } from "../src/host.ts";
 import { addInboxEvent, addTimer, InboxDoc, type InboxTask, TimerDoc } from "../src/inbox.ts";
 import { IndexDoc } from "../src/organization.ts";
-import { AgentDoc } from "@earendil-works/pi-durable";
+
 import { INBOX_BATCH_ENTRY, isUserMessageEntry } from "@pinomad/protocol/inbox.ts";
 import { connectTo, LONG_ANSWER, startChat, startFauxHost, tempDir, useCleanups } from "./support.ts";
 
@@ -541,6 +543,10 @@ describe("Inbox base branch", () => {
     await git(project, "commit", "-q", "--allow-empty", "-m", "feature work");
     return { project, main };
   }
+  const toolResults = async (host: OpenedHost, id: ConversationId): Promise<string[]> => {
+    const page = await (await host.harness.conversation(id, context))!.entries({ order: "ascending" }, 1000, undefined, context);
+    return page.items.filter((each) => each.kind === "pi.tool-result").map((each) => JSON.stringify((each as { model?: unknown }).model));
+  };
   const cwdOf = async (host: OpenedHost, id: ConversationId) => (await host.harness.snapshot(AgentDoc, id, context))?.cwd;
   const inboxOf = async (host: OpenedHost) => Object.values((await host.harness.snapshot(InboxDoc, context))?.inboxes ?? {})[0];
 
@@ -586,21 +592,35 @@ describe("Inbox base branch", () => {
     expect(checkout?.base).toBe(moved);
   });
 
-  it("moves an intake opened in the project directory into its own checkout", async () => {
-    const project = await gitProject();
-    const host = await startFauxHost(defer, { projects: [project], answers: ["noted", "again"] });
+  it("moves an intake opened in the project directory into its own checkout, and its next run reads there", async () => {
+    const { project } = await onFeatureBranch();
+    // Only on main: the project directory, on the feature branch, lacks it.
+    await git(project, "switch", "-q", "main");
+    await writeFile(join(project, "on-main.txt"), "from main\n");
+    await git(project, "add", "on-main.txt");
+    await git(project, "commit", "-q", "-m", "main only");
+    await git(project, "switch", "-q", "feature");
+    const host = await startFauxHost(defer, {
+      projects: [project],
+      extensions: [coding, question],
+      answers: ["noted", fauxAssistantMessage(fauxToolCall("read", { path: "on-main.txt" }), { stopReason: "toolUse" }), "read it"],
+    });
     const intake = await host.inbox.sendToIntake(project, "hi", "r1", context);
+    const first = (await cwdOf(host, intake))!;
+    await until(() => headOf(first).catch(() => undefined), (head) => head !== undefined);
     await until(() => userTexts(host, intake), (texts) => texts.length === 1);
-    // As an intake opened before #846 was: in the project directory, with no checkout record.
+    // As an intake opened before #846 was: in the project directory, with no checkout record and no worktree.
+    await git(project, "worktree", "remove", "--force", first);
     await host.harness.commit(async (tx) => {
       const index = await tx.doc(IndexDoc);
       index.checkouts = (index.checkouts ?? []).filter((each) => each.conversationId !== intake);
       (await tx.doc(AgentDoc, intake)).cwd = index.projects[0]!.path;
     }, context);
-    await host.inbox.sendToIntake(project, "again", "r2", context);
+    await host.inbox.sendToIntake(project, "read on-main.txt", "r2", context);
     const cwd = (await cwdOf(host, intake))!;
     expect(cwd).toContain("/worktrees/");
-    expect(await headOf(cwd)).toBe(await headOf(project));
+    const [result] = await until(() => toolResults(host, intake), (results) => results.length === 1);
+    expect(result).toContain("from main");
   });
 
   it("keeps a non-git project's intake in the project directory", async () => {

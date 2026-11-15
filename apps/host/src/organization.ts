@@ -319,6 +319,12 @@ export async function pinCheckout(
 ): Promise<void> {
   const repo = await gitBase(project);
   if (repo === undefined) return;
+  const found = (await harness.snapshot(IndexDoc, context))?.checkouts?.find((each) => each.conversationId === id);
+  // Already there: a recreated worktree starts at its record's base, which is this commit.
+  if (found?.base === commit) {
+    await ensureWorktree(found);
+    return;
+  }
   const record = await harness.commit(async (tx) => {
     const doc = await tx.doc(IndexDoc);
     const existing = doc.checkouts?.find((each) => each.conversationId === id);
