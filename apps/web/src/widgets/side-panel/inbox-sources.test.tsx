@@ -1,5 +1,5 @@
 import { composeStories } from "@storybook/react-vite";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { HostInbox } from "@pinomad/protocol/inbox.ts";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -114,6 +114,34 @@ describe("adding an event source", () => {
     });
     expect(await within(dialog()).findByText("This schedule never fires")).toBeInTheDocument();
     expect(within(dialog()).getByRole("textbox", { name: "Name" })).toHaveValue("Leap day");
+  });
+
+  it("can't be closed while the host is adding, so its answer never lands on a later form", async () => {
+    const { remote, user } = setup();
+    let answer: (value: { sourceId: string }) => void = () => {};
+    vi.mocked(remote.controller.addInboxSource).mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
+    await user.click(screen.getByRole("button", { name: "Add source" }));
+    await user.type(within(dialog()).getByRole("textbox", { name: "Name" }), "Morning check");
+    await user.type(within(dialog()).getByRole("textbox", { name: "Task" }), "Look at CI.");
+    await user.click(within(dialog()).getByRole("button", { name: "Add" }));
+    expect(within(dialog()).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    await user.click(within(dialog()).getByRole("button", { name: "Close" }));
+    expect(dialog()).toBeInTheDocument();
+    answer({ sourceId: "src-new" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("can't drop a removal's confirm while the host is removing", async () => {
+    const { remote, user } = setup();
+    vi.mocked(remote.controller.removeInboxSource).mockImplementationOnce(() => new Promise(() => {}));
+    await user.click(within(sourcesList()).getByRole("button", { name: "More for NAS backups" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Remove" }));
+    const confirm = await screen.findByRole("alertdialog", { name: "Remove NAS backups?" });
+    await user.click(within(confirm).getByRole("button", { name: "Remove" }));
+    expect(within(confirm).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("alertdialog", { name: "Remove NAS backups?" })).toBeInTheDocument();
   });
 
   it("adds a plugin source with the plugin's filter, restricted unless you say otherwise", async () => {

@@ -271,7 +271,8 @@ function ConfirmSource({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   return (
-    <AlertDialog open onOpenChange={(open) => (open ? undefined : onClose())}>
+    // Held open while the host works: its answer moves this dialog on, and must not land on another one.
+    <AlertDialog open onOpenChange={(open) => (open || busy ? undefined : onClose())}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
@@ -279,7 +280,7 @@ function ConfirmSource({
         </AlertDialogHeader>
         <FormError>{error}</FormError>
         <AlertDialogFooter>
-          <AlertDialogCancel />
+          <AlertDialogCancel disabled={busy} />
           <Button
             variant="destructive"
             loading={busy}
@@ -490,7 +491,9 @@ export function AddSourceDialog({
   const nothingToPick = kind === "plugin" && withSources.length === 0;
 
   return (
-    <Dialog open onOpenChange={(open) => (open ? undefined : onClose())} disablePointerDismissal>
+    // Held open while the host adds: its answer closes this dialog (or shows a
+    // webhook's secret), and must not land on a form opened after it.
+    <Dialog open onOpenChange={(open) => (open || saving ? undefined : onClose())} disablePointerDismissal>
       <DialogContent className="w-[480px]">
         <DialogHeader>
           <DialogTitle>Add an event source</DialogTitle>
@@ -706,7 +709,7 @@ export function AddSourceDialog({
             <FormError>{error}</FormError>
           </DialogBody>
           <DialogFooter>
-            <Button variant="secondary" onClick={() => onClose()}>
+            <Button variant="secondary" disabled={saving} onClick={() => onClose()}>
               Cancel
             </Button>
             <Button type="submit" variant="primary" loading={saving} disabled={!connected || nothingToPick}>
