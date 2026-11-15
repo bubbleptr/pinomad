@@ -50,6 +50,9 @@ public struct InboxTaskQuestion: Equatable, Sendable, Identifiable {
 }
 
 public enum Inbox {
+    /// The protocol minor whose `inbox` stream carries `InboxTask.questions`.
+    public static let taskQuestionsMinor: UInt32 = 41
+
     /// Every open request the Inbox's tasks wait on, in task order. A task
     /// the worker hasn't taken has no conversation to answer on.
     public static func taskQuestions(_ inbox: ProjectInbox) -> [InboxTaskQuestion] {
@@ -61,9 +64,14 @@ public enum Inbox {
 
     /// Where a "Waiting for your answer" notice leads: an open task's
     /// question is answered in its intake once the intake exists; a closed
-    /// task's questions don't show there, so it opens the task itself.
-    public static func answerTarget(_ conversationId: UInt64, waiting: Bool, inboxes: [ProjectInbox]?) -> UInt64 {
-        guard waiting, let place = place(of: conversationId, in: inboxes),
+    /// task's questions don't show there, so it opens the task itself. A
+    /// host before 5.41 publishes no task questions: its intake can't show
+    /// them, so its notices open the task too.
+    public static func answerTarget(
+        _ conversationId: UInt64, waiting: Bool, inboxes: [ProjectInbox]?, hostMinor: UInt32?
+    ) -> UInt64 {
+        guard waiting, (hostMinor ?? 0) >= taskQuestionsMinor,
+              let place = place(of: conversationId, in: inboxes),
               let task = place.task, !task.closed, let intake = place.inbox.intake
         else { return conversationId }
         return intake

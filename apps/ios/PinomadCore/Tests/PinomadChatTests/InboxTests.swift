@@ -339,24 +339,30 @@ private func cot(_ tools: [ToolItem]) -> CotView {
 
     /// An open task's question is answered in its intake (#846).
     @Test func anOpenTasksQuestionOpensTheIntake() {
-        #expect(Inbox.answerTarget(3, waiting: true, inboxes: inboxes) == 9)
+        #expect(Inbox.answerTarget(3, waiting: true, inboxes: inboxes, hostMinor: 41) == 9)
     }
 
     /// The host publishes no questions for a closed task: its own conversation.
     @Test func aClosedTasksQuestionOpensTheTask() {
-        #expect(Inbox.answerTarget(4, waiting: true, inboxes: inboxes) == 4)
+        #expect(Inbox.answerTarget(4, waiting: true, inboxes: inboxes, hostMinor: 41) == 4)
+    }
+
+    /// 5.38–5.40 hosts have intakes but publish no task questions there.
+    @Test func anOlderHostsQuestionOpensTheTask() {
+        #expect(Inbox.answerTarget(3, waiting: true, inboxes: inboxes, hostMinor: 40) == 3)
+        #expect(Inbox.answerTarget(3, waiting: true, inboxes: inboxes, hostMinor: nil) == 3)
     }
 
     @Test func withoutAnIntakeTheTaskOpens() {
         let noIntake = [inbox(tasks: [task("open", conversation: 3)])]
-        #expect(Inbox.answerTarget(3, waiting: true, inboxes: noIntake) == 3)
+        #expect(Inbox.answerTarget(3, waiting: true, inboxes: noIntake, hostMinor: 41) == 3)
     }
 
     @Test func otherNoticesAndOtherConversationsOpenThemselves() {
-        #expect(Inbox.answerTarget(3, waiting: false, inboxes: inboxes) == 3)
-        #expect(Inbox.answerTarget(7, waiting: true, inboxes: inboxes) == 7)
-        #expect(Inbox.answerTarget(9, waiting: true, inboxes: inboxes) == 9)
-        #expect(Inbox.answerTarget(3, waiting: true, inboxes: nil) == 3)
+        #expect(Inbox.answerTarget(3, waiting: false, inboxes: inboxes, hostMinor: 41) == 3)
+        #expect(Inbox.answerTarget(7, waiting: true, inboxes: inboxes, hostMinor: 41) == 7)
+        #expect(Inbox.answerTarget(9, waiting: true, inboxes: inboxes, hostMinor: 41) == 9)
+        #expect(Inbox.answerTarget(3, waiting: true, inboxes: nil, hostMinor: 41) == 3)
     }
 }
 

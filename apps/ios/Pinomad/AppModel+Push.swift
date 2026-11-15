@@ -60,9 +60,10 @@ extension AppModel {
             if target.waitingForAnswer {
                 // Its host's Inboxes not known yet (a cold launch): open the
                 // task now and move to its intake once they arrive.
-                if let inboxes = runtimes[ref.hostKey]?.snapshot?.inbox {
+                if let snapshot = runtimes[ref.hostKey]?.snapshot, let inboxes = snapshot.inbox {
                     ref = ConversationRef(hostKey: ref.hostKey, conversationId: Inbox.answerTarget(
-                        ref.conversationId, waiting: true, inboxes: inboxes))
+                        ref.conversationId, waiting: true, inboxes: inboxes,
+                        hostMinor: snapshot.host?.protocol.minor))
                 } else {
                     pendingAnswerRedirect = ref
                 }
@@ -81,18 +82,22 @@ extension AppModel {
     /// and only while the task the tap opened is still all that's shown.
     func resolveAnswerRedirect(_ runtime: HostRuntime) {
         guard let ref = pendingAnswerRedirect, ref.hostKey == runtime.hostKey,
-              let inboxes = runtime.snapshot?.inbox
+              let snapshot = runtime.snapshot, let inboxes = snapshot.inbox
         else { return }
         pendingAnswerRedirect = nil
-        let target = Inbox.answerTarget(ref.conversationId, waiting: true, inboxes: inboxes)
+        let target = Inbox.answerTarget(ref.conversationId, waiting: true, inboxes: inboxes,
+                                        hostMinor: snapshot.host?.protocol.minor)
         guard target != ref.conversationId, navPath == [.conversation(ref)] else { return }
         navPath = [.conversation(ConversationRef(hostKey: ref.hostKey, conversationId: target))]
     }
 
     /// Where a question notice on a loaded host leads, for the banner check.
     func pushAnswerTarget(_ target: PushTarget) -> UInt64? {
-        guard target.waitingForAnswer, let inboxes = runtimes[target.hostKey]?.snapshot?.inbox else { return nil }
-        return Inbox.answerTarget(target.conversationId, waiting: true, inboxes: inboxes)
+        guard target.waitingForAnswer, let snapshot = runtimes[target.hostKey]?.snapshot,
+              let inboxes = snapshot.inbox
+        else { return nil }
+        return Inbox.answerTarget(target.conversationId, waiting: true, inboxes: inboxes,
+                                  hostMinor: snapshot.host?.protocol.minor)
     }
 
     /// The banner baseline is the conversation actually visible, not just
