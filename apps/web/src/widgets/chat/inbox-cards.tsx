@@ -63,13 +63,20 @@ export function inboxSubmitsOf(tools: readonly ToolItem[]): ToolItem[] {
   return tools.filter((tool) => tool.toolName === "inbox_submit");
 }
 
+/** The call's arguments as the model wrote them, which the host may yet refuse: each field is kept only when it is a string. */
 function argsOf(tool: ToolItem): { title?: string; mergeInto?: string } {
+  let parsed: unknown;
   try {
-    const parsed: unknown = JSON.parse(tool.argsText ?? "");
-    return typeof parsed === "object" && parsed !== null ? (parsed as { title?: string; mergeInto?: string }) : {};
+    parsed = JSON.parse(tool.argsText ?? "");
   } catch {
     return {};
   }
+  if (typeof parsed !== "object" || parsed === null) return {};
+  const { title, mergeInto } = parsed as Record<string, unknown>;
+  return {
+    title: typeof title === "string" ? title : undefined,
+    mergeInto: typeof mergeInto === "string" ? mergeInto : undefined,
+  };
 }
 
 /** One card per filed task: its state light, title and where it stands now. A card opens its task. */

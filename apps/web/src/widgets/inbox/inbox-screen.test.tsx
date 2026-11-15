@@ -27,7 +27,7 @@ describe("the intake before its first message", () => {
     render(<IntakeDraft view={view} remote={remote} onOpened={onOpened} />);
     await typeAndSend("Export is broken");
     expect(remote.controller.sendToIntake).toHaveBeenCalledWith(WEBSITE.path, "Export is broken");
-    await waitFor(() => expect(onOpened).toHaveBeenCalledWith(77));
+    await waitFor(() => expect(onOpened).toHaveBeenCalledWith(77, WEBSITE.path));
   });
 
   it("keeps the message and shows why when the host refuses it", async () => {

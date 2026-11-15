@@ -2,7 +2,9 @@ import { composeStories } from "@storybook/react-vite";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
+import type { InboxTranscript } from "../../entities/inbox/inbox-transcript.tsx";
 import { PINOMAD, TASK } from "../../test/story-fixtures.tsx";
+import { InboxTaskCards } from "./inbox-cards.tsx";
 import * as stories from "./inbox-cards.stories.tsx";
 
 const { IntakeTaskCards, TaskEvents } = composeStories(stories);
@@ -21,6 +23,20 @@ describe("intake task cards", () => {
     ]);
     await user.click(cards[0]!);
     expect(IntakeTaskCards.args.onOpenTask).toHaveBeenCalledWith(PINOMAD.path, expect.objectContaining({ id: TASK.queued }));
+  });
+
+  it("still renders a call whose arguments have the wrong types", () => {
+    const transcript: InboxTranscript = { events: new Map(), task: () => undefined, openTask: () => {} };
+    render(
+      <InboxTaskCards
+        tools={[
+          { toolName: "inbox_submit", state: "output-error", argsText: JSON.stringify({ title: { text: "Fix export" }, mergeInto: 7 }) },
+        ]}
+        inbox={transcript}
+      />,
+    );
+    const card = within(screen.getByRole("list", { name: "Filed tasks" })).getByRole("listitem");
+    expect(card).toHaveTextContent(/Task.*Not filed/);
   });
 });
 

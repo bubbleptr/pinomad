@@ -939,6 +939,10 @@ export function Workbench({
   const draft = draftSlotState.home;
   // An Inbox screen with no conversation of its own takes the draft's place (ADR-0051 §6).
   const inboxTarget = drafting ? draftSlotState.inbox : undefined;
+  // An intake's first send resolves after an arbitrary delay; only the intake
+  // still shown may take main when it does.
+  const inboxTargetRef = useRef(inboxTarget);
+  inboxTargetRef.current = inboxTarget;
   // Token clients learn drafting from the snapshot; the stored-host root reads
   // it from focus instead.
   useEffect(() => {
@@ -1339,7 +1343,16 @@ export function Workbench({
       <ConnectionBanner view={view} wsUrl={wsUrl} hostKey={hostKey} />
         <div className="@container relative flex min-h-0 min-w-0 flex-1 flex-col">
         {shownId === undefined && inboxTarget !== undefined ? (
-          <InboxScreen view={view} remote={remote} target={inboxTarget} onOpened={openConversation} />
+          <InboxScreen
+            view={view}
+            remote={remote}
+            target={inboxTarget}
+            onOpened={(id, project) => {
+              const shown = inboxTargetRef.current;
+              if (!live.current || shown?.project !== project || shown.task !== undefined) return;
+              openConversation(id);
+            }}
+          />
         ) : shownId === undefined ? (
           <DraftHome
             view={view}

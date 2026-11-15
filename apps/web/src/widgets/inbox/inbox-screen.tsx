@@ -24,8 +24,8 @@ export function InboxScreen({
   view: DurableView;
   remote: RemoteDurable;
   target: InboxTarget;
-  /** The intake the first message opened. */
-  onOpened: (id: ConversationId) => void;
+  /** The intake the first message to `project` opened; the caller decides whether that intake is still the one shown. */
+  onOpened: (id: ConversationId, project: string) => void;
 }) {
   const inbox = view.inbox?.inboxes.find((each) => each.project === target.project);
   const connected = view.connection === "connected";
@@ -62,7 +62,7 @@ function IntakeDraft({
   inbox: ProjectInbox;
   remote: RemoteDurable;
   connected: boolean;
-  onOpened: (id: ConversationId) => void;
+  onOpened: (id: ConversationId, project: string) => void;
 }) {
   const [value, setValue] = useState("");
   const [sending, setSending] = useState(false);
@@ -77,7 +77,7 @@ function IntakeDraft({
       (id) => {
         setSending(false);
         setValue("");
-        onOpened(id);
+        onOpened(id, inbox.project);
       },
       (reason: unknown) => {
         setSending(false);

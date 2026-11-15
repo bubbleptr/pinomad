@@ -77,6 +77,20 @@ describe("Inbox screens in main", () => {
     expect(hosts.focusConversation).toHaveBeenCalledWith({ hostKey: HOME_HOST.hostKey, conversationId: 90 });
   });
 
+  it("does not pull main back to the intake when the reader moved on before the send returned", async () => {
+    const { hosts, remote, store } = renderOn({ project: WEBSITE.path }, withInbox());
+    let resolve!: (id: ConversationId) => void;
+    vi.mocked(remote.controller.sendToIntake).mockReturnValueOnce(new Promise((done) => (resolve = done)));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("textbox"));
+    await user.keyboard("Export is broken{Enter}");
+    expect(remote.controller.sendToIntake).toHaveBeenCalledWith(WEBSITE.path, "Export is broken");
+
+    act(() => store.slot(newDraftKey).setInbox({ project: PINOMAD.path, task: TASK.queued }));
+    await act(async () => resolve(77 as ConversationId));
+    expect(hosts.focusConversation).not.toHaveBeenCalledWith(expect.objectContaining({ conversationId: 77 }));
+  });
+
   it("opens a queued task's conversation once the worker takes it", () => {
     const { hosts, push } = renderOn({ project: PINOMAD.path, task: TASK.queued }, withInbox());
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("CSV export garbles Chinese text");
