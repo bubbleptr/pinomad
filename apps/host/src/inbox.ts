@@ -51,12 +51,16 @@ export type InboxTask = {
   closed: boolean;
   /** Why the worker gave up on its last batch, when it did; it moved on to the next task. */
   failed?: string;
+  /** Its run stopped on a question to the user; cleared once the run settles. */
+  waiting?: boolean;
 };
 
 export type ProjectInbox = {
   tasks: InboxTask[];
   /** thread → task id. */
   threads: Record<string, string>;
+  /** The project's intake conversation, where the user hands it work (ADR-0051 §6); opened by the first message. */
+  intake?: ConversationId;
 };
 
 export const InboxDoc = defineDoc<{ inboxes: Record<string, ProjectInbox> }>({
@@ -340,8 +344,89 @@ const wakeMeAt = defineTool({
   },
 });
 
-/** The Inbox's tools; the host installs it, and only Inbox task conversations are offered them. */
-export const inboxExtension = defineExtension({ name: "inbox", tools: [wakeMeAt, notify, inboxFollow] });
+/** The intake conversation's project, read inside a commit. */
+async function intakeIn(tx: Tx, conversationId: ConversationId): Promise<{ project: string; inbox: ProjectInbox }> {
+  const inboxes = (await tx.doc(InboxDoc)).inboxes;
+  const found = Object.entries(inboxes).find(([, inbox]) => inbox.intake === conversationId);
+  if (found === undefined) throw new Error("inbox_submit only works in a project's intake conversation");
+  return { project: found[0], inbox: found[1] };
+}
+
+const inboxSubmit = defineTool({
+  name: "inbox_submit",
+  callers: ["model"],
+  deferred: true,
+  description:
+    "Put work into this project's Inbox, where a worker takes tasks one at a time. One call per task: split a message that holds several. To add to a task already in the list (a duplicate, more detail), pass its id as mergeInto. Set external when the detail quotes text someone other than the user wrote, such as an issue body.",
+  parameters: Type.Object({
+    title: Type.String({ minLength: 1, maxLength: 120, description: "A short title for the task" }),
+    detail: Type.String({ minLength: 1, maxLength: 4_000, description: "What to do, with pointers (files, links, issue numbers); the worker reads it as the task's event" }),
+    mergeInto: Type.Optional(Type.String({ description: "The id of an existing task to add this to" })),
+    external: Type.Optional(Type.Boolean({ description: "True when the detail quotes outside text, not the user's own words" })),
+  }),
+  // Safe: the event id is the tool task's id, so a rerun finds the event it added.
+  replay: "safe",
+  execute: async (args, api, context) => {
+    const result = await api.commit(async (tx) => {
+      const { project, inbox } = await intakeIn(tx, api.conversationId);
+      if (args.mergeInto !== undefined && !inbox.tasks.some((task) => task.id === args.mergeInto)) {
+        throw new Error(`No task ${args.mergeInto} in this Inbox`);
+      }
+      const recorded = recordEvent((await tx.doc(InboxDoc)).inboxes, project, {
+        id: `submit:${api.taskId}`,
+        source: "user",
+        ...(args.mergeInto === undefined ? {} : { task: args.mergeInto }),
+        title: args.title,
+        summary: args.detail,
+        trusted: args.external !== true,
+      });
+      return { task: recorded.task, merged: args.mergeInto !== undefined };
+    }, context);
+    const text = result.merged ? `Added to task ${result.task}.` : `Created task ${result.task}: ${args.title}.`;
+    return { output: [{ type: "text", text }], details: { task: result.task, title: args.title, merged: result.merged } };
+  },
+});
+
+const TASK_LIST_LIMIT = 50;
+
+/** The intake's own instructions and the Inbox's current tasks, rendered for intake conversations only. */
+const intakeSection = {
+  key: "inbox_intake",
+  render: async (input: { conversationId: ConversationId; read: { snapshot: Harness["snapshot"] } }, context: Context) => {
+    const doc = await input.read.snapshot(InboxDoc, context);
+    const inbox = Object.values(doc?.inboxes ?? {}).find((each) => each.intake === input.conversationId);
+    if (inbox === undefined) return undefined;
+    const tasks = inbox.tasks.slice(-TASK_LIST_LIMIT).map((task) => {
+      const state =
+        task.failed !== undefined
+          ? "failed"
+          : task.closed
+            ? "done"
+            : task.waiting === true
+              ? "waiting for the user"
+              : task.events.some((event) => !event.handled)
+                ? "pending"
+                : "in progress";
+      return `- ${task.id} [${state}] ${escape(task.title)}`;
+    });
+    return [
+      "This is the project's intake conversation. The user tells you what needs doing; you ask what is unclear, split it into tasks, and put each into the Inbox with inbox_submit. A worker runs the tasks; you do not fix anything yourself. Merge a duplicate into its task with mergeInto. You can also answer what the tasks below are doing.",
+      "",
+      tasks.length === 0 ? "The Inbox has no tasks yet." : `The Inbox's tasks, newest last:\n${tasks.join("\n")}`,
+    ].join("\n");
+  },
+};
+
+/** Tools offered from the start to an Inbox task's conversation, and the intake's whole tool set. */
+export const INBOX_TASK_TOOLS: readonly string[] = ["wake_me_at", "notify", "inbox_follow"];
+export const INTAKE_TOOLS: readonly string[] = ["read", "ask_user_question", "inbox_submit"];
+
+/** The Inbox's tools; the host installs it, and only Inbox conversations are offered them. */
+export const inboxExtension = defineExtension({
+  name: "inbox",
+  tools: [wakeMeAt, notify, inboxFollow, inboxSubmit],
+  sections: [intakeSection as never],
+});
 
 /** Fire every timer due by `now`: one commit writes its event and marks it done or moves it on. */
 async function fireDueTimers(harness: Harness, now: number, context: Context): Promise<void> {
@@ -393,7 +478,26 @@ const FIRST_MESSAGE_PREFACE =
 /** The part of a `pinomad.question` document the worker reads. */
 type QuestionState = { requests: { resolution?: JsonValue }[] };
 
-export type CreateInboxConversation = (input: { project: string; text: string; requestId: string }, context: Context) => Promise<ConversationId>;
+export type CreateInboxConversation = (
+  input: {
+    project: string;
+    text: string;
+    requestId: string;
+    kind: "task" | "intake";
+    /** Runs in the creating commit, before the first message is admitted. */
+    onInit?: (tx: Tx, id: ConversationId) => Promise<void>;
+  },
+  context: Context,
+) => Promise<ConversationId>;
+
+export interface InboxHandle {
+  /**
+   * Send the user's message to `project`'s intake conversation, opening it on
+   * the first message. A repeated request id is admitted once.
+   */
+  sendToIntake(project: string, text: string, requestId: string, context: Context): Promise<ConversationId>;
+  close(): void;
+}
 
 /**
  * What the worker takes next, among tasks not parked on a question: a batch
@@ -425,7 +529,7 @@ export async function startInbox(options: {
   /** The host's upgrade gate: no batch starts while an upgrade installs, and its events stay pending. */
   readonly upgrade?: { admit(): () => void; subscribe(listener: () => void): () => void };
   readonly context: Context;
-}): Promise<{ close(): void }> {
+}): Promise<InboxHandle> {
   const { harness, context } = options;
   let closed = false;
   /** Projects whose loop is running, and ones a change arrived for meanwhile. */
@@ -515,7 +619,7 @@ export async function startInbox(options: {
     const text = batch.first ? `${FIRST_MESSAGE_PREFACE}\n\n${blocks}` : blocks;
     let conversationId = task.conversationId;
     if (conversationId === undefined) {
-      conversationId = await options.createConversation({ project, text, requestId: batch.requestId }, context);
+      conversationId = await options.createConversation({ project, text, requestId: batch.requestId, kind: "task" }, context);
       const created = conversationId;
       await harness.commit(async (tx) => {
         (await find(tx)).conversationId = created;
@@ -545,6 +649,10 @@ export async function startInbox(options: {
     // Parked: the task leaves the queue until its run settles.
     const waiting = parkedIn(project);
     waiting.set(task.id, asked.stop);
+    await harness.commit(async (tx) => {
+      const current = (await tx.doc(InboxDoc)).inboxes[project]?.tasks.find((each) => each.id === task.id);
+      if (current !== undefined) current.waiting = true;
+    }, context);
     void settledRun
       .then(async () => {
         asked.stop();
@@ -577,6 +685,7 @@ export async function startInbox(options: {
       if (current === undefined) return;
       // The batch settled; a later event that reopened the task makes a new one.
       delete current.batch;
+      delete current.waiting;
       if (current.events.every((event) => event.handled)) current.closed = true;
     }, context);
   }
@@ -678,7 +787,45 @@ export async function startInbox(options: {
     return Promise.resolve();
   });
 
+  /** One intake opening at a time per project: two first messages must not open two. */
+  const opening = new Map<string, Promise<unknown>>();
+  async function sendToIntake(project: string, text: string, requestId: string, ctx: Context): Promise<ConversationId> {
+    const key = await projectKey(project);
+    const previous = opening.get(key) ?? Promise.resolve();
+    const turn = previous.catch(() => {}).then(async (): Promise<ConversationId> => {
+      const intake = await harness.commit(async (tx) => {
+        if (!(await tx.doc(IndexDoc)).projects.some((each) => each.path === key)) throw new Error(`Unknown project: ${project}`);
+        const inboxes = (await tx.doc(InboxDoc)).inboxes;
+        if (inboxes[key] === undefined) inboxes[key] = { tasks: [], threads: {} };
+        return inboxes[key]!.intake;
+      }, ctx);
+      if (intake !== undefined) {
+        const conversation = await harness.conversation(intake, ctx);
+        if (conversation === undefined) throw new Error(`The intake conversation ${intake} is gone`);
+        await conversation.submit({ type: "input", content: text, whenBusy: "followUp", requestId }, ctx);
+        return intake;
+      }
+      // Recorded in the creating commit: the first run already renders as the
+      // intake, and no crash can leave an intake the Inbox does not know.
+      return await options.createConversation(
+        {
+          project: key,
+          text,
+          requestId,
+          kind: "intake",
+          onInit: async (tx, id) => {
+            (await tx.doc(InboxDoc)).inboxes[key]!.intake = id;
+          },
+        },
+        ctx,
+      );
+    });
+    opening.set(key, turn);
+    return await turn;
+  }
+
   return {
+    sendToIntake,
     close() {
       closed = true;
       clearTimeout(alarm);

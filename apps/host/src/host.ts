@@ -8,7 +8,7 @@ import type { JsonValue } from "@earendil-works/chord/json";
 import type { ImageProcessor } from "@earendil-works/pi-durable/tools";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { addProject, createConversation, ensureIndex, IndexDoc } from "./organization.ts";
-import { inboxExtension, startInbox } from "./inbox.ts";
+import { INBOX_TASK_TOOLS, inboxExtension, type InboxHandle, INTAKE_TOOLS, startInbox } from "./inbox.ts";
 import { checkoutAt, ensureWorktree, worktreeRoot } from "./checkout.ts";
 import { ensureDevices, loadHostKey, loadRelayKey, pairingOffers } from "./devices.ts";
 import type { RelayLinkState } from "./relay-link.ts";
@@ -154,6 +154,8 @@ export interface OpenedHost {
    * host is not joined.
    */
   createAccountOffer(): Promise<{ secret: string; expiresAt: number } | undefined>;
+  /** The project Inboxes (ADR-0051): talking to a project's intake conversation. */
+  readonly inbox: Pick<InboxHandle, "sendToIntake">;
   close(): Promise<void>;
 }
 
@@ -411,6 +413,9 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     harness.resume();
     // Inbox workers (ADR-0051): each task's conversation is created like a user's, in the project.
     const roles = agentRoles;
+    const builtinTools = [...extensions.flatMap(({ extension }) => extension.tools ?? []), ...inboxExtension.tools!];
+    const inboxTaskTools = inboxExtension.tools!.filter((tool) => INBOX_TASK_TOOLS.includes(tool.name));
+    const intakeTools = builtinTools.filter((tool) => INTAKE_TOOLS.includes(tool.name));
     const inbox = await startInbox({
       harness,
       context,
@@ -419,11 +424,20 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
         .flatMap((extension) => extension.docs ?? [])
         .filter((doc) => doc.presentation === "pinomad.question")
         .map((doc) => doc.token as ConversationDocToken<{ requests: { resolution?: JsonValue }[] }>),
-      createConversation: ({ project, text, requestId }, ctx) =>
+      createConversation: ({ project, text, requestId, kind, onInit }, ctx) =>
         createConversation(
           harness!,
           options.dataDir,
-          { home: { kind: "project", path: project }, text, requestId, modelTools: inboxExtension.tools! },
+          {
+            home: { kind: "project", path: project },
+            text,
+            requestId,
+            ...(onInit === undefined ? {} : { onInit }),
+            // An intake only reads, asks and submits (ADR-0051 §6); it works in the project itself.
+            ...(kind === "intake"
+              ? { checkout: "project" as const, modelTools: { only: intakeTools } }
+              : { modelTools: { add: inboxTaskTools } }),
+          },
           settingsDefaults(hostSettings.value),
           models,
           options.modelSummaries,
@@ -441,6 +455,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       closed: opened.closed,
       settings: hostSettings,
       ...(processes === undefined ? {} : { processes }),
+      inbox: { sendToIntake: (...args) => inbox.sendToIntake(...args) },
       // The binding is read at mint time; admission re-reads it again (a
       // join/leave between the two must not let the old binding through).
       // A server.json without `binding` — written before the field existed —
