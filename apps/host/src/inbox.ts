@@ -12,7 +12,8 @@ import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Context } from "@earendil-works/chord/context";
 import type { JsonValue } from "@earendil-works/chord/json";
-import { type ConversationDocToken, type ConversationId, defineDoc, type Harness } from "@earendil-works/pi-durable";
+import { type ConversationDocToken, type ConversationId, defineDoc, defineExtension, defineTool, type Harness } from "@earendil-works/pi-durable";
+import { Type } from "typebox";
 import { gitBase } from "./checkout.ts";
 import { IndexDoc } from "./organization.ts";
 
@@ -82,6 +83,36 @@ const projectKey = async (path: string): Promise<string> => await realpath(resol
 const titleOf = (input: InboxEventInput): string =>
   (input.title ?? input.summary.split("\n", 1)[0] ?? "").trim().slice(0, 120) || "Untitled task";
 
+/** Put an event into one Inbox inside a commit; see `addInboxEvent`. */
+function recordEvent(inboxes: Record<string, ProjectInbox>, key: string, input: InboxEventInput): { task: string; duplicate: boolean } {
+  if (inboxes[key] === undefined) inboxes[key] = { tasks: [], threads: {} };
+  const inbox = inboxes[key]!;
+  for (const task of inbox.tasks) {
+    if (task.events.some((event) => event.id === input.id)) return { task: task.id, duplicate: true };
+  }
+  const event: InboxEvent = {
+    id: input.id,
+    source: input.source,
+    ...(input.thread === undefined ? {} : { thread: input.thread }),
+    summary: input.summary,
+    trusted: input.trusted,
+    receivedAt: Date.now(),
+    handled: false,
+  };
+  const targetId = input.task ?? (input.thread === undefined ? undefined : inbox.threads[input.thread]);
+  const target = targetId === undefined ? undefined : inbox.tasks.find((task) => task.id === targetId);
+  if (target !== undefined) {
+    target.events.push(event);
+    target.closed = false;
+    delete target.failed;
+    return { task: target.id, duplicate: false };
+  }
+  const task: InboxTask = { id: randomUUID(), title: titleOf(input), createdAt: Date.now(), events: [event], closed: false };
+  inbox.tasks.push(task);
+  if (input.thread !== undefined) inbox.threads[input.thread] = task.id;
+  return { task: task.id, duplicate: false };
+}
+
 /**
  * Put an event into `project`'s Inbox: to the task named by `task` or by its
  * thread, else into a new task. A repeated event id changes nothing.
@@ -95,33 +126,142 @@ export async function addInboxEvent(
   const key = await projectKey(project);
   return await harness.commit(async (tx) => {
     if (!(await tx.doc(IndexDoc)).projects.some((each) => each.path === key)) throw new Error(`Unknown project: ${project}`);
-    const doc = await tx.doc(InboxDoc);
-    if (doc.inboxes[key] === undefined) doc.inboxes[key] = { tasks: [], threads: {} };
-    const inbox = doc.inboxes[key]!;
-    for (const task of inbox.tasks) {
-      if (task.events.some((event) => event.id === input.id)) return { task: task.id, duplicate: true };
+    return recordEvent((await tx.doc(InboxDoc)).inboxes, key, input);
+  }, context);
+}
+
+/**
+ * A timer (ADR-0051 §8): a follow-up a task set for itself (`task`, fires
+ * once) or a schedule (`every`, fires on that cadence). Timers live apart from
+ * the Inbox and never start a run: when one comes due the scheduler writes an
+ * event into the Inbox, in the same commit that marks it done or moves it on.
+ */
+export type InboxTimer = {
+  id: string;
+  /** The Inbox's project key. */
+  project: string;
+  /** Epoch ms of the next fire. */
+  due: number;
+  /** What the event says. */
+  note: string;
+  /** A follow-up's task: the event goes back to it. */
+  task?: string;
+  /** A schedule's period in ms; the next due time keeps its phase (no DST correction). */
+  every?: number;
+  /** A follow-up that fired, or a timer whose project left the host. */
+  done: boolean;
+};
+
+export const TimerDoc = defineDoc<{ timers: InboxTimer[] }>({
+  kind: "pinomad.inbox-timers",
+  version: 1,
+  scope: "session",
+  initial: () => ({ timers: [] }),
+  checkpointWhen: () => false,
+});
+
+/** The first due time after `now` on the timer's cadence: a schedule that missed several fires once. */
+const nextDue = (due: number, every: number, now: number): number => due + (Math.floor((now - due) / every) + 1) * every;
+
+/** Add a timer to `project`'s Inbox. A follow-up names its task; a schedule gives `every`. */
+export async function addTimer(
+  harness: Harness,
+  project: string,
+  input: { readonly due: number; readonly note: string; readonly task?: string; readonly every?: number; readonly id?: string },
+  context: Context,
+): Promise<string> {
+  if (input.every !== undefined && !(input.every > 0)) throw new Error("A schedule's period must be positive");
+  const key = await projectKey(project);
+  return await harness.commit(async (tx) => {
+    if (!(await tx.doc(IndexDoc)).projects.some((each) => each.path === key)) throw new Error(`Unknown project: ${project}`);
+    const doc = await tx.doc(TimerDoc);
+    const id = input.id ?? randomUUID();
+    if (doc.timers.some((timer) => timer.id === id)) return id;
+    doc.timers.push({
+      id,
+      project: key,
+      due: input.due,
+      note: input.note,
+      ...(input.task === undefined ? {} : { task: input.task }),
+      ...(input.every === undefined ? {} : { every: input.every }),
+      done: false,
+    });
+    return id;
+  }, context);
+}
+
+const MAX_ALARM_MS = 60_000;
+const RETRY_ALARM_MS = 5_000;
+
+const wakeMeAt = defineTool({
+  name: "wake_me_at",
+  callers: ["model"],
+  // Offered only to an Inbox task's conversation (createConversation's modelTools).
+  deferred: true,
+  description:
+    "Come back to this Inbox task later: at `at`, an event with `note` reopens this task and you continue in this conversation. Use it to check on something that takes time (CI, a reply, a deploy) instead of waiting. Only works in an Inbox task.",
+  parameters: Type.Object({
+    at: Type.Optional(Type.String({ description: "When to wake, as an ISO 8601 time with a timezone offset, such as 2026-11-16T09:00:00+08:00" })),
+    in_minutes: Type.Optional(Type.Number({ exclusiveMinimum: 0, description: "Or how many minutes from now to wake" })),
+    note: Type.String({ description: "What to check when you wake, a line for your future self" }),
+  }),
+  // Safe: the timer id is the tool task's id, so a rerun finds the timer it added.
+  // A time already past (a rerun after the host was down, say) wakes right away.
+  replay: "safe",
+  execute: async (args, api, context) => {
+    const now = Date.now();
+    if ((args.at === undefined) === (args.in_minutes === undefined)) throw new Error("Give exactly one of at and in_minutes");
+    const due = args.at === undefined ? now + args.in_minutes! * 60_000 : Date.parse(args.at);
+    if (Number.isNaN(due)) throw new Error(`Not a time: ${args.at}`);
+    await api.commit(async (tx) => {
+      const inboxes = (await tx.doc(InboxDoc)).inboxes;
+      // The task's first run starts before the worker records the conversation
+      // id; the conversation's request id is that first batch's.
+      const requestId = (await tx.doc(IndexDoc)).conversations.find((entry) => entry.id === api.conversationId)?.requestId;
+      const owner = Object.entries(inboxes)
+        .flatMap(([project, inbox]) => inbox.tasks.map((task) => ({ project, task })))
+        .find(({ task }) => task.conversationId === api.conversationId || (requestId !== undefined && task.batch?.requestId === requestId));
+      if (owner === undefined) throw new Error("wake_me_at only works in an Inbox task's conversation");
+      const timers = (await tx.doc(TimerDoc)).timers;
+      // The tool task's id: a provider's call id (`call_0`) can repeat across conversations.
+      const id = `wake:${api.taskId}`;
+      if (timers.some((timer) => timer.id === id)) return;
+      timers.push({ id, project: owner.project, due, note: args.note, task: owner.task.id, done: false });
+    }, context);
+    const when = due <= now ? "right away: that time has passed" : `at ${new Date(due).toISOString()}`;
+    return { output: [{ type: "text", text: `Will wake this task ${when} (it is now ${new Date(now).toISOString()}).` }] };
+  },
+});
+
+/** The Inbox's tools; the host installs it, and only Inbox task conversations are offered them. */
+export const inboxExtension = defineExtension({ name: "inbox", tools: [wakeMeAt] });
+
+/** Fire every timer due by `now`: one commit writes its event and marks it done or moves it on. */
+async function fireDueTimers(harness: Harness, now: number, context: Context): Promise<void> {
+  await harness.commit(async (tx) => {
+    const timers = await tx.doc(TimerDoc);
+    if (!timers.timers.some((timer) => !timer.done && timer.due <= now)) return;
+    const inboxes = (await tx.doc(InboxDoc)).inboxes;
+    const projects = new Set((await tx.doc(IndexDoc)).projects.map((project) => project.path));
+    for (const timer of timers.timers) {
+      if (timer.done || timer.due > now) continue;
+      if (!projects.has(timer.project)) {
+        timer.done = true;
+        continue;
+      }
+      // An agent wrote a follow-up's note: it is only as trusted as what its task read.
+      const owner = timer.task === undefined ? undefined : inboxes[timer.project]?.tasks.find((task) => task.id === timer.task);
+      // Keyed by the due time: a crash before this commit fires it again, a repeat is a no-op.
+      recordEvent(inboxes, timer.project, {
+        id: `timer:${timer.id}:${timer.due}`,
+        source: timer.task === undefined ? "schedule" : "followUp",
+        ...(timer.task === undefined ? {} : { task: timer.task }),
+        summary: timer.note,
+        trusted: owner === undefined ? timer.task === undefined : owner.events.every((event) => event.trusted),
+      });
+      if (timer.every === undefined) timer.done = true;
+      else timer.due = nextDue(timer.due, timer.every, now);
     }
-    const event: InboxEvent = {
-      id: input.id,
-      source: input.source,
-      ...(input.thread === undefined ? {} : { thread: input.thread }),
-      summary: input.summary,
-      trusted: input.trusted,
-      receivedAt: Date.now(),
-      handled: false,
-    };
-    const targetId = input.task ?? (input.thread === undefined ? undefined : inbox.threads[input.thread]);
-    const target = targetId === undefined ? undefined : inbox.tasks.find((task) => task.id === targetId);
-    if (target !== undefined) {
-      target.events.push(event);
-      target.closed = false;
-      delete target.failed;
-      return { task: target.id, duplicate: false };
-    }
-    const task: InboxTask = { id: randomUUID(), title: titleOf(input), createdAt: Date.now(), events: [event], closed: false };
-    inbox.tasks.push(task);
-    if (input.thread !== undefined) inbox.threads[input.thread] = task.id;
-    return { task: task.id, duplicate: false };
   }, context);
 }
 
@@ -375,6 +515,7 @@ export async function startInbox(options: {
 
   await harness.commit(async (tx) => {
     await tx.doc(InboxDoc);
+    await tx.doc(TimerDoc);
   }, context);
   const watch = await harness.watchDoc(InboxDoc, context);
   if (watch === undefined) throw new Error("Inbox document is not available");
@@ -392,9 +533,49 @@ export async function startInbox(options: {
     return Promise.resolve();
   });
 
+  // The scheduler: one timeout armed for the earliest due timer, re-armed when
+  // the timers change and capped so a clock change is noticed within a minute.
+  let alarm: ReturnType<typeof setTimeout> | undefined;
+  let firing = Promise.resolve();
+  const alarmIn = (delayMs: number): void => {
+    clearTimeout(alarm);
+    if (closed) return;
+    alarm = setTimeout(() => {
+      firing = firing
+        .then(async () => {
+          await fireDueTimers(harness, Date.now(), context);
+          // A capped alarm that found nothing due changed nothing a watch would see.
+          arm((await harness.snapshot(TimerDoc, context))?.timers ?? []);
+        })
+        .catch((error: unknown) => {
+          if (closed) return;
+          console.error("Inbox timers failed to fire; retrying:", error);
+          // A failed commit changed nothing a watch would see: try again later.
+          alarmIn(RETRY_ALARM_MS);
+        });
+    }, delayMs);
+  };
+  const arm = (timers: readonly Readonly<InboxTimer>[]): void => {
+    const due = Math.min(...timers.filter((timer) => !timer.done).map((timer) => timer.due));
+    if (!Number.isFinite(due)) {
+      clearTimeout(alarm);
+      return;
+    }
+    alarmIn(Math.min(Math.max(due - Date.now(), 0), MAX_ALARM_MS));
+  };
+  const timerWatch = await harness.watchDoc(TimerDoc, context);
+  if (timerWatch === undefined) throw new Error("Inbox timer document is not available");
+  arm(timerWatch.value?.timers ?? []);
+  timerWatch.start((call) => {
+    if (call.kind === "value") arm(call.value?.timers ?? []);
+    return Promise.resolve();
+  });
+
   return {
     close() {
       closed = true;
+      clearTimeout(alarm);
+      timerWatch.stop();
       watch.stop();
       unsubscribe?.();
       for (const map of parked.values()) for (const stop of map.values()) stop();

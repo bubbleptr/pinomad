@@ -7,9 +7,9 @@ import { describe, expect, it } from "vitest";
 import type { QuestionState } from "@pinomad/protocol/presentation.ts";
 import { question } from "../src/extensions/question.ts";
 import type { OpenedHost } from "../src/host.ts";
-import { addInboxEvent, InboxDoc, type InboxTask } from "../src/inbox.ts";
+import { addInboxEvent, addTimer, InboxDoc, type InboxTask, TimerDoc } from "../src/inbox.ts";
 import { IndexDoc } from "../src/organization.ts";
-import { LONG_ANSWER, startFauxHost, tempDir, useCleanups } from "./support.ts";
+import { connectTo, LONG_ANSWER, startChat, startFauxHost, tempDir, useCleanups } from "./support.ts";
 
 const context = BACKGROUND_CONTEXT;
 // The question extension's document, as the host hands it to the Inbox.
@@ -241,5 +241,97 @@ describe("Inbox", () => {
   it("refuses an event for a project the host does not know", async () => {
     const host = await startFauxHost(defer);
     await expect(addInboxEvent(host.harness, await plainProject(), event("e1", "bug"), context)).rejects.toThrow(/Unknown project/);
+  });
+});
+
+describe("Inbox timers", () => {
+  const timersOf = async (host: OpenedHost) => (await host.harness.snapshot(TimerDoc, context))?.timers ?? [];
+
+  it("fires a schedule into the Inbox as a new task each time, once per due time", async () => {
+    const project = await plainProject();
+    const host = await startFauxHost(defer, { projects: [project], answers: ["first", "second"] });
+    const start = Date.now();
+    await addTimer(host.harness, project, { due: start + 200, every: 400, note: "daily digest" }, context);
+    const tasks = await until(() => tasksOf(host, project), (tasks) => tasks.length >= 2 && tasks[0]!.closed);
+    expect(tasks.slice(0, 2).map((task) => task.events[0]!.source)).toEqual(["schedule", "schedule"]);
+    expect(await userTexts(host, tasks[0]!.conversationId!)).toEqual([expect.stringContaining("daily digest")]);
+    // Each fire moved the due time on; none is in the past.
+    const [timer] = await timersOf(host);
+    expect(timer!.due).toBeGreaterThan(start + 400);
+  });
+
+  it("fires a schedule that came due while the host was down once, not once per missed time", async () => {
+    const project = await plainProject();
+    const dir = await tempDir();
+    defer(dir.remove);
+    const first = await startFauxHost(defer, { dataDir: dir.path, projects: [project], answers: [] });
+    // As if the host slept through five due times.
+    await addTimer(first.harness, project, { due: Date.now() - 5 * 60_000 + 1_000, every: 60_000, note: "missed" }, context);
+    await first.close();
+
+    const second = await startFauxHost(defer, { dataDir: dir.path, projects: [project], answers: ["ran"] });
+    await until(() => tasksOf(second, project), (tasks) => tasks[0]?.closed === true);
+    expect(await tasksOf(second, project)).toHaveLength(1);
+    expect((await timersOf(second))[0]!.due).toBeGreaterThan(Date.now());
+  });
+
+  it("wakes a task at the time it set with wake_me_at, in the same conversation", async () => {
+    const project = await plainProject();
+    const at = new Date(Date.now() + 500).toISOString();
+    const wake = fauxAssistantMessage(fauxToolCall("wake_me_at", { at, note: "check CI on the PR" }), { stopReason: "toolUse" });
+    const host = await startFauxHost(defer, { projects: [project], answers: [wake, "will check later", "CI is green"] });
+    await addInboxEvent(host.harness, project, event("e1", "fix the flaky test"), context);
+    const [task] = await until(() => tasksOf(host, project), (tasks) => tasks[0]?.events.length === 2 && tasks[0]!.closed);
+    expect(task!.events[1]).toMatchObject({ source: "followUp", handled: true });
+    const texts = await userTexts(host, task!.conversationId!);
+    expect(texts).toHaveLength(2);
+    expect(texts[1]).toContain("check CI on the PR");
+    expect(await timersOf(host)).toEqual([expect.objectContaining({ task: task!.id, done: true })]);
+  });
+
+  it("keeps a follow-up of a task that read outside content untrusted", async () => {
+    const project = await plainProject();
+    const wake = fauxAssistantMessage(fauxToolCall("wake_me_at", { in_minutes: 0.01, note: "look again" }), { stopReason: "toolUse" });
+    const host = await startFauxHost(defer, { projects: [project], answers: [wake, "later", "looked"] });
+    await addInboxEvent(host.harness, project, { ...event("issue-1", "issue opened by a stranger"), trusted: false }, context);
+    const [task] = await until(() => tasksOf(host, project), (tasks) => tasks[0]?.events.length === 2 && tasks[0]!.closed);
+    expect(task!.events[1]).toMatchObject({ source: "followUp", trusted: false });
+  });
+
+  it("keeps one timer per wake_me_at call even when two tasks' calls share a provider call id", async () => {
+    const project = await gitProject();
+    const wake = (note: string) =>
+      fauxAssistantMessage(fauxToolCall("wake_me_at", { in_minutes: 60, note }, { id: "call_0" }), { stopReason: "toolUse" });
+    const host = await startFauxHost(defer, { projects: [project], answers: [wake("first"), "ok", wake("second"), "ok"] });
+    await addInboxEvent(host.harness, project, event("e1", "one"), context);
+    await addInboxEvent(host.harness, project, event("e2", "two"), context);
+    const tasks = await until(() => tasksOf(host, project), (tasks) => tasks.length === 2 && tasks.every((task) => task.closed));
+    const timers = await timersOf(host);
+    expect(timers.map((timer) => [timer.task, timer.note])).toEqual([
+      [tasks[0]!.id, "first"],
+      [tasks[1]!.id, "second"],
+    ]);
+  });
+
+  it("wakes right away for a wake_me_at time that has already passed", async () => {
+    const project = await plainProject();
+    const at = new Date(Date.now() - 60_000).toISOString();
+    const wake = fauxAssistantMessage(fauxToolCall("wake_me_at", { at, note: "late check" }), { stopReason: "toolUse" });
+    const host = await startFauxHost(defer, { projects: [project], answers: [wake, "later", "checked"] });
+    await addInboxEvent(host.harness, project, event("e1", "bug"), context);
+    const [task] = await until(() => tasksOf(host, project), (tasks) => tasks[0]?.events.length === 2 && tasks[0]!.closed);
+    expect(task!.events[1]).toMatchObject({ source: "followUp", summary: "late check" });
+  });
+
+  it("offers wake_me_at to an Inbox task's conversation and not to an ordinary one", async () => {
+    const project = await plainProject();
+    const host = await startFauxHost(defer, { projects: [project], answers: ["done", "hi"] });
+    await addInboxEvent(host.harness, project, event("e1", "bug"), context);
+    const [task] = await until(() => tasksOf(host, project), (tasks) => tasks[0]?.closed === true);
+    const offered = async (id: ConversationId) =>
+      (await (await host.harness.conversation(id, context))!.agent(context)).tools.map((tool) => tool.name);
+    expect(await offered(task!.conversationId!)).toContain("wake_me_at");
+    const chat = await startChat(await connectTo(defer, host), "hello");
+    expect(await offered(chat)).not.toContain("wake_me_at");
   });
 });
