@@ -446,6 +446,9 @@ struct ConversationView: View {
                            { model.retry(request, conversation: conversationId) }
                        },
                        retryKey: retryRequest?.requestId).equatable()
+            case .inboxBatch:
+                // The batch's event card is #809's; until then a marker stands in.
+                MarkerRow("Inbox events")
             case .compaction:
                 MarkerRow("Context compacted")
             case .reset:

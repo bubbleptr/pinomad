@@ -3,13 +3,12 @@ import type { ConversationId, ConversationView } from "@earendil-works/pi-durabl
 import { fn } from "storybook/test";
 import { InboxTranscriptProvider } from "../../entities/inbox/inbox-transcript.tsx";
 import {
-  inboxTaskConversation,
-  intakeConversation,
   INTAKE_ID,
   PINOMAD_INBOX,
   RUNNING_TASK_ID,
   withInbox,
 } from "../../test/story-fixtures.tsx";
+import { inboxTaskConversation, intakeConversation } from "../../test/inbox-fixtures.ts";
 import { ConversationTranscript } from "./conversation-transcript.tsx";
 import { InboxEventCard } from "./inbox-cards.tsx";
 

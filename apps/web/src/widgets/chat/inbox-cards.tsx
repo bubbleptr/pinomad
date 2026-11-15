@@ -3,7 +3,7 @@
 // intake's `inbox_submit` calls filed, each a button to its task.
 import type { InboxEvent } from "@pinomad/protocol/inbox.ts";
 import type { ToolItem } from "@pinomad/client/tool-item.ts";
-import { submittedTaskId } from "../../entities/inbox/host-text.ts";
+import { pinomadOf } from "@pinomad/client/cot-view.ts";
 import { sourceLabel } from "../../entities/inbox/inbox.ts";
 import type { InboxTranscript } from "../../entities/inbox/inbox-transcript.tsx";
 import { TaskDot } from "../../entities/inbox/task-dot.tsx";
@@ -86,10 +86,12 @@ export function InboxTaskCards({ tools, inbox }: { tools: readonly ToolItem[]; i
     <ul aria-label="Filed tasks" className="flex flex-col gap-2">
       {tools.map((tool, index) => {
         const args = argsOf(tool);
-        const taskId = tool.state === "output-available" ? submittedTaskId(tool.output) : undefined;
+        const detail = pinomadOf(tool);
+        const filed = detail?.kind === "inboxSubmit" ? detail : undefined;
+        const taskId = filed?.task;
         const info = taskId === undefined ? undefined : inbox.task(taskId);
-        const title = info?.task.title ?? args.title ?? "Task";
-        const what = args.mergeInto === undefined ? "New task" : "Added to task";
+        const title = info?.task.title ?? filed?.title ?? args.title ?? "Task";
+        const what = (filed?.merged ?? args.mergeInto !== undefined) ? "Added to task" : "New task";
         const description =
           tool.state === "output-error"
             ? "Not filed"

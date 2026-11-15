@@ -10,6 +10,7 @@ import { question } from "../src/extensions/question.ts";
 import type { OpenedHost } from "../src/host.ts";
 import { addInboxEvent, addTimer, InboxDoc, type InboxTask, TimerDoc } from "../src/inbox.ts";
 import { IndexDoc } from "../src/organization.ts";
+import { INBOX_BATCH_ENTRY, isUserMessageEntry } from "@pinomad/protocol/inbox.ts";
 import { connectTo, LONG_ANSWER, startChat, startFauxHost, tempDir, useCleanups } from "./support.ts";
 
 const context = BACKGROUND_CONTEXT;
@@ -54,7 +55,7 @@ async function userTexts(host: OpenedHost, id: ConversationId): Promise<string[]
   const conversation = await host.harness.conversation(id, context);
   const page = await conversation!.entries({ order: "ascending" }, 1000, undefined, context);
   return page.items
-    .filter((entry) => entry.kind === "pi.user")
+    .filter((entry) => isUserMessageEntry(entry.kind))
     .map((entry) => JSON.stringify((entry as { model?: unknown }).model));
 }
 
@@ -123,6 +124,22 @@ describe("Inbox", () => {
     const texts = await userTexts(host, task!.conversationId!);
     expect(texts).toHaveLength(2);
     expect(texts[1]).toContain("CI failed");
+  });
+
+  it("tags each batch message with its task and events, the first one and a later one alike", async () => {
+    const project = await plainProject();
+    const host = await startFauxHost(defer, { projects: [project], answers: ["fixed", "looked at CI"] });
+    await addInboxEvent(host.harness, project, { ...event("issue-1", "issue opened"), thread: "github:acme/web#1" }, context);
+    const [task] = await until(() => tasksOf(host, project), (tasks) => tasks[0]?.closed === true);
+    await addInboxEvent(host.harness, project, { ...event("ci-1", "CI failed"), thread: "github:acme/web#1" }, context);
+    await until(() => tasksOf(host, project), (tasks) => tasks[0]!.events.length === 2 && tasks[0]!.closed);
+    const conversation = await host.harness.conversation(task!.conversationId!, context);
+    const page = await conversation!.entries({ order: "ascending" }, 1000, undefined, context);
+    const batches = page.items.filter((entry) => entry.kind === INBOX_BATCH_ENTRY).map((entry) => entry.data);
+    expect(batches).toEqual([
+      { task: task!.id, eventIds: ["issue-1"] },
+      { task: task!.id, eventIds: ["ci-1"] },
+    ]);
   });
 
   it("loses nothing and repeats nothing across a restart mid-queue", async () => {

@@ -30,7 +30,6 @@ import { usePluginRegistry } from "../../entities/plugin/plugin-host.tsx";
 import { HOST_UPGRADING_ERROR } from "@pinomad/protocol/upgrade.ts";
 import { Badge } from "../../shared/ui/badge.tsx";
 import type { InboxEvent } from "@pinomad/protocol/inbox.ts";
-import { deliveredEventIds } from "../../entities/inbox/host-text.ts";
 import { useInboxTranscript, type InboxTranscript } from "../../entities/inbox/inbox-transcript.tsx";
 import { InboxEventCard, InboxTaskCards, inboxSubmitsOf } from "./inbox-cards.tsx";
 
@@ -87,9 +86,13 @@ export function ChatEntryView({
 }) {
   const inbox = useInboxTranscript();
   switch (entry.kind) {
+    case "inboxBatch": {
+      const events = batchEvents(entry, inbox);
+      // The Inbox no longer lists them (or this view has no Inbox): say what the message was.
+      if (events.length === 0) return <ChatSystemMessage variant="divider">Inbox events</ChatSystemMessage>;
+      return <InboxEventCard events={events} startedAt={entry.timestamp} today={today} />;
+    }
     case "user": {
-      const events = deliveredEvents(entry, inbox);
-      if (events !== undefined) return <InboxEventCard events={events} startedAt={entry.timestamp} today={today} />;
       return (
         <UserEntry
           entry={entry}
@@ -125,17 +128,13 @@ export function ChatEntryView({
   }
 }
 
-/**
- * The task's events a worker message delivered, when it is one: it reads as
- * an event card instead of the preface, rules and blocks the model gets.
- */
-function deliveredEvents(entry: Extract<ChatEntry, { kind: "user" }>, inbox: InboxTranscript | undefined): InboxEvent[] | undefined {
-  if (inbox === undefined || inbox.events.size === 0 || entry.local !== undefined) return undefined;
-  const events = deliveredEventIds(entry.text).flatMap((id) => {
+/** The events an Inbox batch delivered that the Inbox still lists, in delivery order. */
+function batchEvents(entry: Extract<ChatEntry, { kind: "inboxBatch" }>, inbox: InboxTranscript | undefined): InboxEvent[] {
+  if (inbox === undefined) return [];
+  return entry.eventIds.flatMap((id) => {
     const event = inbox.events.get(id);
     return event === undefined ? [] : [event];
   });
-  return events.length === 0 ? undefined : events;
 }
 
 function UserEntry({

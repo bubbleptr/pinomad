@@ -122,8 +122,34 @@ pub enum ChatEntry {
         #[cfg_attr(feature = "ffi", uniffi(default))]
         ended_at: Option<f64>,
     },
+    /// The Inbox worker's message handing its task a batch of events
+    /// (`pinomad.inbox-batch`): clients show those events from the Inbox
+    /// stream, not the text the model reads.
+    InboxBatch {
+        id: String,
+        task: String,
+        /// In delivery order.
+        event_ids: Vec<String>,
+        /// When the host admitted the batch, as an epoch stamp.
+        timestamp: Option<f64>,
+    },
     Compaction { id: String },
     Reset { id: String },
+}
+
+/// `INBOX_BATCH_ENTRY`: the entry kind of an Inbox batch.
+const INBOX_BATCH_ENTRY: &str = "pinomad.inbox-batch";
+
+/// An Inbox batch entry's data, each field checked.
+fn inbox_batch_of(data: Option<&Json>) -> Option<(String, Vec<String>)> {
+    let data = data?;
+    let task = data.get("task").and_then(Json::as_str)?.to_string_lossy();
+    let ids = data.get("eventIds").and_then(Json::as_array)?;
+    let event_ids = ids
+        .iter()
+        .map(|id| id.as_str().map(|s| s.to_string_lossy()))
+        .collect::<Option<Vec<_>>>()?;
+    Some((task, event_ids))
 }
 
 fn lit(text: &str) -> Vec<u16> {
@@ -337,6 +363,18 @@ fn nested_child(slot: &Json) -> ToolItem {
     }
 }
 
+/// An accepted `inbox_submit` result's details, each field checked.
+fn inbox_submit_of(details: Option<&Json>) -> Option<PinomadToolDetail> {
+    let details = details?;
+    let task = details.get("task").and_then(Json::as_str)?.to_string_lossy();
+    let title = details.get("title").and_then(Json::as_str)?.to_string_lossy();
+    let merged = match details.get("merged") {
+        Some(Json::Bool(merged)) => *merged,
+        _ => return None,
+    };
+    Some(PinomadToolDetail::InboxSubmit { task, title, merged })
+}
+
 fn tool_item(
     block: &Json,
     message: &RunMessage,
@@ -391,8 +429,16 @@ fn tool_item(
 
     let mut pinomad = None;
     let mut children = Vec::new();
+    let accepted = !result.is_some_and(|r| matches!(r.get("isError"), Some(Json::Bool(true))));
+    let filed = if tool_name.is_some_and(|n| n.units() == lit("inbox_submit")) && accepted {
+        inbox_submit_of(result.and_then(|r| not_null(r.get("details"))))
+    } else {
+        None
+    };
     if let Some(ClassifiedDoc::Diff(value)) = &classified {
         pinomad = Some(PinomadToolDetail::Diff { patch: value.patch.clone() });
+    } else if filed.is_some() {
+        pinomad = filed;
     } else if let Some(child) = child {
         pinomad = Some(PinomadToolDetail::Subagent {
             conversation_id: child,
@@ -791,7 +837,22 @@ pub fn derive_chat(view: &Json, tool_presentations: &Json, busy: bool) -> Vec<Ch
         let message = entry.get("model").and_then(Json::as_array).and_then(|m| m.first());
         let id = lossy(&text::string_of(entry.get("id")));
         let kind = entry.get("kind");
-        if str_eq(kind, "pi.user") && str_eq(message.and_then(|m| m.get("role")), "user") {
+        let is_user_message = str_eq(message.and_then(|m| m.get("role")), "user");
+        let batch = if str_eq(kind, INBOX_BATCH_ENTRY) && is_user_message {
+            inbox_batch_of(entry.get("data"))
+        } else {
+            None
+        };
+        if let Some((task, event_ids)) = batch {
+            flush!(false);
+            items.push(ChatEntry::InboxBatch {
+                id,
+                task,
+                event_ids,
+                timestamp: finite_number(message.and_then(|m| m.get("timestamp"))),
+            });
+        } else if (str_eq(kind, "pi.user") || str_eq(kind, INBOX_BATCH_ENTRY)) && is_user_message {
+            // A user message, or a batch whose data is unreadable: shown as the message it holds.
             flush!(false);
             // The typed text, without the host's blocks (ADR-0028, #321).
             let typed = strip_user_blocks(message.and_then(|m| m.get("content")));

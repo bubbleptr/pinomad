@@ -8,6 +8,7 @@
 import type { ConversationId, ConversationView, EntryRecord, LiveState, ModelRef, NestedToolSlot } from "@earendil-works/pi-durable";
 import type { UserAttachment } from "@pinomad/protocol/attachments.ts";
 import type { ImageMimeType, ViewImage } from "@pinomad/protocol/images.ts";
+import { INBOX_BATCH_ENTRY, type InboxBatch, isUserMessageEntry } from "@pinomad/protocol/inbox.ts";
 import { classify, type PresentationType } from "@pinomad/protocol/presentation.ts";
 import type { LogicalSubmission } from "@pinomad/protocol/view.ts";
 import { stripUserBlocks } from "./skill-blocks.ts";
@@ -111,6 +112,20 @@ export type ChatEntry =
       /** When the run's last answer finished, once settled. */
       endedAt?: number;
     }
+  | {
+      /**
+       * The Inbox worker's message handing its task a batch of events
+       * (INBOX_BATCH_ENTRY): clients show those events from the Inbox
+       * stream, not the text the model reads.
+       */
+      kind: "inboxBatch";
+      id: string;
+      task: string;
+      /** In delivery order. */
+      eventIds: readonly string[];
+      /** When the host admitted the batch, as an epoch stamp. */
+      timestamp?: number;
+    }
   | { kind: "compaction"; id: string }
   | { kind: "reset"; id: string };
 
@@ -132,6 +147,14 @@ export type PinomadToolDetail =
       endedAt?: number;
       /** Its own worktree's branch, when dispatched with `checkout: "worktree"` (ADR-0046 §5). */
       branch?: string;
+    }
+  | {
+      /** An `inbox_submit` call the host accepted: the task it filed or added to (ADR-0051 §6). */
+      kind: "inboxSubmit";
+      task: string;
+      title: string;
+      /** Added to an existing task rather than a new one. */
+      merged: boolean;
     };
 
 /** A tool item that may carry a `pinomad` render payload; what deriveChat produces. */
@@ -259,6 +282,22 @@ function argsTextOf(args: unknown, toolName: string | undefined): string | undef
   return JSON.stringify(args);
 }
 
+/** An accepted `inbox_submit` result's details, each field checked. */
+function inboxSubmitOf(details: unknown): Extract<PinomadToolDetail, { kind: "inboxSubmit" }> | undefined {
+  if (typeof details !== "object" || details === null) return undefined;
+  const { task, title, merged } = details as { task?: unknown; title?: unknown; merged?: unknown };
+  if (typeof task !== "string" || typeof title !== "string" || typeof merged !== "boolean") return undefined;
+  return { kind: "inboxSubmit", task, title, merged };
+}
+
+/** An Inbox batch entry's data, each field checked. */
+function inboxBatchOf(data: unknown): InboxBatch | undefined {
+  if (typeof data !== "object" || data === null) return undefined;
+  const { task, eventIds } = data as { task?: unknown; eventIds?: unknown };
+  if (typeof task !== "string" || !Array.isArray(eventIds) || !eventIds.every((id) => typeof id === "string")) return undefined;
+  return { task, eventIds: eventIds as string[] };
+}
+
 function childConversationId(details: unknown): ConversationId | undefined {
   if (typeof details !== "object" || details === null) return undefined;
   const id = (details as { conversationId?: unknown }).conversationId;
@@ -358,8 +397,11 @@ function toolItem(
 
   let pinomad: PinomadToolDetail | undefined;
   let children: ToolItem[] | undefined;
+  const filed = toolName === "inbox_submit" && result?.isError !== true ? inboxSubmitOf(result?.details) : undefined;
   if (classified?.type === "pinomad.diff") {
     pinomad = { kind: "diff", patch: classified.value.patch };
+  } else if (filed !== undefined) {
+    pinomad = filed;
   } else if (child !== undefined) {
     const detail = details as { model?: unknown; startedAt?: unknown; branch?: unknown };
     pinomad = {
@@ -617,7 +659,13 @@ export function deriveChat(
       | UserMessageLike
       | undefined;
     const id = String(entry.id);
-    if (entry.kind === "pi.user" && message?.role === "user") {
+    const batch = entry.kind === INBOX_BATCH_ENTRY && message?.role === "user" ? inboxBatchOf(entry.data) : undefined;
+    if (batch !== undefined) {
+      flush(false);
+      const timestamp = finiteNumber(message?.timestamp);
+      items.push({ kind: "inboxBatch", id, task: batch.task, eventIds: batch.eventIds, ...(timestamp === undefined ? {} : { timestamp }) });
+    } else if (isUserMessageEntry(entry.kind) && message?.role === "user") {
+      // A user message, or a batch whose data is unreadable: shown as the message it holds.
       flush(false);
       const typed = stripUserBlocks(message.content);
       const timestamp = finiteNumber(message.timestamp);

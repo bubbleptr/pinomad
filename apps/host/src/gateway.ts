@@ -94,6 +94,7 @@ import { attachmentBlock } from "@pinomad/protocol/attachments.ts";
 import type { AttachmentStore } from "./attachments.ts";
 import type { ImageProcessor } from "@earendil-works/pi-durable/tools";
 import { ImageRefs } from "./image-refs.ts";
+import { INBOX_BATCH_ENTRY, isUserMessageEntry } from "@pinomad/protocol/inbox.ts";
 import { MAX_TRANSCRIPT_PAGE, type TranscriptPage, type TranscriptWindow } from "@pinomad/protocol/transcript.ts";
 import { ImageVariants } from "./image-variants.ts";
 import type { AgentRoleStore } from "./agent-roles.ts";
@@ -1390,7 +1391,7 @@ class ConversationList implements HostValue<readonly ConversationSummary[]> {
     for (const change of publication.changes) {
       if (change.type === "entry") {
         const entry = change.value;
-        if (entry.kind !== "pi.user" && entry.kind !== "pi.assistant") continue;
+        if (!isUserMessageEntry(entry.kind) && entry.kind !== "pi.assistant") continue;
         const facts = this.#fact(entry.conversationId);
         if (entry.kind === "pi.user" && facts.title === undefined) Object.assign(facts, titleOf(entry));
         // Entries only append: the largest id is the newest own message, whatever
@@ -1735,7 +1736,7 @@ function titleOf(entry: EntryRecord | undefined): { title?: string } {
 const WHOLE_TRANSCRIPT = { min: Number.MAX_SAFE_INTEGER, max: Number.MAX_SAFE_INTEGER };
 
 /** Entries a client's derivation starts a new row at, so a page starting here never splits a run. */
-const TURN_STARTS = new Set(["pi.user", "pi.compaction", "pi.reset"]);
+const TURN_STARTS = new Set(["pi.user", INBOX_BATCH_ENTRY, "pi.compaction", "pi.reset"]);
 
 /**
  * The entries up to and including `before` (from the newest without it),
@@ -1809,7 +1810,7 @@ async function historyFacts(
         (entry) => entry.kind === "pi.user" && entry.conversationId === id && titleOf(entry).title !== undefined,
       ) ?? first;
     newest ??= page.items.find(
-      (entry) => entry.conversationId === id && (entry.kind === "pi.user" || entry.kind === "pi.assistant"),
+      (entry) => entry.conversationId === id && (isUserMessageEntry(entry.kind) || entry.kind === "pi.assistant"),
     );
     cursor = page.next;
   } while (cursor !== undefined);

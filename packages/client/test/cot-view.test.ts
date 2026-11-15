@@ -303,6 +303,22 @@ describe("deriveChat", () => {
     expect(pinomadOf(step2.tools[0]!)).toEqual({ kind: "subagent", conversationId: 9, model: "faux/faux-1", output: "report", startedAt: 1000, endedAt: 4000 });
   });
 
+  it("carries each filed Inbox task on its inbox_submit call, and none on a refused one", () => {
+    const step = runs(derive("inbox-submit"))[0]!.cot.steps.find((s) => s.kind === "tools")!;
+    if (step.kind !== "tools") throw new Error("no tools step");
+    expect(step.tools.map(pinomadOf)).toEqual([
+      { kind: "inboxSubmit", task: "t2", title: "Export", merged: false },
+      { kind: "inboxSubmit", task: "t1", title: "More", merged: true },
+      undefined,
+    ]);
+  });
+
+  it("reads inbox_submit details only from inbox_submit", () => {
+    const step = runs(derive("inbox-submit-other-tool"))[0]!.cot.steps.find((s) => s.kind === "tools")!;
+    if (step.kind !== "tools") throw new Error("no tools step");
+    expect(pinomadOf(step.tools[0]!)).toBeUndefined();
+  });
+
   it("collects result images onto the tool item", () => {
     const run = runs(derive("tool-result-images")).at(-1)!;
     const step = run.cot.steps.find((s) => s.kind === "tools")!;
@@ -433,7 +449,24 @@ describe("deriveChat", () => {
   });
 });
 
+describe("deriveChat Inbox batches", () => {
+  it("shows each batch as its task's events, each opening its own run", () => {
+    const entries = derive("inbox-batches");
+    expect(entries.map((item) => item.kind)).toEqual(["inboxBatch", "run", "inboxBatch", "run", "user", "run"]);
+    expect(entries[0]).toMatchObject({ kind: "inboxBatch", task: "t1", eventIds: ["e1"], timestamp: 100 });
+    expect(entries[2]).toMatchObject({ kind: "inboxBatch", task: "t1", eventIds: ["e2", "e3"], timestamp: 200 });
+  });
+
+  it("shows a batch whose data it cannot read as the message the model got", () => {
+    expect(derive("inbox-batches")[4]).toMatchObject({ kind: "user", text: "malformed" });
+  });
+});
+
 describe("retryOf", () => {
+  it("offers no retry for a run that answered an Inbox batch", () => {
+    expect(retryOf(derive("retry-inbox-batch"))).toBeUndefined();
+  });
+
   it("returns the user message a failed run answered", () => {
     expect(retryOf(derive("retry-simple"))).toEqual({ text: "go", images: [], skills: [], attachments: [], requestId: `retry:${runs(derive("retry-simple")).at(-1)!.id}` });
   });

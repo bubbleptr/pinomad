@@ -11,6 +11,7 @@ import type { ConversationId, Cursor, EntryRecord, Harness } from "@earendil-wor
 import { stripUserBlocks } from "@pinomad/client/skill-blocks.ts";
 import type { HostSettingsStore } from "./host-settings.ts";
 import { TitleDoc } from "./title-doc.ts";
+import { isUserMessageEntry } from "@pinomad/protocol/inbox.ts";
 
 const context: Context = BACKGROUND_CONTEXT;
 
@@ -99,7 +100,8 @@ export function attachAutoTitle(
       let cursor: Cursor | undefined;
       do {
         const page = await conversation.entries({}, 256, cursor, context);
-        first = page.items.findLast((entry) => entry.kind === "pi.user" && entry.conversationId === id) ?? first;
+        // An Inbox batch counts: its events are what an Inbox task is about.
+        first = page.items.findLast((entry) => isUserMessageEntry(entry.kind) && entry.conversationId === id) ?? first;
         newest ??= page.items.find((entry) => entry.conversationId === id && entry.kind === "pi.assistant");
         cursor = page.next;
       } while (cursor !== undefined);

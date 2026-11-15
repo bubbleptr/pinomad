@@ -538,7 +538,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
         .flatMap((extension) => extension.docs ?? [])
         .filter((doc) => doc.presentation === "pinomad.question")
         .map((doc) => doc.token as ConversationDocToken<{ requests: { resolution?: JsonValue }[] }>),
-      createConversation: ({ project, text, requestId, kind, onInit }, ctx) =>
+      createConversation: ({ project, text, requestId, kind, entry, onInit }, ctx) =>
         createConversation(
           harness!,
           options.dataDir,
@@ -546,6 +546,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
             home: { kind: "project", path: project },
             text,
             requestId,
+            ...(entry === undefined ? {} : { entry }),
             ...(onInit === undefined ? {} : { onInit }),
             // An intake only reads, asks and submits (ADR-0051 §6), and a tidy-up only
             // touches the memory (ADR-0052 §3); both work in the project itself.
