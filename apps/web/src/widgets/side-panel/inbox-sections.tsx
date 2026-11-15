@@ -1,8 +1,9 @@
 // The Tasks surface's Inbox part (ADR-0051 §11, ADR-0040 §1): the project
-// Inbox's processing rules and the follow-ups not yet fired. Event sources
-// (#808) go between the two.
+// Inbox's processing rules, its event sources and the follow-ups not yet
+// fired.
 import { useId, useState } from "react";
 import { INBOX_RULES_MAX_BYTES, type InboxFollowUp, type ProjectInbox } from "@pinomad/protocol/inbox.ts";
+import type { PluginInfo } from "@pinomad/protocol/frames.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { Button } from "../../shared/ui/button.tsx";
 import { Field, FieldError, FieldLabel, FormError } from "../../shared/ui/field.tsx";
@@ -12,11 +13,27 @@ import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, 
 import { Textarea } from "../../shared/ui/textarea.tsx";
 import { useErrorToast } from "../../shared/ui/toast.tsx";
 import { messageTime } from "../chat/chat-time.ts";
+import { SourcesSection } from "./inbox-sources.tsx";
 
-export function InboxSections({ inbox, remote, connected }: { inbox: ProjectInbox; remote: RemoteDurable; connected: boolean }) {
+export function InboxSections({
+  inbox,
+  remote,
+  connected,
+  plugins,
+  externalSources,
+}: {
+  inbox: ProjectInbox;
+  remote: RemoteDurable;
+  connected: boolean;
+  /** The host's loaded plugins, for their event sources. */
+  plugins: readonly PluginInfo[];
+  /** The host takes plugin and webhook sources (it has a sandbox for Inbox runs). */
+  externalSources: boolean;
+}) {
   return (
     <div className="flex flex-col">
       <RulesSection inbox={inbox} remote={remote} connected={connected} />
+      <SourcesSection inbox={inbox} remote={remote} connected={connected} plugins={plugins} externalSources={externalSources} />
       <FollowUpsSection inbox={inbox} remote={remote} connected={connected} />
     </div>
   );

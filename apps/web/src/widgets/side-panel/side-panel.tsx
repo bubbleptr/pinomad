@@ -292,7 +292,13 @@ function TasksSurface({
         )}
       </SurfaceBar>
       <Scrollable>
-          {inbox === undefined ? null : <InboxSections inbox={inbox} remote={remote} connected={view.connection === "connected"} />}
+          {inbox === undefined ? null : <InboxSections
+              inbox={inbox}
+              remote={remote}
+              connected={view.connection === "connected"}
+              plugins={view.host?.plugins ?? []}
+              externalSources={view.inbox?.externalSources === true}
+            />}
           {groups.length === 0 && processRows.length === 0 ? (
             inbox !== undefined ? null : (
               <span className="text-xs/5 text-muted-foreground p-3 text-muted-foreground">

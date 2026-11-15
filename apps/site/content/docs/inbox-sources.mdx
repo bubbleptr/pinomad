@@ -5,7 +5,7 @@ description: Schedules, plugin sources and LAN webhooks that put events into a p
 
 A project's Inbox takes work from you through its intake conversation, and from event sources: a schedule, a plugin's source (such as new GitHub issues), or a webhook on your local network. Each event opens a task, or goes back to the task that follows its thread, and the Inbox's worker takes tasks one at a time.
 
-Add a source on the project's Tasks page in Inbox mode. A source can be turned off and on again, or removed; tasks it already opened stay.
+Add a source with **Add source** under **Event sources** on the project's **Tasks** page in Inbox mode, then pick **Schedule**, **Plugin** or **Webhook**. Each source's switch turns it off and on again; its **⋯** menu removes it, and tasks it already opened stay.
 
 ## Restricted or all tools
 
@@ -45,7 +45,7 @@ Each starts from the moment you add it; existing issues and comments don't flood
 
 ## Webhooks
 
-A webhook takes events from scripts and services on your network, such as a NAS, a home server or a CI runner, with a signed `POST`. When you add one, you get its URL and secret once; copy them then. Reset the secret if you lose it, and the old one stops working at once.
+A webhook takes events from scripts and services on your network, such as a NAS, a home server or a CI runner, with a signed `POST`. When you add one, you get its URL and secret once; copy them then. If you lose it, pick **Reset secret** from the source's **⋯** menu: the new secret shows once, and the old one stops working at once.
 
 Other machines can reach the webhook only when the host listens on your network (remote access on, see [Without an account](/docs/without-account/)); otherwise only scripts on the host itself can use it. The URL names the host's LAN address; from another machine on your tailnet, put the host's MagicDNS name in its place.
 

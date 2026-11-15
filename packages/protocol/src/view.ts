@@ -16,7 +16,7 @@ import type { HostSettings, HostSettingsPatch } from "./settings.ts";
 import type { ImageResult, ImageVariant, OutgoingImage, ViewImage } from "./images.ts";
 import type { UserAttachment } from "./attachments.ts";
 import type { HostUpgrade, UpgradeWhen } from "./upgrade.ts";
-import type { HostInbox } from "./inbox.ts";
+import type { HostInbox, InboxSourceSpec, InboxWebhookAccess } from "./inbox.ts";
 
 /** A model's thinking level, "off" included. pi-ai's `ModelThinkingLevel`, re-exported for browser clients. */
 export type ThinkingLevel = ModelThinkingLevel;
@@ -478,6 +478,19 @@ export interface DurableController {
   cancelFollowUp(timerId: string): Promise<void>;
   /** Close a task without running it; rejects while the worker has a batch of it out. */
   skipInboxTask(project: string, taskId: string): Promise<void>;
+  /**
+   * Add an event source to a project's Inbox, enabled (ADR-0051 §10); a
+   * webhook's URL and secret come back here and nowhere else. Rejects with the
+   * host's reason (no sandbox, a bad schedule). Needs a 5.39 host, like the
+   * source calls below.
+   */
+  addInboxSource(project: string, name: string, trusted: boolean, spec: InboxSourceSpec): Promise<{ sourceId: string; webhook?: InboxWebhookAccess }>;
+  /** Turn a source off or back on. */
+  setInboxSourceEnabled(sourceId: string, enabled: boolean): Promise<void>;
+  /** Delete a source; tasks it opened stay. */
+  removeInboxSource(sourceId: string): Promise<void>;
+  /** A new secret for a webhook source; the old one stops working at once. */
+  resetInboxWebhookSecret(sourceId: string): Promise<InboxWebhookAccess>;
   /** Create a named agent on the host; rejects when `<name>.md` already exists. Needs a 5.6 host. */
   createAgent(role: AgentRole): Promise<void>;
   /** Overwrite an existing named agent — also the way a broken file gets fixed. Renaming is create + delete. Needs a 5.6 host. */

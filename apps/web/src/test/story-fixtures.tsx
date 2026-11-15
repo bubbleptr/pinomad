@@ -17,7 +17,7 @@ import type {
 } from "@pinomad/client/account.ts";
 import type { StoredHost } from "@pinomad/client/stored-host.ts";
 import type { HostProviders, LoginFlow, LoginMethod, ProviderInfo } from "@pinomad/protocol/auth.ts";
-import { PROTOCOL } from "@pinomad/protocol/frames.ts";
+import { PROTOCOL, type PluginInfo } from "@pinomad/protocol/frames.ts";
 import type { KeyPair } from "@pinomad/protocol/noise.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { organize, type ConversationNode, type HostIndex, type Project } from "@pinomad/protocol/organization.ts";
@@ -33,7 +33,7 @@ import type {
 import type { ProcessInfo } from "@pinomad/protocol/processes.ts";
 import type { TerminalInfo, TerminalList } from "@pinomad/protocol/terminals.ts";
 import type { HostUpgrade } from "@pinomad/protocol/upgrade.ts";
-import type { HostInbox, InboxEvent, ProjectInbox } from "@pinomad/protocol/inbox.ts";
+import type { HostInbox, InboxEvent, InboxSourceSpec, ProjectInbox } from "@pinomad/protocol/inbox.ts";
 import type { ConversationSummary, DurableController, DurableView, ModelSummary } from "@pinomad/protocol/view.ts";
 import { AccountContext } from "../entities/account/account-context.tsx";
 import type { AccountModel, AccountState } from "../entities/account/account-model.ts";
@@ -733,6 +733,15 @@ export function fakeRemote(
     setInboxRules: fn(async () => {}),
     cancelFollowUp: fn(async () => {}),
     skipInboxTask: fn(async () => {}),
+    addInboxSource: fn(async (project: string, _name: string, _trusted: boolean, spec: InboxSourceSpec) => ({
+      sourceId: "src-new",
+      ...(spec.kind === "webhook"
+        ? { webhook: { url: `http://192.168.1.20:7432/inbox/${project.split("/").pop()}-3f9a1c02de/events`, source: "src-new", secret: "whsec_Hk2pQ9xN4vL7tR1sW8yB3mC6dF0gJ5aE" } }
+        : {}),
+    })),
+    setInboxSourceEnabled: fn(async () => {}),
+    removeInboxSource: fn(async () => {}),
+    resetInboxWebhookSecret: fn(async (sourceId: string) => ({ url: "http://192.168.1.20:7432/inbox/pinomad-3f9a1c02de/events", source: sourceId, secret: "whsec_new7Qp2Lx9Vb4Nc1Md8Rf3Tg6Yh0Jk5Ws" })),
     createAgent: fn(async () => {}),
     updateAgent: fn(async () => {}),
     deleteAgent: fn(async () => {}),
@@ -1462,12 +1471,56 @@ export const PINOMAD_INBOX: ProjectInbox = {
     { id: "wake:1", due: now + 2 * 24 * 60 * MINUTE, note: "Check whether #409 got a review", task: TASK.done },
     { id: "tidy:pinomad", due: now + 4 * 60 * MINUTE, note: "Daily memory tidy-up", every: 24 * 60 * MINUTE, kind: "tidy" },
   ],
+  sources: [
+    {
+      id: "src-bugs",
+      name: "Bugs on kieran/pinomad",
+      spec: { kind: "plugin", plugin: "github", source: "issues", filter: "kieran/pinomad label:bug" },
+      enabled: true,
+      trusted: false,
+      createdAt: now - 3 * 24 * 60 * MINUTE,
+    },
+    {
+      id: "src-ci",
+      name: "CI on my pull requests",
+      spec: { kind: "plugin", plugin: "github", source: "ci", filter: "kieran/pinomad" },
+      enabled: true,
+      trusted: false,
+      createdAt: now - 3 * 24 * 60 * MINUTE,
+      problem: "GitHub answered 401: the token has expired",
+    },
+    {
+      id: "src-deps",
+      name: "Dependency check",
+      spec: {
+        kind: "schedule",
+        schedule: { kind: "daily", time: "08:00", timeZone: "Asia/Shanghai" },
+        note: "Look for outdated dependencies and open a task for each one worth upgrading.",
+      },
+      enabled: true,
+      trusted: true,
+      createdAt: now - 2 * 24 * 60 * MINUTE,
+      next: now + 14 * 60 * MINUTE,
+    },
+    { id: "src-nas", name: "NAS backups", spec: { kind: "webhook" }, enabled: false, trusted: false, createdAt: now - 24 * 60 * MINUTE },
+  ],
 };
 
-export const WEBSITE_INBOX: ProjectInbox = { project: WEBSITE.path, tasks: [], threads: {}, rules: "", followUps: [] };
+/** The GitHub example plugin as a host reports it: three Inbox sources. */
+export const GITHUB_PLUGIN: PluginInfo = {
+  name: "github",
+  api: 1,
+  sources: [
+    { name: "issues", description: "New issues", filter: "owner/repo, then label:<name> for each label an issue must have" },
+    { name: "pr-comments", description: "Comments on pull requests a task follows", filter: "owner/repo", followedOnly: true },
+    { name: "ci", description: "CI results on pull requests a task follows", filter: "owner/repo", followedOnly: true },
+  ],
+};
+
+export const WEBSITE_INBOX: ProjectInbox = { project: WEBSITE.path, tasks: [], threads: {}, rules: "", followUps: [], sources: [] };
 
 /** The view with the pinomad project's Inbox: an intake and tasks in every group. */
-export function withInbox(view: DurableView = fakeView(), inbox: HostInbox = { inboxes: [PINOMAD_INBOX, WEBSITE_INBOX] }): DurableView {
+export function withInbox(view: DurableView = fakeView(), inbox: HostInbox = { inboxes: [PINOMAD_INBOX, WEBSITE_INBOX], externalSources: true }): DurableView {
   const inboxIndex: HostIndex = {
     ...index,
     conversations: [
@@ -1475,7 +1528,8 @@ export function withInbox(view: DurableView = fakeView(), inbox: HostInbox = { i
       ...inboxSummaries.map((summary) => ({ id: summary.id, home: { kind: "project" as const, path: PINOMAD.path }, createdAt: now - 60 * MINUTE })),
     ],
   };
-  return { ...view, organized: organize(inboxIndex, [...summaries, ...inboxSummaries]), inbox };
+  const host = view.host ?? { protocol: PROTOCOL };
+  return { ...view, organized: organize(inboxIndex, [...summaries, ...inboxSummaries]), inbox, host: { ...host, plugins: host.plugins ?? [GITHUB_PLUGIN] } };
 }
 
 /** The intake: the user's message, then the agent splitting it into tasks with `inbox_submit`. */
