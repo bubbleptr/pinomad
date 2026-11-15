@@ -152,7 +152,9 @@ describe("sandboxed environment", () => {
     const realHome = await fakeHome();
     const dataDir = await temp();
     const { repo, worktree, cwd } = await gitWorktree(dataDir);
-    const policy = await inboxSandboxPolicy({ dataDir, project: join(repo, "pkg"), cwd, realHome });
+    // The fake home is in a temp dir, which the run may write; its bin dir must still be frozen as a PATH entry.
+    const hostPath = `${join(realHome, ".local", "bin")}:${process.env.PATH}`;
+    const policy = await inboxSandboxPolicy({ dataDir, project: join(repo, "pkg"), cwd, realHome, hostPath });
     const env = await openSandboxedEnv(cwd, policy);
     return { policy, env, realHome, dataDir, repo, worktree, cwd };
   }
@@ -190,6 +192,7 @@ describe("sandboxed environment", () => {
       join(realHome, ".zshrc"),
       join(worktree, "keys", "id_ed25519"),
       join(dataDir, "auth.json"),
+      join(dataDir, "secrets.json"),
     ]) {
       const read = await env.readTextFile(path, context);
       expect(read.ok, path).toBe(false);
@@ -255,7 +258,15 @@ describe("sandboxed environment", () => {
     const server = createServer().listen(socket);
     await once(server, "listening");
     defer(() => new Promise<void>((done) => server.close(() => done())));
+    // The plugin credential store (#817) sits in the data dir beside the run's own worktree.
+    await writeFile(join(dataDir, "secrets.json"), '{"github":"ghp_secret"}');
+    await mkdir(join(realHome, ".local", "bin"), { recursive: true });
     const attempts = {
+      secrets: `cat ${join(dataDir, "secrets.json")}`,
+      // A binary planted on a PATH dir would run later outside the sandbox, as the host or the user.
+      pathShadow: `echo 'exit 0' > ${join(realHome, ".local", "bin", "git")}`,
+      // The host's own environment, where a token it was started with lives.
+      hostEnviron: `cat /proc/${process.pid}/environ`,
       ssh: `cat ${join(realHome, ".ssh", "id_ed25519")}`,
       gh: `ls ${join(realHome, ".config", "gh")}`,
       rc: `cat ${join(realHome, ".zshrc")}`,

@@ -9,7 +9,7 @@ import { execFile, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { access, constants, mkdir, readlink, realpath, rename, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
-import { basename, dirname, join, resolve, sep } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import type { Context } from "@earendil-works/chord/context";
 import {
@@ -213,13 +213,15 @@ const exists = (path: string): Promise<boolean> => access(path, constants.F_OK).
 /**
  * The policy for an Inbox run of `project` in `cwd`. Its HOME is
  * `<dataDir>/inbox-home/<project hash>`, kept between runs so caches survive,
- * with only the user's git identity copied in. `realHome` is for tests.
+ * with only the user's git identity copied in. `realHome` and `hostPath`
+ * (the host's PATH) are for tests.
  */
 export async function inboxSandboxPolicy(input: {
   readonly dataDir: string;
   readonly project: string;
   readonly cwd: string;
   readonly realHome?: string;
+  readonly hostPath?: string;
 }): Promise<SandboxPolicy> {
   const realHome = await canonical(input.realHome ?? homedir());
   const home = join(input.dataDir, "inbox-home", createHash("sha256").update(input.project).digest("hex").slice(0, 16));
@@ -258,7 +260,13 @@ export async function inboxSandboxPolicy(input: {
     visible: [await canonical(join(input.dataDir, "attachments"))],
     writable: [...temps, "/dev"],
     own: await canonicalAll([input.cwd, ...(top === undefined ? [] : [top]), home, ...(gitDir === undefined ? [] : [gitDir])]),
-    frozen: gitDir === undefined ? [] : [join(gitDir, "hooks"), join(gitDir, "config")],
+    // The host's PATH too: a binary planted there would run later as the host (its `git`) or the user.
+    frozen: [
+      ...(gitDir === undefined ? [] : [join(gitDir, "hooks"), join(gitDir, "config")]),
+      ...(await canonicalAll(
+        (input.hostPath ?? process.env.PATH ?? "").split(delimiter).filter((dir) => isAbsolute(dir) && dir !== "/"),
+      )),
+    ],
     toolchains,
   };
 }
@@ -366,7 +374,11 @@ export async function bwrapArgs(policy: SandboxPolicy, cwd: string): Promise<str
   }
   for (const path of policy.visible) if (await exists(path)) args.push("--ro-bind", path, path);
   for (const path of policy.own) if (await exists(path)) args.push("--bind", path, path);
-  for (const path of policy.frozen) if (await exists(path)) args.push("--ro-bind", path, path);
+  // Only where the run could otherwise write: elsewhere the root is read-only already, and a bind
+  // inside a hidden path would show it again.
+  for (const path of policy.frozen) {
+    if (within(path, [...policy.own, ...policy.writable]) && (await exists(path))) args.push("--ro-bind", path, path);
+  }
   args.push("--chdir", cwd);
   return args;
 }
