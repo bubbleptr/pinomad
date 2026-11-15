@@ -246,11 +246,14 @@ export type OutboxMessage = {
   failed?: boolean;
 };
 
-export const OutboxDoc = defineDoc<{ messages: OutboxMessage[] }>({
+/** A push the deliverer sent to at least one device, kept for an hour: what the hourly cap counts. */
+export type OutboxPush = { id: string; at: number };
+
+export const OutboxDoc = defineDoc<{ messages: OutboxMessage[]; pushes?: OutboxPush[] }>({
   kind: "pinomad.outbox",
   version: 1,
   scope: "session",
-  initial: () => ({ messages: [] }),
+  initial: () => ({ messages: [], pushes: [] }),
   checkpointWhen: () => false,
 });
 

@@ -871,4 +871,55 @@ describe("Inbox pushes", () => {
     expect(message).toMatchObject({ sent: false, attempts: 1 });
     expect(message!.retryAt).toBeGreaterThan(message!.at);
   });
+  it("counts a push toward the hourly cap as soon as it goes out, not when its slowest device settles", async () => {
+    const project = await tempDir();
+    defer(project.remove);
+    // Device A accepts at once; device B's server asks for a retry in 15 minutes.
+    const apns = fakeTransport((request) =>
+      request.token === TOKEN_A.apns ? { result: "accepted", reason: "ok" } : { result: "retry", reason: "5xx", retryAfterMs: 15 * 60_000 },
+    );
+    const { host, timers } = await pushHost({
+      apns,
+      projects: [project.path],
+      outboxPolicy: { ...DEFAULT_POLICY, gatherMs: 0, maxWaitMs: 0, perHour: 1 },
+      answers: [notifyStep("first"), "ok", notifyStep("second"), "ok"],
+    });
+    for (const [name, token] of [["phone", TOKEN_A], ["tablet", TOKEN_B]] as const) {
+      const { client } = await pairDevice(defer, host, name);
+      await client.controller.setPushToken(token);
+    }
+    await addInboxEvent(host.harness, project.path, { id: "e1", source: "user", summary: "one", trusted: true }, context);
+    await waitUntil(() => timers.pending > 0);
+    timers.advance(15_000); // the title wait
+    await apns.waitForCalls(2);
+    await addInboxEvent(host.harness, project.path, { id: "e2", source: "user", summary: "two", trusted: true }, context);
+    await waitUntil(async () => (await host.harness.snapshot(OutboxDoc, context))?.messages.length === 2);
+    // Past any title wait the second push could be held by, but well short of B's retry.
+    await settle();
+    timers.advance(20_000);
+    await settle();
+    // The second notify is held by the cap while device B still waits to retry the first.
+    expect(apns.calls.filter((call) => call.token === TOKEN_A.apns)).toHaveLength(1);
+  });
+
+  it("does not count notifies that reached no device against the hourly cap", async () => {
+    const project = await tempDir();
+    defer(project.remove);
+    const apns = fakeTransport();
+    const { host, timers } = await pushHost({
+      apns,
+      projects: [project.path],
+      outboxPolicy: { ...DEFAULT_POLICY, gatherMs: 0, maxWaitMs: 0, perHour: 1 },
+      answers: [notifyStep("nobody hears this"), "ok", notifyStep("the phone hears this"), "ok"],
+    });
+    await addInboxEvent(host.harness, project.path, { id: "e1", source: "user", summary: "one", trusted: true }, context);
+    await waitUntil(async () => (await host.harness.snapshot(OutboxDoc, context))?.messages[0]?.sent === true);
+    const { client } = await pairDevice(defer, host, "phone");
+    await client.controller.setPushToken(TOKEN_A);
+    await addInboxEvent(host.harness, project.path, { id: "e2", source: "user", summary: "two", trusted: true }, context);
+    await waitUntil(() => timers.pending > 0);
+    timers.advance(15_000);
+    await apns.waitForCalls(1);
+    expect((await host.harness.snapshot(OutboxDoc, context))?.pushes).toHaveLength(1);
+  });
 });

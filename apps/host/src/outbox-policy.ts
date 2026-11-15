@@ -2,7 +2,7 @@
 // after a short quiet spell, so several close together become one digest;
 // at most `perHour` pushes an hour; none during quiet hours; a failed
 // delivery is retried with backoff. Pure: the sender asks, sends and stores.
-import type { OutboxMessage } from "./inbox.ts";
+import type { OutboxMessage, OutboxPush } from "./inbox.ts";
 
 export type DeliveryPolicy = {
   /** Pushes an hour at most; a digest counts as one. */
@@ -52,6 +52,7 @@ function quietUntil(at: number, quiet: DeliveryPolicy["quietHours"]): number | u
  */
 export function plan(
   messages: readonly Readonly<OutboxMessage>[],
+  pushes: readonly Readonly<OutboxPush>[],
   now: number,
   policy: DeliveryPolicy,
 ): { send: Readonly<OutboxMessage>[]; drop: string[]; wakeAt?: number } {
@@ -80,14 +81,10 @@ export function plan(
     return done();
   }
 
-  // Pushes in the last hour, a digest once: the time each push went out.
-  const pushes = new Map<string, number>();
-  for (const message of messages) {
-    if (message.sentAt !== undefined && message.pushId !== undefined && now - message.sentAt < HOUR) pushes.set(message.pushId, message.sentAt);
-  }
-  if (pushes.size >= policy.perHour) {
-    const times = [...pushes.values()].sort((a, b) => a - b);
-    wakes.push(times[pushes.size - policy.perHour]! + HOUR);
+  // The pushes sent in the last hour, a digest once, counted from when each went out.
+  const recent = pushes.filter((push) => now - push.at < HOUR).map((push) => push.at).sort((a, b) => a - b);
+  if (recent.length >= policy.perHour) {
+    wakes.push(recent[recent.length - policy.perHour]! + HOUR);
     return done();
   }
   return done(ready);

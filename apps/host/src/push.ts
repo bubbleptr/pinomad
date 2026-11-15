@@ -16,7 +16,7 @@ import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 import type { PushToken } from "@pinomad/protocol/frames.ts";
 import { DevicesDoc, RevocationsDoc } from "./devices.ts";
 import type { HostValue } from "./host-value.ts";
-import { inboxTaskOf, InboxDoc, OutboxDoc, type OutboxMessage } from "./inbox.ts";
+import { inboxTaskOf, InboxDoc, OutboxDoc, type OutboxMessage, type OutboxPush as PushRecord } from "./inbox.ts";
 import { DEFAULT_POLICY, type DeliveryPolicy, failedDelivery, plan } from "./outbox-policy.ts";
 import { IndexDoc } from "./organization.ts";
 import { TitleDoc } from "./title-doc.ts";
@@ -543,7 +543,7 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
   const taken = new Set<string>();
   type OutboxPush = { readonly ids: readonly string[]; left: number; accepted: boolean; gaveUp: boolean };
   const outboxPushes = new Map<string, OutboxPush>();
-  let latest: readonly Readonly<OutboxMessage>[] = [];
+  let latest: { readonly messages: readonly Readonly<OutboxMessage>[]; readonly pushes: readonly Readonly<PushRecord>[] } = { messages: [], pushes: [] };
   let wake: unknown;
 
   const writeOutbox = (change: (message: OutboxMessage) => void, ids: ReadonlySet<string>): Promise<void> =>
@@ -579,10 +579,11 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
     for (const id of push.ids) taken.delete(id);
   }
 
-  const deliver = async (messages: readonly Readonly<OutboxMessage>[]): Promise<void> => {
+  const deliver = async (outbox: typeof latest): Promise<void> => {
     if (disposed) return;
     const decision = plan(
-      messages.filter((message) => !taken.has(message.id)),
+      outbox.messages.filter((message) => !taken.has(message.id)),
+      outbox.pushes,
       now(),
       policy(),
     );
@@ -603,8 +604,24 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
         ? { id: last.conversationId, body: NOTIFY_BODY, notify: true }
         : { id: last.conversationId, body: `${group.length} updates for you`, fixedTitle: DIGEST_TITLE, notify: true };
     const created = await enqueue(notice, pushId);
-    // No device to push to: nothing will settle it, and nothing would be gained by retrying.
-    if (created === 0 && outboxPushes.delete(pushId)) await settlePush(pushId, { ids: group.map((message) => message.id), left: 0, accepted: true, gaveUp: false });
+    if (created === 0) {
+      // No device to push to: done with these messages, and nothing went out to count.
+      outboxPushes.delete(pushId);
+      await writeOutbox((message) => void (message.sent = true), new Set(group.map((message) => message.id)));
+      for (const message of group) taken.delete(message.id);
+      return;
+    }
+    // Counted the moment it goes out, not when its slowest device settles: the cap
+    // holds while one device still retries, and outlives the trimmed message history.
+    const at = now();
+    await harness
+      .commit(async (tx) => {
+        const doc = await tx.doc(OutboxDoc);
+        doc.pushes = [...(doc.pushes ?? []).filter((push) => at - push.at < 60 * 60_000), { id: pushId, at }];
+      }, context)
+      .catch((error: unknown) => {
+        if (!disposed) console.error(`push: could not record a notify push: ${error instanceof Error ? error.message : String(error)}`);
+      });
   };
   let delivering = Promise.resolve();
   // A watch needs the document to exist; the first notify would otherwise go unseen.
@@ -612,10 +629,10 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
     await tx.doc(OutboxDoc);
   }, context);
   const outboxWatch = await harness.watchDoc(OutboxDoc, context);
-  function onOutbox(messages: readonly Readonly<OutboxMessage>[]): void {
-    latest = messages;
+  function onOutbox(outbox: typeof latest): void {
+    latest = outbox;
     delivering = delivering
-      .then(() => deliver(messages))
+      .then(() => deliver(outbox))
       .catch((error: unknown) => {
         if (!disposed) console.error(`push: could not deliver notify messages: ${error instanceof Error ? error.message : String(error)}`);
       });
@@ -646,9 +663,9 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
   });
   update();
   if (outboxWatch === undefined) throw new Error("Outbox document is not available");
-  onOutbox(outboxWatch.value?.messages ?? []);
+  onOutbox({ messages: outboxWatch.value?.messages ?? [], pushes: outboxWatch.value?.pushes ?? [] });
   outboxWatch.start(async (call) => {
-    if (call.kind === "value") onOutbox(call.value?.messages ?? []);
+    if (call.kind === "value") onOutbox({ messages: call.value?.messages ?? [], pushes: call.value?.pushes ?? [] });
   });
 
   return {
