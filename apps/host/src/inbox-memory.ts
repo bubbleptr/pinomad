@@ -77,6 +77,16 @@ async function writable(dir: string, path: string): Promise<string> {
 const escape = (text: string): string => text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
 /**
+ * How a run ends (ADR-0052 §5): the default is to say little. Fixed bytes, so
+ * it stays inside the cached prefix; the user's own rules follow and win.
+ */
+export const ENDING_A_RUN =
+  "Each run ends one of three ways. Finish quietly when the work needed nothing from the user: no message, the result is in the task's conversation and memory. " +
+  "Call notify only when the user needs to know something now (something broke, something they asked to hear about happened, work is ready for their review) — once per run at most, and never to report routine progress. " +
+  "Ask with ask_user_question when you cannot go on without a decision only the user can make. " +
+  "Check the recent notifications first: never tell the user the same thing twice. The user's instructions below override this.";
+
+/**
  * The fixed part of a task's message: the same bytes for every task of the
  * project while the rules and indexes stay unchanged, so the provider's
  * prompt cache can reuse it (ADR-0052 §2). Per-task parts come after it.
@@ -87,6 +97,7 @@ export async function memoryPreamble(dir: string): Promise<string> {
     return text === undefined || text.trim() === "" ? `<${tag}/>` : `<${tag}>\n${escape(text.trim())}\n</${tag}>`;
   };
   return [
+    ENDING_A_RUN,
     "Your memory for this project is kept between tasks; read and change it with the memory tools.",
     "Keep tasks/<this task's id>.md current with what is done and what is left, and add its line to tasks/INDEX.md with memory_append; do that before you finish a run, as your conversation may be compacted. Put what you learn about the user and the project in notes/ and list it in notes/INDEX.md, again with memory_append: other tasks write the indexes too. Only store what cannot be looked up: point to issues, PRs and commits instead of copying them.",
     await part("instructions", INSTRUCTIONS),
