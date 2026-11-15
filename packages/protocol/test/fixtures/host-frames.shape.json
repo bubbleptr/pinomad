@@ -425,6 +425,7 @@
     },
     "inbox": {
       "value": {
+        "externalSources": "boolean",
         "inboxes": []
       },
       "ops": []

@@ -61,7 +61,7 @@ Plugins written before the host built them had a `plugin.json` and a `host.ts`. 
 import { definePlugin } from "@pinomad/plugin/v1";
 
 export default definePlugin((pinomad) => {
-  // pinomad.state(…), pinomad.tool(…), pinomad.method(…), pinomad.secret(…)
+  // pinomad.state(…), pinomad.tool(…), pinomad.method(…), pinomad.secret(…), pinomad.source(…)
 });
 ```
 
@@ -69,6 +69,7 @@ export default definePlugin((pinomad) => {
 - `tool({ name, description, parameters, run })`: a tool the model can call. `parameters` is a JSON Schema object. `run(args, ctx)` returns `{ text }`, which is what the model sees; if it throws, the model gets the error message as a failed result. Tool names use letters, digits and `_`, at most 64 characters, must not start with `mcp__`, and must not clash with another tool on the host. A plugin that takes a built-in tool's name is not loaded, or keeps its previous version when an edit adds the name; of two plugins with the same tool name, the one later in alphabetical order is skipped. A call cut off by a host restart isn't run again.
 - `method(name, run)`: a function your UI calls with `call` or `useCall`. `run(args, ctx)` takes and returns JSON; if it throws, the call fails with its message.
 - `secret(name, { description })`: a credential the user enters, such as an API token; see Secrets below. Returns a handle for `ctx.secret`. Names use letters, digits, `_` and `-`.
+- `source({ name, description, filter, poll | listen })`: events for a project's Inbox; see Event sources below.
 
 `ctx` is the conversation the tool or method runs for:
 
@@ -103,6 +104,42 @@ The host keeps secrets in `secrets.json` in its data directory, readable only by
 
 The host replaces every set secret of the plugin with `[redacted]` in what its tools return or throw. A value you derive from a secret, such as a base64-encoded header, isn't caught, so keep it out of your results. Never put a secret in an environment variable, a file the agent can read, or the arguments of a process: pass it only to the request or child process that needs it.
 
+### Event sources
+
+A plugin can feed a project's Inbox: declare a source with `source`, and the user adds it to a project's Inbox with their own filter (see [Inbox event sources](/docs/inbox-sources/)). Each event becomes a task, or goes back to the task that follows its thread.
+
+```ts
+pinomad.source({
+  name: "issues",
+  description: "New issues",
+  filter: "owner/repo, then label:<name>",
+  poll: {
+    intervalMs: 5 * 60_000,
+    run: async ({ cursor }, ctx) => {
+      const issues = await listIssues(ctx.filter, await ctx.secret(token));
+      if (cursor === undefined) return { events: [], cursor: newest(issues) };
+      return {
+        events: newerThan(issues, cursor).map((issue) => ({
+          id: `issue:${issue.number}`,
+          thread: `github:${repo}#${issue.number}`,
+          title: `#${issue.number} ${issue.title}`,
+          summary: `New issue #${issue.number}: ${issue.title}\n${issue.url}`,
+        })),
+        cursor: newest(issues),
+      };
+    },
+  },
+});
+```
+
+- `name` uses letters, digits, `_` and `-`; `description` names the kind of event in the add-source dialog; `filter` tells the user what to type, and leave it out when the source takes none.
+- Give exactly one of `poll` and `listen`. `poll.run({ cursor }, ctx)` runs when the source is added or turned on and when the host starts, then every `intervalMs` (five minutes by default, at least a minute). It returns the new events, oldest first, and a cursor the host stores with them and hands to the next poll. A first poll (`cursor` undefined) should usually return only a cursor, so adding a source doesn't flood the Inbox with the backlog. `listen(emit, ctx)` is for a source that pushes: call `emit(event)` as events arrive and return a function that stops listening.
+- `ctx.filter` is what the user typed; `ctx.secret(handle)` reads a secret as in a tool.
+- An event has an `id` unique within the source (a repeat is dropped, so returning one twice is harmless), a `summary` of at most 4,000 characters with pointers rather than the full content, and optionally a `thread` and a new task's `title`. Secrets are scrubbed from what the agent reads, as from tool results.
+- `followedOnly: true` keeps events whose thread no task follows out of the Inbox. Use it for comments and CI results, which belong to a task that opened or follows the PR (the agent registers the thread with `inbox_follow`) and shouldn't each open a task of their own.
+
+Whether a source's events count as the user's own words is the user's choice when they add it, never the plugin's. A poll that throws shows its message on the source, scrubbed of secrets, and the next poll tries again.
+
 ### The browser half
 
 `web.tsx` default-exports a function that receives the browser API. The host builds it into one script; each client checks the script against the hash the host announced before running it. JSX renders with the app's React, and `import { useState } from "react"` gets that same React, so hooks from either `react` or `pinomad.React` are the app's own. Other React packages, such as `react-dom`, aren't available. CSS and image imports aren't supported yet; use inline styles and `data:` URLs.
@@ -127,6 +164,8 @@ What the sandbox promises: content in it can't reach anything of the client, not
 ## Example: GitHub
 
 [`examples/plugins/github`](https://github.com/bubbleptr/pinomad/tree/main/examples/plugins/github) gives the agent `github_open_pr`, `github_comment` and `git_push`, which add the `github_token` secret in the host process. `git_push` pushes the conversation checkout's `HEAD` to a branch. The `git` that holds the token runs in a scratch repository the host makes, so hooks and config the agent writes into its checkout never run with it, and the token goes only to the GitHub server, in a header only that process sees. The `GITHUB_API_URL` and `GITHUB_SERVER_URL` variables in the host's environment point it at GitHub Enterprise. Copy the directory to `~/.pinomad/plugins/github/` and set `github_token` to try it.
+
+It also has three event sources. `issues` brings new open issues of a repository, filtered by label (`acme/web label:bug`): one task per issue, on the thread `github:acme/web#<number>`. `pr-comments` and `ci` bring comments on pull requests and finished workflow runs (`acme/web`), but only to a task that follows the PR. Each starts where the repository is when you add it, without the backlog. The token needs Issues, Pull requests and Actions read access for them.
 
 ## Example: artifact
 

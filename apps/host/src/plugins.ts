@@ -31,15 +31,33 @@ import {
   type Tx,
 } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
-import type { PluginInfo } from "@pinomad/protocol/frames.ts";
-import type { HostApi, HostPlugin, PluginContext, PluginSecret, PluginState, SecretOptions, StateOptions, ToolDefinition } from "@pinomad/plugin/v1";
+import type { PluginInfo, PluginSourceInfo } from "@pinomad/protocol/frames.ts";
+import type {
+  HostApi,
+  HostPlugin,
+  PluginContext,
+  PluginSecret,
+  PluginState,
+  SecretOptions,
+  SourceContext,
+  SourceDefinition,
+  SourceEvent,
+  StateOptions,
+  ToolDefinition,
+} from "@pinomad/plugin/v1";
 import type { ExtensionDoc } from "./builtin-extension.ts";
-import { openSecretStore, type SecretStore } from "./secrets.ts";
+import type { SecretStore } from "./secrets.ts";
 
 const context = BACKGROUND_CONTEXT;
 const NAME = /^[a-z][a-z0-9-]*$/;
 const STATE_NAME = /^[A-Za-z0-9_-]+$/;
 const SECRET_NAME = STATE_NAME;
+const SOURCE_NAME = STATE_NAME;
+/** How often a polled source runs unless it says otherwise, and the least it may ask for. */
+const POLL_DEFAULT_MS = 5 * 60_000;
+const POLL_MIN_MS = 60_000;
+/** What one source event may carry (ADR-0051 §5: a summary and pointers); a longer summary is cut. */
+export const SOURCE_EVENT_LIMITS = { id: 200, summary: 4_000, thread: 200, title: 120 } as const;
 /** What a set secret reads as in a tool's result. */
 const REDACTED = "[redacted]";
 /** Provider-safe tool names; `mcp__…` is the MCP bridge's namespace, so MCP tools never collide with a plugin's. */
@@ -66,6 +84,21 @@ export interface PluginStore {
 
 export type PluginMethod = (args: JsonValue, store: PluginStore, conversationId: ConversationId, context: Context) => Promise<JsonValue>;
 
+/**
+ * A loaded plugin's Inbox event source (ADR-0051 §10), as the host's source
+ * runner drives it. Events come back checked and scrubbed of the plugin's
+ * secrets. A reload makes a new object, so the runner restarts what it runs.
+ */
+export interface LoadedSource {
+  readonly info: PluginSourceInfo;
+  readonly poll?: {
+    readonly intervalMs: number;
+    run(cursor: JsonValue | undefined, filter: string): Promise<{ events: SourceEvent[]; cursor?: JsonValue }>;
+  };
+  /** Starts listening; resolves with the stop function. */
+  readonly listen?: (filter: string, emit: (event: SourceEvent) => Promise<void>) => Promise<() => void>;
+}
+
 /** What one reload changed, by plugin name; `failed` kept their loaded version (or were left out). */
 export interface PluginReload {
   readonly added: readonly string[];
@@ -84,6 +117,8 @@ export interface PluginCatalog {
   bundle(name: string, hash: string): string;
   /** Throws for an unknown plugin or method. */
   method(plugin: string, method: string): PluginMethod;
+  /** A loaded plugin's source, or undefined when the plugin is not loaded or declares no such source. */
+  source(plugin: string, name: string): LoadedSource | undefined;
   /** Store or (`null`) remove a declared secret's value; throws for an unknown plugin or secret. Listeners run after. */
   setSecret(plugin: string, name: string, value: string | null): Promise<void>;
   /** `listener` runs after each reload that added, changed or removed a plugin; returns the unsubscribe. */
@@ -100,8 +135,8 @@ export interface PluginsOptions {
   /** The host's registry; each loaded plugin's extension is kept installed in it. */
   readonly registry: Registry;
   readonly log?: (line: string) => void;
-  /** The credential store's file (`<dataDir>/secrets.json`). */
-  readonly secretsFile: string;
+  /** The host's credential store (`<dataDir>/secrets.json`), shared with the Inbox's webhook secrets. */
+  readonly secrets: SecretStore;
   /** Called after every reload that added, changed, removed or failed a plugin. */
   readonly onReload?: (outcome: PluginReload) => void;
   /** How long a burst of file events settles before a rebuild. */
@@ -113,6 +148,7 @@ interface Registration {
   readonly tools: ToolDefinition[];
   readonly methods: Map<string, (args: JsonValue, ctx: PluginContext) => Promise<JsonValue>>;
   readonly secrets: Map<string, SecretOptions>;
+  readonly sources: Map<string, SourceDefinition>;
   /** The host's store, read under this plugin's name once `translate` knows it. */
   readonly store: SecretStore;
 }
@@ -123,6 +159,8 @@ interface Translated {
   readonly methods: ReadonlyMap<string, PluginMethod>;
   /** Declared secrets, in declaration order. */
   readonly secrets: readonly { readonly name: string; readonly description: string }[];
+  /** Declared sources, in declaration order. */
+  readonly sources: ReadonlyMap<string, LoadedSource>;
 }
 
 /** The composed registry: the Durable snapshot the host mirrors, and each accepted plugin. */
@@ -139,7 +177,7 @@ const PluginExtensions = defineRegistry<Registration, Composition>("pinomad.plug
 export async function openPlugins(dir: string, options: PluginsOptions): Promise<Plugins> {
   const log = options.log ?? ((line) => console.error(line));
   const reserved = new Set(options.reservedTools);
-  const store = await openSecretStore(options.secretsFile);
+  const store = options.secrets;
   // chord watches the root from the start; one created later would never be seen.
   await mkdir(dir, { recursive: true });
 
@@ -327,11 +365,13 @@ export async function openPlugins(dir: string, options: PluginsOptions): Promise
       return announced().map(({ name, translated }) => {
         const bundle = web.get(name);
         const secrets = (translated?.secrets ?? []).map((secret) => ({ ...secret, set: store.get(name, secret.name) !== undefined }));
+        const sources = [...(translated?.sources.values() ?? [])].map((source) => source.info);
         return {
           name,
           api: 1,
           ...(bundle === undefined ? {} : { web: { hash: bundle.hash, size: bundle.size } }),
           ...(secrets.length === 0 ? {} : { secrets }),
+          ...(sources.length === 0 ? {} : { sources }),
         };
       });
     },
@@ -348,6 +388,7 @@ export async function openPlugins(dir: string, options: PluginsOptions): Promise
       if (run === undefined) throw new Error(`Unknown method ${method} on plugin ${plugin}`);
       return run;
     },
+    source: (plugin, name) => composition().plugins.get(plugin)?.sources.get(name),
     setSecret: async (plugin, name, value) => {
       if (!find(plugin).translated?.secrets.some((secret) => secret.name === name)) throw new Error(`Plugin ${plugin} has no secret ${name}`);
       await store.set(plugin, name, value);
@@ -409,7 +450,7 @@ function compose(table: readonly { readonly plugin: string; readonly value: Regi
  */
 function collect(plugin: unknown, reserved: ReadonlySet<string>, store: SecretStore): Registration {
   if (typeof plugin !== "function") throw new Error("definePlugin needs a function");
-  const registration: Registration = { states: [], tools: [], methods: new Map(), secrets: new Map(), store };
+  const registration: Registration = { states: [], tools: [], methods: new Map(), secrets: new Map(), sources: new Map(), store };
   let open = true;
   const guard = (what: string) => {
     if (!open) throw new Error(`${what} must be called while definePlugin's function runs`);
@@ -444,6 +485,24 @@ function collect(plugin: unknown, reserved: ReadonlySet<string>, store: SecretSt
       if (reserved.has(name)) throw new Error(`tool ${name} is a built-in tool`);
       if (registration.tools.some((tool) => tool.name === name)) throw new Error(`tool ${name} is defined twice`);
       registration.tools.push(definition);
+    },
+    source: (definition) => {
+      guard("source");
+      const { name, description, filter, followedOnly, poll, listen } = (definition ?? {}) as Partial<SourceDefinition>;
+      if (typeof name !== "string" || !SOURCE_NAME.test(name)) throw new Error(`source name ${JSON.stringify(name)} must match ${SOURCE_NAME}`);
+      if (registration.sources.has(name)) throw new Error(`source ${name} is defined twice`);
+      if (typeof description !== "string") throw new Error(`source ${name} needs a description`);
+      if (filter !== undefined && typeof filter !== "string") throw new Error(`source ${name}'s filter must be a string`);
+      if (followedOnly !== undefined && typeof followedOnly !== "boolean") throw new Error(`source ${name}'s followedOnly must be a boolean`);
+      if ((poll === undefined) === (listen === undefined)) throw new Error(`source ${name} needs exactly one of poll and listen`);
+      if (poll !== undefined) {
+        if (typeof poll.run !== "function") throw new Error(`source ${name}'s poll needs a run function`);
+        if (poll.intervalMs !== undefined && !(Number.isFinite(poll.intervalMs) && poll.intervalMs >= POLL_MIN_MS)) {
+          throw new Error(`source ${name}'s intervalMs must be at least ${POLL_MIN_MS}`);
+        }
+      }
+      if (listen !== undefined && typeof listen !== "function") throw new Error(`source ${name}'s listen must be a function`);
+      registration.sources.set(name, definition);
     },
     method: (name, run) => {
       guard("method");
@@ -545,8 +604,72 @@ function translate(plugin: string, registration: Registration): Translated {
       },
     }),
   );
+  /** A source's event, checked, with every set secret scrubbed from what the agent will read. */
+  const sourceEvent = (source: string, value: unknown): SourceEvent => {
+    const event = (value ?? {}) as Partial<Record<keyof SourceEvent, unknown>>;
+    const field = (key: keyof SourceEvent, required: boolean): string | undefined => {
+      const text = event[key];
+      if (text === undefined && !required) return undefined;
+      if (typeof text !== "string" || (required && text.length === 0)) throw new Error(`source ${source} emitted an event whose ${key} is not a non-empty string`);
+      if (key !== "summary" && text.length > SOURCE_EVENT_LIMITS[key]) {
+        throw new Error(`source ${source} emitted an event whose ${key} is longer than ${SOURCE_EVENT_LIMITS[key]} characters`);
+      }
+      return redact(text, new Set());
+    };
+    const thread = field("thread", false);
+    const title = field("title", false);
+    return {
+      id: field("id", true)!,
+      summary: field("summary", true)!.slice(0, SOURCE_EVENT_LIMITS.summary),
+      ...(thread === undefined ? {} : { thread }),
+      ...(title === undefined ? {} : { title }),
+    };
+  };
+  const sourceContext = (filter: string): SourceContext => ({ filter, secret: secretOf() });
+  const sources = new Map<string, LoadedSource>();
+  for (const [name, { description, filter, followedOnly, poll, listen }] of registration.sources) {
+    const info: PluginSourceInfo = {
+      name,
+      description,
+      ...(filter === undefined ? {} : { filter }),
+      ...(followedOnly === true ? { followedOnly: true as const } : {}),
+    };
+    sources.set(name, {
+      info,
+      ...(poll === undefined
+        ? {}
+        : {
+            poll: {
+              intervalMs: poll.intervalMs ?? POLL_DEFAULT_MS,
+              run: async (cursor, filter) => {
+                try {
+                  const result = await poll.run({ cursor }, sourceContext(filter));
+                  if (!Array.isArray(result?.events)) throw new Error(`source ${name}'s poll must return { events }`);
+                  return {
+                    events: result.events.map((event) => sourceEvent(name, event)),
+                    ...(result.cursor === undefined ? {} : { cursor: result.cursor }),
+                  };
+                } catch (error) {
+                  // Shown on the source in every client: scrubbed like a tool's error.
+                  throw new Error(redact(message(error), new Set()));
+                }
+              },
+            },
+          }),
+      ...(listen === undefined
+        ? {}
+        : {
+            listen: async (filter, emit) => {
+              const stop = await listen((event) => emit(sourceEvent(name, event)), sourceContext(filter));
+              if (typeof stop !== "function") throw new Error(`source ${name}'s listen must return a stop function`);
+              return stop;
+            },
+          }),
+    });
+  }
   const translated: Translated = {
     extension: defineExtension({ name: `plugin.${plugin}`, tools }),
+    sources,
     docs,
     secrets: [...registration.secrets].map(([name, { description }]) => ({ name, description })),
     methods: new Map(

@@ -71,8 +71,149 @@ pub struct ProjectInbox {
     pub threads: HashMap<String, String>,
     /// The user's rules (`instructions.md`); empty when unset.
     pub rules: String,
-    /// Soonest first.
+    /// Soonest first. A schedule source's timer is not one: it is the source's `next`.
     pub follow_ups: Vec<InboxFollowUp>,
+    /// Its event sources (5.39, ADR-0051 §10), oldest first; empty before 5.39.
+    #[cfg_attr(feature = "ffi", uniffi(default = []))]
+    pub sources: Vec<InboxSource>,
+}
+
+/// When a schedule source fires (5.39), as wall time in `time_zone` (IANA).
+/// `time` is `HH:MM`; `day` is 0 (Sunday) to 6; `expression` is five cron fields.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
+pub enum InboxSchedule {
+    Daily { time: String, time_zone: String },
+    Weekdays { time: String, time_zone: String },
+    Weekly { day: u8, time: String, time_zone: String },
+    Cron { expression: String, time_zone: String },
+}
+
+/// What a source is (5.39): a schedule writing `note`, one of a plugin's
+/// declared sources with the user's `filter`, or a LAN webhook.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
+pub enum InboxSourceSpec {
+    Schedule { schedule: InboxSchedule, note: String },
+    Plugin { plugin: String, source: String, filter: String },
+    Webhook,
+}
+
+/// One event source of an Inbox (5.39, ADR-0051 §10).
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct InboxSource {
+    pub id: String,
+    pub name: String,
+    pub spec: InboxSourceSpec,
+    pub enabled: bool,
+    /// Its events count as the user's own ("all tools") rather than outside content.
+    pub trusted: bool,
+    pub created_at: f64,
+    /// A schedule's next fire, epoch milliseconds; `None` while disabled.
+    pub next: Option<f64>,
+    /// Why it could not deliver lately.
+    pub problem: Option<String>,
+}
+
+/// A webhook source's address and signing secret, from `addInboxSource` or
+/// `resetInboxWebhookSecret` only (5.39).
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct InboxWebhookAccess {
+    pub url: String,
+    /// Sent as the `X-Pinomad-Source` header.
+    pub source: String,
+    pub secret: String,
+}
+
+impl InboxSchedule {
+    fn of(value: &Json) -> Option<Self> {
+        let time_zone = text(value.get("timeZone"))?;
+        let time = || text(value.get("time"));
+        Some(match text(value.get("kind"))?.as_str() {
+            "daily" => Self::Daily { time: time()?, time_zone },
+            "weekdays" => Self::Weekdays { time: time()?, time_zone },
+            "weekly" => Self::Weekly {
+                day: value.get("day").and_then(Json::as_number).filter(|d| d.fract() == 0.0 && (0.0..=6.0).contains(d))? as u8,
+                time: time()?,
+                time_zone,
+            },
+            "cron" => Self::Cron { expression: text(value.get("expression"))?, time_zone },
+            _ => return None,
+        })
+    }
+
+    pub fn to_json(&self) -> Json {
+        match self {
+            Self::Daily { time, time_zone } => object(&[("kind", "daily".into()), ("time", time.as_str().into()), ("timeZone", time_zone.as_str().into())]),
+            Self::Weekdays { time, time_zone } => object(&[("kind", "weekdays".into()), ("time", time.as_str().into()), ("timeZone", time_zone.as_str().into())]),
+            Self::Weekly { day, time, time_zone } => object(&[
+                ("kind", "weekly".into()),
+                ("day", Json::Number(f64::from(*day))),
+                ("time", time.as_str().into()),
+                ("timeZone", time_zone.as_str().into()),
+            ]),
+            Self::Cron { expression, time_zone } => object(&[("kind", "cron".into()), ("expression", expression.as_str().into()), ("timeZone", time_zone.as_str().into())]),
+        }
+    }
+}
+
+impl InboxSourceSpec {
+    fn of(value: &Json) -> Option<Self> {
+        Some(match text(value.get("kind"))?.as_str() {
+            "schedule" => Self::Schedule { schedule: InboxSchedule::of(value.get("schedule")?)?, note: text(value.get("note")).unwrap_or_default() },
+            "plugin" => Self::Plugin {
+                plugin: text(value.get("plugin"))?,
+                source: text(value.get("source"))?,
+                filter: text(value.get("filter")).unwrap_or_default(),
+            },
+            "webhook" => Self::Webhook,
+            _ => return None,
+        })
+    }
+
+    /// The wire's `InboxSourceSpec`, as `addInboxSource` takes it.
+    pub fn to_json(&self) -> Json {
+        match self {
+            Self::Schedule { schedule, note } => object(&[("kind", "schedule".into()), ("schedule", schedule.to_json()), ("note", note.as_str().into())]),
+            Self::Plugin { plugin, source, filter } => object(&[
+                ("kind", "plugin".into()),
+                ("plugin", plugin.as_str().into()),
+                ("source", source.as_str().into()),
+                ("filter", filter.as_str().into()),
+            ]),
+            Self::Webhook => object(&[("kind", "webhook".into())]),
+        }
+    }
+}
+
+impl InboxWebhookAccess {
+    /// `addInboxSource`'s `webhook` or `resetInboxWebhookSecret`'s result; `None` when malformed.
+    pub fn of(value: &Json) -> Option<Self> {
+        Some(Self { url: text(value.get("url"))?, source: text(value.get("source"))?, secret: text(value.get("secret"))? })
+    }
+}
+
+fn object(fields: &[(&str, Json)]) -> Json {
+    let mut out = crate::json::JsonObject::new();
+    for (key, value) in fields {
+        out.set(crate::u16str::U16String::from_str(key), value.clone());
+    }
+    Json::Object(std::sync::Arc::new(out))
+}
+
+fn source_of(value: &Json) -> Option<InboxSource> {
+    Some(InboxSource {
+        id: text(value.get("id"))?,
+        name: text(value.get("name")).unwrap_or_default(),
+        spec: InboxSourceSpec::of(value.get("spec")?)?,
+        enabled: flag(value.get("enabled")),
+        trusted: flag(value.get("trusted")),
+        created_at: number(value.get("createdAt")),
+        next: value.get("next").and_then(Json::as_number),
+        problem: text(value.get("problem")),
+    })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -284,6 +425,7 @@ fn project_inbox_of(value: &Json) -> Option<ProjectInbox> {
         threads,
         rules: text(value.get("rules")).unwrap_or_default(),
         follow_ups: list(value.get("followUps"), follow_up_of),
+        sources: list(value.get("sources"), source_of),
     })
 }
 
@@ -315,6 +457,16 @@ impl QuietHours {
         object.set(crate::u16str::U16String::from_str("start"), Json::Number(self.start as f64));
         object.set(crate::u16str::U16String::from_str("end"), Json::Number(self.end as f64));
         Json::Object(std::sync::Arc::new(object))
+    }
+}
+
+/// Whether the host takes plugin and webhook sources (`inbox.externalSources`,
+/// 5.39): only with a sandbox for Inbox runs. `None` before the snapshot or on
+/// an older host.
+pub fn external_sources_of(value: &Json) -> Option<bool> {
+    match value.get("externalSources") {
+        Some(Json::Bool(available)) => Some(*available),
+        _ => None,
     }
 }
 

@@ -10,10 +10,15 @@ import type { Context } from "@earendil-works/chord/context";
 import { type ConversationId, defineExtension, defineTool, type Extension, type ToolExecutionApi } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 
-/** `<dataDir>/inbox/<name>-<hash>/memory`: readable by name, unique by the project's full path. */
-export function memoryDir(dataDir: string, project: string): string {
+/** `<name>-<hash>`: readable by name, unique by the project's full path. Also the project in a webhook's URL. */
+export function inboxName(project: string): string {
   const hash = createHash("sha256").update(project).digest("hex").slice(0, 10);
-  return join(dataDir, "inbox", `${basename(project) || "root"}-${hash}`, "memory");
+  return `${basename(project) || "root"}-${hash}`;
+}
+
+/** `<dataDir>/inbox/<name>-<hash>/memory`. */
+export function memoryDir(dataDir: string, project: string): string {
+  return join(dataDir, "inbox", inboxName(project), "memory");
 }
 
 const INSTRUCTIONS = "instructions.md";

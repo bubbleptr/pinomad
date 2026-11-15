@@ -343,6 +343,31 @@ describe("parseClientFrame", () => {
     expect(call("skipInboxTask", { project: "/p" })).toBe("malformed");
   });
 
+  it("accepts the source calls by shape at minor 39; times, zones and cron fields are the host's to refuse", () => {
+    for (const method of ["addInboxSource", "setInboxSourceEnabled", "removeInboxSource", "resetInboxWebhookSecret"] as const) {
+      expect(hostSupportsCall(38, method)).toBe(false);
+      expect(hostSupportsCall(39, method)).toBe(true);
+    }
+    const call = (method: string, args: unknown) => kinds({ type: "call", id: 1, method, args });
+    const add = (spec: unknown, extra: Record<string, unknown> = {}) => call("addInboxSource", { project: "/p", name: "Bugs", trusted: false, spec, ...extra });
+    expect(add({ kind: "webhook" })).toBe("frame");
+    expect(add({ kind: "plugin", plugin: "github", source: "issues", filter: "" })).toBe("frame");
+    expect(add({ kind: "schedule", note: "x", schedule: { kind: "daily", time: "25:99", timeZone: "Nowhere" } })).toBe("frame");
+    expect(add({ kind: "schedule", note: "x", schedule: { kind: "weekly", day: 9, time: "08:00", timeZone: "UTC" } })).toBe("frame");
+    expect(add({ kind: "schedule", note: "x", schedule: { kind: "cron", expression: "* * * * *", timeZone: "UTC" } })).toBe("frame");
+    expect(add({ kind: "schedule", note: "x", schedule: { kind: "weekly", time: "08:00", timeZone: "UTC" } })).toBe("malformed");
+    expect(add({ kind: "schedule", note: "x", schedule: { kind: "hourly", timeZone: "UTC" } })).toBe("malformed");
+    expect(add({ kind: "schedule", schedule: { kind: "daily", time: "08:00", timeZone: "UTC" } })).toBe("malformed");
+    expect(add({ kind: "plugin", plugin: "github", source: "issues" })).toBe("malformed");
+    expect(add({ kind: "email" })).toBe("malformed");
+    expect(add({ kind: "webhook" }, { trusted: "yes" })).toBe("malformed");
+    expect(add({ kind: "webhook" }, { name: "" })).toBe("malformed");
+    expect(call("setInboxSourceEnabled", { sourceId: "s1", enabled: true })).toBe("frame");
+    expect(call("setInboxSourceEnabled", { sourceId: "s1" })).toBe("malformed");
+    expect(call("removeInboxSource", { sourceId: "" })).toBe("malformed");
+    expect(call("resetInboxWebhookSecret", { sourceId: "s1" })).toBe("frame");
+  });
+
   it("accepts inboxQuietHours as minutes of the day or null", () => {
     const call = (inboxQuietHours: unknown): unknown => ({ type: "call", id: 1, method: "updateSettings", args: { patch: { inboxQuietHours } } });
     expect(kinds(call({ start: 22 * 60, end: 7 * 60 }))).toBe("frame");

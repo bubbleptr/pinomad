@@ -19,7 +19,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 38 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 39 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -138,6 +138,10 @@ pub enum CallMethod {
     SetInboxRules,
     CancelFollowUp,
     SkipInboxTask,
+    AddInboxSource,
+    SetInboxSourceEnabled,
+    RemoveInboxSource,
+    ResetInboxWebhookSecret,
 }
 
 impl CallMethod {
@@ -205,6 +209,10 @@ impl CallMethod {
             "setInboxRules" => Self::SetInboxRules,
             "cancelFollowUp" => Self::CancelFollowUp,
             "skipInboxTask" => Self::SkipInboxTask,
+            "addInboxSource" => Self::AddInboxSource,
+            "setInboxSourceEnabled" => Self::SetInboxSourceEnabled,
+            "removeInboxSource" => Self::RemoveInboxSource,
+            "resetInboxWebhookSecret" => Self::ResetInboxWebhookSecret,
             _ => return None,
         })
     }
@@ -261,6 +269,7 @@ impl CallMethod {
             Self::PluginBundle | Self::PluginCall => 34,
             Self::SetPluginSecret => 37,
             Self::SendToIntake | Self::SetInboxRules | Self::CancelFollowUp | Self::SkipInboxTask => 38,
+            Self::AddInboxSource | Self::SetInboxSourceEnabled | Self::RemoveInboxSource | Self::ResetInboxWebhookSecret => 39,
         }
     }
 }
@@ -301,6 +310,7 @@ pub fn host_supports_feature(host_minor: u32, feature: HostFeature) -> bool {
         HostFeature::PluginReload => 35,
         HostFeature::PluginSecrets => 37,
         HostFeature::InboxQuietHours => 38,
+        HostFeature::InboxSources => 39,
     };
     host_minor >= since
 }
@@ -368,6 +378,9 @@ pub enum HostFeature {
     /// `updateSettings`'s `inboxQuietHours` key next to the `inbox` stream
     /// (38, ADR-0052 §4) — an older host 4400s the key.
     InboxQuietHours,
+    /// `inbox[].sources`, `inbox.externalSources`, `hello.plugins[].sources`
+    /// and the source calls (39, ADR-0051 §10).
+    InboxSources,
 }
 
 

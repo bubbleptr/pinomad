@@ -1,12 +1,12 @@
 {
   "protocol": {
     "major": 5,
-    "minor": 38
+    "minor": 39
   },
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":38},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":39},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -16,22 +16,22 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":38},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":39},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
       "expect": "hello"
     },
     {
       "name": "hello-plugins",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":38},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"plugins\":[{\"name\":\"artifact\",\"api\":1,\"web\":{\"hash\":\"abababababababababababababababababababababababababababababababab\",\"size\":1024}}]}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":39},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"plugins\":[{\"name\":\"artifact\",\"api\":1,\"web\":{\"hash\":\"abababababababababababababababababababababababababababababababab\",\"size\":1024}}]}",
       "expect": "hello"
     },
     {
       "name": "signalHello",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":38},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":39},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
       "expect": "signalHello"
     },
     {
       "name": "signalHello-no-rtc",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":38}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":39}}",
       "expect": "signalHello"
     },
     {
@@ -284,6 +284,10 @@
         "since": 0
       },
       {
+        "name": "addInboxSource",
+        "since": 39
+      },
+      {
         "name": "addProject",
         "since": 0
       },
@@ -412,6 +416,10 @@
         "since": 21
       },
       {
+        "name": "removeInboxSource",
+        "since": 39
+      },
+      {
         "name": "removeProject",
         "since": 0
       },
@@ -426,6 +434,10 @@
       {
         "name": "reorderQueued",
         "since": 29
+      },
+      {
+        "name": "resetInboxWebhookSecret",
+        "since": 39
       },
       {
         "name": "resizeTerminal",
@@ -462,6 +474,10 @@
       {
         "name": "setInboxRules",
         "since": 38
+      },
+      {
+        "name": "setInboxSourceEnabled",
+        "since": 39
       },
       {
         "name": "setModel",
@@ -612,6 +628,10 @@
         "since": 38
       },
       {
+        "name": "inboxSources",
+        "since": 39
+      },
+      {
         "name": "liveBranch",
         "since": 11
       },
@@ -659,6 +679,18 @@
       "minor": 0,
       "call": "abort",
       "expect": true
+    },
+    {
+      "name": "addInboxSource@39",
+      "minor": 39,
+      "call": "addInboxSource",
+      "expect": true
+    },
+    {
+      "name": "addInboxSource@38",
+      "minor": 38,
+      "call": "addInboxSource",
+      "expect": false
     },
     {
       "name": "addProject@0",
@@ -997,6 +1029,18 @@
       "expect": false
     },
     {
+      "name": "removeInboxSource@39",
+      "minor": 39,
+      "call": "removeInboxSource",
+      "expect": true
+    },
+    {
+      "name": "removeInboxSource@38",
+      "minor": 38,
+      "call": "removeInboxSource",
+      "expect": false
+    },
+    {
       "name": "removeProject@0",
       "minor": 0,
       "call": "removeProject",
@@ -1036,6 +1080,18 @@
       "name": "reorderQueued@28",
       "minor": 28,
       "call": "reorderQueued",
+      "expect": false
+    },
+    {
+      "name": "resetInboxWebhookSecret@39",
+      "minor": 39,
+      "call": "resetInboxWebhookSecret",
+      "expect": true
+    },
+    {
+      "name": "resetInboxWebhookSecret@38",
+      "minor": 38,
+      "call": "resetInboxWebhookSecret",
       "expect": false
     },
     {
@@ -1138,6 +1194,18 @@
       "name": "setInboxRules@37",
       "minor": 37,
       "call": "setInboxRules",
+      "expect": false
+    },
+    {
+      "name": "setInboxSourceEnabled@39",
+      "minor": 39,
+      "call": "setInboxSourceEnabled",
+      "expect": true
+    },
+    {
+      "name": "setInboxSourceEnabled@38",
+      "minor": 38,
+      "call": "setInboxSourceEnabled",
       "expect": false
     },
     {
@@ -1420,6 +1488,18 @@
       "name": "inboxQuietHours@37",
       "minor": 37,
       "feature": "inboxQuietHours",
+      "expect": false
+    },
+    {
+      "name": "inboxSources@39",
+      "minor": 39,
+      "feature": "inboxSources",
+      "expect": true
+    },
+    {
+      "name": "inboxSources@38",
+      "minor": 38,
+      "feature": "inboxSources",
       "expect": false
     },
     {

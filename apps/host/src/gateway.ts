@@ -1,5 +1,5 @@
 import { stat } from "node:fs/promises";
-import { createServer, type IncomingMessage, type Server as HttpServer } from "node:http";
+import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { homedir, networkInterfaces } from "node:os";
 import { join, sep } from "node:path";
@@ -342,6 +342,12 @@ export interface GatewayOptions {
   readonly upgrade?: UpgradeService;
   /** The project Inboxes (ADR-0051): the `inbox` stream and its calls. Absent → an empty stream and the calls fail. */
   readonly inbox?: InboxService;
+  /**
+   * The Inbox webhook endpoint (ADR-0051 §10) on both listeners' plain HTTP;
+   * resolves false for a path that is not its own. Never reachable through
+   * the relay, which carries only the secure channel's ciphertext.
+   */
+  readonly webhook?: (request: IncomingMessage, response: ServerResponse) => Promise<boolean>;
 }
 
 /** The gateway's view of the host upgrader (`HostUpgrader`). */
@@ -417,7 +423,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
   // The loopback port also serves the built web client: in service mode there
   // is no vite dev server to reach it through (ADR-0009 §7).
   const http = createServer((request, response) => {
-    void serveWebClient(request, response, options.webRoot).catch(() => {
+    void serveHttp(options, request, response).catch(() => {
       if (!response.headersSent) response.writeHead(500);
       response.end();
     });
@@ -1217,6 +1223,12 @@ function secureHandshake(
   });
 }
 
+/** A listener's plain HTTP: the Inbox webhook endpoint (ADR-0051 §10), else the built web client. */
+async function serveHttp(options: GatewayOptions, request: IncomingMessage, response: ServerResponse): Promise<void> {
+  if (await options.webhook?.(request, response)) return;
+  await serveWebClient(request, response, options.webRoot);
+}
+
 /** The remote listener's current advertisement, re-read on every invite/hello. */
 interface RemoteListener {
   readonly url: string;
@@ -1235,7 +1247,7 @@ async function startRemote(
   const remote = spec?.lan;
   if (spec === undefined || remote === undefined) return undefined;
   const http = createServer((request, response) => {
-    void serveWebClient(request, response, options.webRoot).catch(() => {
+    void serveHttp(options, request, response).catch(() => {
       if (!response.headersSent) response.writeHead(500);
       response.end();
     });
@@ -2762,6 +2774,18 @@ class GatewayClient {
         await this.#inbox().skipTask(project, taskId, context);
         return null;
       }
+      case "addInboxSource":
+        return await this.#inbox().addSource(args as CallMethods["addInboxSource"]["args"], context);
+      case "setInboxSourceEnabled": {
+        const { sourceId, enabled } = args as CallMethods["setInboxSourceEnabled"]["args"];
+        await this.#inbox().setSourceEnabled(sourceId, enabled, context);
+        return null;
+      }
+      case "removeInboxSource":
+        await this.#inbox().removeSource((args as CallMethods["removeInboxSource"]["args"]).sourceId, context);
+        return null;
+      case "resetInboxWebhookSecret":
+        return await this.#inbox().resetWebhookSecret((args as CallMethods["resetInboxWebhookSecret"]["args"]).sourceId, context);
       case "startUpgrade":
         await this.#upgrades().start((args as CallMethods["startUpgrade"]["args"]).when);
         return null;

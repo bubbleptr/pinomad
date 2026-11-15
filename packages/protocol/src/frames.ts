@@ -6,7 +6,7 @@ import { isCustomProviderApi, type CustomProviderApi, type CustomProviderInput, 
 import type { EndpointSet } from "./endpoints.ts";
 import type { ImageResult, OutgoingImage } from "./images.ts";
 import type { HostDevices } from "./devices.ts";
-import { isQuietHours, type HostInbox } from "./inbox.ts";
+import { isInboxSourceSpec, isQuietHours, type HostInbox, type InboxSourceSpec, type InboxWebhookAccess } from "./inbox.ts";
 import type { McpStatus } from "./mcp.ts";
 import type { RtcAnswer, RtcHello, RtcOfferArgs } from "./rtc.ts";
 import type { TerminalId, TerminalsHello } from "./terminals.ts";
@@ -110,7 +110,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 38 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 39 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -468,6 +468,23 @@ export interface CallMethods {
    * worker has a batch of it out (running or waiting).
    */
   skipInboxTask: { args: { project: string; taskId: string }; result: null };
+  /**
+   * Add an event source to a project's Inbox (5.39, ADR-0051 §10), enabled.
+   * A webhook's address and signing secret come back here and nowhere else.
+   * Plugin and webhook sources are refused without an OS sandbox
+   * (`inbox.externalSources`), as are a bad schedule, an unknown plugin source
+   * and an unknown project; each is an `ok:false`.
+   */
+  addInboxSource: {
+    args: { project: string; name: string; trusted: boolean; spec: InboxSourceSpec };
+    result: { sourceId: string; webhook?: InboxWebhookAccess };
+  };
+  /** Turn a source off or back on; a schedule turned on next fires at its next time, not the ones it missed. */
+  setInboxSourceEnabled: { args: { sourceId: string; enabled: boolean }; result: null };
+  /** Delete a source and, for a webhook, its secret. Tasks it opened stay. */
+  removeInboxSource: { args: { sourceId: string }; result: null };
+  /** Replace a webhook source's secret; the old one stops working at once. */
+  resetInboxWebhookSecret: { args: { sourceId: string }; result: InboxWebhookAccess };
 }
 
 /** APNs device-token registration (ADR-0025 §7, protocol 5.9). */
@@ -495,6 +512,19 @@ export interface PluginInfo {
   readonly web?: { readonly hash: string; readonly size: number };
   /** The secrets it declares (5.37, ADR-0052 §6) and whether each is set; never their values. Absent → none. */
   readonly secrets?: readonly PluginSecretInfo[];
+  /** The Inbox event sources it declares (5.39, ADR-0051 §10), for the add-source dialog. Absent → none. */
+  readonly sources?: readonly PluginSourceInfo[];
+}
+
+export interface PluginSourceInfo {
+  /** What `addInboxSource`'s plugin spec names as `source`. */
+  readonly name: string;
+  /** The kind of event, in the plugin's words: "New issues". */
+  readonly description: string;
+  /** What the user's filter means, such as "owner/repo, then label:bug"; absent → the source takes no filter. */
+  readonly filter?: string;
+  /** Its events only go to a task that already follows their thread (`inbox_follow`); others are dropped. */
+  readonly followedOnly?: true;
 }
 
 export interface PluginSecretInfo {
@@ -577,6 +607,10 @@ export const CALL_SINCE: Record<CallMethod, number> = {
   setInboxRules: 38,
   cancelFollowUp: 38,
   skipInboxTask: 38,
+  addInboxSource: 39,
+  setInboxSourceEnabled: 39,
+  removeInboxSource: 39,
+  resetInboxWebhookSecret: 39,
 };
 
 /** Whether a host of the given minor version knows `method`. */
@@ -632,6 +666,8 @@ export const FEATURE_SINCE = {
   pluginSecrets: 37,
   /** The `inboxQuietHours` setting (38, ADR-0052 §4); an older host 4400s the key. */
   inboxQuietHours: 38,
+  /** `inbox[].sources`, `inbox.externalSources`, `hello.plugins[].sources` and the source calls (39, ADR-0051 §10). */
+  inboxSources: 39,
 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
@@ -955,6 +991,13 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
       return nonempty(args.timerId);
     case "skipInboxTask":
       return nonempty(args.project) && nonempty(args.taskId);
+    case "addInboxSource":
+      return nonempty(args.project) && nonempty(args.name) && typeof args.trusted === "boolean" && isInboxSourceSpec(args.spec);
+    case "setInboxSourceEnabled":
+      return nonempty(args.sourceId) && typeof args.enabled === "boolean";
+    case "removeInboxSource":
+    case "resetInboxWebhookSecret":
+      return nonempty(args.sourceId);
     case "pluginBundle":
       return nonempty(args.name) && (args.hash === undefined || nonempty(args.hash));
     case "pluginCall":
