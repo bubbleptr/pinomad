@@ -447,10 +447,13 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
             text,
             requestId,
             ...(onInit === undefined ? {} : { onInit }),
-            // An intake only reads, asks and submits (ADR-0051 §6); it works in the project itself.
+            // An intake only reads, asks and submits (ADR-0051 §6), and a tidy-up only
+            // touches the memory (ADR-0052 §3); both work in the project itself.
             ...(kind === "intake"
               ? { checkout: "project" as const, modelTools: { only: intakeTools } }
-              : { modelTools: { add: inboxTaskTools } }),
+              : kind === "tidy"
+                ? { checkout: "project" as const, modelTools: { only: memoryExtension.tools! } }
+                : { modelTools: { add: inboxTaskTools } }),
           },
           settingsDefaults(hostSettings.value),
           models,
