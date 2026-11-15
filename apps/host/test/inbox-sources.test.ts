@@ -125,7 +125,7 @@ afterEach(() => {
   delete (globalThis as Feed).__feedCursors;
 });
 
-async function sourcesHost(options: { sandbox?: boolean; remote?: boolean; plugins?: Record<string, string>; copy?: Record<string, string> } = {}) {
+async function sourcesHost(options: { remote?: boolean; plugins?: Record<string, string>; copy?: Record<string, string> } = {}) {
   const project = await tempDir();
   defer(project.remove);
   const dataDir = await tempDir();
@@ -141,7 +141,6 @@ async function sourcesHost(options: { sandbox?: boolean; remote?: boolean; plugi
     dataDir: dataDir.path,
     projects: [project.path],
     answers: Array.from({ length: 30 }, () => "ok"),
-    inboxSandbox: async () => options.sandbox ?? true,
     ...(options.remote === true ? { remote: { port: 0 } } : {}),
   });
   const key = (await host.harness.snapshot(IndexDoc, context))!.projects[0]!.path;
@@ -249,9 +248,9 @@ describe("webhook sources", () => {
   });
 });
 
-describe("without a sandbox", () => {
-  it("refuses plugin and webhook sources but takes schedules", async () => {
-    const { key, socket, host } = await sourcesHost({ sandbox: false, plugins: { feed: FEED } });
+describe("offered sources", () => {
+  it("lists each plugin's sources and takes plugin and webhook sources", async () => {
+    const { key, socket, host } = await sourcesHost({ plugins: { feed: FEED } });
     const hello = await socket.next((frame) => frame.type === "hello");
     expect(hello.type === "hello" && hello.plugins?.find((plugin) => plugin.name === "feed")?.sources).toEqual([
       { name: "items", description: "Items", filter: "A JSON file" },
@@ -262,18 +261,11 @@ describe("without a sandbox", () => {
     ]);
     const client = await connectTo(defer, host);
     await waitForView(client.view, (view) => view.inbox !== null);
-    expect(client.view.current().inbox?.externalSources).toBe(false);
+    expect(client.view.current().inbox?.externalSources).toBe(true);
     for (const spec of [{ kind: "webhook" }, { kind: "plugin", plugin: "feed", source: "items", filter: "/x" }]) {
       const result = await socket.call("addInboxSource", { project: key, name: "x", trusted: false, spec });
-      expect(result.ok === false && result.error).toMatch(/no sandbox/);
+      expect(result.ok, JSON.stringify(result)).toBe(true);
     }
-    const schedule = await socket.call("addInboxSource", {
-      project: key,
-      name: "Daily check",
-      trusted: true,
-      spec: { kind: "schedule", note: "Check dependencies", schedule: { kind: "daily", time: "08:00", timeZone: "UTC" } },
-    });
-    expect(schedule.ok).toBe(true);
   });
 });
 
@@ -471,7 +463,7 @@ async function sourceList(host: OpenedHost, key: string): Promise<InboxSource[]>
     host.harness.snapshot(TimerDoc, context),
     host.harness.snapshot(SourcesDoc, context),
   ]);
-  const value = hostInbox(index ?? null, inboxes?.inboxes ?? {}, timers?.timers ?? [], new Map(), sources?.sources ?? [], true);
+  const value = hostInbox(index ?? null, inboxes?.inboxes ?? {}, timers?.timers ?? [], new Map(), sources?.sources ?? []);
   return [...(value.inboxes.find((inbox) => inbox.project === key)?.sources ?? [])];
 }
 

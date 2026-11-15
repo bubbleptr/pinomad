@@ -83,7 +83,7 @@ export default definePlugin((pinomad) => {
 
 ### 凭据
 
-插件代 agent 调外部服务时，要用一个不能让 agent 看到的凭据。用 `secret` 声明，在 `run` 里用 `ctx.secret` 读，由宿主进程发请求：agent 只调你的工具，手里没有 token，也就没法把它泄露给读到的网页。
+插件代 agent 调外部服务时，要用一个不能让 agent 看到的凭据。用 `secret` 声明，在 `run` 里用 `ctx.secret` 读，由宿主进程发请求：agent 只调你的工具，token 不进对话、工具结果，也不进 agent 的环境变量，agent 没法顺口把它交给读到的网页。但 agent 的命令和宿主是同一个用户，读得到 `secrets.json`；Inbox 的运行里，auto mode 会检查对宿主数据目录的读取。
 
 ```ts
 const token = pinomad.secret("api_token", { description: "An API token with write access." });

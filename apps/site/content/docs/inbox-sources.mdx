@@ -16,7 +16,7 @@ When you add a source you choose how far its tasks are trusted:
 
 Plugin and webhook sources start as restricted; a schedule runs your own note, so it counts as yours.
 
-Plugin and webhook sources need the Inbox's sandbox, which keeps a run's commands away from your credentials: Seatbelt on macOS, bubblewrap (`bwrap`) on Linux. A host without one only offers schedules.
+Inbox runs use your machine's own environment and credentials, like a coding conversation: commands run as you, with your home folder, environment variables and logins. Auto mode checks each tool call. Reading your credential files (such as `~/.ssh` or `~/.aws`) or the host's data folder is never allowed without a check: in a restricted run it waits for you, otherwise the safety check judges it.
 
 ## Schedules
 
@@ -31,7 +31,7 @@ Times are wall-clock times in the time zone you pick, so 09:00 stays 09:00 acros
 
 ## Plugin sources
 
-A plugin can offer event sources; pick the plugin, the kind of event and a filter in its own syntax. The plugin polls its service from the host, with a token it keeps out of the agent's reach (see [Plugins](/docs/plugins/)). If a poll fails, the source shows why and the next poll tries again.
+A plugin can offer event sources; pick the plugin, the kind of event and a filter in its own syntax. The plugin polls its service from the host, with a token that is not put into the conversation or the agent's environment (see [Plugins](/docs/plugins/)). If a poll fails, the source shows why and the next poll tries again.
 
 The [GitHub example plugin](https://github.com/bubbleptr/pinomad/tree/main/examples/plugins/github) has three:
 

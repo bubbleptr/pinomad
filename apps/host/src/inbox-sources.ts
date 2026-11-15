@@ -80,15 +80,9 @@ export interface SourceDeps {
   readonly secrets: SecretStore;
   /** The loaded plugins; absent when they failed to load. */
   readonly plugins: () => PluginCatalog | undefined;
-  /** Whether Inbox runs get an OS sandbox: without one, plugin and webhook sources are refused (ADR-0052 §7). */
-  readonly sandboxAvailable: () => Promise<boolean>;
   /** The gateway's base for webhook URLs (`http://<LAN address>:<port>`); undefined until it listens. */
   readonly webhookBase: () => string | undefined;
 }
-
-export const isExternal = (spec: InboxSourceSpec): boolean => spec.kind !== "schedule";
-
-const NO_SANDBOX = "This host has no sandbox for Inbox runs, so it takes no plugin or webhook sources (install bubblewrap on Linux)";
 
 /** A webhook source's URL path for `project`. */
 export const webhookPath = (project: string): string => `/inbox/${encodeURIComponent(inboxName(project))}/events`;
@@ -123,12 +117,11 @@ function cleanSpec(spec: InboxSourceSpec): InboxSourceSpec {
 const CRON_MAX = 200;
 const ZONE_MAX = 64;
 
-async function checkSpec(deps: SourceDeps, input: { name: string; spec: InboxSourceSpec }): Promise<void> {
+function checkSpec(deps: SourceDeps, input: { name: string; spec: InboxSourceSpec }): void {
   if (input.name.trim().length === 0 || input.name.length > INBOX_SOURCE_NAME_MAX) {
     throw new Error(`A source's name is 1 to ${INBOX_SOURCE_NAME_MAX} characters`);
   }
   const { spec } = input;
-  if (isExternal(spec) && !(await deps.sandboxAvailable())) throw new Error(NO_SANDBOX);
   switch (spec.kind) {
     case "schedule":
       if (spec.note.trim().length === 0 || spec.note.length > INBOX_SOURCE_NOTE_MAX) {
@@ -179,7 +172,7 @@ export async function addInboxSource(
   input: { project: string; name: string; trusted: boolean; spec: InboxSourceSpec },
   context: Context,
 ): Promise<{ sourceId: string; webhook?: InboxWebhookAccess }> {
-  await checkSpec(deps, input);
+  checkSpec(deps, input);
   const key = await projectKey(input.project);
   const record: InboxSourceRecord = {
     id: randomUUID(),
@@ -207,9 +200,6 @@ export async function addInboxSource(
 }
 
 export async function setInboxSourceEnabled(deps: SourceDeps, sourceId: string, enabled: boolean, context: Context): Promise<void> {
-  const record = (await deps.harness.snapshot(SourcesDoc, context))?.sources.find((each) => each.id === sourceId);
-  // Turning an outside source on is adding it again: the same sandbox rule.
-  if (enabled && record !== undefined && isExternal(record.spec) && !(await deps.sandboxAvailable())) throw new Error(NO_SANDBOX);
   await deps.harness.commit(async (tx) => {
     const { record } = await sourceIn(tx, sourceId);
     if (record.enabled === enabled) return;
@@ -299,10 +289,6 @@ export async function startSourceRunner(deps: SourceDeps & { readonly context: C
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const once = async (): Promise<void> => {
-      if (!(await deps.sandboxAvailable())) {
-        await setProblem(harness, record.id, NO_SANDBOX, context);
-        return;
-      }
       const cursor = (await harness.snapshot(SourceCursorsDoc, context))?.cursors[record.id];
       let result: Awaited<ReturnType<NonNullable<LoadedSource["poll"]>["run"]>>;
       try {
@@ -351,7 +337,6 @@ export async function startSourceRunner(deps: SourceDeps & { readonly context: C
     const emit = async (event: SourceEvent): Promise<void> => {
       if (stopped) return;
       try {
-        if (!(await deps.sandboxAvailable())) throw new Error(NO_SANDBOX);
         await harness.commit((tx) => deliver(tx, record.id, event, loaded.info.followedOnly === true), context);
         // Delivering again clears what an earlier event or failure left on the source.
         if (!stopped) await setProblem(harness, record.id, undefined, context);
@@ -360,10 +345,6 @@ export async function startSourceRunner(deps: SourceDeps & { readonly context: C
       }
     };
     void (async () => {
-      if (!(await deps.sandboxAvailable())) {
-        await setProblem(harness, record.id, NO_SANDBOX, context);
-        return;
-      }
       try {
         const stop = await loaded.listen!(record.spec.filter, emit, fail);
         if (stopped) stop();
@@ -507,9 +488,8 @@ const header = (request: IncomingMessage, name: string): string | undefined => {
  * is not the endpoint's, so the listener serves it as before. Refused: a
  * peer outside the LAN and tailnet or a forwarded request (403), a body over
  * `WEBHOOK_MAX_BYTES` (413), an unknown or disabled source, a bad signature
- * or a timestamp outside `WEBHOOK_WINDOW_MS` (all the same 401), and with no
- * sandbox for Inbox runs (503). A repeated event id is accepted and changes
- * nothing, so a sender may retry.
+ * or a timestamp outside `WEBHOOK_WINDOW_MS` (all the same 401). A repeated
+ * event id is accepted and changes nothing, so a sender may retry.
  */
 export async function handleWebhook(
   deps: SourceDeps & { readonly context: Context; readonly now?: () => number },
@@ -561,10 +541,6 @@ export async function handleWebhook(
   const given = Buffer.from(signature);
   if (given.length !== expected.length || !timingSafeEqual(given, expected)) return unauthorized();
 
-  if (!(await deps.sandboxAvailable())) {
-    reply(response, 503, { error: NO_SANDBOX });
-    return true;
-  }
   let event: SourceEvent;
   try {
     event = parseWebhookEvent(JSON.parse(body.toString("utf8")) as unknown);
