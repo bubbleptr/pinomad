@@ -231,8 +231,9 @@ struct InboxSettingsView: View {
         }
     }
 
-    /// The new secret shows in a sheet opened now, in its waiting state: if
-    /// the reader closes it before the host answers, the secret is dropped.
+    /// The new secret shows in a sheet opened now, in its waiting state and
+    /// held open until the host answers; the token keeps a late answer off
+    /// any other sheet.
     private func reset(_ source: InboxSource) {
         let token = sheet.present(.resetting(source))
         busy.insert(source.id)
@@ -327,15 +328,11 @@ struct InboxSettingsView: View {
                     sheet.complete(token, with: webhook.map { .access(title: "Webhook added", access: $0) })
                 })
         case .resetting:
-            NavigationStack {
-                ProgressView("Resetting the secret…")
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Cancel") { sheet.complete(token, with: nil) }
-                        }
-                    }
-            }
-            .presentationDetents([.medium])
+            // Held until the host answers: once it rotates the secret, the
+            // new one must be shown, or senders break with nothing to copy.
+            ProgressView("Resetting the secret…")
+                .presentationDetents([.medium])
+                .interactiveDismissDisabled()
         case .access(let title, let access):
             WebhookAccessView(model: model, hostKey: hostKey, title: title, initial: access) {
                 sheet.complete(token, with: nil)

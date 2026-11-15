@@ -344,6 +344,7 @@ struct WebhookAccessView: View {
                 Text(text)
                     .font(.footnote.monospaced())
                     .textSelection(.enabled)
+                    .accessibilityIdentifier("webhook-\(label.lowercased())")
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Button {
                     UIPasteboard.general.string = text

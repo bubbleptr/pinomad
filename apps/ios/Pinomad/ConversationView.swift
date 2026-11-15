@@ -343,9 +343,10 @@ struct ConversationView: View {
         guard let snapshot = model.snapshot,
               let place = Inbox.place(of: conversationId, in: snapshot.inbox)
         else { return nil }
-        return InboxContext(
-            place: place,
-            tasks: Inbox.describe(place.inbox, summaries: Inbox.summaries(snapshot.organized)))
+        // Only an intake files tasks; a task's transcript needs just its place.
+        let tasks = place.task == nil
+            ? Inbox.describe(place.inbox, summaries: Inbox.summaries(snapshot.organized)) : [:]
+        return InboxContext(place: place, tasks: tasks)
     }
 
     private func openInboxTask(_ task: InboxTask, in inbox: InboxContext?) {

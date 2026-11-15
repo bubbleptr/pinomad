@@ -13,6 +13,21 @@
 		AA0000000000000000000107 /* AgentChatCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000108 /* AgentChatCore */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		AA0000000000000000001202 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA0000000000000000001001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA0000000000000000000301;
+			remoteInfo = Pinomad;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		AA0000000000000000000701 /* Pinomad.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Pinomad.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000000000000000001203 /* PinomadUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PinomadUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
 		AA0000000000000000000201 /* Exceptions for "Pinomad" folder in "Pinomad" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
@@ -25,6 +40,11 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		AA0000000000000000001201 /* PinomadUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = PinomadUITests;
+			sourceTree = "<group>";
+		};
 		AA0000000000000000000401 /* Pinomad */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -47,6 +67,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0000000000000000001204 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -54,6 +81,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000401 /* Pinomad */,
+				AA0000000000000000001201 /* PinomadUITests */,
 				AA0000000000000000000602 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -62,6 +90,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000701 /* Pinomad.app */,
+				AA0000000000000000001203 /* PinomadUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -95,6 +124,27 @@
 			productReference = AA0000000000000000000701 /* Pinomad.app */;
 			productType = "com.apple.product-type.application";
 		};
+		AA0000000000000000001205 /* PinomadUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000000000000000001206 /* Build configuration list for PBXNativeTarget "PinomadUITests" */;
+			buildPhases = (
+				AA0000000000000000001207 /* Sources */,
+				AA0000000000000000001204 /* Frameworks */,
+				AA0000000000000000001208 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA0000000000000000001209 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AA0000000000000000001201 /* PinomadUITests */,
+			);
+			name = PinomadUITests;
+			productName = PinomadUITests;
+			productReference = AA0000000000000000001203 /* PinomadUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -105,6 +155,10 @@
 				LastSwiftUpdateCheck = 2700;
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
+					AA0000000000000000001205 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = AA0000000000000000000301;
+					};
 					AA0000000000000000000301 = {
 						CreatedOnToolsVersion = 27.0;
 						SystemCapabilities = {
@@ -134,12 +188,20 @@
 			projectRoot = "";
 			targets = (
 				AA0000000000000000000301 /* Pinomad */,
+				AA0000000000000000001205 /* PinomadUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		AA0000000000000000000902 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0000000000000000001208 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -156,7 +218,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0000000000000000001207 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AA0000000000000000001209 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA0000000000000000000301 /* Pinomad */;
+			targetProxy = AA0000000000000000001202 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		AA0000000000000000000C01 /* Debug */ = {
@@ -346,6 +423,44 @@
 			};
 			name = Release;
 		};
+		AA000000000000000000120A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = build.kieran.pinomad.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = Pinomad;
+			};
+			name = Debug;
+		};
+		AA000000000000000000120B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MARKETING_VERSION = 0.0.0;
+				PRODUCT_BUNDLE_IDENTIFIER = build.kieran.pinomad.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_TARGET_NAME = Pinomad;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -363,6 +478,15 @@
 			buildConfigurations = (
 				AA0000000000000000000C01 /* Debug */,
 				AA0000000000000000000C02 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0000000000000000001206 /* Build configuration list for PBXNativeTarget "PinomadUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA000000000000000000120A /* Debug */,
+				AA000000000000000000120B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
