@@ -10,7 +10,7 @@ import type { ConversationDocToken, ConversationId } from "@earendil-works/pi-du
 import { describe, expect, it } from "vitest";
 import type { QuestionState } from "@pinomad/protocol/presentation.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
-import { AutoModeDoc, type AutoVerdict, type Classify, callQuote, parseVerdict, ruleFor } from "../src/auto-mode.ts";
+import { AutoModeDoc, type AutoVerdict, type Classify, callQuote, classifierModel, parseVerdict, ruleFor } from "../src/auto-mode.ts";
 import { coding } from "../src/extensions/coding.ts";
 import { question } from "../src/extensions/question.ts";
 import { createSubagent } from "../src/extensions/subagent.ts";
@@ -91,6 +91,17 @@ describe("auto mode rules", () => {
     ]) {
       expect(ruleFor("bash", { command }, true), command).toBeUndefined();
     }
+  });
+
+  it("judges with a small model only when the host can run it, else with the default model", () => {
+    const summary = (provider: string, modelId: string) => ({ provider, modelId, name: modelId, contextWindow: 1, thinkingLevels: ["off" as const], images: false });
+    const fallback = { provider: "kimi-coding", modelId: "kimi-for-coding" };
+    expect(classifierModel([summary("kimi-coding", "kimi-for-coding")], fallback)).toEqual(fallback);
+    expect(classifierModel([summary("anthropic", "claude-haiku-5-5"), summary("kimi-coding", "kimi-for-coding")], fallback)).toEqual({
+      provider: "anthropic",
+      modelId: "claude-haiku-5-5",
+    });
+    expect(classifierModel([], null)).toBeUndefined();
   });
 
   it("reads the classifier's answer, and treats anything else as a question for the user", () => {

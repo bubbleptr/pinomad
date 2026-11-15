@@ -11,7 +11,7 @@ import { addProject, createConversation, ensureIndex, familyRoot, IndexDoc } fro
 import { INBOX_TASK_TOOLS, InboxDoc, inboxExtension, type InboxHandle, inboxTaskOf, INTAKE_TOOLS, memoryOwner, startInbox } from "./inbox.ts";
 import { createMemoryExtension } from "./inbox-memory.ts";
 import { inboxSandboxPolicy, openSandboxedEnv, type SandboxedExecutionEnv } from "./sandbox.ts";
-import { type Classify, createAutoMode, modelClassifier } from "./auto-mode.ts";
+import { type Classify, classifierModel, createAutoMode, modelClassifier } from "./auto-mode.ts";
 import type { QuestionState } from "@pinomad/protocol/presentation.ts";
 import { checkoutAt, ensureWorktree, worktreeRoot } from "./checkout.ts";
 import { ensureDevices, loadHostKey, loadRelayKey, pairingOffers } from "./devices.ts";
@@ -263,11 +263,8 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
           modelClassifier(
             () => models,
             () => {
-              // A small, fast model when the host can run one; else the default model.
-              const small = models.getModel("anthropic", "claude-haiku-5-5");
-              if (small !== undefined) return small;
-              const ref = hostSettings.value.defaultModel;
-              return ref === null ? undefined : models.getModel(ref.provider, ref.modelId);
+              const ref = classifierModel(options.modelSummaries(), hostSettings.value.defaultModel);
+              return ref === undefined ? undefined : models.getModel(ref.provider, ref.modelId);
             },
           ),
       }),
