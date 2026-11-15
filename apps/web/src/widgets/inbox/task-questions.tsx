@@ -28,7 +28,7 @@ export function TaskQuestions({
         <section key={`${task.id}:${request.id}`} aria-label={task.title} className="flex flex-col gap-1">
           <div className="flex items-center gap-2 px-1">
             <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{task.title}</span>
-            <Button variant="ghost" size="sm" aria-label={`Open ${task.title}`} onClick={() => onOpenTask(task)}>
+            <Button variant="secondary" size="sm" aria-label={`Open ${task.title}`} onClick={() => onOpenTask(task)}>
               Open task
             </Button>
           </div>

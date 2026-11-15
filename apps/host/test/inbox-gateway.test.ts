@@ -161,6 +161,7 @@ describe("the Inbox's base branch (5.41, #846)", () => {
     expect((await until((inbox) => inbox.baseBranch !== undefined)).baseBranch).toBe("trunk");
     // Shown, not stored: an Inbox entry would start a daily tidy-up for a project that never used it.
     expect((await host.harness.snapshot(InboxDoc, context))?.inboxes[key]).toBeUndefined();
+    expect((await host.harness.snapshot(TimerDoc, context))?.timers.some((timer) => timer.project === key)).toBe(false);
     await client.controller.setInboxBaseBranch(key, "release");
     await until((inbox) => inbox.baseBranch === "release");
     await expect(client.controller.setInboxBaseBranch(key, "nope")).rejects.toThrow(/"nope" does not exist/);
