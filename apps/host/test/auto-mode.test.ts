@@ -4,13 +4,16 @@
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
+import { fauxAssistantMessage, type FauxResponseStep, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
+import type { Models } from "@earendil-works/pi-ai/models";
 import type { ConversationDocToken, ConversationId } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
 import type { QuestionState } from "@pinomad/protocol/presentation.ts";
-import { type AutoVerdict, type Classify, parseVerdict, ruleFor } from "../src/auto-mode.ts";
+import type { ModelSummary } from "@pinomad/protocol/view.ts";
+import { AutoModeDoc, type AutoVerdict, type Classify, callQuote, parseVerdict, ruleFor } from "../src/auto-mode.ts";
 import { coding } from "../src/extensions/coding.ts";
 import { question } from "../src/extensions/question.ts";
+import { createSubagent } from "../src/extensions/subagent.ts";
 import type { OpenedHost } from "../src/host.ts";
 import { addInboxEvent, InboxDoc, type InboxTask } from "../src/inbox.ts";
 import { connectTo, startChat, startFauxHost, tempDir, useCleanups } from "./support.ts";
@@ -65,6 +68,31 @@ describe("auto mode rules", () => {
     expect(ruleFor("bash", { command: "npm test" }, true)).toBeUndefined();
   });
 
+  it("allows only commands whose every argument is read-only, one command per call", () => {
+    expect(ruleFor("bash", { command: "find src -name '*.ts'" }, true)).toBeUndefined();
+    expect(ruleFor("bash", { command: "find src -type f -name x.ts" }, true)).toBe("allow");
+    expect(ruleFor("bash", { command: "git branch -a" }, true)).toBe("allow");
+    expect(ruleFor("bash", { command: "git log --oneline -5" }, true)).toBe("allow");
+    // Options that write files or run programs, and a newline that starts a second command.
+    for (const command of [
+      "find . -fprintf out.txt %p",
+      "find . -fls out.txt",
+      "find . -newer x -exec rm {} +",
+      "git diff --output=patch.txt",
+      "git show HEAD --output patch.txt",
+      "git log --ext-diff",
+      "git branch evil",
+      "git branch -D main",
+      "rg --pre ./run.sh TODO",
+      "rg --hostname-bin ./run.sh TODO",
+      "git status\ntouch pwned",
+      "ls\rtouch pwned",
+      "cat *",
+    ]) {
+      expect(ruleFor("bash", { command }, true), command).toBeUndefined();
+    }
+  });
+
   it("reads the classifier's answer, and treats anything else as a question for the user", () => {
     expect(parseVerdict('{"verdict":"allow","reason":"runs the tests"}')).toEqual({ verdict: "allow", reason: "runs the tests" });
     expect(parseVerdict('Sure! ```json\n{"verdict":"block","reason":"deletes the repo"}\n```')).toEqual({ verdict: "block", reason: "deletes the repo" });
@@ -97,7 +125,7 @@ describe("auto mode in Inbox runs", () => {
 
   it("holds an unsure call until the user allows that exact call", async () => {
     const command = "touch allowed.txt";
-    const summary = `bash: ${JSON.stringify({ command })}`;
+    const summary = callQuote("bash", { command });
     const { host, project, tasks } = await setup(
       [
         call("bash", { command }),
@@ -126,7 +154,7 @@ describe("auto mode in Inbox runs", () => {
 
   it("does not take an Allow on a question that leaves out the call, nor reuse one", async () => {
     const command = "touch sneaky.txt";
-    const summary = `bash: ${JSON.stringify({ command })}`;
+    const summary = callQuote("bash", { command });
     const ask = (text: string) =>
       call("ask_user_question", { questions: [{ header: "OK?", question: text, options: [{ label: "Allow" }, { label: "Deny" }] }] });
     const { host, project, tasks } = await setup(
@@ -152,6 +180,111 @@ describe("auto mode in Inbox runs", () => {
     // Allowed once: the second identical call is held again.
     expect(await exists(join(project, "sneaky.txt"))).toBe(true);
     expect(results.at(-1)).toContain("Not run");
+  });
+
+  it("takes the Allow only from the question that quotes the call, and remembers it was used", async () => {
+    const command = "touch paired.txt";
+    const quote = callQuote("bash", { command });
+    const { host, project, tasks } = await setup(
+      [
+        call("bash", { command }),
+        call("ask_user_question", {
+          questions: [
+            { header: "Run?", question: `May I run ${quote}?`, options: [{ label: "Allow" }, { label: "Deny" }] },
+            { header: "Tidy?", question: "May I tidy the README?", options: [{ label: "Allow" }, { label: "Deny" }] },
+          ],
+        }),
+        call("bash", { command }),
+        "done",
+      ],
+      async () => ({ verdict: "ask", reason: "writes to the project" }),
+    );
+    await addInboxEvent(host.harness, project, event("pair"), context);
+    const [task] = await until(tasks, (all) => all[0]?.waiting === true);
+    await host.harness.commit(async (tx) => {
+      for (const request of (await tx.doc(QuestionDoc, task!.conversationId!)).requests) {
+        request.resolution ??= { outcome: "answered", answers: [{ selected: ["Deny"] }, { selected: ["Allow"] }], at: Date.now() };
+      }
+    }, context);
+    const [done] = await until(tasks, (all) => all[0]?.closed === true);
+    expect(await exists(join(project, "paired.txt"))).toBe(false);
+    expect((await host.harness.snapshot(AutoModeDoc, done!.conversationId!, context))?.granted).toEqual([]);
+  });
+
+  it("records a used Allow in the conversation, so a restart cannot reuse it", async () => {
+    const command = "touch once.txt";
+    const quote = callQuote("bash", { command });
+    const { host, project, tasks } = await setup(
+      [
+        call("bash", { command }),
+        call("ask_user_question", { questions: [{ header: "Run?", question: `Run ${quote}?`, options: [{ label: "Allow" }, { label: "Deny" }] }] }),
+        call("bash", { command }),
+        "done",
+      ],
+      async () => ({ verdict: "ask", reason: "writes to the project" }),
+    );
+    await addInboxEvent(host.harness, project, event("once"), context);
+    const [task] = await until(tasks, (all) => all[0]?.waiting === true);
+    let requestId: string | undefined;
+    await host.harness.commit(async (tx) => {
+      for (const request of (await tx.doc(QuestionDoc, task!.conversationId!)).requests) {
+        requestId = request.id;
+        request.resolution ??= { outcome: "answered", answers: [{ selected: ["Allow"] }], at: Date.now() };
+      }
+    }, context);
+    const [done] = await until(tasks, (all) => all[0]?.closed === true);
+    expect(await exists(join(project, "once.txt"))).toBe(true);
+    expect((await host.harness.snapshot(AutoModeDoc, done!.conversationId!, context))?.granted).toEqual([requestId]);
+  });
+
+  it("asks the user, without the classifier, when the call is too long to show it whole", async () => {
+    const asked: string[] = [];
+    const { host, project, tasks } = await setup([call("bash", { command: `touch long.txt # ${"x".repeat(5_000)}` }), "ok"], async (input) => {
+      asked.push(input.tool);
+      return { verdict: "allow", reason: "" };
+    });
+    await addInboxEvent(host.harness, project, event("long"), context);
+    const [task] = await until(tasks, (all) => all[0]?.closed === true);
+    expect(asked).toEqual([]);
+    expect(await exists(join(project, "long.txt"))).toBe(false);
+    expect((await toolResults(host, task!.conversationId!))[0]).toContain("ask_user_question");
+  });
+
+  it("gates the subagents an Inbox task dispatches, with the task's trust", async () => {
+    const project = await tempDir();
+    defer(project.remove);
+    const asked: string[] = [];
+    const reply = (text: string) => fauxAssistantMessage(text);
+    const route: FauxResponseStep = (request) => {
+      const last = request.messages.findLast((message) => message.role !== "system")!;
+      if (last.role === "toolResult") return reply("ack");
+      const text = typeof last.content === "string" ? last.content : last.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("");
+      if (text.includes("make sub.txt")) return call("bash", { command: "touch sub.txt" });
+      if (text.includes("delegate it")) return call("subagent", { task: "make sub.txt", name: "maker", checkout: "shared" });
+      return reply("done");
+    };
+    const host = await startFauxHost(defer, {
+      projects: [project.path],
+      extensions: (provided: { models: Models; modelSummaries: () => readonly ModelSummary[] }) => [
+        coding,
+        question,
+        createSubagent({ models: provided.models, modelSummaries: provided.modelSummaries, exclude: [question.extension] }),
+      ],
+      autoMode: {
+        classify: async (input) => {
+          asked.push(input.tool);
+          return input.tool === "subagent" ? { verdict: "allow", reason: "" } : { verdict: "block", reason: "not this" };
+        },
+      },
+      answers: Array.from({ length: 20 }, () => route),
+    });
+    await addInboxEvent(host.harness, project.path, event("delegate it"), context);
+    await until(
+      async () => Object.values((await host.harness.snapshot(InboxDoc, context))?.inboxes ?? {}).flatMap((inbox) => inbox.tasks),
+      (all) => all[0]?.closed === true,
+    );
+    expect(asked).toEqual(["subagent", "bash"]);
+    expect(await exists(join(project.path, "sub.txt"))).toBe(false);
   });
 
   it("asks the user, without the classifier, before an outside-content run reaches the network", async () => {

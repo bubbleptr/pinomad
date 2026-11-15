@@ -5,15 +5,17 @@
 // conversations are untouched.
 //
 // A hook cannot write documents, so "ask" blocks the call and tells the agent
-// to ask with ask_user_question, quoting the exact call; once the user picks
-// "Allow" on such a question, that one call passes. The quoted call is what
-// the user approves, whatever the agent writes around it.
+// to ask with ask_user_question, quoting the exact call with an ID bound to its
+// full arguments; once the user picks "Allow" on that question, that one call
+// passes. The quoted call is what the user approves, whatever the agent writes
+// around it. Subagents of a task are gated as the task is.
+import { createHash } from "node:crypto";
 import { BACKGROUND_CONTEXT, type Context } from "@earendil-works/chord/context";
 import type { Model, Models, Context as ModelContext } from "@earendil-works/pi-ai";
 import { type ConversationDocToken, defineDoc, defineExtension, type Extension, type Harness, hook, ToolTask } from "@earendil-works/pi-durable";
 import type { QuestionState } from "@pinomad/protocol/presentation.ts";
 import { InboxDoc, inboxTaskOf } from "./inbox.ts";
-import { IndexDoc } from "./organization.ts";
+import { familyRoot, IndexDoc } from "./organization.ts";
 
 /** A tool call's arguments as the model sent them. */
 type JsonObject = { readonly [key: string]: unknown };
@@ -40,8 +42,38 @@ const SAFE_TOOLS = new Set([
   "subagent_list",
 ]);
 
-/** One read-only command, nothing chained, redirected or substituted. */
-const SAFE_BASH = /^\s*(?:git\s+(?:status|diff|log|show|branch|rev-parse)|ls|cat|rg|grep|pwd|head|tail|wc|find(?![^\n]*\s-(?:exec|execdir|delete|ok)\b))(?:\s[^;&|<>`$\n]*)?$/;
+/** Characters a read-only command never needs: chaining, redirection, substitution, quoting, globs, line breaks. */
+const SHELL_SYNTAX = /[^\x20-\x7e\t]|[;&|<>`$(){}\[\]\\'"*?~!#]/;
+const READ_ANYTHING = new Set(["ls", "cat", "pwd", "head", "tail", "wc", "grep"]);
+/** `find` tests and harmless options; its actions that write files or run programs are left out. */
+const FIND_OPTIONS = new Set([
+  "-name", "-iname", "-path", "-ipath", "-type", "-maxdepth", "-mindepth", "-newer", "-mtime", "-mmin",
+  "-size", "-empty", "-print", "-print0", "-not", "-a", "-and", "-o", "-or", "-L", "-H", "-P",
+]);
+/** `rg` long options that only shape the search or its output (`--pre` and `--hostname-bin` run programs). */
+const RG_OPTIONS = new Set([
+  "--hidden", "--files", "--glob", "--iglob", "--type", "--type-not", "--no-ignore", "--line-number", "--count",
+  "--fixed-strings", "--ignore-case", "--smart-case", "--word-regexp", "--files-with-matches", "--max-count",
+  "--context", "--before-context", "--after-context", "--json", "--no-heading", "--heading", "--multiline",
+]);
+const GIT_BRANCH_OPTIONS = new Set(["-a", "--all", "-r", "--remotes", "-v", "-vv", "--list", "--show-current"]);
+
+/** One read-only command: every argument is one the command only reads with. */
+function readOnlyBash(command: string): boolean {
+  if (SHELL_SYNTAX.test(command)) return false;
+  const [program, ...args] = command.trim().split(/[ \t]+/);
+  if (program === undefined) return false;
+  if (READ_ANYTHING.has(program)) return true;
+  const options = args.filter((arg) => arg.startsWith("-"));
+  if (program === "find") return options.every((arg) => FIND_OPTIONS.has(arg));
+  if (program === "rg") return options.every((arg) => !arg.startsWith("--") || RG_OPTIONS.has(arg.split("=")[0]!));
+  if (program !== "git") return false;
+  const [sub, ...rest] = args;
+  if (sub === "branch") return rest.every((arg) => GIT_BRANCH_OPTIONS.has(arg));
+  if (sub === "status" || sub === "rev-parse") return true;
+  if (sub === "diff" || sub === "log" || sub === "show") return rest.every((arg) => !arg.startsWith("--output") && arg !== "--ext-diff");
+  return false;
+}
 
 const BLOCKED_BASH: readonly RegExp[] = [
   /\bsudo\b/,
@@ -65,7 +97,7 @@ export function ruleFor(tool: string, args: JsonObject, trusted: boolean): "allo
   const command = typeof args.command === "string" ? args.command : "";
   if (BLOCKED_BASH.some((pattern) => pattern.test(command))) return "block";
   if (!trusted && OUTSIDE_ASK_BASH.some((pattern) => pattern.test(command))) return "ask";
-  if (SAFE_BASH.test(command)) return "allow";
+  if (readOnlyBash(command)) return "allow";
   return undefined;
 }
 
@@ -96,7 +128,7 @@ export function modelClassifier(models: () => Models, pick: () => Model<string> 
   return async (input) => {
     const model = pick();
     if (model === undefined) return { verdict: "ask", reason: "No model is available for the safety check." };
-    const args = JSON.stringify(input.args).slice(0, 4_000);
+    const args = JSON.stringify(input.args);
     const request: ModelContext = {
       systemPrompt: CLASSIFIER_PROMPT,
       messages: [
@@ -115,24 +147,43 @@ export function modelClassifier(models: () => Models, pick: () => Model<string> 
 
 /** What auto mode decided, per conversation, newest last; for the Tasks page and tuning the rules. */
 export type AutoDecision = { tool: string; verdict: AutoVerdict["verdict"]; reason: string; by: "rule" | "classifier" | "user"; at: number };
-export const AutoModeDoc = defineDoc<{ decisions: AutoDecision[] }>({
+/** `granted`: question requests whose "Allow" already let a call through; each approves one call, also across restarts. */
+export const AutoModeDoc = defineDoc<{ decisions: AutoDecision[]; granted: string[] }>({
   kind: "pinomad.auto-mode",
   version: 1,
   scope: "conversation",
   history: "latest",
   fork: "initial",
-  initial: () => ({ decisions: [] }),
+  initial: () => ({ decisions: [], granted: [] }),
   checkpointWhen: () => false,
 });
 const KEEP_DECISIONS = 100;
 
-/** The call as the user approves it: tool and exact arguments. */
-export const callSummary = (tool: string, args: JsonObject): string => `${tool}: ${JSON.stringify(args)}`.slice(0, 2_000);
+/** Longest call the user is shown, and the classifier judges, whole; a longer one is always the user's call. */
+const SHOWN_LIMIT = 2_000;
 
-const askText = (summary: string, reason: string): string =>
-  `Not run: this needs the user's OK (${reason || "the safety check is not sure"}). ` +
-  `Ask with ask_user_question, quoting this call exactly in the question — ${summary} — with the options "Allow" and "Deny". ` +
-  "If they allow it, make the same call again; otherwise find another way or stop.";
+/**
+ * The call as the user approves it: an ID bound to the tool and its full
+ * arguments, then the call itself. The question must quote all of it.
+ */
+export const callQuote = (tool: string, args: JsonObject): string => {
+  const json = JSON.stringify(args);
+  const id = createHash("sha256").update(`${tool}\n${json}`).digest("hex").slice(0, 32);
+  return `[call ${id}] ${tool}: ${json.length > SHOWN_LIMIT ? `${json.slice(0, SHOWN_LIMIT)}…` : json}`;
+};
+
+const askText = (quote: string, reason: string, subagent: boolean): string =>
+  subagent
+    ? `Not run: this needs the user's OK (${reason || "the safety check is not sure"}), which a subagent cannot ask for. Find another way, or say in your answer what you need.`
+    : `Not run: this needs the user's OK (${reason || "the safety check is not sure"}). ` +
+      `Ask with ask_user_question, quoting this call exactly in the question — ${quote} — with the options "Allow" and "Deny". ` +
+      "If they allow it, make the same call again; otherwise find another way or stop.";
+
+type QuestionRequest = {
+  readonly id?: string;
+  readonly questions?: readonly { readonly question?: string }[];
+  readonly resolution?: { readonly outcome?: string; readonly answers?: readonly { readonly selected?: readonly string[] }[] };
+};
 
 export function createAutoMode(options: {
   readonly classify: Classify;
@@ -140,9 +191,6 @@ export function createAutoMode(options: {
   /** The installed `pinomad.question` documents, where the user's "Allow" lands. */
   readonly questionDocs: () => readonly ConversationDocToken<QuestionState>[];
 }): Extension {
-  /** Question requests whose "Allow" already let a call through: each approves one call. */
-  const used = new Set<string>();
-
   const record = (conversationId: number, decision: AutoDecision): void => {
     void options
       .harness()
@@ -161,30 +209,41 @@ export function createAutoMode(options: {
         beforeTool: async (call, api, context) => {
           const [inboxes, index] = await Promise.all([api.snapshot(InboxDoc, context), api.snapshot(IndexDoc, context)]);
           if (inboxes === undefined || index === undefined) return undefined;
-          const owner = inboxTaskOf(inboxes.inboxes, index, api.conversationId);
+          // A subagent works for the task that dispatched it: same gate, same trust.
+          const root = await familyRoot(options.harness(), api.conversationId, context);
+          const owner = inboxTaskOf(inboxes.inboxes, index, root);
           // Coding conversations, the intake and the memory tidy-up are not gated.
           if (owner === undefined || owner.task.kind === "tidy") return undefined;
+          const subagent = root !== api.conversationId;
           const args = call.arguments as JsonObject;
           const trusted = owner.task.events.every((event) => event.trusted);
-          const summary = callSummary(call.name, args);
+          const quote = callQuote(call.name, args);
           const decide = (verdict: AutoVerdict, by: AutoDecision["by"]) => {
             record(api.conversationId, { tool: call.name, verdict: verdict.verdict, reason: verdict.reason, by, at: Date.now() });
             if (verdict.verdict === "allow") return undefined;
-            return { block: verdict.verdict === "block" ? `Not run: ${verdict.reason || "the safety check refused it"}.` : askText(summary, verdict.reason) };
+            return { block: verdict.verdict === "block" ? `Not run: ${verdict.reason || "the safety check refused it"}.` : askText(quote, verdict.reason, subagent) };
           };
 
-          // The user's "Allow" on a question quoting this exact call lets it through once.
+          // The user's "Allow" on the question quoting this exact call lets it through once.
+          const auto = await api.snapshot(AutoModeDoc, api.conversationId, context);
           for (const token of options.questionDocs()) {
             const doc = await api.snapshot(token, api.conversationId, context);
-            for (const request of (doc?.requests ?? []) as readonly { id?: string; questions?: { question?: string }[]; resolution?: { outcome?: string; answers?: { selected?: string[] }[] } }[]) {
-              const key = `${api.conversationId}:${request.id}`;
-              if (request.resolution?.outcome !== "answered" || used.has(key)) continue;
-              const quotes = request.questions?.some((each) => each.question?.includes(summary) === true) === true;
-              const allowed = request.resolution.answers?.some((answer) => answer.selected?.includes("Allow") === true) === true;
-              if (quotes && allowed) {
-                used.add(key);
-                return decide({ verdict: "allow", reason: "the user allowed it" }, "user");
-              }
+            for (const request of (doc?.requests ?? []) as readonly QuestionRequest[]) {
+              if (request.id === undefined || request.resolution?.outcome !== "answered" || auto?.granted.includes(request.id) === true) continue;
+              const answers = request.resolution.answers ?? [];
+              const allowed = (request.questions ?? []).some(
+                (each, n) => each.question?.includes(quote) === true && answers[n]?.selected?.includes("Allow") === true,
+              );
+              if (!allowed) continue;
+              // Used up before the call runs, and durably: a restart cannot spend it again.
+              const id = request.id;
+              const fresh = await options.harness().commit(async (tx) => {
+                const state = await tx.doc(AutoModeDoc, api.conversationId);
+                if (state.granted.includes(id)) return false;
+                state.granted.push(id);
+                return true;
+              }, context);
+              if (fresh) return decide({ verdict: "allow", reason: "the user allowed it" }, "user");
             }
           }
 
@@ -193,6 +252,8 @@ export function createAutoMode(options: {
             const reason = rule === "allow" ? "" : rule === "block" ? "the rules forbid it" : "it reaches outside the project while the run holds outside content";
             return decide({ verdict: rule, reason }, "rule");
           }
+          // Too long to show the user or the classifier whole: only the user can judge it.
+          if (JSON.stringify(args).length > SHOWN_LIMIT) return decide({ verdict: "ask", reason: "the call is too long to check automatically" }, "rule");
           let verdict: AutoVerdict;
           try {
             verdict = await options.classify({ tool: call.name, args, trusted, task: owner.task.title }, context);
