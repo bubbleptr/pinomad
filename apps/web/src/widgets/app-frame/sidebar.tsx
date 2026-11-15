@@ -32,6 +32,9 @@ import { clientDeviceName } from "../../address.ts";
 import { StatusDot } from "../../shared/ui/status-dot.tsx";
 import { Badge } from "../../shared/ui/badge.tsx";
 import { Avatar, AvatarFallback, initials } from "../../shared/ui/avatar.tsx";
+import type { InboxTarget } from "../../entities/composer/composer-store.ts";
+import { inboxConversationIds } from "../../entities/inbox/inbox.ts";
+import { InboxMachineSection, ModeSwitch, type SidebarMode } from "./inbox-sidebar.tsx";
 
 const PROJECT_EXPANDED_KEY = "pinomad.projectSidebar.expanded";
 
@@ -491,9 +494,13 @@ export function SidebarContent({
   draftingChat,
   shownId,
   locate,
+  mode = "coding",
+  inboxTarget,
+  onModeChange,
   onNewChat,
   onDraft,
   onOpen,
+  onInboxTarget,
   onShowMachine,
   onSelect,
 }: {
@@ -503,16 +510,42 @@ export function SidebarContent({
   draftingChat: boolean;
   shownId: ConversationId | undefined;
   locate?: SidebarLocate;
+  /** Coding lists conversations; Inbox lists each project's Inbox (ADR-0051 §1). Without `onModeChange` there is no switch. */
+  mode?: SidebarMode;
+  /** The focused machine's Inbox screen shown in place of a conversation. */
+  inboxTarget?: InboxTarget | undefined;
+  onModeChange?: (mode: SidebarMode) => void;
   /** The global New chat chooses its own machine (ADR-0035 §7). */
   onNewChat?: () => void;
   onDraft: (key: string, home: Home) => void;
   onOpen: (key: string, id: ConversationId) => void;
+  onInboxTarget?: (key: string, target: InboxTarget) => void;
   /** Focus a machine that has nothing to list, so the main column explains why. */
   onShowMachine?: (key: string) => void;
   onSelect?: () => void;
 }) {
+  const modeSwitch = onModeChange === undefined ? null : <ModeSwitch mode={mode} onChange={onModeChange} />;
+  if (mode === "inbox") {
+    return (
+      <>
+        {modeSwitch}
+        {machines.map((machine) => (
+          <InboxMachineSection
+            key={machine.key}
+            machine={machine}
+            shownId={machine.key === focusKey ? shownId : undefined}
+            target={machine.key === focusKey ? inboxTarget : undefined}
+            onOpen={(id) => onOpen(machine.key, id)}
+            onTarget={(target) => onInboxTarget?.(machine.key, target)}
+            onSelect={onSelect}
+          />
+        ))}
+      </>
+    );
+  }
   return (
     <>
+      {modeSwitch}
       <SideNavSection isHeaderHidden title="New chat">
         <SideNavItem
           icon={<AnimatedNewChat className="size-4" />}
@@ -575,7 +608,19 @@ function MachineSection({
   const [addOpen, setAddOpen] = useState(false);
   const [removing, setRemoving] = useState<Project>();
   const [folds, setFolds] = useState(() => readExpandedProjects(key));
-  const organized = rejected ? undefined : view?.organized;
+  // The Inbox's conversations are listed in Inbox mode only (ADR-0051 §2).
+  const organized = useMemo(() => {
+    if (rejected || view === undefined) return undefined;
+    const inboxIds = inboxConversationIds(view.inbox);
+    if (inboxIds.size === 0) return view.organized;
+    return {
+      ...view.organized,
+      projects: view.organized.projects.map((entry) => ({
+        ...entry,
+        conversations: entry.conversations.filter((node) => !inboxIds.has(node.summary.id)),
+      })),
+    };
+  }, [rejected, view]);
   const start = (home: Home): void => {
     onDraft(home);
     onSelect?.();

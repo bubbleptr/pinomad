@@ -44,6 +44,7 @@ import { AppearanceSection } from "./appearance-section.tsx";
 import type { FrameMachine } from "./app-frame.tsx";
 import { DevicesSection } from "./devices-section.tsx";
 import { HostUpgradeSection } from "./host-upgrade-section.tsx";
+import { InboxQuietHours } from "./inbox-quiet-hours.tsx";
 import { HostStatusDot, HostsSection } from "./hosts.tsx";
 import { LocalHostSection } from "./local-host-section.tsx";
 import { ProvidersSection } from "./providers-section.tsx";
@@ -61,7 +62,7 @@ const SECTIONS = [
   { id: "providers", title: "Providers", icon: KeyRound, group: "host", keywords: "api key login subscription custom endpoint" },
   { id: "models", title: "Models", icon: Sparkles, group: "host", keywords: "default model thinking" },
   { id: "agents", title: "Agents", icon: Bot, group: "host", keywords: "roles subagents named agents mcp servers tools" },
-  { id: "chats", title: "Chats", icon: ChatBubble, group: "host", keywords: "conversations queue steer follow-up messages archived archive restore history" },
+  { id: "chats", title: "Chats", icon: ChatBubble, group: "host", keywords: "conversations queue steer follow-up messages archived archive restore history inbox quiet hours do not disturb notifications" },
   { id: "devices", title: "Devices", icon: Devices, group: "host", keywords: "paired revoke" },
   { id: "about", title: "About", icon: Info, group: "host", keywords: "host name rename version upgrade update automatic protocol website" },
 ] as const;
@@ -580,6 +581,7 @@ function sectionBody(
         body: (
           <div className="flex flex-col gap-6">
             <ChatsSection view={view} remote={remote} connected={connected} />
+            <InboxQuietHours view={view} remote={remote} />
             <ArchivedSection view={view} remote={remote} connected={connected} />
           </div>
         ),

@@ -24,7 +24,9 @@ export function HostFrame({ children }: { children: ReactNode }) {
   const infos = useHostRuntimeInfos();
   const narrow = useMediaQuery("(max-width: 1023px)");
   const focusedInfo = focus === null ? undefined : infos.get(focus.hostKey);
-  const home = useOptionalComposerSlotState(focusedInfo?.composer.slot(newDraftKey))?.home;
+  const draft = useOptionalComposerSlotState(focusedInfo?.composer.slot(newDraftKey));
+  const drafting = focus === null || focus.conversationId === undefined;
+  const inboxTarget = drafting ? draft?.inbox : undefined;
   // Each pairing's device key marks "This device" in that host's Devices list.
   const devices = useMemo(
     () => new Map(hosts.map((host) => [host.hostKey, keyPairFromPrivate(fromBase64Url(host.privateKey))])),
@@ -66,8 +68,14 @@ export function HostFrame({ children }: { children: ReactNode }) {
     <AppFrame
       machines={machines}
       focusKey={focus?.hostKey}
-      draftingChat={(focus === null || focus.conversationId === undefined) && home?.kind === "chat"}
+      draftingChat={drafting && inboxTarget === undefined && draft?.home.kind === "chat"}
       shownId={focus?.conversationId}
+      inboxTarget={inboxTarget}
+      onInboxTarget={(hostKey, target) => {
+        // Like a draft: the target goes on the host's new-draft slot before focus moves.
+        infos.get(hostKey)?.composer.slot(newDraftKey).setInbox(target);
+        focusDraft(hostKey);
+      }}
       onDraft={startDraft}
       onOpen={(hostKey, conversationId) => focusConversation({ hostKey, conversationId })}
       onNewChat={newChat}

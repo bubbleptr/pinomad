@@ -39,6 +39,9 @@ import { LazyXtermView } from "./lazy-xterm-view.tsx";
 import { SurfaceBar } from "./surface-bar.tsx";
 import { TerminalSurface } from "./terminal-surface.tsx";
 import { StatusDot } from "../../shared/ui/status-dot.tsx";
+import type { ProjectInbox } from "@pinomad/protocol/inbox.ts";
+import { describeTasks } from "../../entities/inbox/inbox.ts";
+import { InboxSections } from "./inbox-sections.tsx";
 
 type BuiltInSurface = "tasks" | "changes" | "terminal";
 export type PanelSurface = BuiltInSurface | PluginSurfaceId;
@@ -91,12 +94,15 @@ export function SurfaceButtons({
   liveActivity,
   pluginPanels = [],
   drafting = false,
+  inboxScreen = false,
   onSelect,
 }: {
   narrow: boolean;
   open: boolean;
   /** No conversation yet: Tasks, Changes and Terminal have nothing to show, so only plugin surfaces remain. */
   drafting?: boolean;
+  /** The draft's place holds an Inbox screen: Tasks still has that Inbox's rules and follow-ups. */
+  inboxScreen?: boolean;
   surface: PanelSurface;
   /** Foreground work Tasks would show is running. */
   liveActivity: boolean;
@@ -106,7 +112,7 @@ export function SurfaceButtons({
 }) {
   const surface = shownSurface(selected, pluginPanels);
   const entries: { id: PanelSurface; label: string; icon: ReactNode }[] = [
-    ...(drafting ? [] : SURFACES),
+    ...(!drafting ? SURFACES : inboxScreen ? SURFACES.filter((entry) => entry.id === "tasks") : []),
     ...pluginPanels.map((panel) => ({ id: panel.surface, label: panel.label, icon: PLUGIN_ICON })),
   ];
   if (entries.length === 0) return null;
@@ -171,6 +177,7 @@ function TasksSurface({
   view,
   remote,
   shownId,
+  inbox,
   barStart,
   barEnd,
   openInPanel,
@@ -180,6 +187,8 @@ function TasksSurface({
   remote: RemoteDurable;
   /** The main column's conversation, loaded or not — while drafting, the family is empty. */
   shownId: ConversationId | undefined;
+  /** The Inbox of the shown conversation or Inbox screen: its rules and follow-ups lead the list (ADR-0051 §11). */
+  inbox?: ProjectInbox | undefined;
   barStart?: ReactNode;
   barEnd?: ReactNode;
   openInPanel: (id: ConversationId) => void;
@@ -268,22 +277,28 @@ function TasksSurface({
       ? `${runningProcesses} ${runningProcesses === 1 ? "process" : "processes"} running`
       : undefined,
   ].filter((part) => part !== undefined);
+  // In an Inbox the bar counts its open tasks (the header already names the
+  // project); the subagent rows still follow.
+  const barParts = inbox === undefined ? tally : inboxTally(inbox, view);
   return (
     <div className="flex flex-col h-full min-h-0">
       <SurfaceBar start={barStart} end={barEnd}>
         <h2 className="shrink-0 text-sm font-semibold">Tasks</h2>
-        {tally.length === 0 ? null : (
+        {barParts.length === 0 ? null : (
           <>
             <span aria-hidden="true" className="text-sm text-muted-foreground">·</span>
-            <span className="truncate text-sm text-muted-foreground">{tally.join(" · ")}</span>
+            <span className="truncate text-sm text-muted-foreground">{barParts.join(" · ")}</span>
           </>
         )}
       </SurfaceBar>
       <Scrollable>
+          {inbox === undefined ? null : <InboxSections inbox={inbox} remote={remote} connected={view.connection === "connected"} />}
           {groups.length === 0 && processRows.length === 0 ? (
-            <span className="text-xs/5 text-muted-foreground p-3 text-muted-foreground">
-              No tasks yet
-            </span>
+            inbox !== undefined ? null : (
+              <span className="text-xs/5 text-muted-foreground p-3 text-muted-foreground">
+                No tasks yet
+              </span>
+            )
           ) : (
             <>
               {groups.map((group) => (
@@ -301,6 +316,19 @@ function TasksSurface({
       </Scrollable>
     </div>
   );
+}
+
+/** The Inbox's open tasks by group, for the bar. */
+function inboxTally(inbox: ProjectInbox, view: DurableView): string[] {
+  const counts = { waiting: 0, running: 0, pending: 0 };
+  for (const { state } of describeTasks(inbox, view.organized).values()) {
+    if (state === "waiting" || state === "running" || state === "pending") counts[state] += 1;
+  }
+  return [
+    counts.waiting > 0 ? `${counts.waiting} waiting` : undefined,
+    counts.running > 0 ? `${counts.running} in progress` : undefined,
+    counts.pending > 0 ? `${counts.pending} queued` : undefined,
+  ].filter((part) => part !== undefined);
 }
 
 /** A run of rows named by its owner; the name shows only when there are other owners to tell apart. */
@@ -619,6 +647,8 @@ export function SidePanel({
   surface: selected,
   pluginPanels = [],
   drafting = false,
+  inboxScreen = false,
+  inbox,
   busy,
   liveActivity,
   onOpenChange,
@@ -636,6 +666,10 @@ export function SidePanel({
   pluginPanels?: readonly PluginPanel[];
   /** No conversation yet; the phone dialog's switch offers only plugin surfaces, as the header does. */
   drafting?: boolean;
+  /** The draft's place holds an Inbox screen, which keeps Tasks. */
+  inboxScreen?: boolean;
+  /** The Inbox of what main shows (ADR-0051 §11). */
+  inbox?: ProjectInbox | undefined;
   /** The shown conversation is running; Changes refreshes once it settles. */
   busy: boolean;
   liveActivity: boolean;
@@ -682,6 +716,7 @@ export function SidePanel({
         view={view}
         remote={remote}
         shownId={shownId}
+        inbox={inbox}
         barStart={barStart}
         barEnd={barEnd}
         openInPanel={openInPanel}
@@ -709,6 +744,7 @@ export function SidePanel({
               liveActivity={liveActivity}
               pluginPanels={pluginPanels}
               drafting={drafting}
+              inboxScreen={inboxScreen}
               onSelect={onSelectSurface}
             />,
             close,

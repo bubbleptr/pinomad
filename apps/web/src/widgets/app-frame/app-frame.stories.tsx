@@ -16,6 +16,9 @@ import {
   summaryOf,
   withAccount,
   withHosts,
+  withInbox,
+  inboxTaskConversation,
+  RUNNING_TASK_ID,
 } from "../../test/story-fixtures.tsx";
 import { ConversationTranscript } from "../chat/conversation-transcript.tsx";
 import { ComposerSkeleton, ConversationSkeleton } from "../chat/conversation-skeleton.tsx";
@@ -219,6 +222,12 @@ export const Opening: Story = {
 /** Every notice also lands as a toast. */
 const noticed = fakeView({ notices: [{ id: 1, level: "error", message: "Model anthropic/claude-opus-5-5 is overloaded; retrying in 8s" }] });
 export const WithNotice: Story = { args: { machines: fakeMachines({ home: noticed }) } };
+
+/** An Inbox task in main brings the sidebar to Inbox mode, where its row is (ADR-0051 §1). */
+const inboxTask = withInbox(fakeView({ conversation: inboxTaskConversation() }));
+export const InboxTaskShown: Story = {
+  args: { machines: fakeMachines({ home: inboxTask }), shownId: RUNNING_TASK_ID, onInboxTarget: fn() },
+};
 
 /** On a phone the sidebar becomes a drawer behind the header's menu button. */
 export const Narrow: Story = {

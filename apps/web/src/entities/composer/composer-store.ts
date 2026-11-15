@@ -19,6 +19,16 @@ import { prepareImage } from "../image/prepare-image.ts";
 
 export type CheckoutMode = "worktree" | "local";
 
+/**
+ * An Inbox screen the main column shows without a conversation of its own:
+ * a project's intake before its first message, or a task the worker has not
+ * taken yet (ADR-0051 §6).
+ */
+export interface InboxTarget {
+  readonly project: string;
+  readonly task?: string;
+}
+
 export interface FileAttachmentEntry {
   readonly key: string;
   readonly name: string;
@@ -42,6 +52,8 @@ export interface ComposerSlotState {
   readonly fileError: string | null;
   /** The new-draft target; ignored by conversation slots. */
   readonly home: Home;
+  /** Set in place of a draft: the new-draft screen shows this Inbox target. */
+  readonly inbox: InboxTarget | undefined;
   readonly checkoutMode: CheckoutMode;
   readonly agent: string | undefined;
   readonly overrides: AgentDraftOverrides;
@@ -58,6 +70,7 @@ const initialState = (): ComposerSlotState => ({
   fileEntries: [],
   fileError: null,
   home: { kind: "chat" },
+  inbox: undefined,
   checkoutMode: "worktree",
   agent: undefined,
   overrides: {},
@@ -103,7 +116,11 @@ export class ComposerSlot {
   }
 
   setHome(home: Home): void {
-    this.#set({ home });
+    this.#set({ home, inbox: undefined });
+  }
+
+  setInbox(inbox: InboxTarget | undefined): void {
+    this.#set({ inbox });
   }
 
   setCheckoutMode(checkoutMode: CheckoutMode): void {
