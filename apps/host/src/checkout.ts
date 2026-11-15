@@ -189,6 +189,42 @@ export async function ensureWorktree(record: WorktreeCheckout): Promise<void> {
 }
 
 /**
+ * The branch an Inbox works from when the user named none (#846): the one
+ * `origin/HEAD` points at when it is a local branch, else `main`, else
+ * `master`, else whatever `repo` has checked out. The caller stores the
+ * answer, so a later switch in the project directory does not move it.
+ */
+export async function defaultBranch(repo: string): Promise<string | undefined> {
+  const local = (name: string) => git(repo, ["show-ref", "--verify", "--quiet", `refs/heads/${name}`]).then(() => true, () => false);
+  const remote = await git(repo, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]).then(
+    ({ stdout }) => stdout.trim().replace(/^refs\/remotes\/origin\//, ""),
+    () => undefined,
+  );
+  for (const name of [remote, "main", "master"]) if (name !== undefined && name !== "" && (await local(name))) return name;
+  return await branchOf(repo);
+}
+
+/** The commit local branch `name` points at; a missing branch is an error naming it. */
+export async function branchCommit(repo: string, name: string): Promise<string> {
+  return await git(repo, ["rev-parse", "--verify", "--quiet", `refs/heads/${name}^{commit}`]).then(
+    ({ stdout }) => stdout.trim(),
+    () => {
+      throw new Error(`The Inbox's base branch "${name}" does not exist in ${repo}`);
+    },
+  );
+}
+
+/**
+ * Move a checkout's branch and files to `commit`, dropping anything in it.
+ * Only for checkouts nobody edits: the intake reads and never writes (#846).
+ */
+export async function resetWorktree(record: WorktreeCheckout, commit: string): Promise<void> {
+  await locked(record.repo, async () => {
+    await git(record.path, ["reset", "-q", "--hard", commit]);
+  });
+}
+
+/**
  * Remove a worktree's directory; the branch is never deleted (it may be
  * unmerged). No --force: a dirty tree is refused, and the refusal reason is
  * returned so the caller can warn. Returns undefined when removed or absent.

@@ -14,7 +14,7 @@ import type { Context } from "@earendil-works/chord/context";
 import type { JsonValue } from "@earendil-works/chord/json";
 import { type ConversationDocToken, type ConversationId, defineDoc, type InputEntry, defineExtension, defineTool, type Harness, type Tx } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
-import { gitBase } from "./checkout.ts";
+import { branchCommit, defaultBranch, gitBase } from "./checkout.ts";
 import { memoryDir, memoryPreamble, type MemoryOwner, taskMemory } from "./inbox-memory.ts";
 import { IndexDoc } from "./organization.ts";
 import { nextFire } from "./schedule.ts";
@@ -68,6 +68,12 @@ export type ProjectInbox = {
   threads: Record<string, string>;
   /** The project's intake conversation, where the user hands it work (ADR-0051 §6); opened by the first message. */
   intake?: ConversationId;
+  /**
+   * The local branch the intake reads and tasks start from (#846), stored
+   * once found so switching branches in the project directory moves neither.
+   * Absent in a non-git project and until first needed.
+   */
+  baseBranch?: string;
 };
 
 export const InboxDoc = defineDoc<{ inboxes: Record<string, ProjectInbox> }>({
@@ -615,6 +621,8 @@ export type CreateInboxConversation = (
     text: string;
     requestId: string;
     kind: "task" | "intake" | "tidy";
+    /** The commit a task's or intake's checkout starts at: the Inbox's base branch (#846). */
+    base?: string;
     /** The entry the first message is placed as, instead of a plain `pi.user` one. */
     entry?: InputEntry;
     /** Runs in the creating commit, before the first message is admitted. */
@@ -663,6 +671,8 @@ export async function startInbox(options: {
   readonly upgrade?: { admit(): () => void; subscribe(listener: () => void): () => void };
   /** The host's data dir, where each project's memory lives. */
   readonly dataDir: string;
+  /** Put the intake's own checkout at `commit` before a message reaches it (#846). */
+  readonly pinIntake: (intake: ConversationId, project: string, commit: string, context: Context) => Promise<void>;
   readonly context: Context;
 }): Promise<InboxHandle> {
   const { harness, context } = options;
@@ -678,6 +688,28 @@ export async function startInbox(options: {
     if (map === undefined) parked.set(project, (map = new Map()));
     return map;
   };
+
+  /**
+   * The commit `project`'s base branch points at now, or undefined for a
+   * non-git project. The branch is found once and stored (#846); a stored
+   * branch that is gone is an error, never a quiet fallback.
+   */
+  async function baseCommit(project: string, ctx: Context): Promise<string | undefined> {
+    const repo = await gitBase(project);
+    if (repo === undefined) return undefined;
+    let branch = (await harness.snapshot(InboxDoc, ctx))?.inboxes[project]?.baseBranch;
+    if (branch === undefined) {
+      const found = await defaultBranch(repo.repo);
+      if (found === undefined) throw new Error(`No branch to use as the Inbox's base in ${repo.repo}`);
+      branch = await harness.commit(async (tx) => {
+        const inboxes = (await tx.doc(InboxDoc)).inboxes;
+        if (inboxes[project] === undefined) inboxes[project] = { tasks: [], threads: {} };
+        // Another caller may have stored one meanwhile: the first stays.
+        return (inboxes[project]!.baseBranch ??= found);
+      }, ctx);
+    }
+    return await branchCommit(repo.repo, branch);
+  }
 
   const pump = (project: string): void => {
     if (closed) return;
@@ -771,8 +803,10 @@ export async function startInbox(options: {
     const entry: InputEntry = { kind: INBOX_BATCH_ENTRY, data };
     let conversationId = task.conversationId;
     if (conversationId === undefined) {
+      // A tidy-up works in the project itself and needs no base.
+      const base = task.kind === "tidy" ? undefined : await baseCommit(project, context);
       conversationId = await options.createConversation(
-        { project, text, requestId: batch.requestId, kind: task.kind === "tidy" ? "tidy" : "task", entry },
+        { project, text, requestId: batch.requestId, kind: task.kind === "tidy" ? "tidy" : "task", entry, ...(base === undefined ? {} : { base }) },
         context,
       );
       const created = conversationId;
@@ -971,9 +1005,12 @@ export async function startInbox(options: {
         if (inboxes[key] === undefined) inboxes[key] = { tasks: [], threads: {} };
         return inboxes[key]!.intake;
       }, ctx);
+      const base = await baseCommit(key, ctx);
       if (intake !== undefined) {
         const conversation = await harness.conversation(intake, ctx);
         if (conversation === undefined) throw new Error(`The intake conversation ${intake} is gone`);
+        // Each message reads the base branch as it is now.
+        if (base !== undefined) await options.pinIntake(intake, key, base, ctx);
         await conversation.submit({ type: "input", content: text, whenBusy: "followUp", requestId }, ctx);
         return intake;
       }
@@ -985,6 +1022,7 @@ export async function startInbox(options: {
           text,
           requestId,
           kind: "intake",
+          ...(base === undefined ? {} : { base }),
           onInit: async (tx, id) => {
             (await tx.doc(InboxDoc)).inboxes[key]!.intake = id;
           },

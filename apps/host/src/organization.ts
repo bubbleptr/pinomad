@@ -25,7 +25,7 @@ import type { Home, HostIndex, Project, WorktreeCheckout } from "@pinomad/protoc
 import type { AgentRole, AgentRoles } from "@pinomad/protocol/agents.ts";
 import type { MessageImage } from "@pinomad/protocol/images.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
-import { branchSuffix, checkoutAt, gitBase, type RepoBase, removeWorktree, worktreeBranch, worktreePath } from "./checkout.ts";
+import { branchSuffix, checkoutAt, ensureWorktree, gitBase, type RepoBase, removeWorktree, resetWorktree, worktreeBranch, worktreePath } from "./checkout.ts";
 import { messageContent } from "./message-content.ts";
 import { RoleDoc } from "./role-doc.ts";
 
@@ -121,6 +121,8 @@ export async function createConversation(
     readonly requestId: string;
     /** `"project"` works directly in the project directory; default is a worktree when the project is a git repo. */
     readonly checkout?: "worktree" | "project";
+    /** The commit a worktree starts at, instead of the project directory's HEAD (an Inbox's base branch, #846). */
+    readonly base?: string;
     /** Overrides the host default; an unknown ref rejects before the commit. */
     readonly model?: ModelRef;
     /** Overrides the host default; clamps to the effective model's levels. */
@@ -207,7 +209,7 @@ export async function createConversation(
   // one (ADR-0010 §6); the directory itself is created lazily by the env builder.
   const repo =
     home.kind === "project" && input.checkout !== "project" && projectPath !== undefined
-      ? await gitBase(projectPath)
+      ? await gitBase(projectPath).then((found) => (found === undefined || input.base === undefined ? found : { ...found, base: input.base }))
       : undefined;
   const suffix = repo === undefined ? undefined : branchSuffix();
   try {
@@ -247,18 +249,7 @@ export async function createConversation(
           // this document and falls back to the index entry only when absent.
           (await tx.doc(RoleDoc, id)).name = role?.name ?? null;
           if (repo !== undefined && suffix !== undefined) {
-            const path = worktreePath(dataDir, id);
-            // Read-after-set: a fresh ??= array is a raw value, pushes to it would not persist.
-            if (doc.checkouts === undefined) doc.checkouts = [];
-            doc.checkouts.push({
-              conversationId: id,
-              path,
-              repo: repo.repo,
-              subdir: repo.subdir,
-              branch: worktreeBranch(id, suffix),
-              base: repo.base,
-            });
-            (await tx.doc(AgentDoc, id)).cwd = join(path, repo.subdir);
+            await addCheckout(tx, dataDir, id, repo, suffix);
           } else if (home.kind === "chat") {
             // A Chat's checkout is a per-conversation directory under the data dir; its
             // id exists only inside this commit, so the cwd is set on the agent doc here.
@@ -289,6 +280,54 @@ export async function createConversation(
     }
     return error.conversationId;
   }
+}
+
+/**
+ * Record a worktree checkout for conversation `id` and point its cwd into it,
+ * inside a commit. The directory is made lazily by the env builder (ADR-0010 §6).
+ */
+async function addCheckout(tx: Tx, dataDir: string, id: ConversationId, repo: RepoBase, suffix: string): Promise<WorktreeCheckout> {
+  const doc = await tx.doc(IndexDoc);
+  // Read-after-set: a fresh ??= array is a raw value, pushes to it would not persist.
+  if (doc.checkouts === undefined) doc.checkouts = [];
+  const record: WorktreeCheckout = {
+    conversationId: id,
+    path: worktreePath(dataDir, id),
+    repo: repo.repo,
+    subdir: repo.subdir,
+    branch: worktreeBranch(id, suffix),
+    base: repo.base,
+  };
+  doc.checkouts.push(record);
+  (await tx.doc(AgentDoc, id)).cwd = join(record.path, repo.subdir);
+  return record;
+}
+
+/**
+ * Put a project conversation's own checkout at `commit` (#846): the intake
+ * reads one fixed branch, whatever the project directory has checked out.
+ * One opened in the project directory before that gets its checkout here.
+ * A non-git project is left where it is.
+ */
+export async function pinCheckout(
+  harness: Harness,
+  dataDir: string,
+  id: ConversationId,
+  project: string,
+  commit: string,
+  context: Context,
+): Promise<void> {
+  const repo = await gitBase(project);
+  if (repo === undefined) return;
+  const record = await harness.commit(async (tx) => {
+    const doc = await tx.doc(IndexDoc);
+    const existing = doc.checkouts?.find((each) => each.conversationId === id);
+    if (existing === undefined) return { ...(await addCheckout(tx, dataDir, id, { ...repo, base: commit }, branchSuffix())) };
+    existing.base = commit;
+    return { ...existing };
+  }, context);
+  await ensureWorktree(record);
+  await resetWorktree(record, commit);
 }
 
 /**

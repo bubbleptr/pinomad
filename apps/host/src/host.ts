@@ -8,7 +8,7 @@ import { type ConversationDocToken, createRegistry, Harness, type HarnessSetting
 import type { JsonValue } from "@earendil-works/chord/json";
 import type { ImageProcessor } from "@earendil-works/pi-durable/tools";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
-import { addProject, createConversation, ensureIndex, IndexDoc } from "./organization.ts";
+import { addProject, createConversation, ensureIndex, IndexDoc, pinCheckout } from "./organization.ts";
 import { INBOX_TASK_TOOLS, inboxExtension, type InboxHandle, INTAKE_TOOLS, memoryOwner, startInbox } from "./inbox.ts";
 import { createMemoryExtension } from "./inbox-memory.ts";
 import { handleWebhook, type SourceDeps, startSourceRunner } from "./inbox-sources.ts";
@@ -489,12 +489,13 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       harness,
       context,
       dataDir: options.dataDir,
+      pinIntake: (intake, project, commit, ctx) => pinCheckout(harness!, options.dataDir, intake, project, commit, ctx),
       ...(upgrader === undefined ? {} : { upgrade: upgrader }),
       questionDocs: extensions
         .flatMap((extension) => extension.docs ?? [])
         .filter((doc) => doc.presentation === "pinomad.question")
         .map((doc) => doc.token as ConversationDocToken<{ requests: { resolution?: JsonValue }[] }>),
-      createConversation: ({ project, text, requestId, kind, entry, onInit }, ctx) =>
+      createConversation: ({ project, text, requestId, kind, base, entry, onInit }, ctx) =>
         createConversation(
           harness!,
           options.dataDir,
@@ -502,12 +503,14 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
             home: { kind: "project", path: project },
             text,
             requestId,
+            ...(base === undefined ? {} : { base }),
             ...(entry === undefined ? {} : { entry }),
             ...(onInit === undefined ? {} : { onInit }),
-            // An intake only reads, asks and submits (ADR-0051 §6), and a tidy-up only
-            // touches the memory (ADR-0052 §3); both work in the project itself.
+            // An intake only reads, asks and submits (ADR-0051 §6), in its own
+            // checkout of the base branch (#846); a tidy-up only touches the
+            // memory (ADR-0052 §3) and works in the project itself.
             ...(kind === "intake"
-              ? { checkout: "project" as const, modelTools: { only: intakeTools } }
+              ? { modelTools: { only: intakeTools } }
               : kind === "tidy"
                 ? { checkout: "project" as const, modelTools: { only: memoryExtension.tools! } }
                 : { modelTools: { add: inboxTaskTools } }),
