@@ -16,6 +16,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { ServerFrame } from "@pinomad/protocol/frames.ts";
 import { isBusy, transcript } from "@pinomad/protocol/transcript.ts";
 import { coding } from "../src/extensions/coding.ts";
+import { openSecretStore } from "../src/secrets.ts";
 import type { OpenedHost } from "../src/host.ts";
 import { connectTo, startConversation, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
@@ -272,5 +273,73 @@ export default definePlugin((p) => {
     // Cleared, the secret reads as unset.
     expect(await socket.call("setPluginSecret", { plugin: "leaky", name: "api_key", value: null })).toEqual({ ok: true, value: null });
     expect(await readFile(join(dataDir.path, "secrets.json"), "utf8")).not.toContain(TOKEN);
+  });
+
+  it("redacts the value a tool read even when the secret is cleared before it returns", async () => {
+    // The tool reads the secret, then waits on this server; the test clears the secret meanwhile.
+    let release!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      const gate = createServer((_request, response) => {
+        release = () => response.end("go");
+        resolve();
+      });
+      gate.listen(0, "127.0.0.1", () => {
+        process.env.PINOMAD_TEST_GATE = `http://127.0.0.1:${(gate.address() as AddressInfo).port}`;
+      });
+      defer(() => new Promise<void>((done) => gate.close(() => done())));
+    });
+    restore.push(() => delete process.env.PINOMAD_TEST_GATE);
+    const dataDir = await tempDir();
+    defer(dataDir.remove);
+    const dir = join(dataDir.path, "plugins", "slow");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "slow" }));
+    await writeFile(
+      join(dir, "server.ts"),
+      `import { definePlugin } from "@pinomad/plugin/v1";
+export default definePlugin((p) => {
+  const key = p.secret("api_key", { description: "The key." });
+  p.tool({ name: "slow_leak", description: "x", parameters: { type: "object" }, run: async (_args, ctx) => {
+    const value = await ctx.secret(key);
+    await (await fetch(process.env.PINOMAD_TEST_GATE)).text();
+    return { text: "key=" + value };
+  } });
+});
+`,
+    );
+    const host = await startFauxHost(defer, { dataDir: dataDir.path, answers: [call("slow_leak", {}), "done"] });
+    const socket = await rawSocket(host);
+    expect(await socket.call("setPluginSecret", { plugin: "slow", name: "api_key", value: TOKEN })).toEqual({ ok: true, value: null });
+
+    const client = await connectTo(defer, host);
+    await startConversation(client, { kind: "chat" }, "go");
+    await waiting;
+    expect(await socket.call("setPluginSecret", { plugin: "slow", name: "api_key", value: null })).toEqual({ ok: true, value: null });
+    release();
+    await waitForView(client.view, (view) => !isBusy(view.conversation!) && transcript(view.conversation!).at(-1)?.text === "done");
+
+    const entries = JSON.stringify(client.view.current().conversation!.entries);
+    expect(entries).toContain("key=[redacted]");
+    expect(entries).not.toContain(TOKEN);
+  });
+});
+
+describe("secret store", () => {
+  it("keeps names like __proto__ and constructor as plain names", async () => {
+    const dir = await tempDir();
+    defer(dir.remove);
+    const path = join(dir.path, "secrets.json");
+    const store = await openSecretStore(path);
+    await store.set("p", "other", "1");
+    expect(store.get("p", "constructor")).toBeUndefined();
+    expect(store.get("__proto__", "x")).toBeUndefined();
+    await store.set("p", "__proto__", "2");
+    await store.set("__proto__", "constructor", "3");
+    expect(store.get("p", "__proto__")).toBe("2");
+    expect(store.get("__proto__", "constructor")).toBe("3");
+    const reopened = await openSecretStore(path);
+    expect(reopened.get("p", "__proto__")).toBe("2");
+    expect(reopened.get("__proto__", "constructor")).toBe("3");
+    expect(reopened.get("p", "other")).toBe("1");
   });
 });

@@ -495,21 +495,26 @@ function translate(plugin: string, registration: Registration): Translated {
     if (token === undefined) throw new Error(`State ${state.name} does not belong to plugin ${plugin}`);
     return token;
   };
-  const secretOf = async (secret: PluginSecret): Promise<string | undefined> => {
+  /** Reads a secret; `read` collects every value handed out, which a tool's result is scrubbed of. */
+  const secretOf = (read?: Set<string>) => async (secret: PluginSecret): Promise<string | undefined> => {
     if (typeof secret?.name !== "string" || !registration.secrets.has(secret.name)) throw new Error(`Secret ${secret?.name} does not belong to plugin ${plugin}`);
-    return registration.store.get(plugin, secret.name);
+    const value = registration.store.get(plugin, secret.name);
+    if (value !== undefined) read?.add(value);
+    return value;
   };
-  /** `text` with every set secret of this plugin replaced, longest first so one containing another goes whole. */
-  const redact = (text: string): string =>
-    [...registration.secrets.keys()]
-      .flatMap((name) => registration.store.get(plugin, name) ?? [])
+  /**
+   * `text` with every set secret of this plugin replaced, and every value the call read (the user may
+   * have changed or cleared one since), longest first so one containing another goes whole.
+   */
+  const redact = (text: string, read: ReadonlySet<string>): string =>
+    [...new Set([...read, ...[...registration.secrets.keys()].flatMap((name) => registration.store.get(plugin, name) ?? [])])]
       .filter((value) => value.length > 0)
       .sort((a, b) => b.length - a.length)
       .reduce((scrubbed, value) => scrubbed.replaceAll(value, REDACTED), text);
-  const contextFor = (store: PluginStore, conversationId: ConversationId, context: Context, cwd?: string): PluginContext => ({
+  const contextFor = (store: PluginStore, conversationId: ConversationId, context: Context, tool?: { cwd: string | undefined; read: Set<string> }): PluginContext => ({
     conversationId,
-    cwd,
-    secret: secretOf,
+    cwd: tool?.cwd,
+    secret: secretOf(tool?.read),
     read: async <T>(state: PluginState<T>): Promise<T> => {
       const token = tokenOf(state);
       return ((await store.snapshot(token, conversationId, context)) ?? token.definition.initial()) as T;
@@ -529,12 +534,13 @@ function translate(plugin: string, registration: Registration): Translated {
       // The plugin's run may have side effects outside its state; an interrupted call is not rerun.
       replay: "unsafe",
       execute: async (args, api, context) => {
+        const read = new Set<string>();
         try {
-          const { text } = await tool.run(args as JsonObject, contextFor(api, api.conversationId, context, api.env?.cwd));
-          return { output: [{ type: "text", text: redact(String(text)) }] };
+          const { text } = await tool.run(args as JsonObject, contextFor(api, api.conversationId, context, { cwd: api.env?.cwd, read }));
+          return { output: [{ type: "text", text: redact(String(text), read) }] };
         } catch (error) {
           if (context.abortSignal?.aborted === true) throw error;
-          return { output: [{ type: "text", text: redact(message(error)) }], isError: true };
+          return { output: [{ type: "text", text: redact(message(error), read) }], isError: true };
         }
       },
     }),

@@ -47,8 +47,8 @@ export interface PluginContext {
   readonly cwd: string | undefined;
   /**
    * A secret's value as the user set it, read now; undefined while unset. The host
-   * replaces every set secret of this plugin with `[redacted]` in what a tool
-   * returns or throws, but a value the plugin derives (encodes, splits) is the
+   * replaces every set secret of this plugin, and every value the call read, with
+   * `[redacted]` in what a tool returns or throws, but a value the plugin derives (encodes, splits) is the
    * plugin's to keep out of its results.
    */
   secret(secret: PluginSecret): Promise<string | undefined>;
