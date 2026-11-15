@@ -59,7 +59,7 @@ export default definePlugin((pinomad) => {
 
   const token = async (ctx: Pick<PluginContext, "secret">): Promise<string> => {
     const value = await ctx.secret(tokenSecret);
-    if (value === undefined) throw new Error("The github plugin's github_token secret is not set. Ask the user to set it.");
+    if (value === undefined) throw new Error("The github plugin's github_token secret is not set; set it in the plugin's settings.");
     return value;
   };
 
