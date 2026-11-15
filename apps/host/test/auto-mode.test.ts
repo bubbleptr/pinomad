@@ -433,6 +433,53 @@ describe("auto mode in Inbox runs", () => {
     expect((await toolResults(host, task!.conversationId!))[0]).toContain("ask_user_question");
   });
 
+  it("holds an intake's read of the host's data until the user allows that call, without the classifier", async () => {
+    const asked: string[] = [];
+    let quote = "";
+    const { host, project } = await setup(
+      ({ dataDir }) => {
+        const read = call("read", { path: join(dataDir, "secrets.json") });
+        quote = callQuote("read", { path: join(dataDir, "secrets.json") });
+        const ask = call("ask_user_question", {
+          questions: [{ header: "Allow?", question: `May I run ${quote}?`, options: [{ label: "Allow" }, { label: "Deny" }] }],
+        });
+        return [read, ask, read, read, "done"];
+      },
+      async (input) => {
+        asked.push(input.tool);
+        return { verdict: "allow", reason: "" };
+      },
+    );
+    const intake = await host.inbox.sendToIntake(project, "what is in the secrets?", "r1", context);
+    const held = await until(() => toolResults(host, intake), (results) => results.length === 1);
+    expect(held[0]).toContain("ask_user_question");
+    expect(held[0]).toContain(JSON.stringify(quote).slice(1, -1));
+    await until(async () => (await host.harness.snapshot(QuestionDoc, intake, context))?.requests.length === 1, (ok) => ok);
+    await host.harness.commit(async (tx) => {
+      for (const request of (await tx.doc(QuestionDoc, intake)).requests) {
+        request.resolution ??= { outcome: "answered", answers: [{ selected: ["Allow"] }], at: Date.now() };
+      }
+    }, context);
+    const results = await until(() => toolResults(host, intake), (all) => all.length === 4);
+    // Allowed once: it runs, and the same call again is held.
+    expect(results[2]).not.toContain("Not run");
+    expect(results[3]).toContain("Not run");
+    expect(asked).toEqual([]);
+  });
+
+  it("leaves an intake's ordinary reads alone", async () => {
+    const asked: string[] = [];
+    const { host, project } = await setup([call("read", { path: "README.md" }), "done"], async (input) => {
+      asked.push(input.tool);
+      return { verdict: "block", reason: "no" };
+    });
+    const intake = await host.inbox.sendToIntake(project, "read the readme", "r1", context);
+    const [result] = await until(() => toolResults(host, intake), (results) => results.length === 1);
+    expect(result).not.toContain("Not run");
+    expect(asked).toEqual([]);
+    expect((await host.harness.snapshot(AutoModeDoc, intake, context))?.decisions ?? []).toEqual([]);
+  });
+
   it("leaves coding conversations alone", async () => {
     const asked: string[] = [];
     const { host } = await setup([call("bash", { command: "echo coding" }), "done"], async (input) => {

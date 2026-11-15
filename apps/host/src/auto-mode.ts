@@ -10,6 +10,11 @@
 // passes. The quoted call is what the user approves, whatever the agent writes
 // around it. Subagents of a task are gated as the task is.
 //
+// The intake conversation is not gated, except that a read of a credential
+// path or the host's data dir always asks the user there, without the rule
+// table or the classifier: it sees task summaries that came from outside.
+// The memory tidy-up has only the memory tools and is not gated.
+//
 // Inbox runs have no sandbox (ADR-0052 §7): they run as the user, with the
 // user's HOME and environment. So a read of a credential path or of the host's
 // data dir is never allowed by rule; with outside content in the run it is the
@@ -360,11 +365,16 @@ export function createAutoMode(options: {
           // A subagent works for the task that dispatched it: same gate, same trust.
           const root = await familyRoot(options.harness(), api.conversationId, context);
           const owner = inboxTaskOf(inboxes.inboxes, index, root);
-          // Coding conversations, the intake and the memory tidy-up are not gated.
-          if (owner === undefined || owner.task.kind === "tidy") return undefined;
+          const intake = owner === undefined && Object.values(inboxes.inboxes).some((inbox) => inbox.intake === root);
+          // Coding conversations and the memory tidy-up (memory tools only) are not gated.
+          if (owner === undefined ? !intake : owner.task.kind === "tidy") return undefined;
           const subagent = root !== api.conversationId;
           const args = call.arguments as JsonObject;
-          const trusted = owner.task.events.every((event) => event.trusted);
+          // A file tool without a cwd has no environment and does not run; "/" only keeps the check total.
+          const cwd = (await api.snapshot(AgentDoc, api.conversationId, context))?.cwd ?? "/";
+          const where = { home: homedir(), cwd, dataDir: options.dataDir };
+          // The intake is gated only where it reads credentials or the host's data.
+          if (intake && !readsCredentials(call.name, args, where)) return undefined;
           const quote = callQuote(call.name, args);
           const decide = (verdict: AutoVerdict, by: AutoDecision["by"]) => {
             record(api.conversationId, { tool: call.name, verdict: verdict.verdict, reason: verdict.reason, by, at: Date.now() });
@@ -395,9 +405,9 @@ export function createAutoMode(options: {
             }
           }
 
-          // A file tool without a cwd has no environment and does not run; "/" only keeps the check total.
-          const cwd = (await api.snapshot(AgentDoc, api.conversationId, context))?.cwd ?? "/";
-          const where = { home: homedir(), cwd, dataDir: options.dataDir };
+          // The intake has no classifier: such a read is always the user's call.
+          if (owner === undefined) return decide({ verdict: "ask", reason: "it reads credentials or the host's data" }, "rule");
+          const trusted = owner.task.events.every((event) => event.trusted);
           const rule = ruleFor(call.name, args, trusted, where);
           if (rule !== undefined) {
             const reason =
