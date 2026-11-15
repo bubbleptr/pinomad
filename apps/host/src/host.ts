@@ -272,6 +272,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
               const ref = classifierModel(options.modelSummaries(), hostSettings.value.defaultModel);
               return ref === undefined ? undefined : models.getModel(ref.provider, ref.modelId);
             },
+            (line) => console.error(line),
           ),
       }),
     );

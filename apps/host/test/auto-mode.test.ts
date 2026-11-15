@@ -10,7 +10,7 @@ import type { ConversationDocToken, ConversationId } from "@earendil-works/pi-du
 import { describe, expect, it } from "vitest";
 import type { QuestionState } from "@pinomad/protocol/presentation.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
-import { AutoModeDoc, type AutoVerdict, type Classify, callQuote, classifierModel, parseVerdict, ruleFor } from "../src/auto-mode.ts";
+import { AutoModeDoc, type AutoVerdict, type Classify, callQuote, classifierModel, modelClassifier, parseVerdict, ruleFor } from "../src/auto-mode.ts";
 import { coding } from "../src/extensions/coding.ts";
 import { question } from "../src/extensions/question.ts";
 import { createSubagent } from "../src/extensions/subagent.ts";
@@ -185,6 +185,57 @@ describe("auto mode rules", () => {
     expect(ruleFor("bash", { command: "cat ../../../secrets.json" }, false, checkout)).toBe("ask");
   });
 
+  it("lets a trusted run edit files in its project by rule, but not outside it, in .git, or with outside content", () => {
+    for (const tool of ["edit", "write"]) {
+      expect(ruleFor(tool, { path: "src/a.ts" }, true, where), tool).toBe("allow");
+      expect(ruleFor(tool, { path: "/home/u/code/app/test/a.test.ts" }, true, where), tool).toBe("allow");
+      expect(ruleFor(tool, { path: "src/a.ts" }, false, where), tool).toBeUndefined();
+      for (const path of [
+        "../other/a.ts",
+        "/home/u/.zshrc",
+        "@/home/u/.zshrc",
+        "file:///home/u/.zshrc",
+        ".git/hooks/pre-commit",
+        ".GIT/hooks/pre-commit",
+        "src/../../x.ts",
+        "~/.ssh/config",
+      ]) {
+        expect(ruleFor(tool, { path }, true, where), `${tool} ${path}`).not.toBe("allow");
+      }
+    }
+    // A conversation without a cwd has no project.
+    expect(ruleFor("write", { path: "/home/u/code/app/a.ts" }, true, { ...where, cwd: "/" })).toBeUndefined();
+    // The checkout in the data dir is the project, not the host's data.
+    const checkout = { ...where, cwd: "/home/u/.pinomad/worktrees/12" };
+    expect(ruleFor("edit", { path: "apps/host/src/a.ts" }, true, checkout)).toBe("allow");
+  });
+
+  it("asks the model again when its answer cannot be read, and logs what it said", async () => {
+    const replies = [
+      { stopReason: "length", content: [{ type: "thinking", thinking: "Let me consider" }] },
+      { stopReason: "stop", content: [{ type: "text", text: '{"verdict":"allow","reason":"runs the tests"}' }] },
+    ];
+    const requests: { maxTokens?: number }[] = [];
+    const models = {
+      completeSimple: async (_model: unknown, _request: unknown, options: { maxTokens?: number }) => {
+        requests.push(options);
+        return replies.shift();
+      },
+    } as unknown as Models;
+    const logged: string[] = [];
+    const classify = modelClassifier(() => models, () => ({ provider: "p", id: "m" }) as never, (line) => logged.push(line));
+    const input = { tool: "bash", args: { command: "bun test" }, trusted: true, task: "fix" };
+    expect(await classify(input, context)).toEqual({ verdict: "allow", reason: "runs the tests" });
+    expect(requests).toHaveLength(2);
+    // Room for a model that thinks before it answers.
+    expect(requests[0]!.maxTokens).toBeGreaterThanOrEqual(1_000);
+    expect(logged.join("\n")).toContain("length");
+    // A second unreadable answer is the user's call.
+    const unreadable = { stopReason: "stop", content: [{ type: "text", text: "fine" }] };
+    replies.push(unreadable, unreadable);
+    expect((await classify(input, context)).verdict).toBe("ask");
+  });
+
   it("judges with a small model only when the host can run it, else with the default model", () => {
     const summary = (provider: string, modelId: string) => ({ provider, modelId, name: modelId, contextWindow: 1, thinkingLevels: ["off" as const], images: false });
     const fallback = { provider: "kimi-coding", modelId: "kimi-for-coding" };
@@ -253,6 +304,41 @@ describe("auto mode in Inbox runs", () => {
     }, context);
     await until(tasks, (all) => all[0]?.closed === true);
     expect(await exists(join(project, "allowed.txt"))).toBe(true);
+  });
+
+  it("takes an Allow on a question that quotes calls without their IDs, once for each call it quotes", async () => {
+    // As agents write it: the IDs dropped, two blocked calls in one question.
+    const first = { command: "touch one.txt", timeout: 30 };
+    const second = { command: "touch two.txt", timeout: 30 };
+    const { host, project, tasks } = await setup(
+      [
+        call("bash", first),
+        call("bash", second),
+        call("ask_user_question", {
+          questions: [
+            {
+              header: "Run?",
+              question: `需要这两个调用，是否允许？\n\nbash: ${JSON.stringify(first)}\n\nbash: ${JSON.stringify(second)}`,
+              options: [{ label: "Allow" }, { label: "Deny" }],
+            },
+          ],
+        }),
+        call("bash", first),
+        call("bash", second),
+        "done",
+      ],
+      async () => ({ verdict: "ask", reason: "writes to the project" }),
+    );
+    await addInboxEvent(host.harness, project, event("two"), context);
+    const [task] = await until(tasks, (all) => all[0]?.waiting === true);
+    await host.harness.commit(async (tx) => {
+      for (const request of (await tx.doc(QuestionDoc, task!.conversationId!)).requests) {
+        request.resolution ??= { outcome: "answered", answers: [{ selected: ["Allow"] }], at: Date.now() };
+      }
+    }, context);
+    await until(tasks, (all) => all[0]?.closed === true);
+    expect(await exists(join(project, "one.txt"))).toBe(true);
+    expect(await exists(join(project, "two.txt"))).toBe(true);
   });
 
   it("does not take an Allow on a question that leaves out the call, nor reuse one", async () => {
@@ -337,7 +423,9 @@ describe("auto mode in Inbox runs", () => {
     }, context);
     const [done] = await until(tasks, (all) => all[0]?.closed === true);
     expect(await exists(join(project, "once.txt"))).toBe(true);
-    expect((await host.harness.snapshot(AutoModeDoc, done!.conversationId!, context))?.granted).toEqual([requestId]);
+    const granted = (await host.harness.snapshot(AutoModeDoc, done!.conversationId!, context))?.granted;
+    expect(granted).toHaveLength(1);
+    expect(granted![0]!.startsWith(`${requestId}/`)).toBe(true);
   });
 
   it("asks the user, without the classifier, when the call is too long to show it whole", async () => {
