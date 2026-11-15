@@ -22,7 +22,7 @@ import type { RelayLinkState } from "./relay-link.ts";
 import { type McpBridge, startMcp } from "./mcp.ts";
 import type { ModelAuth } from "./model-auth.ts";
 import { type AgentRoleStore, openAgentRoles } from "./agent-roles.ts";
-import { type HostSettingsStore, openHostSettings, type SettingsFallback, settingsDefaults } from "./host-settings.ts";
+import { type HostSettingsStore, openHostSettings, type SettingsFallback, inboxDefaults } from "./host-settings.ts";
 import { constantValue } from "./host-value.ts";
 import type { PushTimers, PushTransport } from "./push.ts";
 import type { DeliveryPolicy } from "./outbox-policy.ts";
@@ -511,7 +511,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
                 ? { checkout: "project" as const, modelTools: { only: memoryExtension.tools! } }
                 : { modelTools: { add: inboxTaskTools } }),
           },
-          settingsDefaults(hostSettings.value),
+          inboxDefaults(hostSettings.value, kind),
           models,
           options.modelSummaries,
           roles?.value ?? { roles: [], problems: [] },

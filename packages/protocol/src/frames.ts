@@ -110,7 +110,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 39 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 40 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -668,6 +668,8 @@ export const FEATURE_SINCE = {
   inboxQuietHours: 38,
   /** `inbox[].sources`, `inbox.externalSources`, `hello.plugins[].sources` and the source calls (39, ADR-0051 §10). */
   inboxSources: 39,
+  /** The `inboxIntakeModel` and `inboxWorkerModel` settings (40); an older host 4400s the keys. */
+  inboxModels: 40,
 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
@@ -869,8 +871,11 @@ const isCallMethod = (method: string): method is CallMethod =>
 /** Call names kept in sync with CallMethods by deriving them from the exhaustive gate table. */
 const CALL_METHODS = Object.keys(CALL_SINCE) as readonly CallMethod[];
 
+const isModelRefOrNull = (value: unknown): boolean =>
+  value === null || (record(value) && nonempty(value.provider) && nonempty(value.modelId));
+
 const SETTING_VALIDATORS: Record<HostSettingKey, (value: unknown) => boolean> = {
-  defaultModel: (value) => value === null || (record(value) && nonempty(value.provider) && nonempty(value.modelId)),
+  defaultModel: isModelRefOrNull,
   defaultThinkingLevel: (value) => value === null || isThinkingLevel(value),
   steeringMode: (value) => value === null || isQueueMode(value),
   followUpMode: (value) => value === null || isQueueMode(value),
@@ -881,6 +886,8 @@ const SETTING_VALIDATORS: Record<HostSettingKey, (value: unknown) => boolean> = 
   hostName: (value) => value === null || typeof value === "string",
   autoUpgrade: (value) => value === null || isAutoUpgradeMode(value),
   inboxQuietHours: (value) => value === null || isQuietHours(value),
+  inboxIntakeModel: isModelRefOrNull,
+  inboxWorkerModel: isModelRefOrNull,
 };
 
 function validCallArgs(method: CallMethod, args: Record<string, unknown>): boolean {

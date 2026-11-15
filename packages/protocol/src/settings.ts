@@ -29,6 +29,16 @@ export interface HostSettings {
    * local time; `null` for none. Absent on older hosts.
    */
   readonly inboxQuietHours?: QuietHours | null;
+  /**
+   * The model a project's new intake conversation starts on (5.40); `null`
+   * follows `defaultModel`. Absent on older hosts.
+   */
+  readonly inboxIntakeModel?: ModelRef | null;
+  /**
+   * The model a new Inbox task's conversation and the memory tidy-up start on
+   * (5.40); `null` follows `defaultModel`. Absent on older hosts.
+   */
+  readonly inboxWorkerModel?: ModelRef | null;
   /** Keys PiNomad's settings.json sets; the rest are inherited. Lets a client offer "reset". */
   readonly custom: readonly HostSettingKey[];
 }
@@ -46,6 +56,8 @@ const HOST_SETTING_KEY_SET = {
   hostName: true,
   autoUpgrade: true,
   inboxQuietHours: true,
+  inboxIntakeModel: true,
+  inboxWorkerModel: true,
 } satisfies Record<HostSettingKey, true>;
 export const HOST_SETTING_KEYS = Object.keys(HOST_SETTING_KEY_SET) as readonly HostSettingKey[];
 

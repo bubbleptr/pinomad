@@ -4634,6 +4634,12 @@ impl RemoteDurable {
                 {
                     return Err(too_old("5.38"));
                 }
+                // And the Inbox models on a pre-5.40 host.
+                if (patch.get("inboxIntakeModel").is_some() || patch.get("inboxWorkerModel").is_some())
+                    && !host_supports_feature(self.host_minor, HostFeature::InboxModels)
+                {
+                    return Err(too_old("5.40"));
+                }
                 let args = obj(&[("patch", patch.clone())]);
                 steps.push_back(Step::Call { method: "updateSettings", args });
             }

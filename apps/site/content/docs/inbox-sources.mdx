@@ -5,6 +5,8 @@ description: Schedules, plugin sources and LAN webhooks that put events into a p
 
 A project's Inbox takes work from you through its intake conversation, and from event sources: a schedule, a plugin's source (such as new GitHub issues), or a webhook on your local network. Each event opens a task, or goes back to the task that follows its thread, and the Inbox's worker takes tasks one at a time.
 
+By default the intake conversation and each task's conversation start on the host's default model. To pick others, set **Intake model** and **Worker model** under **Inbox** in Settings → Chats on the web or desktop app (host 5.40 or later). They apply to conversations opened after the change: an intake that already exists keeps its model, and you can switch it in its composer like any conversation's.
+
 Add a source with **Add source** under **Event sources** on the project's **Tasks** page in Inbox mode, then pick **Schedule**, **Plugin** or **Webhook**. Each source's switch turns it off and on again; its **⋯** menu removes it, and tasks it already opened stay. On iPhone, the same list is in the project's Inbox settings: the gear beside the project in Inbox mode.
 
 ## Restricted or all tools
