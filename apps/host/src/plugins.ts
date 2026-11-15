@@ -56,6 +56,8 @@ const SOURCE_NAME = STATE_NAME;
 /** How often a polled source runs unless it says otherwise, and the least it may ask for. */
 const POLL_DEFAULT_MS = 5 * 60_000;
 const POLL_MIN_MS = 60_000;
+/** Also well under the 2^31 - 1 ms a Node timer can wait: a longer delay fires after 1 ms. */
+const POLL_MAX_MS = 24 * 60 * 60_000;
 /** What one source event may carry (ADR-0051 §5: a summary and pointers); a longer summary is cut. */
 export const SOURCE_EVENT_LIMITS = { id: 200, summary: 4_000, thread: 200, title: 120 } as const;
 /** What a set secret reads as in a tool's result. */
@@ -501,8 +503,8 @@ function collect(plugin: unknown, reserved: ReadonlySet<string>, store: SecretSt
       if ((poll === undefined) === (listen === undefined)) throw new Error(`source ${name} needs exactly one of poll and listen`);
       if (poll !== undefined) {
         if (typeof poll.run !== "function") throw new Error(`source ${name}'s poll needs a run function`);
-        if (poll.intervalMs !== undefined && !(Number.isFinite(poll.intervalMs) && poll.intervalMs >= POLL_MIN_MS)) {
-          throw new Error(`source ${name}'s intervalMs must be at least ${POLL_MIN_MS}`);
+        if (poll.intervalMs !== undefined && !(Number.isFinite(poll.intervalMs) && poll.intervalMs >= POLL_MIN_MS && poll.intervalMs <= POLL_MAX_MS)) {
+          throw new Error(`source ${name}'s intervalMs must be between ${POLL_MIN_MS} (a minute) and ${POLL_MAX_MS} (a day)`);
         }
       }
       if (listen !== undefined && typeof listen !== "function") throw new Error(`source ${name}'s listen must be a function`);
@@ -608,8 +610,12 @@ function translate(plugin: string, registration: Registration): Translated {
       },
     }),
   );
-  /** A source's event, checked, with every set secret scrubbed from what the agent will read. */
-  const sourceEvent = (source: string, value: unknown): SourceEvent => {
+  /**
+   * A source's event, checked, with every set secret and every value `read`
+   * handed out (the user may have changed or cleared one since) scrubbed from
+   * what the agent will read.
+   */
+  const sourceEvent = (source: string, value: unknown, read: ReadonlySet<string>): SourceEvent => {
     const event = (value ?? {}) as Partial<Record<keyof SourceEvent, unknown>>;
     const field = (key: keyof SourceEvent, required: boolean): string | undefined => {
       const text = event[key];
@@ -618,7 +624,7 @@ function translate(plugin: string, registration: Registration): Translated {
       if (key !== "summary" && text.length > SOURCE_EVENT_LIMITS[key]) {
         throw new Error(`source ${source} emitted an event whose ${key} is longer than ${SOURCE_EVENT_LIMITS[key]} characters`);
       }
-      return redact(text, new Set());
+      return redact(text, read);
     };
     const thread = field("thread", false);
     const title = field("title", false);
@@ -629,7 +635,8 @@ function translate(plugin: string, registration: Registration): Translated {
       ...(title === undefined ? {} : { title }),
     };
   };
-  const sourceContext = (filter: string): SourceContext => ({ filter, secret: secretOf() });
+  /** `read` collects every secret value handed to this poll or listener, as for a tool call. */
+  const sourceContext = (filter: string, read: Set<string>): SourceContext => ({ filter, secret: secretOf(read) });
   const sources = new Map<string, LoadedSource>();
   for (const [name, { description, filter, followedOnly, poll, listen }] of registration.sources) {
     const info: PluginSourceInfo = {
@@ -646,16 +653,17 @@ function translate(plugin: string, registration: Registration): Translated {
             poll: {
               intervalMs: poll.intervalMs ?? POLL_DEFAULT_MS,
               run: async (cursor, filter) => {
+                const read = new Set<string>();
                 try {
-                  const result = await poll.run({ cursor }, sourceContext(filter));
+                  const result = await poll.run({ cursor }, sourceContext(filter, read));
                   if (!Array.isArray(result?.events)) throw new Error(`source ${name}'s poll must return { events }`);
                   return {
-                    events: result.events.map((event) => sourceEvent(name, event)),
+                    events: result.events.map((event) => sourceEvent(name, event, read)),
                     ...(result.cursor === undefined ? {} : { cursor: result.cursor }),
                   };
                 } catch (error) {
                   // Shown on the source in every client: scrubbed like a tool's error.
-                  throw new Error(redact(message(error), new Set()));
+                  throw new Error(redact(message(error), read));
                 }
               },
             },
@@ -664,16 +672,23 @@ function translate(plugin: string, registration: Registration): Translated {
         ? {}
         : {
             listen: async (filter, emit, fail) => {
+              // Every value this listener read, for as long as it listens.
+              const read = new Set<string>();
               const take = async (event: unknown): Promise<void> => {
                 try {
-                  await emit(sourceEvent(name, event));
+                  await emit(sourceEvent(name, event, read));
                 } catch (error) {
-                  fail(redact(message(error), new Set()));
+                  fail(redact(message(error), read));
                 }
               };
-              const stop = await listen(take, sourceContext(filter));
+              let stop: unknown;
+              try {
+                stop = await listen(take, sourceContext(filter, read));
+              } catch (error) {
+                throw new Error(redact(message(error), read));
+              }
               if (typeof stop !== "function") throw new Error(`source ${name}'s listen must return a stop function`);
-              return stop;
+              return stop as () => void;
             },
           }),
     });

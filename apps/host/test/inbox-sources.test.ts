@@ -96,11 +96,31 @@ export default definePlugin((p) => {
       return () => { globalThis.__feedEmit = undefined; };
     },
   });
+  // Reads the token, then waits for the test before using it.
+  p.source({
+    name: "slow",
+    description: "Slow",
+    poll: {
+      run: async (_input, ctx) => {
+        const value = (await ctx.secret(token)) ?? "";
+        await new Promise((resolve) => { globalThis.__feedGate = resolve; });
+        return { events: [{ id: "s1", summary: "saw " + value }] };
+      },
+    },
+  });
+  p.source({
+    name: "broken",
+    description: "Broken",
+    listen: async (_emit, ctx) => {
+      throw new Error("connect failed with " + (await ctx.secret(token)));
+    },
+  });
 });
 `;
 
-type Feed = typeof globalThis & { __feedEmit?: (event: unknown) => Promise<void>; __feedCursors?: unknown[] };
+type Feed = typeof globalThis & { __feedEmit?: (event: unknown) => Promise<void>; __feedCursors?: unknown[]; __feedGate?: () => void };
 afterEach(() => {
+  delete (globalThis as Feed).__feedGate;
   delete (globalThis as Feed).__feedEmit;
   delete (globalThis as Feed).__feedCursors;
 });
@@ -237,6 +257,8 @@ describe("without a sandbox", () => {
       { name: "items", description: "Items", filter: "A JSON file" },
       { name: "replies", description: "Replies", filter: "A JSON file", followedOnly: true },
       { name: "pushed", description: "Pushed items" },
+      { name: "slow", description: "Slow" },
+      { name: "broken", description: "Broken" },
     ]);
     const client = await connectTo(defer, host);
     await waitForView(client.view, (view) => view.inbox !== null);
@@ -322,10 +344,32 @@ describe("plugin sources", () => {
     );
     expect(problem).toMatch(/id is not a non-empty string/);
     await emit!({ id: "p1", summary: "pushed one", thread: "push:1" });
+    // Delivering again clears the problem.
+    await until(async () => (await sourceList(host, key)).find((source) => source.id === sourceId), (source) => source?.problem === undefined);
     const [task] = await until(tasks, (list) => list.length === 1);
     expect(task!.events[0]).toMatchObject({ id: `plugin:feed:${sourceId}:p1`, trusted: true, thread: "push:1" });
     await socket.ok("setInboxSourceEnabled", { sourceId, enabled: false });
     await until(async () => (globalThis as Feed).__feedEmit, (value) => value === undefined);
+  });
+
+  it("scrub a secret the source read even after the user cleared it, and a listener's start error", async () => {
+    const { key, socket, tasks, host } = await sourcesHost({ plugins: { feed: FEED } });
+    await socket.ok("setPluginSecret", { plugin: "feed", name: "token", value: TOKEN });
+    await socket.ok("addInboxSource", { project: key, name: "Slow", trusted: false, spec: { kind: "plugin", plugin: "feed", source: "slow", filter: "" } });
+    const release = await until(async () => (globalThis as Feed).__feedGate, (value) => value !== undefined);
+    // Cleared while the poll holds the old value.
+    await socket.ok("setPluginSecret", { plugin: "feed", name: "token", value: null });
+    release!();
+    const [task] = await until(tasks, (list) => list.length === 1);
+    expect(task!.events[0]!.summary).toBe("saw [redacted]");
+
+    await socket.ok("setPluginSecret", { plugin: "feed", name: "token", value: TOKEN });
+    const { sourceId } = await socket.ok<{ sourceId: string }>("addInboxSource", { project: key, name: "Broken", trusted: false, spec: { kind: "plugin", plugin: "feed", source: "broken", filter: "" } });
+    const problem = await until(
+      async () => (await sourceList(host, key)).find((source) => source.id === sourceId)?.problem,
+      (value) => value !== undefined,
+    );
+    expect(problem).toBe("connect failed with [redacted]");
   });
 
   it("the GitHub example's PR comment and CI sources reach only the task that follows the PR", async () => {

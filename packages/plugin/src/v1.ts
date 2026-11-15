@@ -114,8 +114,8 @@ export interface SourceDefinition {
   readonly followedOnly?: boolean;
   /**
    * Polled: the host calls `run` for each added source when it is enabled or
-   * the host starts, then every `intervalMs` (default five minutes, at least a
-   * minute). `cursor` is what the last poll returned, undefined the first
+   * the host starts, then every `intervalMs` (default five minutes, from a
+   * minute to a day). `cursor` is what the last poll returned, undefined the first
    * time; a first poll should usually return only a cursor, not the backlog.
    * A throw is shown on the source and the next poll tries again.
    */

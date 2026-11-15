@@ -353,6 +353,8 @@ export async function startSourceRunner(deps: SourceDeps & { readonly context: C
       try {
         if (!(await deps.sandboxAvailable())) throw new Error(NO_SANDBOX);
         await harness.commit((tx) => deliver(tx, record.id, event, loaded.info.followedOnly === true), context);
+        // Delivering again clears what an earlier event or failure left on the source.
+        if (!stopped) await setProblem(harness, record.id, undefined, context);
       } catch (error) {
         if (!closed) fail(message(error));
       }
