@@ -16,8 +16,59 @@ struct QuestionCards: View {
     var body: some View {
         VStack(spacing: 8) {
             ForEach(questions, id: \.request.id) { question in
-                QuestionCard(model: model, conversationId: conversationId,
+                QuestionCard(model: model, conversationId: conversationId, hostKey: nil,
                              question: question, connected: connected)
+            }
+        }
+    }
+}
+
+/// The requests an Inbox's tasks wait on, in its intake (#846): the user
+/// answers them where they talk to the Inbox instead of opening each task.
+/// Each card is the task conversation's own request, answered there, so
+/// auto mode's one-time Allow (ADR-0051 §7) stays exactly what the task asked.
+struct TaskQuestionCards: View {
+    let model: AppModel
+    /// The page's host, which needn't be the focused one.
+    let hostKey: String
+    let questions: [InboxTaskQuestion]
+    let connected: Bool
+    let openTask: (InboxTask) -> Void
+
+    @Environment(\.questionPageMaxHeight) private var maxPageHeight
+
+    var body: some View {
+        // Several tasks asking at once scroll inside the stack rather than
+        // push the conversation off screen; room for one whole card.
+        ViewThatFits(in: .vertical) {
+            cards
+            ScrollView { cards }
+                .scrollIndicators(.visible)
+        }
+        .frame(maxHeight: maxPageHeight + 160)
+    }
+
+    private var cards: some View {
+        VStack(spacing: 8) {
+            ForEach(questions) { item in
+                let title = item.task.title.isEmpty ? "Task" : item.task.title
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text(title)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Button("Open Task") { openTask(item.task) }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .accessibilityLabel("Open \(title)")
+                    }
+                    .padding(.horizontal, 8)
+                    QuestionCard(model: model, conversationId: item.conversationId, hostKey: hostKey,
+                                 question: item.question, connected: connected)
+                }
+                .accessibilityElement(children: .contain)
             }
         }
     }
@@ -44,6 +95,8 @@ private let otherFieldID = "other"
 private struct QuestionCard: View {
     let model: AppModel
     let conversationId: UInt64
+    /// The host the conversation is on; nil for the focused one.
+    let hostKey: String?
     let question: PendingQuestion
     let connected: Bool
 
@@ -73,13 +126,13 @@ private struct QuestionCard: View {
     private var current: Int { min(max(page ?? 0, 0), max(count - 1, 0)) }
 
     private var draft: QuestionDraft {
-        model.questionDrafts[request.id] ?? QuestionDraft(questionCount: count)
+        model.questionRuntime(hostKey)?.questionDrafts[request.id] ?? QuestionDraft(questionCount: count)
     }
 
     private func update(_ change: (inout QuestionDraft) -> Void) {
         var next = draft
         change(&next)
-        model.questionDrafts[request.id] = next
+        model.questionRuntime(hostKey)?.questionDrafts[request.id] = next
     }
 
     private var action: FooterAction {
@@ -352,7 +405,7 @@ private struct QuestionCard: View {
         otherFocus = nil
         sending = true
         Task {
-            await model.answer(question, conversation: conversationId)
+            await model.answer(question, conversation: conversationId, hostKey: hostKey)
             sending = false
         }
     }

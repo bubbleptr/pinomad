@@ -191,7 +191,8 @@ struct ConversationView: View {
                 } else if let conversation {
                     ConversationComposer(
                         model: model, conversation: conversation, agentPick: agentPick,
-                        backgroundBar: backgroundBar(conversation, node: node)
+                        backgroundBar: backgroundBar(conversation, node: node),
+                        taskQuestions: intakeTaskQuestions()
                     )
                         // The agent at work, in the empty strip under the card:
                         // hung from the bar's bottom edge down past the home
@@ -347,6 +348,17 @@ struct ConversationView: View {
         let tasks = place.task == nil
             ? Inbox.describe(place.inbox, summaries: Inbox.summaries(snapshot.organized)) : [:]
         return InboxContext(place: place, tasks: tasks)
+    }
+
+    /// On an intake, the requests its tasks wait on (#846); nil elsewhere.
+    private func intakeTaskQuestions() -> IntakeTaskQuestions? {
+        guard let place = Inbox.place(of: conversationId, in: model.runtimes[ref.hostKey]?.snapshot?.inbox),
+              place.task == nil
+        else { return nil }
+        let project = place.inbox.project
+        return IntakeTaskQuestions(hostKey: ref.hostKey, questions: Inbox.taskQuestions(place.inbox)) { task in
+            model.navPath.append(model.taskRoute(ref.hostKey, project: project, task))
+        }
     }
 
     private func openInboxTask(_ task: InboxTask, in inbox: InboxContext?) {

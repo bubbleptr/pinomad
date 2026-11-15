@@ -338,6 +338,8 @@ final class AppModel {
     var pushError: String?
     var pushForgetWarning: String?
     var pendingPush: PushTarget?
+    /// A question notice's task, opened before its host's Inboxes were known.
+    var pendingAnswerRedirect: ConversationRef?
     /// Set once the keychain answered — a cold-start tap must not be
     /// dropped as "unknown host" before the stored hosts are read.
     var hostsLoaded = false
@@ -458,6 +460,7 @@ final class AppModel {
 
     func start() {
         push.onTarget = { [weak self] target in self?.receivePushTarget(target) }
+        push.answerTarget = { [weak self] target in self?.pushAnswerTarget(target) }
         push.onToken = { [weak self] in self?.syncPushToken() }
         if let target = push.takePendingTarget() { receivePushTarget(target) }
         Task { [weak self] in
@@ -1116,6 +1119,7 @@ final class AppModel {
         }
         // A tap may be waiting for this host's first view, focused or not.
         if pendingPush?.hostKey == runtime.hostKey { advancePushTarget() }
+        resolveAnswerRedirect(runtime)
         guard isFocused else { return }
         syncPhase()
         updatePushVisibility()

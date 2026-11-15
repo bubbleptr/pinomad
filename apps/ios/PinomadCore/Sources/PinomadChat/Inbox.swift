@@ -37,7 +37,45 @@ public struct InboxTaskSection: Equatable, Sendable, Identifiable {
     public var title: String { Inbox.groupLabel(group) }
 }
 
+/// One request a task waits on, shown in its Inbox's intake (#846). The card
+/// is the task conversation's own request, answered there, so auto mode's
+/// one-time Allow (ADR-0051 §7) stays exactly what the task asked.
+public struct InboxTaskQuestion: Equatable, Sendable, Identifiable {
+    public let task: InboxTask
+    /// The task's conversation, where the answer goes.
+    public let conversationId: UInt64
+    public let question: PendingQuestion
+
+    public var id: String { "\(task.id):\(question.request.id)" }
+}
+
 public enum Inbox {
+    /// Every open request the Inbox's tasks wait on, in task order. A task
+    /// the worker hasn't taken has no conversation to answer on.
+    public static func taskQuestions(_ inbox: ProjectInbox) -> [InboxTaskQuestion] {
+        inbox.tasks.flatMap { task -> [InboxTaskQuestion] in
+            guard let id = task.conversationId else { return [] }
+            return task.questions.map { InboxTaskQuestion(task: task, conversationId: id, question: $0) }
+        }
+    }
+
+    /// Where a "Waiting for your answer" notice leads: an open task's
+    /// question is answered in its intake once the intake exists; a closed
+    /// task's questions don't show there, so it opens the task itself.
+    public static func answerTarget(_ conversationId: UInt64, waiting: Bool, inboxes: [ProjectInbox]?) -> UInt64 {
+        guard waiting, let place = place(of: conversationId, in: inboxes),
+              let task = place.task, !task.closed, let intake = place.inbox.intake
+        else { return conversationId }
+        return intake
+    }
+
+    /// The branch a typed base branch sets; blank goes back to the
+    /// repository's default.
+    public static func baseBranch(from text: String) -> String? {
+        let branch = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return branch.isEmpty ? nil : branch
+    }
+
     /// Every conversation the Inbox owns: intakes and task (and tidy-up)
     /// conversations. They stay out of the coding lists.
     public static func conversationIds(_ inboxes: [ProjectInbox]?) -> Set<UInt64> {

@@ -310,6 +310,14 @@ struct IntakeDraftView: View {
         .scrollDismissesKeyboard(.interactively)
         .safeAreaBar(edge: .bottom) {
             VStack(alignment: .leading, spacing: 6) {
+                // The tasks' questions are answered here too, before the
+                // intake exists (#846).
+                if let inbox, case let asking = Inbox.taskQuestions(inbox), !asking.isEmpty {
+                    TaskQuestionCards(model: model, hostKey: hostKey, questions: asking, connected: connected) { task in
+                        model.navPath.append(model.taskRoute(hostKey, project: project, task))
+                    }
+                    .padding(.bottom, 2)
+                }
                 if let error {
                     Text(error)
                         .font(.footnote)

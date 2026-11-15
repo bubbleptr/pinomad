@@ -20,14 +20,21 @@ private func event(_ id: String, source: String = "user", handled: Bool = false)
 
 private func task(
     _ id: String, conversation: UInt64? = nil, events: [InboxEvent] = [], inFlight: Bool = false,
-    closed: Bool = false, failed: String? = nil, waiting: Bool = false, kind: String? = nil
+    closed: Bool = false, failed: String? = nil, waiting: Bool = false, kind: String? = nil,
+    questions: [PendingQuestion] = []
 ) -> InboxTask {
     InboxTask(id: id, title: "Task \(id)", createdAt: 0, conversationId: conversation, events: events,
-              inFlight: inFlight, closed: closed, skipped: false, failed: failed, waiting: waiting, kind: kind)
+              inFlight: inFlight, closed: closed, skipped: false, failed: failed, waiting: waiting, kind: kind,
+              questions: questions)
 }
 
 private func inbox(intake: UInt64? = nil, tasks: [InboxTask] = [], sources: [InboxSource] = []) -> ProjectInbox {
-    ProjectInbox(project: "/p", intake: intake, tasks: tasks, threads: [:], rules: "", followUps: [], sources: sources)
+    ProjectInbox(project: "/p", intake: intake, tasks: tasks, threads: [:], rules: "", followUps: [], sources: sources,
+                 baseBranch: nil)
+}
+
+private func question(_ id: String, kind: String = "ask_user_question") -> PendingQuestion {
+    PendingQuestion(kind: kind, request: QuestionRequest(id: id, questions: [], askedAt: 0, resolution: nil))
 }
 
 private func tool(
@@ -302,5 +309,61 @@ private func cot(_ tools: [ToolItem]) -> CotView {
         #expect(Inbox.carryingDraft("", into: nil) == nil)
         // Both: neither is lost.
         #expect(Inbox.carryingDraft("Login loops", into: "Earlier note") == "Earlier note\n\nLogin loops")
+    }
+}
+
+@Suite struct InboxTaskQuestionsTests {
+    /// #846: every task's pending requests, in task order, each answered on
+    /// its own task's conversation with the card's kind.
+    @Test func listsEveryTasksQuestionsInTaskOrder() {
+        let listed = inbox(intake: 9, tasks: [
+            task("t1", conversation: 3, questions: [question("a"), question("b", kind: "pinomad.allow")]),
+            task("t2", conversation: 4),
+            task("t3", conversation: 5, questions: [question("c")]),
+        ])
+        let asking = Inbox.taskQuestions(listed)
+        #expect(asking.map(\.id) == ["t1:a", "t1:b", "t3:c"])
+        #expect(asking.map(\.conversationId) == [3, 3, 5])
+        #expect(asking[1].question.kind == "pinomad.allow")
+        #expect(asking[0].task.id == "t1")
+    }
+
+    /// A task the worker hasn't taken has no conversation to answer on.
+    @Test func skipsTasksWithoutAConversation() {
+        #expect(Inbox.taskQuestions(inbox(tasks: [task("t1", questions: [question("a")])])).isEmpty)
+    }
+}
+
+@Suite struct InboxAnswerTargetTests {
+    private let inboxes = [inbox(intake: 9, tasks: [task("open", conversation: 3), task("closed", conversation: 4, closed: true)])]
+
+    /// An open task's question is answered in its intake (#846).
+    @Test func anOpenTasksQuestionOpensTheIntake() {
+        #expect(Inbox.answerTarget(3, waiting: true, inboxes: inboxes) == 9)
+    }
+
+    /// The host publishes no questions for a closed task: its own conversation.
+    @Test func aClosedTasksQuestionOpensTheTask() {
+        #expect(Inbox.answerTarget(4, waiting: true, inboxes: inboxes) == 4)
+    }
+
+    @Test func withoutAnIntakeTheTaskOpens() {
+        let noIntake = [inbox(tasks: [task("open", conversation: 3)])]
+        #expect(Inbox.answerTarget(3, waiting: true, inboxes: noIntake) == 3)
+    }
+
+    @Test func otherNoticesAndOtherConversationsOpenThemselves() {
+        #expect(Inbox.answerTarget(3, waiting: false, inboxes: inboxes) == 3)
+        #expect(Inbox.answerTarget(7, waiting: true, inboxes: inboxes) == 7)
+        #expect(Inbox.answerTarget(9, waiting: true, inboxes: inboxes) == 9)
+        #expect(Inbox.answerTarget(3, waiting: true, inboxes: nil) == 3)
+    }
+}
+
+@Suite struct InboxBaseBranchTests {
+    /// Empty goes back to the repository's default branch.
+    @Test func blankMeansTheRepositoryDefault() {
+        #expect(Inbox.baseBranch(from: "  release/1.2 \n") == "release/1.2")
+        #expect(Inbox.baseBranch(from: " \n ") == nil)
     }
 }

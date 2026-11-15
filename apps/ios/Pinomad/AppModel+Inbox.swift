@@ -56,6 +56,12 @@ extension AppModel {
         _ = try await inboxSession(hostKey).invoke(.setInboxRules(project: project, rules: rules))
     }
 
+    /// nil goes back to the repository's default branch; the host refuses
+    /// when it can't find one, keeping the old branch.
+    func setInboxBaseBranch(_ hostKey: String, project: String, branch: String?) async throws {
+        _ = try await inboxSession(hostKey).invoke(.setInboxBaseBranch(project: project, branch: branch))
+    }
+
     func cancelFollowUp(_ hostKey: String, id: String) async throws {
         _ = try await inboxSession(hostKey).invoke(.cancelFollowUp(timerId: id))
     }
