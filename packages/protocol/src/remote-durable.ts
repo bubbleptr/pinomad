@@ -3591,6 +3591,13 @@ class RemoteClient {
     }
   }
 
+  /** The source calls all arrived together in 5.39 (ADR-0051 §10). */
+  #requireInboxSources(): void {
+    if (!hostSupportsCall(this.#hostMinor, "addInboxSource")) {
+      throw new Error("The host is too old for Inbox event sources (needs protocol 5.39); run `pinomad upgrade` on the host");
+    }
+  }
+
   #command(operation: () => Promise<unknown>): Promise<void> {
     this.#commands = this.#commands
       .then(operation)
@@ -3990,6 +3997,26 @@ class RemoteClient {
         this.#request(async () => {
           this.#requireInbox();
           await this.#call("cancelFollowUp", { timerId });
+        }),
+      addInboxSource: (project, name, trusted, spec) =>
+        this.#request(async () => {
+          this.#requireInboxSources();
+          return await this.#call("addInboxSource", { project, name, trusted, spec });
+        }),
+      setInboxSourceEnabled: (sourceId, enabled) =>
+        this.#request(async () => {
+          this.#requireInboxSources();
+          await this.#call("setInboxSourceEnabled", { sourceId, enabled });
+        }),
+      removeInboxSource: (sourceId) =>
+        this.#request(async () => {
+          this.#requireInboxSources();
+          await this.#call("removeInboxSource", { sourceId });
+        }),
+      resetInboxWebhookSecret: (sourceId) =>
+        this.#request(async () => {
+          this.#requireInboxSources();
+          return await this.#call("resetInboxWebhookSecret", { sourceId });
         }),
       skipInboxTask: (project, taskId) =>
         this.#request(async () => {
