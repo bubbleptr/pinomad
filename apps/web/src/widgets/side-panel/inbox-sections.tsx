@@ -8,6 +8,7 @@ import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import { Button } from "../../shared/ui/button.tsx";
 import { Field, FieldError, FieldLabel, FormError } from "../../shared/ui/field.tsx";
 import { IconButton } from "../../shared/ui/icon-button.tsx";
+import { Input } from "../../shared/ui/input.tsx";
 import { Bell, Cancel, Clock } from "../../shared/ui/icons.tsx";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "../../shared/ui/item.tsx";
 import { Textarea } from "../../shared/ui/textarea.tsx";
@@ -33,6 +34,8 @@ export function InboxSections({
   return (
     <div className="flex flex-col">
       <RulesSection inbox={inbox} remote={remote} connected={connected} />
+      {/* Only a Git project has one, and only a 5.40 host says which. Keyed: a draft belongs to its project. */}
+      {inbox.baseBranch === undefined ? null : <BaseBranchSection key={inbox.project} inbox={inbox} baseBranch={inbox.baseBranch} remote={remote} connected={connected} />}
       <SourcesSection inbox={inbox} remote={remote} connected={connected} plugins={plugins} externalSources={externalSources} />
       <FollowUpsSection inbox={inbox} remote={remote} connected={connected} />
     </div>
@@ -125,6 +128,100 @@ function RulesSection({ inbox, remote, connected }: { inbox: ProjectInbox; remot
               Cancel
             </Button>
             <Button type="submit" variant="primary" size="sm" loading={saving} disabled={!connected || tooLong}>
+              Save
+            </Button>
+          </div>
+        </form>
+      )}
+    </section>
+  );
+}
+
+/** The branch the intake reads and tasks start from (#846); an empty draft goes back to the repository's default. */
+function BaseBranchSection({
+  inbox,
+  baseBranch,
+  remote,
+  connected,
+}: {
+  inbox: ProjectInbox;
+  baseBranch: string;
+  remote: RemoteDurable;
+  connected: boolean;
+}) {
+  const heading = useId();
+  const [draft, setDraft] = useState<string>();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string>();
+  const save = (): void => {
+    if (draft === undefined) return;
+    const branch = draft.trim();
+    setSaving(true);
+    setError(undefined);
+    remote.controller.setInboxBaseBranch(inbox.project, branch === "" ? null : branch).then(
+      () => {
+        setSaving(false);
+        setDraft(undefined);
+      },
+      (reason: unknown) => {
+        setSaving(false);
+        setError(reason instanceof Error ? reason.message : String(reason));
+      },
+    );
+  };
+  return (
+    <section aria-labelledby={heading} className="flex flex-col gap-1.5 px-3 py-3">
+      <div className="flex min-h-7 items-center gap-2">
+        <SectionHeading id={heading}>Base branch</SectionHeading>
+        {draft !== undefined ? null : (
+          <Button
+            className="ms-auto"
+            variant="secondary"
+            size="sm"
+            disabled={!connected}
+            onClick={() => {
+              setError(undefined);
+              setDraft(baseBranch);
+            }}
+          >
+            Change
+          </Button>
+        )}
+      </div>
+      {draft === undefined ? (
+        <>
+          <p className="font-mono text-sm/5">{baseBranch}</p>
+          <p className="text-xs/5 text-muted-foreground">
+            The intake reads this branch and new tasks start from it, whatever the project folder has checked out.
+          </p>
+        </>
+      ) : (
+        <form
+          className="flex flex-col gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            save();
+          }}
+        >
+          <Field>
+            <FieldLabel className="sr-only">Base branch</FieldLabel>
+            <Input
+              // Change was just pressed: the box it opened takes the focus.
+              autoFocus
+              value={draft}
+              placeholder="Empty for the repository's default"
+              spellCheck={false}
+              autoCapitalize="off"
+              autoComplete="off"
+              onChange={(event) => setDraft(event.target.value)}
+            />
+          </Field>
+          <FormError>{error}</FormError>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setDraft(undefined)}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" size="sm" loading={saving} disabled={!connected}>
               Save
             </Button>
           </div>

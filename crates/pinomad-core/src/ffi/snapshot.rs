@@ -518,15 +518,7 @@ fn conversation_of(view: &Json, fresh: bool, fresh_epoch: u64) -> Option<Convers
         .unwrap_or_default();
     let questions = pending_questions(&docs)
         .into_iter()
-        .map(|pending| PendingQuestion {
-            kind: pending.kind,
-            request: QuestionRequest {
-                id: pending.request.id,
-                questions: pending.request.questions,
-                asked_at: pending.request.asked_at,
-                resolution: pending.request.resolution,
-            },
-        })
+        .map(PendingQuestion::from)
         .collect();
     let todo = docs.iter().find_map(|doc| {
         let value = doc.get("value").cloned().unwrap_or(Json::Null);

@@ -110,7 +110,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 40 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 41 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -460,6 +460,12 @@ export interface CallMethods {
   sendToIntake: { args: { project: string; text: string; requestId: string }; result: { conversationId: ConversationId } };
   /** Replace the Inbox's rules (`instructions.md`); `""` clears them. Over `INBOX_RULES_MAX_BYTES` is an `ok:false`. */
   setInboxRules: { args: { project: string; rules: string }; result: null };
+  /**
+   * Set the local branch the Inbox's intake reads and its tasks start from
+   * (5.41, #846); `null` goes back to the repository's default. A branch that
+   * does not exist, or a project that is not a Git repository, is an `ok:false`.
+   */
+  setInboxBaseBranch: { args: { project: string; branch: string | null }; result: null };
   /** Drop a follow-up or schedule that has not fired; the daily tidy-up cannot be cancelled. */
   cancelFollowUp: { args: { timerId: string }; result: null };
   /**
@@ -611,6 +617,7 @@ export const CALL_SINCE: Record<CallMethod, number> = {
   setInboxSourceEnabled: 39,
   removeInboxSource: 39,
   resetInboxWebhookSecret: 39,
+  setInboxBaseBranch: 41,
 };
 
 /** Whether a host of the given minor version knows `method`. */
@@ -994,6 +1001,8 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
     case "setInboxRules":
       // Shape only — the size cap is the host's `ok:false`.
       return nonempty(args.project) && typeof args.rules === "string";
+    case "setInboxBaseBranch":
+      return nonempty(args.project) && (args.branch === null || nonempty(args.branch));
     case "cancelFollowUp":
       return nonempty(args.timerId);
     case "skipInboxTask":

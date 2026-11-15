@@ -56,7 +56,7 @@ impl TodoDoc {
 }
 
 /// `QuestionOptionSchema`: `{label: string(minLength: 1), description?}`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct QuestionOption {
     pub label: String,
@@ -64,7 +64,7 @@ pub struct QuestionOption {
 }
 
 /// `QuestionItemSchema`: `{question, header, options: 2..4, multiSelect?}`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct QuestionItem {
     pub question: String,
@@ -75,7 +75,7 @@ pub struct QuestionItem {
 
 /// `QuestionAnswerSchema`: labels chosen from a question's options; empty
 /// `selected` with no `other` means skipped.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
 pub struct QuestionAnswer {
     pub selected: Vec<String>,
@@ -83,7 +83,7 @@ pub struct QuestionAnswer {
 }
 
 /// `QuestionResolutionSchema`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Enum))]
 pub enum QuestionResolution {
     Answered { answers: Vec<QuestionAnswer>, at: f64 },

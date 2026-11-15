@@ -4001,6 +4001,13 @@ class RemoteClient {
           this.#requireInbox();
           await this.#call("setInboxRules", { project, rules });
         }),
+      setInboxBaseBranch: (project, branch) =>
+        this.#request(async () => {
+          if (!hostSupportsCall(this.#hostMinor, "setInboxBaseBranch")) {
+            throw new Error("The host is too old to pick the Inbox's base branch (needs protocol 5.41); run `pinomad upgrade` on the host");
+          }
+          await this.#call("setInboxBaseBranch", { project, branch });
+        }),
       cancelFollowUp: (timerId) =>
         this.#request(async () => {
           this.#requireInbox();

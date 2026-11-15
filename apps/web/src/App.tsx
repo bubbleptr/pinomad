@@ -41,6 +41,7 @@ import { ComposerSkeleton, ConversationSkeleton, ConversationUnavailable } from 
 import { panelSurfaceOf, shownSurface, SidePanel, SurfaceButtons, type PanelSurface } from "./widgets/side-panel/side-panel.tsx";
 import { OverviewCard } from "./widgets/overview/overview-card.tsx";
 import { PendingQuestions } from "./presentation/question.tsx";
+import { TaskQuestions } from "./widgets/inbox/task-questions.tsx";
 import type { RemoteDurable, RemoteDurableOptions } from "@pinomad/protocol/remote-durable.ts";
 import { isBusy } from "@pinomad/protocol/transcript.ts";
 import { isProcessActive } from "@pinomad/protocol/processes.ts";
@@ -1352,6 +1353,7 @@ export function Workbench({
               if (!live.current || shown?.project !== project || shown.task !== undefined) return;
               openConversation(id);
             }}
+            onOpenTask={openInboxTask}
           />
         ) : shownId === undefined ? (
           <DraftHome
@@ -1425,6 +1427,15 @@ export function Workbench({
                   failed ? null : <ComposerSkeleton />
                 ) : (
                   <div className="flex flex-col gap-1">
+                    {/* An intake also shows what its Inbox's tasks are asking (#846). */}
+                    {shownInbox?.inbox !== undefined && shownInbox.task === undefined ? (
+                      <TaskQuestions
+                        inbox={shownInbox.inbox}
+                        remote={remote}
+                        connected={view.connection === "connected"}
+                        onOpenTask={(task) => openInboxTask(shownInbox.inbox!.project, task)}
+                      />
+                    ) : null}
                     <PendingQuestions docs={view.docs} remote={remote} connected={view.connection === "connected"} />
                     <ConversationComposer
                       view={view}

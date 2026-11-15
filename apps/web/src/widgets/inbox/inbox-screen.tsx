@@ -3,7 +3,7 @@
 // opens the intake, or a task the worker has not taken yet.
 import { useState, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
-import type { ProjectInbox } from "@pinomad/protocol/inbox.ts";
+import type { InboxTask, ProjectInbox } from "@pinomad/protocol/inbox.ts";
 import type { RemoteDurable } from "@pinomad/protocol/remote-durable.ts";
 import type { DurableView } from "@pinomad/protocol/view.ts";
 import type { InboxTarget } from "../../entities/composer/composer-store.ts";
@@ -14,18 +14,22 @@ import { Button } from "../../shared/ui/button.tsx";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../../shared/ui/empty.tsx";
 import { useErrorToast } from "../../shared/ui/toast.tsx";
 import { InboxEventCard } from "../chat/inbox-cards.tsx";
+import { TaskQuestions } from "./task-questions.tsx";
 
 export function InboxScreen({
   view,
   remote,
   target,
   onOpened,
+  onOpenTask,
 }: {
   view: DurableView;
   remote: RemoteDurable;
   target: InboxTarget;
   /** The intake the first message to `project` opened; the caller decides whether that intake is still the one shown. */
   onOpened: (id: ConversationId, project: string) => void;
+  /** Open a task whose question the intake shows. */
+  onOpenTask: (project: string, task: InboxTask) => void;
 }) {
   const inbox = view.inbox?.inboxes.find((each) => each.project === target.project);
   const connected = view.connection === "connected";
@@ -42,7 +46,7 @@ export function InboxScreen({
     );
   }
   return target.task === undefined ? (
-    <IntakeDraft inbox={inbox} remote={remote} connected={connected} onOpened={onOpened} />
+    <IntakeDraft inbox={inbox} remote={remote} connected={connected} onOpened={onOpened} onOpenTask={(task) => onOpenTask(inbox.project, task)} />
   ) : (
     <QueuedTask inbox={inbox} taskId={target.task} view={view} remote={remote} connected={connected} />
   );
@@ -58,11 +62,13 @@ function IntakeDraft({
   remote,
   connected,
   onOpened,
+  onOpenTask,
 }: {
   inbox: ProjectInbox;
   remote: RemoteDurable;
   connected: boolean;
   onOpened: (id: ConversationId, project: string) => void;
+  onOpenTask: (task: InboxTask) => void;
 }) {
   const [value, setValue] = useState("");
   const [sending, setSending] = useState(false);
@@ -99,6 +105,8 @@ function IntakeDraft({
         </Empty>
       </Centered>
       <div className="mx-auto w-full max-w-[44rem] px-4 pb-4">
+        {/* A scheduled or webhook task can ask before anyone wrote to the intake. */}
+        <TaskQuestions inbox={inbox} remote={remote} connected={connected} onOpenTask={onOpenTask} />
         <ChatPromptInput
           value={value}
           onValueChange={setValue}

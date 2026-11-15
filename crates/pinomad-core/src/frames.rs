@@ -19,7 +19,7 @@ pub const INVALID_FRAME_CLOSE_CODE: u16 = 4400;
 /// `minor` the host features. Integers, not floats — the version will be
 /// compared across the UniFFI boundary, and a protocol's parts are never
 /// fractional.
-pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 40 };
+pub const PROTOCOL: ProtocolVersion = ProtocolVersion { major: 5, minor: 41 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[cfg_attr(feature = "ffi", derive(uniffi::Record))]
@@ -142,6 +142,7 @@ pub enum CallMethod {
     SetInboxSourceEnabled,
     RemoveInboxSource,
     ResetInboxWebhookSecret,
+    SetInboxBaseBranch,
 }
 
 impl CallMethod {
@@ -213,6 +214,7 @@ impl CallMethod {
             "setInboxSourceEnabled" => Self::SetInboxSourceEnabled,
             "removeInboxSource" => Self::RemoveInboxSource,
             "resetInboxWebhookSecret" => Self::ResetInboxWebhookSecret,
+            "setInboxBaseBranch" => Self::SetInboxBaseBranch,
             _ => return None,
         })
     }
@@ -270,6 +272,7 @@ impl CallMethod {
             Self::SetPluginSecret => 37,
             Self::SendToIntake | Self::SetInboxRules | Self::CancelFollowUp | Self::SkipInboxTask => 38,
             Self::AddInboxSource | Self::SetInboxSourceEnabled | Self::RemoveInboxSource | Self::ResetInboxWebhookSecret => 39,
+            Self::SetInboxBaseBranch => 41,
         }
     }
 }

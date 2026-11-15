@@ -3,10 +3,11 @@
 // see it, from the Inbox, timer and source documents and each project's rules
 // file. Event sources and their calls arrived in 5.39 (ADR-0051 §10).
 import type { Context } from "@earendil-works/chord/context";
-import type { ConversationId, Harness } from "@earendil-works/pi-durable";
+import type { ConversationDocToken, ConversationId, Harness } from "@earendil-works/pi-durable";
 import {
   INBOX_RULES_MAX_BYTES,
   type HostInbox,
+  type InboxQuestion,
   type InboxSource as WireSource,
   type InboxSourceSpec,
   type InboxTask as WireTask,
@@ -14,8 +15,22 @@ import {
   type ProjectInbox as WireInbox,
 } from "@pinomad/protocol/inbox.ts";
 import type { HostIndex } from "@pinomad/protocol/organization.ts";
+import type { QuestionState } from "@pinomad/protocol/presentation.ts";
 import { Published, type HostValue } from "./host-value.ts";
-import { cancelFollowUp, type InboxHandle, InboxDoc, type InboxTask, type InboxTimer, type ProjectInbox, projectKey, skipInboxTask, TimerDoc } from "./inbox.ts";
+import {
+  cancelFollowUp,
+  ensureBaseBranch,
+  type InboxHandle,
+  InboxDoc,
+  type InboxTask,
+  type InboxTimer,
+  type ProjectInbox,
+  projectKey,
+  setBaseBranch,
+  skipInboxTask,
+  TimerDoc,
+} from "./inbox.ts";
+import { defaultBranch, gitBase } from "./checkout.ts";
 import { memoryDir, readRules, writeRules } from "./inbox-memory.ts";
 import {
   addInboxSource,
@@ -33,6 +48,7 @@ export interface InboxService extends HostValue<HostInbox> {
   sendToIntake(project: string, text: string, requestId: string, context: Context): Promise<ConversationId>;
   prepareIntake(conversationId: ConversationId, context: Context): Promise<void>;
   setRules(project: string, rules: string): Promise<void>;
+  setBaseBranch(project: string, branch: string | null, context: Context): Promise<void>;
   cancelFollowUp(timerId: string, context: Context): Promise<void>;
   skipTask(project: string, taskId: string, context: Context): Promise<void>;
   addSource(
@@ -44,7 +60,18 @@ export interface InboxService extends HostValue<HostInbox> {
   resetWebhookSecret(sourceId: string, context: Context): Promise<InboxWebhookAccess>;
 }
 
-const wireTask = (task: Readonly<InboxTask>): WireTask => ({
+/** A conversation's unanswered questions, by its id. */
+type QuestionsOf = (conversationId: ConversationId) => readonly InboxQuestion[];
+
+const wireTask = (task: Readonly<InboxTask>, questionsOf: QuestionsOf): WireTask => {
+  const questions = task.conversationId === undefined || task.closed ? [] : questionsOf(task.conversationId);
+  return {
+    ...wireTaskFields(task),
+    ...(questions.length === 0 ? {} : { questions }),
+  };
+};
+
+const wireTaskFields = (task: Readonly<InboxTask>): WireTask => ({
   id: task.id,
   title: task.title,
   createdAt: task.createdAt,
@@ -97,16 +124,21 @@ export function hostInbox(
   timers: readonly Readonly<InboxTimer>[],
   rules: ReadonlyMap<string, string>,
   sources: readonly Readonly<InboxSourceRecord>[],
+  questionsOf: QuestionsOf = () => [],
+  /** The default branch of git projects whose Inbox stores none yet. */
+  defaults: ReadonlyMap<string, string> = new Map(),
 ): HostInbox {
   return {
     // Plugin and webhook sources are always taken; the field stays for clients that read it.
     externalSources: true,
     inboxes: (index?.projects ?? []).map(({ path }): WireInbox => {
       const inbox = inboxes[path];
+      const baseBranch = inbox?.baseBranch ?? defaults.get(path);
       return {
         project: path,
         ...(inbox?.intake === undefined ? {} : { intake: inbox.intake }),
-        tasks: (inbox?.tasks ?? []).map(wireTask),
+        ...(baseBranch === undefined ? {} : { baseBranch }),
+        tasks: (inbox?.tasks ?? []).map((task) => wireTask(task, questionsOf)),
         threads: { ...inbox?.threads },
         rules: rules.get(path) ?? "",
         followUps: timers
@@ -129,6 +161,8 @@ export async function openInboxService(options: {
   readonly intake: () => Pick<InboxHandle, "sendToIntake" | "prepareIntake"> | undefined;
   /** The source calls' dependencies; `harness` is the host's. */
   readonly sources: SourceDeps;
+  /** The installed `pinomad.question` documents: an open task's unanswered requests go into the stream (#846). */
+  readonly questionDocs?: readonly ConversationDocToken<QuestionState>[];
 }): Promise<InboxService & { close(): void }> {
   const { dataDir, context } = options;
   const { harness } = options.sources;
@@ -149,7 +183,56 @@ export async function openInboxService(options: {
   let inboxes = inboxWatch.value?.inboxes ?? {};
   let timers = timerWatch.value?.timers ?? [];
   let sources = sourceWatch.value?.sources ?? [];
-  const value = (): HostInbox => hostInbox(index, inboxes, timers, rules, sources);
+  const value = (): HostInbox => hostInbox(index, inboxes, timers, rules, sources, questionsOf, defaults);
+
+  // Each open task's question documents, watched while the task is open, so a
+  // question shows (and an answer clears) in the stream as it happens.
+  const questionWatches = new Map<ConversationId, Map<string, { value: Readonly<QuestionState> | null; stop(): void }>>();
+  const questionsOf: QuestionsOf = (id) =>
+    [...(questionWatches.get(id)?.entries() ?? [])].flatMap(([kind, watch]) =>
+      (watch.value?.requests ?? []).filter((request) => request.resolution === undefined).map((request) => ({ kind, request })),
+    );
+  let closed = false;
+  const syncQuestionWatches = async (): Promise<void> => {
+    const open = new Set(
+      Object.values(inboxes).flatMap((inbox) =>
+        inbox.tasks.filter((task) => !task.closed && task.conversationId !== undefined).map((task) => task.conversationId!),
+      ),
+    );
+    for (const [id, watches] of questionWatches) {
+      if (open.has(id)) continue;
+      for (const watch of watches.values()) watch.stop();
+      questionWatches.delete(id);
+    }
+    for (const id of open) {
+      let watches = questionWatches.get(id);
+      if (watches === undefined) questionWatches.set(id, (watches = new Map()));
+      for (const token of options.questionDocs ?? []) {
+        const kind = token.definition.kind;
+        if (watches.has(kind)) continue;
+        // Absent until the conversation's first question: the next change to the Inbox tries again.
+        const watch = await harness.watchDoc(token, id, context);
+        if (watch === undefined) continue;
+        if (closed || questionWatches.get(id) !== watches) {
+          watch.stop();
+          continue;
+        }
+        const entry = { value: watch.value, stop: () => watch.stop() };
+        watches.set(kind, entry);
+        watch.start((call) => {
+          if (call.kind === "value") {
+            entry.value = call.value;
+            refresh();
+          }
+          return Promise.resolve();
+        });
+      }
+    }
+  };
+  /** Projects whose default base branch was looked for in this process: once is enough (#846). */
+  const baseLooked = new Set<string>();
+  /** The default branch of a git project whose Inbox was never used: shown, not stored. */
+  const defaults = new Map<string, string>();
   /** Each project's rules, read once and then kept by `setRules`. */
   const rules = new Map<string, string>();
   const readFor = async (path: string): Promise<void> => {
@@ -170,6 +253,24 @@ export async function openInboxService(options: {
     tail = tail
       .then(async () => {
         for (const project of index?.projects ?? []) await readFor(project.path);
+        await syncQuestionWatches();
+        // Each git project shows its branch before the first task. An Inbox in
+        // use stores it; one never used only shows the default, since writing
+        // an Inbox entry would start its daily tidy-up.
+        for (const { path } of index?.projects ?? []) {
+          if (inboxes[path]?.baseBranch !== undefined || baseLooked.has(path)) continue;
+          baseLooked.add(path);
+          try {
+            if (inboxes[path] !== undefined) await ensureBaseBranch(harness, path, context);
+            else {
+              const repo = await gitBase(path);
+              const found = repo === undefined ? undefined : await defaultBranch(repo.repo);
+              if (found !== undefined) defaults.set(path, found);
+            }
+          } catch (error) {
+            console.error(`Inbox base branch for ${path} could not be found: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
         published.set(value());
       })
       .catch((error: unknown) => console.error("Inbox stream could not refresh:", error));
@@ -202,6 +303,9 @@ export async function openInboxService(options: {
     }
     return Promise.resolve();
   });
+
+  // Once now, for what the first refresh does beyond publishing: the base branches and question watches.
+  refresh();
 
   let writes: Promise<void> = Promise.resolve();
 
@@ -239,6 +343,10 @@ export async function openInboxService(options: {
       refresh();
       await tail;
     },
+    setBaseBranch: async (project, branch, ctx) => {
+      const key = await registered(project);
+      await setBaseBranch(harness, key, branch, ctx);
+    },
     cancelFollowUp: (timerId, ctx) => cancelFollowUp(harness, timerId, ctx),
     skipTask: (project, taskId, ctx) => skipInboxTask(harness, project, taskId, ctx),
     addSource: (input, ctx) => addInboxSource(options.sources, input, ctx),
@@ -246,6 +354,9 @@ export async function openInboxService(options: {
     removeSource: (sourceId, ctx) => removeInboxSource(options.sources, sourceId, ctx),
     resetWebhookSecret: (sourceId, ctx) => resetInboxWebhookSecret(options.sources, sourceId, ctx),
     close() {
+      closed = true;
+      for (const watches of questionWatches.values()) for (const watch of watches.values()) watch.stop();
+      questionWatches.clear();
       indexWatch.stop();
       inboxWatch.stop();
       timerWatch.stop();

@@ -3912,6 +3912,31 @@ fn inbox_source_calls_need_a_5_39_host() {
     assert_eq!(args("setInboxSourceEnabled"), Some(obj(&[("sourceId", Json::from("s")), ("enabled", Json::Bool(true))])));
 }
 
+/// #846: the Inbox's base branch needs a 5.41 host; `None` goes on the wire as null.
+#[test]
+fn inbox_base_branch_needs_a_5_41_host_and_sends_null_for_the_default() {
+    let old = ScriptedHost::new(vec![obj(&[])], vec![("protocol".to_string(), protocol_obj(40.0))]);
+    let mut h = Harness::new(old);
+    h.invoke(1, Call::SetInboxBaseBranch { project: "/p".into(), branch: Some("main".into()) });
+    assert_eq!(
+        h.ops.get(&1),
+        Some(&Err("The host is too old to pick the Inbox's base branch (needs protocol 5.41); run `pinomad upgrade` on the host".to_string()))
+    );
+    assert!(h.host.method("setInboxBaseBranch").is_empty());
+
+    let mut h = setup();
+    h.invoke(1, Call::SetInboxBaseBranch { project: "/p".into(), branch: Some("dev".into()) });
+    h.invoke(2, Call::SetInboxBaseBranch { project: "/p".into(), branch: None });
+    let calls: Vec<Json> = h.host.method("setInboxBaseBranch").iter().filter_map(|call| call.get("args").cloned()).collect();
+    assert_eq!(
+        calls,
+        vec![
+            obj(&[("project", Json::from("/p")), ("branch", Json::from("dev"))]),
+            obj(&[("project", Json::from("/p")), ("branch", Json::Null)]),
+        ]
+    );
+}
+
 // ─── background processes (5.32, ADR-0045) ────────────────────────────
 
 fn process_doc() -> Json {

@@ -474,6 +474,8 @@ export interface DurableController {
   sendToIntake(project: string, text: string): Promise<ConversationId>;
   /** Replace an Inbox's rules; `""` clears them. Rejects past `INBOX_RULES_MAX_BYTES`. */
   setInboxRules(project: string, rules: string): Promise<void>;
+  /** Set the branch the Inbox's intake reads and tasks start from; `null` goes back to the repository's default. Needs a 5.41 host. */
+  setInboxBaseBranch(project: string, branch: string | null): Promise<void>;
   /** Drop a follow-up or schedule that has not fired; rejects for the daily tidy-up. */
   cancelFollowUp(timerId: string): Promise<void>;
   /** Close a task without running it; rejects while the worker has a batch of it out. */

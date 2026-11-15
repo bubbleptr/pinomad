@@ -2,6 +2,7 @@
 // tasks and their events, the user's rules, the follow-ups and schedules not
 // yet fired, and the project's intake conversation.
 import type { ConversationId } from "@earendil-works/pi-durable";
+import type { QuestionRequest } from "./presentation.ts";
 
 /** Where an event came from: `user`, `schedule`, `followUp`, `webhook`, or `plugin:<name>`. */
 export type InboxEventSource = string;
@@ -66,8 +67,20 @@ export interface InboxTask {
   readonly failed?: string;
   /** Its run stopped on a question to the user. */
   readonly waiting?: true;
+  /**
+   * The questions its conversation waits on (5.41, #846), so the intake can
+   * show them without opening the task: answer each with `answer` on
+   * `conversationId` and the `kind` given here. Absent when there are none.
+   */
+  readonly questions?: readonly InboxQuestion[];
   /** The Inbox's own memory tidy-up (ADR-0052 §3). */
   readonly kind?: "tidy";
+}
+
+/** An unanswered question in a task's conversation: the request and the kind of document holding it. */
+export interface InboxQuestion {
+  readonly kind: string;
+  readonly request: QuestionRequest;
 }
 
 /** A timer not yet fired: a follow-up a task set for itself (`task`) or a schedule (`every`). */
@@ -97,6 +110,12 @@ export interface ProjectInbox {
   readonly rules: string;
   /** Timers not yet fired, soonest first. A schedule source's timer is not one: it shows as the source's `next`. */
   readonly followUps: readonly InboxFollowUp[];
+  /**
+   * The local branch the intake reads and tasks start from (5.41, #846):
+   * the user's choice or the repository's default, fixed once found. Absent
+   * for a project that is not a Git repository, and before 5.41.
+   */
+  readonly baseBranch?: string;
   /** Where its events come from besides the user and the agent (5.39, ADR-0051 §10), oldest first. Absent before 5.39. */
   readonly sources?: readonly InboxSource[];
 }
