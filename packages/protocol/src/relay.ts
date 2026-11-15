@@ -101,7 +101,7 @@ export interface NameFrame {
 export interface PushNotification {
   /** `pinomad.title` or the fixed fallback — never the first user message. */
   readonly title: string;
-  /** The run event: "Waiting for your answer" / "Finished" / "Failed". */
+  /** The event: "Waiting for your answer" / "Finished" / "Failed", or "Update for you" from an Inbox task's `notify`. */
   readonly body: string;
   /**
    * Fixed-length digest of `hostKey:conversationId`: `hostKey:id` itself can

@@ -12,7 +12,7 @@ import { realpath } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Context } from "@earendil-works/chord/context";
 import type { JsonValue } from "@earendil-works/chord/json";
-import { type ConversationDocToken, type ConversationId, defineDoc, defineExtension, defineTool, type Harness } from "@earendil-works/pi-durable";
+import { type ConversationDocToken, type ConversationId, defineDoc, defineExtension, defineTool, type Harness, type Tx } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import { gitBase } from "./checkout.ts";
 import { IndexDoc } from "./organization.ts";
@@ -190,8 +190,6 @@ export async function addTimer(
     return id;
   }, context);
 }
-
-type Tx = Parameters<Parameters<Harness["commit"]>[0]>[0];
 
 /**
  * The Inbox task a conversation belongs to. A task's first run starts before
