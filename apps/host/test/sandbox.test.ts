@@ -60,13 +60,14 @@ async function gitWorktree(): Promise<{ repo: string; worktree: string }> {
   return { repo, worktree };
 }
 
-async function run(env: Awaited<ReturnType<typeof openSandboxedEnv>>, command: string, extra?: Record<string, string>) {
+async function run(env: Awaited<ReturnType<typeof openSandboxedEnv>>, command: string, extra?: Record<string, string>, inheritEnv = true) {
   let stdout = "";
   let stderr = "";
   const result = await env.exec(
     command,
     {
       ...(extra === undefined ? {} : { env: extra }),
+      inheritEnv,
       onOutput: (text, _context, info) => {
         if (info.stream === "stdout") stdout += text;
         else stderr += text;
@@ -134,6 +135,26 @@ describe("sandboxed environment", () => {
     const env = await openSandboxedEnv(worktree, policy);
     const out = await run(env, 'printf "%s|%s" "$HOME" "${GH_TOKEN-unset}"', { GH_TOKEN: "gho_leak" });
     expect(out.stdout).toBe(`${policy.home}|unset`);
+  });
+
+  it("keeps toolchain managers pointed at the user's installs, which a fresh HOME would lose", async () => {
+    const realHome = await fakeHome();
+    await mkdir(join(realHome, ".local", "share", "mise"), { recursive: true });
+    await mkdir(join(realHome, ".rustup"));
+    const { repo, worktree } = await gitWorktree();
+    const policy = await inboxSandboxPolicy({ dataDir: await temp(), project: repo, cwd: worktree, realHome });
+    const env = await openSandboxedEnv(worktree, policy);
+    const out = await run(env, 'printf "%s|%s|%s|%s" "$MISE_DATA_DIR" "$RUSTUP_HOME" "${NVM_DIR-unset}" "$CARGO_HOME"', {
+      PATH: process.env.PATH!,
+      CARGO_HOME: "/opt/cargo",
+    }, false);
+    const real = await realpath(realHome);
+    expect(out.stdout).toBe(`${join(real, ".local", "share", "mise")}|${join(real, ".rustup")}|unset|/opt/cargo`);
+  });
+
+  it.runIf(process.platform === "linux")("hides the user's runtime dir, where the keyring's D-Bus socket lives", async () => {
+    const { policy } = await setup();
+    expect(policy.hidden).toContain(`/run/user/${process.getuid!()}`);
   });
 
   it("refuses the file tools a credential path, even through a symlink in the worktree", async () => {

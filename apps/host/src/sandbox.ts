@@ -131,6 +131,26 @@ export type SandboxPolicy = {
   readonly own: readonly string[];
   /** Git hooks and config: code planted there would run outside the sandbox. */
   readonly frozen: readonly string[];
+  /**
+   * Toolchain managers' dirs under the real HOME, which the fresh one would
+   * lose; readable, not writable. A variable the environment already sets wins.
+   */
+  readonly toolchains: Readonly<Record<string, string>>;
+};
+
+/** Where toolchain managers find their installs when their variable is unset, relative to HOME. */
+const TOOLCHAIN_HOMES: Readonly<Record<string, string>> = {
+  MISE_DATA_DIR: ".local/share/mise",
+  MISE_CONFIG_DIR: ".config/mise",
+  MISE_STATE_DIR: ".local/state/mise",
+  ASDF_DATA_DIR: ".asdf",
+  RUSTUP_HOME: ".rustup",
+  CARGO_HOME: ".cargo",
+  NVM_DIR: ".nvm",
+  VOLTA_HOME: ".volta",
+  BUN_INSTALL: ".bun",
+  PYENV_ROOT: ".pyenv",
+  RBENV_ROOT: ".rbenv",
 };
 
 const within = (path: string, roots: readonly string[]): boolean =>
@@ -176,7 +196,15 @@ export async function inboxSandboxPolicy(input: {
     () => undefined,
   );
   const temps = new Set(await Promise.all([tmpdir(), "/tmp", "/var/tmp", ...(process.env.TMPDIR ? [process.env.TMPDIR] : [])].map(canonical)));
-  const runtime = process.platform === "linux" && process.env.XDG_RUNTIME_DIR ? [process.env.XDG_RUNTIME_DIR] : [];
+  // The runtime dir holds the keyring's D-Bus socket and the gpg and ssh agents; D-Bus finds it by uid even without the variable.
+  const runtime =
+    process.platform === "linux"
+      ? [`/run/user/${process.getuid!()}`, ...(process.env.XDG_RUNTIME_DIR ? [process.env.XDG_RUNTIME_DIR] : [])]
+      : [];
+  const toolchains: Record<string, string> = {};
+  for (const [name, path] of Object.entries(TOOLCHAIN_HOMES)) {
+    if (await exists(join(realHome, path))) toolchains[name] = join(realHome, path);
+  }
   const canonicalAll = (paths: readonly string[]) => Promise.all(paths.map(canonical));
   const gitDir = common === undefined ? undefined : await canonical(common);
   return {
@@ -185,6 +213,7 @@ export async function inboxSandboxPolicy(input: {
     writable: [...temps, "/dev"],
     own: await canonicalAll([input.cwd, home, ...(gitDir === undefined ? [] : [gitDir])]),
     frozen: gitDir === undefined ? [] : [join(gitDir, "hooks"), join(gitDir, "config")],
+    toolchains,
   };
 }
 
@@ -301,7 +330,7 @@ export class SandboxedExecutionEnv extends NodeExecutionEnv {
 
   /** `argv` wrapped in the OS sandbox, with `env` scrubbed and HOME moved. */
   async launch(argv: readonly string[], env: Readonly<Record<string, string | undefined>>, cwd: string): Promise<{ argv: string[]; env: Record<string, string> }> {
-    const scrubbed = scrubEnv(env, this.policy.home);
+    const scrubbed = { ...this.policy.toolchains, ...scrubEnv(env, this.policy.home) };
     const wrapped =
       this.#launcher === undefined
         ? [...argv]
