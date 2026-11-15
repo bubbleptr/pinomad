@@ -243,4 +243,13 @@ extension Inbox {
         guard path.last == expected else { return nil }
         return path.dropLast() + [next]
     }
+
+    /// The composer draft for an intake that opened while the draft page
+    /// still held unsent text: that text, after any draft the conversation
+    /// already has. `nil` leaves the conversation's draft as it is.
+    public static func carryingDraft(_ unsent: String, into existing: String?) -> String? {
+        guard !unsent.allSatisfy(\.isWhitespace) else { return nil }
+        guard let existing, !existing.allSatisfy(\.isWhitespace) else { return unsent }
+        return existing + "\n\n" + unsent
+    }
 }

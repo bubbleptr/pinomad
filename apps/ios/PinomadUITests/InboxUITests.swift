@@ -31,7 +31,16 @@ final class InboxUITests: XCTestCase {
     private func openSettings() {
         app.launchEnvironment["PINOMAD_OPEN_INBOX"] = "settings:\(project)"
         app.launch()
-        XCTAssertTrue(app.buttons["Add Source"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["Edit Rules"].waitForExistence(timeout: 20))
+    }
+
+    /// Lists are lazy: a row below the fold has no element until it scrolls in.
+    @discardableResult
+    private func scrolledTo(_ element: XCUIElement) -> XCUIElement {
+        for _ in 0..<15 where !(element.exists && element.isHittable) {
+            app.swipeUp()
+        }
+        return element
     }
 
     private func unique(_ prefix: String) -> String {
@@ -47,11 +56,7 @@ final class InboxUITests: XCTestCase {
         app.launch()
         let row = app.buttons[(fresh as NSString).lastPathComponent]
         XCTAssertTrue(app.buttons["Inbox"].waitForExistence(timeout: 20))
-        // Lists are lazy: a project below the fold has no row until it scrolls in.
-        for _ in 0..<12 where !row.isHittable {
-            app.swipeUp()
-        }
-        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        XCTAssertTrue(scrolledTo(row).waitForExistence(timeout: 5))
         row.tap()
         let field = app.textViews.firstMatch.exists ? app.textViews.firstMatch : app.textFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5))
@@ -67,7 +72,7 @@ final class InboxUITests: XCTestCase {
     func testAddAScheduleSource() {
         openSettings()
         let source = unique("Weekly audit")
-        app.buttons["Add Source"].tap()
+        scrolledTo(app.buttons["Add Source"]).tap()
         let nameField = app.textFields["Dependency check"]
         XCTAssertTrue(nameField.waitForExistence(timeout: 5))
         nameField.tap()
@@ -77,7 +82,7 @@ final class InboxUITests: XCTestCase {
         note.tap()
         note.typeText("Audit the dependencies.")
         app.buttons["Add"].tap()
-        XCTAssertTrue(app.staticTexts[source].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts[source].waitForExistence(timeout: 15) || scrolledTo(app.staticTexts[source]).exists)
     }
 
     /// A new webhook shows its URL, source id and secret once; the secret
@@ -86,7 +91,7 @@ final class InboxUITests: XCTestCase {
     func testWebhookSecretSignsEventsThenSkipAndAnswer() async throws {
         openSettings()
         let source = unique("Hook")
-        app.buttons["Add Source"].tap()
+        scrolledTo(app.buttons["Add Source"]).tap()
         app.buttons["Webhook"].tap()
         let nameField = app.textFields["NAS backups"]
         XCTAssertTrue(nameField.waitForExistence(timeout: 5))
@@ -143,7 +148,7 @@ final class InboxUITests: XCTestCase {
         openSettings()
         // A webhook of its own, so the shared ones stay as they are.
         let source = unique("Throwaway")
-        app.buttons["Add Source"].tap()
+        scrolledTo(app.buttons["Add Source"]).tap()
         app.buttons["Webhook"].tap()
         let nameField = app.textFields["NAS backups"]
         XCTAssertTrue(nameField.waitForExistence(timeout: 5))
@@ -154,7 +159,8 @@ final class InboxUITests: XCTestCase {
         app.buttons["Done"].tap()
 
         let toggle = app.switches[source]
-        XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+        _ = toggle.waitForExistence(timeout: 10)
+        XCTAssertTrue(scrolledTo(toggle).exists)
         XCTAssertEqual(toggle.value as? String, "1")
         toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
         // Off once the host has it, then held there by the next snapshot.

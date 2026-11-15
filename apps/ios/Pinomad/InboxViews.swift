@@ -347,10 +347,16 @@ struct IntakeDraftView: View {
             // Another message gets its own id; the same text keeps it for a retry.
             if !sending { requestId = UUID().uuidString }
         }
-        .onChange(of: inbox?.intake) { _, intake in
-            // Opened from another device meanwhile: show it.
+        .onChange(of: inbox?.intake, initial: true) { _, intake in
+            // Opened from another device meanwhile: show it, and keep what
+            // was typed here as its composer draft. While a send is in
+            // flight the text is that message, already on its way.
             guard let intake else { return }
-            model.replaceInboxPage(page, with: .conversation(ConversationRef(hostKey: hostKey, conversationId: intake)))
+            let unsent = sending ? "" : text
+            guard model.replaceInboxPage(page, with: .conversation(ConversationRef(hostKey: hostKey, conversationId: intake))),
+                  let runtime = model.runtimes[hostKey],
+                  let draft = Inbox.carryingDraft(unsent, into: runtime.drafts[intake]) else { return }
+            runtime.drafts[intake] = draft
         }
         .safeAreaInset(edge: .top) { ConnectionBanner(model: model, hostKey: hostKey) }
         .navigationTitle(inboxProjectName(project, organized: model.runtimes[hostKey]?.snapshot?.organized))
@@ -416,7 +422,9 @@ struct QueuedTaskView: View {
                 ContentUnavailableView { Label("This task is gone", image: .inbox) }
             }
         }
-        .onChange(of: info?.task.conversationId) { _, id in
+        // `initial`: a task the worker already took when the page opened
+        // goes straight to its conversation.
+        .onChange(of: info?.task.conversationId, initial: true) { _, id in
             guard let id else { return }
             model.replaceInboxPage(page, with: .conversation(ConversationRef(hostKey: hostKey, conversationId: id)))
         }

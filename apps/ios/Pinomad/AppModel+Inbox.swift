@@ -117,8 +117,11 @@ extension AppModel {
     /// Swap a draft or queued-task page for the conversation it became —
     /// only while that page is still on top: a reply that lands after the
     /// reader moved on (another page, another host) takes them nowhere.
-    func replaceInboxPage(_ page: Route, with next: Route) {
-        guard let path = Inbox.replacingTop(navPath, ifTop: page, with: next) else { return }
+    /// Whether `page` was still on top and so was replaced.
+    @discardableResult
+    func replaceInboxPage(_ page: Route, with next: Route) -> Bool {
+        guard let path = Inbox.replacingTop(navPath, ifTop: page, with: next) else { return false }
         navPath = path
+        return true
     }
 }
