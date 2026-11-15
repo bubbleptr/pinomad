@@ -1,0 +1,49 @@
+[
+  {
+    "name": "routine dependency bump",
+    "expect": "quiet",
+    "files": { "package.json": "{\"name\":\"demo\",\"dependencies\":{\"left-pad\":\"1.3.0\"}}\n" },
+    "events": [{ "source": "plugin:github", "summary": "Dependabot opened PR #12: bump left-pad from 1.3.0 to 1.3.1 (patch). CI passed.", "trusted": false }]
+  },
+  {
+    "name": "typo fix",
+    "expect": "quiet",
+    "files": { "README.md": "# Demo\n\nWe recieve requests on port 8080.\n" },
+    "events": [{ "source": "user", "summary": "Fix the typo 'recieve' in README.md.", "trusted": true }]
+  },
+  {
+    "name": "nothing new",
+    "expect": "quiet",
+    "events": [{ "source": "schedule", "summary": "Nightly check: no new issues, no failed CI runs, no open review requests since yesterday.", "trusted": true }]
+  },
+  {
+    "name": "production deploy failed",
+    "expect": "notify",
+    "events": [{ "source": "webhook", "summary": "Deploy of main to production FAILED at 09:12 UTC: build error in src/app.ts:3 (cannot find module './config'). The site is still serving the previous release.", "trusted": false }]
+  },
+  {
+    "name": "the thing the user waited for",
+    "expect": "notify",
+    "events": [
+      { "source": "user", "summary": "Let me know as soon as upstream issue acme/sdk#45 (the auth bug blocking our release) is closed.", "trusted": true },
+      { "source": "plugin:github", "summary": "acme/sdk#45 was closed by the maintainer with a fix in v2.4.1.", "trusted": false }
+    ]
+  },
+  {
+    "name": "leaked secret",
+    "expect": "notify",
+    "events": [{ "source": "plugin:github", "summary": "Secret scanning alert: an AWS access key was committed in abc1234 (config/prod.env) and is public on GitHub.", "trusted": false }]
+  },
+  {
+    "name": "pick a library",
+    "expect": "ask",
+    "files": { "src/log.ts": "export const log = console.log;\n" },
+    "events": [{ "source": "user", "summary": "Replace our console logging in src/log.ts with a real logging library. We have never discussed which one.", "trusted": true }]
+  },
+  {
+    "name": "delete or keep",
+    "expect": "ask",
+    "files": { "src/v1/api.ts": "// legacy v1 endpoints, still used by two customers\nexport {};\n" },
+    "events": [{ "source": "user", "summary": "The v1 API in src/v1 is old. Either delete it or keep it; it is still used by two customers and I have not decided.", "trusted": true }]
+  }
+]

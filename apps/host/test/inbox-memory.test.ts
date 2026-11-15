@@ -8,7 +8,7 @@ import type { ConversationId } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
 import type { OpenedHost } from "../src/host.ts";
 import { addInboxEvent, InboxDoc, type InboxTask, OutboxDoc, TimerDoc } from "../src/inbox.ts";
-import { memoryDir } from "../src/inbox-memory.ts";
+import { ENDING_A_RUN, memoryDir, memoryPreamble } from "../src/inbox-memory.ts";
 import { IndexDoc } from "../src/organization.ts";
 import { startFauxHost, tempDir, useCleanups } from "./support.ts";
 
@@ -238,5 +238,16 @@ describe("Inbox memory tidy-up", () => {
     }, context);
     const all = await until(tasks, (list) => list.length === 2 && list[1]!.closed);
     expect(all[1]!.kind).toBe("tidy");
+  });
+});
+
+describe("Inbox default rules", () => {
+  it("tells every run when to notify, ask or finish quietly, ahead of the user's own rules", async () => {
+    const dir = (await tempDir()).path;
+    const bare = await memoryPreamble(dir);
+    expect(bare).toContain(ENDING_A_RUN);
+    await writeFile(join(dir, "instructions.md"), "Notify me about every PR.");
+    const ruled = await memoryPreamble(dir);
+    expect(ruled.indexOf(ENDING_A_RUN)).toBeLessThan(ruled.indexOf("Notify me about every PR."));
   });
 });
