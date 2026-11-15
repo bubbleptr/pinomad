@@ -294,6 +294,27 @@ describe("Inbox runs", () => {
     expect(codingOut.join()).toContain(`home=${process.env.HOME}`);
   });
 
+  it("keeps the intake conversation's read tool out of the data dir, where a coding conversation can read", async () => {
+    const project = await temp();
+    const dataDir = await temp();
+    await writeFile(join(dataDir, "secret.txt"), "host secret");
+    const read = () => fauxAssistantMessage(fauxToolCall("read", { path: join(dataDir, "secret.txt") }), { stopReason: "toolUse" });
+    const host = await startFauxHost(defer, {
+      dataDir,
+      projects: [project],
+      extensions: [coding],
+      answers: [read(), "intake done", read(), "coding done"],
+    });
+    const intake = await host.inbox.sendToIntake(project, "what is in the secret?", "r1", context);
+    const intakeOut = await until(() => toolOutputs(host, intake), (out) => out.length === 1);
+    expect(intakeOut.join()).not.toContain("host secret");
+
+    const client = await connectTo(defer, host);
+    const ordinary = await startConversation(client, { kind: "project", path: project }, "hi");
+    const codingOut = await until(() => toolOutputs(host, ordinary), (out) => out.length === 1);
+    expect(codingOut.join()).toContain("host secret");
+  });
+
   it("sandboxes a subagent an Inbox task dispatches", async () => {
     const project = await temp();
     const dataDir = await temp();

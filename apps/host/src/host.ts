@@ -281,7 +281,10 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     // Inbox membership never ends and a family root never changes, so both are kept.
     const inboxProjects = new Map<ConversationId, string>();
     const roots = new Map<ConversationId, ConversationId>();
-    /** The project whose Inbox runs this conversation, itself or as a subagent of one. */
+    /**
+     * The project whose Inbox this conversation belongs to: a task's or the
+     * intake (which sees task summaries from outside), itself or as a subagent of one.
+     */
     const inboxProjectOf = async (id: ConversationId): Promise<string | undefined> => {
       const known = inboxProjects.get(id);
       if (known !== undefined) return known;
@@ -291,7 +294,11 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
         roots.set(id, root);
       }
       const [inboxes, index] = await Promise.all([harness!.snapshot(InboxDoc, context), harness!.snapshot(IndexDoc, context)]);
-      const project = inboxes === undefined || index === undefined ? undefined : inboxTaskOf(inboxes.inboxes, index, root)?.project;
+      const project =
+        inboxes === undefined || index === undefined
+          ? undefined
+          : (Object.entries(inboxes.inboxes).find(([, inbox]) => inbox.intake === root)?.[0] ??
+            inboxTaskOf(inboxes.inboxes, index, root)?.project);
       if (project !== undefined) inboxProjects.set(id, project);
       return project;
     };
