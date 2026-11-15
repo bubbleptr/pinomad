@@ -137,6 +137,7 @@ fn feature_of(name: &str) -> HostFeature {
         "pluginSecrets" => HostFeature::PluginSecrets,
         "inboxQuietHours" => HostFeature::InboxQuietHours,
         "inboxSources" => HostFeature::InboxSources,
+        "inboxModels" => HostFeature::InboxModels,
         other => panic!("unknown feature {other}"),
     }
 }

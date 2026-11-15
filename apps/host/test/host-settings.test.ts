@@ -47,6 +47,8 @@ describe("openHostSettings", () => {
       hostName: normalizeHostName(hostname()),
       autoUpgrade: "notify",
       inboxQuietHours: null,
+      inboxIntakeModel: null,
+      inboxWorkerModel: null,
       custom: [],
     });
     await expect(readFile(path, "utf8")).rejects.toThrow();
