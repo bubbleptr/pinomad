@@ -213,6 +213,8 @@ export interface PushSenderOptions {
   readonly limits?: { readonly maxPending?: number; readonly maxInflight?: number };
   /** The pacing of `notify` pushes (ADR-0052 §4), read on each look; DEFAULT_POLICY when absent. */
   readonly outboxPolicy?: () => DeliveryPolicy;
+  /** Calls back when the policy may have changed (the quiet hours setting): held messages are planned again. */
+  readonly onOutboxPolicyChange?: (listener: () => void) => () => void;
   /** The time the pacing reads; tests pair it with their manual timers. */
   readonly now?: () => number;
 }
@@ -667,12 +669,15 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
   outboxWatch.start(async (call) => {
     if (call.kind === "value") onOutbox({ messages: call.value?.messages ?? [], pushes: call.value?.pushes ?? [] });
   });
+  // A held message's wake time came from the old policy: shortened quiet hours must not wait it out.
+  const unsubscribePolicy = options.onOutboxPolicyChange?.(() => onOutbox(latest));
 
   return {
     stats: () => ({ pending: pending.size, queued: readyQueue.length }),
     async close() {
       disposed = true;
       unsubscribeConversations();
+      unsubscribePolicy?.();
       commits.detach();
       await indexWatch?.stop();
       if (wake !== undefined) timers.clearTimeout(wake);

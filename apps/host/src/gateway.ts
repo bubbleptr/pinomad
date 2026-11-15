@@ -797,6 +797,7 @@ export async function startGateway(options: GatewayOptions): Promise<Gateway> {
             const quiet = options.settings.value.inboxQuietHours;
             return quiet === undefined || quiet === null ? base : { ...base, quietHours: quiet };
           },
+          onOutboxPolicyChange: (listener) => options.settings.subscribe(() => listener()),
           ...(options.push.now === undefined ? {} : { now: options.push.now }),
         });
   const remoteInfo =

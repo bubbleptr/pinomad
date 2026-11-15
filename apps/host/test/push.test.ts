@@ -879,6 +879,30 @@ describe("Inbox pushes", () => {
     expect(apns.calls[0]!.notification.body).toBe("Update for you");
   });
 
+  it("sends a held notify once the quiet hours are cleared, without waiting for their old end", async () => {
+    const project = await tempDir();
+    defer(project.remove);
+    const apns = fakeTransport();
+    const { host, timers } = await pushHost({ apns, projects: [project.path], answers: [notifyStep("done overnight"), "ok"] });
+    const now = new Date();
+    const start = now.getHours() * 60 + now.getMinutes();
+    await host.settings.update({ inboxQuietHours: { start, end: (start + 120) % 1440 } });
+    const { client } = await pairDevice(defer, host, "phone");
+    await client.controller.setPushToken(TOKEN_A);
+    await addInboxEvent(host.harness, project.path, { id: "e1", source: "user", summary: "one", trusted: true }, context);
+    await waitUntil(async () => (await host.harness.snapshot(OutboxDoc, context))?.messages.length === 1);
+    timers.advance(60_000);
+    await settle();
+    expect(apns.calls).toHaveLength(0);
+    await host.settings.update({ inboxQuietHours: null });
+    // Only the title wait is left, nowhere near the two hours.
+    await waitUntil(() => {
+      timers.advance(5_000);
+      return apns.calls.length > 0;
+    });
+    expect(timers.elapsed).toBeLessThan(10 * 60_000);
+  });
+
   it("schedules a notify again when its push reached no device", async () => {
     const apns = fakeTransport(() => ({ result: "retry", reason: "server down" }));
     const project = await tempDir();
