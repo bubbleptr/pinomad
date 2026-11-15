@@ -11,6 +11,8 @@ import { addProject, createConversation, ensureIndex, familyRoot, IndexDoc } fro
 import { INBOX_TASK_TOOLS, InboxDoc, inboxExtension, type InboxHandle, inboxTaskOf, INTAKE_TOOLS, memoryOwner, startInbox } from "./inbox.ts";
 import { createMemoryExtension } from "./inbox-memory.ts";
 import { inboxSandboxPolicy, openSandboxedEnv, type SandboxedExecutionEnv } from "./sandbox.ts";
+import { type Classify, createAutoMode, modelClassifier } from "./auto-mode.ts";
+import type { QuestionState } from "@pinomad/protocol/presentation.ts";
 import { checkoutAt, ensureWorktree, worktreeRoot } from "./checkout.ts";
 import { ensureDevices, loadHostKey, loadRelayKey, pairingOffers } from "./devices.ts";
 import type { RelayLinkState } from "./relay-link.ts";
@@ -85,6 +87,8 @@ export interface OpenHostOptions {
    * test hosts turn it off so the scripted answers go only to agent runs.
    */
   readonly autoTitle?: boolean;
+  /** Auto mode for Inbox runs (ADR-0051 §7); the default classifier calls a small model. */
+  readonly autoMode?: { readonly classify?: Classify };
   /**
    * APNs push sender (ADR-0025): absent → `setPushToken` registers but nothing
    * is sent (faux test hosts). `{}` sends through the relay link when the
@@ -243,6 +247,31 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     for (const { extension } of extensions) registry.install(extension);
     // The Inbox's tools are deferred: only a task's conversation is offered them up front.
     registry.install(inboxExtension);
+    registry.install(
+      createAutoMode({
+        harness: () => {
+          if (harness === undefined) throw new Error("harness is not open yet");
+          return harness;
+        },
+        questionDocs: () =>
+          extensions
+            .flatMap((extension) => extension.docs ?? [])
+            .filter((doc) => doc.presentation === "pinomad.question")
+            .map((doc) => doc.token as ConversationDocToken<QuestionState>),
+        classify:
+          options.autoMode?.classify ??
+          modelClassifier(
+            () => models,
+            () => {
+              // A small, fast model when the host can run one; else the default model.
+              const small = models.getModel("anthropic", "claude-haiku-5-5");
+              if (small !== undefined) return small;
+              const ref = hostSettings.value.defaultModel;
+              return ref === null ? undefined : models.getModel(ref.provider, ref.modelId);
+            },
+          ),
+      }),
+    );
     const memoryExtension = createMemoryExtension(memoryOwner(options.dataDir));
     registry.install(memoryExtension);
     // Plugins load after the built-ins, whose tool names they may not take, and

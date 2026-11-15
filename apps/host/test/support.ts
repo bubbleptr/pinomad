@@ -110,6 +110,7 @@ export async function startFauxHost(
     mcpConfig,
     modelAuth,
     autoTitle,
+    autoMode,
     openStorage,
     push,
     images,
@@ -165,6 +166,11 @@ export async function startFauxHost(
      * consume a queued `answers` step, so it stays off unless a test opts in.
      */
     autoTitle?: boolean;
+    /**
+     * Auto mode's classifier would also call the faux provider and eat a
+     * queued answer: tests get an allow-all classifier unless they pass one.
+     */
+    autoMode?: OpenHostOptions["autoMode"];
     /** Wrap the real storage to inject failures (session-failure tests). */
     openStorage?: OpenHostOptions["openStorage"];
     /**
@@ -236,6 +242,7 @@ export async function startFauxHost(
     ...(mcpConfig === undefined ? {} : { mcpConfig }),
     ...(modelAuth === undefined ? {} : { modelAuth }),
     autoTitle: autoTitle === true,
+    autoMode: autoMode ?? { classify: async () => ({ verdict: "allow", reason: "" }) },
     ...(openStorage === undefined ? {} : { openStorage }),
     ...(push === undefined ? {} : { push }),
     ...(images === undefined ? {} : { images }),
