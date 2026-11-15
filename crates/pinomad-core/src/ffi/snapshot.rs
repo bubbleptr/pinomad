@@ -115,6 +115,14 @@ pub struct HostSettingsState {
     /// or on a host older than 5.38.
     #[uniffi(default = None)]
     pub inbox_quiet_hours: Option<QuietHours>,
+    /// The model a project's new intake conversation starts on; `None`
+    /// follows the default model, as on a host older than 5.40.
+    #[uniffi(default = None)]
+    pub inbox_intake_model: Option<ModelRef>,
+    /// The model new Inbox tasks and the memory tidy-up start on; `None`
+    /// follows the default model.
+    #[uniffi(default = None)]
+    pub inbox_worker_model: Option<ModelRef>,
 }
 
 /// `QueueMode` (settings.ts): queued messages go one per turn, or all at
@@ -399,6 +407,8 @@ fn settings_of(view: &Json) -> Option<HostSettingsState> {
         follow_up_mode: mode("followUpMode"),
         custom,
         inbox_quiet_hours: QuietHours::of(settings.get("inboxQuietHours")),
+        inbox_intake_model: settings.get("inboxIntakeModel").and_then(ModelRef::from_json),
+        inbox_worker_model: settings.get("inboxWorkerModel").and_then(ModelRef::from_json),
     })
 }
 

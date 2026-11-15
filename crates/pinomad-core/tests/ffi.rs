@@ -1870,6 +1870,8 @@ fn snapshot_settings_carry_the_account_switch_and_whether_the_name_is_custom() {
             follow_up_mode: None,
             custom: vec!["steeringMode".to_string(), "hostName".to_string()],
             inbox_quiet_hours: None,
+            inbox_intake_model: None,
+            inbox_worker_model: None,
         })
     );
 
@@ -1890,6 +1892,8 @@ fn snapshot_settings_carry_the_account_switch_and_whether_the_name_is_custom() {
             follow_up_mode: None,
             custom: vec![],
             inbox_quiet_hours: None,
+            inbox_intake_model: None,
+            inbox_worker_model: None,
         })
     );
 }
@@ -3056,7 +3060,11 @@ fn snapshot_decodes_the_inbox_stream_and_quiet_hours() {
     let mut host = ScriptedHost::new();
     host.snapshots.insert(
         "settings".to_string(),
-        obj(&[("inboxQuietHours", obj(&[("start", Json::from(1320.0)), ("end", Json::from(420.0))]))]),
+        obj(&[
+            ("inboxQuietHours", obj(&[("start", Json::from(1320.0)), ("end", Json::from(420.0))])),
+            ("inboxIntakeModel", obj(&[("provider", Json::from("anthropic")), ("modelId", Json::from("opus"))])),
+            ("inboxWorkerModel", Json::Null),
+        ]),
     );
     let inbox = Json::parse(
         r#"{"inboxes":[{"project":"/p","intake":9,"rules":"be brief","threads":{"github:a/b#1":"t1"},
@@ -3068,7 +3076,13 @@ fn snapshot_decodes_the_inbox_stream_and_quiet_hours() {
     host.snapshots.insert("inbox".to_string(), inbox);
     let h = Harness::boot(host, "req-1");
     let snapshot = h.client.snapshot().unwrap();
-    assert_eq!(snapshot.settings.unwrap().inbox_quiet_hours, Some(QuietHours { start: 1320, end: 420 }));
+    let settings = snapshot.settings.unwrap();
+    assert_eq!(settings.inbox_quiet_hours, Some(QuietHours { start: 1320, end: 420 }));
+    assert_eq!(
+        settings.inbox_intake_model,
+        Some(ModelRef { provider: "anthropic".to_string(), model_id: "opus".to_string() })
+    );
+    assert_eq!(settings.inbox_worker_model, None);
     let inboxes = snapshot.inbox.unwrap();
     let [project] = inboxes.as_slice() else { panic!("one project") };
     assert_eq!((project.project.as_str(), project.intake, project.rules.as_str()), ("/p", Some(9), "be brief"));
@@ -3251,6 +3265,10 @@ fn inbox_calls_encode_the_reference_frames() {
     h.invoke(3, FfiCall::CancelFollowUp { timer_id: "wake:1".into() });
     h.invoke(4, FfiCall::SkipInboxTask { project: "/p".into(), task_id: "t".into() });
     h.invoke(5, FfiCall::SetInboxQuietHours { hours: None });
+    h.invoke(6, FfiCall::SetInboxIntakeModel {
+        model: Some(ModelRef { provider: "openai".to_string(), model_id: "gpt/5".to_string() }),
+    });
+    h.invoke(7, FfiCall::SetInboxWorkerModel { model: None });
     assert_eq!(
         call_args(&h, "sendToIntake"),
         vec![obj(&[("project", Json::from("/p")), ("text", Json::from("hi")), ("requestId", Json::from("r1"))])]
@@ -3258,7 +3276,15 @@ fn inbox_calls_encode_the_reference_frames() {
     assert_eq!(call_args(&h, "setInboxRules"), vec![obj(&[("project", Json::from("/p")), ("rules", Json::from(""))])]);
     assert_eq!(call_args(&h, "cancelFollowUp"), vec![obj(&[("timerId", Json::from("wake:1"))])]);
     assert_eq!(call_args(&h, "skipInboxTask"), vec![obj(&[("project", Json::from("/p")), ("taskId", Json::from("t"))])]);
-    assert_eq!(call_args(&h, "updateSettings"), vec![obj(&[("patch", obj(&[("inboxQuietHours", Json::Null)]))])]);
+    let model = obj(&[("provider", Json::from("openai")), ("modelId", Json::from("gpt/5"))]);
+    assert_eq!(
+        call_args(&h, "updateSettings"),
+        vec![
+            obj(&[("patch", obj(&[("inboxQuietHours", Json::Null)]))]),
+            obj(&[("patch", obj(&[("inboxIntakeModel", model)]))]),
+            obj(&[("patch", obj(&[("inboxWorkerModel", Json::Null)]))]),
+        ]
+    );
 }
 
 // ─── background processes (5.32, ADR-0045) ───────────────────────────

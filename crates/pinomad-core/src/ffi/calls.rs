@@ -326,6 +326,13 @@ pub enum FfiCall {
     /// When the Inbox's `notify` pushes wait (ADR-0052 §4); `None` for none.
     /// Needs a 5.38 host — an older one lands a notice.
     SetInboxQuietHours { hours: Option<QuietHours> },
+    /// The model a project's new intake conversation starts on; `None`
+    /// follows the default model. Needs a 5.40 host — an older one lands a
+    /// notice.
+    SetInboxIntakeModel { model: Option<ModelRef> },
+    /// The model new Inbox tasks and the memory tidy-up start on; `None`
+    /// follows the default model. Needs a 5.40 host.
+    SetInboxWorkerModel { model: Option<ModelRef> },
     /// Hand the user's message to a project's intake conversation (ADR-0051
     /// §6), opening it on the first message. Request-class, like the Inbox
     /// calls below; resolves `CallResult::IntakeSent`. Needs a 5.38 host.
@@ -566,6 +573,12 @@ impl FfiCall {
             },
             FfiCall::SetInboxQuietHours { hours } => Call::UpdateSettings {
                 patch: settings_patch("inboxQuietHours", hours.map(QuietHours::to_json).unwrap_or(Json::Null)),
+            },
+            FfiCall::SetInboxIntakeModel { model } => Call::UpdateSettings {
+                patch: settings_patch("inboxIntakeModel", model.map(|m| m.to_json()).unwrap_or(Json::Null)),
+            },
+            FfiCall::SetInboxWorkerModel { model } => Call::UpdateSettings {
+                patch: settings_patch("inboxWorkerModel", model.map(|m| m.to_json()).unwrap_or(Json::Null)),
             },
             FfiCall::SendToIntake { project, text, request_id } => Call::SendToIntake { project, text, request_id },
             FfiCall::SetInboxRules { project, rules } => Call::SetInboxRules { project, rules },

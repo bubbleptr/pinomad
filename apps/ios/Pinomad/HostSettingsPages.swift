@@ -114,7 +114,8 @@ struct HostModelsView: View {
                 let levels = summary?.thinkingLevels ?? []
                 Section {
                     NavigationLink {
-                        DefaultModelPicker(model: model, hostKey: hostKey)
+                        ModelPickerList(model: model, hostKey: hostKey, title: "Default Model",
+                                        selected: snapshot.defaults.model) { model.setDefaultModel($0) }
                     } label: {
                         LabeledContent("Default model") {
                             HStack(spacing: 6) {
@@ -158,9 +159,12 @@ struct HostModelsView: View {
 
 /// Every model the host offers, by provider; picking one saves it and
 /// goes back.
-private struct DefaultModelPicker: View {
+private struct ModelPickerList: View {
     let model: AppModel
     let hostKey: String
+    let title: String
+    let selected: ModelRef?
+    let pick: (ModelRef) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
@@ -178,14 +182,14 @@ private struct DefaultModelPicker: View {
                     ForEach(shown.filter { $0.provider == provider }, id: \.self) { summary in
                         let ref = ModelRef(provider: summary.provider, modelId: summary.modelId)
                         Button {
-                            model.setDefaultModel(ref)
+                            pick(ref)
                             dismiss()
                         } label: {
                             HStack(spacing: 10) {
                                 ModelLogo(model: ref, size: 18, reserve: true)
                                 Text(summary.name ?? summary.modelId)
                                 Spacer()
-                                if sameModel(a: ref, b: model.snapshot?.defaults.model) {
+                                if sameModel(a: ref, b: selected) {
                                     Image(.check).foregroundStyle(.tint)
                                 }
                             }
@@ -197,7 +201,7 @@ private struct DefaultModelPicker: View {
         }
         .disabled(!model.connected)
         .searchable(text: $query, prompt: "Search models")
-        .navigationTitle("Default Model")
+        .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
     }
 }
@@ -373,8 +377,12 @@ struct HostChatsView: View {
             } else {
                 tooOld("settings")
             }
+            let inboxModels = model.hostSupports(.inboxModels)
+            if let settings = snapshot.settings, inboxModels {
+                inboxModelsSection(settings, models: snapshot.models)
+            }
             if let settings = snapshot.settings, model.hostSupports(.inboxQuietHours) {
-                quietHoursSection(settings.inboxQuietHours)
+                quietHoursSection(settings.inboxQuietHours, header: !inboxModels)
             }
             archivedSection(snapshot.organized.archived)
         }
@@ -400,8 +408,50 @@ struct HostChatsView: View {
 
     /// When the Inbox's `notify` pushes wait (ADR-0052 §4): one window for
     /// the whole host, in the host's local time. Questions are not held.
+    /// The models new intake and task conversations start on (5.40); unset,
+    /// or no longer offered, they follow the default model. An existing
+    /// intake keeps its model.
+    private func inboxModelsSection(_ settings: HostSettingsState, models: [ModelSummary]) -> some View {
+        Section {
+            inboxModelRow("Intake model", title: "Intake Model", ref: settings.inboxIntakeModel, models: models) {
+                model.setInboxIntakeModel(hostKey, $0)
+            }
+            inboxModelRow("Worker model", title: "Worker Model", ref: settings.inboxWorkerModel, models: models) {
+                model.setInboxWorkerModel(hostKey, $0)
+            }
+            if settings.custom.contains("inboxIntakeModel") || settings.custom.contains("inboxWorkerModel") {
+                Button("Use the Default Model") {
+                    model.setInboxIntakeModel(hostKey, nil)
+                    model.setInboxWorkerModel(hostKey, nil)
+                }
+                .disabled(!model.connected)
+            }
+        } header: {
+            Text("Inbox")
+        } footer: {
+            Text("New intake and task conversations start on these models.")
+        }
+    }
+
+    private func inboxModelRow(
+        _ label: String, title: String, ref: ModelRef?, models: [ModelSummary], pick: @escaping (ModelRef) -> Void
+    ) -> some View {
+        let summary = ref.flatMap { summaryOf(models: models, model: $0) }
+        return NavigationLink {
+            ModelPickerList(model: model, hostKey: hostKey, title: title, selected: ref, pick: pick)
+        } label: {
+            LabeledContent(label) {
+                HStack(spacing: 6) {
+                    if let ref, summary != nil { ModelLogo(model: ref, size: 14) }
+                    Text(summary.map { $0.name ?? $0.modelId } ?? "Default model")
+                }
+            }
+        }
+        .disabled(!model.connected || models.isEmpty)
+    }
+
     @ViewBuilder
-    private func quietHoursSection(_ quiet: QuietHours?) -> some View {
+    private func quietHoursSection(_ quiet: QuietHours?, header: Bool) -> some View {
         Section {
             Toggle("Quiet hours", isOn: Binding(
                 get: { quiet != nil },
@@ -418,7 +468,7 @@ struct HostChatsView: View {
                 ), displayedComponents: .hourAndMinute)
             }
         } header: {
-            Text("Inbox")
+            if header { Text("Inbox") }
         } footer: {
             Text("Inbox updates wait until the window ends. Times are the host's local time.")
         }
