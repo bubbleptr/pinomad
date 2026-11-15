@@ -406,6 +406,11 @@ export class ManualTimers implements PushTimers {
     return this.#queue.length;
   }
 
+  /** Time advanced so far, in ms. */
+  get elapsed(): number {
+    return this.#now;
+  }
+
   /** Fire every timer due within `ms`, including ones they schedule. */
   advance(ms: number): void {
     const until = this.#now + ms;

@@ -17,6 +17,7 @@ import { question } from "../src/extensions/question.ts";
 import type { OpenedHost } from "../src/host.ts";
 import type { HostValue } from "../src/host-value.ts";
 import { addInboxEvent, InboxDoc, OutboxDoc } from "../src/inbox.ts";
+import { DEFAULT_POLICY, type DeliveryPolicy } from "../src/outbox-policy.ts";
 import { IndexDoc } from "../src/organization.ts";
 import { attachPushSender, PushDoc, pushTokenProblem, type PushTransport } from "../src/push.ts";
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
@@ -141,15 +142,18 @@ async function pushHost(
     apns: ReturnType<typeof fakeTransport>;
     timers?: ManualTimers;
     dataDir?: string;
+    /** The outbox pacing; by default `notify` pushes go out as soon as the sender looks. */
+    outboxPolicy?: DeliveryPolicy;
   },
 ): Promise<{ host: OpenedHost; apns: ReturnType<typeof fakeTransport>; timers: ManualTimers; dataDir: string }> {
-  const { apns, timers = new ManualTimers(), dataDir, ...rest } = options;
+  const { apns, timers = new ManualTimers(), dataDir, outboxPolicy = { ...DEFAULT_POLICY, gatherMs: 0, maxWaitMs: 0 }, ...rest } = options;
+  // The pacing reads real time moved on by however far the manual timers advanced.
   const dir = dataDir ?? (await joinedDir());
   const host = await startFauxHost(defer, {
     ...rest,
     dataDir: dir,
     remote: { port: 0 },
-    push: { transport: apns.transport, timers },
+    push: { transport: apns.transport, timers, outboxPolicy: () => outboxPolicy, now: () => Date.now() + timers.elapsed },
   });
   return { host, apns, timers, dataDir: dir };
 }
@@ -796,7 +800,7 @@ describe("Inbox pushes", () => {
     // Settled before the restart: an interrupted run would push Failed on the next start.
     await waitForView(watcher.view, (view) => view.organized.chats[0]?.summary.status === undefined);
     await first.harness.commit(async (tx) => {
-      (await tx.doc(OutboxDoc)).messages.push({ id: "notify:old", project: "/p", task: "t", conversationId: id, text: "stale", at: Date.now() - 2 * 60 * 60_000, sent: false });
+      (await tx.doc(OutboxDoc)).messages.push({ id: "notify:old", project: "/p", task: "t", conversationId: id, text: "stale", at: Date.now() - 13 * 60 * 60_000, sent: false });
     }, context);
     await first.close();
 
@@ -822,5 +826,49 @@ describe("Inbox pushes", () => {
     await apns.waitForCalls(1);
     expect(apns.calls[0]!.notification.body).toBe("Update for you");
     await waitUntil(async () => (await host.harness.snapshot(OutboxDoc, context))?.messages[0]?.sent === true);
+  });
+  it("gathers notifies close together into one digest push", async () => {
+    const project = await tempDir();
+    defer(project.remove);
+    const apns = fakeTransport();
+    const { host, timers } = await pushHost({
+      apns,
+      projects: [project.path],
+      outboxPolicy: { ...DEFAULT_POLICY, gatherMs: 30_000, maxWaitMs: 120_000 },
+      answers: [notifyStep("first is done"), "ok", notifyStep("second is done"), "ok"],
+    });
+    const { client } = await pairDevice(defer, host, "phone");
+    await client.controller.setPushToken(TOKEN_A);
+    await addInboxEvent(host.harness, project.path, { id: "e1", source: "user", summary: "one", trusted: true }, context);
+    await addInboxEvent(host.harness, project.path, { id: "e2", source: "user", summary: "two", trusted: true }, context);
+    await waitUntil(async () => (await host.harness.snapshot(OutboxDoc, context))?.messages.length === 2);
+    await settle();
+    expect(apns.calls).toHaveLength(0);
+    timers.advance(31_000);
+    await apns.waitForCalls(1);
+    await settle();
+    expect(apns.calls).toHaveLength(1);
+    expect(apns.calls[0]!.notification).toMatchObject({ title: "PiNomad Inbox", body: "2 updates for you" });
+    const messages = (await host.harness.snapshot(OutboxDoc, context))!.messages;
+    expect(messages.every((message) => message.sent && message.pushId === messages[0]!.pushId)).toBe(true);
+  });
+
+  it("schedules a notify again when its push reached no device", async () => {
+    const apns = fakeTransport(() => ({ result: "retry", reason: "server down" }));
+    const project = await tempDir();
+    defer(project.remove);
+    const { host, timers } = await pushHost({ apns, projects: [project.path], answers: [notifyStep("ready"), "ok"] });
+    const { client } = await pairDevice(defer, host, "phone");
+    await client.controller.setPushToken(TOKEN_A);
+    await addInboxEvent(host.harness, project.path, { id: "e1", source: "user", summary: "one", trusted: true }, context);
+    // The title wait, then the push's own retries (5, 10, 20 s) run out.
+    await waitUntil(async () => {
+      timers.advance(5_000);
+      return (await host.harness.snapshot(OutboxDoc, context))?.messages[0]?.attempts === 1;
+    });
+    expect(apns.calls.length).toBeGreaterThanOrEqual(4);
+    const [message] = (await host.harness.snapshot(OutboxDoc, context))!.messages;
+    expect(message).toMatchObject({ sent: false, attempts: 1 });
+    expect(message!.retryAt).toBeGreaterThan(message!.at);
   });
 });

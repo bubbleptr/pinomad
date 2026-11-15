@@ -19,6 +19,7 @@ import { type AgentRoleStore, openAgentRoles } from "./agent-roles.ts";
 import { type HostSettingsStore, openHostSettings, type SettingsFallback, settingsDefaults } from "./host-settings.ts";
 import { constantValue } from "./host-value.ts";
 import type { PushTimers, PushTransport } from "./push.ts";
+import type { DeliveryPolicy } from "./outbox-policy.ts";
 import { toBase64Url } from "@pinomad/protocol/secure-channel.ts";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import lockfile from "proper-lockfile";
@@ -88,7 +89,13 @@ export interface OpenHostOptions {
    * is sent (faux test hosts). `{}` sends through the relay link when the
    * host is joined; tests inject `transport`/`timers` fakes.
    */
-  readonly push?: { readonly transport?: PushTransport; readonly timers?: PushTimers };
+  readonly push?: {
+    readonly transport?: PushTransport;
+    readonly timers?: PushTimers;
+    /** The pacing of `notify` pushes and the clock it reads; tests shorten and pin them. */
+    readonly outboxPolicy?: () => DeliveryPolicy;
+    readonly now?: () => number;
+  };
   /** How long a lock left by a killed host blocks the next one. proper-lockfile's minimum is 2000. */
   readonly lockStaleMs?: number;
   /** Test seam: the session.sqlite opener; defaults to the node-sqlite storage. */
@@ -377,6 +384,8 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
               hostKey: toBase64Url(hostKey.publicKey),
               ...(options.push.transport === undefined ? {} : { transport: options.push.transport }),
               ...(options.push.timers === undefined ? {} : { timers: options.push.timers }),
+              ...(options.push.outboxPolicy === undefined ? {} : { outboxPolicy: options.push.outboxPolicy }),
+              ...(options.push.now === undefined ? {} : { now: options.push.now }),
             },
           }),
       ...(options.rtc === undefined ? {} : { rtc: options.rtc }),

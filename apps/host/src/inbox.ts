@@ -234,7 +234,16 @@ export type OutboxMessage = {
   /** Stays on the host: the push carries only a fixed line (ADR-0025 §8). */
   text: string;
   at: number;
+  /** Delivered, dropped as stale, or given up on: the deliverer is done with it. */
   sent: boolean;
+  /** When its push went out, and the push it went out in (a digest carries several messages). */
+  sentAt?: number;
+  pushId?: string;
+  /** Deliveries that reached no device so far, and when to try again. */
+  attempts?: number;
+  retryAt?: number;
+  /** Given up after the last attempt. */
+  failed?: boolean;
 };
 
 export const OutboxDoc = defineDoc<{ messages: OutboxMessage[] }>({
