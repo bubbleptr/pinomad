@@ -1,6 +1,7 @@
 import type { ModelRef } from "@earendil-works/pi-durable";
 import type { ThinkingLevel } from "./view.ts";
 import type { AutoUpgradeMode } from "./upgrade.ts";
+import type { QuietHours } from "./inbox.ts";
 
 /** Queue mode of pi's submissions inbox (`steering` / `followUp`). */
 export type QueueMode = "all" | "one-at-a-time";
@@ -23,6 +24,11 @@ export interface HostSettings {
   readonly hostName?: string;
   /** Release checks and idle upgrades (5.30, ADR-0043 §6); absent on older hosts. */
   readonly autoUpgrade?: AutoUpgradeMode;
+  /**
+   * When the Inbox's `notify` pushes wait (5.38, ADR-0052 §4), in the host's
+   * local time; `null` for none. Absent on older hosts.
+   */
+  readonly inboxQuietHours?: QuietHours | null;
   /** Keys PiNomad's settings.json sets; the rest are inherited. Lets a client offer "reset". */
   readonly custom: readonly HostSettingKey[];
 }
@@ -39,6 +45,7 @@ const HOST_SETTING_KEY_SET = {
   rtcStun: true,
   hostName: true,
   autoUpgrade: true,
+  inboxQuietHours: true,
 } satisfies Record<HostSettingKey, true>;
 export const HOST_SETTING_KEYS = Object.keys(HOST_SETTING_KEY_SET) as readonly HostSettingKey[];
 

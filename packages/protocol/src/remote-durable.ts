@@ -1090,6 +1090,7 @@ class RemoteClient {
         settings: null,
         agents: null,
         upgrade: null,
+        inbox: null,
         host: this.#hostInfo(),
       };
       this.#refresh();
@@ -3487,6 +3488,7 @@ class RemoteClient {
       settings: this.#host("settings") ?? null,
       agents: this.#host("agents") ?? null,
       upgrade: this.#host("upgrade") ?? null,
+      inbox: this.#host("inbox") ?? null,
       defaults: this.#effectiveDefaults(this.#helloDefaults),
     });
   }
@@ -3579,6 +3581,13 @@ class RemoteClient {
   #requireUpgrade(): void {
     if (!hostSupportsCall(this.#hostMinor, "startUpgrade")) {
       throw new Error("The host is too old for this (needs protocol 5.30); run `pinomad upgrade` on the host");
+    }
+  }
+
+  /** The Inbox calls all arrived together in 5.38 (ADR-0051). */
+  #requireInbox(): void {
+    if (!hostSupportsCall(this.#hostMinor, "sendToIntake")) {
+      throw new Error("The host is too old for the Inbox (needs protocol 5.38); run `pinomad upgrade` on the host");
     }
   }
 
@@ -3947,6 +3956,11 @@ class RemoteClient {
               "The host is too old for this (needs protocol 5.30); run `pinomad upgrade` on the host",
             );
           }
+          if (patch.inboxQuietHours !== undefined && !hostSupportsFeature(this.#hostMinor, "inboxQuietHours")) {
+            throw new Error(
+              "The host is too old for this (needs protocol 5.38); run `pinomad upgrade` on the host",
+            );
+          }
           return this.#call("updateSettings", { patch });
         }),
       // Unqueued: a wait or an install must not hold the command queue.
@@ -3962,6 +3976,26 @@ class RemoteClient {
         this.#requireUpgrade();
         await this.#call("checkUpgrade", {});
       },
+      sendToIntake: (project, text) =>
+        this.#request(async () => {
+          this.#requireInbox();
+          return (await this.#call("sendToIntake", { project, text, requestId: newRequestId() })).conversationId;
+        }),
+      setInboxRules: (project, rules) =>
+        this.#request(async () => {
+          this.#requireInbox();
+          await this.#call("setInboxRules", { project, rules });
+        }),
+      cancelFollowUp: (timerId) =>
+        this.#request(async () => {
+          this.#requireInbox();
+          await this.#call("cancelFollowUp", { timerId });
+        }),
+      skipInboxTask: (project, taskId) =>
+        this.#request(async () => {
+          this.#requireInbox();
+          await this.#call("skipInboxTask", { project, taskId });
+        }),
       createAgent: (role) =>
         this.#request(async () => {
           if (!hostSupportsCall(this.#hostMinor, "createAgent")) {

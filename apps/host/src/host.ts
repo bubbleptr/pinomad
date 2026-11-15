@@ -13,6 +13,7 @@ import { createMemoryExtension } from "./inbox-memory.ts";
 import { inboxSandboxPolicy, openSandboxedEnv, type SandboxedExecutionEnv } from "./sandbox.ts";
 import { type Classify, classifierModel, createAutoMode, modelClassifier } from "./auto-mode.ts";
 import type { QuestionState } from "@pinomad/protocol/presentation.ts";
+import { openInboxService } from "./inbox-view.ts";
 import { checkoutAt, ensureWorktree, worktreeRoot } from "./checkout.ts";
 import { ensureDevices, loadHostKey, loadRelayKey, pairingOffers } from "./devices.ts";
 import type { RelayLinkState } from "./relay-link.ts";
@@ -209,6 +210,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
   let extensions: readonly BuiltinExtension[] = [];
   let plugins: Plugins | undefined;
   let upgrader: Awaited<ReturnType<typeof startHostUpgrader>> | undefined;
+  let inboxView: Awaited<ReturnType<typeof openInboxService>> | undefined;
   try {
     const models = withAnswerTiming(options.models);
     const token = await hostToken(options.dataDir);
@@ -422,8 +424,12 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
                   drain: () => processes!.drain(context),
                 }),
           });
+    // The `inbox` stream starts with the gateway; its intake calls wait for the workers below.
+    let inboxWorkers: InboxHandle | undefined;
+    inboxView = await openInboxService({ harness, dataDir: options.dataDir, context, intake: () => inboxWorkers });
     const gateway = await startGateway({
       harness,
+      inbox: inboxView,
       models,
       modelSummaries: options.modelSummaries,
       ...(options.images === undefined ? {} : { images: options.images }),
@@ -495,7 +501,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     const builtinTools = [...extensions.flatMap(({ extension }) => extension.tools ?? []), ...inboxExtension.tools!];
     const inboxTaskTools = [...inboxExtension.tools!, ...memoryExtension.tools!].filter((tool) => INBOX_TASK_TOOLS.includes(tool.name));
     const intakeTools = builtinTools.filter((tool) => INTAKE_TOOLS.includes(tool.name));
-    const inbox = await startInbox({
+    const inbox = (inboxWorkers = await startInbox({
       harness,
       context,
       dataDir: options.dataDir,
@@ -527,7 +533,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
           roles?.value ?? { roles: [], problems: [] },
           ctx,
         ),
-    });
+    }));
 
     const opened = harness;
     let closing: Promise<void> | undefined;
@@ -568,6 +574,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
           try {
             upgrader?.close();
             inbox.close();
+            inboxView?.close();
             await gateway.close();
             // Close writes no outcome: a running turn resumes at the next open.
             await opened.close(context);
@@ -589,6 +596,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     };
   } catch (error) {
     upgrader?.close();
+    inboxView?.close();
     if (processes !== undefined) await processes.close(context).catch(() => {});
     options.modelAuth?.close();
     attachments?.close();

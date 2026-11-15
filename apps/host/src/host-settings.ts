@@ -21,6 +21,7 @@ import {
 } from "@pinomad/protocol/settings.ts";
 import { RTC_DEFAULT_STUN } from "@pinomad/protocol/rtc.ts";
 import { isAutoUpgradeMode, type AutoUpgradeMode } from "@pinomad/protocol/upgrade.ts";
+import { isQuietHours, type QuietHours } from "@pinomad/protocol/inbox.ts";
 import type { ConversationDefaults, ModelSummary, ThinkingLevel } from "@pinomad/protocol/view.ts";
 import { Published, sameList, type HostValue } from "./host-value.ts";
 
@@ -85,6 +86,8 @@ const fileValueError = (
       return typeof value === "string" ? undefined : "malformed";
     case "autoUpgrade":
       return isAutoUpgradeMode(value) ? undefined : "malformed";
+    case "inboxQuietHours":
+      return isQuietHours(value) ? undefined : "malformed";
   }
 };
 
@@ -102,6 +105,9 @@ const sameSettings = (a: HostSettings, b: HostSettings): boolean =>
     : sameList(a.rtcStun, b.rtcStun, (x, y) => x === y))
   && a.hostName === b.hostName
   && a.autoUpgrade === b.autoUpgrade
+  && a.inboxQuietHours?.start === b.inboxQuietHours?.start
+  && a.inboxQuietHours?.end === b.inboxQuietHours?.end
+  && (a.inboxQuietHours === null) === (b.inboxQuietHours === null)
   && sameList(a.custom, b.custom, (x, y) => x === y);
 
 const parse = (path: string, text: string): Record<string, unknown> => {
@@ -168,6 +174,7 @@ export async function openHostSettings(options: {
       // so `.local` suffixes, stray controls and oversize names never display.
       hostName: normalizeHostName((fileValues.hostName as string | undefined) ?? hostname()),
       autoUpgrade: (fileValues.autoUpgrade as AutoUpgradeMode | undefined) ?? "notify",
+      inboxQuietHours: (fileValues.inboxQuietHours as QuietHours | undefined) ?? null,
       custom,
     };
   };

@@ -11,6 +11,7 @@ use crate::ffi::providers::{ApiKeyChange, CustomProviderApi, CustomProviderInput
 use crate::ffi::ResultKind;
 use crate::json::{Json, JsonObject};
 use crate::ffi::upgrade::AutoUpgradeMode;
+use crate::inbox::QuietHours;
 use crate::ffi::snapshot::QueueDelivery;
 use crate::remote_durable::{Call, UpgradeWhen};
 use crate::u16str::U16String;
@@ -322,6 +323,19 @@ pub enum FfiCall {
     /// Release checks and idle upgrades (ADR-0043 §6). Needs a 5.30 host —
     /// an older one lands a notice.
     SetAutoUpgrade { mode: AutoUpgradeMode },
+    /// When the Inbox's `notify` pushes wait (ADR-0052 §4); `None` for none.
+    /// Needs a 5.38 host — an older one lands a notice.
+    SetInboxQuietHours { hours: Option<QuietHours> },
+    /// Hand the user's message to a project's intake conversation (ADR-0051
+    /// §6), opening it on the first message. Request-class, like the Inbox
+    /// calls below; resolves `CallResult::IntakeSent`. Needs a 5.38 host.
+    SendToIntake { project: String, text: String, request_id: String },
+    /// Replace an Inbox's rules; `""` clears them. Rejects past 16 KB.
+    SetInboxRules { project: String, rules: String },
+    /// Drop a follow-up or schedule; rejects for the daily tidy-up.
+    CancelFollowUp { timer_id: String },
+    /// Close a task without running it; rejects while its run is out.
+    SkipInboxTask { project: String, task_id: String },
     /// The model new conversations start with; `None` goes back to pi's.
     SetDefaultModel { model: Option<ModelRef> },
     /// The thinking level new conversations start with; `None` goes back
@@ -436,6 +450,7 @@ impl FfiCall {
             FfiCall::ReorderQueued { .. } => Some(ResultKind::ReorderQueued),
             FfiCall::BeginLogin { .. } => Some(ResultKind::LoginStarted),
             FfiCall::ListEndpointModels { .. } => Some(ResultKind::EndpointModels),
+            FfiCall::SendToIntake { .. } => Some(ResultKind::IntakeSent),
             _ => None,
         }
     }
@@ -535,6 +550,13 @@ impl FfiCall {
             FfiCall::SetAutoUpgrade { mode } => Call::UpdateSettings {
                 patch: settings_patch("autoUpgrade", Json::from(mode.as_str())),
             },
+            FfiCall::SetInboxQuietHours { hours } => Call::UpdateSettings {
+                patch: settings_patch("inboxQuietHours", hours.map(QuietHours::to_json).unwrap_or(Json::Null)),
+            },
+            FfiCall::SendToIntake { project, text, request_id } => Call::SendToIntake { project, text, request_id },
+            FfiCall::SetInboxRules { project, rules } => Call::SetInboxRules { project, rules },
+            FfiCall::CancelFollowUp { timer_id } => Call::CancelFollowUp { timer_id },
+            FfiCall::SkipInboxTask { project, task_id } => Call::SkipInboxTask { project, task_id },
             FfiCall::SetDefaultModel { model } => Call::UpdateSettings {
                 patch: settings_patch("defaultModel", model.map(|m| m.to_json()).unwrap_or(Json::Null)),
             },

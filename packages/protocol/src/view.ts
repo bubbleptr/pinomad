@@ -16,6 +16,7 @@ import type { HostSettings, HostSettingsPatch } from "./settings.ts";
 import type { ImageResult, ImageVariant, OutgoingImage, ViewImage } from "./images.ts";
 import type { UserAttachment } from "./attachments.ts";
 import type { HostUpgrade, UpgradeWhen } from "./upgrade.ts";
+import type { HostInbox } from "./inbox.ts";
 
 /** A model's thinking level, "off" included. pi-ai's `ModelThinkingLevel`, re-exported for browser clients. */
 export type ThinkingLevel = ModelThinkingLevel;
@@ -210,6 +211,8 @@ export interface DurableView {
   readonly agents: AgentRoles | null;
   /** Release checks and the upgrade in progress (ADR-0043); `null` before its snapshot or when the host predates the `upgrade` stream (5.30). */
   readonly upgrade: HostUpgrade | null;
+  /** Each project's Inbox (ADR-0051); `null` before its snapshot or when the host predates the `inbox` stream (5.38). */
+  readonly inbox: HostInbox | null;
   /**
    * What the host announced in its hello; `version` is absent when the host
    * runs from a source checkout, `plugins` when it has none (ADR-0049).
@@ -463,6 +466,18 @@ export interface DurableController {
   cancelUpgrade(): Promise<void>;
   /** Ask the host to check npm now; rejects while `autoUpgrade` is `off`. Needs a 5.30 host. */
   checkUpgrade(): Promise<void>;
+  /**
+   * Hand the user's message to a project's intake conversation (ADR-0051 §6),
+   * opening it on the first message; resolves with its id. Rejects with the
+   * host's error. Needs a 5.38 host, like the Inbox calls below.
+   */
+  sendToIntake(project: string, text: string): Promise<ConversationId>;
+  /** Replace an Inbox's rules; `""` clears them. Rejects past `INBOX_RULES_MAX_BYTES`. */
+  setInboxRules(project: string, rules: string): Promise<void>;
+  /** Drop a follow-up or schedule that has not fired; rejects for the daily tidy-up. */
+  cancelFollowUp(timerId: string): Promise<void>;
+  /** Close a task without running it; rejects while the worker has a batch of it out. */
+  skipInboxTask(project: string, taskId: string): Promise<void>;
   /** Create a named agent on the host; rejects when `<name>.md` already exists. Needs a 5.6 host. */
   createAgent(role: AgentRole): Promise<void>;
   /** Overwrite an existing named agent — also the way a broken file gets fixed. Renaming is create + delete. Needs a 5.6 host. */

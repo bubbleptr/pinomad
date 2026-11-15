@@ -3,6 +3,7 @@
 // screen is suppressed (ADR-0035 §9).
 import { useEffect, useRef } from "react";
 import type { DurableView } from "@pinomad/protocol/view.ts";
+import { inboxRunIds } from "@pinomad/client/inbox.ts";
 import { diffRunNotices, type StatusBaseline } from "@pinomad/client/run-notifications.ts";
 import type { ConversationRef } from "../host/focus.ts";
 
@@ -34,7 +35,7 @@ export function useRunNotifications(
   useEffect(() => {
     if (!enabled) return;
     if (view.connection !== "connected") return;
-    const { notices, changed, baseline: next } = diffRunNotices(baseline.current, view.organized);
+    const { notices, changed, baseline: next } = diffRunNotices(baseline.current, view.organized, inboxRunIds(view.inbox));
     baseline.current = next;
     for (const id of changed) {
       shown.current.get(id)?.close();
@@ -67,5 +68,5 @@ export function useRunNotifications(
         if (shown.current.get(notice.id) === notification) shown.current.delete(notice.id);
       };
     }
-  }, [enabled, hostKey, visibleConversationId, view.connection, view.organized]);
+  }, [enabled, hostKey, visibleConversationId, view.connection, view.organized, view.inbox]);
 }

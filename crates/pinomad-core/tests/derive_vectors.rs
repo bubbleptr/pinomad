@@ -2,11 +2,13 @@
 // packages/client/test/fixtures/rust-vectors/ — the TS reference computed
 // the expectations; regenerate with PINOMAD_UPDATE_VECTORS=1.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use pinomad_core::chat::{agent_of, queue_items, queued_input, status_text, task_rows, usage_rows};
 use pinomad_core::context_usage::context_usage;
+use pinomad_core::inbox::{group_inbox_tasks, inbox_task_state, task_of};
 use pinomad_core::cot_view::{derive_chat, retry_of, split_subagent_calls, submission_queue_rows, submission_rows};
 use pinomad_core::json::{Json, JsonObject};
 use pinomad_core::presentation::classify;
@@ -943,6 +945,51 @@ fn command_input_replay() {
                 Json::Object(std::sync::Arc::new(object))
             }
         };
+        assert_eq!(norm(&got), expect_text(case), "{name}");
+    }
+}
+
+/// Inbox task states and the sidebar's groups (ADR-0051 §2) — the same
+/// derivations as `packages/client/src/inbox.ts`.
+#[test]
+fn inbox_derivations_replay() {
+    let file = load("inbox");
+    let status = |summary: &Json| summary.get("status").and_then(Json::as_str).map(|s| s.to_string_lossy());
+    for case in cases(&file, "taskState") {
+        let name = as_text(field(case, "name"));
+        let task = task_of(&Json::parse(&as_text(field(case, "task"))).unwrap()).expect("task decodes");
+        let summary = case.get("summary").map(|text| Json::parse(&as_text(text)).unwrap());
+        let got = inbox_task_state(&task, summary.as_ref().and_then(status).as_deref());
+        assert_eq!(norm(&Json::from(got.as_str())), expect_text(case), "{name}");
+    }
+    for case in cases(&file, "groups") {
+        let name = as_text(field(case, "name"));
+        let tasks: Vec<_> = Json::parse(&as_text(field(case, "tasks")))
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|task| task_of(task).expect("task decodes"))
+            .collect();
+        let summaries = Json::parse(&as_text(field(case, "summaries"))).unwrap();
+        let statuses: HashMap<u64, String> = summaries
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|summary| Some((summary.get("id")?.as_number()? as u64, status(summary)?)))
+            .collect();
+        let groups = group_inbox_tasks(&tasks, &|id| statuses.get(&id).cloned());
+        let got = Json::array(
+            groups
+                .iter()
+                .map(|group| {
+                    Json::array(vec![
+                        Json::from(group.group.as_str()),
+                        Json::array(group.tasks.iter().map(|task| Json::from(task.id.clone())).collect()),
+                    ])
+                })
+                .collect(),
+        );
         assert_eq!(norm(&got), expect_text(case), "{name}");
     }
 }

@@ -44,6 +44,7 @@ import {
 } from "../src/model.ts";
 import { parsePatch } from "../src/patch.ts";
 import { orderedProcesses, processStatusText } from "../src/processes.ts";
+import { groupInboxTasks, inboxTaskState } from "../src/inbox.ts";
 import { stripUserBlocks, type UserContent } from "../src/skill-blocks.ts";
 import { skillMentionRanges } from "../src/skill-mentions.ts";
 import { parseCommandInput } from "../src/command-input.ts";
@@ -116,6 +117,7 @@ import {
 } from "./misc-cases.ts";
 import { PATCH_CASES } from "./patch-cases.ts";
 import { PROCESS_ORDER_CASES, PROCESS_STATUS_CASES } from "./processes-cases.ts";
+import { INBOX_GROUP_CASES, INBOX_STATE_CASES } from "./inbox-cases.ts";
 import { SKILL_BLOCK_CASES } from "./skill-blocks-cases.ts";
 import { USER_BLOCK_CASES } from "./attachment-blocks-cases.ts";
 import { SKILL_MENTION_CASES } from "./skill-mentions-cases.ts";
@@ -173,11 +175,11 @@ const expect = (wireText: string): string => {
   return out;
 };
 
-/** The `conversation:4` stream from the recorded host session, after its ops. */
+/** The recorded host session's conversation stream, after its ops; its id is whatever the host gave it. */
 function recordedConversation(): { view: ConversationView; presentations: Record<string, string>; busy: boolean } {
   const path = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "protocol", "test", "fixtures", "host-frames.json");
   const frames = JSON.parse(readFileSync(path, "utf8")) as { stream?: string; value?: unknown; ops?: unknown[] }[];
-  const conversation = frames.filter((frame) => frame.stream === "conversation:4");
+  const conversation = frames.filter((frame) => frame.stream?.startsWith("conversation:") === true);
   let view = conversation.find((frame) => frame.value !== undefined)!.value as ConversationView;
   for (const frame of conversation.filter((frame) => frame.ops !== undefined)) {
     view = applyImmutable(view, frame.ops as never) as ConversationView;
@@ -538,6 +540,23 @@ function processesVector(): VectorFile {
   });
 }
 
+function inboxVector(): VectorFile {
+  return write("inbox", {
+    taskState: INBOX_STATE_CASES.map((c) => ({
+      name: c.name,
+      task: wire(c.task),
+      ...(c.summary === undefined ? {} : { summary: wire(c.summary) }),
+      expect: expect(wire(inboxTaskState(c.task, c.summary))),
+    })),
+    groups: INBOX_GROUP_CASES.map((c) => ({
+      name: c.name,
+      tasks: wire(c.tasks),
+      summaries: wire(c.summaries),
+      expect: expect(wire(groupInboxTasks(c.tasks, c.summaries).map((group) => [group.group, group.tasks.map((task) => task.id)]))),
+    })),
+  });
+}
+
 function skillBlocksVector(): VectorFile {
   // Skill cases are string content (a string never carries attachments); the
   // attachment cases exercise whole-block parsing.
@@ -856,6 +875,7 @@ export async function buildVectors(): Promise<VectorFile[]> {
     miscVector(),
     patchVector(),
     processesVector(),
+    inboxVector(),
     skillMentionsVector(),
     skillBlocksVector(),
     commandInputVector(),

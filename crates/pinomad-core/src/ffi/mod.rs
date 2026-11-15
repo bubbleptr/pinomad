@@ -48,6 +48,7 @@ pub(crate) enum ResultKind {
     TakeBackSubmission,
     LoginStarted,
     EndpointModels,
+    IntakeSent,
 }
 
 /// State behind the single lock: the machine plus the op→result-shape map
@@ -245,6 +246,20 @@ impl PinomadClient {
                                 value: CallResult::EndpointModels { models },
                             },
                             Err(error) => FfiCommand::OperationFailed { op, error, carrier_lost: false },
+                        },
+                        Some(ResultKind::IntakeSent) => match value
+                            .as_ref()
+                            .and_then(|v| crate::json::num_key(v.get("conversationId")))
+                        {
+                            Some(conversation_id) => FfiCommand::OperationSucceeded {
+                                op,
+                                value: CallResult::IntakeSent { conversation_id },
+                            },
+                            None => FfiCommand::OperationFailed {
+                                op,
+                                error: "malformed sendToIntake result: conversationId".to_string(),
+                                carrier_lost: false,
+                            },
                         },
                         None => FfiCommand::OperationSucceeded { op, value: CallResult::Unit },
                     }

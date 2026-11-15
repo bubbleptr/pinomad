@@ -203,6 +203,8 @@ pub enum CallResult {
     LoginStarted { login_id: String },
     /// `listEndpointModels` — the model ids the endpoint listed.
     EndpointModels { models: Vec<String> },
+    /// `sendToIntake` — the project's intake conversation.
+    IntakeSent { conversation_id: u64 },
     /// `takeBackSubmission` — the send's original content when it was taken
     /// back, or `None` when the host already admitted it.
     TakeBackSubmission { draft: Option<SubmissionDraft> },

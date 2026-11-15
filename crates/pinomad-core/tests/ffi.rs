@@ -15,6 +15,7 @@ use pinomad_core::ffi::{
     ReorderOutcome, SteerOutcome, StoredHost, SubmissionDraft, SubmissionStatus, SubmitMode, ThinkingLevel,
     WithdrawOutcome, AutoUpgradeMode, AvailableUpgrade, UpgradeBlocker, UpgradeFailure, UpgradePhase,
 };
+use pinomad_core::inbox::{InboxTaskState, QuietHours};
 use pinomad_core::json::{Json, JsonObject};
 use pinomad_core::remote_durable::UpgradeWhen;
 use pinomad_core::remote_durable::RemoteDurableOptions;
@@ -1866,6 +1867,7 @@ fn snapshot_settings_carry_the_account_switch_and_whether_the_name_is_custom() {
             steering_mode: None,
             follow_up_mode: None,
             custom: vec!["steeringMode".to_string(), "hostName".to_string()],
+            inbox_quiet_hours: None,
         })
     );
 
@@ -1885,6 +1887,7 @@ fn snapshot_settings_carry_the_account_switch_and_whether_the_name_is_custom() {
             steering_mode: None,
             follow_up_mode: None,
             custom: vec![],
+            inbox_quiet_hours: None,
         })
     );
 }
@@ -3041,6 +3044,59 @@ fn upgrade_calls_encode_the_reference_frames() {
     assert_eq!(call_args(&h, "cancelUpgrade"), vec![obj(&[])]);
     assert_eq!(call_args(&h, "checkUpgrade"), vec![obj(&[])]);
     assert_eq!(call_args(&h, "updateSettings"), vec![obj(&[("patch", obj(&[("autoUpgrade", Json::from("off"))]))])]);
+}
+
+/// ADR-0051: the `inbox` stream and `inboxQuietHours` setting, typed; the
+/// Inbox calls lower to the reference frames and `sendToIntake` resolves the
+/// intake's id.
+#[test]
+fn snapshot_decodes_the_inbox_stream_and_quiet_hours() {
+    let mut host = ScriptedHost::new();
+    host.snapshots.insert(
+        "settings".to_string(),
+        obj(&[("inboxQuietHours", obj(&[("start", Json::from(1320.0)), ("end", Json::from(420.0))]))]),
+    );
+    let inbox = Json::parse(
+        r#"{"inboxes":[{"project":"/p","intake":9,"rules":"be brief","threads":{"github:a/b#1":"t1"},
+        "tasks":[{"id":"t1","title":"Login","createdAt":1,"conversationId":3,"inFlight":true,"waiting":true,"closed":false,
+        "events":[{"id":"e1","source":"user","thread":"github:a/b#1","summary":"login fails","trusted":false,"receivedAt":5,"handled":true}]}],
+        "followUps":[{"id":"tidy:/p","due":100,"note":"Daily memory tidy-up","every":86400000,"kind":"tidy"}]}]}"#,
+    )
+    .unwrap();
+    host.snapshots.insert("inbox".to_string(), inbox);
+    let h = Harness::boot(host, "req-1");
+    let snapshot = h.client.snapshot().unwrap();
+    assert_eq!(snapshot.settings.unwrap().inbox_quiet_hours, Some(QuietHours { start: 1320, end: 420 }));
+    let inboxes = snapshot.inbox.unwrap();
+    let [project] = inboxes.as_slice() else { panic!("one project") };
+    assert_eq!((project.project.as_str(), project.intake, project.rules.as_str()), ("/p", Some(9), "be brief"));
+    assert_eq!(project.threads.get("github:a/b#1").map(String::as_str), Some("t1"));
+    let task = &project.tasks[0];
+    assert!(task.in_flight && task.waiting && !task.closed);
+    assert_eq!(task.conversation_id, Some(3));
+    assert_eq!(task.events[0].thread.as_deref(), Some("github:a/b#1"));
+    assert!(!task.events[0].trusted);
+    assert_eq!(pinomad_core::ffi::inbox_task_state(task.clone(), None), InboxTaskState::Waiting);
+    assert_eq!(project.follow_ups[0].kind.as_deref(), Some("tidy"));
+    assert_eq!(project.follow_ups[0].every, Some(86_400_000.0));
+}
+
+#[test]
+fn inbox_calls_encode_the_reference_frames() {
+    let mut h = Harness::new();
+    h.invoke(1, FfiCall::SendToIntake { project: "/p".into(), text: "hi".into(), request_id: "r1".into() });
+    h.invoke(2, FfiCall::SetInboxRules { project: "/p".into(), rules: "".into() });
+    h.invoke(3, FfiCall::CancelFollowUp { timer_id: "wake:1".into() });
+    h.invoke(4, FfiCall::SkipInboxTask { project: "/p".into(), task_id: "t".into() });
+    h.invoke(5, FfiCall::SetInboxQuietHours { hours: None });
+    assert_eq!(
+        call_args(&h, "sendToIntake"),
+        vec![obj(&[("project", Json::from("/p")), ("text", Json::from("hi")), ("requestId", Json::from("r1"))])]
+    );
+    assert_eq!(call_args(&h, "setInboxRules"), vec![obj(&[("project", Json::from("/p")), ("rules", Json::from(""))])]);
+    assert_eq!(call_args(&h, "cancelFollowUp"), vec![obj(&[("timerId", Json::from("wake:1"))])]);
+    assert_eq!(call_args(&h, "skipInboxTask"), vec![obj(&[("project", Json::from("/p")), ("taskId", Json::from("t"))])]);
+    assert_eq!(call_args(&h, "updateSettings"), vec![obj(&[("patch", obj(&[("inboxQuietHours", Json::Null)]))])]);
 }
 
 // ─── background processes (5.32, ADR-0045) ───────────────────────────

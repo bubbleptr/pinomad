@@ -6,6 +6,7 @@ import { isCustomProviderApi, type CustomProviderApi, type CustomProviderInput, 
 import type { EndpointSet } from "./endpoints.ts";
 import type { ImageResult, OutgoingImage } from "./images.ts";
 import type { HostDevices } from "./devices.ts";
+import { isQuietHours, type HostInbox } from "./inbox.ts";
 import type { McpStatus } from "./mcp.ts";
 import type { RtcAnswer, RtcHello, RtcOfferArgs } from "./rtc.ts";
 import type { TerminalId, TerminalsHello } from "./terminals.ts";
@@ -48,12 +49,14 @@ export interface HostStreamValues {
   agents: AgentRoles;
   /** Release checks and the upgrade in progress (5.30, ADR-0043). */
   upgrade: HostUpgrade;
+  /** Each project's Inbox: tasks, rules, follow-ups and intake (5.38, ADR-0051). */
+  inbox: HostInbox;
 }
 
 export type HostStreamName = keyof HostStreamValues;
 
 /** Minor version that introduced each host stream (ADR-0018 §2); every client subscribes to the ones its host's minor covers. */
-export const HOST_STREAMS = { conversations: 0, index: 0, devices: 0, mcp: 0, models: 1, auth: 1, settings: 2, agents: 6, providers: 21, upgrade: 30 } satisfies Record<
+export const HOST_STREAMS = { conversations: 0, index: 0, devices: 0, mcp: 0, models: 1, auth: 1, settings: 2, agents: 6, providers: 21, upgrade: 30, inbox: 38 } satisfies Record<
   HostStreamName,
   number
 >;
@@ -107,7 +110,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 37 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 38 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -449,6 +452,22 @@ export interface CallMethods {
    * secret is an `ok:false`; every connection is sent a `plugins` frame after.
    */
   setPluginSecret: { args: { plugin: string; name: string; value: string | null }; result: null };
+  /**
+   * Inbox mode (5.38, ADR-0051). `sendToIntake` hands the user's message to
+   * the project's intake conversation, opening it on the first message;
+   * idempotent on `requestId`. Refused while an upgrade installs.
+   */
+  sendToIntake: { args: { project: string; text: string; requestId: string }; result: { conversationId: ConversationId } };
+  /** Replace the Inbox's rules (`instructions.md`); `""` clears them. Over `INBOX_RULES_MAX_BYTES` is an `ok:false`. */
+  setInboxRules: { args: { project: string; rules: string }; result: null };
+  /** Drop a follow-up or schedule that has not fired; the daily tidy-up cannot be cancelled. */
+  cancelFollowUp: { args: { timerId: string }; result: null };
+  /**
+   * Close a task without running it: its pending events count as handled and
+   * it reads as skipped until a later event reopens it. Refused while the
+   * worker has a batch of it out (running or waiting).
+   */
+  skipInboxTask: { args: { project: string; taskId: string }; result: null };
 }
 
 /** APNs device-token registration (ADR-0025 §7, protocol 5.9). */
@@ -554,6 +573,10 @@ export const CALL_SINCE: Record<CallMethod, number> = {
   pluginBundle: 34,
   pluginCall: 34,
   setPluginSecret: 37,
+  sendToIntake: 38,
+  setInboxRules: 38,
+  cancelFollowUp: 38,
+  skipInboxTask: 38,
 };
 
 /** Whether a host of the given minor version knows `method`. */
@@ -607,6 +630,8 @@ export const FEATURE_SINCE = {
   pluginReload: 35,
   /** `hello.plugins[].secrets` and the `setPluginSecret` call (37, ADR-0052 §6). */
   pluginSecrets: 37,
+  /** The `inboxQuietHours` setting (38, ADR-0052 §4); an older host 4400s the key. */
+  inboxQuietHours: 38,
 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
@@ -819,6 +844,7 @@ const SETTING_VALIDATORS: Record<HostSettingKey, (value: unknown) => boolean> = 
   // Shape only — the host re-checks content anyway (cleanHostName).
   hostName: (value) => value === null || typeof value === "string",
   autoUpgrade: (value) => value === null || isAutoUpgradeMode(value),
+  inboxQuietHours: (value) => value === null || isQuietHours(value),
 };
 
 function validCallArgs(method: CallMethod, args: Record<string, unknown>): boolean {
@@ -920,6 +946,15 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
       return conversationId();
     case "earlierEntries":
       return conversationId() && positive(args.before) && positive(args.limit);
+    case "sendToIntake":
+      return nonempty(args.project) && nonempty(args.text) && nonempty(args.requestId);
+    case "setInboxRules":
+      // Shape only — the size cap is the host's `ok:false`.
+      return nonempty(args.project) && typeof args.rules === "string";
+    case "cancelFollowUp":
+      return nonempty(args.timerId);
+    case "skipInboxTask":
+      return nonempty(args.project) && nonempty(args.taskId);
     case "pluginBundle":
       return nonempty(args.name) && (args.hash === undefined || nonempty(args.hash));
     case "pluginCall":

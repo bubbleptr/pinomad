@@ -1,0 +1,89 @@
+{
+  "taskState": [
+    {
+      "name": "unhandled events and no run are pending",
+      "task": "{\"id\":\"a\",\"title\":\"task a\",\"createdAt\":1,\"events\":[{\"id\":\"e\",\"source\":\"user\",\"summary\":\"event e\",\"trusted\":true,\"receivedAt\":10,\"handled\":false}],\"closed\":false}",
+      "expect": "\"pending\""
+    },
+    {
+      "name": "a batch in flight is running",
+      "task": "{\"id\":\"a\",\"title\":\"task a\",\"createdAt\":1,\"events\":[{\"id\":\"a-1\",\"source\":\"user\",\"summary\":\"event a-1\",\"trusted\":true,\"receivedAt\":10,\"handled\":true}],\"closed\":false,\"inFlight\":true,\"conversationId\":7}",
+      "expect": "\"running\""
+    },
+    {
+      "name": "a running conversation is running",
+      "task": "{\"id\":\"a\",\"title\":\"task a\",\"createdAt\":1,\"events\":[{\"id\":\"a-1\",\"source\":\"user\",\"summary\":\"event a-1\",\"trusted\":true,\"receivedAt\":10,\"handled\":true}],\"closed\":false,\"conversationId\":7}",
+      "summary": "{\"id\":7,\"kind\":\"conversation\",\"title\":\"t\",\"status\":\"running\"}",
+      "expect": "\"running\""
+    },
+    {
+      "name": "new events while its conversation runs stay running",
+      "task": "{\"id\":\"a\",\"title\":\"task a\",\"createdAt\":1,\"events\":[{\"id\":\"e1\",\"source\":\"user\",\"summary\":\"event e1\",\"trusted\":true,\"receivedAt\":10,\"handled\":true},{\"id\":\"e2\",\"source\":\"user\",\"summary\":\"event e2\",\"trusted\":true,\"receivedAt\":20,\"handled\":false}],\"closed\":false,\"conversationId\":7}",
+      "summary": "{\"id\":7,\"kind\":\"conversation\",\"title\":\"t\",\"status\":\"running\"}",
+      "expect": "\"running\""
+    },
+    {
+      "name": "a parked task is waiting",
+      "task": "{\"id\":\"a\",\"title\":\"task a\",\"createdAt\":1,\"events\":[{\"id\":\"a-1\",\"source\":\"user\",\"summary\":\"event a-1\",\"trusted\":true,\"receivedAt\":10,\"handled\":true}],\"closed\":false,\"inFlight\":true,\"waiting\":true,\"conversationId\":7}",
+      "expect": "\"waiting\""
+    },
+    {
+      "name": "a question in its conversation is waiting",
+      "task": "{\"id\":\"a\",\"title\":\"task a\",\"createdAt\":1,\"events\":[{\"id\":\"a-1\",\"source\":\"user\",\"summary\":\"event a-1\",\"trusted\":true,\"receivedAt\":10,\"handled\":true}],\"closed\":false,\"inFlight\":true,\"conversationId\":7}",
+      "summary": "{\"id\":7,\"kind\":\"conversation\",\"title\":\"t\",\"status\":\"needs-answer\"}",
+      "expect": "\"waiting\""
+    },
+    {
+      "name": "an answered task whose run resumed is running before the worker clears waiting",
+      "task": "{\"id\":\"a\",\"title\":\"task a\",\"createdAt\":1,\"events\":[{\"id\":\"a-1\",\"source\":\"user\",\"summary\":\"event a-1\",\"trusted\":true,\"receivedAt\":10,\"handled\":true}],\"closed\":false,\"inFlight\":true,\"waiting\":true,\"conversationId\":7}",
+      "summary": "{\"id\":7,\"kind\":\"conversation\",\"title\":\"t\",\"status\":\"running\"}",
+      "expect": "\"running\""
+    },
+    {
+      "name": "closed is done",
+      "task": "{\"id\":\"a\",\"title\":\"task a\",\"createdAt\":1,\"events\":[{\"id\":\"a-1\",\"source\":\"user\",\"summary\":\"event a-1\",\"trusted\":true,\"receivedAt\":10,\"handled\":true}],\"closed\":true,\"conversationId\":7}",
+      "expect": "\"done\""
+    },
+    {
+      "name": "a failed run on a closed task is still done",
+      "task": "{\"id\":\"a\",\"title\":\"task a\",\"createdAt\":1,\"events\":[{\"id\":\"a-1\",\"source\":\"user\",\"summary\":\"event a-1\",\"trusted\":true,\"receivedAt\":10,\"handled\":true}],\"closed\":true,\"conversationId\":7}",
+      "summary": "{\"id\":7,\"kind\":\"conversation\",\"title\":\"t\",\"status\":\"failed\"}",
+      "expect": "\"done\""
+    },
+    {
+      "name": "skipped",
+      "task": "{\"id\":\"a\",\"title\":\"task a\",\"createdAt\":1,\"events\":[{\"id\":\"a-1\",\"source\":\"user\",\"summary\":\"event a-1\",\"trusted\":true,\"receivedAt\":10,\"handled\":true}],\"closed\":true,\"skipped\":true}",
+      "expect": "\"skipped\""
+    },
+    {
+      "name": "the worker gave up",
+      "task": "{\"id\":\"a\",\"title\":\"task a\",\"createdAt\":1,\"events\":[{\"id\":\"a-1\",\"source\":\"user\",\"summary\":\"event a-1\",\"trusted\":true,\"receivedAt\":10,\"handled\":true}],\"closed\":true,\"failed\":\"boom\"}",
+      "expect": "\"failed\""
+    },
+    {
+      "name": "a reopened task is pending again",
+      "task": "{\"id\":\"a\",\"title\":\"task a\",\"createdAt\":1,\"events\":[{\"id\":\"e1\",\"source\":\"user\",\"summary\":\"event e1\",\"trusted\":true,\"receivedAt\":10,\"handled\":true},{\"id\":\"e2\",\"source\":\"user\",\"summary\":\"event e2\",\"trusted\":true,\"receivedAt\":20,\"handled\":false}],\"closed\":false,\"conversationId\":7}",
+      "summary": "{\"id\":7,\"kind\":\"conversation\",\"title\":\"t\"}",
+      "expect": "\"pending\""
+    },
+    {
+      "name": "open with nothing left to send reads as done",
+      "task": "{\"id\":\"a\",\"title\":\"task a\",\"createdAt\":1,\"events\":[{\"id\":\"a-1\",\"source\":\"user\",\"summary\":\"event a-1\",\"trusted\":true,\"receivedAt\":10,\"handled\":true}],\"closed\":false}",
+      "expect": "\"done\""
+    }
+  ],
+  "groups": [
+    {
+      "name": "empty",
+      "tasks": "[]",
+      "summaries": "[]",
+      "expect": "[[\"waiting\",[]],[\"running\",[]],[\"pending\",[]],[\"done\",[]]]"
+    },
+    {
+      "name": "sidebar order: waiting, running, pending, done",
+      "tasks": "[{\"id\":\"done-old\",\"title\":\"task done-old\",\"createdAt\":1,\"events\":[{\"id\":\"d1\",\"source\":\"user\",\"summary\":\"event d1\",\"trusted\":true,\"receivedAt\":10,\"handled\":true}],\"closed\":true},{\"id\":\"pending-late\",\"title\":\"task pending-late\",\"createdAt\":1,\"events\":[{\"id\":\"p1\",\"source\":\"user\",\"summary\":\"event p1\",\"trusted\":true,\"receivedAt\":50,\"handled\":false}],\"closed\":false},{\"id\":\"skipped\",\"title\":\"task skipped\",\"createdAt\":1,\"events\":[{\"id\":\"s1\",\"source\":\"user\",\"summary\":\"event s1\",\"trusted\":true,\"receivedAt\":40,\"handled\":true}],\"closed\":true,\"skipped\":true},{\"id\":\"waiting\",\"title\":\"task waiting\",\"createdAt\":1,\"events\":[{\"id\":\"w1\",\"source\":\"user\",\"summary\":\"event w1\",\"trusted\":true,\"receivedAt\":5,\"handled\":true}],\"closed\":false,\"inFlight\":true,\"waiting\":true},{\"id\":\"pending-early\",\"title\":\"task pending-early\",\"createdAt\":1,\"events\":[{\"id\":\"p2\",\"source\":\"user\",\"summary\":\"event p2\",\"trusted\":true,\"receivedAt\":20,\"handled\":true},{\"id\":\"p3\",\"source\":\"user\",\"summary\":\"event p3\",\"trusted\":true,\"receivedAt\":30,\"handled\":false}],\"closed\":false},{\"id\":\"running\",\"title\":\"task running\",\"createdAt\":1,\"events\":[{\"id\":\"r1\",\"source\":\"user\",\"summary\":\"event r1\",\"trusted\":true,\"receivedAt\":15,\"handled\":true}],\"closed\":false,\"inFlight\":true},{\"id\":\"failed\",\"title\":\"task failed\",\"createdAt\":1,\"events\":[{\"id\":\"f1\",\"source\":\"user\",\"summary\":\"event f1\",\"trusted\":true,\"receivedAt\":60,\"handled\":true}],\"closed\":true,\"failed\":\"boom\"},{\"id\":\"by-summary\",\"title\":\"task by-summary\",\"createdAt\":1,\"events\":[{\"id\":\"b1\",\"source\":\"user\",\"summary\":\"event b1\",\"trusted\":true,\"receivedAt\":70,\"handled\":true}],\"closed\":false,\"conversationId\":7}]",
+      "summaries": "[{\"id\":7,\"kind\":\"conversation\",\"title\":\"t\",\"status\":\"running\"}]",
+      "expect": "[[\"waiting\",[\"waiting\"]],[\"running\",[\"by-summary\",\"running\"]],[\"pending\",[\"pending-early\",\"pending-late\"]],[\"done\",[\"failed\",\"skipped\",\"done-old\"]]]"
+    }
+  ]
+}
