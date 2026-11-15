@@ -1,10 +1,11 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
+import { fauxAssistantMessage, type FauxResponseStep, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
 import type { ConversationDocToken, ConversationId } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
 import type { QuestionState } from "@pinomad/protocol/presentation.ts";
+import { coding } from "../src/extensions/coding.ts";
 import { question } from "../src/extensions/question.ts";
 import type { OpenedHost } from "../src/host.ts";
 import { addInboxEvent, addTimer, InboxDoc, type InboxTask, TimerDoc } from "../src/inbox.ts";
@@ -359,5 +360,89 @@ describe("inbox_follow", () => {
     const doc = await host.harness.snapshot(InboxDoc, context);
     const threads = Object.values(doc!.inboxes)[0]!.threads;
     expect(threads["github:acme/web#1"]).toBe(tasks[0]!.id);
+  });
+});
+
+describe("intake conversation", () => {
+  const submit = (args: Parameters<typeof fauxToolCall>[1]) => fauxAssistantMessage(fauxToolCall("inbox_submit", args), { stopReason: "toolUse" });
+  const agentOf = async (host: OpenedHost, id: ConversationId) => (await host.harness.conversation(id, context))!.agent(context);
+  /** The intake section as the next request would render it. */
+  const intakePrompt = async (host: OpenedHost, id: ConversationId) => {
+    const section = (await agentOf(host, id)).sections.find((each) => each.key === "inbox_intake");
+    return await section?.render({ conversationId: id, read: host.harness } as never, context);
+  };
+  const intakeOf = async (host: OpenedHost) =>
+    Object.values((await host.harness.snapshot(InboxDoc, context))?.inboxes ?? {})[0]?.intake;
+
+  it("opens one intake conversation per project, with only read-only tools, questions and inbox_submit", async () => {
+    const project = await plainProject();
+    const host = await startFauxHost(defer, { projects: [project], extensions: [coding, question], answers: ["noted", "again"] });
+    // Sent at once: the second must not open a second intake.
+    const [first, second] = await Promise.all([
+      host.inbox.sendToIntake(project, "two bugs: login fails, avatar blurry", "r1", context),
+      host.inbox.sendToIntake(project, "also the footer", "r2", context),
+    ]);
+    expect(second).toBe(first);
+    expect(await intakeOf(host)).toBe(first);
+    await until(() => userTexts(host, first), (texts) => texts.length === 2);
+    expect((await agentOf(host, first)).tools.map((tool) => tool.name).sort()).toEqual(["ask_user_question", "inbox_submit", "read"]);
+  });
+
+  it("puts what the user asked for into the Inbox as tasks the worker runs", async () => {
+    const project = await gitProject();
+    const host = await startFauxHost(defer, {
+      projects: [project],
+      answers: [submit({ title: "Login fails", detail: "Login fails on Safari after the redirect" }), "submitted", "fixed login"],
+    });
+    await host.inbox.sendToIntake(project, "login is broken on safari", "r1", context);
+    const [task] = await until(() => tasksOf(host, project), (tasks) => tasks[0]?.closed === true);
+    expect(task).toMatchObject({ title: "Login fails" });
+    expect(task!.events[0]).toMatchObject({ source: "user", trusted: true, summary: "Login fails on Safari after the redirect" });
+    expect(task!.conversationId).not.toBe(await intakeOf(host));
+  });
+
+  it("marks a submission that quotes outside text as external", async () => {
+    const project = await plainProject();
+    const host = await startFauxHost(defer, {
+      projects: [project],
+      answers: [submit({ title: "Issue 9", detail: "Issue #9 says: crash on start", external: true }), "submitted", "looked"],
+    });
+    await host.inbox.sendToIntake(project, "handle issue 9, here is its text", "r1", context);
+    const [task] = await until(() => tasksOf(host, project), (tasks) => tasks[0]?.closed === true);
+    expect(task!.events[0]!.trusted).toBe(false);
+  });
+
+  it("adds to an existing task with mergeInto, and lists the tasks in its system prompt", async () => {
+    const project = await plainProject();
+    let taskId = "";
+    const host = await startFauxHost(defer, {
+      projects: [project],
+      answers: [
+        "fixed avatar",
+        // Merges into the task the first event opened, known only once it ran.
+        () => submit({ title: "Avatar", detail: "It is blurry on iPad too", mergeInto: taskId }),
+        "added",
+        "fixed iPad too",
+      ],
+    });
+    await addInboxEvent(host.harness, project, event("e1", "avatar is blurry"), context);
+    const [first] = await until(() => tasksOf(host, project), (tasks) => tasks[0]?.closed === true);
+    taskId = first!.id;
+    const intake = await host.inbox.sendToIntake(project, "the avatar is blurry on iPad too", "r1", context);
+    const [task] = await until(() => tasksOf(host, project), (tasks) => tasks[0]?.events.length === 2 && tasks[0]!.closed);
+    expect(await tasksOf(host, project)).toHaveLength(1);
+    expect(task!.events[1]!.summary).toBe("It is blurry on iPad too");
+    const prompt = await intakePrompt(host, intake);
+    expect(prompt).toContain(`${taskId} [done] avatar is blurry`);
+    // A task's own conversation does not get the intake's prompt.
+    expect(await intakePrompt(host, task!.conversationId!)).toBeUndefined();
+  });
+
+  it("refuses inbox_submit outside an intake conversation", async () => {
+    const project = await plainProject();
+    const host = await startFauxHost(defer, { projects: [project], answers: [submit({ title: "x", detail: "y" }), "tried"] });
+    await addInboxEvent(host.harness, project, event("e1", "a task"), context);
+    await until(() => tasksOf(host, project), (tasks) => tasks[0]?.closed === true);
+    expect(await tasksOf(host, project)).toHaveLength(1);
   });
 });

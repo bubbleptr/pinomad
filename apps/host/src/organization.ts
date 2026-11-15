@@ -129,8 +129,11 @@ export async function createConversation(
     readonly attachmentText?: string;
     /** A named agent to create the conversation with (ADR-0023): its prompt is copied in, its model/level are defaults the args override. */
     readonly agent?: string;
-    /** Deferred tools offered to the model from the start, such as the Inbox's tools in a task's conversation. */
-    readonly modelTools?: readonly ToolRegistration[];
+    /**
+     * Tools offered to the model: `add` offers deferred ones from the start (an
+     * Inbox task's tools); `only` replaces the offered set (an Inbox intake).
+     */
+    readonly modelTools?: { readonly add: readonly ToolRegistration[] } | { readonly only: readonly ToolRegistration[] };
   },
   defaults: ConversationDefaults,
   models: Models,
@@ -213,7 +216,9 @@ export async function createConversation(
           // The role's prompt is copied in at creation — later edits to the
           // file do not reach this conversation (ADR-0023 §7).
           ...(role === undefined || role.prompt === "" ? {} : { instructions: role.prompt }),
-          ...(input.modelTools === undefined ? {} : { modelTools: { add: input.modelTools } }),
+          ...(input.modelTools === undefined
+            ? {}
+            : { modelTools: "only" in input.modelTools ? input.modelTools.only : { add: input.modelTools.add } }),
         },
         init: async (tx, id) => {
           const doc = await tx.doc(IndexDoc);
