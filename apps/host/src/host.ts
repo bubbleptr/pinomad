@@ -3,13 +3,14 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, join, sep } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import type { Models } from "@earendil-works/pi-ai/models";
-import { type ConversationDocToken, createRegistry, Harness, type HarnessSettings, type SessionEnd, type Storage } from "@earendil-works/pi-durable";
+import { type ConversationDocToken, type ConversationId, createRegistry, Harness, type HarnessSettings, type SessionEnd, type Storage } from "@earendil-works/pi-durable";
 import type { JsonValue } from "@earendil-works/chord/json";
 import type { ImageProcessor } from "@earendil-works/pi-durable/tools";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
-import { addProject, createConversation, ensureIndex, IndexDoc } from "./organization.ts";
-import { INBOX_TASK_TOOLS, inboxExtension, type InboxHandle, INTAKE_TOOLS, memoryOwner, startInbox } from "./inbox.ts";
+import { addProject, createConversation, ensureIndex, familyRoot, IndexDoc } from "./organization.ts";
+import { INBOX_TASK_TOOLS, InboxDoc, inboxExtension, type InboxHandle, inboxTaskOf, INTAKE_TOOLS, memoryOwner, startInbox } from "./inbox.ts";
 import { createMemoryExtension } from "./inbox-memory.ts";
+import { inboxSandboxPolicy, openSandboxedEnv, type SandboxedExecutionEnv } from "./sandbox.ts";
 import { checkoutAt, ensureWorktree, worktreeRoot } from "./checkout.ts";
 import { ensureDevices, loadHostKey, loadRelayKey, pairingOffers } from "./devices.ts";
 import type { RelayLinkState } from "./relay-link.ts";
@@ -276,6 +277,24 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     });
     // One environment per working directory; conversations sharing a cwd share it.
     const environments = new Map<string, NodeExecutionEnv>();
+    const sandboxedEnvironments = new Map<string, Promise<SandboxedExecutionEnv>>();
+    // Inbox membership never ends and a family root never changes, so both are kept.
+    const inboxProjects = new Map<ConversationId, string>();
+    const roots = new Map<ConversationId, ConversationId>();
+    /** The project whose Inbox runs this conversation, itself or as a subagent of one. */
+    const inboxProjectOf = async (id: ConversationId): Promise<string | undefined> => {
+      const known = inboxProjects.get(id);
+      if (known !== undefined) return known;
+      let root = roots.get(id);
+      if (root === undefined) {
+        root = await familyRoot(harness!, id, context);
+        roots.set(id, root);
+      }
+      const [inboxes, index] = await Promise.all([harness!.snapshot(InboxDoc, context), harness!.snapshot(IndexDoc, context)]);
+      const project = inboxes === undefined || index === undefined ? undefined : inboxTaskOf(inboxes.inboxes, index, root)?.project;
+      if (project !== undefined) inboxProjects.set(id, project);
+      return project;
+    };
     const chatsDir = join(options.dataDir, "chats");
     harness = await Harness.open(
       await (options.openStorage ?? openNodeSqliteStorage)(join(options.dataDir, "session.sqlite")),
@@ -302,6 +321,20 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
           // A crash between conversation creation and checkout creation leaves the
           // dir missing; the environment is the one place it is always needed.
           if (cwd.startsWith(`${chatsDir}/`)) await mkdir(cwd, { recursive: true });
+          // An Inbox run's processes go in the sandbox (ADR-0052 §7). A non-git
+          // project's Inbox task shares its cwd with coding conversations, so
+          // this is decided per conversation, before the per-cwd cache.
+          const project = await inboxProjectOf(target.conversationId);
+          if (project !== undefined) {
+            const key = `${project}\0${cwd}`;
+            let sandboxed = sandboxedEnvironments.get(key);
+            if (sandboxed === undefined) {
+              sandboxed = inboxSandboxPolicy({ dataDir: options.dataDir, project, cwd }).then((policy) => openSandboxedEnv(cwd, policy));
+              sandboxedEnvironments.set(key, sandboxed);
+              sandboxed.catch(() => sandboxedEnvironments.delete(key));
+            }
+            return await sandboxed;
+          }
           let env = environments.get(cwd);
           if (env === undefined) {
             env = new NodeExecutionEnv({ cwd });
