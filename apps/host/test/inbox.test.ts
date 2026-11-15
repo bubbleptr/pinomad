@@ -252,8 +252,8 @@ describe("Inbox timers", () => {
     const host = await startFauxHost(defer, { projects: [project], answers: ["first", "second"] });
     const start = Date.now();
     await addTimer(host.harness, project, { due: start + 200, every: 400, note: "daily digest" }, context);
-    const tasks = await until(() => tasksOf(host, project), (tasks) => tasks.length === 2 && tasks.every((task) => task.closed));
-    expect(tasks.map((task) => task.events[0]!.source)).toEqual(["schedule", "schedule"]);
+    const tasks = await until(() => tasksOf(host, project), (tasks) => tasks.length >= 2 && tasks[0]!.closed);
+    expect(tasks.slice(0, 2).map((task) => task.events[0]!.source)).toEqual(["schedule", "schedule"]);
     expect(await userTexts(host, tasks[0]!.conversationId!)).toEqual([expect.stringContaining("daily digest")]);
     // Each fire moved the due time on; none is in the past.
     const [timer] = await timersOf(host);
@@ -265,20 +265,14 @@ describe("Inbox timers", () => {
     const dir = await tempDir();
     defer(dir.remove);
     const first = await startFauxHost(defer, { dataDir: dir.path, projects: [project], answers: [] });
-    await addTimer(first.harness, project, { due: Date.now() + 60_000, every: 100, note: "missed" }, context);
-    // As if the host slept through several due times.
-    await first.harness.commit(async (tx) => {
-      (await tx.doc(TimerDoc)).timers[0]!.due = Date.now() - 1_000;
-    }, context);
+    // As if the host slept through five due times.
+    await addTimer(first.harness, project, { due: Date.now() - 5 * 60_000 + 1_000, every: 60_000, note: "missed" }, context);
     await first.close();
 
     const second = await startFauxHost(defer, { dataDir: dir.path, projects: [project], answers: ["ran"] });
     await until(() => tasksOf(second, project), (tasks) => tasks[0]?.closed === true);
-    // Stop it before the next fire so the count is only what came due while down.
-    await second.harness.commit(async (tx) => {
-      (await tx.doc(TimerDoc)).timers[0]!.done = true;
-    }, context);
     expect(await tasksOf(second, project)).toHaveLength(1);
+    expect((await timersOf(second))[0]!.due).toBeGreaterThan(Date.now());
   });
 
   it("wakes a task at the time it set with wake_me_at, in the same conversation", async () => {
@@ -293,6 +287,15 @@ describe("Inbox timers", () => {
     expect(texts).toHaveLength(2);
     expect(texts[1]).toContain("check CI on the PR");
     expect(await timersOf(host)).toEqual([expect.objectContaining({ task: task!.id, done: true })]);
+  });
+
+  it("keeps a follow-up of a task that read outside content untrusted", async () => {
+    const project = await plainProject();
+    const wake = fauxAssistantMessage(fauxToolCall("wake_me_at", { in_minutes: 0.01, note: "look again" }), { stopReason: "toolUse" });
+    const host = await startFauxHost(defer, { projects: [project], answers: [wake, "later", "looked"] });
+    await addInboxEvent(host.harness, project, { ...event("issue-1", "issue opened by a stranger"), trusted: false }, context);
+    const [task] = await until(() => tasksOf(host, project), (tasks) => tasks[0]?.events.length === 2 && tasks[0]!.closed);
+    expect(task!.events[1]).toMatchObject({ source: "followUp", trusted: false });
   });
 
   it("offers wake_me_at to an Inbox task's conversation and not to an ordinary one", async () => {

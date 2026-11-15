@@ -148,7 +148,7 @@ export type InboxTimer = {
   task?: string;
   /** A schedule's period in ms; the next due time keeps its phase (no DST correction). */
   every?: number;
-  /** A follow-up that fired, or a cancelled timer. */
+  /** A follow-up that fired, or a timer whose project left the host. */
   done: boolean;
 };
 
@@ -200,27 +200,33 @@ const wakeMeAt = defineTool({
   description:
     "Come back to this Inbox task later: at `at`, an event with `note` reopens this task and you continue in this conversation. Use it to check on something that takes time (CI, a reply, a deploy) instead of waiting. Only works in an Inbox task.",
   parameters: Type.Object({
-    at: Type.String({ description: "When to wake, as an ISO 8601 time with a timezone offset, such as 2026-11-16T09:00:00+08:00" }),
+    at: Type.Optional(Type.String({ description: "When to wake, as an ISO 8601 time with a timezone offset, such as 2026-11-16T09:00:00+08:00" })),
+    in_minutes: Type.Optional(Type.Number({ exclusiveMinimum: 0, description: "Or how many minutes from now to wake" })),
     note: Type.String({ description: "What to check when you wake, a line for your future self" }),
   }),
   // Safe: the timer id is the call id, so a rerun finds the timer it added.
   replay: "safe",
   execute: async (args, api, context) => {
-    const due = Date.parse(args.at);
+    const now = Date.now();
+    if ((args.at === undefined) === (args.in_minutes === undefined)) throw new Error("Give exactly one of at and in_minutes");
+    const due = args.at === undefined ? now + args.in_minutes! * 60_000 : Date.parse(args.at);
     if (Number.isNaN(due)) throw new Error(`Not a time: ${args.at}`);
-    if (due <= Date.now()) throw new Error(`${args.at} is not in the future`);
+    if (due <= now) throw new Error(`${args.at} is not in the future; it is now ${new Date(now).toISOString()}`);
     await api.commit(async (tx) => {
       const inboxes = (await tx.doc(InboxDoc)).inboxes;
+      // The task's first run starts before the worker records the conversation
+      // id; the conversation's request id is that first batch's.
+      const requestId = (await tx.doc(IndexDoc)).conversations.find((entry) => entry.id === api.conversationId)?.requestId;
       const owner = Object.entries(inboxes)
         .flatMap(([project, inbox]) => inbox.tasks.map((task) => ({ project, task })))
-        .find(({ task }) => task.conversationId === api.conversationId);
+        .find(({ task }) => task.conversationId === api.conversationId || (requestId !== undefined && task.batch?.requestId === requestId));
       if (owner === undefined) throw new Error("wake_me_at only works in an Inbox task's conversation");
       const timers = (await tx.doc(TimerDoc)).timers;
       const id = `wake:${api.callId}`;
       if (timers.some((timer) => timer.id === id)) return;
       timers.push({ id, project: owner.project, due, note: args.note, task: owner.task.id, done: false });
     }, context);
-    return { output: [{ type: "text", text: `Will wake this task at ${new Date(due).toISOString()}.` }] };
+    return { output: [{ type: "text", text: `Will wake this task at ${new Date(due).toISOString()} (it is now ${new Date(now).toISOString()}).` }] };
   },
 });
 
@@ -233,15 +239,22 @@ async function fireDueTimers(harness: Harness, now: number, context: Context): P
     const timers = await tx.doc(TimerDoc);
     if (!timers.timers.some((timer) => !timer.done && timer.due <= now)) return;
     const inboxes = (await tx.doc(InboxDoc)).inboxes;
+    const projects = new Set((await tx.doc(IndexDoc)).projects.map((project) => project.path));
     for (const timer of timers.timers) {
       if (timer.done || timer.due > now) continue;
+      if (!projects.has(timer.project)) {
+        timer.done = true;
+        continue;
+      }
+      // An agent wrote a follow-up's note: it is only as trusted as what its task read.
+      const owner = timer.task === undefined ? undefined : inboxes[timer.project]?.tasks.find((task) => task.id === timer.task);
       // Keyed by the due time: a crash before this commit fires it again, a repeat is a no-op.
       recordEvent(inboxes, timer.project, {
         id: `timer:${timer.id}:${timer.due}`,
         source: timer.task === undefined ? "schedule" : "followUp",
         ...(timer.task === undefined ? {} : { task: timer.task }),
         summary: timer.note,
-        trusted: true,
+        trusted: owner === undefined ? timer.task === undefined : owner.events.every((event) => event.trusted),
       });
       if (timer.every === undefined) timer.done = true;
       else timer.due = nextDue(timer.due, timer.every, now);
