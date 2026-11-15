@@ -135,9 +135,11 @@ export interface HostApi {
   /** Per-conversation JSON state. */
   state<T extends JsonObject>(name: string, options: StateOptions<T>): PluginState<T>;
   /**
-   * A credential the user enters in a client, stored by the host outside the
-   * agent's reach (ADR-0052 §6). Clients can set it and see whether it is set,
-   * never read it back. Name: [A-Za-z0-9_-].
+   * A credential the user enters in a client, stored by the host (ADR-0052 §6)
+   * and never put in the conversation, a tool result or the agent's environment.
+   * The agent runs as the same user as the host, so the store is not out of its
+   * reach. Clients can set it and see whether it is set, never read it back.
+   * Name: [A-Za-z0-9_-].
    */
   secret(name: string, options: SecretOptions): PluginSecret;
   /** A tool the model can call. */

@@ -1,9 +1,12 @@
 // The host's credential store (ADR-0052 §6): plugin secrets in one JSON file
 // under the data dir that only the host's user can read (0600), by plugin and
 // name. Only the host reads it; clients set values and learn whether one is
-// set, never what it is. A file rather than the OS keychain: the host runs
-// headless on Linux as often as on macOS, and a keychain would not keep the
-// agent out either — it runs as the same user (§7's sandbox does that).
+// set, never what it is. A value is never put in the conversation, a tool
+// result or the agent's environment, but the agent's commands run as the same
+// user as the host, so this file does not keep them out: in Inbox runs, auto
+// mode checks reads of the data dir. A file rather than the OS keychain: the
+// host runs headless on Linux as often as on macOS, and a keychain would not
+// keep out a process of the same user either.
 import { randomBytes } from "node:crypto";
 import { chmod, readFile, rename, rm, writeFile } from "node:fs/promises";
 

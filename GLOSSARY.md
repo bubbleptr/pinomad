@@ -109,7 +109,7 @@ _Avoid_: 工单、ticket、job、事件（事件是送进任务的东西）
 _Avoid_: 提交表单、前台、triage 对话
 
 **事件源（Event Source）**:
-挂在一个项目 Inbox 上、往里送事件的东西：定时、插件声明的事件源（如 GitHub 的新 issue）或局域网 webhook（ADR-0051 §10）。用户添加时选它的事件可不可信（"受限工具 / 全部工具"），这只决定 auto mode 判得多严。插件和 webhook 事件源要求宿主有沙箱。
+挂在一个项目 Inbox 上、往里送事件的东西：定时、插件声明的事件源（如 GitHub 的新 issue）或局域网 webhook（ADR-0051 §10）。用户添加时选它的事件可不可信（"受限工具 / 全部工具"），这只决定 auto mode 判得多严。
 _Avoid_: 订阅、watch、集成、触发器
 
 **Inbox 记忆（Inbox Memory）**:

@@ -83,7 +83,7 @@ Plugin state follows the conversation's history like the rest of the conversatio
 
 ### Secrets
 
-A plugin that calls an outside service on the agent's behalf needs a credential the agent must not see. Declare it with `secret`, read it inside `run` with `ctx.secret`, and send the request from the host process: the agent calls your tool, never holds the token, and can't leak it to a page it reads.
+A plugin that calls an outside service on the agent's behalf needs a credential the agent must not see. Declare it with `secret`, read it inside `run` with `ctx.secret`, and send the request from the host process: the agent calls your tool, and the token is never in the conversation, a tool result or the agent's environment, so the agent can't simply repeat it to a page it reads. The agent's commands still run as the same user as the host, which can read `secrets.json`; in Inbox runs, auto mode checks reads of the host's data directory.
 
 ```ts
 const token = pinomad.secret("api_token", { description: "An API token with write access." });

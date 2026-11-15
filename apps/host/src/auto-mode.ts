@@ -9,12 +9,25 @@
 // full arguments; once the user picks "Allow" on that question, that one call
 // passes. The quoted call is what the user approves, whatever the agent writes
 // around it. Subagents of a task are gated as the task is.
+//
+// The intake conversation is not gated, except that a read of a credential
+// path or the host's data dir always asks the user there, without the rule
+// table or the classifier: it sees task summaries that came from outside.
+// The memory tidy-up has only the memory tools and is not gated.
+//
+// Inbox runs have no sandbox (ADR-0052 §7): they run as the user, with the
+// user's HOME and environment. So a read of a credential path or of the host's
+// data dir is never allowed by rule; with outside content in the run it is the
+// user's call, otherwise the classifier's.
 import { createHash } from "node:crypto";
+import { homedir } from "node:os";
+import { join, resolve, sep } from "node:path";
 import { BACKGROUND_CONTEXT, type Context } from "@earendil-works/chord/context";
 import type { Model, Models, Context as ModelContext } from "@earendil-works/pi-ai";
-import { type ConversationDocToken, defineDoc, defineExtension, type Extension, type Harness, hook, ToolTask } from "@earendil-works/pi-durable";
+import { AgentDoc, type ConversationDocToken, defineDoc, defineExtension, type Extension, type Harness, hook, ToolTask } from "@earendil-works/pi-durable";
 import type { QuestionState } from "@pinomad/protocol/presentation.ts";
 import type { ModelSummary } from "@pinomad/protocol/view.ts";
+import { worktreeRoot } from "./checkout.ts";
 import { InboxDoc, inboxTaskOf } from "./inbox.ts";
 import { familyRoot, IndexDoc } from "./organization.ts";
 
@@ -59,11 +72,16 @@ const RG_OPTIONS = new Set([
 ]);
 const GIT_BRANCH_OPTIONS = new Set(["-a", "--all", "-r", "--remotes", "-v", "-vv", "--list", "--show-current"]);
 
+/** Short options without an attached value, or with a count (`-n`, `-rn`, `-A3`, `-5`); others may carry a path. */
+const PLAIN_SHORT_OPTION = /^-[A-Za-z]*\d*$/;
+
 /** One read-only command: every argument is one the command only reads with. */
 function readOnlyBash(command: string): boolean {
   if (SHELL_SYNTAX.test(command)) return false;
   const [program, ...args] = command.trim().split(/[ \t]+/);
   if (program === undefined) return false;
+  // `-f/path` reads a file the path check may not see whole: the classifier's to judge.
+  if (args.some((arg) => arg.startsWith("-") && !arg.startsWith("--") && !PLAIN_SHORT_OPTION.test(arg))) return false;
   if (READ_ANYTHING.has(program)) return true;
   const options = args.filter((arg) => arg.startsWith("-"));
   if (program === "find") return options.every((arg) => FIND_OPTIONS.has(arg));
@@ -74,6 +92,123 @@ function readOnlyBash(command: string): boolean {
   if (sub === "status" || sub === "rev-parse") return true;
   if (sub === "diff" || sub === "log" || sub === "show") return rest.every((arg) => !arg.startsWith("--output") && arg !== "--ext-diff");
   return false;
+}
+
+/** Credential files and dirs under the user's HOME. */
+const CREDENTIAL_PATHS: readonly string[] = [
+  ".ssh",
+  ".gnupg",
+  ".password-store",
+  ".aws",
+  ".azure",
+  ".kube",
+  ".docker",
+  ".netrc",
+  ".git-credentials",
+  ".npmrc",
+  ".yarnrc",
+  ".yarnrc.yml",
+  ".pypirc",
+  ".gem/credentials",
+  ".cargo/credentials",
+  ".cargo/credentials.toml",
+  ".terraform.d/credentials.tfrc.json",
+  ".config/gh",
+  ".config/hub",
+  ".config/git/credentials",
+  ".config/gcloud",
+  ".config/op",
+  ".config/google-chrome",
+  ".config/chromium",
+  ".mozilla",
+  ".local/share/keyrings",
+  // The default host data dir, also when this host runs on another one.
+  ".pinomad",
+  ".pi",
+  ".claude",
+  ".codex",
+  ".bash_history",
+  ".zsh_history",
+  ".histfile",
+  // Where people export tokens.
+  ".profile",
+  ".bashrc",
+  ".bash_profile",
+  ".bash_login",
+  ".zshrc",
+  ".zshenv",
+  ".zprofile",
+  ".zlogin",
+  ".config/fish",
+  ".env",
+  ".gitconfig",
+  ".config/git/config",
+  "Library/Keychains",
+  "Library/Cookies",
+  "Library/Application Support/Google/Chrome",
+  "Library/Application Support/Firefox",
+];
+
+/** Where a run's paths resolve: the user's HOME, the conversation's cwd and the host's data dir. */
+export type RunPaths = { readonly home: string; readonly cwd: string; readonly dataDir: string };
+
+const under = (path: string, root: string): boolean => path === root || path.startsWith(root.endsWith(sep) ? root : root + sep);
+
+/**
+ * Whether `path` names a credential path or the host's data dir, outside the
+ * checkouts and attachments kept there. Lexical: `~` and `$HOME` expanded,
+ * relative paths and `..` resolved against the cwd, symlinks not followed,
+ * case ignored (macOS ignores it). `recursive`: a dir that holds one counts too.
+ */
+function credentialPath(path: string, where: RunPaths, recursive: boolean): boolean {
+  const expanded = path.replace(/^(["'])(.*)\1$/, "$2").replace(/^(?:~|\$HOME|\$\{HOME\})(?=\/|$)/, where.home);
+  const target = resolve(where.cwd, expanded).toLowerCase();
+  const kept = [worktreeRoot(where.dataDir), join(where.dataDir, "attachments")];
+  if (kept.some((root) => under(target, resolve(root).toLowerCase()))) return false;
+  return [...CREDENTIAL_PATHS.map((each) => join(where.home, each)), where.dataDir].some((each) => {
+    const root = resolve(each).toLowerCase();
+    return under(target, root) || (recursive && under(root, target));
+  });
+}
+
+/** Commands that print or search what they are given: those `readOnlyBash` allows. */
+const READ_PROGRAMS = new Set([...READ_ANYTHING, "find", "rg", "git"]);
+
+/** What a short option may carry after its letters: each tail of `-rf/path` (`f/path`, `/path`, …). */
+const shortOptionTails = (arg: string): string[] => Array.from({ length: arg.length - 2 }, (_, n) => arg.slice(n + 2));
+
+/** Whether the command searches the cwd when given no path: `rg`, `find`, `git grep`, a recursive `grep`. */
+function searchesCwd(program: string, args: readonly string[]): boolean {
+  if (program === "rg" || program === "find") return true;
+  if (program === "git") return args.find((arg) => !arg.startsWith("-")) === "grep";
+  return program === "grep" && args.some((arg) => arg === "--recursive" || /^-[A-Za-z]*[rR]/.test(arg));
+}
+
+/**
+ * The paths each read program in `command` may read: its words, the values of
+ * `--option=value` and what a short option may carry, and `.` for a search
+ * that defaults to the cwd.
+ */
+function readArguments(command: string): string[] {
+  return command.split(/[;&|()`\n\r]+/).flatMap((segment) => {
+    const [program, ...args] = segment.trim().split(/[\s<>]+/);
+    if (program === undefined || !READ_PROGRAMS.has(program)) return [];
+    const given = args.flatMap((arg) =>
+      !arg.startsWith("-") ? [arg] : arg.includes("=") ? [arg.slice(arg.indexOf("=") + 1)] : arg.startsWith("--") ? [] : shortOptionTails(arg),
+    );
+    return searchesCwd(program, args) ? [...given, "."] : given;
+  });
+}
+
+/** Whether the call reads a credential path or the host's data dir. */
+function readsCredentials(tool: string, args: JsonObject, where: RunPaths): boolean {
+  // As the read tool takes its path: Unicode spaces made plain, a leading `@` dropped.
+  if (tool === "read") {
+    if (typeof args.path !== "string") return false;
+    return credentialPath(args.path.replace(/[\u00a0\u2000-\u200a\u202f\u205f\u3000]/g, " ").replace(/^@/, ""), where, false);
+  }
+  if (tool !== "bash" || typeof args.command !== "string") return false;
+  return readArguments(args.command).some((arg) => credentialPath(arg, where, true));
 }
 
 const BLOCKED_BASH: readonly RegExp[] = [
@@ -92,13 +227,14 @@ const OUTSIDE_ASK_BASH: readonly RegExp[] = [
 ];
 
 /** The rule table's answer, or undefined when the classifier must judge. */
-export function ruleFor(tool: string, args: JsonObject, trusted: boolean): "allow" | "block" | "ask" | undefined {
-  if (SAFE_TOOLS.has(tool)) return "allow";
-  if (tool !== "bash") return undefined;
-  const command = typeof args.command === "string" ? args.command : "";
+export function ruleFor(tool: string, args: JsonObject, trusted: boolean, where: RunPaths): "allow" | "block" | "ask" | undefined {
+  const command = tool === "bash" && typeof args.command === "string" ? args.command : "";
   if (BLOCKED_BASH.some((pattern) => pattern.test(command))) return "block";
   if (!trusted && OUTSIDE_ASK_BASH.some((pattern) => pattern.test(command))) return "ask";
-  if (readOnlyBash(command)) return "allow";
+  // Never allowed by rule: the user's call with outside content in the run, else the classifier's.
+  if (readsCredentials(tool, args, where)) return trusted ? undefined : "ask";
+  if (SAFE_TOOLS.has(tool)) return "allow";
+  if (tool === "bash" && readOnlyBash(command)) return "allow";
   return undefined;
 }
 
@@ -202,6 +338,8 @@ type QuestionRequest = {
 
 export function createAutoMode(options: {
   readonly classify: Classify;
+  /** The host's data dir, which a run reads only with a check. */
+  readonly dataDir: string;
   readonly harness: () => Harness;
   /** The installed `pinomad.question` documents, where the user's "Allow" lands. */
   readonly questionDocs: () => readonly ConversationDocToken<QuestionState>[];
@@ -227,11 +365,16 @@ export function createAutoMode(options: {
           // A subagent works for the task that dispatched it: same gate, same trust.
           const root = await familyRoot(options.harness(), api.conversationId, context);
           const owner = inboxTaskOf(inboxes.inboxes, index, root);
-          // Coding conversations, the intake and the memory tidy-up are not gated.
-          if (owner === undefined || owner.task.kind === "tidy") return undefined;
+          const intake = owner === undefined && Object.values(inboxes.inboxes).some((inbox) => inbox.intake === root);
+          // Coding conversations and the memory tidy-up (memory tools only) are not gated.
+          if (owner === undefined ? !intake : owner.task.kind === "tidy") return undefined;
           const subagent = root !== api.conversationId;
           const args = call.arguments as JsonObject;
-          const trusted = owner.task.events.every((event) => event.trusted);
+          // A file tool without a cwd has no environment and does not run; "/" only keeps the check total.
+          const cwd = (await api.snapshot(AgentDoc, api.conversationId, context))?.cwd ?? "/";
+          const where = { home: homedir(), cwd, dataDir: options.dataDir };
+          // The intake is gated only where it reads credentials or the host's data.
+          if (intake && !readsCredentials(call.name, args, where)) return undefined;
           const quote = callQuote(call.name, args);
           const decide = (verdict: AutoVerdict, by: AutoDecision["by"]) => {
             record(api.conversationId, { tool: call.name, verdict: verdict.verdict, reason: verdict.reason, by, at: Date.now() });
@@ -262,9 +405,19 @@ export function createAutoMode(options: {
             }
           }
 
-          const rule = ruleFor(call.name, args, trusted);
+          // The intake has no classifier: such a read is always the user's call.
+          if (owner === undefined) return decide({ verdict: "ask", reason: "it reads credentials or the host's data" }, "rule");
+          const trusted = owner.task.events.every((event) => event.trusted);
+          const rule = ruleFor(call.name, args, trusted, where);
           if (rule !== undefined) {
-            const reason = rule === "allow" ? "" : rule === "block" ? "the rules forbid it" : "it reaches outside the project while the run holds outside content";
+            const reason =
+              rule === "allow"
+                ? ""
+                : rule === "block"
+                  ? "the rules forbid it"
+                  : readsCredentials(call.name, args, where)
+                    ? "it reads credentials or the host's data while the run holds outside content"
+                    : "it reaches outside the project while the run holds outside content";
             return decide({ verdict: rule, reason }, "rule");
           }
           // Too long to show the user or the classifier whole: only the user can judge it.

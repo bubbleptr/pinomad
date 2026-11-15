@@ -96,10 +96,10 @@ export function hostInbox(
   timers: readonly Readonly<InboxTimer>[],
   rules: ReadonlyMap<string, string>,
   sources: readonly Readonly<InboxSourceRecord>[],
-  externalSources: boolean,
 ): HostInbox {
   return {
-    externalSources,
+    // Plugin and webhook sources are always taken; the field stays for clients that read it.
+    externalSources: true,
     inboxes: (index?.projects ?? []).map(({ path }): WireInbox => {
       const inbox = inboxes[path];
       return {
@@ -148,9 +148,7 @@ export async function openInboxService(options: {
   let inboxes = inboxWatch.value?.inboxes ?? {};
   let timers = timerWatch.value?.timers ?? [];
   let sources = sourceWatch.value?.sources ?? [];
-  // Probed once: a sandbox does not come or go while the host runs.
-  const externalSources = await options.sources.sandboxAvailable();
-  const value = (): HostInbox => hostInbox(index, inboxes, timers, rules, sources, externalSources);
+  const value = (): HostInbox => hostInbox(index, inboxes, timers, rules, sources);
   /** Each project's rules, read once and then kept by `setRules`. */
   const rules = new Map<string, string>();
   const readFor = async (path: string): Promise<void> => {

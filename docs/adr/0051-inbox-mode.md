@@ -33,7 +33,7 @@ PiNomad 已经有其中一半：对话就是能恢复的 worker，Durable 的 `p
    - 实现时改（#804）：收件对话在用户发第一条消息时才建（建对话要带第一条消息），不随 Inbox 一起建；在项目目录里，不开 worktree。只读工具目前只有 `read`，没有只读的搜索。`inbox_submit` 的 `external` 由 agent 标注，标了就按外部写的算。系统提示里的任务列表每次请求重新渲染。
 
 7. **Inbox 的运行由 auto mode 把关（修订 ADR-0011 §1）。** 每次工具调用先过分类器：安全的直接跑，危险的拦下，拿不准的变成 `ask_user_question` 等用户。分类器知道这次运行有没有外部写的内容（issue、PR 评论、webhook），有就判得更严。编码模式不变，仍然直接执行。ADR-0011 放弃审批闸门的理由是"人在场时逐条批准打断太多"；Inbox 的运行是人不在场时由外部事件触发的，没人看着、内容可能来自陌生人，这个理由不成立。
-   - 实现时定（#805，设计记录见 [auto mode 方案](https://claude.ai/artifact/HF7GkH2DD7rWFsciixGqrF)）：挂在 Durable 的 `beforeTool` 钩子上，只管 Inbox 任务的对话（收件对话和记忆整理不管）。先过规则表：只读工具和只读命令放行，`sudo`、强推、改 git 配置或远端、`curl | sh`、删家目录直接拦；运行里有外部内容时，联网和装依赖的命令交给用户。规则判不了的交给分类器（宿主有 Haiku 5.5 就用它，否则用默认模型），只给它工具名、参数、任务标题和信任标记，出错按"问用户"。钩子写不了文档，所以"问用户"是拦下调用并让 agent 用 `ask_user_question` 问，题干必须原样引用这次调用；用户选"Allow"后，同一调用放行一次。每次判断记在对话级的 `pinomad.auto-mode` 文档里（保留最近 100 条）。
+   - 实现时定（#805，设计记录见 [auto mode 方案](https://claude.ai/artifact/HF7GkH2DD7rWFsciixGqrF)）：挂在 Durable 的 `beforeTool` 钩子上，只管 Inbox 任务的对话（收件对话和记忆整理不管；例外是收件对话读凭据路径或宿主数据目录，总是先问用户，#839）。先过规则表：只读工具和只读命令放行，`sudo`、强推、改 git 配置或远端、`curl | sh`、删家目录直接拦；运行里有外部内容时，联网和装依赖的命令交给用户。规则判不了的交给分类器（宿主有 Haiku 5.5 就用它，否则用默认模型），只给它工具名、参数、任务标题和信任标记，出错按"问用户"。钩子写不了文档，所以"问用户"是拦下调用并让 agent 用 `ask_user_question` 问，题干必须原样引用这次调用；用户选"Allow"后，同一调用放行一次。每次判断记在对话级的 `pinomad.auto-mode` 文档里（保留最近 100 条）。
 
 8. **计时器单独存放，到点只往 Inbox 写一个事件，不直接开跑。** 定时事件源和 `wake_me_at` 都这样。宿主判断空闲（自动升级、空闲重启）时不算睡着的 Durable 任务，否则只要有计时器就永远等不到空闲。
    - 实现时改（#803）：worker 不是 Durable 任务，不会因为睡着的任务挡住空闲判断，空闲判断不用改。计时器存在会话级的 `pinomad.inbox-timers` 文档里，宿主按最早的到点时间定一个闹钟（最长一分钟复查一次）；到点时在同一次提交里写 Inbox 事件（事件 id 带到点时间，重启后不重复）并把跟进标为完成、把定时推到下一次，宕机期间错过的几次只补一次。
@@ -44,7 +44,7 @@ PiNomad 已经有其中一半：对话就是能恢复的 worker，Durable 的 `p
 
 10. **事件源挂在 Inbox 上：定时、插件、局域网 webhook（修订 ADR-0049 §7）。** 插件可以声明事件源，由宿主轮询或由插件推送。第一期不做公网入口：webhook 只开在局域网和 tailnet 上的 `POST`（HMAC 签名）。经服务端转发 webhook 会让服务端看到明文，和"服务端只转密文"（ADR-0008、0022）冲突。GitHub 这类外部服务靠插件轮询。
    - 实现时定（#808，5.39）：事件源存在会话级的 `pinomad.inbox-sources` 文档里，`inbox` 流给每个项目带上 `sources`，客户端用 `addInboxSource`、`setInboxSourceEnabled`、`removeInboxSource`、`resetInboxWebhookSecret` 管理。设计稿添加对话框里的"受限工具 / 全部工具"就是事件的 `trusted`，只影响 auto mode 判得严不严（第 7 条），不是两套工具（见"没选的方案"）；它由用户添加时选，插件和请求体都改不了，定时算用户写的。
-   - 插件和 webhook 事件源要求有沙箱（ADR-0052 §7）：没有时添加和重新打开都被拒，`inbox.externalSources` 告诉客户端。
+   - 插件和 webhook 事件源要求有沙箱（ADR-0052 §7）：没有时添加和重新打开都被拒，`inbox.externalSources` 告诉客户端。后来 ADR-0052 §7 撤回，沙箱去掉：两种事件源总是接受，宿主总是发 `externalSources: true`。
    - 定时事件源是计时器文档里的一个计时器（`source:<id>`），按所选时区的墙上时间算下一次（每天、工作日、每周或五段 cron），不再是固定周期。每次到点开一项以事件源命名的新任务，不用 thread 串成一项。春季拨快跳过的时间在拨快那一刻触发，秋季重复的只触发第一次；宕机错过的只补一次。它不算跟进，不出现在 `followUps` 里，`cancelFollowUp` 也拒绝它。
    - 插件用 `source()` 声明事件源：轮询（`poll`，默认五分钟、一分钟到一天，游标和事件在同一次提交里存下，崩溃只会重复一次轮询，重复的事件按 id 去掉）或推送（`listen`）。事件 id 前面加上来源和事件源 id，谁也占不了别人的或宿主的 id。`followedOnly` 的事件只送给已经跟着这个 thread 的任务，其余丢掉：PR 评论和 CI 结果不该每条开一项任务，应该回到开或跟着这个 PR 的任务。插件没加载时事件源保留，上面显示原因。
    - webhook 是两个监听端口（loopback 和局域网的 0.0.0.0）上的 `POST /inbox/<项目的记忆目录名>/events`，带 `X-Pinomad-Source`、`X-Pinomad-Timestamp` 和 `X-Pinomad-Signature`（`sha256=` 加上对 `<timestamp>.<body>` 的 HMAC-SHA256）。只接本机、RFC 1918、`100.64.0.0/10`（tailnet）和 IPv6 唯一本地地址来的请求，带转发头的一律拒绝（反向代理后面可能是公网）。时间戳窗口五分钟，窗口里的重放带的是同一个事件 id，去重后不起作用；请求体上限 64 KB。来源不明、已关闭、签名不对和时间戳过期都回同一个 401。密钥由宿主生成，存在 `secrets.json` 里插件名取不到的 `@inbox-webhooks` 名下，只在添加和重置时返回一次；URL 用配对邀请同样的局域网地址，不用 `publicUrl`。

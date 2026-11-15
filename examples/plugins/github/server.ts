@@ -1,8 +1,9 @@
 // GitHub through tools that add the token in the host process (ADR-0052 §6):
-// the agent asks for a PR, a comment or a push and never holds the token
-// itself. GITHUB_API_URL and GITHUB_SERVER_URL in the host's environment point
-// it at GitHub Enterprise (or a test server); the agent cannot pick the host
-// the token is sent to.
+// the agent asks for a PR, a comment or a push and the token is never in its
+// conversation or environment. It runs as the host's user, so this does not
+// put the token out of its reach. GITHUB_API_URL and GITHUB_SERVER_URL in the
+// host's environment point it at GitHub Enterprise (or a test server); the
+// agent cannot pick through these tools the host the token is sent to.
 import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -194,7 +195,7 @@ export default definePlugin((pinomad) => {
   pinomad.tool({
     name: "github_open_pr",
     description:
-      "Open a pull request on GitHub. Push the branch first with git_push; `gh` and `git push` have no credentials here.",
+      "Open a pull request on GitHub. Push the branch first with git_push; use these tools rather than `gh` or `git push`.",
     parameters: {
       type: "object",
       properties: {
@@ -244,7 +245,7 @@ export default definePlugin((pinomad) => {
   pinomad.tool({
     name: "git_push",
     description:
-      "Push the conversation checkout's HEAD to a branch of a GitHub repository. Commit first; this is the only way to push here.",
+      "Push the conversation checkout's HEAD to a branch of a GitHub repository. Commit first; use this rather than `git push`.",
     parameters: {
       type: "object",
       properties: {
