@@ -806,4 +806,21 @@ describe("Inbox pushes", () => {
     await settle();
     expect(apns.calls.map((call) => call.notification.body)).toEqual([]);
   });
+  it("pushes a notify again after a restart that cut off its send", async () => {
+    const dataDir = await joinedDir();
+    const first = await inboxHost([notifyStep("the PR is ready"), "told them"], dataDir);
+    await addInboxEvent(first.host.harness, first.project, { id: "e1", source: "user", summary: "fix it", trusted: true }, context);
+    // No auto-title: the push waits for a title when the host stops.
+    await waitUntil(() => first.timers.pending > 0);
+    expect(first.apns.calls).toHaveLength(0);
+    await first.host.close();
+
+    const apns = fakeTransport();
+    const { host, timers } = await pushHost({ apns, dataDir, answers: [] });
+    await waitUntil(() => timers.pending > 0);
+    timers.advance(15_000);
+    await apns.waitForCalls(1);
+    expect(apns.calls[0]!.notification.body).toBe("Update for you");
+    await waitUntil(async () => (await host.harness.snapshot(OutboxDoc, context))?.messages[0]?.sent === true);
+  });
 });

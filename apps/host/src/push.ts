@@ -233,6 +233,8 @@ type SendItem = {
   timer?: unknown;
   /** True while waiting for an in-flight slot — avoids double-queueing. */
   queued: boolean;
+  /** The outbox message this push delivers: marked sent once its last push settles. */
+  readonly outbox?: string;
 };
 
 /** What a log knows a token by: only the last few characters ever reach it. */
@@ -344,6 +346,15 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
     // reference there forever, and the outbox bound is on both structures.
     const queuedAt = readyQueue.indexOf(item);
     if (queuedAt >= 0) readyQueue.splice(queuedAt, 1);
+    // A sender closing mid-send leaves the message unsent: the next start pushes it.
+    if (item.outbox !== undefined && !disposed) {
+      const left = (outboxLeft.get(item.outbox) ?? 1) - 1;
+      if (left > 0) outboxLeft.set(item.outbox, left);
+      else {
+        outboxLeft.delete(item.outbox);
+        markSent(item.outbox);
+      }
+    }
   };
 
   /** Releases one queued item per freed in-flight slot. */
@@ -454,17 +465,19 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
     return inboxes !== undefined && current !== undefined && inboxTaskOf(inboxes.inboxes, current, id) !== undefined;
   };
 
-  const enqueue = async (notice: Notice): Promise<void> => {
-    if (disposed) return;
+  /** Pushes created for `notice`; an outbox message's are counted in `outboxLeft` before any can settle. */
+  const enqueue = async (notice: Notice, outbox?: string): Promise<number> => {
+    let created = 0;
+    if (disposed) return created;
     const itemGeneration = generation.get(notice.id) ?? 0;
     try {
-      if (notice.body === "Finished" && (await inboxRun(notice.id))) return;
+      if (notice.body === "Finished" && (await inboxRun(notice.id))) return created;
       // One request per (environment, token) — the registration's identity,
       // the same key unregistration and eviction match on.
       const entries = await registrations();
       const seen = new Set<string>();
       for (const entry of entries) {
-        if (disposed) return;
+        if (disposed) return created;
         const identity = `${entry.environment}:${entry.token}`;
         if (seen.has(identity)) continue;
         seen.add(identity);
@@ -472,33 +485,51 @@ export async function attachPushSender(options: PushSenderOptions): Promise<Push
           const [oldest] = pending;
           drop(oldest!);
         }
-        const item: SendItem = { token: entry.token, environment: entry.environment, notice, generation: itemGeneration, attempts: 0, queued: false };
+        const item: SendItem = {
+          token: entry.token,
+          environment: entry.environment,
+          notice,
+          generation: itemGeneration,
+          attempts: 0,
+          queued: false,
+          ...(outbox === undefined ? {} : { outbox }),
+        };
+        if (outbox !== undefined) outboxLeft.set(outbox, (outboxLeft.get(outbox) ?? 0) + 1);
+        created += 1;
         pending.add(item);
         void attempt(item);
       }
     } catch (error) {
       console.error(`push: could not read registrations: ${error instanceof Error ? error.message : String(error)}`);
     }
+    return created;
   };
 
   /**
-   * `notify` messages: each unsent one is pushed once and marked sent. The
-   * push itself retries in memory like any other; a host stopped before the
-   * mark pushes it again on start.
+   * `notify` messages: each unsent one is pushed and marked sent once every
+   * push for it settled (delivered, given up or dropped). A host stopped
+   * before that pushes it again on start.
    */
   const taken = new Set<string>();
+  const outboxLeft = new Map<string, number>();
+  const markSent = (id: string): void => {
+    void harness
+      .commit(async (tx) => {
+        for (const message of (await tx.doc(OutboxDoc)).messages) if (message.id === id) message.sent = true;
+      }, context)
+      .catch((error: unknown) => {
+        if (!disposed) console.error(`push: could not mark a notify message sent: ${error instanceof Error ? error.message : String(error)}`);
+      });
+  };
   const deliver = async (messages: readonly Readonly<OutboxMessage>[]): Promise<void> => {
-    const fresh = messages.filter((message) => !message.sent && !taken.has(message.id));
-    if (fresh.length === 0 || disposed) return;
-    for (const message of fresh) taken.add(message.id);
-    const now = Date.now();
-    for (const message of fresh) {
-      if (now - message.at < NOTIFY_STALE_MS) await enqueue({ id: message.conversationId, body: NOTIFY_BODY });
+    for (const message of messages) {
+      if (disposed) return;
+      if (message.sent || taken.has(message.id)) continue;
+      taken.add(message.id);
+      const created = Date.now() - message.at < NOTIFY_STALE_MS ? await enqueue({ id: message.conversationId, body: NOTIFY_BODY }, message.id) : 0;
+      // No device to push to, or too old to be news: nothing will settle it.
+      if (created === 0 && !disposed) markSent(message.id);
     }
-    const ids = new Set(fresh.map((message) => message.id));
-    await harness.commit(async (tx) => {
-      for (const message of (await tx.doc(OutboxDoc)).messages) if (ids.has(message.id)) message.sent = true;
-    }, context);
   };
   let delivering = Promise.resolve();
   // A watch needs the document to exist; the first notify would otherwise go unseen.
