@@ -75,7 +75,7 @@ export function InboxSettings({ view, remote }: { view: DurableView; remote: Rem
         </SettingsRow>
         {models ? (
           <>
-            <SettingsRow label="Intake model" description="The conversation where you hand work to the Inbox">
+            <SettingsRow label="Intake model" description="New intake conversations, where you hand work to the Inbox, start on this model">
               <ModelCombobox
                 label="Intake model"
                 models={view.models}
@@ -85,7 +85,7 @@ export function InboxSettings({ view, remote }: { view: DurableView; remote: Rem
                 onChange={(picked) => void remote.controller.updateSettings({ inboxIntakeModel: picked })}
               />
             </SettingsRow>
-            <SettingsRow label="Worker model" description="The conversations that work on tasks">
+            <SettingsRow label="Worker model" description="New task conversations start on this model">
               <ModelCombobox
                 label="Worker model"
                 models={view.models}

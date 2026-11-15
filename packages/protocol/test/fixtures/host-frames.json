@@ -97,7 +97,7 @@
       "rtcStun": [
         "stun:stun.cloudflare.com:3478"
       ],
-      "hostName": "kierandeMacBook-Pro",
+      "hostName": "omarchy",
       "autoUpgrade": "notify",
       "inboxQuietHours": null,
       "inboxIntakeModel": null,
@@ -184,7 +184,7 @@
             "home": {
               "kind": "chat"
             },
-            "createdAt": 1794758800613,
+            "createdAt": 1794732233283,
             "requestId": "contract-1"
           }
         ]
@@ -269,7 +269,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1794758800615,
+        "updatedAt": 1794732233285,
         "currentAgent": null
       }
     ]
@@ -287,7 +287,7 @@
             {
               "role": "user",
               "content": "contract run",
-              "timestamp": 1794758800615
+              "timestamp": 1794732233285
             }
           ],
           "kind": "pi.user",
@@ -318,7 +318,7 @@
           "items": []
         },
         "pi.provider": {
-          "sessionId": "01a1dff5-f4e5-7389-a85d-26a020156f70"
+          "sessionId": "01a1de60-9243-727d-aebb-fc3368c4c863"
         },
         "pi.usage": {
           "models": {},
@@ -474,7 +474,7 @@
                     }
                   }
                 ],
-                "timestamp": 1794758800619
+                "timestamp": 1794732233289
               }
             ],
             "kind": "pi.system",
@@ -565,7 +565,7 @@
         ],
         [
           {
-            "callId": "tool:1794758800571:3lvsn4ey2w9",
+            "callId": "tool:1794732233232:st8319jmcra",
             "name": "write",
             "taskId": 20,
             "status": "pending"
@@ -628,7 +628,7 @@
                 "content": [
                   {
                     "type": "toolCall",
-                    "id": "tool:1794758800571:3lvsn4ey2w9",
+                    "id": "tool:1794732233232:st8319jmcra",
                     "name": "write",
                     "arguments": {
                       "path": "note.txt",
@@ -636,7 +636,7 @@
                     }
                   }
                 ],
-                "api": "faux:1794758800572:5nobt6kwn5l",
+                "api": "faux:1794732233233:zt93guzwfhf",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
@@ -654,7 +654,7 @@
                   }
                 },
                 "stopReason": "toolUse",
-                "timestamp": 1794758800571,
+                "timestamp": 1794732233232,
                 "thinkingLevel": "off"
               }
             ],
@@ -739,7 +739,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1794758800571,
+        "updatedAt": 1794732233232,
         "currentAgent": null,
         "activity": {
           "tool": "write",
@@ -799,7 +799,7 @@
             "model": [
               {
                 "role": "toolResult",
-                "toolCallId": "tool:1794758800571:3lvsn4ey2w9",
+                "toolCallId": "tool:1794732233232:st8319jmcra",
                 "toolName": "write",
                 "content": [
                   {
@@ -812,7 +812,7 @@
                 },
                 "isError": false,
                 "durationMs": 1,
-                "timestamp": 1794758800691
+                "timestamp": 1794732233361
               }
             ],
             "data": {
@@ -930,7 +930,7 @@
         "kind": "conversation",
         "title": "contract run",
         "status": "running",
-        "updatedAt": 1794758800571,
+        "updatedAt": 1794732233232,
         "currentAgent": null
       }
     ]
@@ -1072,7 +1072,7 @@
                     "text": "contract done"
                   }
                 ],
-                "api": "faux:1794758800572:5nobt6kwn5l",
+                "api": "faux:1794732233233:zt93guzwfhf",
                 "provider": "faux",
                 "model": "faux-1",
                 "usage": {
@@ -1090,9 +1090,9 @@
                   }
                 },
                 "stopReason": "stop",
-                "timestamp": 1794758800572,
+                "timestamp": 1794732233233,
                 "pinomad": {
-                  "answerStartedAt": 1794758800700
+                  "answerStartedAt": 1794732233370
                 },
                 "thinkingLevel": "off"
               }
