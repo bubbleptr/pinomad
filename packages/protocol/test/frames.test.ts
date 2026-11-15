@@ -55,6 +55,15 @@ describe("parseClientFrame", () => {
     expect(kinds(call({ name: "panel", hash: 7 }))).toBe("malformed");
   });
 
+  it("accepts setPluginSecret with a value or null; an empty value or a missing name is malformed", () => {
+    const call = (args: unknown) => ({ type: "call", id: 1, method: "setPluginSecret", args });
+    expect(kinds(call({ plugin: "github", name: "github_token", value: "t" }))).toBe("frame");
+    expect(kinds(call({ plugin: "github", name: "github_token", value: null }))).toBe("frame");
+    expect(kinds(call({ plugin: "github", name: "github_token", value: "" }))).toBe("malformed");
+    expect(kinds(call({ plugin: "github", name: "github_token" }))).toBe("malformed");
+    expect(kinds(call({ plugin: "github", value: "t" }))).toBe("malformed");
+  });
+
   it("accepts listFiles with either scope kind; rejects malformed scopes and queries", () => {
     const call = (args: unknown): unknown => ({ type: "call", id: 1, method: "listFiles", args });
     expect(kinds(call({ scope: { kind: "conversation", conversationId: 7 }, query: "src/" }))).toBe("frame");

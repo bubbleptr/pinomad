@@ -5,6 +5,8 @@
 // extension `plugin.<name>`, mirrored into the host's registry; the browser
 // halves are served through `pluginBundle`. An edit is rebuilt and reloaded; a
 // plugin whose build, evaluation or checks fail keeps the version it had.
+// Secrets a plugin declares live in the host's credential store (ADR-0052 §6):
+// its tools read them in this process, and what they return is scrubbed of them.
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
@@ -30,12 +32,16 @@ import {
 } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import type { PluginInfo } from "@pinomad/protocol/frames.ts";
-import type { HostApi, HostPlugin, PluginContext, PluginState, StateOptions, ToolDefinition } from "@pinomad/plugin/v1";
+import type { HostApi, HostPlugin, PluginContext, PluginSecret, PluginState, SecretOptions, StateOptions, ToolDefinition } from "@pinomad/plugin/v1";
 import type { ExtensionDoc } from "./builtin-extension.ts";
+import { openSecretStore, type SecretStore } from "./secrets.ts";
 
 const context = BACKGROUND_CONTEXT;
 const NAME = /^[a-z][a-z0-9-]*$/;
 const STATE_NAME = /^[A-Za-z0-9_-]+$/;
+const SECRET_NAME = STATE_NAME;
+/** What a set secret reads as in a tool's result. */
+const REDACTED = "[redacted]";
 /** Provider-safe tool names; `mcp__…` is the MCP bridge's namespace, so MCP tools never collide with a plugin's. */
 const TOOL_NAME = /^[A-Za-z0-9_]{1,64}$/;
 /** The app's own facet in chord's terms; it serves the registry the plugins contribute to. */
@@ -78,6 +84,8 @@ export interface PluginCatalog {
   bundle(name: string, hash: string): string;
   /** Throws for an unknown plugin or method. */
   method(plugin: string, method: string): PluginMethod;
+  /** Store or (`null`) remove a declared secret's value; throws for an unknown plugin or secret. Listeners run after. */
+  setSecret(plugin: string, name: string, value: string | null): Promise<void>;
   /** `listener` runs after each reload that added, changed or removed a plugin; returns the unsubscribe. */
   subscribe(listener: () => void): () => void;
 }
@@ -92,6 +100,8 @@ export interface PluginsOptions {
   /** The host's registry; each loaded plugin's extension is kept installed in it. */
   readonly registry: Registry;
   readonly log?: (line: string) => void;
+  /** The credential store's file (`<dataDir>/secrets.json`). */
+  readonly secretsFile: string;
   /** Called after every reload that added, changed, removed or failed a plugin. */
   readonly onReload?: (outcome: PluginReload) => void;
   /** How long a burst of file events settles before a rebuild. */
@@ -102,12 +112,17 @@ interface Registration {
   readonly states: { readonly handle: PluginState<unknown>; readonly options: StateOptions<JsonObject> }[];
   readonly tools: ToolDefinition[];
   readonly methods: Map<string, (args: JsonValue, ctx: PluginContext) => Promise<JsonValue>>;
+  readonly secrets: Map<string, SecretOptions>;
+  /** The host's store, read under this plugin's name once `translate` knows it. */
+  readonly store: SecretStore;
 }
 
 interface Translated {
   readonly extension: Extension;
   readonly docs: readonly ExtensionDoc[];
   readonly methods: ReadonlyMap<string, PluginMethod>;
+  /** Declared secrets, in declaration order. */
+  readonly secrets: readonly { readonly name: string; readonly description: string }[];
 }
 
 /** The composed registry: the Durable snapshot the host mirrors, and each accepted plugin. */
@@ -124,6 +139,7 @@ const PluginExtensions = defineRegistry<Registration, Composition>("pinomad.plug
 export async function openPlugins(dir: string, options: PluginsOptions): Promise<Plugins> {
   const log = options.log ?? ((line) => console.error(line));
   const reserved = new Set(options.reservedTools);
+  const store = await openSecretStore(options.secretsFile);
   // chord watches the root from the start; one created later would never be seen.
   await mkdir(dir, { recursive: true });
 
@@ -133,7 +149,7 @@ export async function openPlugins(dir: string, options: PluginsOptions): Promise
     context,
   );
   const definePlugin = (plugin: unknown) => {
-    const registration = collect(plugin, reserved);
+    const registration = collect(plugin, reserved, store);
     return defineFacet<Principal>((_host, self) => self.contribute(PluginExtensions, registration));
   };
   const core = defineFacet<Principal>((facetHost) => facetHost.serve(PluginExtensions, { compose }));
@@ -308,9 +324,15 @@ export async function openPlugins(dir: string, options: PluginsOptions): Promise
   };
   return {
     get info(): readonly PluginInfo[] {
-      return announced().map(({ name }) => {
+      return announced().map(({ name, translated }) => {
         const bundle = web.get(name);
-        return { name, api: 1, ...(bundle === undefined ? {} : { web: { hash: bundle.hash, size: bundle.size } }) };
+        const secrets = (translated?.secrets ?? []).map((secret) => ({ ...secret, set: store.get(name, secret.name) !== undefined }));
+        return {
+          name,
+          api: 1,
+          ...(bundle === undefined ? {} : { web: { hash: bundle.hash, size: bundle.size } }),
+          ...(secrets.length === 0 ? {} : { secrets }),
+        };
       });
     },
     get docs(): readonly ExtensionDoc[] {
@@ -325,6 +347,11 @@ export async function openPlugins(dir: string, options: PluginsOptions): Promise
       const run = find(plugin).translated?.methods.get(method);
       if (run === undefined) throw new Error(`Unknown method ${method} on plugin ${plugin}`);
       return run;
+    },
+    setSecret: async (plugin, name, value) => {
+      if (!find(plugin).translated?.secrets.some((secret) => secret.name === name)) throw new Error(`Plugin ${plugin} has no secret ${name}`);
+      await store.set(plugin, name, value);
+      for (const listener of listeners) listener();
     },
     subscribe: (listener) => {
       listeners.add(listener);
@@ -380,9 +407,9 @@ function compose(table: readonly { readonly plugin: string; readonly value: Regi
  * this runs while chord evaluates `server.ts`, so a throw fails that evaluation
  * and a reload keeps the version that was loaded.
  */
-function collect(plugin: unknown, reserved: ReadonlySet<string>): Registration {
+function collect(plugin: unknown, reserved: ReadonlySet<string>, store: SecretStore): Registration {
   if (typeof plugin !== "function") throw new Error("definePlugin needs a function");
-  const registration: Registration = { states: [], tools: [], methods: new Map() };
+  const registration: Registration = { states: [], tools: [], methods: new Map(), secrets: new Map(), store };
   let open = true;
   const guard = (what: string) => {
     if (!open) throw new Error(`${what} must be called while definePlugin's function runs`);
@@ -397,6 +424,14 @@ function collect(plugin: unknown, reserved: ReadonlySet<string>): Registration {
       const handle: PluginState<T> = Object.freeze({ name });
       registration.states.push({ handle, options: options as StateOptions<JsonObject> });
       return handle;
+    },
+    secret: (name: string, options: SecretOptions): PluginSecret => {
+      guard("secret");
+      if (typeof name !== "string" || !SECRET_NAME.test(name)) throw new Error(`secret name ${JSON.stringify(name)} must match ${SECRET_NAME}`);
+      if (registration.secrets.has(name)) throw new Error(`secret ${name} is defined twice`);
+      if (typeof options?.description !== "string") throw new Error(`secret ${name} needs a description`);
+      registration.secrets.set(name, { description: options.description });
+      return Object.freeze({ name });
     },
     tool: (definition) => {
       guard("tool");
@@ -460,8 +495,26 @@ function translate(plugin: string, registration: Registration): Translated {
     if (token === undefined) throw new Error(`State ${state.name} does not belong to plugin ${plugin}`);
     return token;
   };
-  const contextFor = (store: PluginStore, conversationId: ConversationId, context: Context): PluginContext => ({
+  /** Reads a secret; `read` collects every value handed out, which a tool's result is scrubbed of. */
+  const secretOf = (read?: Set<string>) => async (secret: PluginSecret): Promise<string | undefined> => {
+    if (typeof secret?.name !== "string" || !registration.secrets.has(secret.name)) throw new Error(`Secret ${secret?.name} does not belong to plugin ${plugin}`);
+    const value = registration.store.get(plugin, secret.name);
+    if (value !== undefined) read?.add(value);
+    return value;
+  };
+  /**
+   * `text` with every set secret of this plugin replaced, and every value the call read (the user may
+   * have changed or cleared one since), longest first so one containing another goes whole.
+   */
+  const redact = (text: string, read: ReadonlySet<string>): string =>
+    [...new Set([...read, ...[...registration.secrets.keys()].flatMap((name) => registration.store.get(plugin, name) ?? [])])]
+      .filter((value) => value.length > 0)
+      .sort((a, b) => b.length - a.length)
+      .reduce((scrubbed, value) => scrubbed.replaceAll(value, REDACTED), text);
+  const contextFor = (store: PluginStore, conversationId: ConversationId, context: Context, tool?: { cwd: string | undefined; read: Set<string> }): PluginContext => ({
     conversationId,
+    cwd: tool?.cwd,
+    secret: secretOf(tool?.read),
     read: async <T>(state: PluginState<T>): Promise<T> => {
       const token = tokenOf(state);
       return ((await store.snapshot(token, conversationId, context)) ?? token.definition.initial()) as T;
@@ -481,12 +534,13 @@ function translate(plugin: string, registration: Registration): Translated {
       // The plugin's run may have side effects outside its state; an interrupted call is not rerun.
       replay: "unsafe",
       execute: async (args, api, context) => {
+        const read = new Set<string>();
         try {
-          const { text } = await tool.run(args as JsonObject, contextFor(api, api.conversationId, context));
-          return { output: [{ type: "text", text }] };
+          const { text } = await tool.run(args as JsonObject, contextFor(api, api.conversationId, context, { cwd: api.env?.cwd, read }));
+          return { output: [{ type: "text", text: redact(String(text), read) }] };
         } catch (error) {
           if (context.abortSignal?.aborted === true) throw error;
-          return { output: [{ type: "text", text: message(error) }], isError: true };
+          return { output: [{ type: "text", text: redact(message(error), read) }], isError: true };
         }
       },
     }),
@@ -494,6 +548,7 @@ function translate(plugin: string, registration: Registration): Translated {
   const translated: Translated = {
     extension: defineExtension({ name: `plugin.${plugin}`, tools }),
     docs,
+    secrets: [...registration.secrets].map(([name, { description }]) => ({ name, description })),
     methods: new Map(
       [...registration.methods].map(([name, run]) => [
         name,

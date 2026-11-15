@@ -1,12 +1,12 @@
 {
   "protocol": {
     "major": 5,
-    "minor": 36
+    "minor": 37
   },
   "serverFrames": [
     {
       "name": "hello",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":36},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":37},\"hostVersion\":\"1.2.3\",\"session\":{\"id\":\"s1\",\"directory\":\"/data\"},\"models\":[],\"docs\":[],\"toolPresentations\":{\"edit\":\"pinomad.diff\"}}",
       "expect": "hello"
     },
     {
@@ -16,22 +16,22 @@
     },
     {
       "name": "hello-unknown-fields",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":36},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":37},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"future\":{\"anything\":[1,2]}}",
       "expect": "hello"
     },
     {
       "name": "hello-plugins",
-      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":36},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"plugins\":[{\"name\":\"artifact\",\"api\":1,\"web\":{\"hash\":\"abababababababababababababababababababababababababababababababab\",\"size\":1024}}]}",
+      "wire": "{\"type\":\"hello\",\"protocol\":{\"major\":5,\"minor\":37},\"session\":{\"id\":\"s\",\"directory\":\"/d\"},\"models\":[],\"docs\":[],\"toolPresentations\":{},\"plugins\":[{\"name\":\"artifact\",\"api\":1,\"web\":{\"hash\":\"abababababababababababababababababababababababababababababababab\",\"size\":1024}}]}",
       "expect": "hello"
     },
     {
       "name": "signalHello",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":36},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":37},\"rtc\":{\"stun\":[\"stun:stun.cloudflare.com:3478\"],\"signalOnly\":true}}",
       "expect": "signalHello"
     },
     {
       "name": "signalHello-no-rtc",
-      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":36}}",
+      "wire": "{\"type\":\"signalHello\",\"protocol\":{\"major\":5,\"minor\":37}}",
       "expect": "signalHello"
     },
     {
@@ -456,6 +456,10 @@
         "since": 0
       },
       {
+        "name": "setPluginSecret",
+        "since": 37
+      },
+      {
         "name": "setPushToken",
         "since": 7
       },
@@ -594,6 +598,10 @@
       {
         "name": "plugins",
         "since": 34
+      },
+      {
+        "name": "pluginSecrets",
+        "since": 37
       },
       {
         "name": "processes",
@@ -1079,6 +1087,18 @@
       "expect": true
     },
     {
+      "name": "setPluginSecret@37",
+      "minor": 37,
+      "call": "setPluginSecret",
+      "expect": true
+    },
+    {
+      "name": "setPluginSecret@36",
+      "minor": 36,
+      "call": "setPluginSecret",
+      "expect": false
+    },
+    {
       "name": "setPushToken@7",
       "minor": 7,
       "call": "setPushToken",
@@ -1352,6 +1372,18 @@
       "name": "plugins@33",
       "minor": 33,
       "feature": "plugins",
+      "expect": false
+    },
+    {
+      "name": "pluginSecrets@37",
+      "minor": 37,
+      "feature": "pluginSecrets",
+      "expect": true
+    },
+    {
+      "name": "pluginSecrets@36",
+      "minor": 36,
+      "feature": "pluginSecrets",
       "expect": false
     },
     {

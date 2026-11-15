@@ -61,21 +61,47 @@ API 的类型定义在 PiNomad 仓库里：服务端是 [`packages/plugin/src/v1
 import { definePlugin } from "@pinomad/plugin/v1";
 
 export default definePlugin((pinomad) => {
-  // pinomad.state(…)、pinomad.tool(…)、pinomad.method(…)
+  // pinomad.state(…)、pinomad.tool(…)、pinomad.method(…)、pinomad.secret(…)
 });
 ```
 
 - `state(name, { version, initial, shared })`：按对话保存的 JSON 状态。`initial()` 是对话还没写过时的值。`shared: false` 的状态只留在宿主上；默认会同步给客户端，界面用 `useState` 读。共享状态会同步到每个正在看这段对话的客户端，所以大块内容放在只留宿主的状态里，界面再通过方法去取。
 - `tool({ name, description, parameters, run })`：模型能调用的工具。`parameters` 是 JSON Schema 对象。`run(args, ctx)` 返回 `{ text }`，就是模型看到的结果；抛错的话模型收到一条失败结果，内容是错误信息。工具名只能用字母、数字和 `_`，最长 64 个字符，不能以 `mcp__` 开头，也不能和宿主上已有的工具重名。占用内置工具名的插件不会加载，修改后才占用的则继续用原来的版本；两个插件的工具重名时，按字母顺序靠后的那个被跳过。宿主重启打断的调用不会重跑。
 - `method(name, run)`：给界面用 `call` 或 `useCall` 调的函数。`run(args, ctx)` 收发 JSON；抛错的话这次调用失败，带上错误信息。
+- `secret(name, { description })`：用户填的凭据，比如 API token，见下面的“凭据”。返回一个句柄，交给 `ctx.secret`。名字只能用字母、数字、`_` 和 `-`。
 
 `ctx` 是这次工具调用或方法调用所属的对话：
 
 - `ctx.conversationId`
 - `ctx.read(state)`：已提交的值。
 - `ctx.change(async (tx) => { … })`：一次提交。`await tx.get(state)` 拿到一份草稿，直接改它；改过的草稿要么一起存下，要么都不存。
+- `ctx.cwd`：对话的工作目录，工具里才有；方法里是 `undefined`。
+- `ctx.secret(handle)`：凭据现在的值，没填时是 `undefined`。
 
 插件状态和对话的其他内容一样跟着对话历史走：Fork 出来的对话从分叉那一刻的状态开始。
+
+### 凭据
+
+插件代 agent 调外部服务时，要用一个不能让 agent 看到的凭据。用 `secret` 声明，在 `run` 里用 `ctx.secret` 读，由宿主进程发请求：agent 只调你的工具，手里没有 token，也就没法把它泄露给读到的网页。
+
+```ts
+const token = pinomad.secret("api_token", { description: "An API token with write access." });
+
+pinomad.tool({
+  name: "service_post",
+  // …
+  run: async (args, ctx) => {
+    const value = await ctx.secret(token);
+    if (value === undefined) throw new Error("The api_token secret is not set. Ask the user to set it.");
+    const response = await fetch("https://api.example.com/posts", { method: "POST", headers: { authorization: `Bearer ${value}` } });
+    return { text: `Posted: ${response.status}` };
+  },
+});
+```
+
+宿主把凭据按插件和名字存在数据目录的 `secrets.json` 里，只有宿主所在的用户能读（权限 600）。客户端用 `setPluginSecret` 调用填值，能看到哪些已经填了，读不回值本身。在 App 里有地方填之前，先停掉宿主再写这个文件：`{ "<插件>": { "<凭据>": "<值>" } }`。
+
+插件的工具返回或抛出的内容里，凡是这个插件已填的凭据，宿主都换成 `[redacted]`。从凭据推出来的值（比如 base64 编码过的请求头）拦不住，别放进结果里。凭据也不要放进环境变量、agent 能读的文件或者进程参数里：只交给需要它的那个请求或子进程。
 
 ### 浏览器侧
 
@@ -97,6 +123,10 @@ export default definePlugin((pinomad) => {
 插件的界面代码是你信任的，模型写出来的内容不是。`Sandbox` 接收 `html`（一份完整的文档）和 `title`（框架的无障碍名称），在一个框架里渲染这份文档，脚本照常运行。它会撑满给它的空间。`html` 一变，就是一份新文档。
 
 沙箱承诺的是：里面的内容碰不到客户端的任何东西，包括设备密钥、存储和 App 页面。它不承诺断网：fetch、跳转和外部的脚本、样式、图片都尽量拦下了，但拦不住 WebRTC，页面仍然可以经 STUN 或 DNS 往外发数据。内联脚本和样式可以用，图片可以用 `data:` URL。
+
+## 示例：GitHub
+
+[`examples/plugins/github`](https://github.com/bubbleptr/pinomad/tree/main/examples/plugins/github) 给 agent 加了 `github_open_pr`、`github_comment` 和 `git_push`，在宿主进程里带上 `github_token` 凭据。`git_push` 把对话检出的 `HEAD` 推到一个分支。带着 token 的 `git` 在宿主新建的临时仓库里跑，agent 写进检出里的钩子和配置碰不到它；token 放在只有这个进程看得到的请求头里，只发给 GitHub 服务器。宿主环境里的 `GITHUB_API_URL` 和 `GITHUB_SERVER_URL` 可以把它指向 GitHub Enterprise。把目录复制到 `~/.pinomad/plugins/github/`，填好 `github_token` 就能试。
 
 ## 示例：artifact
 

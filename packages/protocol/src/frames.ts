@@ -107,7 +107,7 @@ export interface ProtocolVersion {
  * `HOST_STREAMS` and `CALL_SINCE` below). `major` differs → the two cannot
  * talk.
  */
-export const PROTOCOL: ProtocolVersion = { major: 5, minor: 36 };
+export const PROTOCOL: ProtocolVersion = { major: 5, minor: 37 };
 
 export interface CallMethods {
   /** Register a local directory as a project; normalized and deduplicated host-side. */
@@ -442,6 +442,13 @@ export interface CallMethods {
     args: { conversationId: ConversationId; plugin: string; method: string; args: JsonValue };
     result: JsonValue;
   };
+  /**
+   * Store a secret a plugin declared (5.37, ADR-0052 §6), or remove it with
+   * `null`. Write-only: `hello.plugins[].secrets` and the `plugins` frame say
+   * whether one is set, and no call reads a value back. An unknown plugin or
+   * secret is an `ok:false`; every connection is sent a `plugins` frame after.
+   */
+  setPluginSecret: { args: { plugin: string; name: string; value: string | null }; result: null };
 }
 
 /** APNs device-token registration (ADR-0025 §7, protocol 5.9). */
@@ -467,6 +474,15 @@ export interface PluginInfo {
   readonly api: number;
   /** The browser half: sha-256 hex of the bundle's UTF-8 bytes and their count. Absent → tools only. */
   readonly web?: { readonly hash: string; readonly size: number };
+  /** The secrets it declares (5.37, ADR-0052 §6) and whether each is set; never their values. Absent → none. */
+  readonly secrets?: readonly PluginSecretInfo[];
+}
+
+export interface PluginSecretInfo {
+  readonly name: string;
+  /** What to enter, in the plugin's words. */
+  readonly description: string;
+  readonly set: boolean;
 }
 
 /** One `hello.docs` entry: a conversation document offered as `doc:<kind>:<conversationId>` streams. */
@@ -537,6 +553,7 @@ export const CALL_SINCE: Record<CallMethod, number> = {
   checkUpgrade: 30,
   pluginBundle: 34,
   pluginCall: 34,
+  setPluginSecret: 37,
 };
 
 /** Whether a host of the given minor version knows `method`. */
@@ -588,6 +605,8 @@ export const FEATURE_SINCE = {
   plugins: 34,
   /** The `plugins` frame after a reload, and `pluginBundle`'s `hash` (35, ADR-0050). */
   pluginReload: 35,
+  /** `hello.plugins[].secrets` and the `setPluginSecret` call (37, ADR-0052 §6). */
+  pluginSecrets: 37,
 } as const;
 export type HostFeature = keyof typeof FEATURE_SINCE;
 
@@ -906,6 +925,9 @@ function validCallArgs(method: CallMethod, args: Record<string, unknown>): boole
     case "pluginCall":
       // `args` is the plugin's own JSON; `null` is a value, only a missing key is malformed.
       return conversationId() && nonempty(args.plugin) && nonempty(args.method) && args.args !== undefined;
+    case "setPluginSecret":
+      // An empty value is malformed: `null` removes one.
+      return nonempty(args.plugin) && nonempty(args.name) && (args.value === null || nonempty(args.value));
     case "image":
       return nonempty(args.ref) && (args.variant === undefined || args.variant === "thumbnail" || args.variant === "preview");
     case "beginAttachment":
