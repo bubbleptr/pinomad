@@ -15,6 +15,7 @@ import {
   INBOX_SOURCE_FILTER_MAX,
   INBOX_SOURCE_NAME_MAX,
   INBOX_SOURCE_NOTE_MAX,
+  type InboxSchedule,
   type InboxSourceSpec,
   type InboxWebhookAccess,
 } from "@pinomad/protocol/inbox.ts";
@@ -99,6 +100,29 @@ function webhookAccess(deps: SourceDeps, record: InboxSourceRecord, secret: stri
 const newSecret = (): string => randomBytes(32).toString("base64url");
 
 /** Checks what a client asked for; throws the reason it is refused. */
+/** The spec as stored: only its known fields, so nothing else a client sent is kept or broadcast. */
+function cleanSpec(spec: InboxSourceSpec): InboxSourceSpec {
+  switch (spec.kind) {
+    case "schedule": {
+      const { schedule } = spec;
+      const clean: InboxSchedule =
+        schedule.kind === "cron"
+          ? { kind: "cron", expression: schedule.expression, timeZone: schedule.timeZone }
+          : schedule.kind === "weekly"
+            ? { kind: "weekly", day: schedule.day, time: schedule.time, timeZone: schedule.timeZone }
+            : { kind: schedule.kind, time: schedule.time, timeZone: schedule.timeZone };
+      return { kind: "schedule", schedule: clean, note: spec.note };
+    }
+    case "plugin":
+      return { kind: "plugin", plugin: spec.plugin, source: spec.source, filter: spec.filter };
+    case "webhook":
+      return { kind: "webhook" };
+  }
+}
+
+const CRON_MAX = 200;
+const ZONE_MAX = 64;
+
 async function checkSpec(deps: SourceDeps, input: { name: string; spec: InboxSourceSpec }): Promise<void> {
   if (input.name.trim().length === 0 || input.name.length > INBOX_SOURCE_NAME_MAX) {
     throw new Error(`A source's name is 1 to ${INBOX_SOURCE_NAME_MAX} characters`);
@@ -110,6 +134,8 @@ async function checkSpec(deps: SourceDeps, input: { name: string; spec: InboxSou
       if (spec.note.trim().length === 0 || spec.note.length > INBOX_SOURCE_NOTE_MAX) {
         throw new Error(`A schedule's note is 1 to ${INBOX_SOURCE_NOTE_MAX} characters`);
       }
+      if (spec.schedule.timeZone.length > ZONE_MAX) throw new Error("Unknown time zone");
+      if (spec.schedule.kind === "cron" && spec.schedule.expression.length > CRON_MAX) throw new Error(`A cron expression is at most ${CRON_MAX} characters`);
       checkSchedule(spec.schedule);
       return;
     case "plugin": {
@@ -159,7 +185,7 @@ export async function addInboxSource(
     id: randomUUID(),
     project: key,
     name: input.name.trim(),
-    spec: input.spec,
+    spec: cleanSpec(input.spec),
     enabled: true,
     trusted: input.trusted,
     createdAt: Date.now(),
@@ -318,10 +344,18 @@ export async function startSourceRunner(deps: SourceDeps & { readonly context: C
   const listen = (record: InboxSourceRecord & { spec: { kind: "plugin" } }, loaded: LoadedSource): Running => {
     let stopped = false;
     let stopListening: (() => void) | undefined;
+    const fail = (problem: string): void => {
+      if (!stopped) void setProblem(harness, record.id, problem, context).catch(() => {});
+    };
+    // Never rejects: a plugin may call it unawaited from a socket handler.
     const emit = async (event: SourceEvent): Promise<void> => {
       if (stopped) return;
-      if (!(await deps.sandboxAvailable())) throw new Error(NO_SANDBOX);
-      await harness.commit((tx) => deliver(tx, record.id, event, loaded.info.followedOnly === true), context);
+      try {
+        if (!(await deps.sandboxAvailable())) throw new Error(NO_SANDBOX);
+        await harness.commit((tx) => deliver(tx, record.id, event, loaded.info.followedOnly === true), context);
+      } catch (error) {
+        if (!closed) fail(message(error));
+      }
     };
     void (async () => {
       if (!(await deps.sandboxAvailable())) {
@@ -329,7 +363,7 @@ export async function startSourceRunner(deps: SourceDeps & { readonly context: C
         return;
       }
       try {
-        const stop = await loaded.listen!(record.spec.filter, emit);
+        const stop = await loaded.listen!(record.spec.filter, emit, fail);
         if (stopped) stop();
         else {
           stopListening = stop;

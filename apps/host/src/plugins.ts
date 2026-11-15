@@ -95,8 +95,12 @@ export interface LoadedSource {
     readonly intervalMs: number;
     run(cursor: JsonValue | undefined, filter: string): Promise<{ events: SourceEvent[]; cursor?: JsonValue }>;
   };
-  /** Starts listening; resolves with the stop function. */
-  readonly listen?: (filter: string, emit: (event: SourceEvent) => Promise<void>) => Promise<() => void>;
+  /**
+   * Starts listening; resolves with the stop function. The plugin's `emit`
+   * never rejects or throws, even unawaited in a socket handler: an event it
+   * cannot take goes to `fail` (scrubbed), and `emit` must not reject either.
+   */
+  readonly listen?: (filter: string, emit: (event: SourceEvent) => Promise<void>, fail: (problem: string) => void) => Promise<() => void>;
 }
 
 /** What one reload changed, by plugin name; `failed` kept their loaded version (or were left out). */
@@ -659,8 +663,15 @@ function translate(plugin: string, registration: Registration): Translated {
       ...(listen === undefined
         ? {}
         : {
-            listen: async (filter, emit) => {
-              const stop = await listen((event) => emit(sourceEvent(name, event)), sourceContext(filter));
+            listen: async (filter, emit, fail) => {
+              const take = async (event: unknown): Promise<void> => {
+                try {
+                  await emit(sourceEvent(name, event));
+                } catch (error) {
+                  fail(redact(message(error), new Set()));
+                }
+              };
+              const stop = await listen(take, sourceContext(filter));
               if (typeof stop !== "function") throw new Error(`source ${name}'s listen must return a stop function`);
               return stop;
             },

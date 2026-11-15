@@ -311,14 +311,71 @@ describe("plugin sources", () => {
   });
 
   it("take pushed events while enabled, and stop listening when turned off", async () => {
-    const { key, socket, tasks } = await sourcesHost({ plugins: { feed: FEED } });
+    const { key, socket, tasks, host } = await sourcesHost({ plugins: { feed: FEED } });
     const { sourceId } = await socket.ok<{ sourceId: string }>("addInboxSource", { project: key, name: "Pushed", trusted: true, spec: { kind: "plugin", plugin: "feed", source: "pushed", filter: "" } });
     const emit = await until(async () => (globalThis as Feed).__feedEmit, (value) => value !== undefined);
+    // A malformed event, unawaited as from a socket handler: it shows on the source and rejects nothing.
+    void emit!({ id: "", summary: "no id" });
+    const problem = await until(
+      async () => (await sourceList(host, key)).find((source) => source.id === sourceId)?.problem,
+      (value) => value !== undefined,
+    );
+    expect(problem).toMatch(/id is not a non-empty string/);
     await emit!({ id: "p1", summary: "pushed one", thread: "push:1" });
     const [task] = await until(tasks, (list) => list.length === 1);
     expect(task!.events[0]).toMatchObject({ id: `plugin:feed:${sourceId}:p1`, trusted: true, thread: "push:1" });
     await socket.ok("setInboxSourceEnabled", { sourceId, enabled: false });
     await until(async () => (globalThis as Feed).__feedEmit, (value) => value === undefined);
+  });
+
+  it("the GitHub example's PR comment and CI sources reach only the task that follows the PR", async () => {
+    const later = "2099-01-01T00:00:00Z";
+    const replies: Record<string, unknown> = { "/repos/acme/web/issues/comments": [], "/repos/acme/web/pulls/comments": [], "/repos/acme/web/actions/runs": { workflow_runs: [] } };
+    const server = createServer((request, response) => {
+      const path = new URL(request.url ?? "/", "http://x").pathname;
+      response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(replies[path] ?? []));
+    });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    defer(() => new Promise<void>((resolve) => server.close(() => resolve())));
+    const before = process.env.GITHUB_API_URL;
+    process.env.GITHUB_API_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    defer(() => {
+      if (before === undefined) delete process.env.GITHUB_API_URL;
+      else process.env.GITHUB_API_URL = before;
+    });
+
+    const { key, socket, tasks, host } = await sourcesHost({ copy: { github: GITHUB_EXAMPLE } });
+    await socket.ok("setPluginSecret", { plugin: "github", name: "github_token", value: TOKEN });
+    // The task that opened PR #7 follows its thread.
+    const { addInboxEvent } = await import("../src/inbox.ts");
+    const { task: followed } = await addInboxEvent(host.harness, key, { id: "pr7", source: "user", thread: "github:acme/web#7", summary: "Fix login", trusted: true }, context);
+    const add = async (source: string) =>
+      (await socket.ok<{ sourceId: string }>("addInboxSource", { project: key, name: source, trusted: false, spec: { kind: "plugin", plugin: "github", source, filter: "acme/web" } })).sourceId;
+    const ids = [await add("pr-comments"), await add("ci")];
+    for (const id of ids) await until(async () => (await host.harness.snapshot(SourceCursorsDoc, context))?.cursors[id], (cursor) => cursor !== undefined);
+
+    replies["/repos/acme/web/issues/comments"] = [
+      { id: 11, html_url: "https://github.example/acme/web/pull/7#issuecomment-11", created_at: later, user: { login: "ana" }, issue_url: "https://api.example/repos/acme/web/issues/7" },
+      { id: 12, html_url: "https://github.example/acme/web/issues/9#issuecomment-12", created_at: later, issue_url: "https://api.example/repos/acme/web/issues/9" },
+      { id: 13, html_url: "https://github.example/acme/web/pull/8#issuecomment-13", created_at: later, issue_url: "https://api.example/repos/acme/web/issues/8" },
+    ];
+    replies["/repos/acme/web/pulls/comments"] = [
+      { id: 14, html_url: "https://github.example/acme/web/pull/7#discussion_r14", created_at: later, user: { login: "bo" }, pull_request_url: "https://api.example/repos/acme/web/pulls/7" },
+    ];
+    replies["/repos/acme/web/actions/runs"] = {
+      workflow_runs: [{ id: 99, run_attempt: 1, name: "ci", conclusion: "failure", html_url: "https://github.example/acme/web/actions/runs/99", updated_at: later, pull_requests: [{ number: 7 }] }],
+    };
+    for (const sourceId of ids) {
+      await socket.ok("setInboxSourceEnabled", { sourceId, enabled: false });
+      await socket.ok("setInboxSourceEnabled", { sourceId, enabled: true });
+    }
+    const list = await until(tasks, (each) => each.find((task) => task.id === followed)!.events.length === 4);
+    const events = list.find((task) => task.id === followed)!.events.slice(1);
+    expect(events.map((event) => event.id).sort()).toEqual([`plugin:github:${ids[0]}:comment:11`, `plugin:github:${ids[0]}:comment:14`, `plugin:github:${ids[1]}:run:99:1:7`].sort());
+    expect(events.every((event) => event.thread === "github:acme/web#7" && !event.trusted)).toBe(true);
+    // The issue comment and the comment on an unfollowed PR opened nothing.
+    expect(list).toHaveLength(1);
   });
 
   it("the GitHub example's issues source starts after the backlog and brings new issues labelled as filtered", async () => {

@@ -97,7 +97,7 @@
       "rtcStun": [
         "stun:stun.cloudflare.com:3478"
       ],
-      "hostName": "kierandeMacBook-Pro",
+      "hostName": "omarchy",
       "autoUpgrade": "notify",
       "inboxQuietHours": null,
       "custom": []

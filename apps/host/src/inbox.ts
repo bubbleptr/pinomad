@@ -145,7 +145,8 @@ export function recordSourceEvent(
   input: InboxEventInput,
   followedOnly: boolean,
 ): { task: string; duplicate: boolean } | undefined {
-  if (followedOnly && (input.thread === undefined || inboxes[key]?.threads[input.thread] === undefined)) return undefined;
+  // Own keys only: a thread named `constructor` is followed by no task.
+  if (followedOnly && (input.thread === undefined || !Object.hasOwn(inboxes[key]?.threads ?? {}, input.thread))) return undefined;
   return recordEvent(inboxes, key, input);
 }
 

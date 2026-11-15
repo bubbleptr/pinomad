@@ -14,9 +14,9 @@ When you add a source you choose how far its tasks are trusted:
 - **Restricted tools**: the content comes from someone else. Auto mode judges the run more strictly: reading is fine, and installing packages or reaching the network waits for you.
 - **All tools**: like a task you submitted yourself.
 
-Plugin and webhook sources start as restricted; a schedule runs your own note, so it counts as yours. Either way the run is in the Inbox's sandbox and never sees your credentials.
+Plugin and webhook sources start as restricted; a schedule runs your own note, so it counts as yours.
 
-Plugin and webhook sources need that sandbox: Seatbelt on macOS, bubblewrap (`bwrap`) on Linux. A host without one only offers schedules.
+Plugin and webhook sources need the Inbox's sandbox, which keeps a run's commands away from your credentials: Seatbelt on macOS, bubblewrap (`bwrap`) on Linux. A host without one only offers schedules.
 
 ## Schedules
 
@@ -46,6 +46,8 @@ Each starts from the moment you add it; existing issues and comments don't flood
 ## Webhooks
 
 A webhook takes events from scripts and services on your network, such as a NAS, a home server or a CI runner, with a signed `POST`. When you add one, you get its URL and secret once; copy them then. Reset the secret if you lose it, and the old one stops working at once.
+
+Other machines can reach the webhook only when the host listens on your network (remote access on, see [Without an account](/docs/without-account/)); otherwise only scripts on the host itself can use it. The URL names the host's LAN address; from another machine on your tailnet, put the host's MagicDNS name in its place.
 
 The host answers webhooks only on its own addresses for your LAN and tailnet, and only from senders there: private (RFC 1918) addresses, Tailscale's `100.64.0.0/10` and unique-local IPv6, and the machine itself. A request through a reverse proxy is refused. PiNomad's server never forwards webhooks: it would see their content, and it only ever carries encrypted traffic. To react to a public service such as GitHub, use a plugin source, which polls it.
 
