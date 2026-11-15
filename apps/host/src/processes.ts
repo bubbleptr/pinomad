@@ -40,6 +40,13 @@ const REPORT_LIMIT = 4 * 1024;
 const REPORT_LINES = 40;
 const REPORT_TAIL = "\n\nLast output:\n";
 
+/** Rewrites a process's argv and environment before it is spawned. */
+export type LaunchProcess = (
+  argv: readonly string[],
+  env: Readonly<Record<string, string>>,
+  cwd: string,
+) => Promise<{ argv: readonly string[]; env: Record<string, string> }>;
+
 export interface ProcessesOptions {
   /** Resolved after Harness.open; `open()` is called once it exists. */
   readonly harness: () => Harness;
@@ -77,6 +84,8 @@ export interface ProcessRuntime {
     readonly cwd: string;
     /** A replay reuses the id its tool call memoized; an existing live entry wins. */
     readonly id?: ProcessId;
+    /** Wraps the command and its environment, as an Inbox run's sandbox does (ADR-0052 §7). */
+    readonly launch?: LaunchProcess;
   }, context: Context): Promise<ProcessInfo>;
   output(input: {
     readonly conversationId: ConversationId;
@@ -166,8 +175,15 @@ export class Processes implements ProcessRuntime {
     readonly name: string;
     readonly cwd: string;
     readonly id?: ProcessId;
+    readonly launch?: LaunchProcess;
   }, context: Context): Promise<ProcessInfo> {
     const harness = this.#options.harness();
+    const { shell, env } = this.#options;
+    const command = {
+      argv: [shell.file, ...shell.args, "-c", input.command],
+      env: { ...env, TERM: "xterm-256color", COLORTERM: "truecolor" },
+    };
+    const launched = input.launch === undefined ? command : await input.launch(command.argv, command.env, input.cwd);
     const root = await this.#root(input.conversationId);
     if (this.#closing) throw new Error("The host is shutting down");
     if (this.#options.installing?.() === true) throw new Error("An upgrade is installing; try again after it finishes");
@@ -241,7 +257,7 @@ export class Processes implements ProcessRuntime {
     }
 
     try {
-      this.#spawn(entry, input.cwd);
+      this.#spawn(entry, input.cwd, launched);
     } catch (error) {
       await this.#fail(entry, message(error), context);
       throw error;
@@ -395,15 +411,15 @@ export class Processes implements ProcessRuntime {
     return root;
   }
 
-  #spawn(entry: Entry, cwd: string): void {
+  #spawn(entry: Entry, cwd: string, launched: { readonly argv: readonly string[]; readonly env: Record<string, string> }): void {
     const generation = ++entry.generation;
-    const { shell, env } = this.#options;
-    const pty = this.#options.spawn(shell.file, [...shell.args, "-c", entry.info.command], {
+    const [file, ...args] = launched.argv;
+    const pty = this.#options.spawn(file!, args, {
       name: "xterm-256color",
       cols: 120,
       rows: 40,
       cwd,
-      env: { ...env, TERM: "xterm-256color", COLORTERM: "truecolor" },
+      env: launched.env,
     });
     entry.pty = pty;
     if (pty.pid !== undefined) entry.info.pid = pty.pid;

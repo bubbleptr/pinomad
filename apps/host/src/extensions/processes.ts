@@ -9,6 +9,7 @@ import type { ProcessInfo, ProcessState } from "@pinomad/protocol/processes.ts";
 import type { BuiltinExtension } from "../builtin-extension.ts";
 import { ProcessDoc } from "../process-doc.ts";
 import type { ProcessRuntime } from "../processes.ts";
+import { SandboxedExecutionEnv } from "../sandbox.ts";
 
 const ID = Type.String({ minLength: 1, description: "The process id returned by process_start." });
 
@@ -40,6 +41,7 @@ export function createProcesses(options: { readonly runtime?: ProcessRuntime }):
       const agent = await api.agent(context);
       const cwd = agent.cwd;
       if (cwd === undefined) throw new Error("This conversation has no working directory");
+      const env = api.env;
       const name = cleanName(args.name) ?? defaultName(args.command);
       // Record the id before any process starts: a replay of this exact call
       // must return the same id instead of starting a second process.
@@ -50,6 +52,8 @@ export function createProcesses(options: { readonly runtime?: ProcessRuntime }):
         name: memo.name,
         cwd,
         id: memo.id,
+        // An Inbox run's environment puts its processes in the sandbox too (ADR-0052 §7).
+        ...(env instanceof SandboxedExecutionEnv ? { launch: env.launch.bind(env) } : {}),
       }, context);
       return result(processResult("Started", process), { id: process.id, name: process.name });
     },
