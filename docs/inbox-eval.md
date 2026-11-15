@@ -11,7 +11,7 @@ ANTHROPIC_API_KEY=… node apps/host/eval/inbox-notify.ts --model anthropic/clau
 ```
 
 - `--model`：`provider/model`，默认 `anthropic/claude-haiku-5-5`。
-- 凭据：模型的 API key 走环境变量（pi 认的那些，如 `ANTHROPIC_API_KEY`）；或者 `--auth <auth.json>`，把一份 PiNomad / pi 的 `auth.json` 复制进临时数据目录。注意 OAuth 凭据在副本里刷新时可能轮换 refresh token，让原文件里的失效，所以优先用 API key。
+- 凭据：模型的 API key 走环境变量（pi 认的那些，如 `ANTHROPIC_API_KEY`）；或者 `--auth <auth.json>`，直接用一份 PiNomad / pi 的 `auth.json`（如 `~/.pinomad/auth.json`）。这份文件原地使用、不复制：OAuth 凭据过期时会刷新并写回原文件，复制一份去刷新可能轮换 refresh token，让原文件里的失效。
 - `--budget`：美元上限，默认 5；花到上限后剩下的用例记为 `skipped`。
 - `--only <名字片段>`：只跑名字含这段的用例。
 - `--pass-score`：过线分数，默认 0.75；没过线时退出码为 1。

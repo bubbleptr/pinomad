@@ -3,14 +3,16 @@
 // scored against the expected ending. Needs real model access, so it is not
 // part of CI. Usage and credentials: docs/inbox-eval.md.
 import { execFile } from "node:child_process";
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { parseArgs } from "node:util";
 import { promisify } from "node:util";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import type { ConversationId } from "@earendil-works/pi-durable";
+import type { ConversationDocToken, ConversationId } from "@earendil-works/pi-durable";
+import type { QuestionState } from "@pinomad/protocol/presentation.ts";
+import { AutoModeDoc } from "../src/auto-mode.ts";
 import { createCoding } from "../src/extensions/coding.ts";
 import { question } from "../src/extensions/question.ts";
 import { todo } from "../src/extensions/todo.ts";
@@ -48,8 +50,9 @@ const cases = (JSON.parse(await readFile(join(dirname(new URL(import.meta.url).p
 );
 
 const dataDir = await mkdtemp(join(tmpdir(), "pinomad-eval-"));
-if (values.auth !== undefined) await copyFile(values.auth, join(dataDir, "auth.json"));
-const runtime = await ModelRuntime.create({ authPath: join(dataDir, "auth.json"), modelsPath: join(dataDir, "models.json") });
+// `--auth` is used in place, never copied: an OAuth refresh in a copy can rotate
+// the refresh token and log out whatever else uses the original.
+const runtime = await ModelRuntime.create({ authPath: values.auth ?? join(dataDir, "auth.json"), modelsPath: join(dataDir, "models.json") });
 if (runtime.getModel(provider!, modelId) === undefined) throw new Error(`Unknown model ${values.model}`);
 
 const projects: string[] = [];
@@ -85,6 +88,19 @@ const host: OpenedHost = await openHost({
 const taskOf = async (project: string): Promise<InboxTask | undefined> =>
   Object.entries((await host.harness.snapshot(InboxDoc, context))?.inboxes ?? {}).find(([key]) => key.endsWith(project.split("/").pop()!))?.[1]
     .tasks[0];
+
+const QuestionDoc = question.docs![0]!.token as ConversationDocToken<QuestionState>;
+
+/** Why a run ended as it did: the questions it asked and what auto mode held or refused, for tuning the rules. */
+async function whyOf(id: ConversationId): Promise<string[]> {
+  const asked = ((await host.harness.snapshot(QuestionDoc, id, context))?.requests ?? []).flatMap((request) =>
+    request.questions.map((each) => `asked: ${each.question}`),
+  );
+  const held = ((await host.harness.snapshot(AutoModeDoc, id, context))?.decisions ?? [])
+    .filter((decision) => decision.verdict !== "allow")
+    .map((decision) => `auto mode ${decision.verdict} ${decision.tool} (${decision.by}): ${decision.reason}`);
+  return [...held, ...asked];
+}
 
 /** Cost of every model reply in a conversation, as the provider reported it, and whether one failed. */
 async function repliesOf(id: ConversationId): Promise<{ cost: number; error?: string }> {
@@ -148,9 +164,11 @@ try {
       failure !== undefined ? "error" : timedOut ? "timeout" : task?.waiting === true ? "ask" : task?.closed !== true ? "timeout" : notified ? "notify" : "quiet";
     spent += replies.cost;
     results.push({ name: each.name, expect: each.expect, got, cost: replies.cost, ...(failure === undefined ? {} : { error: failure }) });
+    const why = task?.conversationId === undefined ? [] : await whyOf(task.conversationId);
     console.log(
       `${got === each.expect ? "PASS" : "FAIL"}  ${each.name}: expected ${each.expect}, got ${got} ($${replies.cost.toFixed(4)})${failure === undefined ? "" : ` — ${failure}`}`,
     );
+    for (const line of why) console.log(`      ${line.replace(/\s+/g, " ").slice(0, 300)}`);
   }
 } finally {
   await host.close();
