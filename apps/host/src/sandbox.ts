@@ -6,8 +6,8 @@
 // the run's own dirs. The file tools run inside the host process, so the same
 // rules are checked there too. Coding conversations never come through here.
 import { execFile, spawn } from "node:child_process";
-import { createHash } from "node:crypto";
-import { access, constants, mkdir, realpath, stat, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { access, constants, mkdir, readlink, realpath, rename, stat, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { promisify } from "node:util";
@@ -187,16 +187,26 @@ export function permits(policy: SandboxPolicy, path: string, access: "read" | "w
   return access === "read" || within(path, policy.writable);
 }
 
-/** The canonical form of a path that may not exist yet: its nearest existing ancestor resolved. */
-async function canonical(path: string): Promise<string> {
+/**
+ * The canonical form of a path that may not exist yet: its nearest existing
+ * ancestor resolved, and a dangling symlink followed to where a write through
+ * it would land.
+ */
+async function canonical(path: string, hops = 0): Promise<string> {
   const absolute = resolve(path);
   try {
     return await realpath(absolute);
   } catch {
+    const target = await readlink(absolute).catch(() => undefined);
+    // A link loop fails every open anyway; 40 is Linux's own limit.
+    if (target !== undefined && hops < 40) return await canonical(resolve(dirname(absolute), target), hops + 1);
     const parent = dirname(absolute);
-    return parent === absolute ? absolute : join(await canonical(parent), basename(absolute));
+    return parent === absolute ? absolute : join(await canonical(parent, hops), basename(absolute));
   }
 }
+
+/** The host process's own environment and open files; the file tools run in the host, so these are never the run's. */
+const HOST_PROCESS_PATHS = ["/proc", "/dev"];
 
 const exists = (path: string): Promise<boolean> => access(path, constants.F_OK).then(() => true, () => false);
 
@@ -261,7 +271,11 @@ async function seedGitIdentity(cwd: string, home: string): Promise<void> {
   if (name === "" && email === "") return;
   const quote = (value: string) => `"${value.replace(/["\\]/g, "\\$&")}"`;
   const lines = ["[user]", ...(name === "" ? [] : [`\tname = ${quote(name)}`]), ...(email === "" ? [] : [`\temail = ${quote(email)}`])];
-  await writeFile(join(home, ".gitconfig"), `${lines.join("\n")}\n`);
+  // The run owns this HOME and may have left a symlink here: write beside it and rename over it,
+  // which replaces a link instead of following it.
+  const staged = join(home, `.gitconfig.${randomUUID()}`);
+  await writeFile(staged, `${lines.join("\n")}\n`, { flag: "wx" });
+  await rename(staged, join(home, ".gitconfig"));
 }
 
 /** The program that wraps a command in the OS sandbox, or undefined where there is none. */
@@ -405,7 +419,8 @@ export class SandboxedExecutionEnv extends NodeExecutionEnv {
 
   async #check(path: string, mode: "read" | "write"): Promise<FileError | undefined> {
     const absolute = resolve(this.cwd, path);
-    if (permits(this.policy, await canonical(absolute), mode)) return undefined;
+    const target = await canonical(absolute);
+    if (!within(absolute, HOST_PROCESS_PATHS) && !within(target, HOST_PROCESS_PATHS) && permits(this.policy, target, mode)) return undefined;
     return new FileError("permission_denied", `An Inbox run cannot ${mode} ${path}`, path);
   }
 

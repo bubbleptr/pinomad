@@ -206,6 +206,37 @@ describe("sandboxed environment", () => {
     expect(read.ok && read.value).toBe("fine");
   });
 
+  it("refuses a file-tool write through a dangling symlink to a credential path", async () => {
+    const { env, realHome, worktree } = await setup();
+    await symlink(join(realHome, ".ssh", "authorized_keys"), join(worktree, "keys"));
+    const written = await env.writeFile(join(worktree, "keys"), "ssh-ed25519 attacker", context);
+    expect(written.ok).toBe(false);
+    await expect(readFile(join(realHome, ".ssh", "authorized_keys"), "utf8")).rejects.toThrow();
+  });
+
+  it("refuses the file tools the host's own process files", async () => {
+    const { env } = await setup();
+    // The file tools run in the host: these are the host's environment and open files, not the run's.
+    for (const path of ["/proc/self/environ", "/dev/fd/0"]) {
+      const read = await env.readTextFile(path, context);
+      expect(read.ok, path).toBe(false);
+      if (!read.ok) expect(read.error.code, path).toBe("permission_denied");
+    }
+  });
+
+  it("does not follow a symlink the run left as its HOME's .gitconfig", async () => {
+    const realHome = await fakeHome();
+    const dataDir = await temp();
+    const { repo, cwd } = await gitWorktree(dataDir);
+    const policy = await inboxSandboxPolicy({ dataDir, project: repo, cwd, realHome });
+    await writeFile(join(dataDir, "auth.json"), "{\"token\":\"keep\"}");
+    await rm(join(policy.home, ".gitconfig"), { force: true });
+    await symlink(join(dataDir, "auth.json"), join(policy.home, ".gitconfig"));
+    await inboxSandboxPolicy({ dataDir, project: repo, cwd, realHome });
+    expect(await readFile(join(dataDir, "auth.json"), "utf8")).toBe("{\"token\":\"keep\"}");
+    expect(await readFile(join(policy.home, ".gitconfig"), "utf8")).toContain("email");
+  });
+
   it("lets the run read message attachments in the data dir, but not change them", async () => {
     const { env, dataDir } = await setup();
     await mkdir(join(dataDir, "attachments", "a1", "file"), { recursive: true });
