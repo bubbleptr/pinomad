@@ -235,6 +235,31 @@ describe("the app frame across hosts", () => {
     await waitFor(() => expect(screen.getByTestId("focus").textContent).toBe(`${DEVBOX_HOST.hostKey}:draft`));
   });
 
+  it("puts hosts and settings in the account menu while keeping Settings in the footer", async () => {
+    const registry = createHostRuntimeRegistry();
+    render(
+      <AccountContext.Provider value={fakeAccount(signedIn())}>
+        <Harness hosts={[HOME_HOST]} initialFocus={{ hostKey: HOME_HOST.hostKey }} connect={connected} registry={registry} />
+      </AccountContext.Provider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("workbench")).toBeVisible());
+
+    expect(screen.queryByRole("button", { name: "Hosts" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Settings" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^Account menu:/ }));
+    const menu = await screen.findByRole("menu");
+    expect(within(menu).getByRole("menuitem", { name: /^Account:/ })).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "Hosts" })).toBeInTheDocument();
+
+    await userEvent.click(within(menu).getByRole("menuitem", { name: "Settings" }));
+    expect(await screen.findByRole("region", { name: "Settings" })).toBeInTheDocument();
+    await userEvent.click(within(settingsNav()).getByRole("button", { name: "Close settings" }));
+    expect(screen.getByRole("button", { name: /^Account menu:/ })).toHaveFocus();
+
+    await userEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(await screen.findByRole("region", { name: "Settings" })).toBeInTheDocument();
+  });
+
   it("locates a machine from the hosts list without moving focus", async () => {
     const registry = createHostRuntimeRegistry();
     render(
@@ -250,7 +275,8 @@ describe("the app frame across hosts", () => {
     await userEvent.click(within(devbox).getByRole("button", { name: "Collapse omarchy" }));
     expect(within(devbox).queryByRole("button", { name: "Fix the parser's trailing-comma bug" })).toBeNull();
 
-    await userEvent.click(screen.getByRole("button", { name: "Hosts" }));
+    await userEvent.click(screen.getByRole("button", { name: /^Account menu:/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Hosts" }));
     await userEvent.click(await screen.findByRole("menuitem", { name: /omarchy/ }));
 
     expect(await within(devbox).findByRole("button", { name: "Fix the parser's trailing-comma bug" })).toBeInTheDocument();
@@ -438,7 +464,10 @@ describe("the app frame across hosts", () => {
     expect(await screen.findByRole("heading", { name: "Connecting" })).toBeInTheDocument();
     expect(screen.getByRole("navigation")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Hosts" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Hosts" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /^Account menu:/ }));
+    expect(await screen.findByRole("menuitem", { name: "Hosts" })).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
 
     await userEvent.click(screen.getByRole("button", { name: "Settings" }));
     const dialog = await screen.findByRole("region", { name: "Settings" });
@@ -448,17 +477,18 @@ describe("the app frame across hosts", () => {
     expect(within(dialog).getByRole("button", { name: "Add a host" })).toBeInTheDocument();
   });
 
-  it.each<[string, AccountState, string | RegExp, string]>([
-    ["signed in, opens the account in Settings", signedIn(), /kieran@example\.com/, "Settings"],
-    ["signed out, opens the sign-in dialog", { status: "signed-out", mode: "cookie" }, "Sign in", "Account"],
-  ])("from the sidebar's account, %s", async (_, state, chip, dialogName) => {
+  it.each<[string, AccountState, string]>([
+    ["signed in, opens the account in Settings", signedIn(), "Settings"],
+    ["signed out, opens the sign-in dialog", { status: "signed-out", mode: "cookie" }, "Account"],
+  ])("from the sidebar's account, %s", async (_, state, dialogName) => {
     const registry = createHostRuntimeRegistry();
     render(
       <AccountContext.Provider value={fakeAccount(state)}>
         <Harness hosts={[HOME_HOST]} initialFocus={{ hostKey: HOME_HOST.hostKey }} connect={connected} registry={registry} />
       </AccountContext.Provider>,
     );
-    await userEvent.click(await screen.findByRole("button", { name: chip }));
+    await userEvent.click(await screen.findByRole("button", { name: /^Account menu:/ }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: dialogName === "Settings" ? /^Account:/ : "Sign in" }));
     const dialog = await screen.findByRole(dialogName === "Settings" ? "region" : "dialog", { name: dialogName });
     if (dialogName === "Settings") expect(await within(dialog).findByRole("button", { name: "Sign out" })).toBeInTheDocument();
     else expect(await within(dialog).findByRole("heading", { name: "Sign in" })).toBeInTheDocument();

@@ -1,6 +1,6 @@
 import { SideNav } from "../../shared/ui/side-nav.tsx";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { fn } from "storybook/test";
+import { fn, userEvent, within } from "storybook/test";
 import {
   devboxView,
   fakeHosts,
@@ -72,6 +72,13 @@ export const DraftingChat: Story = { args: { draftingChat: true, shownId: undefi
 /** The desktop app marks Settings once an update is downloaded. */
 export const UpdateReady: Story = {
   decorators: [withDesktopUpdates({ state: "ready", currentVersion: "0.9.0", availableVersion: "0.10.0" })],
+};
+
+/** The account popup keeps hosts and Settings together above the user bar. */
+export const AccountMenu: Story = {
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole("button", { name: /^Account menu:/ }));
+  },
 };
 
 /** Without an account, the user chip shows the device's own name. */

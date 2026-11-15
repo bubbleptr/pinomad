@@ -116,9 +116,16 @@ async function pairFromSettings(page: Page, link: string): Promise<void> {
   await addHost.getByRole("button", { name: "Connect", exact: true }).click();
 }
 
-/** The host menu in the user bar: each paired host's name with its status. */
+/** The host submenu in the user bar: each paired host's name with its status. */
 async function openHostsMenu(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Hosts", exact: true }).click();
+  await page.getByRole("button", { name: /^Account menu:/ }).click();
+  await page.getByRole("menuitem", { name: "Hosts", exact: true }).click();
+}
+
+/** Escape dismisses one layer at a time: first the hosts, then their account menu. */
+async function closeHostsMenu(page: Page): Promise<void> {
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
 }
 
 /**
@@ -3367,7 +3374,7 @@ it("switches between paired hosts on the desktop bridge", async () => {
   await openHostsMenu(page);
   await page.getByRole("menuitem", { name: `${labelB} (connected)`, exact: true }).waitFor();
   await page.getByRole("menuitem", { name: `${labelA} (connected)`, exact: true }).waitFor();
-  await page.keyboard.press("Escape");
+  await closeHostsMenu(page);
   // Every machine lists its own conversations; opening one focuses its machine.
   const groupA = page.getByRole("group", { name: labelA, exact: true });
   await groupA.getByRole("button", { name: "hello A", exact: true }).click();
@@ -3384,7 +3391,7 @@ it("switches between paired hosts on the desktop bridge", async () => {
   await hostB.close();
   await openHostsMenu(page);
   await page.getByRole("menuitem", { name: `${labelB} (offline)`, exact: true }).waitFor();
-  await page.keyboard.press("Escape");
+  await closeHostsMenu(page);
   await page.getByText("Host connection lost", { exact: true }).waitFor();
   await groupA.getByRole("button", { name: "hello A", exact: true }).click();
   await page.getByText("host A answer", { exact: true }).waitFor();
@@ -3505,7 +3512,7 @@ it("unpairs a host from Settings → Hosts only after confirmation, at both ends
   await page.keyboard.press("Escape");
   await openHostsMenu(page);
   await page.getByRole("menuitem", { name: `${labelA} (connected)`, exact: true }).waitFor();
-  await page.keyboard.press("Escape");
+  await closeHostsMenu(page);
   await expect.poll(() => storedHostCount(page)).toBe(1);
   expect(await page.evaluate(() => (window as unknown as { refusalSeen?: boolean }).refusalSeen)).toBe(false);
   await page.evaluate(() => localStorage.removeItem("test.desktopListDelayMs"));

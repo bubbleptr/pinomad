@@ -125,7 +125,7 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 | `spinner.tsx` 的 `Spinner` | 等待中的一小块区域，旁边通常有一行说明文字。`size="sm"`（14px）放在文字行里，默认 `md`（20px）放在空的面板中间。读屏念 "Loading"，知道在加载什么时写 `aria-label`。按钮自己的加载状态用 `Button` 的 `loading`，不要另放转圈。 |
 | `skeleton.tsx` 的 `Skeleton` | 内容的形状已知、还在路上时的占位块，尺寸和圆角写在 `className` 里。它先等 1 秒再淡入淡出，快的加载不会闪一下；一组用 `index` 错开。 |
 | `empty.tsx` 的 `Empty` | 一屏或一个面板没东西可显示，或在等一个状态过去（Connecting）：`EmptyHeader` 里放 `EmptyTitle` 和 `EmptyDescription`，操作放 `EmptyContent`。 |
-| `avatar.tsx` 的 `Avatar` | 账号的圆形头像，里面是 `AvatarFallback` 和 `initials(name)` 算出的首字母，根元素写 `aria-label`。尺寸 `xs`（20px，侧栏）和 `lg`（48px，账号页）。 |
+| `avatar.tsx` 的 `Avatar` | 账号的圆形头像，里面是 `AvatarFallback` 和 `initials(name)` 算出的首字母，根元素写 `aria-label`。尺寸 `xs`（20px，侧栏）、`sm`（32px，账号菜单）和 `lg`（48px，账号页）。 |
 | `tooltip.tsx` | 悬停说明，700ms 后才出现（`TooltipProvider` 的默认值），免得用户已经知道点哪、点的同时弹出来。只用于给纯图标按钮命名、补全被截断的文字、说明禁用原因；操作需要的信息（错误、要核对的 ID）直接写在界面上，有文字标签的控件不再加解释性 tooltip。按钮用 `Button` 的 `tooltip` 属性；其余元素用 `Tooltip` / `TooltipTrigger render={…}` / `TooltipContent`。 |
 
 只给读屏看的文字用 `<span className="sr-only">`。
@@ -138,7 +138,7 @@ iOS（`apps/ios`）不用这份 CSS，但分档一致：`primary` ↔ `.bordered
 | --- | --- |
 | `dialog.tsx` | 要用户停下来填写或查看的一屏内容：重命名、添加项目、账号。`<Dialog open onOpenChange>` 里放 `DialogContent`，依次是 `DialogHeader`（`DialogTitle`、可选的 `DialogDescription`）、`DialogBody`（内容，过长时自己滚动）、`DialogFooter`（按钮靠右，Cancel 在主按钮左边）。宽度用 `className`（默认 400px，如 `w-[480px]`，最宽 90vw），右上角自带关闭按钮（`showCloseButton={false}` 去掉）；`variant="fullscreen"` 铺满屏幕（窄屏的右侧面板）。有输入的对话框加 `disablePointerDismissal`，点外面不会丢掉填了一半的内容。打开时焦点落在带 `data-autofocus` 的元素上，没有就落在标题上。 |
 | `alert-dialog.tsx` | 不可撤销动作的确认：`AlertDialogContent` 里放 `AlertDialogHeader`（`AlertDialogTitle` 写成问句，`AlertDialogDescription` 说后果）和 `AlertDialogFooter`（`AlertDialogCancel` 是 `secondary`，`AlertDialogAction` 用 `variant="destructive"`）。点外面不关。它是 shadcn 原样的 `alert-dialog`（只把 Cancel 的默认档换成 `secondary` / `md`），所有“确认一个动作”的对话框都用它，带输入框的也一样（账号那几个走 `widgets/account/confirm-dialog.tsx`）；说明只写后果，一两句。 |
-| `dropdown-menu.tsx` | 按钮打开的一列动作：行尾的 …（`MoreHorizontal`）、输入框的 +、侧栏底部的主机列表。触发按钮通过 `render` 传入（`<DropdownMenuTrigger render={<IconButton icon={…} label="Conversation actions" size="sm" />} />`），保留它自己的样子和名称。`DropdownMenuItem` 是文字，前面可以放图标；禁用的项仍能聚焦、会被读出来。上下键移动，打字跳到对应项。 |
+| `dropdown-menu.tsx` | 按钮打开的一列动作：行尾的 …（`MoreHorizontal`）、输入框的 +、侧栏底部的账号菜单（账号、主机列表和设置）。触发按钮通过 `render` 传入（`<DropdownMenuTrigger render={<IconButton icon={…} label="Conversation actions" size="sm" />} />`），保留它自己的样子和名称。`DropdownMenuItem` 是文字，前面可以放图标；禁用的项仍能聚焦、会被读出来。上下键移动，打字跳到对应项。 |
 | `context-menu.tsx` | 右键（触屏长按）打开的菜单，目前只有终端标签。`ContextMenuSeparator` 分组；从键盘（菜单键、Shift+F10）打开时用 `anchor` 让它出现在元素下方而不是左上角。 |
 | `popover.tsx` | 触发按钮旁边、不挡住页面的一块面板，里面可以有搜索框和列表：模型选择。`PopoverContent` 写 `aria-label`，宽度用 `className`；放不下时在可用高度里滚动，不会跑到触发按钮侧面。 |
 | `combobox.tsx` 的 `ComboboxCheckboxItem` | 带搜索的多选（`<Combobox multiple>`），每项前面一个勾选框：自定义端点的模型列表。 |

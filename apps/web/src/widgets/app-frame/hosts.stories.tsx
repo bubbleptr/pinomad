@@ -11,7 +11,7 @@ import {
   HostRuntimesContext,
   type HostRuntimeInfo,
 } from "../../entities/host/host-runtimes.ts";
-import { HostsFallback, HostsMenu, HostsSection } from "./hosts.tsx";
+import { HostsFallback, HostsSection } from "./hosts.tsx";
 import { Alert, AlertDescription, AlertTitle } from "../../shared/ui/alert.tsx";
 
 const STUDIO_HOST = { ...HOME_HOST, name: "Studio" };
@@ -291,19 +291,6 @@ export const SectionRtcUnsupportedBrowser: Story = {
 export const SectionDisconnected: Story = {
   decorators: [withHosts(fakeHosts([STUDIO_HOST], null)), withRuntime(connecting)],
   play: ({ canvasElement }) => openConnection(canvasElement),
-};
-
-/** The sidebar footer's hosts button, opened. */
-export const Menu: Story = {
-  decorators: [withHosts(), withRuntime(relay)],
-  render: () => (
-    <div className="flex justify-end pt-40">
-      <HostsMenu />
-    </div>
-  ),
-  play: async ({ canvasElement }) => {
-    await userEvent.click(within(canvasElement).getByRole("button", { name: "Hosts" }));
-  },
 };
 
 /** What the connection-failure screens show under their message. */
