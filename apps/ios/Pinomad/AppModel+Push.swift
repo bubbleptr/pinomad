@@ -1,4 +1,5 @@
 import Foundation
+import PinomadChat
 import PinomadCore
 import SwiftUI
 
@@ -53,8 +54,20 @@ extension AppModel {
             pendingPush = nil
         case .wait:
             break
-        case .open(let ref):
+        case .open(var ref):
             pendingPush = nil
+            pendingAnswerRedirect = nil
+            if target.waitingForAnswer {
+                // Its host's Inboxes not known yet (a cold launch): open the
+                // task now and move to its intake once they arrive.
+                if let snapshot = runtimes[ref.hostKey]?.snapshot, let inboxes = snapshot.inbox {
+                    ref = ConversationRef(hostKey: ref.hostKey, conversationId: Inbox.answerTarget(
+                        ref.conversationId, waiting: true, inboxes: inboxes,
+                        hostMinor: snapshot.host?.protocol.minor))
+                } else {
+                    pendingAnswerRedirect = ref
+                }
+            }
             // A notification is a destination, not an animated trip through Home.
             var transaction = Transaction()
             transaction.disablesAnimations = true
@@ -62,6 +75,29 @@ extension AppModel {
                 navPath = [.conversation(ref)]
             }
         }
+    }
+
+    /// A question notice opened before its host's Inboxes were known: once
+    /// they are, move to the intake if that's where it is answered — once,
+    /// and only while the task the tap opened is still all that's shown.
+    func resolveAnswerRedirect(_ runtime: HostRuntime) {
+        guard let ref = pendingAnswerRedirect, ref.hostKey == runtime.hostKey,
+              let snapshot = runtime.snapshot, let inboxes = snapshot.inbox
+        else { return }
+        pendingAnswerRedirect = nil
+        let target = Inbox.answerTarget(ref.conversationId, waiting: true, inboxes: inboxes,
+                                        hostMinor: snapshot.host?.protocol.minor)
+        guard target != ref.conversationId, navPath == [.conversation(ref)] else { return }
+        navPath = [.conversation(ConversationRef(hostKey: ref.hostKey, conversationId: target))]
+    }
+
+    /// Where a question notice on a loaded host leads, for the banner check.
+    func pushAnswerTarget(_ target: PushTarget) -> UInt64? {
+        guard target.waitingForAnswer, let snapshot = runtimes[target.hostKey]?.snapshot,
+              let inboxes = snapshot.inbox
+        else { return nil }
+        return Inbox.answerTarget(target.conversationId, waiting: true, inboxes: inboxes,
+                                  hostMinor: snapshot.host?.protocol.minor)
     }
 
     /// The banner baseline is the conversation actually visible, not just

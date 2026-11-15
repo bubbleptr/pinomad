@@ -125,12 +125,19 @@ public func shouldPresentPushBanner(
 public struct PushTarget: Equatable, Sendable {
     public let hostKey: String
     public let conversationId: UInt64
+    /// A "Waiting for your answer" notice: an open Inbox task's question
+    /// is answered in its intake (#846).
+    public let waitingForAnswer: Bool
 
-    public init?(hostKey: String?, conversationId: UInt64?) {
+    public init?(hostKey: String?, conversationId: UInt64?, waitingForAnswer: Bool = false) {
         guard let hostKey, !hostKey.isEmpty, let conversationId else { return nil }
         self.hostKey = hostKey
         self.conversationId = conversationId
+        self.waitingForAnswer = waitingForAnswer
     }
+
+    /// The body the host gives a question notice (`apps/host/src/push.ts`).
+    public static let waitingBody = "Waiting for your answer"
 }
 
 /// What forgetting a host should do about its push registration. The flag

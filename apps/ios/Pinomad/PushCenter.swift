@@ -32,6 +32,9 @@ final class PushCenter: NSObject, @MainActor UNUserNotificationCenterDelegate {
     private var pendingTarget: PushTarget?
     /// Set by `AppModel` once it can route taps and sync tokens.
     var onTarget: ((PushTarget) -> Void)?
+    /// Where a question notice leads when its host is loaded: an open Inbox
+    /// task's intake, which on screen also answers it.
+    var answerTarget: ((PushTarget) -> UInt64?)?
     var onToken: (() -> Void)?
 
     private let defaults = UserDefaults.standard
@@ -188,10 +191,15 @@ final class PushCenter: NSObject, @MainActor UNUserNotificationCenterDelegate {
         let hostKey = info["hostKey"] as? String
         let conversationId = (info["conversationId"] as? NSNumber)?.uint64Value
             ?? (info["conversationId"] as? String).flatMap(UInt64.init)
+        let waiting = notification.request.content.body == PushTarget.waitingBody
+        let redirect = PushTarget(hostKey: hostKey, conversationId: conversationId, waitingForAnswer: waiting)
+            .flatMap { answerTarget?($0) }
         let show = shouldPresentPushBanner(
             pushHostKey: hostKey,
             pushConversationId: conversationId,
             visible: visibleConversation)
+            && shouldPresentPushBanner(pushHostKey: hostKey, pushConversationId: redirect ?? conversationId,
+                                       visible: visibleConversation)
         completionHandler(show ? [.banner, .sound] : [])
     }
 
@@ -204,7 +212,8 @@ final class PushCenter: NSObject, @MainActor UNUserNotificationCenterDelegate {
         let conversationId = (info["conversationId"] as? NSNumber)?.uint64Value
             ?? (info["conversationId"] as? String).flatMap(UInt64.init)
         if let target = PushTarget(
-            hostKey: info["hostKey"] as? String, conversationId: conversationId
+            hostKey: info["hostKey"] as? String, conversationId: conversationId,
+            waitingForAnswer: response.notification.request.content.body == PushTarget.waitingBody
         ) {
             if let onTarget {
                 onTarget(target)

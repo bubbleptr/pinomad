@@ -5,6 +5,13 @@ import PinomadChat
 import PinomadCore
 import SwiftUI
 
+/// The task questions an intake's composer shows, on the intake's host.
+struct IntakeTaskQuestions {
+    let hostKey: String
+    let questions: [InboxTaskQuestion]
+    let openTask: (InboxTask) -> Void
+}
+
 /// The shown conversation's input: run status and queued inputs above a
 /// glass card holding the draft and its actions. Sits in the transcript's
 /// bottom safe-area bar, so the keyboard and the scroll inset follow it.
@@ -21,6 +28,8 @@ struct ConversationComposer: View {
     let agentPick: ConversationAgent?
     /// The family's background subagents, on the card's top edge.
     var backgroundBar: BackgroundSubagentBar?
+    /// An intake's task questions (#846), above its own.
+    var taskQuestions: IntakeTaskQuestions?
 
     @State private var showModels = false
     @State private var showPhotos = false
@@ -194,6 +203,10 @@ struct ConversationComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if let taskQuestions, !taskQuestions.questions.isEmpty {
+                TaskQuestionCards(model: model, hostKey: taskQuestions.hostKey, questions: taskQuestions.questions,
+                                  connected: connected, openTask: taskQuestions.openTask)
+            }
             if !conversation.questions.isEmpty {
                 QuestionCards(model: model, conversationId: conversation.id,
                               questions: conversation.questions, connected: connected)
@@ -500,6 +513,7 @@ struct ConversationComposer: View {
     }
 
     private struct StackShape: Equatable {
+        var taskQuestions: Int
         var questions: Int
         var status: Bool
         var queued: Int
@@ -507,7 +521,7 @@ struct ConversationComposer: View {
     }
 
     private var stackShape: StackShape {
-        StackShape(questions: conversation.questions.count, status: !conversation.statusText.isEmpty,
+        StackShape(taskQuestions: taskQuestions?.questions.count ?? 0, questions: conversation.questions.count, status: !conversation.statusText.isEmpty,
                    queued: queuedRows.count, background: backgroundBar != nil)
     }
 

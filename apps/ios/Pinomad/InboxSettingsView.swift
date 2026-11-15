@@ -13,6 +13,8 @@ enum InboxSourceSheet {
     case resetting(InboxSource)
     case access(title: String, access: InboxWebhookAccess)
     case rules
+    /// The base branch editor, for the project it was opened on.
+    case baseBranch(project: String, current: String)
 }
 
 private struct PresentedSheet: Identifiable {
@@ -41,6 +43,10 @@ struct InboxSettingsView: View {
             if let snapshot, let inbox {
                 List {
                     rulesSection(inbox, connected: connected)
+                    // Absent for a project that isn't a Git repository, or an older host.
+                    if let baseBranch = inbox.baseBranch {
+                        baseBranchSection(baseBranch, connected: connected)
+                    }
                     sourcesSection(inbox, plugins: snapshot.plugins, connected: connected)
                     followUpsSection(inbox, connected: connected)
                 }
@@ -55,6 +61,8 @@ struct InboxSettingsView: View {
                 }
             }
         }
+        // A draft belongs to its project: another project drops it.
+        .onChange(of: project) { _, _ in sheet.dismiss() }
         .navigationTitle(inboxProjectName(project, organized: snapshot?.organized))
         .hostTitle(model, hostKey: hostKey, title: "\(inboxProjectName(project, organized: snapshot?.organized)) Inbox", page: true)
         .sheet(item: Binding(
@@ -113,6 +121,22 @@ struct InboxSettingsView: View {
             Text("Rules")
         } footer: {
             Text("Every task reads these when it starts, along with the project's AGENTS.md.")
+        }
+    }
+
+    // MARK: Base branch
+
+    private func baseBranchSection(_ baseBranch: String, connected: Bool) -> some View {
+        Section {
+            Text(baseBranch)
+                .font(.body.monospaced())
+                .textSelection(.enabled)
+            Button("Change Base Branch") { sheet.present(.baseBranch(project: project, current: baseBranch)) }
+                .disabled(!connected)
+        } header: {
+            Text("Base Branch")
+        } footer: {
+            Text("The intake reads this branch and new tasks start from it, whatever the project folder has checked out.")
         }
     }
 
@@ -341,6 +365,11 @@ struct InboxSettingsView: View {
             InboxRulesEditor(model: model, hostKey: hostKey, project: project, rules: inbox?.rules ?? "") {
                 sheet.complete(token, with: nil)
             }
+        case .baseBranch(let project, let current):
+            InboxBaseBranchEditor(model: model, hostKey: hostKey, project: project, current: current) {
+                sheet.complete(token, with: nil)
+            }
+            .id(project)
         }
     }
 }
@@ -439,6 +468,84 @@ private struct InboxRulesEditor: View {
             do {
                 try await model.setInboxRules(hostKey, project: project,
                                               rules: draft.trimmingCharacters(in: .whitespacesAndNewlines))
+                close()
+            } catch {
+                saving = false
+                self.error = model.describe(error)
+            }
+        }
+    }
+}
+
+/// The base branch, edited in a sheet held open while saving: the host's
+/// answer closes it, and a refusal (no default branch to go back to, say)
+/// keeps the input and shows why.
+private struct InboxBaseBranchEditor: View {
+    let model: AppModel
+    let hostKey: String
+    /// The project it was opened on; Save sends there.
+    let project: String
+    let close: () -> Void
+
+    @State private var draft: String
+    @State private var saving = false
+    @State private var error: String?
+    @FocusState private var focused: Bool
+
+    init(model: AppModel, hostKey: String, project: String, current: String, close: @escaping () -> Void) {
+        self.model = model
+        self.hostKey = hostKey
+        self.project = project
+        self.close = close
+        _draft = State(initialValue: current)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Repository default", text: $draft)
+                        .font(.body.monospaced())
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .focused($focused)
+                        .disabled(saving)
+                        .onSubmit { if !saving, model.isConnected(hostKey) { save() } }
+                } footer: {
+                    if let error {
+                        Text(error).foregroundStyle(.red)
+                    } else {
+                        Text("Leave it empty to use the repository's default branch.")
+                    }
+                }
+            }
+            .navigationTitle("Base Branch")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", action: close).disabled(saving)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if saving {
+                        ProgressView()
+                    } else {
+                        Button("Save") { save() }
+                            .disabled(!model.isConnected(hostKey))
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+        .interactiveDismissDisabled(saving)
+        .task { focused = true }
+    }
+
+    private func save() {
+        saving = true
+        error = nil
+        Task {
+            do {
+                try await model.setInboxBaseBranch(hostKey, project: project, branch: Inbox.baseBranch(from: draft))
                 close()
             } catch {
                 saving = false

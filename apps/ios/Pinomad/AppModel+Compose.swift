@@ -142,12 +142,21 @@ extension AppModel {
     /// away when the snapshot marks the request resolved; the draft is kept
     /// until then so a refused answer (toasted) can be resent. Returns once
     /// the host took or refused it, so the card can hold Submit meanwhile.
-    func answer(_ question: PendingQuestion, conversation id: UInt64) async {
-        guard let runtime = focusedRuntime, let session = runtime.session else { return }
+    /// `hostKey` names the host for a card on a page that carries its own
+    /// (an intake's task questions); nil is the focused one.
+    func answer(_ question: PendingQuestion, conversation id: UInt64, hostKey: String? = nil) async {
+        guard let runtime = questionRuntime(hostKey), let session = runtime.session else { return }
         let draft = runtime.questionDrafts[question.request.id]
             ?? QuestionDraft(questionCount: question.request.questions.count)
         _ = try? await session.invoke(.answer(kind: question.kind, requestId: question.request.id,
                                               answers: draft.answers(), target: id))
+    }
+
+    /// Where a question card's drafts and answer live: the named host, or
+    /// the focused one.
+    func questionRuntime(_ hostKey: String?) -> HostRuntime? {
+        guard let hostKey else { return focusedRuntime }
+        return runtimes[hostKey]
     }
 
     /// Resend a failed run's prompt. The request id is derived from the run,
