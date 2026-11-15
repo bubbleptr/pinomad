@@ -1,7 +1,9 @@
 // Auto mode (ADR-0051 §7): every tool call of an Inbox run passes a gate —
 // rules first, then a classifier; what it is unsure of waits for the user.
 // The classifier is injected here; its model call is a separate seam.
-import { access, realpath } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { access, realpath, writeFile } from "node:fs/promises";
+import { promisify } from "node:util";
 import { join, relative } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { fauxAssistantMessage, type FauxResponseStep, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
@@ -22,6 +24,7 @@ const context = BACKGROUND_CONTEXT;
 const defer = useCleanups();
 const QuestionDoc = question.docs![0]!.token as ConversationDocToken<QuestionState>;
 
+const exec = promisify(execFile);
 const call = (name: string, args: Parameters<typeof fauxToolCall>[1]) =>
   fauxAssistantMessage(fauxToolCall(name, args), { stopReason: "toolUse" });
 const exists = (path: string) => access(path).then(() => true, () => false);
@@ -568,6 +571,27 @@ describe("auto mode in Inbox runs", () => {
     expect(result).not.toContain("Not run");
     expect(asked).toEqual([]);
     expect((await host.harness.snapshot(AutoModeDoc, intake, context))?.decisions ?? []).toEqual([]);
+  });
+
+  it("leaves an intake's reads in its own checkout of the base branch alone", async () => {
+    const asked: string[] = [];
+    const { host, project } = await setup([call("read", { path: "on-main.txt" }), "done"], async (input) => {
+      asked.push(input.tool);
+      return { verdict: "block", reason: "no" };
+    });
+    const git = (...args: string[]) => exec("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd: project });
+    await git("init", "-q", "-b", "main");
+    await writeFile(join(project, "on-main.txt"), "from main\n");
+    await git("add", ".");
+    await git("commit", "-q", "-m", "init");
+    // The project directory sits on a branch without the file; the intake reads main.
+    await git("switch", "-q", "-c", "feature");
+    await git("rm", "-q", "on-main.txt");
+    await git("commit", "-q", "-m", "drop it");
+    const intake = await host.inbox.sendToIntake(project, "read it", "r1", context);
+    const [result] = await until(() => toolResults(host, intake), (results) => results.length === 1);
+    expect(result).toContain("from main");
+    expect(asked).toEqual([]);
   });
 
   it("leaves coding conversations alone", async () => {

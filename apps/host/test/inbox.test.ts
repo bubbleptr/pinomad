@@ -1,8 +1,10 @@
 import { execFile } from "node:child_process";
+import { writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { fauxAssistantMessage, type FauxResponseStep, fauxToolCall } from "@earendil-works/pi-ai/providers/faux";
-import type { ConversationDocToken, ConversationId } from "@earendil-works/pi-durable";
+import { AgentDoc, type ConversationDocToken, type ConversationId } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
 import type { QuestionState } from "@pinomad/protocol/presentation.ts";
 import { coding } from "../src/extensions/coding.ts";
@@ -10,6 +12,7 @@ import { question } from "../src/extensions/question.ts";
 import type { OpenedHost } from "../src/host.ts";
 import { addInboxEvent, addTimer, InboxDoc, type InboxTask, TimerDoc } from "../src/inbox.ts";
 import { IndexDoc } from "../src/organization.ts";
+
 import { INBOX_BATCH_ENTRY, isUserMessageEntry } from "@pinomad/protocol/inbox.ts";
 import { connectTo, LONG_ANSWER, startChat, startFauxHost, tempDir, useCleanups } from "./support.ts";
 
@@ -525,5 +528,140 @@ describe("intake conversation", () => {
     await answerPending(host, task!.conversationId!);
     await until(() => tasksOf(host, project), (tasks) => tasks[0]?.closed === true);
     expect((await tasksOf(host, project))[0]!.waiting).toBeUndefined();
+  });
+});
+
+describe("Inbox base branch", () => {
+  const git = async (cwd: string, ...args: string[]): Promise<string> =>
+    (await exec("git", ["-c", "user.email=t@t", "-c", "user.name=t", ...args], { cwd })).stdout.trim();
+  const headOf = (cwd: string) => git(cwd, "rev-parse", "HEAD");
+  /** A git project left on a feature branch one commit ahead of `main`. */
+  async function onFeatureBranch(): Promise<{ project: string; main: string }> {
+    const project = await gitProject();
+    const main = await headOf(project);
+    await git(project, "switch", "-q", "-c", "feature");
+    await git(project, "commit", "-q", "--allow-empty", "-m", "feature work");
+    return { project, main };
+  }
+  const toolResults = async (host: OpenedHost, id: ConversationId): Promise<string[]> => {
+    const page = await (await host.harness.conversation(id, context))!.entries({ order: "ascending" }, 1000, undefined, context);
+    return page.items.filter((each) => each.kind === "pi.tool-result").map((each) => JSON.stringify((each as { model?: unknown }).model));
+  };
+  const cwdOf = async (host: OpenedHost, id: ConversationId) => (await host.harness.snapshot(AgentDoc, id, context))?.cwd;
+  const inboxOf = async (host: OpenedHost) => Object.values((await host.harness.snapshot(InboxDoc, context))?.inboxes ?? {})[0];
+
+  it("starts a task's worktree at the base branch, not at what the project directory has checked out", async () => {
+    const { project, main } = await onFeatureBranch();
+    const host = await startFauxHost(defer, { projects: [project], answers: ["done"] });
+    await addInboxEvent(host.harness, project, event("e1", "bug"), context);
+    const [task] = await until(() => tasksOf(host, project), (tasks) => tasks[0]?.conversationId !== undefined);
+    const checkout = (await host.harness.snapshot(IndexDoc, context))?.checkouts?.find((each) => each.conversationId === task!.conversationId);
+    expect(checkout?.base).toBe(main);
+    expect((await inboxOf(host))?.baseBranch).toBe("main");
+  });
+
+  it("fails a task whose base branch is gone and goes on", async () => {
+    const project = await gitProject();
+    const host = await startFauxHost(defer, { projects: [project], answers: ["second done"] });
+    await host.harness.commit(async (tx) => {
+      (await tx.doc(InboxDoc)).inboxes[(await tx.doc(IndexDoc)).projects[0]!.path] = { tasks: [], threads: {}, baseBranch: "gone" };
+    }, context);
+    await addInboxEvent(host.harness, project, event("e1", "bug"), context);
+    const [task] = await until(() => tasksOf(host, project), (tasks) => tasks[0]?.closed === true);
+    expect(task!.failed).toContain("gone");
+  });
+
+  it("gives the intake its own checkout of the base branch, moved to the branch's tip before each message", async () => {
+    const { project, main } = await onFeatureBranch();
+    const host = await startFauxHost(defer, { projects: [project], answers: ["noted", "again"] });
+    const intake = await host.inbox.sendToIntake(project, "hi", "r1", context);
+    const cwd = (await cwdOf(host, intake))!;
+    expect(cwd).toContain("/worktrees/");
+    // Made lazily by the run's environment, as every worktree is.
+    await until(() => headOf(cwd).catch(() => undefined), (head) => head !== undefined);
+    expect(await headOf(cwd)).toBe(main);
+
+    // main moves on while the project directory stays on the feature branch.
+    await git(project, "switch", "-q", "main");
+    await git(project, "commit", "-q", "--allow-empty", "-m", "main moved");
+    const moved = await headOf(project);
+    await git(project, "switch", "-q", "feature");
+    await host.inbox.sendToIntake(project, "and now?", "r2", context);
+    expect(await headOf(cwd)).toBe(moved);
+    const checkout = (await host.harness.snapshot(IndexDoc, context))?.checkouts?.find((each) => each.conversationId === intake);
+    expect(checkout?.base).toBe(moved);
+  });
+
+  it("moves the intake to the base branch's tip for a message sent the ordinary way, as clients send all but the first", async () => {
+    const { project } = await onFeatureBranch();
+    const host = await startFauxHost(defer, { projects: [project], answers: ["noted", "again"] });
+    const intake = await host.inbox.sendToIntake(project, "hi", "r1", context);
+    const cwd = (await cwdOf(host, intake))!;
+    await until(() => headOf(cwd).catch(() => undefined), (head) => head !== undefined);
+    await git(project, "switch", "-q", "main");
+    await git(project, "commit", "-q", "--allow-empty", "-m", "main moved");
+    const moved = await headOf(project);
+    await git(project, "switch", "-q", "feature");
+    const client = await connectTo(defer, host);
+    await client.controller.submit("and now?", "followUp", { target: intake });
+    await until(() => userTexts(host, intake), (texts) => texts.length === 2);
+    expect(await headOf(cwd)).toBe(moved);
+  });
+
+  it("resets the intake's files even when its record already names the new base", async () => {
+    const { project } = await onFeatureBranch();
+    const host = await startFauxHost(defer, { projects: [project], answers: ["noted", "again"] });
+    const intake = await host.inbox.sendToIntake(project, "hi", "r1", context);
+    const cwd = (await cwdOf(host, intake))!;
+    await until(() => headOf(cwd).catch(() => undefined), (head) => head !== undefined);
+    await git(project, "switch", "-q", "main");
+    await git(project, "commit", "-q", "--allow-empty", "-m", "main moved");
+    const moved = await headOf(project);
+    await git(project, "switch", "-q", "feature");
+    // As a reset that failed after the record moved leaves it.
+    await host.harness.commit(async (tx) => {
+      const record = (await tx.doc(IndexDoc)).checkouts!.find((each) => each.conversationId === intake)!;
+      record.base = moved;
+    }, context);
+    await host.inbox.sendToIntake(project, "and now?", "r2", context);
+    expect(await headOf(cwd)).toBe(moved);
+  });
+
+  it("moves an intake opened in the project directory into its own checkout, and its next run reads there", async () => {
+    const { project } = await onFeatureBranch();
+    // Only on main: the project directory, on the feature branch, lacks it.
+    await git(project, "switch", "-q", "main");
+    await writeFile(join(project, "on-main.txt"), "from main\n");
+    await git(project, "add", "on-main.txt");
+    await git(project, "commit", "-q", "-m", "main only");
+    await git(project, "switch", "-q", "feature");
+    const host = await startFauxHost(defer, {
+      projects: [project],
+      extensions: [coding, question],
+      answers: ["noted", fauxAssistantMessage(fauxToolCall("read", { path: "on-main.txt" }), { stopReason: "toolUse" }), "read it"],
+    });
+    const intake = await host.inbox.sendToIntake(project, "hi", "r1", context);
+    const first = (await cwdOf(host, intake))!;
+    await until(() => headOf(first).catch(() => undefined), (head) => head !== undefined);
+    await until(() => userTexts(host, intake), (texts) => texts.length === 1);
+    // As an intake opened before #846 was: in the project directory, with no checkout record and no worktree.
+    await git(project, "worktree", "remove", "--force", first);
+    await host.harness.commit(async (tx) => {
+      const index = await tx.doc(IndexDoc);
+      index.checkouts = (index.checkouts ?? []).filter((each) => each.conversationId !== intake);
+      (await tx.doc(AgentDoc, intake)).cwd = index.projects[0]!.path;
+    }, context);
+    await host.inbox.sendToIntake(project, "read on-main.txt", "r2", context);
+    const cwd = (await cwdOf(host, intake))!;
+    expect(cwd).toContain("/worktrees/");
+    const [result] = await until(() => toolResults(host, intake), (results) => results.length === 1);
+    expect(result).toContain("from main");
+  });
+
+  it("keeps a non-git project's intake in the project directory", async () => {
+    const project = await plainProject();
+    const host = await startFauxHost(defer, { projects: [project], answers: ["noted"] });
+    const intake = await host.inbox.sendToIntake(project, "hi", "r1", context);
+    expect(await cwdOf(host, intake)).toBe((await host.harness.snapshot(IndexDoc, context))!.projects[0]!.path);
   });
 });

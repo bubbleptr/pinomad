@@ -105,7 +105,7 @@ Inbox 列表里的一行，对应一个普通对话。第一个事件开出它�
 _Avoid_: 工单、ticket、job、事件（事件是送进任务的东西）
 
 **收件对话（Intake Conversation）**:
-每个项目一条的长期对话，点 Inbox 模式侧栏里的项目名进入。用户在这里把事情说给 agent，agent 追问、拆分、合并重复，再用 `inbox_submit` 放进 Inbox；它只有只读工具和提问，自己不修。
+每个项目一条的长期对话，点 Inbox 模式侧栏里的项目名进入。用户在这里把事情说给 agent，agent 追问、拆分、合并重复，再用 `inbox_submit` 放进 Inbox；它只有只读工具和提问，自己不修；Git 项目里它读的是 Inbox 基准分支的代码（自己的 worktree），不是项目目录当前检出的分支。
 _Avoid_: 提交表单、前台、triage 对话
 
 **事件源（Event Source）**:
