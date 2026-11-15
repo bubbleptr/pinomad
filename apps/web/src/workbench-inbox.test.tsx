@@ -15,6 +15,7 @@ import {
   fakeHosts,
   fakeRemote,
   HOME_HOST,
+  INTAKE_ID,
   PINOMAD,
   PINOMAD_INBOX,
   RUNNING_TASK_ID,
@@ -112,6 +113,37 @@ describe("Inbox screens in main", () => {
     await userEvent.setup().click(screen.getByRole("button", { name: "Tasks" }));
     const panel = screen.getByRole("complementary", { name: "Side panel" });
     expect(within(panel).getByText(PINOMAD_INBOX.rules)).toBeInTheDocument();
+  });
+
+  it("shows what the Inbox's tasks are asking above the intake's composer (#846)", async () => {
+    const view = inboxWith(({ inboxes }) => ({
+      inboxes: inboxes.map((each) =>
+        each.project !== PINOMAD.path
+          ? each
+          : {
+              ...each,
+              tasks: each.tasks.map((task) =>
+                task.conversationId !== RUNNING_TASK_ID
+                  ? task
+                  : {
+                      ...task,
+                      waiting: true as const,
+                      questions: [
+                        {
+                          kind: "question.requests",
+                          request: { id: "q1", askedAt: 0, questions: [{ header: "Scope", question: "Desktop too?", options: [{ label: "Yes" }, { label: "No" }] }] },
+                        },
+                      ],
+                    },
+              ),
+            },
+      ),
+    }));
+    const { hosts } = renderOn(undefined, view, INTAKE_ID);
+    const card = await screen.findByRole("region", { name: "Avatar sometimes missing after sign-in" });
+    expect(within(card).getByText("Desktop too?")).toBeInTheDocument();
+    await userEvent.setup().click(within(card).getByRole("button", { name: "Open Avatar sometimes missing after sign-in" }));
+    expect(hosts.focusConversation).toHaveBeenCalledWith({ hostKey: HOME_HOST.hostKey, conversationId: RUNNING_TASK_ID });
   });
 
   it("titles a task's conversation by its task, not the worker's first message", () => {

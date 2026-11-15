@@ -19,6 +19,8 @@ use pinomad_core::inbox::{
     InboxSchedule, InboxSource, InboxSourceSpec, InboxTaskState, InboxWebhookAccess, PluginInfo, PluginSourceInfo, QuietHours,
 };
 use pinomad_core::json::{Json, JsonObject};
+use pinomad_core::presentation::{QuestionItem, QuestionOption};
+use pinomad_core::questions::card::{PendingQuestion, QuestionRequest};
 use pinomad_core::remote_durable::UpgradeWhen;
 use pinomad_core::remote_durable::RemoteDurableOptions;
 use pinomad_core::transport::PlaintextTransport;
@@ -3157,6 +3159,52 @@ fn snapshot_decodes_inbox_sources() {
     );
 }
 
+/// #846: an Inbox's base branch and the questions a task's conversation
+/// waits on; a malformed question is dropped, absent fields read as none.
+#[test]
+fn snapshot_decodes_inbox_base_branch_and_task_questions() {
+    let mut host = ScriptedHost::new();
+    let inbox = Json::parse(
+        r#"{"inboxes":[
+        {"project":"/p","rules":"","threads":{},"followUps":[],"baseBranch":"dev","tasks":[
+          {"id":"t1","title":"Fix","createdAt":1,"events":[],"closed":false,"waiting":true,"conversationId":7,"questions":[
+            {"kind":"pi.question","request":{"id":"q1","askedAt":5,"questions":[
+              {"question":"Which?","header":"Pick","options":[{"label":"A"},{"label":"B","description":"bee"}]}]}},
+            {"kind":"pi.question","request":{"id":"q2","askedAt":6,"questions":[]}},
+            {"request":{"id":"q3","askedAt":7,"questions":[{"question":"?","header":"h","options":[{"label":"x"},{"label":"y"}]}]}}]},
+          {"id":"t2","title":"Other","createdAt":2,"events":[],"closed":false}]},
+        {"project":"/q","rules":"","threads":{},"followUps":[],"tasks":[]}]}"#,
+    )
+    .unwrap();
+    host.snapshots.insert("inbox".to_string(), inbox);
+    let h = Harness::boot(host, "req-1");
+    let inboxes = h.client.snapshot().unwrap().inbox.unwrap();
+    assert_eq!(inboxes[0].base_branch.as_deref(), Some("dev"));
+    assert_eq!(inboxes[1].base_branch, None);
+    let tasks = &inboxes[0].tasks;
+    assert_eq!(
+        tasks[0].questions,
+        vec![PendingQuestion {
+            kind: "pi.question".into(),
+            request: QuestionRequest {
+                id: "q1".into(),
+                questions: vec![QuestionItem {
+                    question: "Which?".into(),
+                    header: "Pick".into(),
+                    options: vec![
+                        QuestionOption { label: "A".into(), description: None },
+                        QuestionOption { label: "B".into(), description: Some("bee".into()) },
+                    ],
+                    multi_select: None,
+                }],
+                asked_at: 5.0,
+                resolution: None,
+            },
+        }]
+    );
+    assert!(tasks[1].questions.is_empty());
+}
+
 /// The add-source form's plugin list: `hello.plugins` with each plugin's
 /// declared sources, typed; a source without a name is dropped and a plugin
 /// without sources still lists.
@@ -3269,6 +3317,8 @@ fn inbox_calls_encode_the_reference_frames() {
         model: Some(ModelRef { provider: "openai".to_string(), model_id: "gpt/5".to_string() }),
     });
     h.invoke(7, FfiCall::SetInboxWorkerModel { model: None });
+    h.invoke(8, FfiCall::SetInboxBaseBranch { project: "/p".into(), branch: Some("dev".into()) });
+    h.invoke(9, FfiCall::SetInboxBaseBranch { project: "/p".into(), branch: None });
     assert_eq!(
         call_args(&h, "sendToIntake"),
         vec![obj(&[("project", Json::from("/p")), ("text", Json::from("hi")), ("requestId", Json::from("r1"))])]
@@ -3276,6 +3326,13 @@ fn inbox_calls_encode_the_reference_frames() {
     assert_eq!(call_args(&h, "setInboxRules"), vec![obj(&[("project", Json::from("/p")), ("rules", Json::from(""))])]);
     assert_eq!(call_args(&h, "cancelFollowUp"), vec![obj(&[("timerId", Json::from("wake:1"))])]);
     assert_eq!(call_args(&h, "skipInboxTask"), vec![obj(&[("project", Json::from("/p")), ("taskId", Json::from("t"))])]);
+    assert_eq!(
+        call_args(&h, "setInboxBaseBranch"),
+        vec![
+            obj(&[("project", Json::from("/p")), ("branch", Json::from("dev"))]),
+            obj(&[("project", Json::from("/p")), ("branch", Json::Null)]),
+        ]
+    );
     let model = obj(&[("provider", Json::from("openai")), ("modelId", Json::from("gpt/5"))]);
     assert_eq!(
         call_args(&h, "updateSettings"),

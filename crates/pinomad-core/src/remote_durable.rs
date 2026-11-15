@@ -353,6 +353,9 @@ pub enum Call {
     SendToIntake { project: String, text: String, request_id: String },
     /// `setInboxRules` — replace the Inbox's rules; `""` clears them (5.38).
     SetInboxRules { project: String, rules: String },
+    /// `setInboxBaseBranch` — the branch the Inbox's intake reads and its
+    /// tasks start from; `None` goes back to the repository's default (5.41).
+    SetInboxBaseBranch { project: String, branch: Option<String> },
     /// `cancelFollowUp` — drop a follow-up or schedule; the host refuses
     /// the daily tidy-up (5.38).
     CancelFollowUp { timer_id: String },
@@ -4497,6 +4500,14 @@ impl RemoteDurable {
                 let args = obj(&[("project", Json::from(project.clone())), ("rules", Json::from(rules.clone()))]);
                 steps.push_back(Step::Call { method: "setInboxRules", args });
             }
+            Call::SetInboxBaseBranch { project, branch } => {
+                if !host_supports_call(self.host_minor, "setInboxBaseBranch") {
+                    return Err("The host is too old to pick the Inbox's base branch (needs protocol 5.41); run `pinomad upgrade` on the host".to_string());
+                }
+                let branch = branch.as_deref().map_or(Json::Null, Json::from);
+                let args = obj(&[("project", Json::from(project.clone())), ("branch", branch)]);
+                steps.push_back(Step::Call { method: "setInboxBaseBranch", args });
+            }
             Call::CancelFollowUp { timer_id } => {
                 if !host_supports_call(self.host_minor, "cancelFollowUp") {
                     return Err(too_old("5.38"));
@@ -6479,6 +6490,7 @@ fn op_kind(call: &Call) -> OpKind {
         | Call::StopProcess { .. }
         | Call::SendToIntake { .. }
         | Call::SetInboxRules { .. }
+        | Call::SetInboxBaseBranch { .. }
         | Call::CancelFollowUp { .. }
         | Call::SkipInboxTask { .. }
         | Call::AddInboxSource { .. }

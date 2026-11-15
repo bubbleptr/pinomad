@@ -25,6 +25,7 @@ pub use crate::organization::{
     ConversationStatus, HomeKind, SubagentLifecycle, SummaryActivity, SummaryKind,
 };
 pub use crate::patch::{PatchFile, PatchLine, PatchLineKind};
+pub use crate::questions::card::{PendingQuestion, QuestionRequest};
 pub use crate::processes::{BackgroundProcess, ProcessState, ProcessesView};
 pub use crate::presentation::{
     CodemodeCallStatus, DocType, QuestionAnswer, QuestionItem, QuestionOption, QuestionResolution,
@@ -1255,25 +1256,6 @@ pub enum ConnectionState {
     Closed,
     /// The hello announced a different protocol major; terminal.
     Outdated,
-}
-
-/// An unresolved `pinomad.question` request (ADR-0011) and the kind of the
-/// doc carrying it.
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct PendingQuestion {
-    pub kind: String,
-    pub request: QuestionRequest,
-}
-
-/// `QuestionRequest` without raw — the question card renders from this.
-#[derive(Clone, Debug, uniffi::Record)]
-pub struct QuestionRequest {
-    pub id: String,
-    pub questions: Vec<QuestionItem>,
-    /// Epoch ms the request was asked.
-    pub asked_at: f64,
-    /// Absent while the request is still open.
-    pub resolution: Option<QuestionResolution>,
 }
 
 /// One row of `taskGroupsOf`: the owner summary, its label, its subagents.

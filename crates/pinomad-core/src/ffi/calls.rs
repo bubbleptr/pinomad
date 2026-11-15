@@ -339,6 +339,9 @@ pub enum FfiCall {
     SendToIntake { project: String, text: String, request_id: String },
     /// Replace an Inbox's rules; `""` clears them. Rejects past 16 KB.
     SetInboxRules { project: String, rules: String },
+    /// Set the branch the Inbox's intake reads and its tasks start from;
+    /// `None` goes back to the repository's default. Needs a 5.41 host.
+    SetInboxBaseBranch { project: String, branch: Option<String> },
     /// Drop a follow-up or schedule; rejects for the daily tidy-up.
     CancelFollowUp { timer_id: String },
     /// Close a task without running it; rejects while its run is out.
@@ -582,6 +585,7 @@ impl FfiCall {
             },
             FfiCall::SendToIntake { project, text, request_id } => Call::SendToIntake { project, text, request_id },
             FfiCall::SetInboxRules { project, rules } => Call::SetInboxRules { project, rules },
+            FfiCall::SetInboxBaseBranch { project, branch } => Call::SetInboxBaseBranch { project, branch },
             FfiCall::CancelFollowUp { timer_id } => Call::CancelFollowUp { timer_id },
             FfiCall::SkipInboxTask { project, task_id } => Call::SkipInboxTask { project, task_id },
             FfiCall::AddInboxSource { project, name, trusted, spec } => Call::AddInboxSource { project, name, trusted, spec: spec.to_json() },

@@ -3,6 +3,7 @@
 //! derived from the task and its conversation's status, never stored.
 
 use crate::json::Json;
+use crate::questions::card::PendingQuestion;
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -42,6 +43,10 @@ pub struct InboxTask {
     pub waiting: bool,
     /// `tidy` for the Inbox's own memory tidy-up (ADR-0052 §3).
     pub kind: Option<String>,
+    /// The questions its conversation waits on (5.41), answered with
+    /// `answer` on `conversation_id` and the `kind` given here; empty when none.
+    #[cfg_attr(feature = "ffi", uniffi(default = []))]
+    pub questions: Vec<PendingQuestion>,
 }
 
 /// A timer not yet fired: a follow-up (`task`) or a schedule (`every`).
@@ -76,6 +81,11 @@ pub struct ProjectInbox {
     /// Its event sources (5.39, ADR-0051 §10), oldest first; empty before 5.39.
     #[cfg_attr(feature = "ffi", uniffi(default = []))]
     pub sources: Vec<InboxSource>,
+    /// The local branch the intake reads and tasks start from (5.41): the
+    /// user's choice or the repository's default. `None` for a project that
+    /// is not a Git repository, and before 5.41.
+    #[cfg_attr(feature = "ffi", uniffi(default = None))]
+    pub base_branch: Option<String>,
 }
 
 /// When a schedule source fires (5.39), as wall time in `time_zone` (IANA).
@@ -393,7 +403,14 @@ pub fn task_of(value: &Json) -> Option<InboxTask> {
         failed: text(value.get("failed")),
         waiting: flag(value.get("waiting")),
         kind: text(value.get("kind")),
+        questions: list(value.get("questions"), question_of),
     })
+}
+
+/// One `InboxQuestion`; a malformed request is dropped.
+fn question_of(value: &Json) -> Option<PendingQuestion> {
+    let request = crate::presentation::decode_question_request(value.get("request")?)?;
+    Some(PendingQuestion { kind: text(value.get("kind"))?, request: request.into() })
 }
 
 fn follow_up_of(value: &Json) -> Option<InboxFollowUp> {
@@ -426,6 +443,7 @@ fn project_inbox_of(value: &Json) -> Option<ProjectInbox> {
         rules: text(value.get("rules")).unwrap_or_default(),
         follow_ups: list(value.get("followUps"), follow_up_of),
         sources: list(value.get("sources"), source_of),
+        base_branch: text(value.get("baseBranch")),
     })
 }
 

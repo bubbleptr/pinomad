@@ -33,7 +33,7 @@ const event = (id: string, summary: string, thread?: string) => ({
 });
 
 /** A host with one project, a client on it, and the project's key as the host stores it. */
-async function inboxHost(options: Omit<Parameters<typeof startFauxHost>[1], "dataDir" | "projects"> & { git?: boolean } = {}) {
+async function inboxHost(options: Omit<NonNullable<Parameters<typeof startFauxHost>[1]>, "dataDir" | "projects"> & { git?: boolean } = {}) {
   const { git, ...hostOptions } = options;
   const path = await project();
   if (git === true) {
@@ -157,8 +157,10 @@ const inboxTask = (doc: { inboxes: Record<string, { tasks: { id: string; convers
 
 describe("the Inbox's base branch (5.41, #846)", () => {
   it("shows a git project's default branch, and setInboxBaseBranch picks another or goes back", async () => {
-    const { key, client, until } = await inboxHost({ git: true });
+    const { host, key, client, until } = await inboxHost({ git: true });
     expect((await until((inbox) => inbox.baseBranch !== undefined)).baseBranch).toBe("trunk");
+    // Shown, not stored: an Inbox entry would start a daily tidy-up for a project that never used it.
+    expect((await host.harness.snapshot(InboxDoc, context))?.inboxes[key]).toBeUndefined();
     await client.controller.setInboxBaseBranch(key, "release");
     await until((inbox) => inbox.baseBranch === "release");
     await expect(client.controller.setInboxBaseBranch(key, "nope")).rejects.toThrow(/"nope" does not exist/);

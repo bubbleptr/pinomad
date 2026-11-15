@@ -15,7 +15,7 @@ const meta = {
       </div>
     ),
   ],
-  args: { view, remote: fakeRemote(view), target: { project: WEBSITE.path }, onOpened: fn() },
+  args: { view, remote: fakeRemote(view), target: { project: WEBSITE.path }, onOpened: fn(), onOpenTask: fn() },
 } satisfies Meta<typeof InboxScreen>;
 
 export default meta;
@@ -26,3 +26,46 @@ export const IntakeDraft: Story = {};
 
 /** A task the worker has not taken yet: its event, its place in the queue, and Skip. */
 export const QueuedTask: Story = { args: { target: { project: PINOMAD.path, task: TASK.queuedSecond } } };
+
+const asking = withInbox(undefined, {
+  externalSources: true,
+  inboxes: [
+    {
+      project: WEBSITE.path,
+      tasks: [
+        {
+          id: "nightly",
+          title: "Nightly dependency check",
+          createdAt: Date.now(),
+          conversationId: 77 as never,
+          events: [],
+          closed: false,
+          waiting: true,
+          questions: [
+            {
+              kind: "question.requests",
+              request: {
+                id: "allow-1",
+                askedAt: Date.now(),
+                questions: [
+                  {
+                    header: "Allow",
+                    question: "Run `bun update --latest`? It reached the network while the run had outside content.",
+                    options: [{ label: "Allow" }, { label: "Deny" }],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+      threads: {},
+      rules: "",
+      followUps: [],
+      sources: [],
+    },
+  ],
+});
+
+/** A scheduled task asks before anyone wrote to the intake: its question is answered here (#846). */
+export const IntakeDraftWithTaskQuestion: Story = { args: { view: asking, remote: fakeRemote(asking) } };

@@ -1,6 +1,7 @@
 import { renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConversationId } from "@earendil-works/pi-durable";
+import type { HostInbox } from "@pinomad/protocol/inbox.ts";
 import type { ConversationNode, Organized } from "@pinomad/protocol/organization.ts";
 import type { ConversationSummary, DurableView } from "@pinomad/protocol/view.ts";
 import { useRunNotifications } from "./use-run-notifications.ts";
@@ -160,6 +161,40 @@ describe("useRunNotifications", () => {
     expect(focus).toHaveBeenCalledTimes(1);
     expect(open).toHaveBeenCalledWith({ hostKey: hostA, conversationId: id(1) });
     expect(notification.closed).toBe(true);
+  });
+
+  it("opens the intake for a question an Inbox task asks, and stays quiet while that intake is on screen (#846)", () => {
+    const inbox: HostInbox = {
+      inboxes: [
+        {
+          project: "/p",
+          intake: id(9),
+          tasks: [{ id: "t1", title: "Layout", createdAt: 0, conversationId: id(1), events: [], closed: false }],
+          threads: {},
+          rules: "",
+          followUps: [],
+        },
+      ],
+    };
+    const withInbox = (organized: Organized): DurableView => ({ organized, connection: "connected", inbox }) as DurableView;
+    const open = vi.fn();
+    vi.spyOn(window, "focus").mockImplementation(() => {});
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const { rerender } = renderHook(({ view }) => useRunNotifications(view, hostA, undefined, open), {
+      initialProps: { view: withInbox(organized(node({ status: "running" }))) },
+    });
+    rerender({ view: withInbox(organized(node({ status: "needs-answer" }))) });
+    TestNotification.instances[0]!.onclick!();
+    expect(open).toHaveBeenCalledWith({ hostKey: hostA, conversationId: id(9) });
+
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const watching = renderHook(({ view }) => useRunNotifications(view, hostB, id(9), vi.fn()), {
+      initialProps: { view: withInbox(organized(node({ status: "running" }))) },
+    });
+    const before = TestNotification.instances.length;
+    watching.rerender({ view: withInbox(organized(node({ status: "needs-answer" }))) });
+    expect(TestNotification.instances).toHaveLength(before);
   });
 
   it("keeps the baseline while disconnected and reports the missed finish on reconnect", () => {

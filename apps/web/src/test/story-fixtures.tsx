@@ -731,6 +731,7 @@ export function fakeRemote(
     checkUpgrade: fn(async () => {}),
     sendToIntake: fn(async () => 1 as ConversationId),
     setInboxRules: fn(async () => {}),
+    setInboxBaseBranch: fn(async () => {}),
     cancelFollowUp: fn(async () => {}),
     skipInboxTask: fn(async () => {}),
     addInboxSource: fn(async (project: string, _name: string, _trusted: boolean, spec: InboxSourceSpec) => ({
@@ -1466,6 +1467,7 @@ export const PINOMAD_INBOX: ProjectInbox = {
     },
   ],
   threads: { "github:kieran/pinomad#398": TASK.done },
+  baseBranch: "main",
   rules: "Write a failing test before fixing a bug. Tell me once a PR is open. Ask before any database migration.",
   followUps: [
     { id: "wake:1", due: now + 2 * 24 * 60 * MINUTE, note: "Check whether #409 got a review", task: TASK.done },

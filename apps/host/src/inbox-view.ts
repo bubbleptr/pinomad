@@ -30,6 +30,7 @@ import {
   skipInboxTask,
   TimerDoc,
 } from "./inbox.ts";
+import { defaultBranch, gitBase } from "./checkout.ts";
 import { memoryDir, readRules, writeRules } from "./inbox-memory.ts";
 import {
   addInboxSource,
@@ -124,16 +125,19 @@ export function hostInbox(
   rules: ReadonlyMap<string, string>,
   sources: readonly Readonly<InboxSourceRecord>[],
   questionsOf: QuestionsOf = () => [],
+  /** The default branch of git projects whose Inbox stores none yet. */
+  defaults: ReadonlyMap<string, string> = new Map(),
 ): HostInbox {
   return {
     // Plugin and webhook sources are always taken; the field stays for clients that read it.
     externalSources: true,
     inboxes: (index?.projects ?? []).map(({ path }): WireInbox => {
       const inbox = inboxes[path];
+      const baseBranch = inbox?.baseBranch ?? defaults.get(path);
       return {
         project: path,
         ...(inbox?.intake === undefined ? {} : { intake: inbox.intake }),
-        ...(inbox?.baseBranch === undefined ? {} : { baseBranch: inbox.baseBranch }),
+        ...(baseBranch === undefined ? {} : { baseBranch }),
         tasks: (inbox?.tasks ?? []).map((task) => wireTask(task, questionsOf)),
         threads: { ...inbox?.threads },
         rules: rules.get(path) ?? "",
@@ -179,7 +183,7 @@ export async function openInboxService(options: {
   let inboxes = inboxWatch.value?.inboxes ?? {};
   let timers = timerWatch.value?.timers ?? [];
   let sources = sourceWatch.value?.sources ?? [];
-  const value = (): HostInbox => hostInbox(index, inboxes, timers, rules, sources, questionsOf);
+  const value = (): HostInbox => hostInbox(index, inboxes, timers, rules, sources, questionsOf, defaults);
 
   // Each open task's question documents, watched while the task is open, so a
   // question shows (and an answer clears) in the stream as it happens.
@@ -227,6 +231,8 @@ export async function openInboxService(options: {
   };
   /** Projects whose default base branch was looked for in this process: once is enough (#846). */
   const baseLooked = new Set<string>();
+  /** The default branch of a git project whose Inbox was never used: shown, not stored. */
+  const defaults = new Map<string, string>();
   /** Each project's rules, read once and then kept by `setRules`. */
   const rules = new Map<string, string>();
   const readFor = async (path: string): Promise<void> => {
@@ -248,13 +254,22 @@ export async function openInboxService(options: {
       .then(async () => {
         for (const project of index?.projects ?? []) await readFor(project.path);
         await syncQuestionWatches();
-        // Found and stored for each git project up front, so the Inbox shows its branch before the first task.
+        // Each git project shows its branch before the first task. An Inbox in
+        // use stores it; one never used only shows the default, since writing
+        // an Inbox entry would start its daily tidy-up.
         for (const { path } of index?.projects ?? []) {
           if (inboxes[path]?.baseBranch !== undefined || baseLooked.has(path)) continue;
           baseLooked.add(path);
-          await ensureBaseBranch(harness, path, context).catch((error: unknown) =>
-            console.error(`Inbox base branch for ${path} could not be found: ${error instanceof Error ? error.message : String(error)}`),
-          );
+          try {
+            if (inboxes[path] !== undefined) await ensureBaseBranch(harness, path, context);
+            else {
+              const repo = await gitBase(path);
+              const found = repo === undefined ? undefined : await defaultBranch(repo.repo);
+              if (found !== undefined) defaults.set(path, found);
+            }
+          } catch (error) {
+            console.error(`Inbox base branch for ${path} could not be found: ${error instanceof Error ? error.message : String(error)}`);
+          }
         }
         published.set(value());
       })

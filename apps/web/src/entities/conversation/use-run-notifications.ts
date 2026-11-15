@@ -6,6 +6,7 @@ import type { DurableView } from "@pinomad/protocol/view.ts";
 import { inboxRunIds } from "@pinomad/client/inbox.ts";
 import { diffRunNotices, type StatusBaseline } from "@pinomad/client/run-notifications.ts";
 import type { ConversationRef } from "../host/focus.ts";
+import { inboxOfConversation } from "../inbox/inbox.ts";
 
 export function useRunNotifications(
   view: DurableView,
@@ -44,11 +45,15 @@ export function useRunNotifications(
     if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
     const source = hostKey ?? "local";
     for (const notice of notices) {
-      // The window is in front and this exact conversation is on screen.
+      // An Inbox task's question is answered in its intake (#846), once the intake exists.
+      const intake =
+        notice.body === "Waiting for your answer" ? inboxOfConversation(view.inbox, notice.id) : undefined;
+      const target = intake?.task !== undefined && intake.inbox.intake !== undefined ? intake.inbox.intake : notice.id;
+      // The window is in front and the conversation that shows this is on screen.
       if (
         document.visibilityState === "visible"
         && document.hasFocus()
-        && visibleConversationId === notice.id
+        && (visibleConversationId === notice.id || visibleConversationId === target)
       ) continue;
       const notification = new Notification(notice.title, {
         body: notice.body,
@@ -63,7 +68,7 @@ export function useRunNotifications(
       };
       notification.onclick = () => {
         window.focus();
-        openConversation.current({ hostKey: source, conversationId: notice.id });
+        openConversation.current({ hostKey: source, conversationId: target });
         notification.close();
         if (shown.current.get(notice.id) === notification) shown.current.delete(notice.id);
       };

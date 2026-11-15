@@ -472,6 +472,10 @@
         "since": 18
       },
       {
+        "name": "setInboxBaseBranch",
+        "since": 40
+      },
+      {
         "name": "setInboxRules",
         "since": 38
       },
@@ -1186,6 +1190,18 @@
       "name": "setAgent@17",
       "minor": 17,
       "call": "setAgent",
+      "expect": false
+    },
+    {
+      "name": "setInboxBaseBranch@40",
+      "minor": 40,
+      "call": "setInboxBaseBranch",
+      "expect": true
+    },
+    {
+      "name": "setInboxBaseBranch@39",
+      "minor": 39,
+      "call": "setInboxBaseBranch",
       "expect": false
     },
     {

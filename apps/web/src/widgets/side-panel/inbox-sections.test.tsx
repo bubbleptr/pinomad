@@ -49,3 +49,35 @@ describe("the Inbox's rules on the Tasks page", () => {
     expect((screen.getByRole("textbox", { name: "Rules" }) as HTMLTextAreaElement).value).toMatch(/More\.$/);
   });
 });
+
+describe("the Inbox's base branch on the Tasks page (#846)", () => {
+  it("picks another branch, and goes back to the default when left empty", async () => {
+    const { remote, user } = setup();
+    const section = screen.getByRole("region", { name: "Base branch" });
+    expect(within(section).getByText("main")).toBeInTheDocument();
+    await user.click(within(section).getByRole("button", { name: "Change" }));
+    const box = within(section).getByRole("textbox", { name: "Base branch" });
+    await user.clear(box);
+    await user.type(box, "release");
+    await user.click(within(section).getByRole("button", { name: "Save" }));
+    expect(remote.controller.setInboxBaseBranch).toHaveBeenCalledWith(PINOMAD.path, "release");
+
+    await user.click(await within(section).findByRole("button", { name: "Change" }));
+    await user.clear(within(section).getByRole("textbox", { name: "Base branch" }));
+    await user.click(within(section).getByRole("button", { name: "Save" }));
+    expect(remote.controller.setInboxBaseBranch).toHaveBeenLastCalledWith(PINOMAD.path, null);
+  });
+
+  it("keeps the draft and says why when the branch does not exist", async () => {
+    const { remote, user } = setup();
+    vi.mocked(remote.controller.setInboxBaseBranch).mockRejectedValueOnce(new Error('The Inbox\'s base branch "nope" does not exist'));
+    const section = screen.getByRole("region", { name: "Base branch" });
+    await user.click(within(section).getByRole("button", { name: "Change" }));
+    const box = within(section).getByRole("textbox", { name: "Base branch" });
+    await user.clear(box);
+    await user.type(box, "nope");
+    await user.click(within(section).getByRole("button", { name: "Save" }));
+    expect(await within(section).findByRole("alert")).toHaveTextContent('"nope" does not exist');
+    expect((within(section).getByRole("textbox", { name: "Base branch" }) as HTMLInputElement).value).toBe("nope");
+  });
+});

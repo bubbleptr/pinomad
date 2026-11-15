@@ -275,14 +275,17 @@ export async function setBaseBranch(harness: Harness, project: string, branch: s
   const repo = await gitBase(project);
   if (repo === undefined) throw new Error("This project is not a Git repository");
   if (branch !== null) await branchCommit(repo.repo, branch);
-  await harness.commit(async (tx) => {
+  const used = await harness.commit(async (tx) => {
     const inboxes = (await tx.doc(InboxDoc)).inboxes;
+    // Back to the default on an Inbox never used: nothing stored, nothing to drop.
+    if (branch === null && inboxes[project] === undefined) return false;
     if (inboxes[project] === undefined) inboxes[project] = { tasks: [], threads: {} };
     if (branch === null) delete inboxes[project]!.baseBranch;
     else inboxes[project]!.baseBranch = branch;
+    return true;
   }, context);
   // Back to the default: find it now, so the Inbox shows which one it is.
-  if (branch === null) await ensureBaseBranch(harness, project, context);
+  if (branch === null && used) await ensureBaseBranch(harness, project, context);
 }
 
 /**
