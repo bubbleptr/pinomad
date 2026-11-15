@@ -40,6 +40,22 @@ describe("the Inbox's event sources on the Tasks page", () => {
     expect(toggle).toHaveAttribute("aria-disabled", "true");
   });
 
+  it("follows the host once it has flipped, even when another device flips it back", async () => {
+    const withNas = (enabled: boolean) => {
+      const inbox = { ...PINOMAD_INBOX, sources: PINOMAD_INBOX.sources!.map((each) => (each.id === "src-nas" ? { ...each, enabled } : each)) };
+      return { inbox, view: withInbox(undefined, { inboxes: [inbox, WEBSITE_INBOX], externalSources: true }) };
+    };
+    const first = withNas(false);
+    const remote = fakeRemote(first.view);
+    const { rerender } = render(<InboxTasks view={first.view} remote={remote} inbox={first.inbox} />);
+    await userEvent.click(within(sourcesList()).getByRole("switch", { name: "NAS backups" }));
+    const on = withNas(true);
+    rerender(<InboxTasks view={on.view} remote={remote} inbox={on.inbox} />);
+    const off = withNas(false);
+    rerender(<InboxTasks view={off.view} remote={remote} inbox={off.inbox} />);
+    expect(within(sourcesList()).getByRole("switch", { name: "NAS backups" })).not.toBeChecked();
+  });
+
   it("removes a source after a confirm", async () => {
     const { remote, user } = setup();
     await user.click(within(sourcesList()).getByRole("button", { name: "More for NAS backups" }));

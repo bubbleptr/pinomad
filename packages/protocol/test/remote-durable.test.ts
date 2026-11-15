@@ -732,6 +732,41 @@ describe("RemoteDurable side conversation", () => {
     }
   });
 
+  it("rejects the Inbox source calls against a 5.38 host without sending, sends them on 5.39", async () => {
+    const old = fakeTransport([{}], { protocol: { major: 5, minor: 38 } });
+    const remoteOld = await connectRemoteDurable({ transport: old.transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      await expect(remoteOld.controller.addInboxSource("/p", "Hooks", false, { kind: "webhook" })).rejects.toThrow("needs protocol 5.39");
+      await expect(remoteOld.controller.setInboxSourceEnabled("s1", false)).rejects.toThrow("needs protocol 5.39");
+      await expect(remoteOld.controller.removeInboxSource("s1")).rejects.toThrow("needs protocol 5.39");
+      await expect(remoteOld.controller.resetInboxWebhookSecret("s1")).rejects.toThrow("needs protocol 5.39");
+      expect(old.sent.filter((frame) => frame.type === "call")).toHaveLength(0);
+    } finally {
+      remoteOld.close();
+    }
+
+    const access = { url: "http://192.168.1.2:7432/inbox/p-1/events", source: "s1", secret: "k" };
+    const { transport, sent } = fakeTransport([{}], undefined, (frame) =>
+      frame.method === "addInboxSource" ? { ok: true, value: { sourceId: "s1", webhook: access } } : frame.method === "resetInboxWebhookSecret" ? { ok: true, value: access } : undefined,
+    );
+    const remote = await connectRemoteDurable({ transport, reconnectDelayMs: { min: 20, max: 20 } });
+    try {
+      expect(await remote.controller.addInboxSource("/p", "Hooks", false, { kind: "webhook" })).toEqual({ sourceId: "s1", webhook: access });
+      await remote.controller.setInboxSourceEnabled("s1", false);
+      await remote.controller.removeInboxSource("s1");
+      expect(await remote.controller.resetInboxWebhookSecret("s1")).toEqual(access);
+      const calls = sent.filter((frame) => frame.type === "call");
+      expect(calls.map((frame) => [frame.method, frame.args])).toEqual([
+        ["addInboxSource", { project: "/p", name: "Hooks", trusted: false, spec: { kind: "webhook" } }],
+        ["setInboxSourceEnabled", { sourceId: "s1", enabled: false }],
+        ["removeInboxSource", { sourceId: "s1" }],
+        ["resetInboxWebhookSecret", { sourceId: "s1" }],
+      ]);
+    } finally {
+      remote.close();
+    }
+  });
+
   it("rejects setPushToken against a 5.6 host without sending, sends it on 5.7", async () => {
     const old = fakeTransport([{}], { protocol: { major: 5, minor: 6 } });
     const remoteOld = await connectRemoteDurable({ transport: old.transport, reconnectDelayMs: { min: 20, max: 20 } });

@@ -1,7 +1,7 @@
 // The Tasks surface's event sources (ADR-0051 §10): where an Inbox's events
 // come from besides the user and the agent. Each can be switched off or
 // removed; a webhook's secret shows once, when it is made or reset.
-import { useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent } from "react";
 import type { PluginInfo, PluginSourceInfo } from "@pinomad/protocol/frames.ts";
 import {
   INBOX_SOURCE_FILTER_MAX,
@@ -111,27 +111,40 @@ export function SourcesSection({
   const error = useErrorToast();
   const [adding, setAdding] = useState(false);
   const [dialog, setDialog] = useState<RowDialog>();
-  // A flip in flight, and the value asked for until the view catches up: kept
-  // only while the view still shows the value it was flipped from.
+  // A flip asked for, by source: the switch shows it until the view leaves
+  // the value it was flipped from, then follows the view again.
   const [flips, setFlips] = useState<ReadonlyMap<string, { from: boolean; pending: boolean }>>(new Map());
+  useEffect(() => {
+    const caughtUp = [...flips].filter(([id, flip]) => inbox.sources?.find((each) => each.id === id)?.enabled !== flip.from);
+    if (caughtUp.length === 0) return;
+    setFlips((prev) => {
+      const next = new Map(prev);
+      for (const [id] of caughtUp) next.delete(id);
+      return next;
+    });
+  }, [flips, inbox.sources]);
   // Before 5.39 the host has no sources and refuses the calls.
   if (inbox.sources === undefined) return null;
   const sources = inbox.sources;
 
-  const setFlip = (id: string, flip: { from: boolean; pending: boolean } | undefined): void =>
+  const updateFlip = (id: string, update: (flip: { from: boolean; pending: boolean }) => { from: boolean; pending: boolean } | undefined): void =>
     setFlips((prev) => {
+      const flip = prev.get(id);
+      if (flip === undefined) return prev;
       const next = new Map(prev);
-      if (flip === undefined) next.delete(id);
-      else next.set(id, flip);
+      const updated = update(flip);
+      if (updated === undefined) next.delete(id);
+      else next.set(id, updated);
       return next;
     });
   const toggle = (source: InboxSource, enabled: boolean): void => {
     error.clear();
-    setFlip(source.id, { from: source.enabled, pending: true });
+    setFlips((prev) => new Map(prev).set(source.id, { from: source.enabled, pending: true }));
     remote.controller.setInboxSourceEnabled(source.id, enabled).then(
-      () => setFlip(source.id, { from: source.enabled, pending: false }),
+      // The view may have caught up already, which dropped the flip.
+      () => updateFlip(source.id, (flip) => ({ ...flip, pending: false })),
       (reason: unknown) => {
-        setFlip(source.id, undefined);
+        updateFlip(source.id, () => undefined);
         error.show(`Couldn't turn “${source.name}” ${enabled ? "on" : "off"}: ${messageOf(reason)}`);
       },
     );
@@ -513,8 +526,8 @@ export function AddSourceDialog({
 
             {kind === "schedule" ? (
               <>
-                <div className="flex gap-3">
-                  <Field disabled={saving} className="flex-1">
+                <div className="flex flex-wrap gap-3">
+                  <Field disabled={saving} className="min-w-36 flex-1">
                     <FieldLabel>Repeat</FieldLabel>
                     <Select
                       items={REPEATS}
@@ -538,7 +551,7 @@ export function AddSourceDialog({
                     </Select>
                   </Field>
                   {repeat === "weekly" ? (
-                    <Field disabled={saving} className="flex-1">
+                    <Field disabled={saving} className="min-w-36 flex-1">
                       <FieldLabel>Day</FieldLabel>
                       <Select
                         items={DAY_ITEMS}
@@ -596,8 +609,8 @@ export function AddSourceDialog({
                 <p className="text-sm text-muted-foreground">No loaded plugin offers event sources. Install one, such as the GitHub example, and it shows up here.</p>
               ) : (
                 <>
-                  <div className="flex gap-3">
-                    <Field disabled={saving} className="flex-1">
+                  <div className="flex flex-wrap gap-3">
+                    <Field disabled={saving} className="min-w-36 flex-1">
                       <FieldLabel>Plugin</FieldLabel>
                       <Select
                         items={Object.fromEntries(withSources.map((each) => [each.name, each.name]))}
@@ -622,7 +635,7 @@ export function AddSourceDialog({
                         </SelectContent>
                       </Select>
                     </Field>
-                    <Field disabled={saving} className="flex-1">
+                    <Field disabled={saving} className="min-w-36 flex-1">
                       <FieldLabel>Event</FieldLabel>
                       <Select
                         items={Object.fromEntries((pickedPlugin?.sources ?? []).map((each) => [each.name, each.description]))}
