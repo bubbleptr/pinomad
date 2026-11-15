@@ -431,7 +431,7 @@ export const memoryOwner =
 const RECENTLY_SENT = 5;
 
 /** Tools offered from the start to an Inbox task's conversation, and the intake's whole tool set. */
-export const INBOX_TASK_TOOLS: readonly string[] = ["wake_me_at", "notify", "inbox_follow", "memory_read", "memory_write", "memory_list"];
+export const INBOX_TASK_TOOLS: readonly string[] = ["wake_me_at", "notify", "inbox_follow", "memory_read", "memory_write", "memory_append", "memory_list"];
 export const INTAKE_TOOLS: readonly string[] = ["read", "ask_user_question", "inbox_submit"];
 
 /** The Inbox's tools; the host installs it, and only Inbox conversations are offered them. */

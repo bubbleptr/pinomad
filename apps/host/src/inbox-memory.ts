@@ -4,7 +4,7 @@
 // task's progress (`tasks/<id>.md` + `INDEX.md`). The agent reaches them only
 // through the memory tools, which cannot leave the directory.
 import { createHash } from "node:crypto";
-import { lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { appendFile, lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
 import type { Context } from "@earendil-works/chord/context";
 import { type ConversationId, defineExtension, defineTool, type Extension, type ToolExecutionApi } from "@earendil-works/pi-durable";
@@ -48,7 +48,31 @@ async function inside(dir: string, path: string): Promise<string> {
   return target;
 }
 
-const readOrUndefined = (path: string): Promise<string | undefined> => readFile(path, "utf8").catch(() => undefined);
+/** The file's text, or undefined when it does not exist; any other read error is thrown, not mistaken for "no rules". */
+async function readOrUndefined(path: string): Promise<string | undefined> {
+  try {
+    return await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
+}
+
+/**
+ * A file the agent may change: inside the memory, not a symlink, and not the
+ * user's rules under any name (a linked directory can make another path reach them).
+ */
+async function writable(dir: string, path: string): Promise<string> {
+  const target = await inside(dir, path);
+  const link = await lstat(target).catch(() => undefined);
+  if (link?.isSymbolicLink() === true) throw new OutsideMemory(`${path} is a link; memory files are written directly`);
+  await mkdir(dirname(target), { recursive: true });
+  const real = join(await realpath(dirname(target)), basename(target));
+  if (real.toLowerCase() === join(await realpath(dir), INSTRUCTIONS).toLowerCase()) {
+    throw new OutsideMemory("instructions.md is the user's; you can read it but not change it.");
+  }
+  return real;
+}
 
 const escape = (text: string): string => text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 
@@ -64,7 +88,7 @@ export async function memoryPreamble(dir: string): Promise<string> {
   };
   return [
     "Your memory for this project is kept between tasks; read and change it with the memory tools.",
-    "Keep tasks/<this task's id>.md current with what is done and what is left, and give it a line in tasks/INDEX.md; do that before you finish a run, as your conversation may be compacted. Put what you learn about the user and the project in notes/ and list it in notes/INDEX.md. Only store what cannot be looked up: point to issues, PRs and commits instead of copying them.",
+    "Keep tasks/<this task's id>.md current with what is done and what is left, and add its line to tasks/INDEX.md with memory_append; do that before you finish a run, as your conversation may be compacted. Put what you learn about the user and the project in notes/ and list it in notes/INDEX.md, again with memory_append: other tasks write the indexes too. Only store what cannot be looked up: point to issues, PRs and commits instead of copying them.",
     await part("instructions", INSTRUCTIONS),
     await part("notes-index", join("notes", "INDEX.md")),
     await part("tasks-index", join("tasks", "INDEX.md")),
@@ -86,7 +110,7 @@ export async function taskMemory(dir: string, taskId: string, recentlySent: read
 /** Finds the memory directory of the conversation calling a memory tool; the Inbox supplies it. */
 export type MemoryOwner = (conversationId: ConversationId, api: ToolExecutionApi, context: Context) => Promise<string | undefined>;
 
-export const MEMORY_TOOLS: readonly string[] = ["memory_read", "memory_write", "memory_list"];
+export const MEMORY_TOOLS: readonly string[] = ["memory_read", "memory_write", "memory_append", "memory_list"];
 
 /** The memory tools; `owner` answers which project's memory a conversation may use, if any. */
 export function createMemoryExtension(owner: MemoryOwner): Extension {
@@ -133,16 +157,38 @@ export function createMemoryExtension(owner: MemoryOwner): Extension {
     execute: async (args, api, context) => {
       try {
         const dir = await dirFor(api, context, "memory_write");
-        const target = await inside(dir, args.path);
-        if (relative(await realpath(dir), target).toLowerCase() === INSTRUCTIONS) {
-          return { output: [{ type: "text", text: "instructions.md is the user's; you can read it but not change it." }] };
-        }
         if (Buffer.byteLength(args.content, "utf8") > MAX_FILE_BYTES) {
           return { output: [{ type: "text", text: `Too long: a memory file holds at most ${MAX_FILE_BYTES / 1024} KB. Keep it short.` }] };
         }
-        await mkdir(dirname(target), { recursive: true });
-        await writeFile(target, args.content);
+        await writeFile(await writable(dir, args.path), args.content);
         return { output: [{ type: "text", text: `Wrote ${args.path}.` }] };
+      } catch (error) {
+        return refuse(error);
+      }
+    },
+  });
+
+  const memoryAppend = defineTool({
+    name: "memory_append",
+    callers: ["model"],
+    deferred: true,
+    description:
+      "Add a line to the end of a file in this project's Inbox memory, such as an entry in tasks/INDEX.md or notes/INDEX.md. Other tasks may be writing the same index; appending never loses their lines, where rewriting the whole file can.",
+    parameters: Type.Object({
+      path: Type.String({ minLength: 1, description: "A path inside the memory, such as tasks/INDEX.md" }),
+      line: Type.String({ minLength: 1, maxLength: 1_000, description: "The line to add" }),
+    }),
+    // Not replay-safe: a rerun would add the line twice.
+    execute: async (args, api, context) => {
+      try {
+        const target = await writable(await dirFor(api, context, "memory_append"), args.path);
+        const current = await readOrUndefined(target);
+        if (current !== undefined && Buffer.byteLength(current, "utf8") + Buffer.byteLength(args.line, "utf8") > MAX_FILE_BYTES) {
+          return { output: [{ type: "text", text: `Too long: ${args.path} would pass ${MAX_FILE_BYTES / 1024} KB. Tidy it with memory_write first.` }] };
+        }
+        const prefix = current === undefined || current === "" || current.endsWith("\n") ? "" : "\n";
+        await appendFile(target, `${prefix}${args.line.replaceAll("\n", " ")}\n`);
+        return { output: [{ type: "text", text: `Added a line to ${args.path}.` }] };
       } catch (error) {
         return refuse(error);
       }
@@ -168,5 +214,5 @@ export function createMemoryExtension(owner: MemoryOwner): Extension {
     },
   });
 
-  return defineExtension({ name: "inbox-memory", tools: [memoryRead, memoryWrite, memoryList] });
+  return defineExtension({ name: "inbox-memory", tools: [memoryRead, memoryWrite, memoryAppend, memoryList] });
 }
