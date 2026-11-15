@@ -478,3 +478,50 @@ pub fn inboxes_of(value: &Json) -> Option<Vec<ProjectInbox>> {
     }
     Some(list(value.get("inboxes"), project_inbox_of))
 }
+
+/// One `hello.plugins` entry as the add-source form reads it (`PluginInfo`):
+/// its name and the Inbox event sources it declares (5.39, ADR-0051 §10).
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct PluginInfo {
+    pub name: String,
+    /// The plugin API version it is written against.
+    pub api: f64,
+    /// Empty when it declares none.
+    pub sources: Vec<PluginSourceInfo>,
+}
+
+/// `PluginSourceInfo`: one event source a plugin declares.
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "ffi", derive(uniffi::Record))]
+pub struct PluginSourceInfo {
+    /// What `addInboxSource`'s plugin spec names as `source`.
+    pub name: String,
+    /// The kind of event, in the plugin's words: "New issues".
+    pub description: String,
+    /// What the user's filter means; `None` when the source takes no filter.
+    pub filter: Option<String>,
+    /// Its events only reach a task that already follows their thread.
+    pub followed_only: bool,
+}
+
+fn plugin_source_of(value: &Json) -> Option<PluginSourceInfo> {
+    Some(PluginSourceInfo {
+        name: text(value.get("name")).filter(|name| !name.is_empty())?,
+        description: text(value.get("description")).unwrap_or_default(),
+        filter: text(value.get("filter")),
+        followed_only: flag(value.get("followedOnly")),
+    })
+}
+
+/// `view.host.plugins`, typed: the entries `plugin_infos` kept, each with
+/// its sources; a source without a name is dropped.
+pub fn plugins_of(host: Option<&Json>) -> Vec<PluginInfo> {
+    list(host.and_then(|host| host.get("plugins")), |entry| {
+        Some(PluginInfo {
+            name: text(entry.get("name"))?,
+            api: number(entry.get("api")),
+            sources: list(entry.get("sources"), plugin_source_of),
+        })
+    })
+}

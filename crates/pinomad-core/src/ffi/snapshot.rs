@@ -6,7 +6,7 @@ use crate::chat::{agent_of, queue_items, status_text};
 use crate::cot_view::ChatEntry;
 use crate::ffi::providers::{providers_of, HostProviders};
 use crate::ffi::upgrade::{auto_upgrade_of, upgrade_of, AutoUpgradeMode, HostUpgradeState};
-use crate::inbox::{external_sources_of, inboxes_of, ProjectInbox, QuietHours};
+use crate::inbox::{external_sources_of, inboxes_of, plugins_of, PluginInfo, ProjectInbox, QuietHours};
 use crate::ffi::types::*;
 use crate::json::{Json, JsonObject};
 use crate::u16str::U16String;
@@ -82,6 +82,11 @@ pub struct ClientSnapshot {
     /// an older host; the add-source dialog offers only schedules then.
     #[uniffi(default = None)]
     pub inbox_external_sources: Option<bool>,
+    /// The host's loaded plugins (`hello.plugins`, replaced by each
+    /// `plugins` frame), for the add-source form's plugin sources. Empty on
+    /// a host before 5.34 or with none loaded.
+    #[uniffi(default = [])]
+    pub plugins: Vec<PluginInfo>,
 }
 
 /// The part of `HostSettings` (settings.ts) the settings page edits.
@@ -584,5 +589,6 @@ pub(crate) fn build(remote: &RemoteDurable) -> Option<ClientSnapshot> {
         mcp: mcp_of(&view),
         inbox: view.get("inbox").and_then(inboxes_of),
         inbox_external_sources: view.get("inbox").and_then(external_sources_of),
+        plugins: plugins_of(view.get("host")),
     })
 }

@@ -54,6 +54,14 @@ enum Route: Hashable {
     case provider(host: String, id: String, method: LoginMethod?)
     /// Add a custom endpoint, or edit the one with this id.
     case customEndpoint(host: String, id: String?)
+    // The Inbox's pages (ADR-0051). An intake or task that already has its
+    // conversation opens it as `.conversation`.
+    /// A project's intake before its first message: sending opens it.
+    case intakeDraft(hostKey: String, project: String)
+    /// A task the worker hasn't taken yet: its events, place and Skip.
+    case inboxTask(hostKey: String, project: String, task: String)
+    /// A project Inbox's rules, event sources and follow-ups.
+    case inboxSettings(hostKey: String, project: String)
 }
 
 /// The page for a route. The root stack and the settings sheet's own stack
@@ -99,6 +107,12 @@ struct RouteDestination: View {
             ProvidersGate(model: model, hostKey: hostKey) { _ in
                 CustomEndpointView(model: model, hostKey: hostKey, providerId: id)
             }
+        case .intakeDraft(let hostKey, let project):
+            IntakeDraftView(model: model, hostKey: hostKey, project: project)
+        case .inboxTask(let hostKey, let project, let task):
+            QueuedTaskView(model: model, hostKey: hostKey, project: project, taskId: task)
+        case .inboxSettings(let hostKey, let project):
+            InboxSettingsView(model: model, hostKey: hostKey, project: project)
         }
     }
 }
@@ -115,7 +129,8 @@ extension Route {
              .hostModels(let hostKey), .hostAgents(let hostKey), .hostChats(let hostKey),
              .hostDevices(let hostKey), .hostAbout(let hostKey),
              .providerSubscriptions(let hostKey), .providerKeys(let hostKey),
-             .provider(let hostKey, _, _), .customEndpoint(let hostKey, _):
+             .provider(let hostKey, _, _), .customEndpoint(let hostKey, _),
+             .intakeDraft(let hostKey, _), .inboxTask(let hostKey, _, _), .inboxSettings(let hostKey, _):
             HostFocus(hostKey: hostKey)
         case .settings, .general, .addHost, .hosts, .account: nil
         }

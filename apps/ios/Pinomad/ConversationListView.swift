@@ -26,7 +26,18 @@ struct ConversationListView: View {
                     .announces(model.lastError)
                     .listRowBackground(Color.clear)
             }
-            if !query.isEmpty {
+            if mode == .inbox {
+                ForEach(model.machines, id: \.hostKey) { host in
+                    Section {
+                        InboxMachineRows(model: model, hostKey: host.hostKey, query: query)
+                    } header: {
+                        MachineHeader(
+                            label: model.machineLabel(host.hostKey),
+                            online: model.isConnected(host.hostKey)
+                        )
+                    }
+                }
+            } else if !query.isEmpty {
                 searchResults(roots)
             } else {
                 if model.machines.contains(where: {
@@ -55,13 +66,25 @@ struct ConversationListView: View {
         .scrollContentBackground(.hidden)
         .background(Color(.systemGroupedBackground))
         .overlay {
-            if !query.isEmpty, !roots.contains(where: { matches($0.node) }) {
+            if mode == .coding, !query.isEmpty, !roots.contains(where: { matches($0.node) }) {
                 ContentUnavailableView.search(text: query)
             }
         }
         .navigationBarTitleDisplayMode(.inline)
-        .searchable(text: $query, prompt: "Search conversations")
+        .searchable(text: $query, prompt: mode == .inbox ? "Search tasks" : "Search conversations")
         .toolbar {
+            // Coding or Inbox (ADR-0051 §1); only once a host has an Inbox.
+            if inboxAvailable {
+                ToolbarItem(placement: .principal) {
+                    Picker("Mode", selection: Binding(get: { mode }, set: { model.homeMode = $0 })) {
+                        ForEach(HomeMode.allCases, id: \.self) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                }
+            }
             ToolbarItem(placement: .topBarLeading) {
                 Button {
                     // The only way to the account: signed in, its page;
@@ -85,16 +108,29 @@ struct ConversationListView: View {
             }
             DefaultToolbarItem(kind: .search, placement: .bottomBar)
             ToolbarSpacer(.flexible, placement: .bottomBar)
-            ToolbarItem(placement: .bottomBar) {
-                // The draft of the machine last shown; its page offers the
-                // others.
-                Button("New", image: .squarePen) {
-                    guard let hostKey = model.currentHostKey else { return }
-                    model.navPath.append(.newConversation(hostKey: hostKey))
+            // The Inbox takes new work through each project's intake.
+            if mode == .coding {
+                ToolbarItem(placement: .bottomBar) {
+                    // The draft of the machine last shown; its page offers the
+                    // others.
+                    Button("New", image: .squarePen) {
+                        guard let hostKey = model.currentHostKey else { return }
+                        model.navPath.append(.newConversation(hostKey: hostKey))
+                    }
+                    .disabled(!model.connected)
                 }
-                .disabled(!model.connected)
             }
         }
+    }
+
+    /// Whether any machine has an Inbox to show (5.38 and later).
+    private var inboxAvailable: Bool {
+        model.machines.contains { model.inboxes($0.hostKey) != nil }
+    }
+
+    /// The mode shown: Coding until a host has an Inbox.
+    private var mode: HomeMode {
+        inboxAvailable ? model.homeMode : .coding
     }
 
     /// While searching, the matching roots of every machine replace the
@@ -143,7 +179,7 @@ private struct MachineGroup: View {
             }
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden, edges: .bottom)
-        } else if let organized = runtime?.snapshot?.organized {
+        } else if let organized = model.codingOrganized(hostKey) {
             groups(organized, connected: runtime?.isConnectedNow ?? false)
         } else {
             GroupRowsSkeleton()
@@ -245,7 +281,7 @@ func allRoots(_ organized: Organized) -> [(node: ConversationNode, project: Stri
 
 /// A machine's section header: its name and connection dot — the only
 /// place the app shows host state (#252).
-private struct MachineHeader: View {
+struct MachineHeader: View {
     let label: String
     let online: Bool
 

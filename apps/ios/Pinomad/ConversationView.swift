@@ -55,7 +55,10 @@ struct ConversationView: View {
         // Read the node once per version: the title, agent, retry rule and
         // card facts all derive from it.
         let node = self.node
-        let title = node.map { conversationName(summary: $0.summary) } ?? "Conversation"
+        // An Inbox task reads as its task; the intake as the project's intake.
+        let inboxPlace = Inbox.place(of: conversationId, in: model.snapshot?.inbox)
+        let title = inboxPlace.map { $0.task.map { $0.title.isEmpty ? "Task" : $0.title } ?? "Intake" }
+            ?? node.map { conversationName(summary: $0.summary) } ?? "Conversation"
         let isSubagent = node?.summary.kind == .subagent
         // A subagent is read-only; the user can only stop it (ADR-0047 §2).
         let canStop = isSubagent
@@ -265,6 +268,11 @@ struct ConversationView: View {
         .task {
             if connected { model.openConversation(ref) }
         }
+        // An Inbox conversation opened straight from Home's root — a tapped
+        // `notify` push — goes back to the Inbox list, not the coding one.
+        .onChange(of: isInboxConversation, initial: true) { _, isInbox in
+            if isInbox, model.navPath == [.conversation(ref)] { model.homeMode = .inbox }
+        }
         // A push can show this page before the host connects. Subscribe only
         // when ready, rather than turning the initial load into a failed open.
         .onChange(of: connected) { _, connected in
@@ -305,6 +313,10 @@ struct ConversationView: View {
         #endif
     }
 
+    private var isInboxConversation: Bool {
+        Inbox.place(of: conversationId, in: model.runtimes[ref.hostKey]?.snapshot?.inbox) != nil
+    }
+
     private var connected: Bool {
         guard let snapshot = model.snapshot else { return false }
         return snapshot.connection == .connected && !snapshot.unauthorized
@@ -323,6 +335,22 @@ struct ConversationView: View {
         }
         if let branch = conversation?.checkout?.branch { parts.append(branch) }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// The Inbox this conversation belongs to, with its tasks as they stand,
+    /// for the batch and filed-task cards; nil outside the Inbox.
+    private func inboxContext() -> InboxContext? {
+        guard let snapshot = model.snapshot,
+              let place = Inbox.place(of: conversationId, in: snapshot.inbox)
+        else { return nil }
+        return InboxContext(
+            place: place,
+            tasks: Inbox.describe(place.inbox, summaries: Inbox.summaries(snapshot.organized)))
+    }
+
+    private func openInboxTask(_ task: InboxTask, in inbox: InboxContext?) {
+        guard let project = inbox?.place.inbox.project else { return }
+        model.navPath.append(model.taskRoute(ref.hostKey, project: project, task))
     }
 
     /// Record where to return before the session switches to the child. The
@@ -404,9 +432,10 @@ struct ConversationView: View {
             local: conversation.localSubmissions,
             attachmentDetails: model.sentFileDetails
         )
+        let inbox = inboxContext()
         ForEach(rows) { row in
             transcriptRow(row, conversation: conversation, retry: retry, latestRun: latestRun,
-                          subagentSummaries: subagentSummaries, todo: todo)
+                          subagentSummaries: subagentSummaries, todo: todo, inbox: inbox)
         }
     }
 
@@ -417,7 +446,8 @@ struct ConversationView: View {
         retry: RetryRequest?,
         latestRun: String?,
         subagentSummaries: [UInt64: SubagentCardSummary],
-        todo: TodoLine?
+        todo: TodoLine?,
+        inbox: InboxContext?
     ) -> some View {
         switch row {
         case let .entry(entry, status):
@@ -445,10 +475,17 @@ struct ConversationView: View {
                        retry: retryRequest.map { request in
                            { model.retry(request, conversation: conversationId) }
                        },
-                       retryKey: retryRequest?.requestId).equatable()
-            case .inboxBatch:
-                // The batch's event card is #809's; until then a marker stands in.
-                MarkerRow("Inbox events")
+                       retryKey: retryRequest?.requestId,
+                       filed: inbox.map { InboxFiledCard.of(cot, tasks: $0.tasks) } ?? [],
+                       openTask: { task in openInboxTask(task, in: inbox) }).equatable()
+            case let .inboxBatch(_, _, eventIds, timestamp):
+                let events = Inbox.batchEvents(eventIds, task: inbox?.place.task)
+                if events.isEmpty {
+                    // The Inbox no longer lists them (or this host has no Inbox): say what the message was.
+                    MarkerRow("Inbox events")
+                } else {
+                    InboxEventCard(events: events, startedAt: timestamp, today: clock.today).equatable()
+                }
             case .compaction:
                 MarkerRow("Context compacted")
             case .reset:
@@ -664,6 +701,10 @@ private struct RunRow: View, Equatable {
     let retry: (() -> Void)?
     /// What `retry` resends — the closure itself can't be compared.
     let retryKey: String?
+    /// An intake's filed tasks, as they stand now (ADR-0051 §6).
+    let filed: [InboxFiledCard]
+    /// Opens a filed task; not part of equality.
+    let openTask: (InboxTask) -> Void
 
     var body: some View {
         // Split only when this row's body runs — `.equatable()` skips it
@@ -684,6 +725,9 @@ private struct RunRow: View, Equatable {
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
                     .accessibilityLabel(Text(time.full))
+            }
+            if !filed.isEmpty {
+                InboxFiledCards(cards: filed, open: openTask)
             }
             if let failure {
                 RunFailureView(raw: failure)
@@ -706,7 +750,15 @@ private struct RunRow: View, Equatable {
             && lhs.interrupted == rhs.interrupted && lhs.failure == rhs.failure
             && lhs.stream === rhs.stream && lhs.retryKey == rhs.retryKey
             && lhs.endedAt == rhs.endedAt && lhs.today == rhs.today
+            && lhs.filed == rhs.filed
     }
+}
+
+/// The Inbox around a transcript: where the conversation sits and every
+/// task of its Inbox by id.
+private struct InboxContext {
+    let place: InboxPlace
+    let tasks: [String: InboxTaskInfo]
 }
 
 /// Why a run died: the provider's status and message, with the raw error
