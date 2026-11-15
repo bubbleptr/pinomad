@@ -277,14 +277,9 @@ function TasksSurface({
       ? `${runningProcesses} ${runningProcesses === 1 ? "process" : "processes"} running`
       : undefined,
   ].filter((part) => part !== undefined);
-  // In an Inbox the bar names it and counts its tasks; the subagent rows still follow.
-  const barParts =
-    inbox === undefined
-      ? tally
-      : [
-          `${view.organized.projects.find((entry) => entry.project.path === inbox.project)?.project.name ?? inbox.project.split("/").at(-1)} Inbox`,
-          ...inboxTally(inbox, view),
-        ];
+  // In an Inbox the bar counts its open tasks (the header already names the
+  // project); the subagent rows still follow.
+  const barParts = inbox === undefined ? tally : inboxTally(inbox, view);
   return (
     <div className="flex flex-col h-full min-h-0">
       <SurfaceBar start={barStart} end={barEnd}>
