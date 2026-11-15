@@ -115,22 +115,37 @@ try {
       continue;
     }
     const project = projects[index]!;
-    for (const [n, event] of each.events.entries()) {
-      await addInboxEvent(host.harness, project, { id: `${index}-${n}`, ...event }, context);
-    }
     const deadline = Date.now() + CASE_TIMEOUT_MS;
+    /** Wait until the task's run has stopped: closed, or waiting on the user. */
+    const settled = async (): Promise<InboxTask | undefined> => {
+      for (;;) {
+        const current = await taskOf(project);
+        const handled = current?.events.every((each) => each.handled) === true;
+        if ((handled && (current?.closed === true || current?.waiting === true)) || Date.now() > deadline) return current;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    };
+    // Later events go to the same task, as a followed thread's would: the
+    // score is the ending after the last one.
     let task: InboxTask | undefined;
-    for (;;) {
-      task = await taskOf(project);
-      if (task?.closed === true || task?.waiting === true || Date.now() > deadline) break;
-      await new Promise((resolve) => setTimeout(resolve, 500));
+    let notifiedBefore = 0;
+    for (const [n, event] of each.events.entries()) {
+      notifiedBefore = ((await host.harness.snapshot(OutboxDoc, context))?.messages ?? []).filter((message) => message.task === task?.id).length;
+      await addInboxEvent(host.harness, project, { id: `${index}-${n}`, ...event, ...(task === undefined ? {} : { task: task.id }) }, context);
+      task = await settled();
     }
-    const notified = ((await host.harness.snapshot(OutboxDoc, context))?.messages ?? []).some((message) => message.task === task?.id);
+    // Out of time: stop the run (and its subagents) before counting what it cost.
+    const timedOut = Date.now() > deadline;
+    if (timedOut && task?.conversationId !== undefined) {
+      await (await host.harness.conversation(task.conversationId, context))?.abort(context, { background: true });
+      task = await taskOf(project);
+    }
+    const notified = ((await host.harness.snapshot(OutboxDoc, context))?.messages ?? []).filter((message) => message.task === task?.id).length > notifiedBefore;
     const replies = task?.conversationId === undefined ? { cost: 0 } : await repliesOf(task.conversationId);
     // A run that failed says nothing about the rules: scored as an error, never as "quiet".
     const failure = task?.failed ?? replies.error;
     const got: Outcome | "timeout" | "error" =
-      failure !== undefined ? "error" : task?.waiting === true ? "ask" : task?.closed !== true ? "timeout" : notified ? "notify" : "quiet";
+      failure !== undefined ? "error" : timedOut ? "timeout" : task?.waiting === true ? "ask" : task?.closed !== true ? "timeout" : notified ? "notify" : "quiet";
     spent += replies.cost;
     results.push({ name: each.name, expect: each.expect, got, cost: replies.cost, ...(failure === undefined ? {} : { error: failure }) });
     console.log(
