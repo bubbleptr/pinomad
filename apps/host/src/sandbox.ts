@@ -64,6 +64,19 @@ export const CREDENTIAL_PATHS: readonly string[] = [
   ".bash_history",
   ".zsh_history",
   ".histfile",
+  // Where people export tokens; the sandbox HOME never sources them.
+  ".profile",
+  ".bashrc",
+  ".bash_profile",
+  ".bash_login",
+  ".zshrc",
+  ".zshenv",
+  ".zprofile",
+  ".zlogin",
+  ".config/fish",
+  ".env",
+  ".gitconfig",
+  ".config/git/config",
   "Library/Keychains",
   "Library/Cookies",
   "Library/Application Support/Google/Chrome",
@@ -98,7 +111,11 @@ export function credentialEnv(name: string): boolean {
   );
 }
 
-/** `env` without credential variables, with HOME and the XDG dirs moved to `home`. */
+/**
+ * `env` without credential variables, with HOME, the XDG dirs and the package
+ * caches moved to `home`: the real HOME is read-only in the sandbox, so an
+ * install that caches there would fail.
+ */
 export function scrubEnv(env: Readonly<Record<string, string | undefined>>, home: string): Record<string, string> {
   const result: Record<string, string> = {};
   for (const [name, value] of Object.entries(env)) {
@@ -112,22 +129,30 @@ export function scrubEnv(env: Readonly<Record<string, string | undefined>>, home
     XDG_DATA_HOME: join(home, ".local", "share"),
     XDG_CACHE_HOME: join(home, ".cache"),
     XDG_STATE_HOME: join(home, ".local", "state"),
+    BUN_INSTALL_CACHE_DIR: join(home, ".bun", "install", "cache"),
+    CARGO_HOME: join(home, ".cargo"),
+    GOPATH: join(home, "go"),
+    GOMODCACHE: join(home, "go", "pkg", "mod"),
+    npm_config_cache: join(home, ".npm"),
   };
 }
 
 /**
  * What an Inbox run may touch. Paths are canonical. Reads are allowed except
- * under `hidden`; writes only under `writable` and `own`; `own` is readable and
- * writable even inside `hidden`; `frozen` is read-only even inside `own`.
+ * under `hidden`; writes only under `writable` and `own`. Inside `hidden`,
+ * `visible` is readable again and `own` readable and writable; `frozen` is
+ * read-only even inside `own`.
  */
 export type SandboxPolicy = {
   /** The run's HOME. */
   readonly home: string;
-  /** Credential paths and the host's data dir. */
+  /** Credential paths, agent sockets and the host's data dir. */
   readonly hidden: readonly string[];
+  /** Message attachments in the data dir, which the run reads but does not change. */
+  readonly visible: readonly string[];
   /** Temp dirs and devices. */
   readonly writable: readonly string[];
-  /** The working directory, the sandbox HOME and the repository's git dir. */
+  /** The checkout (or project dir), the sandbox HOME and the repository's git dir. */
   readonly own: readonly string[];
   /** Git hooks and config: code planted there would run outside the sandbox. */
   readonly frozen: readonly string[];
@@ -145,10 +170,8 @@ const TOOLCHAIN_HOMES: Readonly<Record<string, string>> = {
   MISE_STATE_DIR: ".local/state/mise",
   ASDF_DATA_DIR: ".asdf",
   RUSTUP_HOME: ".rustup",
-  CARGO_HOME: ".cargo",
   NVM_DIR: ".nvm",
   VOLTA_HOME: ".volta",
-  BUN_INSTALL: ".bun",
   PYENV_ROOT: ".pyenv",
   RBENV_ROOT: ".rbenv",
 };
@@ -159,6 +182,7 @@ const within = (path: string, roots: readonly string[]): boolean =>
 /** Whether `policy` lets a canonical `path` be read or written; the same order as the Seatbelt profile. */
 export function permits(policy: SandboxPolicy, path: string, access: "read" | "write"): boolean {
   if (within(path, policy.own)) return access === "read" || !within(path, policy.frozen);
+  if (within(path, policy.visible)) return access === "read";
   if (within(path, policy.hidden)) return false;
   return access === "read" || within(path, policy.writable);
 }
@@ -191,15 +215,24 @@ export async function inboxSandboxPolicy(input: {
   const home = join(input.dataDir, "inbox-home", createHash("sha256").update(input.project).digest("hex").slice(0, 16));
   await mkdir(home, { recursive: true });
   await seedGitIdentity(input.cwd, home);
-  const common = await run("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd: input.cwd }).then(
-    ({ stdout }) => stdout.trim(),
-    () => undefined,
+  // The whole checkout belongs to the run, not only the project's subdirectory, and so does the
+  // repository's git dir: a worktree's index and refs live there.
+  const [top, common] = await Promise.all(
+    [["--show-toplevel"], ["--path-format=absolute", "--git-common-dir"]].map((args) =>
+      run("git", ["rev-parse", ...args], { cwd: input.cwd }).then(({ stdout }) => stdout.trim(), () => undefined),
+    ),
   );
   const temps = new Set(await Promise.all([tmpdir(), "/tmp", "/var/tmp", ...(process.env.TMPDIR ? [process.env.TMPDIR] : [])].map(canonical)));
-  // The runtime dir holds the keyring's D-Bus socket and the gpg and ssh agents; D-Bus finds it by uid even without the variable.
-  const runtime =
+  // The runtime dir holds the keyring's D-Bus socket and the gpg and ssh agents; D-Bus finds it by uid
+  // even without the variable. On macOS the profile refuses unix-socket connections instead.
+  const sockets =
     process.platform === "linux"
-      ? [`/run/user/${process.getuid!()}`, ...(process.env.XDG_RUNTIME_DIR ? [process.env.XDG_RUNTIME_DIR] : [])]
+      ? [
+          `/run/user/${process.getuid!()}`,
+          ...(process.env.XDG_RUNTIME_DIR ? [process.env.XDG_RUNTIME_DIR] : []),
+          "/run/docker.sock",
+          "/var/run/docker.sock",
+        ]
       : [];
   const toolchains: Record<string, string> = {};
   for (const [name, path] of Object.entries(TOOLCHAIN_HOMES)) {
@@ -207,11 +240,14 @@ export async function inboxSandboxPolicy(input: {
   }
   const canonicalAll = (paths: readonly string[]) => Promise.all(paths.map(canonical));
   const gitDir = common === undefined ? undefined : await canonical(common);
+  // bubblewrap can only make an existing path read-only; a missing hooks dir would be the run's to create.
+  if (gitDir !== undefined) await mkdir(join(gitDir, "hooks"), { recursive: true });
   return {
     home: await canonical(home),
-    hidden: await canonicalAll([...CREDENTIAL_PATHS.map((path) => join(realHome, path)), input.dataDir, ...runtime]),
+    hidden: await canonicalAll([...CREDENTIAL_PATHS.map((path) => join(realHome, path)), input.dataDir, ...sockets]),
+    visible: [await canonical(join(input.dataDir, "attachments"))],
     writable: [...temps, "/dev"],
-    own: await canonicalAll([input.cwd, home, ...(gitDir === undefined ? [] : [gitDir])]),
+    own: await canonicalAll([input.cwd, ...(top === undefined ? [] : [top]), home, ...(gitDir === undefined ? [] : [gitDir])]),
     frozen: gitDir === undefined ? [] : [join(gitDir, "hooks"), join(gitDir, "config")],
     toolchains,
   };
@@ -281,6 +317,7 @@ export function seatbeltArgs(policy: SandboxPolicy): string[] {
     "(version 1)",
     "(allow default)",
     `(deny file-read* ${paths("HIDDEN", policy.hidden)})`,
+    ...(policy.visible.length === 0 ? [] : [`(allow file-read* ${paths("VISIBLE", policy.visible)})`]),
     "(deny file-write*)",
     `(allow file-write* ${paths("WRITABLE", policy.writable)})`,
     `(deny file-write* ${paths("HIDDENW", policy.hidden)})`,
@@ -288,16 +325,24 @@ export function seatbeltArgs(policy: SandboxPolicy): string[] {
     ...(policy.frozen.length === 0 ? [] : [`(deny file-write* ${paths("FROZEN", policy.frozen)})`]),
     // The keychain is a service, not a file: `security` and credential helpers reach it over mach.
     '(deny mach-lookup (global-name "com.apple.SecurityServer") (global-name "com.apple.securityd.xpc"))',
+    // Unix sockets reach agents and daemons outside the sandbox (ssh-agent, gpg-agent, docker, tmux);
+    // the resolver's is the one a build needs.
+    "(deny network-outbound (remote unix-socket))",
+    '(allow network-outbound (remote unix-socket (path-literal "/private/var/run/mDNSResponder")))',
     // Other processes' arguments and environment (the host's included).
     "(deny process-info* (target others))",
   ];
   return ["-p", rules.join("\n"), ...params];
 }
 
-/** bubblewrap arguments for `policy`: the root read-only, hidden paths masked, own dirs bound back. */
+/**
+ * bubblewrap arguments for `policy`: the root read-only, temp dirs private
+ * (agents and tmux keep their sockets in /tmp), hidden paths masked, own dirs
+ * bound back.
+ */
 export async function bwrapArgs(policy: SandboxPolicy, cwd: string): Promise<string[]> {
   const args = ["--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--unshare-pid", "--die-with-parent"];
-  for (const path of policy.writable) if (path !== "/dev" && (await exists(path))) args.push("--bind", path, path);
+  for (const path of policy.writable) if (path !== "/dev" && (await exists(path))) args.push("--tmpfs", path);
   for (const path of policy.hidden) {
     const info = await stat(path).catch(() => undefined);
     if (info === undefined) continue;
@@ -305,6 +350,7 @@ export async function bwrapArgs(policy: SandboxPolicy, cwd: string): Promise<str
     if (info.isDirectory()) args.push("--perms", "0111", "--tmpfs", path);
     else args.push("--ro-bind", "/dev/null", path);
   }
+  for (const path of policy.visible) if (await exists(path)) args.push("--ro-bind", path, path);
   for (const path of policy.own) if (await exists(path)) args.push("--bind", path, path);
   for (const path of policy.frozen) if (await exists(path)) args.push("--ro-bind", path, path);
   args.push("--chdir", cwd);
@@ -330,7 +376,7 @@ export class SandboxedExecutionEnv extends NodeExecutionEnv {
 
   /** `argv` wrapped in the OS sandbox, with `env` scrubbed and HOME moved. */
   async launch(argv: readonly string[], env: Readonly<Record<string, string | undefined>>, cwd: string): Promise<{ argv: string[]; env: Record<string, string> }> {
-    const scrubbed = { ...this.policy.toolchains, ...scrubEnv(env, this.policy.home) };
+    const scrubbed = this.#env(env);
     const wrapped =
       this.#launcher === undefined
         ? [...argv]
@@ -340,15 +386,20 @@ export class SandboxedExecutionEnv extends NodeExecutionEnv {
     return { argv: wrapped, env: scrubbed };
   }
 
+  #env(env: Readonly<Record<string, string | undefined>>): Record<string, string> {
+    return { ...this.policy.toolchains, ...scrubEnv(env, this.policy.home) };
+  }
+
   override async exec(
     command: string | readonly string[],
     options: ShellExecOptions | undefined,
     context: Context,
   ): Promise<Result<ShellExecResult, ExecutionError>> {
-    const argv = typeof command === "string" ? [SHELL, "-c", command] : command;
     const base = options?.inheritEnv === false ? { ...options.env } : { ...process.env, ...options?.env };
+    // Without a sandbox program a command keeps the base class's shell lookup; only the environment changes.
+    const argv = typeof command === "string" && this.#launcher !== undefined ? [SHELL, "-c", command] : command;
     const cwd = options?.cwd === undefined ? this.cwd : resolve(this.cwd, options.cwd);
-    const launched = await this.launch(argv, base, cwd);
+    const launched = typeof argv === "string" ? { argv, env: this.#env(base) } : await this.launch(argv, base, cwd);
     return await super.exec(launched.argv, { ...options, env: launched.env, inheritEnv: false }, context);
   }
 

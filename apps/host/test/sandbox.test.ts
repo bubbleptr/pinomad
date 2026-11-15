@@ -2,7 +2,9 @@
 // own HOME, an environment without credentials, and an OS sandbox that hides
 // the user's credential files and the host's data dir.
 import { execFile } from "node:child_process";
-import { mkdir, readFile, realpath, symlink, writeFile } from "node:fs/promises";
+import { once } from "node:events";
+import { mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -47,17 +49,28 @@ async function fakeHome(): Promise<string> {
   await writeFile(join(home, ".ssh", "id_ed25519"), "PRIVATE KEY");
   await mkdir(join(home, ".config", "gh"), { recursive: true });
   await writeFile(join(home, ".config", "gh", "hosts.yml"), "oauth_token: gho_secret");
+  await writeFile(join(home, ".zshrc"), "export GH_TOKEN=gho_secret");
   return home;
 }
 
-async function gitWorktree(): Promise<{ repo: string; worktree: string }> {
+/**
+ * A worktree laid out as the host makes them: under `<dataDir>/worktrees`, the
+ * project a subdirectory of the repository. The repository has no hooks dir,
+ * so the sandbox must not let a run create one.
+ */
+async function gitWorktree(dataDir?: string): Promise<{ repo: string; worktree: string; cwd: string }> {
   const repo = await temp();
   const git = (...args: string[]) => exec("git", args, { cwd: repo });
   await git("init", "-q", "-b", "main");
-  await git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "init");
-  const worktree = join(await temp(), "wt");
+  await rm(join(repo, ".git", "hooks"), { recursive: true, force: true });
+  await mkdir(join(repo, "pkg"));
+  await writeFile(join(repo, "root.txt"), "root");
+  await writeFile(join(repo, "pkg", "index.js"), "");
+  await git("add", ".");
+  await git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init");
+  const worktree = join(dataDir ?? (await temp()), "worktrees", "wt");
   await git("worktree", "add", "-q", "-b", "task", worktree);
-  return { repo, worktree };
+  return { repo, worktree, cwd: join(worktree, "pkg") };
 }
 
 async function run(env: Awaited<ReturnType<typeof openSandboxedEnv>>, command: string, extra?: Record<string, string>, inheritEnv = true) {
@@ -108,8 +121,11 @@ describe("scrubEnv", () => {
     }
   });
 
-  it("points HOME and the XDG dirs at the sandbox home", () => {
-    const env = scrubEnv({ PATH: "/usr/bin", HOME: "/Users/me", XDG_CONFIG_HOME: "/Users/me/.config", GH_TOKEN: "x" }, "/sandbox");
+  it("points HOME, the XDG dirs and package caches at the sandbox home", () => {
+    const env = scrubEnv(
+      { PATH: "/usr/bin", HOME: "/Users/me", XDG_CONFIG_HOME: "/Users/me/.config", GH_TOKEN: "x", BUN_INSTALL: "/Users/me/.bun", CARGO_HOME: "/Users/me/.cargo" },
+      "/sandbox",
+    );
     expect(env).toEqual({
       PATH: "/usr/bin",
       HOME: "/sandbox",
@@ -117,22 +133,29 @@ describe("scrubEnv", () => {
       XDG_DATA_HOME: "/sandbox/.local/share",
       XDG_CACHE_HOME: "/sandbox/.cache",
       XDG_STATE_HOME: "/sandbox/.local/state",
+      // The real ones are read-only in the sandbox; an install that writes there fails.
+      BUN_INSTALL: "/Users/me/.bun",
+      BUN_INSTALL_CACHE_DIR: "/sandbox/.bun/install/cache",
+      CARGO_HOME: "/sandbox/.cargo",
+      GOPATH: "/sandbox/go",
+      GOMODCACHE: "/sandbox/go/pkg/mod",
+      npm_config_cache: "/sandbox/.npm",
     });
   });
 });
 
 describe("sandboxed environment", () => {
-  async function setup(): Promise<{ policy: SandboxPolicy; realHome: string; dataDir: string; repo: string; worktree: string }> {
+  async function setup() {
     const realHome = await fakeHome();
     const dataDir = await temp();
-    const { repo, worktree } = await gitWorktree();
-    const policy = await inboxSandboxPolicy({ dataDir, project: repo, cwd: worktree, realHome });
-    return { policy, realHome, dataDir, repo, worktree };
+    const { repo, worktree, cwd } = await gitWorktree(dataDir);
+    const policy = await inboxSandboxPolicy({ dataDir, project: join(repo, "pkg"), cwd, realHome });
+    const env = await openSandboxedEnv(cwd, policy);
+    return { policy, env, realHome, dataDir, repo, worktree, cwd };
   }
 
   it("gives commands the sandbox HOME and no credential variables", async () => {
-    const { policy, worktree } = await setup();
-    const env = await openSandboxedEnv(worktree, policy);
+    const { policy, env } = await setup();
     const out = await run(env, 'printf "%s|%s" "$HOME" "${GH_TOKEN-unset}"', { GH_TOKEN: "gho_leak" });
     expect(out.stdout).toBe(`${policy.home}|unset`);
   });
@@ -141,15 +164,14 @@ describe("sandboxed environment", () => {
     const realHome = await fakeHome();
     await mkdir(join(realHome, ".local", "share", "mise"), { recursive: true });
     await mkdir(join(realHome, ".rustup"));
-    const { repo, worktree } = await gitWorktree();
-    const policy = await inboxSandboxPolicy({ dataDir: await temp(), project: repo, cwd: worktree, realHome });
-    const env = await openSandboxedEnv(worktree, policy);
-    const out = await run(env, 'printf "%s|%s|%s|%s" "$MISE_DATA_DIR" "$RUSTUP_HOME" "${NVM_DIR-unset}" "$CARGO_HOME"', {
+    const { repo, cwd } = await gitWorktree();
+    const policy = await inboxSandboxPolicy({ dataDir: await temp(), project: repo, cwd, realHome });
+    const env = await openSandboxedEnv(cwd, policy);
+    const out = await run(env, 'printf "%s|%s|%s" "$MISE_DATA_DIR" "$RUSTUP_HOME" "${NVM_DIR-unset}"', {
       PATH: process.env.PATH!,
-      CARGO_HOME: "/opt/cargo",
+      MISE_DATA_DIR: "/opt/mise",
     }, false);
-    const real = await realpath(realHome);
-    expect(out.stdout).toBe(`${join(real, ".local", "share", "mise")}|${join(real, ".rustup")}|unset|/opt/cargo`);
+    expect(out.stdout).toBe(`/opt/mise|${join(await realpath(realHome), ".rustup")}|unset`);
   });
 
   it.runIf(process.platform === "linux")("hides the user's runtime dir, where the keyring's D-Bus socket lives", async () => {
@@ -158,10 +180,14 @@ describe("sandboxed environment", () => {
   });
 
   it("refuses the file tools a credential path, even through a symlink in the worktree", async () => {
-    const { policy, realHome, worktree, dataDir } = await setup();
-    const env = await openSandboxedEnv(worktree, policy);
+    const { env, realHome, worktree, dataDir } = await setup();
     await symlink(join(realHome, ".ssh"), join(worktree, "keys"));
-    for (const path of [join(realHome, ".ssh", "id_ed25519"), join(worktree, "keys", "id_ed25519"), join(dataDir, "auth.json")]) {
+    for (const path of [
+      join(realHome, ".ssh", "id_ed25519"),
+      join(realHome, ".zshrc"),
+      join(worktree, "keys", "id_ed25519"),
+      join(dataDir, "auth.json"),
+    ]) {
       const read = await env.readTextFile(path, context);
       expect(read.ok, path).toBe(false);
       if (!read.ok) expect(read.error.code).toBe("permission_denied");
@@ -171,20 +197,40 @@ describe("sandboxed environment", () => {
     const written = await env.writeFile(join(dataDir, "planted"), "x", context);
     expect(written.ok).toBe(false);
 
+    // The whole checkout is the run's, not only the project's subdirectory.
     expect((await env.writeFile(join(worktree, "notes.txt"), "fine", context)).ok).toBe(true);
     const read = await env.readTextFile(join(worktree, "notes.txt"), context);
     expect(read.ok && read.value).toBe("fine");
   });
 
+  it("lets the run read message attachments in the data dir, but not change them", async () => {
+    const { env, dataDir } = await setup();
+    await mkdir(join(dataDir, "attachments", "a1", "file"), { recursive: true });
+    await writeFile(join(dataDir, "attachments", "a1", "file", "log.txt"), "attached");
+    const read = await env.readTextFile(join(dataDir, "attachments", "a1", "file", "log.txt"), context);
+    expect(read.ok && read.value).toBe("attached");
+    expect((await env.writeFile(join(dataDir, "attachments", "a1", "file", "log.txt"), "x", context)).ok).toBe(false);
+    if (available) {
+      expect((await run(env, `cat ${join(dataDir, "attachments", "a1", "file", "log.txt")}`)).stdout).toBe("attached");
+    }
+  });
+
   it.runIf(available)("denies credential reads and writes outside the worktree and temp dirs at the OS level", async () => {
-    const { policy, realHome, dataDir, repo, worktree } = await setup();
-    const env = await openSandboxedEnv(worktree, policy);
+    const { env, realHome, dataDir, repo } = await setup();
+    const socket = join(await temp(), "agent.sock");
+    const server = createServer().listen(socket);
+    await once(server, "listening");
+    defer(() => new Promise<void>((done) => server.close(() => done())));
     const attempts = {
       ssh: `cat ${join(realHome, ".ssh", "id_ed25519")}`,
       gh: `ls ${join(realHome, ".config", "gh")}`,
+      rc: `cat ${join(realHome, ".zshrc")}`,
+      hardLink: `ln ${join(realHome, ".ssh", "id_ed25519")} key && cat key`,
       dataDir: `echo planted > ${join(dataDir, "planted")}`,
-      hooks: `echo 'exit 0' > ${join(repo, ".git", "hooks", "pre-commit")}`,
+      hooks: `mkdir -p ${join(repo, ".git", "hooks")} && echo 'exit 0' > ${join(repo, ".git", "hooks", "pre-commit")}`,
       gitConfig: `git config core.hooksPath /tmp`,
+      // An agent's socket (ssh-agent, gpg-agent, docker) acts with credentials the run cannot read.
+      socket: `node -e "require('net').connect('${socket}').on('connect', () => process.exit(0)).on('error', () => process.exit(3))"`,
     };
     for (const [name, command] of Object.entries(attempts)) {
       const out = await run(env, command);
@@ -192,15 +238,14 @@ describe("sandboxed environment", () => {
     }
   });
 
-  it.runIf(available)("still runs builds: node, git status and git commit in the worktree", async () => {
-    const { policy, worktree } = await setup();
-    const env = await openSandboxedEnv(worktree, policy);
+  it.runIf(available)("still runs builds: node, git status and git commit in the checkout", async () => {
+    const { env } = await setup();
     const out = await run(
       env,
-      "node -e 'console.log(1+1)' && git status --short && echo hi > a.txt && git add a.txt && git commit -q -m add && git log --oneline | wc -l && echo tmp > \"${TMPDIR:-/tmp}/sandbox-probe\"",
+      "node -e 'console.log(1+1)' && cat ../root.txt && echo && git status --short && echo hi > a.txt && git add a.txt && git commit -q -m add && git log --oneline | wc -l && echo tmp > \"${TMPDIR:-/tmp}/sandbox-probe\"",
     );
     expect(out.exitCode, out.stderr).toBe(0);
-    expect(out.stdout.split("\n").map((line) => line.trim())).toEqual(["2", "2", ""]);
+    expect(out.stdout.split("\n").map((line) => line.trim())).toEqual(["2", "root", "2", ""]);
   });
 });
 
