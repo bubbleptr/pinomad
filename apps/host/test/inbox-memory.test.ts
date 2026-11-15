@@ -7,8 +7,9 @@ import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/provid
 import type { ConversationId } from "@earendil-works/pi-durable";
 import { describe, expect, it } from "vitest";
 import type { OpenedHost } from "../src/host.ts";
-import { addInboxEvent, InboxDoc, type InboxTask, OutboxDoc } from "../src/inbox.ts";
+import { addInboxEvent, InboxDoc, type InboxTask, OutboxDoc, TimerDoc } from "../src/inbox.ts";
 import { memoryDir } from "../src/inbox-memory.ts";
+import { IndexDoc } from "../src/organization.ts";
 import { startFauxHost, tempDir, useCleanups } from "./support.ts";
 
 const context = BACKGROUND_CONTEXT;
@@ -182,5 +183,60 @@ describe("Inbox fixed context", () => {
     const [task] = await until(tasks, (all) => all[0]?.closed === true);
     const agent = await (await host.harness.conversation(task!.conversationId!, context))!.agent(context);
     expect(agent.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining(["memory_read", "memory_write", "memory_append", "memory_list"]));
+  });
+});
+
+describe("Inbox memory tidy-up", () => {
+  const timersOf = async (host: OpenedHost) => (await host.harness.snapshot(TimerDoc, context))?.timers ?? [];
+
+  it("gives each Inbox a daily tidy-up that runs with only the memory tools", async () => {
+    const { host, project, tasks } = await setup(["fixed", "tidied"]);
+    await addInboxEvent(host.harness, project, event("e1", "fix a bug"), context);
+    await until(tasks, (all) => all[0]?.closed === true);
+    const timer = (await until(() => timersOf(host), (timers) => timers.some((each) => each.kind === "tidy"))).find((each) => each.kind === "tidy");
+    expect(timer).toMatchObject({ kind: "tidy", every: 24 * 60 * 60_000, done: false });
+    expect(timer!.due).toBeGreaterThan(Date.now() + 23 * 60 * 60_000);
+
+    // Bring it due now: it opens a tidy-up task of its own.
+    await host.harness.commit(async (tx) => {
+      for (const each of (await tx.doc(TimerDoc)).timers) if (each.kind === "tidy") each.due = Date.now();
+    }, context);
+    const all = await until(tasks, (list) => list.length === 2 && list[1]!.closed);
+    const tidy = all[1]!;
+    expect(tidy.kind).toBe("tidy");
+    const agent = await (await host.harness.conversation(tidy.conversationId!, context))!.agent(context);
+    expect(agent.tools.map((tool) => tool.name).sort()).toEqual(["memory_append", "memory_list", "memory_read", "memory_write"]);
+    expect(await firstUserText(host, tidy.conversationId!)).toContain("Tidy this project's Inbox memory");
+    // One timer per Inbox, however often the Inbox changes.
+    expect((await timersOf(host)).filter((each) => each.kind === "tidy")).toHaveLength(1);
+  });
+
+  it("keeps the tidy-up of a removed project, so it resumes when the project is added back", async () => {
+    const { host, project, tasks } = await setup(["fixed", "tidied"]);
+    await addInboxEvent(host.harness, project, event("e1", "fix a bug"), context);
+    await until(tasks, (all) => all[0]?.closed === true);
+    const key = (await until(() => timersOf(host), (timers) => timers.some((each) => each.kind === "tidy"))).find((each) => each.kind === "tidy")!.project;
+    let removed: unknown;
+    await host.harness.commit(async (tx) => {
+      const index = await tx.doc(IndexDoc);
+      removed = JSON.parse(JSON.stringify(index.projects.find((each) => each.path === key) ?? null));
+      expect(removed).not.toBeNull();
+      index.projects = index.projects.filter((each) => each.path !== key);
+      for (const each of (await tx.doc(TimerDoc)).timers) if (each.kind === "tidy") each.due = Date.now();
+    }, context);
+    // Due while the project is gone: skipped, not ended.
+    const [skipped] = await until(
+      async () => (await timersOf(host)).filter((each) => each.kind === "tidy"),
+      (timers) => timers[0]!.due > Date.now() + 60_000,
+    );
+    expect(skipped!.done).toBe(false);
+    expect(await tasks()).toHaveLength(1);
+
+    await host.harness.commit(async (tx) => {
+      (await tx.doc(IndexDoc)).projects.push(removed as never);
+      for (const each of (await tx.doc(TimerDoc)).timers) if (each.kind === "tidy") each.due = Date.now();
+    }, context);
+    const all = await until(tasks, (list) => list.length === 2 && list[1]!.closed);
+    expect(all[1]!.kind).toBe("tidy");
   });
 });

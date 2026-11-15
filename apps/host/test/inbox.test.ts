@@ -246,7 +246,9 @@ describe("Inbox", () => {
 });
 
 describe("Inbox timers", () => {
-  const timersOf = async (host: OpenedHost) => (await host.harness.snapshot(TimerDoc, context))?.timers ?? [];
+  // The timers these tests set: every Inbox also gets its own tidy-up timer.
+  const timersOf = async (host: OpenedHost) =>
+    ((await host.harness.snapshot(TimerDoc, context))?.timers ?? []).filter((timer) => timer.kind !== "tidy");
 
   it("fires a schedule into the Inbox as a new task each time, once per due time", async () => {
     const project = await plainProject();
