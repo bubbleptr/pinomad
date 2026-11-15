@@ -270,7 +270,8 @@ export async function bwrapArgs(policy: SandboxPolicy, cwd: string): Promise<str
   for (const path of policy.hidden) {
     const info = await stat(path).catch(() => undefined);
     if (info === undefined) continue;
-    if (info.isDirectory()) args.push("--tmpfs", path);
+    // Traverse-only, so the own dirs bound back inside the data dir stay reachable but nothing lists.
+    if (info.isDirectory()) args.push("--perms", "0111", "--tmpfs", path);
     else args.push("--ro-bind", "/dev/null", path);
   }
   for (const path of policy.own) if (await exists(path)) args.push("--bind", path, path);
