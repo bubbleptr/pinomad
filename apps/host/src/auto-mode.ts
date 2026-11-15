@@ -8,7 +8,8 @@
 // to ask with ask_user_question, quoting the exact call with an ID bound to its
 // full arguments; once the user picks "Allow" on that question, that one call
 // passes. The quoted call is what the user approves, whatever the agent writes
-// around it. Subagents of a task are gated as the task is.
+// around it; a call short enough to quote whole needs only its tool and full
+// arguments, since agents drop the ID. Subagents of a task are gated as the task is.
 //
 // The intake conversation is not gated, except that a read of a credential
 // path or the host's data dir always asks the user there, without the rule
@@ -226,6 +227,25 @@ const OUTSIDE_ASK_BASH: readonly RegExp[] = [
   /\bgit\s+(?:push|clone|fetch|pull)\b/,
 ];
 
+/**
+ * A file tool writing inside the run's project, outside `.git` (hooks run
+ * code). The path is taken as pi's file tools take it (Unicode spaces made
+ * plain, a leading `@` dropped, `~` expanded; a `file:` URL is left to the
+ * classifier). Lexical like `credentialPath`: symlinks not followed.
+ * No cwd (the hook's "/") is no project.
+ */
+function editsProject(tool: string, args: JsonObject, where: RunPaths): boolean {
+  if ((tool !== "edit" && tool !== "write") || typeof args.path !== "string") return false;
+  const path = args.path.replace(/[\u00a0\u2000-\u200a\u202f\u205f\u3000]/g, " ").replace(/^@/, "");
+  if (/^file:/i.test(path)) return false;
+  const cwd = resolve(where.cwd);
+  if (cwd === sep) return false;
+  // Containment keeps case (on Linux `App` is not `app`); the `.git` match ignores it (on macOS `.GIT` is `.git`).
+  const target = resolve(where.cwd, path.replace(/^~(?=\/|$)/, where.home));
+  if (target === cwd || !under(target, cwd)) return false;
+  return !target.slice(cwd.length).toLowerCase().split(sep).includes(".git") && !credentialPath(target, where, false);
+}
+
 /** The rule table's answer, or undefined when the classifier must judge. */
 export function ruleFor(tool: string, args: JsonObject, trusted: boolean, where: RunPaths): "allow" | "block" | "ask" | undefined {
   const command = tool === "bash" && typeof args.command === "string" ? args.command : "";
@@ -235,6 +255,8 @@ export function ruleFor(tool: string, args: JsonObject, trusted: boolean, where:
   if (readsCredentials(tool, args, where)) return trusted ? undefined : "ask";
   if (SAFE_TOOLS.has(tool)) return "allow";
   if (tool === "bash" && readOnlyBash(command)) return "allow";
+  // Without outside content, editing the project is the task itself.
+  if (trusted && editsProject(tool, args, where)) return "allow";
   return undefined;
 }
 
@@ -274,8 +296,18 @@ export function classifierModel(
   return fallback === null ? undefined : { provider: fallback.provider, modelId: fallback.modelId };
 }
 
-/** A classifier backed by a model; `pick` chooses it on each call (a small one when the host has it). */
-export function modelClassifier(models: () => Models, pick: () => Model<string> | undefined): Classify {
+/**
+ * Room for the answer: the fallback is the user's default model, which may
+ * think first, and a reply cut short has no verdict to read.
+ */
+const CLASSIFIER_MAX_TOKENS = 2_000;
+
+/**
+ * A classifier backed by a model; `pick` chooses it on each call (a small one
+ * when the host has it). An answer without a verdict is asked once more, and
+ * logged with why the model stopped.
+ */
+export function modelClassifier(models: () => Models, pick: () => Model<string> | undefined, log: (line: string) => void = () => {}): Classify {
   return async (input) => {
     const model = pick();
     if (model === undefined) return { verdict: "ask", reason: "No model is available for the safety check." };
@@ -290,15 +322,27 @@ export function modelClassifier(models: () => Models, pick: () => Model<string> 
         },
       ],
     };
-    const reply = await models().completeSimple(model, request, { maxTokens: 200 });
-    if (reply.stopReason === "error") throw new Error(reply.errorMessage ?? "classifier failed");
-    return parseVerdict(reply.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join(""));
+    let verdict = UNCLEAR;
+    for (let attempt = 1; attempt <= 2 && verdict === UNCLEAR; attempt++) {
+      const reply = await models().completeSimple(model, request, { maxTokens: CLASSIFIER_MAX_TOKENS });
+      if (reply.stopReason === "error") throw new Error(reply.errorMessage ?? "classifier failed");
+      const text = reply.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
+      verdict = parseVerdict(text);
+      if (verdict === UNCLEAR) {
+        log(`auto mode: ${model.provider}/${model.id} gave no verdict (attempt ${attempt}, stop: ${reply.stopReason}): ${JSON.stringify(text.slice(0, 300))}`);
+      }
+    }
+    return verdict;
   };
 }
 
 /** What auto mode decided, per conversation, newest last; for the Tasks page and tuning the rules. */
 export type AutoDecision = { tool: string; verdict: AutoVerdict["verdict"]; reason: string; by: "rule" | "classifier" | "user"; at: number };
-/** `granted`: question requests whose "Allow" already let a call through; each approves one call, also across restarts. */
+/**
+ * `granted`: the "Allow"s already spent, as `<request id>/<call ID>`; each lets
+ * one call it quotes through once, also across restarts. A bare request id is
+ * from before one question could approve several calls, and spends the whole request.
+ */
 export const AutoModeDoc = defineDoc<{ decisions: AutoDecision[]; granted: string[] }>({
   kind: "pinomad.auto-mode",
   version: 1,
@@ -317,10 +361,11 @@ const SHOWN_LIMIT = 2_000;
  * The call as the user approves it: an ID bound to the tool and its full
  * arguments, then the call itself. The question must quote all of it.
  */
+const callId = (tool: string, json: string): string => createHash("sha256").update(`${tool}\n${json}`).digest("hex").slice(0, 32);
+
 export const callQuote = (tool: string, args: JsonObject): string => {
   const json = JSON.stringify(args);
-  const id = createHash("sha256").update(`${tool}\n${json}`).digest("hex").slice(0, 32);
-  return `[call ${id}] ${tool}: ${json.length > SHOWN_LIMIT ? `${json.slice(0, SHOWN_LIMIT)}…` : json}`;
+  return `[call ${callId(tool, json)}] ${tool}: ${json.length > SHOWN_LIMIT ? `${json.slice(0, SHOWN_LIMIT)}…` : json}`;
 };
 
 const askText = (quote: string, reason: string, subagent: boolean): string =>
@@ -329,6 +374,14 @@ const askText = (quote: string, reason: string, subagent: boolean): string =>
     : `Not run: this needs the user's OK (${reason || "the safety check is not sure"}). ` +
       `Ask with ask_user_question, quoting this call exactly in the question — ${quote} — with the options "Allow" and "Deny". ` +
       "If they allow it, make the same call again; otherwise find another way or stop.";
+
+/** Whether `text` quotes `binding` as a whole: not as the tail of a longer tool name (`subbash: …` is not `bash: …`). */
+function quotes(text: string, binding: string): boolean {
+  for (let at = text.indexOf(binding); at !== -1; at = text.indexOf(binding, at + 1)) {
+    if (at === 0 || !/[\w-]/.test(text[at - 1]!)) return true;
+  }
+  return false;
+}
 
 type QuestionRequest = {
   readonly id?: string;
@@ -376,6 +429,9 @@ export function createAutoMode(options: {
           // The intake is gated only where it reads credentials or the host's data.
           if (intake && !readsCredentials(call.name, args, where)) return undefined;
           const quote = callQuote(call.name, args);
+          // Agents tend to drop the ID; a call short enough to quote whole is bound by its full arguments alone.
+          const json = JSON.stringify(args);
+          const binding = json.length > SHOWN_LIMIT ? quote : `${call.name}: ${json}`;
           const decide = (verdict: AutoVerdict, by: AutoDecision["by"]) => {
             record(api.conversationId, { tool: call.name, verdict: verdict.verdict, reason: verdict.reason, by, at: Date.now() });
             if (verdict.verdict === "allow") return undefined;
@@ -388,17 +444,18 @@ export function createAutoMode(options: {
             const doc = await api.snapshot(token, api.conversationId, context);
             for (const request of (doc?.requests ?? []) as readonly QuestionRequest[]) {
               if (request.id === undefined || request.resolution?.outcome !== "answered" || auto?.granted.includes(request.id) === true) continue;
+              const grant = `${request.id}/${callId(call.name, json)}`;
+              if (auto?.granted.includes(grant) === true) continue;
               const answers = request.resolution.answers ?? [];
               const allowed = (request.questions ?? []).some(
-                (each, n) => each.question?.includes(quote) === true && answers[n]?.selected?.includes("Allow") === true,
+                (each, n) => quotes(each.question ?? "", binding) && answers[n]?.selected?.includes("Allow") === true,
               );
               if (!allowed) continue;
               // Used up before the call runs, and durably: a restart cannot spend it again.
-              const id = request.id;
               const fresh = await options.harness().commit(async (tx) => {
                 const state = await tx.doc(AutoModeDoc, api.conversationId);
-                if (state.granted.includes(id)) return false;
-                state.granted.push(id);
+                if (state.granted.includes(grant)) return false;
+                state.granted.push(grant);
                 return true;
               }, context);
               if (fresh) return decide({ verdict: "allow", reason: "the user allowed it" }, "user");
@@ -421,7 +478,7 @@ export function createAutoMode(options: {
             return decide({ verdict: rule, reason }, "rule");
           }
           // Too long to show the user or the classifier whole: only the user can judge it.
-          if (JSON.stringify(args).length > SHOWN_LIMIT) return decide({ verdict: "ask", reason: "the call is too long to check automatically" }, "rule");
+          if (json.length > SHOWN_LIMIT) return decide({ verdict: "ask", reason: "the call is too long to check automatically" }, "rule");
           let verdict: AutoVerdict;
           try {
             verdict = await options.classify({ tool: call.name, args, trusted, task: owner.task.title }, context);
