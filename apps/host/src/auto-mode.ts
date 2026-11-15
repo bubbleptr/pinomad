@@ -67,11 +67,16 @@ const RG_OPTIONS = new Set([
 ]);
 const GIT_BRANCH_OPTIONS = new Set(["-a", "--all", "-r", "--remotes", "-v", "-vv", "--list", "--show-current"]);
 
+/** Short options without an attached value, or with a count (`-n`, `-rn`, `-A3`, `-5`); others may carry a path. */
+const PLAIN_SHORT_OPTION = /^-[A-Za-z]*\d*$/;
+
 /** One read-only command: every argument is one the command only reads with. */
 function readOnlyBash(command: string): boolean {
   if (SHELL_SYNTAX.test(command)) return false;
   const [program, ...args] = command.trim().split(/[ \t]+/);
   if (program === undefined) return false;
+  // `-f/path` reads a file the path check may not see whole: the classifier's to judge.
+  if (args.some((arg) => arg.startsWith("-") && !arg.startsWith("--") && !PLAIN_SHORT_OPTION.test(arg))) return false;
   if (READ_ANYTHING.has(program)) return true;
   const options = args.filter((arg) => arg.startsWith("-"));
   if (program === "find") return options.every((arg) => FIND_OPTIONS.has(arg));
@@ -164,12 +169,29 @@ function credentialPath(path: string, where: RunPaths, recursive: boolean): bool
 /** Commands that print or search what they are given: those `readOnlyBash` allows. */
 const READ_PROGRAMS = new Set([...READ_ANYTHING, "find", "rg", "git"]);
 
-/** The words given to each read program in `command`, the values of `--option=value` included. */
+/** What a short option may carry after its letters: each tail of `-rf/path` (`f/path`, `/path`, …). */
+const shortOptionTails = (arg: string): string[] => Array.from({ length: arg.length - 2 }, (_, n) => arg.slice(n + 2));
+
+/** Whether the command searches the cwd when given no path: `rg`, `find`, `git grep`, a recursive `grep`. */
+function searchesCwd(program: string, args: readonly string[]): boolean {
+  if (program === "rg" || program === "find") return true;
+  if (program === "git") return args.find((arg) => !arg.startsWith("-")) === "grep";
+  return program === "grep" && args.some((arg) => arg === "--recursive" || /^-[A-Za-z]*[rR]/.test(arg));
+}
+
+/**
+ * The paths each read program in `command` may read: its words, the values of
+ * `--option=value` and what a short option may carry, and `.` for a search
+ * that defaults to the cwd.
+ */
 function readArguments(command: string): string[] {
   return command.split(/[;&|()`\n\r]+/).flatMap((segment) => {
     const [program, ...args] = segment.trim().split(/[\s<>]+/);
     if (program === undefined || !READ_PROGRAMS.has(program)) return [];
-    return args.flatMap((arg) => (!arg.startsWith("-") ? [arg] : arg.includes("=") ? [arg.slice(arg.indexOf("=") + 1)] : []));
+    const given = args.flatMap((arg) =>
+      !arg.startsWith("-") ? [arg] : arg.includes("=") ? [arg.slice(arg.indexOf("=") + 1)] : arg.startsWith("--") ? [] : shortOptionTails(arg),
+    );
+    return searchesCwd(program, args) ? [...given, "."] : given;
   });
 }
 

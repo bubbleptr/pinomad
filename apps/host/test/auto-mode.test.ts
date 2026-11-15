@@ -138,6 +138,42 @@ describe("auto mode rules", () => {
     }
   });
 
+  it("checks a path attached to a short option, and leaves an unclear one to the classifier", () => {
+    for (const command of ["rg -f/home/u/.env README.md", "rg -f~/.env README.md", "grep -rf/home/u/.ssh/id_ed25519 src"]) {
+      expect(ruleFor("bash", { command }, false, where), command).toBe("ask");
+      expect(ruleFor("bash", { command }, true, where), command).toBeUndefined();
+    }
+    for (const command of ["rg -fpatterns.txt src", "rg -f../notes src"]) {
+      expect(ruleFor("bash", { command }, false, where), command).toBeUndefined();
+    }
+    for (const command of ["rg -n TODO src", "grep -rn TODO src", "rg -i -l foo src", "grep -A3 foo src/a.ts", "git log -5"]) {
+      expect(ruleFor("bash", { command }, false, where), command).toBe("allow");
+    }
+  });
+
+  it("checks the cwd a search runs in when it is given no path", () => {
+    const home = { ...where, cwd: "/home/u" };
+    for (const command of [
+      "rg --hidden --no-ignore aws_secret_access_key",
+      "find -name credentials",
+      "grep -rn token",
+      "grep -R token",
+      "grep --recursive token",
+      "git grep token",
+    ]) {
+      expect(ruleFor("bash", { command }, false, home), command).toBe("ask");
+      expect(ruleFor("bash", { command }, true, home), command).toBeUndefined();
+    }
+    // Only what it is given: no recursion, no search of the cwd.
+    expect(ruleFor("bash", { command: "grep token notes.txt" }, false, home)).toBe("allow");
+    const checkout = { ...where, cwd: "/home/u/.pinomad/worktrees/12/pkg" };
+    for (const paths of [where, checkout]) {
+      for (const command of ["rg --hidden token", "find -name x.ts", "grep -rn token"]) {
+        expect(ruleFor("bash", { command }, false, paths), `${command} in ${paths.cwd}`).toBe("allow");
+      }
+    }
+  });
+
   it("still allows ordinary reads in the project, also when its checkout is in the data dir", () => {
     const checkout = { ...where, cwd: "/home/u/.pinomad/worktrees/12/pkg" };
     expect(ruleFor("read", { path: "src/a.ts" }, false, where)).toBe("allow");
