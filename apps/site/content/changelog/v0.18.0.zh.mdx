@@ -1,0 +1,36 @@
+---
+title: Inbox 模式，事件源，边改边重载的插件
+version: v0.18.0
+date: 2026-11-15
+---
+
+**升级前**
+
+- 在 Settings → 宿主 → About 里升级宿主，或者用 `pinomad upgrade`。Inbox 模式需要 0.18.0 的宿主。
+- 插件目录现在是 `package.json` 加 `server.ts`，有界面的再加 `web.tsx`，两半都由宿主构建。按 0.16、0.17 写的插件（`plugin.json`）要改成这个布局，见[插件](/zh/docs/plugins/)。
+
+**Inbox 模式**（Web、Mac App 和 iPhone）
+
+- 侧栏顶部的开关在 **Coding** 和 **Inbox** 之间切换。Inbox 模式下每个项目一个 Inbox：要做的事作为任务放进去，一个 worker 依次取，每项任务在自己的对话里跑。
+- 点项目名进入它的收件对话。把事情说给 agent，它会追问、拆分，再把任务放进 Inbox。放进去的任务显示成卡片，带实时状态。
+- 任务按 **Waiting for you**、**In progress**、**Queued**、**Done** 分组。排队中的任务可以跳过。Git 项目里，一项任务停下来问你时，不耽误其他任务。
+- Inbox 的运行没有人看着，所以每次工具调用都先检查：安全的直接跑，危险的拦下，其余的变成给你的提问。运行里有外部内容时，读你的凭据或宿主数据一律先问你。编码对话不变。
+- Inbox 的运行只在 agent 认为需要时通知你。挨得近的通知合成一条，每小时最多六条，可以在 Settings → Chats 里设免打扰时段。"Waiting for your answer" 和 "Failed" 照旧通知。
+- 每个 Inbox 在宿主上有自己的记忆（规则、笔记、任务进度），每天整理一次。规则在 Tasks 页里改。
+
+**事件源**
+
+- Inbox 可以从定时（每天、工作日、每周或 cron，时区自选）、插件或局域网和 tailnet 上的 webhook 接任务。在 Inbox 模式的 Tasks 页里添加，见 [Inbox 事件源](/zh/docs/inbox-sources/)。
+- 插件和 webhook 事件源默认用受限的工具，可以改。
+- agent 可以跟进一个 thread，比如它开的 PR，之后这个 thread 上的事件会回到同一项任务；它也可以给自己设一个稍后的跟进。
+
+**插件**
+
+- 插件的文件变了，宿主会重新加载，不用重启；打开着的 App 不用重连就换上新界面。构建失败时保留正在跑的版本。
+- 插件可以声明凭据，比如 API token。你在 App 里填，宿主保存；填完不再显示，也不会进对话或 agent 的环境变量。
+- 插件可以为 Inbox 声明事件源。
+- 仓库里有一个 GitHub 示例插件：用你填的 token 开 PR、评论和推送，并把新 issue、PR 评论和 CI 结果作为事件源。
+
+**Web 和 Mac App**
+
+- 宿主列表移到了侧栏底部的账号菜单里。

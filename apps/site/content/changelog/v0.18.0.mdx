@@ -1,0 +1,36 @@
+---
+title: Inbox mode, event sources, and plugins that reload as you edit
+version: v0.18.0
+date: 2026-11-15
+---
+
+**Before you upgrade**
+
+- Upgrade the host from Settings → the host → About, or with `pinomad upgrade`. Inbox mode needs a 0.18.0 host.
+- A plugin folder is now `package.json` plus `server.ts` and, for UI, `web.tsx`; the host builds both. A plugin written for 0.16 or 0.17 (`plugin.json`) has to be moved to this layout. See [Plugins](/docs/plugins/).
+
+**Inbox mode** (web, Mac app and iPhone)
+
+- A switch at the top of the sidebar changes between **Coding** and **Inbox**. In Inbox mode each project has one Inbox: things to do go in as tasks, one worker takes them in turn, and each task runs in its own conversation.
+- Click a project's name to talk to its intake. Describe the work; the agent asks what it needs to, splits it up, and files the tasks. Filed tasks show as cards with their live state.
+- Tasks are grouped **Waiting for you**, **In progress**, **Queued** and **Done**. A queued task can be skipped. A task that stops to ask you something does not hold up the others in a Git project.
+- Inbox runs work unattended, so each tool call is checked first: safe ones run, dangerous ones are blocked, and the rest become a question for you. Reading your credentials or the host's data always waits for you when the run holds content from outside. Coding conversations are unchanged.
+- The agent tells you about an Inbox run with a notification only when it decides to. Notifications close together arrive as one, at most six an hour, and you can set quiet hours under Settings → Chats. "Waiting for your answer" and "Failed" still notify as before.
+- Each Inbox keeps its own memory (rules, notes, task progress) on the host and tidies it once a day. You edit the rules on the Tasks page.
+
+**Event sources**
+
+- An Inbox can take tasks from a schedule (daily, weekdays, weekly or cron, in a time zone you pick), from a plugin, or from a webhook on your local network or tailnet. Add them on the Tasks page in Inbox mode. See [Inbox sources](/docs/inbox-sources/).
+- Plugin and webhook sources run with restricted tools unless you choose otherwise.
+- The agent can follow a thread, such as a pull request it opened, so later events on it come back to the same task, and it can set itself a follow-up for later.
+
+**Plugins**
+
+- The host reloads a plugin when its files change, without a restart, and the open app picks up the new UI without reconnecting. A build that fails keeps the version that was running.
+- A plugin can declare secrets, such as an API token. You enter them in the app; the host keeps them and they are never shown again, put in the conversation, or placed in the agent's environment.
+- A plugin can declare event sources for the Inbox.
+- The repository has a GitHub example plugin: it opens pull requests, comments and pushes with a token you enter, and offers new issues, pull request comments and CI results as event sources.
+
+**Web and Mac app**
+
+- Hosts moved into the account menu at the bottom of the sidebar.
