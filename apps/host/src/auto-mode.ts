@@ -9,7 +9,8 @@
 // full arguments; once the user picks "Allow" on that question, that one call
 // passes. The quoted call is what the user approves, whatever the agent writes
 // around it; a call short enough to quote whole needs only its tool and full
-// arguments, since agents drop the ID. Subagents of a task are gated as the task is.
+// arguments, since agents drop the ID. A short bash call may instead be quoted
+// as its full single-line command. Subagents of a task are gated as the task is.
 //
 // The intake conversation is not gated, except that a read of a credential
 // path or the host's data dir always asks the user there, without the rule
@@ -339,8 +340,8 @@ export function modelClassifier(models: () => Models, pick: () => Model<string> 
 /** What auto mode decided, per conversation, newest last; for the Tasks page and tuning the rules. */
 export type AutoDecision = { tool: string; verdict: AutoVerdict["verdict"]; reason: string; by: "rule" | "classifier" | "user"; at: number };
 /**
- * `granted`: the "Allow"s already spent, as `<request id>/<call ID>`; each lets
- * one call it quotes through once, also across restarts. A bare request id is
+ * `granted`: the "Allow"s already spent, as `<request id>/<call or command ID>`;
+ * each lets one call it quotes through once, also across restarts. A bare request id is
  * from before one question could approve several calls, and spends the whole request.
  */
 export const AutoModeDoc = defineDoc<{ decisions: AutoDecision[]; granted: string[] }>({
@@ -381,6 +382,16 @@ function quotes(text: string, binding: string): boolean {
     if (at === 0 || !/[\w-]/.test(text[at - 1]!)) return true;
   }
   return false;
+}
+
+/**
+ * Raw bash shorthand: the whole question, or one prose line, a blank line and
+ * the command. Anything nested or with other calls needs JSON.
+ */
+function quotesBash(text: string, binding: string): boolean {
+  const lines = text.split(/\r?\n/);
+  if (lines.length === 1) return lines[0] === binding;
+  return lines.length === 3 && lines[1] === "" && lines[2] === binding && lines[0]?.includes("bash:") !== true;
 }
 
 type QuestionRequest = {
@@ -432,6 +443,20 @@ export function createAutoMode(options: {
           // Agents tend to drop the ID; a call short enough to quote whole is bound by its full arguments alone.
           const json = JSON.stringify(args);
           const binding = json.length > SHOWN_LIMIT ? quote : `${call.name}: ${json}`;
+          // Agents show shell commands rather than their JSON envelope. Execution
+          // options may be elided, but any other argument still needs the full JSON.
+          // Question cards collapse newlines, so multiline commands need the JSON too.
+          // A JSON-looking command must not be reinterpreted as the call it quotes.
+          const bashBinding =
+            json.length <= SHOWN_LIMIT &&
+            call.name === "bash" &&
+            typeof args.command === "string" &&
+            !args.command.trimStart().startsWith("{") &&
+            !args.command.includes("\n") &&
+            !args.command.includes("\r") &&
+            Object.keys(args).every((key) => key === "command" || key === "timeout" || key === "run_in_background")
+              ? `bash: ${args.command}`
+              : undefined;
           const decide = (verdict: AutoVerdict, by: AutoDecision["by"]) => {
             record(api.conversationId, { tool: call.name, verdict: verdict.verdict, reason: verdict.reason, by, at: Date.now() });
             if (verdict.verdict === "allow") return undefined;
@@ -444,13 +469,24 @@ export function createAutoMode(options: {
             const doc = await api.snapshot(token, api.conversationId, context);
             for (const request of (doc?.requests ?? []) as readonly QuestionRequest[]) {
               if (request.id === undefined || request.resolution?.outcome !== "answered" || auto?.granted.includes(request.id) === true) continue;
-              const grant = `${request.id}/${callId(call.name, json)}`;
-              if (auto?.granted.includes(grant) === true) continue;
+              const callGrant = `${request.id}/${callId(call.name, json)}`;
+              if (auto?.granted.includes(callGrant) === true) continue;
               const answers = request.resolution.answers ?? [];
-              const allowed = (request.questions ?? []).some(
-                (each, n) => quotes(each.question ?? "", binding) && answers[n]?.selected?.includes("Allow") === true,
-              );
-              if (!allowed) continue;
+              let grant: string | undefined;
+              for (const [n, each] of (request.questions ?? []).entries()) {
+                if (answers[n]?.selected?.includes("Allow") !== true) continue;
+                const text = each.question ?? "";
+                if (quotes(text, binding)) {
+                  grant = callGrant;
+                  break;
+                }
+                if (bashBinding !== undefined && quotesBash(text, bashBinding)) {
+                  // Execution options are not shown in this form, so they cannot mint a fresh grant.
+                  grant = `${request.id}/${callId("bash-command", bashBinding)}`;
+                  break;
+                }
+              }
+              if (grant === undefined || auto?.granted.includes(grant) === true) continue;
               // Used up before the call runs, and durably: a restart cannot spend it again.
               const fresh = await options.harness().commit(async (tx) => {
                 const state = await tx.doc(AutoModeDoc, api.conversationId);

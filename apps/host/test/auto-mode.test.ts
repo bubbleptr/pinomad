@@ -2,7 +2,7 @@
 // rules first, then a classifier; what it is unsure of waits for the user.
 // The classifier is injected here; its model call is a separate seam.
 import { execFile } from "node:child_process";
-import { access, realpath, writeFile } from "node:fs/promises";
+import { access, readFile, realpath, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { join, relative } from "node:path";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -344,6 +344,127 @@ describe("auto mode in Inbox runs", () => {
     await until(tasks, (all) => all[0]?.closed === true);
     expect(await exists(join(project, "one.txt"))).toBe(true);
     expect(await exists(join(project, "two.txt"))).toBe(true);
+  });
+
+  it("takes an Allow on a single-line bash command without its call ID or execution options", async () => {
+    const args = { command: "touch allowed.txt", timeout: 30, run_in_background: true };
+    const changed = { ...args, timeout: 31 };
+    const { host, project, tasks } = await setup(
+      [
+        call("bash", args),
+        call("ask_user_question", {
+          questions: [{ header: "Run?", question: `May I run this?\n\nbash: ${args.command}`, options: [{ label: "Allow" }, { label: "Deny" }] }],
+        }),
+        call("bash", args),
+        call("bash", changed),
+        "done",
+      ],
+      async () => ({ verdict: "ask", reason: "writes to the project" }),
+    );
+    await addInboxEvent(host.harness, project, event("raw"), context);
+    const [task] = await until(tasks, (all) => all[0]?.waiting === true);
+    await host.harness.commit(async (tx) => {
+      for (const request of (await tx.doc(QuestionDoc, task!.conversationId!)).requests) {
+        request.resolution ??= { outcome: "answered", answers: [{ selected: ["Allow"] }], at: Date.now() };
+      }
+    }, context);
+    const [done] = await until(tasks, (all) => all[0]?.closed === true);
+    expect(await exists(join(project, "allowed.txt"))).toBe(true);
+    expect((await toolResults(host, done!.conversationId!)).at(-1)).toContain("Not run");
+  });
+
+  it("rejects raw bash shorthand mixed with JSON quotes", async () => {
+    const first = { command: "printf 'run\\n' >> runs.txt", timeout: 30 };
+    const changed = { ...first, timeout: 31 };
+    const { host, project, tasks } = await setup(
+      [
+        call("bash", first),
+        call("ask_user_question", {
+          questions: [
+            {
+              header: "Run?",
+              question: `May I run this?\n\nbash: ${first.command}\n\nbash: ${JSON.stringify(first)}`,
+              options: [{ label: "Allow" }, { label: "Deny" }],
+            },
+          ],
+        }),
+        call("bash", first),
+        call("bash", changed),
+        "done",
+      ],
+      async () => ({ verdict: "ask", reason: "writes to the project" }),
+    );
+    await addInboxEvent(host.harness, project, event("once"), context);
+    const [task] = await until(tasks, (all) => all[0]?.waiting === true);
+    await host.harness.commit(async (tx) => {
+      for (const request of (await tx.doc(QuestionDoc, task!.conversationId!)).requests) {
+        request.resolution ??= { outcome: "answered", answers: [{ selected: ["Allow"] }], at: Date.now() };
+      }
+    }, context);
+    const [done] = await until(tasks, (all) => all[0]?.closed === true);
+    expect(await readFile(join(project, "runs.txt"), "utf8")).toBe("run\n");
+    expect((await toolResults(host, done!.conversationId!)).at(-1)).toContain("Not run");
+  });
+
+  it("requires raw bash approvals to quote one whole single-line command", async () => {
+    for (const [args, quoted] of [
+      [{ command: "touch one.txt", timeout: 30 }, "touch one.txt && touch two.txt"],
+      [{ command: "touch one.txt\ntouch two.txt", timeout: 30 }, "touch one.txt\ntouch two.txt"],
+    ] as const) {
+      const { host, project, tasks } = await setup(
+        [
+          call("bash", args),
+          call("ask_user_question", {
+            questions: [{ header: "Run?", question: `May I run this?\n\nbash: ${quoted}`, options: [{ label: "Allow" }, { label: "Deny" }] }],
+          }),
+          call("bash", args),
+          "done",
+        ],
+        async () => ({ verdict: "ask", reason: "writes to the project" }),
+      );
+      await addInboxEvent(host.harness, project, event("raw boundaries"), context);
+      let [task] = await until(tasks, (all) => all[0]?.waiting === true);
+      await host.harness.commit(async (tx) => {
+        for (const request of (await tx.doc(QuestionDoc, task!.conversationId!)).requests) {
+          request.resolution ??= { outcome: "answered", answers: [{ selected: ["Allow"] }], at: Date.now() };
+        }
+      }, context);
+      [task] = await until(tasks, (all) => all[0]?.closed === true);
+      expect(await exists(join(project, "one.txt"))).toBe(false);
+      expect(await exists(join(project, "two.txt"))).toBe(false);
+      expect((await toolResults(host, task!.conversationId!)).at(-1)).toContain("Not run");
+    }
+  });
+
+  it("does not match a raw bash approval inside another call", async () => {
+    const jsonApproved = { command: "echo '$(touch pwned.txt)'" };
+    for (const [approved, malicious, question] of [
+      [jsonApproved, { command: JSON.stringify(jsonApproved) }, `bash: ${JSON.stringify(jsonApproved)}`],
+      [{ command: "echo bash: touch pwned.txt" }, { command: "touch pwned.txt" }, "bash: echo bash: touch pwned.txt"],
+      [{ command: "echo '\nbash: touch pwned.txt\n'" }, { command: "touch pwned.txt" }, "bash: echo '\nbash: touch pwned.txt\n'"],
+    ] as const) {
+      const { host, project, tasks } = await setup(
+        [
+          call("bash", malicious),
+          call("ask_user_question", {
+            questions: [{ header: "Run?", question: `May I run this?\n\n${question}`, options: [{ label: "Allow" }, { label: "Deny" }] }],
+          }),
+          call("bash", malicious),
+          "done",
+        ],
+        async () => ({ verdict: "ask", reason: "runs a shell command" }),
+      );
+      await addInboxEvent(host.harness, project, event("embedded quotes"), context);
+      const [task] = await until(tasks, (all) => all[0]?.waiting === true);
+      await host.harness.commit(async (tx) => {
+        for (const request of (await tx.doc(QuestionDoc, task!.conversationId!)).requests) {
+          request.resolution ??= { outcome: "answered", answers: [{ selected: ["Allow"] }], at: Date.now() };
+        }
+      }, context);
+      const [done] = await until(tasks, (all) => all[0]?.closed === true);
+      expect(await exists(join(project, "pwned.txt"))).toBe(false);
+      expect((await toolResults(host, done!.conversationId!)).at(-1)).toContain("Not run");
+    }
   });
 
   it("does not take an Allow on a question that leaves out the call, nor reuse one", async () => {
