@@ -378,14 +378,16 @@ const askText = (quote: string, reason: string, subagent: boolean): string =>
 
 /**
  * Whether `text` quotes `binding` as a whole: not as the tail of a longer tool
- * name (`subbash: …` is not `bash: …`). A raw shell command must also end at a
- * line boundary, so quoting `touch one && …` cannot approve `touch one`.
+ * name (`subbash: …` is not `bash: …`). A raw shell command must occupy a line
+ * of its own, so neither a longer quote nor text inside another command counts.
  */
-function quotes(text: string, binding: string, toEndOfLine = false): boolean {
+function quotes(text: string, binding: string, wholeLine = false): boolean {
   for (let at = text.indexOf(binding); at !== -1; at = text.indexOf(binding, at + 1)) {
-    const after = text[at + binding.length];
-    const lineEnd = after === undefined || after === "\n" || (after === "\r" && text[at + binding.length + 1] === "\n");
-    if ((at === 0 || !/[\w-]/.test(text[at - 1]!)) && (!toEndOfLine || lineEnd)) return true;
+    if (wholeLine) {
+      const after = text[at + binding.length];
+      const lineEnd = after === undefined || after === "\n" || (after === "\r" && text[at + binding.length + 1] === "\n");
+      if ((at === 0 || text[at - 1] === "\n") && lineEnd) return true;
+    } else if (at === 0 || !/[\w-]/.test(text[at - 1]!)) return true;
   }
   return false;
 }
