@@ -1,0 +1,16 @@
+---
+title: Answer task questions from the intake, and one base branch per Inbox
+version: v0.19.0
+date: 2026-11-16
+---
+
+**Before you upgrade**
+
+- Upgrade the host from Settings → the host → About, or with `pinomad upgrade`. The features below need a 0.19.0 host.
+
+**Inbox** (web, Mac app and iPhone)
+
+- When a task stops to ask you something, the question shows above the intake's input, under the task's name, with an **Open task** button. You answer it there without opening the task. A "Waiting for your answer" notification for an Inbox task now opens the intake.
+- An Inbox in a Git project now works from one base branch: the intake reads it, and new tasks start from it, whatever branch the project folder has checked out. It is the repository's default branch unless you change it under **Base branch** on the Tasks page. If the branch is deleted, tasks fail with the reason instead of starting from another branch.
+- Settings → Chats → Inbox has **Intake model** and **Worker model**: the model new intake conversations and new task conversations start on. Left unset, they use the default model.
+- Fewer questions in Inbox runs: in a run without outside content, edits to files inside the project are allowed without a check, and when you allow a blocked call the Allow now takes effect.
