@@ -442,10 +442,12 @@ export function createAutoMode(options: {
           // Agents show shell commands rather than their JSON envelope. Execution
           // options may be elided, but any other argument still needs the full JSON.
           // Question cards collapse newlines, so multiline commands need the JSON too.
+          // A JSON-looking command must not be reinterpreted as the call it quotes.
           const bashBinding =
             json.length <= SHOWN_LIMIT &&
             call.name === "bash" &&
             typeof args.command === "string" &&
+            !args.command.trimStart().startsWith("{") &&
             !args.command.includes("\n") &&
             !args.command.includes("\r") &&
             Object.keys(args).every((key) => key === "command" || key === "timeout" || key === "run_in_background")
@@ -470,13 +472,14 @@ export function createAutoMode(options: {
               for (const [n, each] of (request.questions ?? []).entries()) {
                 if (answers[n]?.selected?.includes("Allow") !== true) continue;
                 const text = each.question ?? "";
-                if (quotes(text, binding)) {
-                  grant = callGrant;
-                  break;
-                }
                 if (bashBinding !== undefined && quotes(text, bashBinding, true)) {
                   // Execution options are not shown in this form, so they cannot mint a fresh grant.
+                  // When both quote forms are present, they share this grant instead of spending one each.
                   grant = `${request.id}/${callId("bash-command", bashBinding)}`;
+                  break;
+                }
+                if (quotes(text, binding)) {
+                  grant = callGrant;
                   break;
                 }
               }
