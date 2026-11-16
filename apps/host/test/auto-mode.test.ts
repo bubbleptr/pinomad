@@ -348,6 +348,7 @@ describe("auto mode in Inbox runs", () => {
 
   it("takes an Allow on a single-line bash command without its call ID or execution options", async () => {
     const args = { command: "touch allowed.txt", timeout: 30, run_in_background: true };
+    const changed = { ...args, timeout: 31 };
     const { host, project, tasks } = await setup(
       [
         call("bash", args),
@@ -355,6 +356,7 @@ describe("auto mode in Inbox runs", () => {
           questions: [{ header: "Run?", question: `May I run this?\n\nbash: ${args.command}`, options: [{ label: "Allow" }, { label: "Deny" }] }],
         }),
         call("bash", args),
+        call("bash", changed),
         "done",
       ],
       async () => ({ verdict: "ask", reason: "writes to the project" }),
@@ -366,11 +368,12 @@ describe("auto mode in Inbox runs", () => {
         request.resolution ??= { outcome: "answered", answers: [{ selected: ["Allow"] }], at: Date.now() };
       }
     }, context);
-    await until(tasks, (all) => all[0]?.closed === true);
+    const [done] = await until(tasks, (all) => all[0]?.closed === true);
     expect(await exists(join(project, "allowed.txt"))).toBe(true);
+    expect((await toolResults(host, done!.conversationId!)).at(-1)).toContain("Not run");
   });
 
-  it("spends a bash Allow once across quote forms and execution options", async () => {
+  it("rejects raw bash shorthand mixed with JSON quotes", async () => {
     const first = { command: "printf 'run\\n' >> runs.txt", timeout: 30 };
     const changed = { ...first, timeout: 31 };
     const { host, project, tasks } = await setup(
