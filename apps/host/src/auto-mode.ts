@@ -376,20 +376,22 @@ const askText = (quote: string, reason: string, subagent: boolean): string =>
       `Ask with ask_user_question, quoting this call exactly in the question — ${quote} — with the options "Allow" and "Deny". ` +
       "If they allow it, make the same call again; otherwise find another way or stop.";
 
-/**
- * Whether `text` quotes `binding` as a whole: not as the tail of a longer tool
- * name (`subbash: …` is not `bash: …`). A raw shell command must occupy a line
- * of its own, so neither a longer quote nor text inside another command counts.
- */
-function quotes(text: string, binding: string, wholeLine = false): boolean {
+/** Whether `text` quotes `binding` as a whole: not as the tail of a longer tool name (`subbash: …` is not `bash: …`). */
+function quotes(text: string, binding: string): boolean {
   for (let at = text.indexOf(binding); at !== -1; at = text.indexOf(binding, at + 1)) {
-    if (wholeLine) {
-      const after = text[at + binding.length];
-      const lineEnd = after === undefined || after === "\n" || (after === "\r" && text[at + binding.length + 1] === "\n");
-      if ((at === 0 || text[at - 1] === "\n") && lineEnd) return true;
-    } else if (at === 0 || !/[\w-]/.test(text[at - 1]!)) return true;
+    if (at === 0 || !/[\w-]/.test(text[at - 1]!)) return true;
   }
   return false;
+}
+
+/**
+ * Raw bash shorthand: the whole question, or one prose line, a blank line and
+ * the command. Anything nested or with other calls needs JSON.
+ */
+function quotesBash(text: string, binding: string): boolean {
+  const lines = text.split(/\r?\n/);
+  if (lines.length === 1) return lines[0] === binding;
+  return lines.length === 3 && lines[1] === "" && lines[2] === binding && lines[0]?.includes("bash:") !== true;
 }
 
 type QuestionRequest = {
@@ -474,14 +476,13 @@ export function createAutoMode(options: {
               for (const [n, each] of (request.questions ?? []).entries()) {
                 if (answers[n]?.selected?.includes("Allow") !== true) continue;
                 const text = each.question ?? "";
-                if (bashBinding !== undefined && quotes(text, bashBinding, true)) {
-                  // Execution options are not shown in this form, so they cannot mint a fresh grant.
-                  // When both quote forms are present, they share this grant instead of spending one each.
-                  grant = `${request.id}/${callId("bash-command", bashBinding)}`;
-                  break;
-                }
                 if (quotes(text, binding)) {
                   grant = callGrant;
+                  break;
+                }
+                if (bashBinding !== undefined && quotesBash(text, bashBinding)) {
+                  // Execution options are not shown in this form, so they cannot mint a fresh grant.
+                  grant = `${request.id}/${callId("bash-command", bashBinding)}`;
                   break;
                 }
               }

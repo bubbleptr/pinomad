@@ -312,32 +312,29 @@ describe("auto mode in Inbox runs", () => {
   });
 
   it("takes an Allow on a question that quotes calls without their IDs, once for each call it quotes", async () => {
-    // As agents write it: the IDs dropped, and a bash call may be just its command.
+    // As agents write it: the IDs dropped, two blocked calls in one question.
     const first = { command: "touch one.txt", timeout: 30 };
     const second = { command: "touch two.txt", timeout: 30 };
-    const third = { command: "touch three.txt", timeout: 30, run_in_background: true };
     const { host, project, tasks } = await setup(
       [
         call("bash", first),
         call("bash", second),
-        call("bash", third),
         call("ask_user_question", {
           questions: [
             {
               header: "Run?",
-              question: `需要这三个调用，是否允许？\n\nbash: ${JSON.stringify(first)}\n\nbash: ${JSON.stringify(second)}\n\nbash: ${third.command}`,
+              question: `需要这两个调用，是否允许？\n\nbash: ${JSON.stringify(first)}\n\nbash: ${JSON.stringify(second)}`,
               options: [{ label: "Allow" }, { label: "Deny" }],
             },
           ],
         }),
         call("bash", first),
         call("bash", second),
-        call("bash", third),
         "done",
       ],
       async () => ({ verdict: "ask", reason: "writes to the project" }),
     );
-    await addInboxEvent(host.harness, project, event("three"), context);
+    await addInboxEvent(host.harness, project, event("two"), context);
     const [task] = await until(tasks, (all) => all[0]?.waiting === true);
     await host.harness.commit(async (tx) => {
       for (const request of (await tx.doc(QuestionDoc, task!.conversationId!)).requests) {
@@ -347,7 +344,30 @@ describe("auto mode in Inbox runs", () => {
     await until(tasks, (all) => all[0]?.closed === true);
     expect(await exists(join(project, "one.txt"))).toBe(true);
     expect(await exists(join(project, "two.txt"))).toBe(true);
-    expect(await exists(join(project, "three.txt"))).toBe(true);
+  });
+
+  it("takes an Allow on a single-line bash command without its call ID or execution options", async () => {
+    const args = { command: "touch allowed.txt", timeout: 30, run_in_background: true };
+    const { host, project, tasks } = await setup(
+      [
+        call("bash", args),
+        call("ask_user_question", {
+          questions: [{ header: "Run?", question: `May I run this?\n\nbash: ${args.command}`, options: [{ label: "Allow" }, { label: "Deny" }] }],
+        }),
+        call("bash", args),
+        "done",
+      ],
+      async () => ({ verdict: "ask", reason: "writes to the project" }),
+    );
+    await addInboxEvent(host.harness, project, event("raw"), context);
+    const [task] = await until(tasks, (all) => all[0]?.waiting === true);
+    await host.harness.commit(async (tx) => {
+      for (const request of (await tx.doc(QuestionDoc, task!.conversationId!)).requests) {
+        request.resolution ??= { outcome: "answered", answers: [{ selected: ["Allow"] }], at: Date.now() };
+      }
+    }, context);
+    await until(tasks, (all) => all[0]?.closed === true);
+    expect(await exists(join(project, "allowed.txt"))).toBe(true);
   });
 
   it("spends a bash Allow once across quote forms and execution options", async () => {
@@ -418,6 +438,7 @@ describe("auto mode in Inbox runs", () => {
     for (const [approved, malicious, question] of [
       [jsonApproved, { command: JSON.stringify(jsonApproved) }, `bash: ${JSON.stringify(jsonApproved)}`],
       [{ command: "echo bash: touch pwned.txt" }, { command: "touch pwned.txt" }, "bash: echo bash: touch pwned.txt"],
+      [{ command: "echo '\nbash: touch pwned.txt\n'" }, { command: "touch pwned.txt" }, "bash: echo '\nbash: touch pwned.txt\n'"],
     ] as const) {
       const { host, project, tasks } = await setup(
         [
