@@ -25,8 +25,14 @@ describe("intake task cards", () => {
     expect(IntakeTaskCards.args.onOpenTask).toHaveBeenCalledWith(PINOMAD.path, expect.objectContaining({ id: TASK.queued }));
   });
 
+  it("keeps the cards static while the mode is disabled", () => {
+    render(<IntakeTaskCards interactive={false} />);
+    expect(screen.queryByRole("button", { name: /CSV export garbles Chinese text/ })).toBeNull();
+    expect(screen.getByText("CSV export garbles Chinese text")).toBeInTheDocument();
+  });
+
   it("still renders a call whose arguments have the wrong types", () => {
-    const transcript: InboxTranscript = { events: new Map(), task: () => undefined, openTask: () => {} };
+    const transcript: InboxTranscript = { interactive: true, events: new Map(), task: () => undefined, openTask: () => {} };
     render(
       <InboxTaskCards
         tools={[

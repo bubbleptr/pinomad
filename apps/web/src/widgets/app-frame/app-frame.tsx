@@ -29,7 +29,7 @@ import {
 import { useSettingsScreen, type SettingsRequest } from "./settings-page.tsx";
 import type { SidebarMode } from "./inbox-sidebar.tsx";
 import type { InboxTarget } from "../../entities/composer/composer-store.ts";
-import { inboxConversationIds } from "../../entities/inbox/inbox.ts";
+import { INBOX_MODE_ENABLED, inboxConversationIds } from "../../entities/inbox/inbox.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
 import { AccountDialog } from "../account/account-dialog.tsx";
 import { Toaster, useToast } from "../../shared/ui/toast.tsx";
@@ -87,6 +87,7 @@ export function AppFrame({
   onShowMachine,
   inboxTarget,
   onInboxTarget,
+  inboxModeEnabled = INBOX_MODE_ENABLED,
   narrow,
   children,
 }: {
@@ -105,11 +106,13 @@ export function AppFrame({
   /** The focused machine's Inbox screen shown in place of a conversation (ADR-0051 §6). */
   inboxTarget?: InboxTarget | undefined;
   onInboxTarget?: (key: string, target: InboxTarget) => void;
+  /** Tests of the dormant mode opt in; the product leaves this off. */
+  inboxModeEnabled?: boolean;
   narrow: boolean;
   children: ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(readSidebarOpen);
-  const [mode, setMode] = useState(readSidebarMode);
+  const [mode, setMode] = useState<SidebarMode>(() => (inboxModeEnabled ? readSidebarMode() : "coding"));
   const changeMode = useCallback((next: SidebarMode): void => {
     window.localStorage.setItem(SIDEBAR_MODE_KEY, next);
     setMode(next);
@@ -133,10 +136,11 @@ export function AppFrame({
   };
   const [locate, setLocate] = useState<SidebarLocate>();
   const focused = machines.find((machine) => machine.key === focusKey);
-  // An Inbox conversation or screen in main (a reload, a notification) brings
-  // the sidebar to Inbox mode, where its row is; the coding sidebar hides it.
+  // While Inbox is enabled, one of its conversations or screens in main brings
+  // the sidebar along, where its row is; the coding sidebar hides it.
   const showsInbox =
-    inboxTarget !== undefined || (shownId !== undefined && inboxConversationIds(focused?.view?.inbox ?? null).has(shownId));
+    inboxModeEnabled &&
+    (inboxTarget !== undefined || (shownId !== undefined && inboxConversationIds(focused?.view?.inbox ?? null).has(shownId)));
   useEffect(() => {
     if (showsInbox) changeMode("inbox");
   }, [changeMode, showsInbox, shownId]);
@@ -177,10 +181,10 @@ export function AppFrame({
       draftingChat={draftingChat}
       shownId={shownId}
       {...(locate === undefined ? {} : { locate })}
-      mode={mode}
-      onModeChange={changeMode}
-      inboxTarget={inboxTarget}
-      {...(onInboxTarget === undefined ? {} : { onInboxTarget })}
+      mode={inboxModeEnabled ? mode : "coding"}
+      {...(inboxModeEnabled ? { onModeChange: changeMode } : {})}
+      inboxTarget={inboxModeEnabled ? inboxTarget : undefined}
+      {...(inboxModeEnabled && onInboxTarget !== undefined ? { onInboxTarget } : {})}
       onDraft={onDraft}
       {...(onNewChat === undefined ? {} : { onNewChat })}
       onOpen={onOpen}

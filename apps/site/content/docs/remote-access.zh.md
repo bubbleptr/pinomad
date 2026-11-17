@@ -266,7 +266,7 @@ HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（
 - 每个环境要 `*_KEY_ID` 和 `*_KEY` 都配上才会向宿主声明；只配一半会在日志里写一条 `apns:` 警告并跳过这个环境。启动日志的 `{"event":"ready",…,"push":["production",…]}` 是实际生效的环境。
 - `_KEY` 是 PEM 文本本身，不是文件路径。服务端认真实换行，也认字面的 `\n`。有的容器平台的变量只存单行，直接粘多行内容会丢掉换行，启动日志报 `apns: the … key is not a valid EC private key`；先把 `.p8` 转成用字面 `\n` 连接的一行再粘：`awk 'NR>1{printf "\\n"} {printf "%s", $0}' AuthKey_XXXXXXXXXX.p8 | pbcopy`（Linux 换成 `wl-copy`），不加引号。
 - 服务端按环境各持一条到 APNs 的 HTTP/2 长连接（production 打 `api.push.apple.com`，development 打 `api.sandbox.push.apple.com`），断了自己重建；provider token 用 `node:crypto` 签 ES256，缓存在进程里。
-- 推送负载只带标题和事件类型（"Waiting for your answer" / "Finished" / "Failed"，Inbox 任务调 `notify` 时是 "Update for you"），不带对话内容。
+- 推送负载只带标题和事件类型（"Waiting for your answer" / "Finished" / "Failed"；已有 Inbox Outbox 的 `notify` 仍是 "Update for you"），不带对话内容。
 - 服务端只推给登记在发起宿主同一账号下的 token（ADR-0036）：设备登录账号后经 `POST /api/push-tokens` 登记，别的 token 回 `rejected`（`token_not_registered`），宿主日志里是 `push: send to …… rejected: token_not_registered`。数据目录里因此多存了每个 token 的环境、所属账号和最近一次登记时间；90 天没刷新的登记作废，「退出所有会话」、用户自己改密码和 `pinomad server passwd` 会清掉这个账号的全部登记。
 
 ### 升级

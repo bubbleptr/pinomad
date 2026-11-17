@@ -48,7 +48,7 @@ function liveRemote(initial: DurableView) {
   return { remote, push };
 }
 
-function renderOn(target: InboxTarget | undefined, view: DurableView, conversationId?: ConversationId) {
+function renderOn(target: InboxTarget | undefined, view: DurableView, conversationId?: ConversationId, inboxModeEnabled = true) {
   const store = new HostComposerStore();
   if (target !== undefined) store.slot(newDraftKey).setInbox(target);
   const hosts = { ...fakeHosts([HOME_HOST], HOME_HOST.hostKey), focus: { hostKey: HOME_HOST.hostKey, conversationId } };
@@ -56,7 +56,15 @@ function renderOn(target: InboxTarget | undefined, view: DurableView, conversati
   render(
     <HostsContext.Provider value={hosts}>
       <HostComposerContext.Provider value={store}>
-        <Workbench remote={remote} wsUrl="ws://test" hostKey={HOME_HOST.hostKey} framed={false} notify={false} hostOpen={vi.fn()} />
+        <Workbench
+          remote={remote}
+          wsUrl="ws://test"
+          hostKey={HOME_HOST.hostKey}
+          framed={false}
+          notify={false}
+          hostOpen={vi.fn()}
+          inboxModeEnabled={inboxModeEnabled}
+        />
       </HostComposerContext.Provider>
     </HostsContext.Provider>,
   );
@@ -68,6 +76,11 @@ const inboxWith = (patch: (inbox: HostInbox) => HostInbox) => withInbox(undefine
 afterEach(() => window.localStorage.clear());
 
 describe("Inbox screens in main", () => {
+  it("ignores a stored Inbox target while the mode is disabled", () => {
+    renderOn({ project: WEBSITE.path }, withInbox(), undefined, false);
+    expect(screen.queryByText("Tell the Inbox what needs doing")).toBeNull();
+  });
+
   it("opens the intake once the host has it", () => {
     const view = withInbox();
     const { hosts, push } = renderOn({ project: WEBSITE.path }, view);
@@ -144,6 +157,38 @@ describe("Inbox screens in main", () => {
     expect(within(card).getByText("Desktop too?")).toBeInTheDocument();
     await userEvent.setup().click(within(card).getByRole("button", { name: "Open Avatar sometimes missing after sign-in" }));
     expect(hosts.focusConversation).toHaveBeenCalledWith({ hostKey: HOME_HOST.hostKey, conversationId: RUNNING_TASK_ID });
+  });
+
+  it("keeps an old task read-only while the mode is disabled", () => {
+    renderOn(undefined, withInbox(), RUNNING_TASK_ID, false);
+    expect(screen.getByText("Read-only · Inbox")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Terminal" })).toBeNull();
+  });
+
+  it("keeps an old Inbox fork read-only too", () => {
+    const forkId = 99 as ConversationId;
+    const base = withInbox();
+    const fork = { summary: { id: forkId, kind: "fork" as const, parent: RUNNING_TASK_ID, title: "Task fork" }, children: [] };
+    const view: DurableView = {
+      ...base,
+      conversation: {
+        ...base.conversation!,
+        conversation: { id: forkId, parent: { conversationId: RUNNING_TASK_ID, at: base.conversation!.entries.at(-1)!.id } },
+      },
+      organized: {
+        ...base.organized,
+        projects: base.organized.projects.map((group) => ({
+          ...group,
+          conversations: group.conversations.map((node) =>
+            node.summary.id === RUNNING_TASK_ID ? { ...node, children: [...node.children, fork] } : node,
+          ),
+        })),
+      },
+    };
+    renderOn(undefined, view, forkId, false);
+    expect(screen.getByText("Read-only · Inbox")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).toBeNull();
   });
 
   it("titles a task's conversation by its task, not the worker's first message", () => {

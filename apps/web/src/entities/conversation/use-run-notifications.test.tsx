@@ -180,7 +180,7 @@ describe("useRunNotifications", () => {
     const open = vi.fn();
     vi.spyOn(window, "focus").mockImplementation(() => {});
     vi.spyOn(document, "hasFocus").mockReturnValue(false);
-    const { rerender } = renderHook(({ view }) => useRunNotifications(view, hostA, undefined, open), {
+    const { rerender } = renderHook(({ view }) => useRunNotifications(view, hostA, undefined, open, true, true), {
       initialProps: { view: withInbox(organized(node({ status: "running" }))) },
     });
     rerender({ view: withInbox(organized(node({ status: "needs-answer" }))) });
@@ -189,12 +189,37 @@ describe("useRunNotifications", () => {
 
     vi.spyOn(document, "hasFocus").mockReturnValue(true);
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
-    const watching = renderHook(({ view }) => useRunNotifications(view, hostB, id(9), vi.fn()), {
+    const watching = renderHook(({ view }) => useRunNotifications(view, hostB, id(9), vi.fn(), true, true), {
       initialProps: { view: withInbox(organized(node({ status: "running" }))) },
     });
     const before = TestNotification.instances.length;
     watching.rerender({ view: withInbox(organized(node({ status: "needs-answer" }))) });
     expect(TestNotification.instances).toHaveLength(before);
+  });
+
+  it("opens the task itself while Inbox mode is disabled", () => {
+    const inbox: HostInbox = {
+      inboxes: [
+        {
+          project: "/p",
+          intake: id(9),
+          tasks: [{ id: "t1", title: "Layout", createdAt: 0, conversationId: id(1), events: [], closed: false }],
+          threads: {},
+          rules: "",
+          followUps: [],
+        },
+      ],
+    };
+    const withInbox = (organized: Organized): DurableView => ({ organized, connection: "connected", inbox }) as DurableView;
+    const open = vi.fn();
+    vi.spyOn(window, "focus").mockImplementation(() => {});
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const { rerender } = renderHook(({ view }) => useRunNotifications(view, hostA, undefined, open), {
+      initialProps: { view: withInbox(organized(node({ status: "running" }))) },
+    });
+    rerender({ view: withInbox(organized(node({ status: "needs-answer" }))) });
+    TestNotification.instances[0]!.onclick!();
+    expect(open).toHaveBeenCalledWith({ hostKey: hostA, conversationId: id(1) });
   });
 
   it("opens a closed task's own conversation for a question asked after it closed (#846)", () => {

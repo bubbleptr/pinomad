@@ -7,6 +7,9 @@ import { findConversation, type Organized } from "@pinomad/protocol/organization
 import type { ConversationSummary } from "@pinomad/protocol/view.ts";
 import { toolDisplayName } from "@pinomad/client/tool-item.ts";
 
+/** Dormant for now; the implementation and snapshots stay intact for a later return. */
+export const INBOX_MODE_ENABLED = false;
+
 /** Every conversation the Inbox owns: intakes and task (and tidy-up) conversations. They stay out of the coding sidebar. */
 export function inboxConversationIds(inbox: HostInbox | null): ReadonlySet<ConversationId> {
   const ids = new Set<ConversationId>();

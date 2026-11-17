@@ -101,6 +101,11 @@ export class Terminals {
     return { owner, limit: this.#limit, terminals };
   }
 
+  /** The conversation family a terminal belongs to, for admission checks. */
+  ownerOf(id: TerminalId): ConversationId {
+    return this.#get(id).owner;
+  }
+
   /** Calls `listener` with the owner's list now and after every change; returns the stop. */
   watch(owner: ConversationId, listener: (list: TerminalList) => void): () => void {
     let set = this.#watchers.get(owner);

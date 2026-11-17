@@ -21,6 +21,7 @@ import type { DurableView, ThinkingLevel } from "@pinomad/protocol/view.ts";
 import { familyUpdatedAt, relativeTime } from "@pinomad/client/family.ts";
 import { sameModel, summaryOf, thinkingLevelLabels } from "@pinomad/client/model.ts";
 import { useAccountModel } from "../../entities/account/account-context.tsx";
+import { INBOX_MODE_ENABLED } from "../../entities/inbox/inbox.ts";
 import { ModelCombobox } from "../../entities/model/model-combobox.tsx";
 import { useNow } from "../../shared/use-now.ts";
 import { ArchiveRestore, ArrowLeft, Bot, Cancel, ChatBubble, ChevronRight, Computer, Devices, Info, KeyRound, MoreHorizontal, Search, SlidersHorizontal, Sparkles, UserCircle } from "../../shared/ui/icons.tsx";
@@ -49,7 +50,7 @@ const SECTIONS = [
   { id: "providers", title: "Providers", icon: KeyRound, group: "host", keywords: "api key login subscription custom endpoint" },
   { id: "models", title: "Models", icon: Sparkles, group: "host", keywords: "default model thinking" },
   { id: "agents", title: "Agents", icon: Bot, group: "host", keywords: "roles subagents named agents mcp servers tools" },
-  { id: "chats", title: "Chats", icon: ChatBubble, group: "host", keywords: "conversations queue steer follow-up messages archived archive restore history inbox quiet hours do not disturb notifications" },
+  { id: "chats", title: "Chats", icon: ChatBubble, group: "host", keywords: "conversations queue steer follow-up messages archived archive restore history notifications" },
   { id: "devices", title: "Devices", icon: Devices, group: "host", keywords: "paired revoke" },
   { id: "about", title: "About", icon: Info, group: "host", keywords: "host name rename version upgrade update automatic protocol website" },
 ] as const;
@@ -568,7 +569,7 @@ function sectionBody(
         body: (
           <div className="flex flex-col gap-6">
             <ChatsSection view={view} remote={remote} connected={connected} />
-            <InboxSettings view={view} remote={remote} />
+            {INBOX_MODE_ENABLED ? <InboxSettings view={view} remote={remote} /> : null}
             <ArchivedSection view={view} remote={remote} connected={connected} />
           </div>
         ),

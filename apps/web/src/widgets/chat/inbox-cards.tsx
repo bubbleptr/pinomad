@@ -112,7 +112,7 @@ export function InboxTaskCards({ tools, inbox }: { tools: readonly ToolItem[]; i
         const card = "flex w-full items-center gap-2.5 rounded-xl border border-border px-3 py-2.5 text-start";
         return (
           <li key={tool.toolCallId ?? index}>
-            {info === undefined ? (
+            {info === undefined || !inbox.interactive ? (
               <div className={card}>{body}</div>
             ) : (
               <button

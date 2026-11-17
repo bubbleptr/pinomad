@@ -17,15 +17,23 @@ function InboxTranscript({
   conversation,
   conversationId,
   onOpenTask,
+  interactive,
 }: {
   conversation: ConversationView;
   conversationId: ConversationId;
   onOpenTask: () => void;
+  interactive: boolean;
 }) {
   const view = withInbox();
   return (
     <div className="flex h-[calc(100vh-3rem)] flex-col">
-      <InboxTranscriptProvider inbox={view.inbox} organized={view.organized} conversationId={conversationId} onOpenTask={onOpenTask}>
+      <InboxTranscriptProvider
+        inbox={view.inbox}
+        organized={view.organized}
+        conversationId={conversationId}
+        onOpenTask={onOpenTask}
+        interactive={interactive}
+      >
         <ConversationTranscript
           conversation={conversation}
           toolPresentations={{}}
@@ -43,7 +51,7 @@ function InboxTranscript({
 const meta = {
   title: "Widgets/Chat/InboxCards",
   component: InboxTranscript,
-  args: { conversation: intakeConversation(), conversationId: INTAKE_ID, onOpenTask: fn() },
+  args: { conversation: intakeConversation(), conversationId: INTAKE_ID, onOpenTask: fn(), interactive: true },
 } satisfies Meta<typeof InboxTranscript>;
 
 export default meta;

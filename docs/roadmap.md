@@ -8,7 +8,7 @@
 
 ## 以后
 
-- [Inbox 模式（ADR-0051）](https://github.com/bubbleptr/pinomad/milestone/11)：事件进项目的 Inbox，一个 worker 依次取任务、每项一个对话；Inbox 的运行由 auto mode 把关
+- [Inbox 模式（ADR-0051）](https://github.com/bubbleptr/pinomad/milestone/11)：暂时停用，保留实现、协议和历史数据，重新评估后再恢复
 - [Backlog](https://github.com/bubbleptr/pinomad/issues?q=is%3Aopen+is%3Aissue+no%3Amilestone+-label%3Alater+-label%3Atech-debt)：没排进阶段的具体小项
 - [`later`](https://github.com/bubbleptr/pinomad/issues?q=is%3Aopen+is%3Aissue+label%3Alater)：等有明确需求再做的想法，相关的合在一个伞形 issue 里
 - [`tech-debt`](https://github.com/bubbleptr/pinomad/issues?q=is%3Aopen+is%3Aissue+label%3Atech-debt)
