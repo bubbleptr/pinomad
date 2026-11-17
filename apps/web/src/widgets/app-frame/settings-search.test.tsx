@@ -54,6 +54,14 @@ describe("Settings search", () => {
     expect(sections()).toEqual(["Account"]);
   });
 
+  it("does not find the disabled Inbox settings", async () => {
+    renderSettings(fakeMachines(), "chats");
+    expect(screen.queryByRole("switch", { name: "Quiet hours" })).toBeNull();
+    expect(screen.queryByRole("combobox", { name: "Worker model" })).toBeNull();
+    await userEvent.type(search(), "inbox");
+    expect(sections()).toEqual([]);
+  });
+
   it("says so when nothing matches", async () => {
     renderSettings();
     await userEvent.type(search(), "zzz");

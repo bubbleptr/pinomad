@@ -77,6 +77,7 @@ const host: OpenedHost = await openHost({
   projects,
   port: 0,
   autoTitle: false,
+  inbox: { enabled: true },
   settingsFallback: {
     defaultModel: () => ({ provider: provider!, modelId }),
     defaultThinkingLevel: () => null,

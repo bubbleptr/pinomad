@@ -16,6 +16,7 @@ import {
 } from "@pinomad/protocol/inbox.ts";
 import type { HostIndex } from "@pinomad/protocol/organization.ts";
 import type { QuestionState } from "@pinomad/protocol/presentation.ts";
+import type { HostSettingsPatch } from "@pinomad/protocol/settings.ts";
 import { Published, type HostValue } from "./host-value.ts";
 import {
   cancelFollowUp,
@@ -24,6 +25,7 @@ import {
   InboxDoc,
   type InboxTask,
   type InboxTimer,
+  isInboxConversation,
   type ProjectInbox,
   projectKey,
   setBaseBranch,
@@ -41,10 +43,14 @@ import {
   type SourceDeps,
   SourcesDoc,
 } from "./inbox-sources.ts";
-import { IndexDoc } from "./organization.ts";
+import { familyRoot, IndexDoc } from "./organization.ts";
 
 /** The gateway's view of the Inboxes: the stream's value and its calls. */
 export interface InboxService extends HostValue<HostInbox> {
+  /** Reject agent work anywhere in an Inbox conversation's family while dormant. */
+  checkRun(conversationId: ConversationId): Promise<void>;
+  /** Inbox-only host settings stay read-only too; ordinary settings pass. */
+  checkSettings(patch: HostSettingsPatch): void;
   sendToIntake(project: string, text: string, requestId: string, context: Context): Promise<ConversationId>;
   prepareIntake(conversationId: ConversationId, context: Context): Promise<void>;
   setRules(project: string, rules: string): Promise<void>;
@@ -63,19 +69,24 @@ export interface InboxService extends HostValue<HostInbox> {
 /** A conversation's unanswered questions, by its id. */
 type QuestionsOf = (conversationId: ConversationId) => readonly InboxQuestion[];
 
-const wireTask = (task: Readonly<InboxTask>, questionsOf: QuestionsOf): WireTask => {
-  const questions = task.conversationId === undefined || task.closed ? [] : questionsOf(task.conversationId);
+/** The first batch's request id finds a conversation whose id was never recorded. */
+const conversationIdOf = (task: Readonly<InboxTask>, index: Readonly<HostIndex> | null | undefined): ConversationId | undefined =>
+  task.conversationId ?? index?.conversations.find((entry) => entry.requestId !== undefined && entry.requestId === task.batch?.requestId)?.id;
+
+const wireTask = (task: Readonly<InboxTask>, questionsOf: QuestionsOf, index: Readonly<HostIndex> | null | undefined): WireTask => {
+  const conversationId = conversationIdOf(task, index);
+  const questions = conversationId === undefined || task.closed ? [] : questionsOf(conversationId);
   return {
-    ...wireTaskFields(task),
+    ...wireTaskFields(task, conversationId),
     ...(questions.length === 0 ? {} : { questions }),
   };
 };
 
-const wireTaskFields = (task: Readonly<InboxTask>): WireTask => ({
+const wireTaskFields = (task: Readonly<InboxTask>, conversationId: ConversationId | undefined): WireTask => ({
   id: task.id,
   title: task.title,
   createdAt: task.createdAt,
-  ...(task.conversationId === undefined ? {} : { conversationId: task.conversationId }),
+  ...(conversationId === undefined ? {} : { conversationId }),
   events: task.events.map((event) => ({
     id: event.id,
     source: event.source,
@@ -138,7 +149,7 @@ export function hostInbox(
         project: path,
         ...(inbox?.intake === undefined ? {} : { intake: inbox.intake }),
         ...(baseBranch === undefined ? {} : { baseBranch }),
-        tasks: (inbox?.tasks ?? []).map((task) => wireTask(task, questionsOf)),
+        tasks: (inbox?.tasks ?? []).map((task) => wireTask(task, questionsOf, index)),
         threads: { ...inbox?.threads },
         rules: rules.get(path) ?? "",
         followUps: timers
@@ -158,6 +169,8 @@ export function hostInbox(
 export async function openInboxService(options: {
   readonly dataDir: string;
   readonly context: Context;
+  /** Dormant mode keeps the snapshot but refuses Inbox API mutations. */
+  readonly writesEnabled: boolean;
   readonly intake: () => Pick<InboxHandle, "sendToIntake" | "prepareIntake"> | undefined;
   /** The source calls' dependencies; `harness` is the host's. */
   readonly sources: SourceDeps;
@@ -166,6 +179,9 @@ export async function openInboxService(options: {
 }): Promise<InboxService & { close(): void }> {
   const { dataDir, context } = options;
   const { harness } = options.sources;
+  const checkWrites = (): void => {
+    if (!options.writesEnabled) throw new Error("Inbox mode is temporarily disabled");
+  };
   await harness.commit(async (tx) => {
     await tx.doc(InboxDoc);
     await tx.doc(TimerDoc);
@@ -196,7 +212,7 @@ export async function openInboxService(options: {
   const syncQuestionWatches = async (): Promise<void> => {
     const open = new Set(
       Object.values(inboxes).flatMap((inbox) =>
-        inbox.tasks.filter((task) => !task.closed && task.conversationId !== undefined).map((task) => task.conversationId!),
+        inbox.tasks.filter((task) => !task.closed).map((task) => conversationIdOf(task, index)).filter((id) => id !== undefined),
       ),
     );
     for (const [id, watches] of questionWatches) {
@@ -261,7 +277,7 @@ export async function openInboxService(options: {
           if (inboxes[path]?.baseBranch !== undefined || baseLooked.has(path)) continue;
           baseLooked.add(path);
           try {
-            if (inboxes[path] !== undefined) await ensureBaseBranch(harness, path, context);
+            if (inboxes[path] !== undefined && options.writesEnabled) await ensureBaseBranch(harness, path, context);
             else {
               const repo = await gitBase(path);
               const found = repo === undefined ? undefined : await defaultBranch(repo.repo);
@@ -317,18 +333,28 @@ export async function openInboxService(options: {
   };
 
   return {
+    checkRun: async (conversationId) => {
+      const root = await familyRoot(harness, conversationId, context);
+      if (isInboxConversation(inboxes, index, root)) checkWrites();
+    },
+    checkSettings: (patch) => {
+      if (patch.inboxQuietHours !== undefined || patch.inboxIntakeModel !== undefined || patch.inboxWorkerModel !== undefined) checkWrites();
+    },
     get value() {
       return published.value;
     },
     subscribe: (listener) => published.subscribe(listener),
     sendToIntake: async (project, text, requestId, ctx) => {
+      checkWrites();
       const intake = options.intake();
       if (intake === undefined) throw new Error("The Inbox is still starting");
       return await intake.sendToIntake(project, text, requestId, ctx);
     },
-    // Before the workers start there is no intake to prepare: a message then reads the checkout as it is.
-    prepareIntake: async (conversationId, ctx) => await options.intake()?.prepareIntake(conversationId, ctx),
+    // A dormant Inbox has no intake to pin; ordinary coding submissions still pass through here.
+    prepareIntake: async (conversationId, ctx) =>
+      options.writesEnabled ? await options.intake()?.prepareIntake(conversationId, ctx) : undefined,
     setRules: async (project, text) => {
+      checkWrites();
       if (Buffer.byteLength(text, "utf8") > INBOX_RULES_MAX_BYTES) {
         throw new Error(`The rules are too long: at most ${INBOX_RULES_MAX_BYTES / 1024} KB`);
       }
@@ -344,15 +370,34 @@ export async function openInboxService(options: {
       await tail;
     },
     setBaseBranch: async (project, branch, ctx) => {
+      checkWrites();
       const key = await registered(project);
       await setBaseBranch(harness, key, branch, ctx);
     },
-    cancelFollowUp: (timerId, ctx) => cancelFollowUp(harness, timerId, ctx),
-    skipTask: (project, taskId, ctx) => skipInboxTask(harness, project, taskId, ctx),
-    addSource: (input, ctx) => addInboxSource(options.sources, input, ctx),
-    setSourceEnabled: (sourceId, enabled, ctx) => setInboxSourceEnabled(options.sources, sourceId, enabled, ctx),
-    removeSource: (sourceId, ctx) => removeInboxSource(options.sources, sourceId, ctx),
-    resetWebhookSecret: (sourceId, ctx) => resetInboxWebhookSecret(options.sources, sourceId, ctx),
+    cancelFollowUp: (timerId, ctx) => {
+      checkWrites();
+      return cancelFollowUp(harness, timerId, ctx);
+    },
+    skipTask: (project, taskId, ctx) => {
+      checkWrites();
+      return skipInboxTask(harness, project, taskId, ctx);
+    },
+    addSource: (input, ctx) => {
+      checkWrites();
+      return addInboxSource(options.sources, input, ctx);
+    },
+    setSourceEnabled: (sourceId, enabled, ctx) => {
+      checkWrites();
+      return setInboxSourceEnabled(options.sources, sourceId, enabled, ctx);
+    },
+    removeSource: (sourceId, ctx) => {
+      checkWrites();
+      return removeInboxSource(options.sources, sourceId, ctx);
+    },
+    resetWebhookSecret: (sourceId, ctx) => {
+      checkWrites();
+      return resetInboxWebhookSecret(options.sources, sourceId, ctx);
+    },
     close() {
       closed = true;
       for (const watches of questionWatches.values()) for (const watch of watches.values()) watch.stop();

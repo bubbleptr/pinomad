@@ -6,9 +6,11 @@ import { createContext, useContext, useMemo, type ReactNode } from "react";
 import type { ConversationId } from "@earendil-works/pi-durable";
 import type { Organized } from "@pinomad/protocol/organization.ts";
 import type { HostInbox, InboxEvent, InboxTask } from "@pinomad/protocol/inbox.ts";
-import { describeTasks, inboxOfConversation, type InboxTaskInfo } from "./inbox.ts";
+import { describeTasks, INBOX_MODE_ENABLED, inboxOfConversation, type InboxTaskInfo } from "./inbox.ts";
 
 export interface InboxTranscript {
+  /** Dormant history keeps its cards but offers no navigation into the mode. */
+  readonly interactive: boolean;
   /** The shown task's events by id; empty outside a task's conversation. */
   readonly events: ReadonlyMap<string, InboxEvent>;
   /** A task of the shown conversation's Inbox, as it stands now. */
@@ -26,12 +28,14 @@ export function InboxTranscriptProvider({
   organized,
   conversationId,
   onOpenTask,
+  interactive = INBOX_MODE_ENABLED,
   children,
 }: {
   inbox: HostInbox | null;
   organized: Organized;
   conversationId: ConversationId | undefined;
   onOpenTask: (project: string, task: InboxTask) => void;
+  interactive?: boolean;
   children: ReactNode;
 }) {
   const found = inboxOfConversation(inbox, conversationId);
@@ -39,6 +43,7 @@ export function InboxTranscriptProvider({
     if (found === undefined) return undefined;
     const described = describeTasks(found.inbox, organized);
     return {
+      interactive,
       events: new Map((found.task?.events ?? []).map((event) => [event.id, event])),
       task: (taskId) => described.get(taskId),
       openTask: (taskId) => {
@@ -46,6 +51,6 @@ export function InboxTranscriptProvider({
         if (task !== undefined) onOpenTask(found.inbox.project, task);
       },
     };
-  }, [found?.inbox, found?.task, organized, onOpenTask]);
+  }, [found?.inbox, found?.task, organized, interactive, onOpenTask]);
   return <InboxTranscriptContext.Provider value={value}>{children}</InboxTranscriptContext.Provider>;
 }

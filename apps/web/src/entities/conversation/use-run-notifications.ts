@@ -6,7 +6,7 @@ import type { DurableView } from "@pinomad/protocol/view.ts";
 import { inboxRunIds } from "@pinomad/client/inbox.ts";
 import { diffRunNotices, type StatusBaseline } from "@pinomad/client/run-notifications.ts";
 import type { ConversationRef } from "../host/focus.ts";
-import { inboxOfConversation } from "../inbox/inbox.ts";
+import { INBOX_MODE_ENABLED, inboxOfConversation } from "../inbox/inbox.ts";
 
 export function useRunNotifications(
   view: DurableView,
@@ -14,6 +14,7 @@ export function useRunNotifications(
   visibleConversationId: number | undefined,
   open: (ref: ConversationRef) => void,
   enabled = true,
+  inboxModeEnabled = INBOX_MODE_ENABLED,
 ): void {
   const baseline = useRef<StatusBaseline | undefined>(undefined);
   // The notifications still on screen, by conversation: a status move while
@@ -49,7 +50,9 @@ export function useRunNotifications(
       // intake exists; a closed task's questions do not show there.
       const owner = notice.body === "Waiting for your answer" ? inboxOfConversation(view.inbox, notice.id) : undefined;
       const target =
-        owner?.task !== undefined && !owner.task.closed && owner.inbox.intake !== undefined ? owner.inbox.intake : notice.id;
+        inboxModeEnabled && owner?.task !== undefined && !owner.task.closed && owner.inbox.intake !== undefined
+          ? owner.inbox.intake
+          : notice.id;
       // The window is in front and the conversation that shows this is on screen.
       if (
         document.visibilityState === "visible"
@@ -74,5 +77,5 @@ export function useRunNotifications(
         if (shown.current.get(notice.id) === notification) shown.current.delete(notice.id);
       };
     }
-  }, [enabled, hostKey, visibleConversationId, view.connection, view.organized, view.inbox]);
+  }, [enabled, hostKey, visibleConversationId, view.connection, view.organized, view.inbox, inboxModeEnabled]);
 }

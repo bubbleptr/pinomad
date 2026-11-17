@@ -31,7 +31,7 @@ import { HostFrame } from "./widgets/app-frame/host-frame.tsx";
 import { DraftHome } from "./widgets/draft-home/draft-home.tsx";
 import { InboxScreen } from "./widgets/inbox/inbox-screen.tsx";
 import { InboxTranscriptProvider } from "./entities/inbox/inbox-transcript.tsx";
-import { inboxOfConversation } from "./entities/inbox/inbox.ts";
+import { INBOX_MODE_ENABLED, inboxOfConversation } from "./entities/inbox/inbox.ts";
 import type { InboxTarget } from "./entities/composer/composer-store.ts";
 import type { InboxTask } from "@pinomad/protocol/inbox.ts";
 import { ConversationComposer } from "./widgets/composer/conversation-composer.tsx";
@@ -860,6 +860,7 @@ export function Workbench({
   hostOpening,
   hostOpen,
   hostCancelOpening,
+  inboxModeEnabled = INBOX_MODE_ENABLED,
 }: {
   remote: RemoteDurable;
   wsUrl: string;
@@ -876,6 +877,8 @@ export function Workbench({
   hostOpening?: Opening;
   hostOpen?: (id: ConversationId) => void;
   hostCancelOpening?: () => void;
+  /** Tests of the dormant Inbox screens opt in; the product leaves this off. */
+  inboxModeEnabled?: boolean;
 }) {
   const view = useDurableView(remote);
   const { hosts, focus, focusConversation, focusDraft, rememberConversation } = useHosts();
@@ -939,7 +942,7 @@ export function Workbench({
   const draftSlotState = useComposerSlotState(newDraftSlot);
   const draft = draftSlotState.home;
   // An Inbox screen with no conversation of its own takes the draft's place (ADR-0051 §6).
-  const inboxTarget = drafting ? draftSlotState.inbox : undefined;
+  const inboxTarget = inboxModeEnabled && drafting ? draftSlotState.inbox : undefined;
   // An intake's first send resolves after an arbitrary delay; only the intake
   // still shown may take main when it does.
   const inboxTargetRef = useRef(inboxTarget);
@@ -1240,7 +1243,16 @@ export function Workbench({
   // no run offers the Fork action. An unknown summary — the shown conversation
   // fell out of `organized` (e.g. its root was archived by another client) —
   // also hides it: the host only accepts forks of known root conversations.
-  const canFork = shownSummary?.kind === "conversation";
+  // Dormant Inbox conversations stay readable without offering new work.
+  const shownInbox =
+    inboxTarget !== undefined
+      ? { inbox: view.inbox?.inboxes.find((each) => each.project === inboxTarget.project), task: undefined }
+      : inboxOfConversation(view.inbox, shownId);
+  const shownRoot = shownId === undefined ? undefined : rootOf(view.organized, shownId);
+  const inboxReadOnly =
+    !inboxModeEnabled
+    && (inboxTarget !== undefined || (shownRoot !== undefined && inboxOfConversation(view.inbox, shownRoot.summary.id) !== undefined));
+  const canFork = !inboxReadOnly && shownSummary?.kind === "conversation";
   // A forked message shows the "N forks" chip instead of the Fork button —
   // legacy data can hold several per message (ADR-0019 §3).
   const forksAtForShown = useCallback(
@@ -1260,16 +1272,12 @@ export function Workbench({
     if (framed) setLocalDrafting(true);
   };
   const showInboxTarget = (target: InboxTarget): void => {
+    if (!inboxModeEnabled) return;
     cancelOpening();
     newDraftSlot.setInbox(target);
     if (hostKey !== undefined) focusDraft(hostKey);
     if (framed) setLocalDrafting(true);
   };
-  // The Inbox the main column belongs to: the shown target's, or the shown conversation's.
-  const shownInbox =
-    inboxTarget !== undefined
-      ? { inbox: view.inbox?.inboxes.find((each) => each.project === inboxTarget.project), task: undefined }
-      : inboxOfConversation(view.inbox, shownId);
   const targetTask =
     inboxTarget?.task === undefined ? undefined : shownInbox?.inbox?.tasks.find((task) => task.id === inboxTarget.task);
   // The intake opened (this send or another client's) or the worker took the
@@ -1394,7 +1402,13 @@ export function Workbench({
             connected={view.connection === "connected"}
           />
         ) : (
-          <InboxTranscriptProvider inbox={view.inbox} organized={view.organized} conversationId={shownId} onOpenTask={openInboxTask}>
+          <InboxTranscriptProvider
+            inbox={view.inbox}
+            organized={view.organized}
+            conversationId={shownId}
+            onOpenTask={openInboxTask}
+            interactive={inboxModeEnabled}
+          >
           <ChatLayout
             // Keyed by the shown id, so the skeleton and the content that
             // replaces it share one layout and dock.
@@ -1423,12 +1437,16 @@ export function Workbench({
                       </Button>
                     )}
                   </div>
+                ) : inboxReadOnly ? (
+                  <div className="flex items-center gap-2 border-t border-border py-2">
+                    <span className="min-w-0 flex-1 text-center text-xs text-muted-foreground">Read-only · Inbox</span>
+                  </div>
                 ) : conversation === undefined ? (
                   failed ? null : <ComposerSkeleton />
                 ) : (
                   <div className="flex flex-col gap-1">
                     {/* An intake also shows what its Inbox's tasks are asking (#846). */}
-                    {shownInbox?.inbox !== undefined && shownInbox.task === undefined ? (
+                    {inboxModeEnabled && shownInbox?.inbox !== undefined && shownInbox.task === undefined ? (
                       <TaskQuestions
                         inbox={shownInbox.inbox}
                         remote={remote}
@@ -1494,7 +1512,7 @@ export function Workbench({
                 submissionEditTooltip={submissionEditTooltip}
                 // A subagent's run belongs to the delegating task; resending its prompt would talk past it.
                 onRetry={
-                  shownSummary?.kind === "subagent"
+                  shownSummary?.kind === "subagent" || inboxReadOnly
                     ? undefined
                     : async ({ text, images, skills, attachments, requestId }) => {
                         requestNotificationPermission();
@@ -1510,14 +1528,14 @@ export function Workbench({
                       }
                 }
                 onRetrySubmission={
-                  shownSummary?.kind === "subagent"
+                  shownSummary?.kind === "subagent" || inboxReadOnly
                     ? undefined
                     : (requestId) => {
                         void remote.controller.retrySubmission(requestId).catch(() => {});
                       }
                 }
                 onEditSubmission={
-                  shownSummary?.kind === "subagent"
+                  shownSummary?.kind === "subagent" || inboxReadOnly
                     ? undefined
                     : (requestId) => {
                         const origin = shownConversationId;
@@ -1567,7 +1585,7 @@ export function Workbench({
           pluginPanels={plugins.panels}
           drafting={drafting}
           inboxScreen={inboxTarget !== undefined}
-          inbox={shownInbox?.inbox}
+          inbox={inboxModeEnabled ? shownInbox?.inbox : undefined}
           busy={busy}
           liveActivity={liveActivity}
           onOpenChange={setPanelOpen}
@@ -1591,7 +1609,7 @@ export function Workbench({
           pluginPanels={plugins.panels}
           drafting={drafting}
           inboxScreen={inboxTarget !== undefined}
-          inbox={shownInbox?.inbox}
+          inbox={inboxModeEnabled ? shownInbox?.inbox : undefined}
           busy={busy}
           liveActivity={liveActivity}
           onOpenChange={setPanelOpen}
@@ -1640,6 +1658,7 @@ export function Workbench({
             onNewChat={() => startDraft({ kind: "chat" })}
             inboxTarget={inboxTarget}
             onInboxTarget={(_key, target) => showInboxTarget(target)}
+            inboxModeEnabled={inboxModeEnabled}
             narrow={narrow}
           >
             {body}

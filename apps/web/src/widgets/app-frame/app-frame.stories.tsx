@@ -223,7 +223,7 @@ export const Opening: Story = {
 const noticed = fakeView({ notices: [{ id: 1, level: "error", message: "Model anthropic/claude-opus-5-5 is overloaded; retrying in 8s" }] });
 export const WithNotice: Story = { args: { machines: fakeMachines({ home: noticed }) } };
 
-/** An Inbox task in main brings the sidebar to Inbox mode, where its row is (ADR-0051 §1). */
+/** While Inbox is dormant, an old task stays out of coding and never reopens the mode. */
 const inboxTask = withInbox(fakeView({ conversation: inboxTaskConversation() }));
 export const InboxTaskShown: Story = {
   args: { machines: fakeMachines({ home: inboxTask }), shownId: RUNNING_TASK_ID, onInboxTarget: fn() },

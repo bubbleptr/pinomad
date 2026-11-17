@@ -16,7 +16,7 @@ import { type ConversationDocToken, type ConversationId, defineDoc, type InputEn
 import { Type } from "typebox";
 import { branchCommit, defaultBranch, gitBase } from "./checkout.ts";
 import { memoryDir, memoryPreamble, type MemoryOwner, taskMemory } from "./inbox-memory.ts";
-import { IndexDoc } from "./organization.ts";
+import { familyRoot, IndexDoc } from "./organization.ts";
 import { nextFire } from "./schedule.ts";
 import { INBOX_BATCH_ENTRY, type InboxBatch, type InboxSchedule } from "@pinomad/protocol/inbox.ts";
 import type { HostIndex } from "@pinomad/protocol/organization.ts";
@@ -49,7 +49,7 @@ export type InboxTask = {
    * conversation, recorded before it is admitted so a restart admits the same
    * draft again (a no-op) and waits on it. Cleared once its run settles.
    */
-  batch?: { requestId: string; eventIds: string[]; first: boolean; admitted: boolean };
+  batch?: { requestId: string; eventIds: string[]; first: boolean; admitted: boolean; paused?: true };
   /** Done or skipped; a later event reopens it. */
   closed: boolean;
   /** Closed by the user without running it (`skipInboxTask`); a later event reopens it. */
@@ -339,6 +339,50 @@ export function inboxTaskOf(
     if (task !== undefined) return { project, task };
   }
   return undefined;
+}
+
+/** Whether a conversation is an intake or belongs to a task, including the first-run id gap. */
+export function isInboxConversation(
+  inboxes: Readonly<Record<string, Readonly<ProjectInbox>>>,
+  index: Readonly<HostIndex> | undefined,
+  conversationId: ConversationId,
+): boolean {
+  if (Object.values(inboxes).some((inbox) => inbox.intake === conversationId)) return true;
+  return index !== undefined && inboxTaskOf(inboxes, index, conversationId) !== undefined;
+}
+
+/**
+ * Stop recovered Inbox work without withdrawing queued inputs. Used while the
+ * mode is dormant: the worker is absent, so only the Harness could resume it.
+ */
+export async function stopInboxRuns(harness: Harness, context: Context): Promise<void> {
+  const [doc, index] = await Promise.all([harness.snapshot(InboxDoc, context), harness.snapshot(IndexDoc, context)]);
+  const inboxes = doc?.inboxes ?? {};
+  const inspection = await harness.inspect(context);
+  const owned = new Set<ConversationId>();
+  const batches = new Set<string>();
+  // Resolve every family before aborting any: a background child can outlive
+  // its root, and no scheduling should race the ownership walk.
+  for (const task of inspection.tasks) {
+    // An earlier user Stop is not a pause introduced by this dormant start.
+    if (task.record.abortRequested) continue;
+    const root = await familyRoot(harness, task.record.conversationId, context);
+    if (!isInboxConversation(inboxes, index, root)) continue;
+    owned.add(task.record.conversationId);
+    if (index === undefined) continue;
+    const owner = inboxTaskOf(inboxes, index, root);
+    if (owner?.task.batch !== undefined) batches.add(owner.task.id);
+  }
+  if (batches.size > 0) {
+    await harness.commit(async (tx) => {
+      for (const inbox of Object.values((await tx.doc(InboxDoc)).inboxes)) {
+        for (const task of inbox.tasks) if (batches.has(task.id) && task.batch !== undefined) task.batch.paused = true;
+      }
+    }, context);
+  }
+  for (const task of inspection.tasks) {
+    if (owned.has(task.record.conversationId) && !task.record.abortRequested) await harness.abortTask(task.record.id, context);
+  }
 }
 
 /** The calling conversation's Inbox task, writable, or an error naming the tool. */
@@ -858,12 +902,35 @@ export async function startInbox(options: {
       }, context);
     }
 
+    // A dormant host's abort is a pause, not a result. Re-enable with a fresh
+    // request id; a user Stop or any other settled outcome keeps its old meaning.
+    const resume = async (settled: Awaited<ReturnType<typeof submission.wait>>): Promise<boolean> => {
+      if (batch.paused !== true || settled.status !== "unanswered" || settled.reason !== "aborted") return false;
+      let resumed = false;
+      await harness.commit(async (tx) => {
+        const current = await find(tx);
+        if (current.batch?.paused !== true) return;
+        current.batch.requestId = `${current.batch.requestId}:resumed`;
+        current.batch.admitted = false;
+        delete current.batch.paused;
+        resumed = true;
+      }, context);
+      if (!resumed) return false;
+      const fresh = (await harness.snapshot(InboxDoc, context))?.inboxes[project]?.tasks.find((each) => each.id === task.id);
+      if (fresh === undefined) return false;
+      await runBatch(project, fresh);
+      return true;
+    };
     // Wait for the run to end, or to stop on a question: then the worker moves on.
-    const settledRun = submission.wait(context).then(() => "settled" as const);
+    const settledRun = submission.wait(context);
     const asked = await questionWatch(conversationId);
-    const outcome = await Promise.race([settledRun, asked.pending]);
-    if (outcome === "settled") {
+    const outcome = await Promise.race([
+      settledRun.then((value) => ({ kind: "settled" as const, value })),
+      asked.pending.then(() => ({ kind: "asked" as const })),
+    ]);
+    if (outcome.kind === "settled") {
       asked.stop();
+      if (await resume(outcome.value)) return;
       await closeTask(project, task.id);
       return;
     }
@@ -875,9 +942,10 @@ export async function startInbox(options: {
       if (current !== undefined) current.waiting = true;
     }, context);
     void settledRun
-      .then(async () => {
+      .then(async (settled) => {
         asked.stop();
         waiting.delete(task.id);
+        if (await resume(settled)) return;
         await closeTask(project, task.id);
         pump(project);
       })

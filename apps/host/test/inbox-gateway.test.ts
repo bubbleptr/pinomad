@@ -12,7 +12,7 @@ import { question } from "../src/extensions/question.ts";
 import { addInboxEvent, addTimer, InboxDoc, TimerDoc } from "../src/inbox.ts";
 import { memoryDir } from "../src/inbox-memory.ts";
 import { IndexDoc } from "../src/organization.ts";
-import { connectTo, LONG_ANSWER, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
+import { connectTo, LONG_ANSWER, startChat, startFauxHost, tempDir, useCleanups, waitForView } from "./support.ts";
 
 const context = BACKGROUND_CONTEXT;
 const exec = promisify(execFile);
@@ -185,6 +185,200 @@ describe("the Inbox's base branch (5.41, #846)", () => {
     const { key, client, until } = await inboxHost();
     expect((await until(() => true)).baseBranch).toBeUndefined();
     await expect(client.controller.setInboxBaseBranch(key, "main")).rejects.toThrow(/not a Git repository/);
+  });
+});
+
+describe("the temporarily disabled Inbox mode", () => {
+  it("keeps new events pending, refuses Inbox writes, and leaves coding available", async () => {
+    const { host, key, client, until } = await inboxHost({ inbox: false, answers: ["coding done"] });
+    await addInboxEvent(host.harness, key, event("pending", "do not run"), context);
+    const pending = await until((inbox) => inbox.tasks.length === 1);
+    expect(pending.tasks[0]!.conversationId).toBeUndefined();
+
+    const coding = await startChat(client, "ordinary coding");
+    await (await host.harness.conversation(coding, context))!.waitForIdle(context);
+    expect((await until(() => true)).tasks[0]!.conversationId).toBeUndefined();
+    await expect(client.controller.sendToIntake(key, "new task")).rejects.toThrow(/disabled/);
+    await expect(client.controller.setInboxRules(key, "rules")).rejects.toThrow(/disabled/);
+    await client.controller.updateSettings({ inboxQuietHours: { start: 1, end: 2 } });
+    expect(client.view.current().notices.at(-1)?.message).toMatch(/temporarily disabled/);
+    expect(host.settings.value.inboxQuietHours).toBeNull();
+    await client.controller.updateSettings({ steeringMode: "all" });
+    expect(host.settings.value.steeringMode).toBe("all");
+    await expect(client.controller.skipInboxTask(key, pending.tasks[0]!.id)).rejects.toThrow(/disabled/);
+    await expect(
+      client.controller.addInboxSource(key, "schedule", true, {
+        kind: "schedule",
+        note: "check",
+        schedule: { kind: "daily", time: "09:00", timeZone: "UTC" },
+      }),
+    ).rejects.toThrow(/disabled/);
+
+    const url = new URL(`/inbox/disabled/events`, host.url.replace(/^ws/, "http"));
+    const response = await fetch(url, { method: "POST", body: "{}" });
+    expect(response.status).toBe(405);
+  });
+
+  it("refuses ordinary conversation calls that would restart an old task", async () => {
+    const path = await project();
+    const dataDir = await tempDir();
+    defer(dataDir.remove);
+    const first = await startFauxHost(defer, { dataDir: dataDir.path, projects: [path], answers: ["done", LONG_ANSWER], tokensPerSecond: 20 });
+    await addInboxEvent(first.harness, path, event("done", "already done"), context);
+    const firstClient = await connectTo(defer, first);
+    await waitForView(firstClient.view, (view) => view.inbox?.inboxes[0]?.tasks[0]?.closed === true);
+    const taskId = Object.values((await first.harness.snapshot(InboxDoc, context))!.inboxes)[0]!.tasks[0]!.conversationId!;
+    await firstClient.controller.switchConversation(taskId);
+    await firstClient.controller.fork(String(firstClient.view.current().conversation!.entries.at(-1)!.id), LONG_ANSWER);
+    const forkId = firstClient.view.current().conversation!.conversation.id;
+    await first.close();
+
+    const disabled = await startFauxHost(defer, { dataDir: dataDir.path, projects: [path], inbox: false });
+    const client = await connectTo(defer, disabled);
+    await client.controller.switchConversation(taskId);
+    await client.controller.submit("ordinary submit must not run", "followUp", { target: taskId, requestId: "disabled-submit" });
+    await waitForView(
+      client.view,
+      (view) =>
+        view.submissions?.some(
+          (submission) => submission.requestId === "disabled-submit" && submission.phase === "failed" && submission.error?.includes("disabled") === true,
+        ) === true,
+    );
+    await client.controller.compact(undefined);
+    expect(client.view.current().notices.at(-1)?.message).toMatch(/temporarily disabled/);
+    const entries = await (await disabled.harness.conversation(taskId, context))!.entries({ order: "ascending" }, 1000, undefined, context);
+    expect(JSON.stringify(entries.items)).not.toContain("ordinary submit must not run");
+    const recoveredFork = await (await disabled.harness.conversation(forkId, context))!.entries({ order: "ascending" }, 1000, undefined, context);
+    const forkAnswers = recoveredFork.items.filter((entry) => entry.kind === "pi.assistant");
+    expect(JSON.stringify(forkAnswers)).not.toContain(LONG_ANSWER);
+
+    await client.controller.fork(String(entries.items[0]!.id), "new fork must not run");
+    expect(client.view.current().notices.at(-1)?.message).toMatch(/temporarily disabled/);
+    expect(client.view.current().conversation!.conversation.id).toBe(taskId);
+  });
+
+  it("allows an already-resolved answer to be retried without restarting work", async () => {
+    const path = await project();
+    const dataDir = await tempDir();
+    defer(dataDir.remove);
+    const asks = fauxAssistantMessage(
+      fauxToolCall("ask_user_question", { questions: [{ header: "Scope", question: "Desktop too?", options: [{ label: "Yes" }, { label: "No" }] }] }),
+      { stopReason: "toolUse" },
+    );
+    const first = await startFauxHost(defer, { dataDir: dataDir.path, projects: [path], extensions: [question], answers: [asks, "done"] });
+    await addInboxEvent(first.harness, path, event("ask", "layout bug"), context);
+    const firstClient = await connectTo(defer, first);
+    await waitForView(firstClient.view, (view) => (view.inbox?.inboxes[0]?.tasks[0]?.questions?.length ?? 0) > 0);
+    const task = firstClient.view.current().inbox!.inboxes[0]!.tasks[0]!;
+    const pending = task.questions![0]!;
+    await firstClient.controller.answer(pending.kind, pending.request.id, [{ selected: ["Yes"] }], task.conversationId);
+    await first.close();
+
+    const disabled = await startFauxHost(defer, { dataDir: dataDir.path, projects: [path], inbox: false });
+    const client = await connectTo(defer, disabled);
+    await client.controller.answer(pending.kind, pending.request.id, [{ selected: ["Yes"] }], task.conversationId);
+    expect(client.view.current().notices.some((notice) => notice.message.includes("temporarily disabled"))).toBe(false);
+  });
+
+  it("does not resume an interrupted task or take its queued successor", async () => {
+    const path = await project();
+    const dataDir = await tempDir();
+    defer(dataDir.remove);
+    const first = await startFauxHost(defer, {
+      dataDir: dataDir.path,
+      projects: [path],
+      answers: [LONG_ANSWER, "must not run"],
+      tokensPerSecond: 20,
+    });
+    await addInboxEvent(first.harness, path, event("running", "interrupted"), context);
+    await addInboxEvent(first.harness, path, event("queued", "still queued"), context);
+    const key = Object.entries((await first.harness.snapshot(InboxDoc, context))!.inboxes).find(([, inbox]) => inbox.tasks.length === 2)![0];
+    const firstClient = await connectTo(defer, first);
+    await waitForView(firstClient.view, (view) => view.inbox?.inboxes[0]?.tasks[0]?.conversationId !== undefined);
+    const runningId = (await first.harness.snapshot(InboxDoc, context))!.inboxes[key]!.tasks[0]!.conversationId!;
+    // The first-run crash window: the conversation exists, but the worker has
+    // not recorded its id yet. The batch and index request ids still agree.
+    await first.harness.commit(async (tx) => {
+      const task = (await tx.doc(InboxDoc)).inboxes[key]!.tasks[0]!;
+      task.conversationId = undefined;
+      expect(task.batch?.requestId).toBe((await tx.doc(IndexDoc)).conversations.find((entry) => entry.id === runningId)?.requestId);
+    }, context);
+    await first.close();
+
+    const disabled = await startFauxHost(defer, { dataDir: dataDir.path, projects: [path], inbox: false });
+    const client = await connectTo(defer, disabled);
+    expect(client.view.current().inbox?.inboxes[0]?.tasks[0]?.conversationId).toBe(runningId);
+    await client.controller.submit("must not restart either", "followUp", { target: runningId, requestId: "disabled-window" });
+    await waitForView(
+      client.view,
+      (view) =>
+        view.submissions?.some(
+          (submission) => submission.requestId === "disabled-window" && submission.phase === "failed" && submission.error?.includes("disabled") === true,
+        ) === true,
+    );
+    await (await disabled.harness.conversation(runningId, context))!.waitForIdle(context);
+    const conversation = await disabled.harness.conversation(runningId, context);
+    const entries = await conversation!.entries({ order: "ascending" }, 1000, undefined, context);
+    expect(JSON.stringify(entries.items)).not.toContain(LONG_ANSWER);
+    expect(JSON.stringify(entries.items)).not.toContain("must not restart either");
+    const inboxes = (await disabled.harness.snapshot(InboxDoc, context))!.inboxes[key]!;
+    expect(inboxes.tasks).toHaveLength(2);
+    expect(inboxes.tasks[1]!.conversationId).toBeUndefined();
+    expect(inboxes.tasks[1]!.events[0]!.handled).toBe(false);
+  });
+});
+
+describe("re-enabling the Inbox", () => {
+  it("retries a batch aborted by the dormant host instead of closing it", async () => {
+    const path = await project();
+    const dataDir = await tempDir();
+    defer(dataDir.remove);
+    const first = await startFauxHost(defer, { dataDir: dataDir.path, projects: [path], answers: [LONG_ANSWER], tokensPerSecond: 20 });
+    await addInboxEvent(first.harness, path, event("resume", "resume this task"), context);
+    const firstClient = await connectTo(defer, first);
+    await waitForView(firstClient.view, (view) => view.inbox?.inboxes[0]?.tasks[0]?.conversationId !== undefined);
+    const taskId = Object.values((await first.harness.snapshot(InboxDoc, context))!.inboxes)[0]!.tasks[0]!.conversationId!;
+    await first.close();
+
+    const disabled = await startFauxHost(defer, { dataDir: dataDir.path, projects: [path], inbox: false });
+    await (await disabled.harness.conversation(taskId, context))!.waitForIdle(context);
+    await disabled.close();
+
+    const enabled = await startFauxHost(defer, { dataDir: dataDir.path, projects: [path], answers: ["resumed done"] });
+    const client = await connectTo(defer, enabled);
+    await waitForView(client.view, (view) => view.inbox?.inboxes[0]?.tasks[0]?.closed === true);
+    const entries = await (await enabled.harness.conversation(taskId, context))!.entries({ order: "ascending" }, 1000, undefined, context);
+    const answers = entries.items.filter((entry) => entry.kind === "pi.assistant");
+    expect(JSON.stringify(answers)).toContain("resumed done");
+  });
+});
+
+describe("a task already stopped before the dormant host", () => {
+  it("does not mark a user's earlier Stop for a later resume", async () => {
+    const path = await project();
+    const dataDir = await tempDir();
+    defer(dataDir.remove);
+    const first = await startFauxHost(defer, { dataDir: dataDir.path, projects: [path], answers: [LONG_ANSWER], tokensPerSecond: 20 });
+    await addInboxEvent(first.harness, path, event("stop", "stop this task"), context);
+    const firstClient = await connectTo(defer, first);
+    await waitForView(firstClient.view, (view) => view.inbox?.inboxes[0]?.tasks[0]?.conversationId !== undefined);
+    const taskId = Object.values((await first.harness.snapshot(InboxDoc, context))!.inboxes)[0]!.tasks[0]!.conversationId!;
+    const inspection = await first.harness.inspect(context);
+    const running = inspection.tasks.find((task) => task.record.conversationId === taskId && task.record.owner === undefined)!;
+    await first.harness.abortTask(running.record.id, context);
+    await first.close();
+
+    const disabled = await startFauxHost(defer, { dataDir: dataDir.path, projects: [path], inbox: false });
+    const batch = Object.values((await disabled.harness.snapshot(InboxDoc, context))!.inboxes)[0]!.tasks[0]!.batch;
+    expect(batch).toMatchObject({ requestId: expect.any(String), admitted: true });
+    expect(batch!.paused).toBeUndefined();
+    await disabled.close();
+
+    const enabled = await startFauxHost(defer, { dataDir: dataDir.path, projects: [path], answers: ["must not resume"] });
+    const client = await connectTo(defer, enabled);
+    await waitForView(client.view, (view) => view.inbox?.inboxes[0]?.tasks[0]?.closed === true);
+    const entries = await (await enabled.harness.conversation(taskId, context))!.entries({ order: "ascending" }, 1000, undefined, context);
+    expect(JSON.stringify(entries.items.filter((entry) => entry.kind === "pi.assistant"))).not.toContain("must not resume");
   });
 });
 

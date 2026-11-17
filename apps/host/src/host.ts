@@ -9,7 +9,7 @@ import type { JsonValue } from "@earendil-works/chord/json";
 import type { ImageProcessor } from "@earendil-works/pi-durable/tools";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { addProject, createConversation, ensureIndex, IndexDoc, pinCheckout } from "./organization.ts";
-import { INBOX_TASK_TOOLS, inboxExtension, type InboxHandle, INTAKE_TOOLS, memoryOwner, startInbox } from "./inbox.ts";
+import { INBOX_TASK_TOOLS, inboxExtension, type InboxHandle, INTAKE_TOOLS, memoryOwner, startInbox, stopInboxRuns } from "./inbox.ts";
 import { createMemoryExtension } from "./inbox-memory.ts";
 import { handleWebhook, type SourceDeps, startSourceRunner } from "./inbox-sources.ts";
 import { openSecretStore } from "./secrets.ts";
@@ -92,6 +92,12 @@ export interface OpenHostOptions {
   readonly autoTitle?: boolean;
   /** Auto mode for Inbox runs (ADR-0051 §7); the default classifier calls a small model. */
   readonly autoMode?: { readonly classify?: Classify };
+  /**
+   * Inbox mode is dormant by default. Its stream stays readable so clients
+   * can keep old conversations out of coding. Workers and new Inbox work are
+   * off; delivery of an existing Outbox is untouched.
+   */
+  readonly inbox?: { readonly enabled: boolean };
   /**
    * APNs push sender (ADR-0025): absent → `setPushToken` registers but nothing
    * is sent (faux test hosts). `{}` sends through the relay link when the
@@ -213,7 +219,9 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
   let plugins: Plugins | undefined;
   let upgrader: Awaited<ReturnType<typeof startHostUpgrader>> | undefined;
   let inboxView: Awaited<ReturnType<typeof openInboxService>> | undefined;
+  let inboxWorkers: InboxHandle | undefined;
   let sourceRunner: { close(): void } | undefined;
+  const inboxEnabled = options.inbox?.enabled === true;
   try {
     const models = withAnswerTiming(options.models);
     const token = await hostToken(options.dataDir);
@@ -399,11 +407,13 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
                   drain: () => processes!.drain(context),
                 }),
           });
-    // The `inbox` stream starts with the gateway; its intake calls wait for the workers below.
-    let inboxWorkers: InboxHandle | undefined;
-    inboxView = await openInboxService({
+    // Keep the stream while dormant: clients use it to keep old Inbox
+    // conversations out of coding. Workers and new Inbox work stay off;
+    // existing Outbox delivery is untouched.
+    const inboxService = await openInboxService({
       dataDir: options.dataDir,
       context,
+      writesEnabled: inboxEnabled,
       intake: () => inboxWorkers,
       sources: sourceDeps,
       questionDocs: extensions
@@ -411,11 +421,13 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
         .filter((doc) => doc.presentation === "pinomad.question")
         .map((doc) => doc.token as ConversationDocToken<QuestionState>),
     });
+    inboxView = inboxService;
+    if (!inboxEnabled) await stopInboxRuns(harness, context);
     const webhookDeps = { ...sourceDeps, context };
     const gateway = await startGateway({
       harness,
-      inbox: inboxView,
-      webhook: (request, response) => handleWebhook(webhookDeps, request, response),
+      inbox: inboxService,
+      ...(inboxEnabled ? { webhook: (request, response) => handleWebhook(webhookDeps, request, response) } : {}),
       models,
       modelSummaries: options.modelSummaries,
       ...(options.images === undefined ? {} : { images: options.images }),
@@ -485,52 +497,54 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
     const remotePort = gateway.remote === undefined ? undefined : new URL(gateway.remote.url).port;
     webhookBase = () =>
       remotePort === undefined ? `http://127.0.0.1:${loopbackPort}` : `http://${pickLanAddress(networkInterfaces()) ?? "127.0.0.1"}:${remotePort}`;
-    sourceRunner = await startSourceRunner({ ...sourceDeps, context });
+    if (inboxEnabled) sourceRunner = await startSourceRunner({ ...sourceDeps, context });
     for (const error of reports.splice(0)) report(error);
     // Recovered work from an interrupted turn continues now.
     harness.resume();
-    // Inbox workers (ADR-0051): each task's conversation is created like a user's, in the project.
-    const roles = agentRoles;
-    const builtinTools = [...extensions.flatMap(({ extension }) => extension.tools ?? []), ...inboxExtension.tools!];
-    const inboxTaskTools = [...inboxExtension.tools!, ...memoryExtension.tools!].filter((tool) => INBOX_TASK_TOOLS.includes(tool.name));
-    const intakeTools = builtinTools.filter((tool) => INTAKE_TOOLS.includes(tool.name));
-    const inbox = (inboxWorkers = await startInbox({
-      harness,
-      context,
-      dataDir: options.dataDir,
-      pinIntake: (intake, project, commit, ctx) => pinCheckout(harness!, options.dataDir, intake, project, commit, ctx),
-      ...(upgrader === undefined ? {} : { upgrade: upgrader }),
-      questionDocs: extensions
-        .flatMap((extension) => extension.docs ?? [])
-        .filter((doc) => doc.presentation === "pinomad.question")
-        .map((doc) => doc.token as ConversationDocToken<{ requests: { resolution?: JsonValue }[] }>),
-      createConversation: ({ project, text, requestId, kind, base, entry, onInit }, ctx) =>
-        createConversation(
-          harness!,
-          options.dataDir,
-          {
-            home: { kind: "project", path: project },
-            text,
-            requestId,
-            ...(base === undefined ? {} : { base }),
-            ...(entry === undefined ? {} : { entry }),
-            ...(onInit === undefined ? {} : { onInit }),
-            // An intake only reads, asks and submits (ADR-0051 §6), in its own
-            // checkout of the base branch (#846); a tidy-up only touches the
-            // memory (ADR-0052 §3) and works in the project itself.
-            ...(kind === "intake"
-              ? { modelTools: { only: intakeTools } }
-              : kind === "tidy"
-                ? { checkout: "project" as const, modelTools: { only: memoryExtension.tools! } }
-                : { modelTools: { add: inboxTaskTools } }),
-          },
-          inboxDefaults(hostSettings.value, kind),
-          models,
-          options.modelSummaries,
-          roles?.value ?? { roles: [], problems: [] },
-          ctx,
-        ),
-    }));
+    if (inboxEnabled) {
+      // Dormant by default; the complete worker remains available to its tests.
+      const roles = agentRoles;
+      const builtinTools = [...extensions.flatMap(({ extension }) => extension.tools ?? []), ...inboxExtension.tools!];
+      const inboxTaskTools = [...inboxExtension.tools!, ...memoryExtension.tools!].filter((tool) => INBOX_TASK_TOOLS.includes(tool.name));
+      const intakeTools = builtinTools.filter((tool) => INTAKE_TOOLS.includes(tool.name));
+      inboxWorkers = await startInbox({
+        harness,
+        context,
+        dataDir: options.dataDir,
+        pinIntake: (intake, project, commit, ctx) => pinCheckout(harness!, options.dataDir, intake, project, commit, ctx),
+        ...(upgrader === undefined ? {} : { upgrade: upgrader }),
+        questionDocs: extensions
+          .flatMap((extension) => extension.docs ?? [])
+          .filter((doc) => doc.presentation === "pinomad.question")
+          .map((doc) => doc.token as ConversationDocToken<{ requests: { resolution?: JsonValue }[] }>),
+        createConversation: ({ project, text, requestId, kind, base, entry, onInit }, ctx) =>
+          createConversation(
+            harness!,
+            options.dataDir,
+            {
+              home: { kind: "project", path: project },
+              text,
+              requestId,
+              ...(base === undefined ? {} : { base }),
+              ...(entry === undefined ? {} : { entry }),
+              ...(onInit === undefined ? {} : { onInit }),
+              // An intake only reads, asks and submits (ADR-0051 §6), in its own
+              // checkout of the base branch (#846); a tidy-up only touches the
+              // memory (ADR-0052 §3) and works in the project itself.
+              ...(kind === "intake"
+                ? { modelTools: { only: intakeTools } }
+                : kind === "tidy"
+                  ? { checkout: "project" as const, modelTools: { only: memoryExtension.tools! } }
+                  : { modelTools: { add: inboxTaskTools } }),
+            },
+            inboxDefaults(hostSettings.value, kind),
+            models,
+            options.modelSummaries,
+            roles?.value ?? { roles: [], problems: [] },
+            ctx,
+          ),
+      });
+    }
 
     const opened = harness;
     let closing: Promise<void> | undefined;
@@ -541,7 +555,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       closed: opened.closed,
       settings: hostSettings,
       ...(processes === undefined ? {} : { processes }),
-      inbox: { sendToIntake: (...args) => inbox.sendToIntake(...args) },
+      inbox: { sendToIntake: (...args) => inboxService.sendToIntake(...args) },
       // The binding is read at mint time; admission re-reads it again (a
       // join/leave between the two must not let the old binding through).
       // A server.json without `binding` — written before the field existed —
@@ -571,7 +585,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
           try {
             upgrader?.close();
             sourceRunner?.close();
-            inbox.close();
+            inboxWorkers?.close();
             inboxView?.close();
             await gateway.close();
             // Close writes no outcome: a running turn resumes at the next open.
@@ -595,6 +609,7 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
   } catch (error) {
     upgrader?.close();
     sourceRunner?.close();
+    inboxWorkers?.close();
     inboxView?.close();
     if (processes !== undefined) await processes.close(context).catch(() => {});
     options.modelAuth?.close();

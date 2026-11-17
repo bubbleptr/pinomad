@@ -366,6 +366,8 @@ export interface UpgradeService extends HostValue<HostUpgrade> {
 
 /** Calls refused with `HOST_UPGRADING_ERROR` while an upgrade installs (ADR-0043 §3). */
 const AGENT_WORK_CALLS: ReadonlySet<CallMethod> = new Set(["submit", "createConversation", "runCommand", "compact", "answer", "sendToIntake"]);
+/** Ordinary calls that can restart an Inbox conversation or branch its family. */
+const INBOX_RUN_CALLS: ReadonlySet<CallMethod> = new Set(["runCommand", "compact", "fork"]);
 
 const NO_UPGRADES: HostValue<HostUpgrade> = constantValue<HostUpgrade>({
   current: packagedVersion ?? null,
@@ -2490,6 +2492,9 @@ class GatewayClient {
   }
 
   async #call(method: CallMethod, args: CallMethods[CallMethod]["args"]): Promise<unknown> {
+    if (INBOX_RUN_CALLS.has(method)) {
+      await this.#options.inbox?.checkRun((args as { conversationId: ConversationId }).conversationId);
+    }
     if (AGENT_WORK_CALLS.has(method) && this.#options.upgrade !== undefined) {
       const release = this.#options.upgrade.admit();
       try {
@@ -2564,6 +2569,7 @@ class GatewayClient {
             // attachments used, or fail on image refs the host no longer shows.
             const existing = await this.#submissionByRequest(input.conversationId, input.requestId);
             if (existing !== undefined) return submitResult(existing);
+            await this.#options.inbox?.checkRun(input.conversationId);
             // The user watches and stops a subagent; only its dispatcher messages it (ADR-0047 §2).
             if (await this.#isSubagent(input.conversationId)) {
               throw new Error("Subagents take no messages from the user: tell the conversation that dispatched it");
@@ -2757,7 +2763,9 @@ class GatewayClient {
         return { models: await this.#providerCalls().listEndpointModels(args as CallMethods["listEndpointModels"]["args"]) };
       }
       case "updateSettings": {
-        await this.#options.settings.update((args as CallMethods["updateSettings"]["args"]).patch);
+        const { patch } = args as CallMethods["updateSettings"]["args"];
+        this.#options.inbox?.checkSettings(patch);
+        await this.#options.settings.update(patch);
         return null;
       }
       case "sendToIntake": {
@@ -3104,6 +3112,17 @@ class GatewayClient {
         );
         if (doc === undefined) throw new Error(`Document ${kind} does not accept answers`);
         const token = doc.token;
+        const resolved = await this.#options.harness.commit(async (tx) => {
+          const value = await tx.doc(token, conversation.id);
+          if (!Value.Check(QuestionSchema, value)) throw new Error(`Document ${kind} does not hold question requests`);
+          const request = value.requests.find((candidate) => candidate.id === requestId);
+          if (request === undefined) throw new Error(`Unknown question request ${requestId}`);
+          return request.resolution !== undefined;
+        }, context);
+        if (resolved) return { first: false };
+        // familyRoot reads through commits of its own, so it cannot share the
+        // answer's write commit. Re-read after it: a duplicate may have landed.
+        await this.#options.inbox?.checkRun(conversation.id);
         return await this.#options.harness.commit(async (tx) => {
           const value = await tx.doc(token, conversation.id);
           if (!Value.Check(QuestionSchema, value)) throw new Error(`Document ${kind} does not hold question requests`);

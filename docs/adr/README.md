@@ -50,7 +50,7 @@ ADR 只记录同时满足三条的决策：难以回退、没有上下文会让�
 | [0029](0029-host-declared-slash-commands.md) | 斜杠命令由宿主声明（协议 5.17 `listCommands` / `runCommand`），客户端不写死命令表；只在消息开头识别 `/<已列出的名字>`；第一期只有内置 `/compact` |
 | [0030](0030-attach-files.md) | 输入框的 Attach files 把客户端本机文件分块上传到宿主 `attachments/`，发送时只传宿主生成的 id（5.19）；`used` 永久保留，清理与 submit 共用锁；模型看到转义后的 v1 `<attachments>` 块，客户端只在用户条目和排队输入里剥离 |
 | [0031](0031-host-owns-credentials-and-providers.md) | 凭据和自定义模型存在数据目录，宿主不再读 pi 的任何配置、不迁移；登录在客户端完成，宿主照 pi 的提示转发，进行中的登录经 `providers` 流推送（5.21） |
-| [0051](0051-inbox-mode.md) | Inbox 模式：每个项目一个 Inbox，事件（收件对话提交的任务、定时、插件、局域网 webhook）进 Inbox，一个 worker 依次取任务，每项任务一个对话，后续事件按 thread 回到原任务；Inbox 的运行由 auto mode 的分类器把关，编码模式不变（修订 0011 §1、0049 §7，补充 0040 §1；§5、§9 由 0052 补充） |
+| [0051](0051-inbox-mode.md) | Inbox 模式：每个项目一个 Inbox，事件（收件对话提交的任务、定时、插件、局域网 webhook）进 Inbox，一个 worker 依次取任务，每项任务一个对话，后续事件按 thread 回到原任务；Inbox 的运行由 auto mode 的分类器把关，编码模式不变（修订 0011 §1、0049 §7，补充 0040 §1；§5、§9 由 0052 补充；实现暂时停用，代码和快照保留；worker 与新执行停止，已有 Outbox 继续投递） |
 | [0052](0052-inbox-memory-outbox-credentials.md) | Inbox 的记忆、发件箱和凭据：记忆按项目存在宿主数据目录（规则、笔记、任务进度、已发消息），固定上下文前缀稳定，每天整理一次；`notify` 经发件箱和投递器发出，默认少发；凭据只在 agent 环境之外，由插件工具代发；Inbox 的沙箱（§7）实现后撤回，改由 auto mode 把关，读凭据路径和数据目录从不被规则直接放行（补充 0051 §5、§9，修订 0049 §8） |
 
 ## 远程与运维

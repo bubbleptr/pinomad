@@ -39,6 +39,7 @@ it("keeps the host credential out of startup logs while local clients can connec
   const client = await connectRemoteDurable({ url: ready.url, token });
   defer(() => client.close());
   expect(client.view.current().connection).toBe("connected");
+  await expect(client.controller.sendToIntake("/tmp", "no Inbox")).rejects.toThrow(/temporarily disabled/);
 });
 
 describe("server.json", () => {

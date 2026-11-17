@@ -7,21 +7,18 @@ import * as stories from "./sidebar.stories.tsx";
 import * as frameStories from "./app-frame.stories.tsx";
 
 const { CodingWithInbox, InboxMode, InboxQueuedTaskShown } = composeStories(stories);
-const { Conversation, InboxTaskShown } = composeStories(frameStories);
+const { InboxTaskShown } = composeStories(frameStories);
 
-describe("the sidebar's mode", () => {
-  it("follows an Inbox conversation into main, and is remembered", async () => {
-    window.localStorage.setItem("pinomad.sidebar.mode", "coding");
+describe("the temporarily disabled Inbox mode", () => {
+  it("ignores a remembered mode and an Inbox conversation in main", () => {
+    window.localStorage.setItem("pinomad.sidebar.mode", "inbox");
     render(<InboxTaskShown />);
-    expect(screen.getByRole("radio", { name: "Inbox" })).toBeChecked();
-    expect(window.localStorage.getItem("pinomad.sidebar.mode")).toBe("inbox");
-    cleanup();
-
-    // A coding conversation in main leaves the user's choice alone.
-    render(<Conversation />);
-    expect(screen.getByRole("radio", { name: "Inbox" })).toBeChecked();
-    await userEvent.setup().click(screen.getByRole("radio", { name: "Coding" }));
+    expect(screen.queryByRole("radio", { name: "Inbox" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "Coding" })).toBeNull();
     expect(screen.getByRole("button", { name: "Fix the parser's trailing-comma bug" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Avatar sometimes missing after sign-in" })).toBeNull();
+    // Keep the old preference dormant so re-enabling does not erase it.
+    expect(window.localStorage.getItem("pinomad.sidebar.mode")).toBe("inbox");
   });
 });
 

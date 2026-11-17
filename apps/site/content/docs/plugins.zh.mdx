@@ -61,7 +61,7 @@ API 的类型定义在 PiNomad 仓库里：服务端是 [`packages/plugin/src/v1
 import { definePlugin } from "@pinomad/plugin/v1";
 
 export default definePlugin((pinomad) => {
-  // pinomad.state(…)、pinomad.tool(…)、pinomad.method(…)、pinomad.secret(…)、pinomad.source(…)
+  // pinomad.state(…)、pinomad.tool(…)、pinomad.method(…)、pinomad.secret(…)
 });
 ```
 
@@ -69,7 +69,6 @@ export default definePlugin((pinomad) => {
 - `tool({ name, description, parameters, run })`：模型能调用的工具。`parameters` 是 JSON Schema 对象。`run(args, ctx)` 返回 `{ text }`，就是模型看到的结果；抛错的话模型收到一条失败结果，内容是错误信息。工具名只能用字母、数字和 `_`，最长 64 个字符，不能以 `mcp__` 开头，也不能和宿主上已有的工具重名。占用内置工具名的插件不会加载，修改后才占用的则继续用原来的版本；两个插件的工具重名时，按字母顺序靠后的那个被跳过。宿主重启打断的调用不会重跑。
 - `method(name, run)`：给界面用 `call` 或 `useCall` 调的函数。`run(args, ctx)` 收发 JSON；抛错的话这次调用失败，带上错误信息。
 - `secret(name, { description })`：用户填的凭据，比如 API token，见下面的“凭据”。返回一个句柄，交给 `ctx.secret`。名字只能用字母、数字、`_` 和 `-`。
-- `source({ name, description, filter, poll | listen })`：送进项目 Inbox 的事件，见下面的“事件源”。
 
 `ctx` 是这次工具调用或方法调用所属的对话：
 
@@ -83,7 +82,7 @@ export default definePlugin((pinomad) => {
 
 ### 凭据
 
-插件代 agent 调外部服务时，要用一个不能让 agent 看到的凭据。用 `secret` 声明，在 `run` 里用 `ctx.secret` 读，由宿主进程发请求：agent 只调你的工具，token 不进对话、工具结果，也不进 agent 的环境变量，agent 没法顺口把它交给读到的网页。但 agent 的命令和宿主是同一个用户，读得到 `secrets.json`；Inbox 的运行里，auto mode 会检查对宿主数据目录的读取。
+插件代 agent 调外部服务时，要用一个不能让 agent 看到的凭据。用 `secret` 声明，在 `run` 里用 `ctx.secret` 读，由宿主进程发请求：agent 只调你的工具，token 不进对话、工具结果，也不进 agent 的环境变量，agent 没法顺口把它交给读到的网页。但 agent 的命令和宿主是同一个用户，读得到 `secrets.json`。
 
 ```ts
 const token = pinomad.secret("api_token", { description: "An API token with write access." });
@@ -103,42 +102,6 @@ pinomad.tool({
 宿主把凭据按插件和名字存在数据目录的 `secrets.json` 里，只有宿主所在的用户能读（权限 600）。客户端用 `setPluginSecret` 调用填值，能看到哪些已经填了，读不回值本身。在 App 里有地方填之前，先停掉宿主再写这个文件：`{ "<插件>": { "<凭据>": "<值>" } }`。
 
 插件的工具返回或抛出的内容里，凡是这个插件已填的凭据，宿主都换成 `[redacted]`。从凭据推出来的值（比如 base64 编码过的请求头）拦不住，别放进结果里。凭据也不要放进环境变量、agent 能读的文件或者进程参数里：只交给需要它的那个请求或子进程。
-
-### 事件源
-
-插件可以往项目的 Inbox 里送事件：用 `source` 声明一个事件源，用户把它加到某个项目的 Inbox 并填上自己的筛选条件（见 [Inbox 事件源](/zh/docs/inbox-sources/)）。每个事件开出一项任务，或者回到跟着它 thread 的那项任务。
-
-```ts
-pinomad.source({
-  name: "issues",
-  description: "New issues",
-  filter: "owner/repo, then label:<name>",
-  poll: {
-    intervalMs: 5 * 60_000,
-    run: async ({ cursor }, ctx) => {
-      const issues = await listIssues(ctx.filter, await ctx.secret(token));
-      if (cursor === undefined) return { events: [], cursor: newest(issues) };
-      return {
-        events: newerThan(issues, cursor).map((issue) => ({
-          id: `issue:${issue.number}`,
-          thread: `github:${repo}#${issue.number}`,
-          title: `#${issue.number} ${issue.title}`,
-          summary: `New issue #${issue.number}: ${issue.title}\n${issue.url}`,
-        })),
-        cursor: newest(issues),
-      };
-    },
-  },
-});
-```
-
-- `name` 只能用字母、数字、`_` 和 `-`；`description` 是添加事件源对话框里事件那一栏的名字；`filter` 告诉用户该填什么，不需要筛选就不写。
-- `poll` 和 `listen` 二选一。`poll.run({ cursor }, ctx)` 在事件源加上或重新打开时、宿主启动时各跑一次，之后每隔 `intervalMs`（默认五分钟，最短一分钟，最长一天）跑一次。它返回新事件（旧的在前）和一个游标，宿主把游标和事件一起存下，下次轮询时交回来。第一次轮询（`cursor` 是 undefined）一般只返回游标，免得一加上就把积压的旧事件全倒进 Inbox。`listen(emit, ctx)` 给推送型的事件源用：事件到了就调 `emit(event)`，返回一个停止监听的函数。
-- `ctx.filter` 是用户填的筛选条件；`ctx.secret(handle)` 和工具里一样读凭据。
-- 事件要有在这个事件源里唯一的 `id`（重复的会被丢掉，所以同一个事件返回两次也没关系），一段最多 4,000 字符的 `summary`，只放摘要和指针、不放全文；可选的 `thread` 和新任务的 `title`。agent 读到的内容里，凭据会像工具结果一样被换掉。
-- `followedOnly: true` 让没有任务跟着的 thread 上的事件不进 Inbox。评论和 CI 结果适合这样：它们属于开了或跟着这个 PR 的那项任务（agent 用 `inbox_follow` 登记 thread），不该每条都开一项新任务。
-
-事件源的事件算不算用户自己的话，由用户在添加时决定，插件说了不算。轮询抛错时，错误信息（去掉凭据）显示在事件源上，下次轮询再试。
 
 ### 浏览器侧
 
@@ -165,7 +128,7 @@ pinomad.source({
 
 [`examples/plugins/github`](https://github.com/bubbleptr/pinomad/tree/main/examples/plugins/github) 给 agent 加了 `github_open_pr`、`github_comment` 和 `git_push`，在宿主进程里带上 `github_token` 凭据。`git_push` 把对话检出的 `HEAD` 推到一个分支。带着 token 的 `git` 在宿主新建的临时仓库里跑，agent 写进检出里的钩子和配置碰不到它；token 放在只有这个进程看得到的请求头里，只发给 GitHub 服务器。宿主环境里的 `GITHUB_API_URL` 和 `GITHUB_SERVER_URL` 可以把它指向 GitHub Enterprise。把目录复制到 `~/.pinomad/plugins/github/`，填好 `github_token` 就能试。
 
-它还带了三个事件源。`issues` 按 label 筛选一个仓库新开的 issue（`acme/web label:bug`）：每个 issue 一项任务，thread 是 `github:acme/web#<编号>`。`pr-comments` 和 `ci` 带来 PR 上的评论和跑完的 workflow（`acme/web`），但只送给跟着这个 PR 的任务。三个都从加上的那一刻开始，不带积压的旧事件。token 要有 Issues、Pull requests 和 Actions 的读权限。
+它还声明了三个 Inbox 事件源：`issues` 按 label 筛选一个仓库新开的 issue（`acme/web label:bug`），`pr-comments` 和 `ci` 带来 PR 上的评论和跑完的 workflow（`acme/web`），只送给跟着这个 PR 的任务。Inbox 模式暂时不可用，这些声明目前不会运行。跑实现层的测试时，token 要有 Issues、Pull requests 和 Actions 的读权限。
 
 ## 示例：artifact
 
