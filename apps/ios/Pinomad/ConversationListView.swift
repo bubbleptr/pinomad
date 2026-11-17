@@ -123,9 +123,10 @@ struct ConversationListView: View {
         }
     }
 
-    /// Whether any machine has an Inbox to show (5.38 and later).
+    /// Whether any machine has an Inbox to show. Dormant mode keeps the
+    /// snapshots for filtering but never presents the picker.
     private var inboxAvailable: Bool {
-        model.machines.contains { model.inboxes($0.hostKey) != nil }
+        model.machines.contains { Inbox.modeAvailable(model.inboxes($0.hostKey)) }
     }
 
     /// The mode shown: Coding until a host has an Inbox.

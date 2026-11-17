@@ -377,11 +377,11 @@ struct HostChatsView: View {
             } else {
                 tooOld("settings")
             }
-            let inboxModels = model.hostSupports(.inboxModels)
+            let inboxModels = Inbox.modeEnabled && model.hostSupports(.inboxModels)
             if let settings = snapshot.settings, inboxModels {
                 inboxModelsSection(settings, models: snapshot.models)
             }
-            if let settings = snapshot.settings, model.hostSupports(.inboxQuietHours) {
+            if let settings = snapshot.settings, Inbox.modeEnabled, model.hostSupports(.inboxQuietHours) {
                 quietHoursSection(settings.inboxQuietHours, header: !inboxModels)
             }
             archivedSection(snapshot.organized.archived)
