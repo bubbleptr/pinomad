@@ -53,6 +53,12 @@ private func cot(_ tools: [ToolItem]) -> CotView {
 @Suite struct InboxPlacementTests {
     private let inboxes = [inbox(intake: 9, tasks: [task("t1", conversation: 3), task("t2")])]
 
+    @Test func inboxModeStaysUnavailableWhileDisabled() {
+        #expect(!Inbox.modeAvailable(inboxes))
+        // The snapshots still identify old conversations so coding can hide them.
+        #expect(Inbox.conversationIds(inboxes) == [3, 9])
+    }
+
     /// ADR-0051 §2: the intake and task conversations are listed in Inbox mode only.
     @Test func codingViewDropsTheInboxConversationsFromProjects() {
         let organized = Organized(
@@ -64,6 +70,22 @@ private func cot(_ tools: [ToolItem]) -> CotView {
         #expect(view.chats.map(\.summary.id) == [1])
         #expect(view.projects[0].conversations.map(\.summary.id) == [4])
         #expect(Inbox.codingView(organized, inboxes: nil) == organized)
+    }
+
+    @Test func anInboxForkIsReadOnlyWhileDisabled() {
+        let fork = ConversationNode(summary: ConversationSummary(
+            id: 10, kind: .fork, parent: 3, forkedAt: nil, title: "Fork", status: nil,
+            updatedAt: nil, label: nil, role: nil, activity: nil), children: [])
+        let organized = Organized(
+            chats: [],
+            projects: [ProjectConversations(project: Project(path: "/p", name: "p", addedAt: nil),
+                                            conversations: [node(3), node(4)])],
+            archived: [])
+        var withFork = organized
+        withFork.projects[0].conversations[0].children = [fork]
+        #expect(Inbox.isReadOnly(organized: withFork, inboxes: inboxes, conversationId: 10))
+        #expect(!Inbox.isReadOnly(organized: withFork, inboxes: inboxes, conversationId: 10, modeEnabled: true))
+        #expect(!Inbox.isReadOnly(organized: withFork, inboxes: inboxes, conversationId: 4))
     }
 
     @Test func placeFindsTheIntakeOrTheTask() {
@@ -337,9 +359,13 @@ private func cot(_ tools: [ToolItem]) -> CotView {
 @Suite struct InboxAnswerTargetTests {
     private let inboxes = [inbox(intake: 9, tasks: [task("open", conversation: 3), task("closed", conversation: 4, closed: true)])]
 
+    @Test func aDisabledModeOpensTheTaskInsteadOfTheIntake() {
+        #expect(Inbox.answerTarget(3, waiting: true, inboxes: inboxes, hostMinor: 41) == 3)
+    }
+
     /// An open task's question is answered in its intake (#846).
     @Test func anOpenTasksQuestionOpensTheIntake() {
-        #expect(Inbox.answerTarget(3, waiting: true, inboxes: inboxes, hostMinor: 41) == 9)
+        #expect(Inbox.answerTarget(3, waiting: true, inboxes: inboxes, hostMinor: 41, modeEnabled: true) == 9)
     }
 
     /// The host publishes no questions for a closed task: its own conversation.

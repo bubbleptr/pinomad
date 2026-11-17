@@ -236,7 +236,7 @@ struct InboxFiledCards: View {
     var body: some View {
         VStack(spacing: 8) {
             ForEach(cards) { card in
-                if let task = card.task {
+                if let task = card.task, Inbox.modeEnabled {
                     Button { open(task) } label: { label(card) }
                         .buttonStyle(.press)
                         .accessibilityHint("Opens the task")
@@ -264,7 +264,7 @@ struct InboxFiledCards: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
-            if card.task != nil {
+            if card.task != nil && Inbox.modeEnabled {
                 Image(.chevronRight)
                     .font(.caption)
                     .foregroundStyle(.tertiary)

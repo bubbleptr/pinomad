@@ -55,11 +55,16 @@ struct ConversationView: View {
         // Read the node once per version: the title, agent, retry rule and
         // card facts all derive from it.
         let node = self.node
+        // A family's root names its Inbox even when a fork is on screen.
+        let familyRoot = model.snapshot.flatMap { rootOf(organized: $0.organized, id: conversationId) } ?? node
         // An Inbox task reads as its task; the intake as the project's intake.
-        let inboxPlace = Inbox.place(of: conversationId, in: model.snapshot?.inbox)
+        let inboxPlace = Inbox.place(of: familyRoot?.summary.id ?? conversationId, in: model.snapshot?.inbox)
         let title = inboxPlace.map { $0.task.map { $0.title.isEmpty ? "Task" : $0.title } ?? "Intake" }
             ?? node.map { conversationName(summary: $0.summary) } ?? "Conversation"
         let isSubagent = node?.summary.kind == .subagent
+        let inboxReadOnly = model.snapshot.map {
+            Inbox.isReadOnly(organized: $0.organized, inboxes: $0.inbox, conversationId: conversationId)
+        } ?? false
         // A subagent is read-only; the user can only stop it (ADR-0047 §2).
         let canStop = isSubagent
             && (node.map { canStopSubagent(summary: $0.summary, hostMinor: model.hostMinor) } ?? false)
@@ -73,7 +78,6 @@ struct ConversationView: View {
         // Card facts only, so a summary's churn (updatedAt/status/activity)
         // doesn't invalidate the transcript's rows.
         // From the family root: a fork's inherited calls name the parent's subagents.
-        let familyRoot = model.snapshot.flatMap { rootOf(organized: $0.organized, id: conversationId) } ?? node
         let subagentSummaries = ChatAdapter.subagentSummaries(in: familyRoot)
         let failed = conversation == nil && model.opening.failed == conversationId
         // Skeleton, content and the failure state cross-fade; under Reduce
@@ -188,6 +192,12 @@ struct ConversationView: View {
                         .foregroundStyle(.tertiary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
+                } else if inboxReadOnly {
+                    Text("Inbox conversations are read-only")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
                 } else if let conversation {
                     ConversationComposer(
                         model: model, conversation: conversation, agentPick: agentPick,
@@ -269,10 +279,10 @@ struct ConversationView: View {
         .task {
             if connected { model.openConversation(ref) }
         }
-        // An Inbox conversation opened straight from Home's root — a tapped
-        // `notify` push — goes back to the Inbox list, not the coding one.
+        // While Inbox is enabled, a conversation opened straight from Home's
+        // root by a `notify` push goes back to the Inbox list, not coding.
         .onChange(of: isInboxConversation, initial: true) { _, isInbox in
-            if isInbox, model.navPath == [.conversation(ref)] { model.homeMode = .inbox }
+            if Inbox.modeEnabled, isInbox, model.navPath == [.conversation(ref)] { model.homeMode = .inbox }
         }
         // A push can show this page before the host connects. Subscribe only
         // when ready, rather than turning the initial load into a failed open.
@@ -315,7 +325,10 @@ struct ConversationView: View {
     }
 
     private var isInboxConversation: Bool {
-        Inbox.place(of: conversationId, in: model.runtimes[ref.hostKey]?.snapshot?.inbox) != nil
+        guard let snapshot = model.runtimes[ref.hostKey]?.snapshot else { return false }
+        return Inbox.place(
+            of: rootOf(organized: snapshot.organized, id: conversationId)?.summary.id ?? conversationId,
+            in: snapshot.inbox) != nil
     }
 
     private var connected: Bool {
@@ -342,7 +355,7 @@ struct ConversationView: View {
     /// for the batch and filed-task cards; nil outside the Inbox.
     private func inboxContext() -> InboxContext? {
         guard let snapshot = model.snapshot,
-              let place = Inbox.place(of: conversationId, in: snapshot.inbox)
+              let place = Inbox.place(of: rootOf(organized: snapshot.organized, id: conversationId)?.summary.id ?? conversationId, in: snapshot.inbox)
         else { return nil }
         // Only an intake files tasks; a task's transcript needs just its place.
         let tasks = place.task == nil
@@ -352,7 +365,8 @@ struct ConversationView: View {
 
     /// On an intake, the requests its tasks wait on (#846); nil elsewhere.
     private func intakeTaskQuestions() -> IntakeTaskQuestions? {
-        guard let place = Inbox.place(of: conversationId, in: model.runtimes[ref.hostKey]?.snapshot?.inbox),
+        guard Inbox.modeEnabled,
+              let place = Inbox.place(of: conversationId, in: model.runtimes[ref.hostKey]?.snapshot?.inbox),
               place.task == nil
         else { return nil }
         let project = place.inbox.project
@@ -436,7 +450,9 @@ struct ConversationView: View {
         // answers when the newest entry is a failed run — check that here
         // first: the call copies the whole history across the FFI, which
         // every streaming snapshot would otherwise pay for.
-        let retry = connected && !isSubagent && Self.endsInFailure(conversation.chat)
+        let inbox = inboxContext()
+        let inboxReadOnly = !Inbox.modeEnabled && inbox != nil
+        let retry = connected && !isSubagent && !inboxReadOnly && Self.endsInFailure(conversation.chat)
             ? retryOf(entries: conversation.chat) : nil
         let latestRun = Self.latestRunId(conversation.chat)
         let todo = Self.todoLine(conversation)
@@ -445,7 +461,6 @@ struct ConversationView: View {
             local: conversation.localSubmissions,
             attachmentDetails: model.sentFileDetails
         )
-        let inbox = inboxContext()
         ForEach(rows) { row in
             transcriptRow(row, conversation: conversation, retry: retry, latestRun: latestRun,
                           subagentSummaries: subagentSummaries, todo: todo, inbox: inbox)
@@ -462,6 +477,7 @@ struct ConversationView: View {
         todo: TodoLine?,
         inbox: InboxContext?
     ) -> some View {
+        let inboxReadOnly = !Inbox.modeEnabled && inbox != nil
         switch row {
         case let .entry(entry, status):
             switch entry {
@@ -510,8 +526,8 @@ struct ConversationView: View {
                 text: message.text, images: message.images, skills: message.skills,
                 attachments: message.attachments, timestamp: nil, status: message.status,
                 error: message.error, today: clock.today, requestKey: message.requestId,
-                retry: { model.retrySubmission(conversation: conversationId, requestId: message.requestId) },
-                edit: { model.editSubmission(conversation: conversationId, requestId: message.requestId) },
+                retry: inboxReadOnly ? nil : { model.retrySubmission(conversation: conversationId, requestId: message.requestId) },
+                edit: inboxReadOnly ? nil : { model.editSubmission(conversation: conversationId, requestId: message.requestId) },
                 editDisabled: availability.isDisabled, editTooltip: availability.tooltip,
                 pending: !connected || model.submissionPending.contains(message.requestId)
             ).equatable()
