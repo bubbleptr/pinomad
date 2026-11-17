@@ -335,7 +335,7 @@ export async function openInboxService(options: {
   return {
     checkRun: async (conversationId) => {
       const root = await familyRoot(harness, conversationId, context);
-      if (isInboxConversation(inboxes, index, root)) checkWrites();
+      if (isInboxConversation(inboxes, index ?? undefined, root)) checkWrites();
     },
     checkSettings: (patch) => {
       if (patch.inboxQuietHours !== undefined || patch.inboxIntakeModel !== undefined || patch.inboxWorkerModel !== undefined) checkWrites();
