@@ -163,6 +163,7 @@ describe("Inbox screens in main", () => {
     renderOn(undefined, withInbox(), RUNNING_TASK_ID, false);
     expect(screen.getByText("Read-only · Inbox")).toBeInTheDocument();
     expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Terminal" })).toBeNull();
   });
 
   it("keeps an old Inbox fork read-only too", () => {

@@ -246,6 +246,7 @@ describe("the temporarily disabled Inbox mode", () => {
     );
     await client.controller.compact(undefined);
     expect(client.view.current().notices.at(-1)?.message).toMatch(/temporarily disabled/);
+    await expect(client.terminals.open(taskId, { cols: 80, rows: 24 })).rejects.toThrow(/temporarily disabled/);
     const entries = await (await disabled.harness.conversation(taskId, context))!.entries({ order: "ascending" }, 1000, undefined, context);
     expect(JSON.stringify(entries.items)).not.toContain("ordinary submit must not run");
     const recoveredFork = await (await disabled.harness.conversation(forkId, context))!.entries({ order: "ascending" }, 1000, undefined, context);

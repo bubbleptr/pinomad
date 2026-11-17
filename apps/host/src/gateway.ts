@@ -367,7 +367,7 @@ export interface UpgradeService extends HostValue<HostUpgrade> {
 /** Calls refused with `HOST_UPGRADING_ERROR` while an upgrade installs (ADR-0043 §3). */
 const AGENT_WORK_CALLS: ReadonlySet<CallMethod> = new Set(["submit", "createConversation", "runCommand", "compact", "answer", "sendToIntake"]);
 /** Ordinary calls that can restart an Inbox conversation or branch its family. */
-const INBOX_RUN_CALLS: ReadonlySet<CallMethod> = new Set(["runCommand", "compact", "fork"]);
+const INBOX_RUN_CALLS: ReadonlySet<CallMethod> = new Set(["runCommand", "compact", "fork", "openTerminal"]);
 
 const NO_UPGRADES: HostValue<HostUpgrade> = constantValue<HostUpgrade>({
   current: packagedVersion ?? null,
@@ -2512,6 +2512,7 @@ class GatewayClient {
       // concurrently, and keystrokes must reach it in the order they came.
       case "terminalInput": {
         const input = args as CallMethods["terminalInput"]["args"];
+        await this.#options.inbox?.checkRun(this.#terminals().ownerOf(input.terminalId));
         this.#terminals().input(input.terminalId, input.data, this.#terminalSizes.get(input.terminalId));
         return null;
       }
@@ -2530,6 +2531,7 @@ class GatewayClient {
       case "restartTerminal": {
         const input = args as CallMethods["restartTerminal"]["args"];
         const size = { cols: input.cols, rows: input.rows };
+        await this.#options.inbox?.checkRun(this.#terminals().ownerOf(input.terminalId));
         this.#terminals().restart(input.terminalId, size);
         this.#terminalSizes.set(input.terminalId, size);
         return null;

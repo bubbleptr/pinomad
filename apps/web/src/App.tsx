@@ -1344,6 +1344,7 @@ export function Workbench({
             pluginPanels={plugins.panels}
             drafting={drafting}
             inboxScreen={inboxTarget !== undefined}
+            inboxReadOnly={inboxReadOnly}
             onSelect={selectSurface}
           />
         }
@@ -1586,6 +1587,7 @@ export function Workbench({
           drafting={drafting}
           inboxScreen={inboxTarget !== undefined}
           inbox={inboxModeEnabled ? shownInbox?.inbox : undefined}
+          inboxReadOnly={inboxReadOnly}
           busy={busy}
           liveActivity={liveActivity}
           onOpenChange={setPanelOpen}
@@ -1610,6 +1612,7 @@ export function Workbench({
           drafting={drafting}
           inboxScreen={inboxTarget !== undefined}
           inbox={inboxModeEnabled ? shownInbox?.inbox : undefined}
+          inboxReadOnly={inboxReadOnly}
           busy={busy}
           liveActivity={liveActivity}
           onOpenChange={setPanelOpen}

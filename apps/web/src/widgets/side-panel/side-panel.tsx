@@ -95,6 +95,7 @@ export function SurfaceButtons({
   pluginPanels = [],
   drafting = false,
   inboxScreen = false,
+  inboxReadOnly = false,
   onSelect,
 }: {
   narrow: boolean;
@@ -103,6 +104,8 @@ export function SurfaceButtons({
   drafting?: boolean;
   /** The draft's place holds an Inbox screen: Tasks still has that Inbox's rules and follow-ups. */
   inboxScreen?: boolean;
+  /** Dormant Inbox history has no interactive Terminal surface. */
+  inboxReadOnly?: boolean;
   surface: PanelSurface;
   /** Foreground work Tasks would show is running. */
   liveActivity: boolean;
@@ -110,9 +113,13 @@ export function SurfaceButtons({
   pluginPanels?: readonly PluginPanel[];
   onSelect: (surface: PanelSurface) => void;
 }) {
-  const surface = shownSurface(selected, pluginPanels);
+  const surface = inboxReadOnly && selected === "terminal" ? "tasks" : shownSurface(selected, pluginPanels);
   const entries: { id: PanelSurface; label: string; icon: ReactNode }[] = [
-    ...(!drafting ? SURFACES : inboxScreen ? SURFACES.filter((entry) => entry.id === "tasks") : []),
+    ...(!drafting
+      ? SURFACES.filter((entry) => !inboxReadOnly || entry.id !== "terminal")
+      : inboxScreen
+        ? SURFACES.filter((entry) => entry.id === "tasks")
+        : []),
     ...pluginPanels.map((panel) => ({ id: panel.surface, label: panel.label, icon: PLUGIN_ICON })),
   ];
   if (entries.length === 0) return null;
@@ -655,6 +662,7 @@ export function SidePanel({
   drafting = false,
   inboxScreen = false,
   inbox,
+  inboxReadOnly = false,
   busy,
   liveActivity,
   onOpenChange,
@@ -676,6 +684,8 @@ export function SidePanel({
   inboxScreen?: boolean;
   /** The Inbox of what main shows (ADR-0051 §11). */
   inbox?: ProjectInbox | undefined;
+  /** Dormant Inbox history has no interactive Terminal surface. */
+  inboxReadOnly?: boolean;
   /** The shown conversation is running; Changes refreshes once it settles. */
   busy: boolean;
   liveActivity: boolean;
@@ -685,7 +695,7 @@ export function SidePanel({
   onOpenInMain: (id: ConversationId) => void;
 }) {
   const [panel, setPanel] = useState<HTMLDivElement | null>(null);
-  const surface = shownSurface(selected, pluginPanels);
+  const surface = inboxReadOnly && selected === "terminal" ? "tasks" : shownSurface(selected, pluginPanels);
   const pluginPanel = pluginPanels.find((entry) => entry.surface === surface);
   const room = useRoomBeside(panel);
   const maxSizePx = Math.max(PANEL_MIN_PX, Math.min(PANEL_MAX_PX, room ?? PANEL_MAX_PX));
@@ -751,6 +761,7 @@ export function SidePanel({
               pluginPanels={pluginPanels}
               drafting={drafting}
               inboxScreen={inboxScreen}
+              inboxReadOnly={inboxReadOnly}
               onSelect={onSelectSurface}
             />,
             close,
