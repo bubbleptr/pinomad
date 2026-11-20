@@ -198,9 +198,9 @@ describe("mcp", () => {
     await until(() => !alive(pid));
   });
 
-  it("matches tools to a namespace whose sanitized prefix is cut at 64 chars", async () => {
-    // `mcp__<58 a's>__` is 65 chars; callName() cuts tool names to 64, so the
-    // namespace prefix must come from callName() too or no tool matches it.
+  it("groups a server's tools under its namespace even when their names are cut at 64 chars", async () => {
+    // `mcp__<58 a's>__` is 65 chars; callName() cuts tool names to 64. The
+    // namespace comes from the server's extension, not a name prefix.
     const long = "a".repeat(58);
     const configPath = await writeConfig({ [long]: { command: process.execPath, args: [fixture] } });
     const host = await startFauxHost(defer, {

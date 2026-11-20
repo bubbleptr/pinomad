@@ -18,6 +18,8 @@ const writeWithDiff = wrapTool(createWriteTool(), (tool) => ({
       if (old.ok) oldContent = old.value;
     }
     const result = await tool.execute(args, api, context);
+    // `write` never parks; a park passes through untouched.
+    if ("sleep" in result || "wait" in result) return result;
     // The patch is named by the path the agent asked for — what the transcript says.
     return { ...result, details: { patch: createPatch(args.path, oldContent, args.content) } };
   },

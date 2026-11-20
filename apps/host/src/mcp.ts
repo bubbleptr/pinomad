@@ -19,8 +19,7 @@ import {
   toLlmContent,
   type Tool as McpTool,
 } from "@earendil-works/pi-mcp";
-import { defineExtension, defineTool, type Registry, type ToolRegistration } from "@earendil-works/pi-durable";
-import type { CodemodeNamespace } from "@earendil-works/pi-durable/codemode";
+import { defineExtension, defineTool, type Registry, type ToolNamespace, type ToolRegistration } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
 import type { McpServerStatus, McpStatus } from "@pinomad/protocol/mcp.ts";
 import type { HostValue } from "./host-value.ts";
@@ -210,14 +209,14 @@ export function startMcp(options: {
   configPath: string;
   registry: Registry;
   /** The connected servers as codemode namespaces; called whenever the toolsets change. */
-  onNamespaces?: (namespaces: CodemodeNamespace[]) => void;
+  onNamespaces?: (namespaces: ToolNamespace[]) => void;
 }): McpBridge {
   const listeners = new Set<(value: McpStatus) => void>();
   const servers = new Map<string, McpServerStatus>();
   // Every connected server's tool registrations; `callers` carries the exposure.
   const toolsets = new Map<string, ToolRegistration[]>();
   // One namespace per connected server, for the codemode section and describeNamespace.
-  const namespaces = new Map<string, CodemodeNamespace>();
+  const namespaces = new Map<string, ToolNamespace>();
   const exposures = new Map<string, "codemode" | "direct">();
   // Every client ever created, so close() also aborts connections still in flight.
   const live = new Set<McpClient>();
@@ -228,10 +227,9 @@ export function startMcp(options: {
     const value: McpStatus = { configPath: options.configPath, errors, servers: [...servers.values()] };
     for (const listener of listeners) listener(value);
   };
-  const install = (): void => {
-    options.registry.install(defineExtension({ name: "mcp", tools: [...toolsets.values()].flat() }));
-    options.onNamespaces?.([...namespaces.values()]);
-  };
+  // Each connected server is its own extension, `mcp.<server>`, carrying its namespace.
+  const extensionName = (name: string): string => `mcp.${name}`;
+  const namespacesChanged = (): void => options.onNamespaces?.([...namespaces.values()]);
   const set = (name: string, patch: Partial<McpServerStatus> & Pick<McpServerStatus, "state">): void => {
     servers.set(name, { name, tools: 0, ...servers.get(name), ...patch });
     publish();
@@ -253,23 +251,23 @@ export function startMcp(options: {
     }
     if (closed) return;
     toolsets.set(name, tools);
-    namespaces.set(name, {
+    const namespace: ToolNamespace = {
       name,
-      ...(description === undefined ? {} : { description }),
+      description: description ?? `Tools of the ${name} MCP server.`,
       ...(client.instructions === undefined ? {} : { instructions: client.instructions }),
-      // The same sanitize and 64-char cut callName() gives tool names, or no
-      // tool startsWith the prefix for server names over ~57 chars.
-      prefix: callName(name, ""),
-    });
+    };
+    namespaces.set(name, namespace);
     set(name, { state: "connected", tools: tools.length, error: collisions.length === 0 ? undefined : collisions.join("; ") });
-    install();
+    options.registry.install(defineExtension({ name: extensionName(name), namespace, tools }));
+    namespacesChanged();
   };
 
   const fail = (name: string, error: string): void => {
     toolsets.delete(name);
     namespaces.delete(name);
     set(name, { state: "failed", error, tools: 0 });
-    install();
+    options.registry.uninstall(defineExtension({ name: extensionName(name) }));
+    namespacesChanged();
   };
 
   const describeConnectError = (error: unknown, transport: StdioTransport | undefined): string => {
@@ -331,7 +329,6 @@ export function startMcp(options: {
       else servers.set(entry.name, { name: entry.name, state: "connecting", tools: 0 });
     }
     publish();
-    install();
     for (const entry of loaded.entries) {
       if (entry.disabled === true) continue;
       exposures.set(entry.name, entry.exposure);

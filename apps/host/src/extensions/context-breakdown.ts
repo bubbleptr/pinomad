@@ -4,8 +4,7 @@
 // usage count — the same formula the meter reads, so clients can tell a
 // breakdown that belongs to the reply they show from a stale one.
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { defineDoc, defineExtension, GenerationTask, hook, type Harness, type TaskId } from "@earendil-works/pi-durable";
-import type { CodemodeNamespace } from "@earendil-works/pi-durable/codemode";
+import { defineDoc, defineExtension, GenerationTask, hook, type Harness, type TaskId, type ToolNamespace } from "@earendil-works/pi-durable";
 import { contextTokens } from "@pinomad/client/context-usage.ts";
 import type { ContextBreakdown } from "@pinomad/protocol/presentation.ts";
 import type { BuiltinExtension } from "../builtin-extension.ts";
@@ -29,7 +28,7 @@ export const ContextBreakdownDoc = defineDoc<ContextBreakdown>({
 });
 
 export function createContextBreakdown(options: { readonly harness: () => Harness }): BuiltinExtension {
-  let namespaces: readonly CodemodeNamespace[] = [];
+  let namespaces: readonly ToolNamespace[] = [];
   // Each generation's latest request; a retry rebuilds the body and replaces it.
   const pending = new Map<TaskId, RequestEstimate>();
   const build = () =>
