@@ -1,19 +1,30 @@
 ---
 title: 账号
-description: 注册登录的细节、账号下的宿主、P2P 直连、密码、设备和删除账号。
+description: 注册和登录、登录方式、账号下的宿主、P2P 直连、密码、设备和删除账号。
 ---
 
 账号在官方服务端 `https://app.pinomad.si` 上。它替你的设备担保，设备直连不上宿主时转发密文；对话在设备和宿主之间端到端加密。怎么开始用见[快速上手](/zh/docs/)。
 
 ## 注册和登录
 
-注册要邀请码：先拿到一个邀请码，再在 [app.pinomad.si](https://app.pinomad.si/) 或 Mac App 的登录表单里点 **Create an account**。
+任何人都能注册。在 [app.pinomad.si](https://app.pinomad.si/)、Mac App 的登录表单或 iPhone 上，二选一：
 
-- 用户名只能用小写字母、数字和 `. _ -`，2–32 位。
-- 密码至少 12 位。
-- 邀请码只能用一次，7 天后过期；用过或过期了，找人再要一个。
+- 点 **Continue with Google**、**Continue with GitHub** 或 **Continue with Apple**；
+- 点 **Create an account**，填邮箱，再填邮件里的 6 位验证码和至少 12 位的密码。
+
+验证码 10 分钟内有效，输错五次作废；**Resend code** 会重发一个。账号建好就直接登录了。
+
+用 Google、GitHub 或 Apple 登录时，按这个登录方式找你的账号；找不到时，如果提供方确认邮箱已验证、并且和你账号的邮箱一致，也会认成同一个账号，并给这个邮箱发一封通知。两样都对不上（比如 Apple 的 **隐藏邮件地址**，或者 GitHub 的主邮箱不是你注册用的那个）时，会让你选 **Create account**，或者点 **I already have an account**，用平时的方式登录后把新的登录方式绑上，免得多出一个账号。
+
+邮箱注册上线之前建的账号，仍在 **Email** 一栏填用户名登录。第一次登录会要求补一个邮箱，用验证码确认；之后就用邮箱登录。
 
 Mac App 在还没连上宿主时，首页就是登录表单；之后点侧栏底部的 **Sign in**。**Server** 一栏已经填好 `https://app.pinomad.si`；自己架了服务端的话，填它的地址（见[不用账号](/zh/docs/without-account/)）。
+
+## 登录方式
+
+Web 和 Mac App 的 Settings → Account、iPhone 的账号页里有 **Sign-in methods**：密码，以及 Google、GitHub、Apple。**Link** 绑定一个（跳到提供方选账号，再回来），从某一项的 **⋯** 菜单选 **Remove** 解绑。最后一种登录方式不能解绑。
+
+上面的 **Email** 一组可以换邮箱：填新邮箱，再填发到新邮箱的验证码。旧邮箱会收到通知。
 
 ## 账号下的宿主
 
@@ -21,7 +32,7 @@ Mac App 在还没连上宿主时，首页就是登录表单；之后点侧栏底
 
 给脚本用、或者没人能确认短码的机器：**Add a host** 里有 **Advanced: join with a one-time token**，给出一条 `pinomad join https://app.pinomad.si <token>` 命令，不用短码就能加入。拿到它的人都能加宿主，所以只能用一次，10 分钟后过期；过期了点 **New command** 重新生成。加上 `--name "Mac mini"` 可以设定设备上显示的名字。
 
-`pinomad leave` 把宿主从账号里移出。也可以在 Web 或 Mac App 的 Settings → Hosts 里移出，比如一台不是你加的机器：已在本机配对的，进它的页面点 **Remove from account**；没配对的，从那一行的 **⋯** 菜单选 **Remove from account**，再填一次密码。之后它不再经服务端连接，要回来只能在它上面重新跑 `pinomad up`。
+`pinomad leave` 把宿主从账号里移出。也可以在 Web 或 Mac App 的 Settings → Hosts 里移出，比如一台不是你加的机器：已在本机配对的，进它的页面点 **Remove from account**；没配对的，从那一行的 **⋯** 菜单选 **Remove from account**，再确认一次（见[确认操作](#确认操作)）。之后它不再经服务端连接，要回来只能在它上面重新跑 `pinomad up`。
 
 ## P2P 直连
 
@@ -43,17 +54,21 @@ Mac App 在还没连上宿主时，首页就是登录表单；之后点侧栏底
 
 ## 密码
 
-改密码：在 Web 或 Mac App 的 Settings → Account 里点 **Change password**，或者在 iPhone 上点首页左上角的账号按钮，再点 Password 旁的 **Change**，填当前密码和新密码（至少 12 位）。当前设备保持登录，其他设备会被退出，用新密码重新登录即可；iPhone 重新登录后推送也会恢复。
+改密码：在 Web 或 Mac App 的 Settings → Account 的 Sign-in methods 里点 **Change password**，或者在 iPhone 上点首页左上角的账号按钮，再点 Password 旁的 **Change**，填当前密码和新密码（至少 12 位）。当前设备保持登录，其他设备会被退出，用新密码重新登录即可；iPhone 重新登录后推送也会恢复。
 
-忘了密码：服务端不存邮箱，没有找回邮件。找服务端的管理员（给你邀请码的人）重置，对方会给你一个新密码；用它登录后，再改成只有你自己知道的密码。
+只用 Google、GitHub 或 Apple 登录的账号没有密码；点 **Set password** 可以设一个，用发到邮箱的验证码确认。
+
+忘了密码：在登录表单上点 **Forgot password?**，填邮箱，再填邮件里的验证码和新密码。所有设备上的会话都会结束。
+
+## 确认操作
+
+移除设备或宿主、换邮箱或改登录方式、设密码和删除账号都会影响到这台设备以外，所以要先确认：填密码，账号没有密码时改为点 **Send code**，填发到邮箱的验证码。在 Web 和 Mac App 里，确认一次之后的五分钟内不用再确认。
 
 ## 账号下的设备
 
 Web 和 Mac App 的 Settings → Account、iPhone 的账号页里的 Signed-in devices 都会列出登录过这个账号的每个浏览器和 App：名字、最近一次登录的时间，以及它经账号加入了哪些宿主、在每台上的状态（已登记、等宿主吊销、已吊销）。你正在用的这台标着 **This device**（iPhone 上是 **This iPhone**）。
 
-丢了设备：从它那一行的 **⋯** 菜单选 **Remove**（iPhone 上也是这个菜单，或者在那一行左滑），再填一次密码。服务端把它从账号里退出登录，并请它经账号加入过的每台宿主吊销它。在线的宿主立刻吊销，离线的在下次连上时吊销。最终仍由宿主决定：之后你还可以用扫码把这台设备重新配对上。在 Web 和 Mac App 里，移除后它就从列表里消失。
-
-在 Web 和 Mac App 里，填过一次密码（或邮件验证码）后的五分钟内，再移除设备或宿主、改登录方式、删除账号都不用再填。
+丢了设备：从它那一行的 **⋯** 菜单选 **Remove**（iPhone 上也是这个菜单，或者在那一行左滑），再确认一次。服务端把它从账号里退出登录，并请它经账号加入过的每台宿主吊销它。在线的宿主立刻吊销，离线的在下次连上时吊销。最终仍由宿主决定：之后你还可以用扫码把这台设备重新配对上。在 Web 和 Mac App 里，移除后它就从列表里消失。
 
 要移除正在用的这台，退出登录时勾上 **This is a shared computer**（iPhone 上是点 **Sign Out**，在确认之前打开 **Remove this iPhone from my hosts**）。服务端会像 Remove 一样，请这台设备经账号加入过的每台宿主吊销它；这台设备也会忘掉这些宿主，连同它在上面的密钥。扫码配对的宿主保留。默认不勾：宿主会一直留着吊销记录，在自己的浏览器上每次退出都勾的话，每台宿主的设备列表里会积下一堆失效的条目。
 
@@ -65,6 +80,6 @@ Web 和 Mac App 的 Settings → Account、iPhone 的账号页里的 Signed-in d
 
 ## 删除账号
 
-删除账号：在 Web 或 Mac App 的 Settings → Account 里，点 Danger zone 下的 **Delete account**，或者 iPhone 账号页（首页左上角的账号按钮）里 Danger Zone 下的 **Delete Account**，再填一次密码。服务端删掉账号和它的登录会话、宿主绑定、推送登记，所有设备都会被退出。管理员账号不能删。
+删除账号：在 Web 或 Mac App 的 Settings → Account 里，点 Danger zone 下的 **Delete account**，或者 iPhone 账号页（首页左上角的账号按钮）里 Danger Zone 下的 **Delete Account**，再确认一次。服务端删掉账号和它的邮箱、登录方式、登录会话、宿主绑定、推送登记，所有设备都会被退出。绑定过 Apple 的，服务端还会撤销 PiNomad 对你 Apple ID 的授权。
 
 加入这个账号的宿主会立刻和服务端断开；要再经服务端连它，在宿主上用另一个账号重新 `pinomad join`。设备在各台宿主上的登记还在，因为这份名单由宿主自己保存：能直连宿主的设备（同一网络或 Tailscale）照常能连。要移除某台设备，到宿主的 Settings → Devices 里解除它的配对，或者在删除账号之前先在 **Devices** 里移除它。

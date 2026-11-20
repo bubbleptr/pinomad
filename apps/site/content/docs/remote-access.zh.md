@@ -62,11 +62,11 @@ Tailscale 和 sing-box 共存时，sing-box 配置要改两处，否则控制面
 
 宿主在家里局域网、手机在外面时，把中继跑在一台有公网地址的 VPS 上：宿主和手机都只往外连中继，中继按宿主身份把两端的连接接起来，只转发密文、不存东西；Web 客户端也由中继用 HTTPS 提供，手机扫二维码直接打开。
 
-VPS 这边：同一个包（只要 Node 25+）——中继和 Web 客户端来自同一个 `pinomad` 安装，版本天然一致。首次启动用两个环境变量建出唯一用户（细节见下面的「服务端账号」）：
+VPS 这边：同一个包（只要 Node 25+）——中继和 Web 客户端来自同一个 `pinomad` 安装，版本天然一致。首次启动用两个环境变量建出第一个账号（细节见下面的「服务端账号」）：
 
 ```sh
 npm i -g pinomad
-export PINOMAD_SERVER_USER=<用户名>
+export PINOMAD_SERVER_USER=<邮箱>
 export PINOMAD_SERVER_PASSWORD=<至少 12 位>
 pinomad server --public-origin https://relay.example.com --data-dir /var/lib/pinomad/server --trust-proxy
 # 默认只监听 127.0.0.1:7430，--port / --listen 可改；--trust-proxy 是因为前面有 Caddy
@@ -87,7 +87,7 @@ relay.example.com {
 }
 ```
 
-systemd 单元示例（VPS 上的系统级单元；node 和包路径都用绝对路径，`command -v node` 和 `npm root -g` 查）。首次启动的两个账号变量和推送用的 APNs 变量都放进 `/etc/pinomad-server.env`（`chmod 600`），用户建好后账号变量可以删掉。数据目录的锁是旁边的 `<目录>.lock`，所以数据目录放在 `StateDirectory` 下面一层：
+systemd 单元示例（VPS 上的系统级单元；node 和包路径都用绝对路径，`command -v node` 和 `npm root -g` 查）。首次启动的两个账号变量、推送用的 APNs 变量，以及发信和快捷登录的变量（见下面的「注册、发信和快捷登录」）都放进 `/etc/pinomad-server.env`（`chmod 600`），账号建好后两个账号变量可以删掉。数据目录的锁是旁边的 `<目录>.lock`，所以数据目录放在 `StateDirectory` 下面一层：
 
 ```ini
 [Unit]
@@ -112,7 +112,10 @@ WantedBy=multi-user.target
 | 环境变量 | 含义 |
 |---|---|
 | `PINOMAD_PUBLIC_ORIGIN` | 客户端打开的 https origin，比如 `https://nomad.example.com` |
-| `PINOMAD_SERVER_USER` / `PINOMAD_SERVER_PASSWORD` | 第一次启动时建出唯一的用户（密码至少 12 位）；之后留着也没关系，用户已存在时不再读 |
+| `PINOMAD_SERVER_USER` / `PINOMAD_SERVER_PASSWORD` | 第一次启动时建出第一个账号（`USER` 填邮箱，密码至少 12 位）；之后留着也没关系，已有账号时不再读 |
+| `PINOMAD_SERVER_REGISTRATION` | 可选，`open` 时任何人都能注册，默认 `closed` |
+| `PINOMAD_SERVER_SMTP_URL` / `PINOMAD_SERVER_MAIL_FROM` | 可选，发验证码的 SMTP，见下面的「注册、发信和快捷登录」 |
+| `PINOMAD_SERVER_GOOGLE_*` / `_GITHUB_*` / `_APPLE_*` | 可选，快捷登录，同上 |
 | `PINOMAD_SERVER_RELAY_*` | 可选，中继限额，见下面的「中继限额」 |
 
 配好变量和持久卷，绑定自定义域名，DNS 指向平台给的地址；用 Cloudflare 时建议**关掉代理（灰云）**，橙云会让国内访问多绕一圈，证书由平台自己签。域名生效后验证：
@@ -128,47 +131,49 @@ pinomad join https://nomad.example.com <token>   # 宿主加入账号、接上�
 
 ### 服务端账号（ADR-0022）
 
-服务端把账号存在数据目录里（`--data-dir`，或环境变量 `PINOMAD_SERVER_DATA_DIR`，默认 `~/.pinomad-server`），首次启动时用两个环境变量建出唯一用户。宿主只有加入账号（`pinomad join`，见下）后才能登记：
+服务端把账号存在数据目录里（`--data-dir`，或环境变量 `PINOMAD_SERVER_DATA_DIR`，默认 `~/.pinomad-server`），首次启动时用两个环境变量建出第一个账号。账号以邮箱为身份（ADR-0044），`PINOMAD_SERVER_USER` 填邮箱，视为已验证；填的不是邮箱时按老式的用户名账号处理。宿主只有加入账号（`pinomad join`，见下）后才能登记：
 
 ```sh
-export PINOMAD_SERVER_USER=<用户名>
+export PINOMAD_SERVER_USER=<邮箱>
 export PINOMAD_SERVER_PASSWORD=<至少 12 位，建议密码管理器生成>
 pinomad server --public-origin https://relay.example.com --data-dir /var/lib/pinomad/server --trust-proxy
 ```
 
-- 两个变量缺一个、或密码不到 12 位，启动直接报错；users 表已有用户后启动不再需要它们。数据目录和宿主一样一个目录只允许一个进程，容器平台部署要挂持久卷。
+- 两个变量缺一个、或密码不到 12 位，启动直接报错；已有账号后启动不再需要它们。数据目录和宿主一样一个目录只允许一个进程，容器平台部署要挂持久卷。
 - 账号 API 和控制连接只走 HTTPS/WSS，明文只留给 localhost 开发。前面有反向代理（Caddy、容器平台）时必须加 `--trust-proxy`：服务端据此信任 `X-Forwarded-Proto` 判定请求是否来自 https，并取 `X-Forwarded-For` 做按 IP 限速；不加的话，经过代理进来的请求会被当成不可信的明文连接拒绝（`/api/*` 回 403，`/host` 升级回 403），限速也只看到代理的地址。
-- 用户登录后可以自己改密码（`POST /api/password`，要填旧密码；旧密码输错和登录共用按用户名的锁定）。改完后当前会话保留，其他会话、没用掉的 join token 和推送登记都作废。
-- 用户可以删除自己的账号（`POST /api/me/delete`，要填密码，输错同样计入锁定）。同一个事务里删掉用户和它的会话、join token、宿主绑定、推送登记；它用过的邀请码保留为「已使用」，只是不再记是谁。账号下宿主的控制连接立刻断开，之后的登记被拒；宿主上已经登记的设备不受影响，要在宿主的 Devices 里吊销。管理员账号不能删（只有它能发邀请码）。
-- 服务端不存邮箱，没有自助找回：忘了密码的用户找管理员，管理员在服务端机器上用 `pinomad server passwd` 重置，新密码从 stdin 读：
+- 用户登录后可以自己改密码（`POST /api/password`，要填旧密码；旧密码输错和登录共用按账号的锁定）。改完后当前会话保留，其他会话、没用掉的 join token 和推送登记都作废。
+- 用户可以删除自己的账号（`POST /api/me/delete`，要再确认一次：填密码，没有密码的账号用发到邮箱的验证码）。同一个事务里删掉账号和它的登录方式、会话、join token、宿主绑定、推送登记；绑定过 Apple 的，再请 Apple 撤销授权（失败只记日志）。账号下宿主的控制连接立刻断开，之后的登记被拒；宿主上已经登记的设备不受影响，要在宿主的 Devices 里吊销。
+- 忘了密码：配了发信时，用户在登录表单上点 **Forgot password?** 自己用验证码重置。没配发信时，部署者在服务端机器上用 `pinomad server passwd` 重置，新密码从 stdin 读：
 
   ```sh
-  printenv NEW_PASSWORD | pinomad server passwd --data-dir /var/lib/pinomad/server --user <用户名>
+  printenv NEW_PASSWORD | pinomad server passwd --data-dir /var/lib/pinomad/server --user <邮箱或用户名>
   ```
 
   服务端不用停。同一个事务里换掉密码哈希、作废这个账号的所有登录会话、没用掉的 join token 和推送登记，运行中的服务端下一个请求就认不出旧会话；宿主上已登记的设备不受影响。把新密码交给用户后，让对方登录再自己改一次。服务端开着时，`passwd` 只在数据库版本和这个 `pinomad` 版本一致时才写（升级了包但服务端还没重启的话，先重启）；服务端停着时照常加锁、迁移。
 
   服务端上只有一个账号时可以省略 `--user`。
 
-#### 邀请码注册
+#### 注册、发信和快捷登录
 
-首次启动建出的账号是管理员，只有它能发邀请码；别人拿邀请码自己注册账号，注册后只看得到自己的宿主。没发过邀请码的服务端没人能注册，行为和以前一样，所以自部署不需要额外的开关。
+自部署默认：注册关闭、没有快捷登录、不发信，只有 `pinomad server user add` 能建账号。按需打开：
 
-- 邀请码一次性，7 天过期，服务端只存它的 SHA-256，原文只在生成时出现一次。
-- 新用户名只能用小写字母、数字和 `. _ -`，2–32 位，不能和已有用户名只差大小写；密码规则和首个账号相同（至少 12 位）。
-- 注册接口 `POST /api/register` 和登录共用按地址的限速。
+- **注册**：`PINOMAD_SERVER_REGISTRATION=open` 时，任何人都能在登录表单上点 **Create an account** 自己注册（要配好发信），或者用快捷登录建新账号。`closed`（默认）时这两条都关掉，快捷登录只能登进已有的账号。
+- **发信**：`PINOMAD_SERVER_SMTP_URL` 和 `PINOMAD_SERVER_MAIL_FROM` 要一起设，比如 `smtps://<用户>:<密码>@smtp.example.com:465`（`smtp://` 会强制 STARTTLS）和 `PiNomad <noreply@example.com>`。配好后才有邮箱注册、找回密码、添加或更换邮箱，以及没有密码的账号用验证码做二次确认。发件域名要配 SPF 和 DKIM，否则验证码容易进垃圾箱。验证码 6 位、10 分钟有效、输错五次作废，按 IP、按邮箱各自限流，全站每天另有上限。
+- **快捷登录**：每个提供方只在它的变量都设了时启用，客户端按 `GET /api/auth/methods` 显示按钮。回调地址都是 `<public-origin>/api/oauth/<provider>/callback`：
+  - Google：`PINOMAD_SERVER_GOOGLE_CLIENT_ID`、`PINOMAD_SERVER_GOOGLE_CLIENT_SECRET`（Web 类型的 OAuth client）。
+  - GitHub：`PINOMAD_SERVER_GITHUB_CLIENT_ID`、`PINOMAD_SERVER_GITHUB_CLIENT_SECRET`（OAuth App）。
+  - Apple：`PINOMAD_SERVER_APPLE_SERVICES_ID`、`PINOMAD_SERVER_APPLE_TEAM_ID`、`PINOMAD_SERVER_APPLE_KEY_ID`、`PINOMAD_SERVER_APPLE_PRIVATE_KEY`（`.p8` 的 PEM 内容，换行可以写成 `\n`）；iOS App 的原生 Sign in with Apple 还要 `PINOMAD_SERVER_APPLE_BUNDLE_ID`。Services ID 里登记域名和回调地址。Apple 用户可能用隐藏邮箱，要在 Apple 开发者账号的 Sign in with Apple → Email Communication 里登记发件域名和地址，否则发往 `privaterelay.appleid.com` 的信收不到。
 
-管理员登录 Web 或桌面端后，账号面板里有 **Invites**：**Create invite** 生成邀请码，列表里能看到谁用了哪个，没用掉的可以 **Revoke**。邀请码是经 HTTP 发的，服务端不用停，所以也可以直接调接口：
+快捷登录回来后，同一个人只会有一个账号：先按提供方给的 ID 找已绑定的账号，再按双方都已验证的邮箱自动绑定（并给这个邮箱发通知），都对不上时让用户选新建还是绑定到已有账号。
+
+服务端 CLI（服务端开着也能用，规则和 `passwd` 一样）：
 
 ```sh
-# 以管理员登录，拿到 bearer token（不带 Origin 时回 token 而不是 cookie）
-TOKEN=$(curl -s https://relay.example.com/api/login -H 'content-type: application/json' \
-  -d '{"username":"<管理员>","password":"<密码>"}' | jq -r .token)
-curl -s -X POST https://relay.example.com/api/invites -H "authorization: Bearer $TOKEN"        # 生成：{ code, expiresAt }
-curl -s https://relay.example.com/api/invites -H "authorization: Bearer $TOKEN"                # 列出：谁用了、何时过期
-curl -s -X POST https://relay.example.com/api/invites/revoke -H "authorization: Bearer $TOKEN" \
-  -H 'content-type: application/json' -d '{"id":<id>}'                                          # 作废没用掉的
+printenv NEW_PASSWORD | pinomad server user add <邮箱> --data-dir /var/lib/pinomad/server   # 加账号，密码从 stdin 读
+pinomad server user set-email <用户名> <邮箱> --data-dir /var/lib/pinomad/server            # 给老账号设邮箱，视为已验证
 ```
+
+ADR-0044 之前的用户名账号照旧能用用户名登录。配了发信的服务端上，它们登录后会被要求补一个邮箱、用验证码确认，之后用邮箱登录；没配发信时用 `user set-email` 补。
 
 #### 宿主加入账号（join / leave）
 
@@ -210,7 +215,7 @@ pinomad leave [--data-dir DIR]
 - 宿主设置 `acceptAccountDevices`（默认开，协议 5.8，客户端用 `FEATURE_SINCE` 判断宿主是否认识它）控制是否接受服务端担保的设备；关掉后还没用掉的账号邀请立即作废。邀请绑定到 `server.json` 里每次写入生成的随机 `binding` 而不只是地址：`pinomad leave`、换服务端、或重新 join（即使同一地址）后，旧绑定签发的邀请在登记时都会被拒——准入时重新核对当前 `server.json`，不用等重启。
 - 账号来源的设备登记成功时不再向在线设备广播 notice（M8 修订 ADR-0022 §6）：新设备只在 Devices 列表里实时出现，并标出来源「via account」。
 
-HTTP API（都在服务端同一端口的 `/api/*` 下）：`POST /api/login`（`{username, password, device?}`）、`GET /api/me`、`POST /api/logout`、`POST /api/sessions/revoke-all`、`POST /api/join-tokens`（返回 `{token, expiresAt, command}`）、`POST /api/host-link/start` 和 `POST /api/host-link/poll`（宿主用，不需要登录，按 RFC 8628 回 `authorization_pending`、`slow_down`、`expired_token`、`access_denied` 或 `{token, expiresAt}`）、`POST /api/host-link/lookup`、`POST /api/host-link/confirm`、`POST /api/host-link/deny`（都带 `{userCode}`，要登录）、`GET /api/hosts`、`POST /api/hosts/:hostId/pairing`、`GET /api/devices`、`POST /api/devices/:id/kick`。会话令牌 30 天固定过期；登录有按 IP 限速、按用户名失败锁定和 scrypt 并发上限，触发回 429。`host-link/start` 每个 IP 10 分钟内最多 10 次（429），全服务端同时最多 1000 个未完成的请求（503）；输错短码按账号 15 分钟 10 次、按 IP 15 分钟 30 次锁定（429）。
+HTTP API（都在服务端同一端口的 `/api/*` 下）：`GET /api/auth/methods`、`POST /api/login`（`{username, password, device?}`，`username` 填邮箱或老账号的用户名）、`POST /api/register/code` 和 `POST /api/register`、`POST /api/password/reset/code` 和 `POST /api/password/reset`、`GET /api/oauth/<provider>/start` 和 `/callback`、`POST /api/oauth/token`、`POST /api/oauth/apple/native`、`POST /api/reauth/code` 和 `POST /api/reauth`、`POST /api/me/email/code` 和 `POST /api/me/email`、`GET /api/me/identities`、`GET /api/me`、`POST /api/logout`、`POST /api/sessions/revoke-all`、`POST /api/join-tokens`（返回 `{token, expiresAt, command}`）、`POST /api/host-link/start` 和 `POST /api/host-link/poll`（宿主用，不需要登录，按 RFC 8628 回 `authorization_pending`、`slow_down`、`expired_token`、`access_denied` 或 `{token, expiresAt}`）、`POST /api/host-link/lookup`、`POST /api/host-link/confirm`、`POST /api/host-link/deny`（都带 `{userCode}`，要登录）、`GET /api/hosts`、`POST /api/hosts/:hostId/pairing`、`GET /api/devices`、`POST /api/devices/:id/kick`。会话令牌 30 天固定过期；登录有按 IP 限速、按账号失败锁定和 scrypt 并发上限，触发回 429。`host-link/start` 每个 IP 10 分钟内最多 10 次（429），全服务端同时最多 1000 个未完成的请求（503）；输错短码按账号 15 分钟 10 次、按 IP 15 分钟 30 次锁定（429）。
 
 #### 服务端担保配对（ADR-0022 §4）
 

@@ -16,7 +16,7 @@
 
 ## 快速上手
 
-1. **注册账号**：在 [app.pinomad.si](https://app.pinomad.si/) 注册（要邀请码）。
+1. **注册账号**：在 [app.pinomad.si](https://app.pinomad.si/) 用邮箱注册，或者直接用 Google、GitHub、Apple 登录。
 2. **加入宿主**：在要跑 agent 的机器（macOS 或 Linux）上运行下面两行。`pinomad up` 会在浏览器里打开一个网页，登录后点确认，宿主就加入了账号，之后作为服务常驻运行。那台机器开不了浏览器时（比如经 SSH），它改为打印一个短码，在任意已登录的设备上输入即可。
 
    ```sh
