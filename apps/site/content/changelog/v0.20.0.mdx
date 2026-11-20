@@ -1,0 +1,20 @@
+---
+title: Inbox mode is paused
+version: v0.20.0
+date: 2026-11-20
+---
+
+**Before you upgrade**
+
+- Upgrade the host from Settings → the host → About, or with `pinomad upgrade`.
+- A 0.20.0 host stops Inbox mode: no worker, schedules, plugin event sources or webhooks run, and Inbox tasks still running when the host starts are paused. Messages already in the Outbox are still delivered.
+
+**Inbox** (web, Mac app and iPhone)
+
+- Inbox mode is temporarily unavailable. The Coding / Inbox switch and the Inbox settings are gone, and new chats are coding conversations.
+- Your Inbox conversations stay, kept out of the Coding list as before. You can read them and their forks, but not send to them or run commands in their Terminal.
+- On iPhone, a notification for an old Inbox task opens that task instead of the intake.
+
+**Plugins**
+
+- Event sources declared with `pinomad.source(…)` don't run while Inbox is paused, and the Event sources section is gone from [Plugins](/docs/plugins/). A plugin's tools, methods, secrets and UI work as before.
