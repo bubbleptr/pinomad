@@ -217,8 +217,6 @@ export function startMcp(options: {
   const toolsets = new Map<string, ToolRegistration[]>();
   // One namespace per connected server, for the codemode section and describeNamespace.
   const namespaces = new Map<string, ToolNamespace>();
-  // Each connected server is its own extension, `mcp.<server>`, carrying its namespace.
-  const installed = new Set<string>();
   const exposures = new Map<string, "codemode" | "direct">();
   // Every client ever created, so close() also aborts connections still in flight.
   const live = new Set<McpClient>();
@@ -229,19 +227,9 @@ export function startMcp(options: {
     const value: McpStatus = { configPath: options.configPath, errors, servers: [...servers.values()] };
     for (const listener of listeners) listener(value);
   };
-  const install = (): void => {
-    for (const name of installed) {
-      if (toolsets.has(name)) continue;
-      options.registry.uninstall(defineExtension({ name: `mcp.${name}` }));
-      installed.delete(name);
-    }
-    for (const [name, tools] of toolsets) {
-      const namespace = namespaces.get(name);
-      options.registry.install(defineExtension({ name: `mcp.${name}`, tools, ...(namespace === undefined ? {} : { namespace }) }));
-      installed.add(name);
-    }
-    options.onNamespaces?.([...namespaces.values()]);
-  };
+  // Each connected server is its own extension, `mcp.<server>`, carrying its namespace.
+  const extensionName = (name: string): string => `mcp.${name}`;
+  const namespacesChanged = (): void => options.onNamespaces?.([...namespaces.values()]);
   const set = (name: string, patch: Partial<McpServerStatus> & Pick<McpServerStatus, "state">): void => {
     servers.set(name, { name, tools: 0, ...servers.get(name), ...patch });
     publish();
@@ -263,20 +251,23 @@ export function startMcp(options: {
     }
     if (closed) return;
     toolsets.set(name, tools);
-    namespaces.set(name, {
+    const namespace: ToolNamespace = {
       name,
       description: description ?? `Tools of the ${name} MCP server.`,
       ...(client.instructions === undefined ? {} : { instructions: client.instructions }),
-    });
+    };
+    namespaces.set(name, namespace);
     set(name, { state: "connected", tools: tools.length, error: collisions.length === 0 ? undefined : collisions.join("; ") });
-    install();
+    options.registry.install(defineExtension({ name: extensionName(name), namespace, tools }));
+    namespacesChanged();
   };
 
   const fail = (name: string, error: string): void => {
     toolsets.delete(name);
     namespaces.delete(name);
     set(name, { state: "failed", error, tools: 0 });
-    install();
+    options.registry.uninstall(defineExtension({ name: extensionName(name) }));
+    namespacesChanged();
   };
 
   const describeConnectError = (error: unknown, transport: StdioTransport | undefined): string => {
@@ -338,7 +329,6 @@ export function startMcp(options: {
       else servers.set(entry.name, { name: entry.name, state: "connecting", tools: 0 });
     }
     publish();
-    install();
     for (const entry of loaded.entries) {
       if (entry.disabled === true) continue;
       exposures.set(entry.name, entry.exposure);

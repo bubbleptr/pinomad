@@ -302,8 +302,8 @@ export async function openHost(options: OpenHostOptions): Promise<OpenedHost> {
       pluginLog(`plugins: not loaded: ${error instanceof Error ? error.message : String(error)}`);
       return undefined;
     });
-    // Connections run in the background; the `mcp` extension (re)installs as tools arrive.
-    // Namespace changes rebuild the extensions that opt in (codemode's section).
+    // Connections run in the background; each server's `mcp.<server>` extension installs as its tools arrive.
+    // Namespace changes rebuild the extensions that opt in (context-breakdown's MCP split).
     mcp =
       options.mcpConfig === undefined
         ? undefined
