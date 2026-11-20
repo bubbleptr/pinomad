@@ -37,7 +37,7 @@ const CODEMODE = [
 ].join("\n\n");
 const SYSTEM = [PREAMBLE, SKILLS, CODEMODE].join("\n\n");
 const SCHEMA = { type: "object", properties: { path: { type: "string", description: "x".repeat(400) } } };
-const NAMESPACES = [{ name: "github", prefix: "mcp__github__" }];
+const NAMESPACES = [{ name: "github", description: "GitHub" }];
 
 describe("estimateRequest", () => {
   it("splits the system prompt into system, skills and MCP, and tools by origin", () => {

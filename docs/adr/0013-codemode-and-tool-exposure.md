@@ -25,14 +25,14 @@ Durable 1.0.4 没有这两样东西：模型看到哪些工具只由 agent 的 `
    - `codemode`：`callers: ["tools"]`，不进模型看到的工具列表，但 `executeTool()` 能调。
    - `deferred` / `tool_search` 和 `hidden` 暂不做；上游已有 `deferred`，需要时直接开。
 
-3. **MCP 工具默认 `codemode`，取代 ADR-0012 第 5 条。** `~/.agents/mcp.json` 里每个 server 可以写 `exposure: "direct"` 改成直接声明（ADR-0012 第 2 条里"不支持 `exposure`"随之改为支持这一个字段，其余 CLI 特有字段仍不支持）。实现上每个 MCP 工具只有一份注册：`callers` 按 exposure 决定；`structuredOutputSchema` 声明成 `CallToolResult` 形状，所以脚本拿到的是原始 `CallToolResult`（含 `isError`、`structuredContent`），模型拿到 `toLlmContent` 映射的文本和图片块。一个 server 是一个命名空间：`{ name: <server>, description, instructions, prefix: "mcp__<server 清洗后的名字>__" }`，server 连接 / 重列 / 掉线时经 `onNamespaces` 回调重装 codemode 扩展。
+3. **MCP 工具默认 `codemode`，取代 ADR-0012 第 5 条。** `~/.agents/mcp.json` 里每个 server 可以写 `exposure: "direct"` 改成直接声明（ADR-0012 第 2 条里"不支持 `exposure`"随之改为支持这一个字段，其余 CLI 特有字段仍不支持）。实现上每个 MCP 工具只有一份注册：`callers` 按 exposure 决定；`structuredOutputSchema` 声明成 `CallToolResult` 形状，所以脚本拿到的是原始 `CallToolResult`（含 `isError`、`structuredContent`），模型拿到 `toLlmContent` 映射的文本和图片块。一个 server 是一个扩展 `mcp.<server>`，它的 `namespace` 是 `{ name: <server>, description, instructions }`（pi 1.6.0 起命名空间由带来工具的扩展声明，不再按名字前缀归组），server 连接 / 重列 / 掉线时装上或卸掉这个扩展。
 
 4. **嵌套调用是上游 `executeTool()` 工具任务，脚本靠确定性重放挺过重启。**
    - 脚本里的 `tools.<name>(args)` 是真实的嵌套工具调用：有自己的任务、校验、钩子和重放策略，结果不进 transcript，只回到调用方。
    - 上游 codemode 工具是 `replay: "safe"`：宿主重启后脚本按日志从头重放，已完成的嵌套调用按键重连不重跑；崩溃时还在跑的嵌套调用按它自己的 `replay` 策略处理。重放拒绝（脚本分叉、版本或指纹变化、超时过期）会得到错误结果。
    - 结果交给脚本的形式：MCP 工具是它的 `CallToolResult`；声明了 `structuredOutputSchema` 的工具（比如 bash 的 `{ output, truncated, exitCode }`）出错也带值返回，脚本查 `exitCode`；其他工具是文本输出。没有结构化输出的工具报错时脚本里的调用 reject。
 
-5. **工具发现和提示词段全用上游的。** 脚本里有 `tools.<name>(args)`、`ALL_TOOLS`、`searchTools`、`describeTool`、`describeNamespace`，以及 `text`、`image`、`console`、`return`、`exit`。`codemode` 工具描述是固定文本；随对话变化的 `codemode` 提示词段按可调用工具渲染（有 token 预算），命名空间按 `prefix` 归组。
+5. **工具发现和提示词段全用上游的。** 脚本里有 `tools.<name>(args)`、`ALL_TOOLS`、`searchTools`、`describeTool`、`describeNamespace`，以及 `text`、`image`、`console`、`return`、`exit`。`codemode` 工具描述是固定文本；随对话变化的 `codemode` 提示词段按可调用工具渲染（有 token 预算），命名空间按工具所属扩展的 `namespace` 归组。
 
 6. **`store` / `load` 和 `models.*` 随上游一起提供。** `store(key, value)` / `load(key)` 按对话存 JSON 值（fork 看到分叉点的值）；`models.*`（模型目录、分类、图片生成）默认开，内部是 `pi.codemode.*` 嵌套工具，不进 `tools` 也不进发现接口。
 

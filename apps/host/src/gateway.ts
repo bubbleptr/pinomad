@@ -2961,7 +2961,7 @@ class GatewayClient {
             return { outcome: "unavailable" as const };
           }
           if (before === submissionId) return { outcome: "moved" as const };
-          // Array order is delivery order: pi-durable's applyBoundary (1.5.2,
+          // Array order is delivery order: pi-durable's applyBoundary (1.6.0,
           // dist/harness/inbox.js) picks steers and follow-ups by array index
           // and places them sorted by index, and enqueue only pushes — despite
           // InboxState's "in ID order" comment. queued-actions.test.ts guards

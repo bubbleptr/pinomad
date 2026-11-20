@@ -1,8 +1,7 @@
 // ADR-0004: a built-in extension is a Durable extension plus the conversation
 // documents it wants clients to see. Core knows extensions only through this
 // boundary; the dependency rule is tested in test/extension-boundary.test.ts.
-import type { ConversationDocToken, Extension, JsonObject } from "@earendil-works/pi-durable";
-import type { CodemodeNamespace } from "@earendil-works/pi-durable/codemode";
+import type { ConversationDocToken, Extension, JsonObject, ToolNamespace } from "@earendil-works/pi-durable";
 import type { PresentationType } from "@pinomad/protocol/presentation.ts";
 
 export interface ExtensionDoc {
@@ -17,10 +16,10 @@ export interface BuiltinExtension {
   /** Tool name → presentation of its result `details` (ADR-0005). */
   readonly tools?: Readonly<Record<string, PresentationType>>;
   /**
-   * Rebuild the extension with the current script-tool namespaces (MCP
-   * servers, ADR-0013 §5); the host reinstalls the result when they change.
+   * Rebuild the extension with the current MCP server namespaces (ADR-0013
+   * §5); the host reinstalls the result when they change.
    */
-  readonly namespaced?: (namespaces: readonly CodemodeNamespace[]) => Extension;
+  readonly namespaced?: (namespaces: readonly ToolNamespace[]) => Extension;
   /** Resources the extension owns process-wide, such as a sandbox pool. */
   readonly close?: () => Promise<void>;
 }

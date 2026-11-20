@@ -1,7 +1,7 @@
 // What filled the context window, estimated from the provider request body
 // right before it is sent. Only the provider's total is measured; these parts
 // are character estimates, so `breakdownOf` fits them under the real count.
-import type { CodemodeNamespace } from "@earendil-works/pi-durable/codemode";
+import type { ToolNamespace } from "@earendil-works/pi-durable";
 import type { ContextBreakdown } from "@pinomad/protocol/presentation.ts";
 
 export type RequestEstimate = Pick<ContextBreakdown, "system" | "skills" | "tools" | "mcp">;
@@ -105,7 +105,7 @@ function cut(text: string, tag: string): { inside: string; rest: string } {
  * under a `## <name>` heading. Only known names split it: a tool description
  * may carry its own `## ` lines.
  */
-function splitCodemode(section: string, namespaces: readonly CodemodeNamespace[]): { builtin: string; mcp: string } {
+function splitCodemode(section: string, namespaces: readonly ToolNamespace[]): { builtin: string; mcp: string } {
   const starts = namespaces
     .map(({ name }) => section.search(new RegExp(`\\n## ${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:\\n| \\(|$)`)))
     .filter((index) => index >= 0);
@@ -115,7 +115,7 @@ function splitCodemode(section: string, namespaces: readonly CodemodeNamespace[]
 }
 
 /** Estimate the fixed parts of a provider request body; undefined when it carries neither a system prompt nor tools. */
-export function estimateRequest(payload: unknown, namespaces: readonly CodemodeNamespace[]): RequestEstimate | undefined {
+export function estimateRequest(payload: unknown, namespaces: readonly ToolNamespace[]): RequestEstimate | undefined {
   if (!isObject(payload)) return undefined;
   const system = systemTextOf(payload);
   const tools = toolsOf(payload);
