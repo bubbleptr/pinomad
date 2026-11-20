@@ -1,0 +1,20 @@
+---
+title: Inbox 模式暂停
+version: v0.20.0
+date: 2026-11-20
+---
+
+**升级前**
+
+- 在 Settings → 宿主 → About 里升级宿主，或者用 `pinomad upgrade`。
+- 0.20.0 的宿主停用 Inbox 模式：worker、定时、插件事件源和 webhook 都不再运行，宿主启动时还在跑的 Inbox 任务会暂停。已经进了 Outbox 的消息照常投递。
+
+**Inbox**（Web、Mac App 和 iPhone）
+
+- Inbox 模式暂时不可用。Coding / Inbox 切换和 Inbox 设置都撤掉了，新对话都是编码对话。
+- 原来的 Inbox 对话都还在，照旧不混进 Coding 列表。可以查看它们和它们的分支，但不能再发消息，也不能在它们的 Terminal 里执行命令。
+- iPhone 上，旧 Inbox 任务的通知现在打开那个任务，而不是收件对话。
+
+**插件**
+
+- 用 `pinomad.source(…)` 声明的事件源在 Inbox 暂停期间不运行，[插件](/zh/docs/plugins/)文档里的事件源一节也撤掉了。插件的工具、方法、密钥和界面照常可用。
